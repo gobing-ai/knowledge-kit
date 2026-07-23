@@ -1,0 +1,15 @@
+{
+    "name": "knowledge-kit",
+    "owner": {
+        "name": "Robin Min",
+        "email": "minlongbing@gmail.com"
+    },
+    "plugins": [
+        {
+            "version": "0.0.1",
+            "name": "kk",
+            "source": "./plugins/kk",
+            "description": "knowledge-kit — a set of toolkit for knowledge management"
+        }
+    ]
+}
