@@ -1,0 +1,38 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# CLI surface consistency for knowledge-kit.
+# Product binary uses createProgram() in apps/cli/src/cli.ts (not a commands/ dir
+# of registerXxxCommand files).
+
+include:
+  - "apps/cli/src/**/*.ts"
+
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/tests/**"
+
+rules:
+  - id: cli-create-program-factory
+    description: >
+      apps/cli/src/cli.ts must export a side-effect-free createProgram() factory
+      (Commander program construction for knowledge-kit).
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "export function createProgram\\("
+        mode: require
+    include:
+      - "apps/cli/src/cli.ts"
+
+  - id: cli-no-parse-at-module-scope
+    description: >
+      Do not call .parse() at module scope in apps/cli/src — only from index
+      under import.meta.main (keeps createProgram testable).
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\\.parse\\("
+    include:
+      - "apps/cli/src/cli.ts"

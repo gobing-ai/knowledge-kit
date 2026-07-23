@@ -1,0 +1,22 @@
+{
+    "name": "@gobing-ai/knowledge-kit",
+    "type": "module",
+    "private": true,
+    "bin": {
+        "knowledge-kit": "./src/index.ts"
+    },
+    "scripts": {
+        "start": "bun run src/index.ts",
+        "dev": "bun run src/index.ts",
+        "build": "bun build src/index.ts --target=bun --outdir=dist",
+        "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/utils": "workspace:*",
+        "commander": "15.0.0"
+    },
+    "devDependencies": {
+        "@types/bun": "1.3.14"
+    }
+}

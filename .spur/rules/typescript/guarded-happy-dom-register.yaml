@@ -1,0 +1,22 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Disabled for knowledge-kit: no apps/web / happy-dom suite.
+# Re-enable when a web app with happy-dom tests is added.
+include:
+  - "apps/web/tests/**/*.test.ts"
+  - "apps/web/tests/**/*.test.tsx"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "apps/web/tests/happy-dom.ts"
+
+rules:
+  - id: guarded-happy-dom-register
+    enabled: false
+    description: >
+      Do not call `GlobalRegistrator.register()` directly in a web test — use
+      `registerHappyDom()` from apps/web/tests/happy-dom.ts.
+    severity: warning
+    evaluator:
+      type: rg
+      config:
+        pattern: "GlobalRegistrator\\.register\\(\\)"

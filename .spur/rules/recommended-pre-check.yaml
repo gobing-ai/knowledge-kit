@@ -1,0 +1,13 @@
+$schema: "@gobing-ai/spur/schemas/preset.schema.json"
+# Recommended pre-check for knowledge-kit (CLI monorepo).
+# Use with: spur rule run --preset recommended-pre-check
+#
+# Categories: TypeScript quality, structure, DB/config boundaries, CLI surface.
+# UI / happy-dom / plugins/sp rules exist under .spur/rules but are disabled
+# (enabled: false) until those surfaces exist.
+name: recommended-pre-check
+extends:
+  - typescript
+  - structure
+  - boundary
+  - surface
