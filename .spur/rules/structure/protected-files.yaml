@@ -53,9 +53,13 @@ rules:
     include:
       - "**/.env"
       - "**/.env.*"
+      - "**/*.env"
     exclude:
       - "**/.env.example"
       - "**/node_modules/**"
+      # vendors/ is reference-only (AGENTS.md); third-party trees may ship sample env files.
+      - "vendors/**"
+      - "**/vendors/**"
 
 # NOTE: the ts-libs `no-github-workflows` rule (asserting .github/workflows must be
 # ABSENT) was intentionally NOT absorbed — ts-libs is a library repo with no CI,
