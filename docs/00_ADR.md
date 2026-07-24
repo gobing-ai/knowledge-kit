@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.2.0
+version: 1.4.0
 created_at: 2026-05-28
-updated_at: 2026-07-22
+updated_at: 2026-07-24
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -110,6 +110,74 @@ both `package.json` and `.prototools` (and `biome.json` `$schema`) together.
 
 At project initialization, dependencies were refreshed to latest published versions
 (`bun outdated` → install Latest column), including Biome **2.5.5**, Commander **15**, and Zod **4**.
+
+---
+
+## ADR-006 — knowledge-kit is a plugin-based knowledge platform (2026-07-23)
+
+> **Status:** Accepted · **Supersedes:** the "minimal CLI monorepo" product framing of the prior
+> `01_PRD` (v1.1.0). This is a product pivot, not a toolchain change — ADR-001..005 (layout,
+> Commander, `@gobing-ai/*` boundary, testable output, Biome) remain the substrate.
+
+**Decision.** knowledge-kit is a **collection of agentic knowledge-management plugins** — an
+**ingest → generate → publish** pipeline over knowledge in multiple formats — delivered as Claude
+Code–style plugins, distributed by `superskill install`, and orchestrated by `spur` (first-class
+harness). The first plugin collection is `plugins/kk`. The platform defines **three typed plugin
+kinds** — `IngestionPlugin`, `ContentGeneratorPlugin`, `PublishPlugin` — as TypeScript contracts
+discovered by a registry. **Orchestration is `spur workflow`**; a bespoke `kk run` runtime CLI is
+**deferred (YAGNI)** until a concrete need appears. The `apps/cli` binary
+(`@gobing-ai/knowledge-kit`) hosts the shared runtime / SDK.
+
+**Sub-decisions (Phase 1 = "Foundation + STORM"):**
+
+1. **Plugin model** — typed contracts + registry (the type / discovery layer), orchestrated by
+   `spur workflow`; not a custom DAG runtime. The framework is the *contract* layer; Spur owns
+   execution. (Refines an initial "formal runtime framework" lean toward a spur-orchestrated
+   hybrid.)
+2. **Ingestion (Karakeep)** — reads an **rclone-synced local folder** mirroring the Karakeep R2
+   bucket, as a normal filesystem. Direct R2 API access is out of Phase 1; the sync is an
+   out-of-band precondition.
+3. **Generators** — reuse-first, lazy Python→TS. The Phase-1 generator wires an **existing agent
+   skill** to the contract; an own **STORM** implementation (ref `vendors/storm`) is Phase 2.
+4. **Publish** — **rewrite-with-tests**, not reuse: the `wt` publish skills lack unit tests, so
+   reusing them as-is would inherit that risk. Phase 1 rewrites **only Surfdash** (the one target
+   the reference vertical needs) behind a reusable test harness; the other 9 targets are a Phase-2
+   tested-rewrite epic. Every publish rewrite is preceded by a **wt-publish audit**.
+5. **Reference vertical** — Karakeep-local → generator → Surfdash, proven end-to-end via a
+   `spur workflow`, is the Phase-1 acceptance demo.
+
+**Rationale.** The plugin taxonomy matches the shape of existing assets: `wt` already carries a
+generator suite and 10 publish targets, and Karakeep / Surfdash sit at the ingest / publish ends.
+Making ingest→generate→publish a composable, tested pipeline converts scattered collection plus
+manual per-platform publishing into a re-runnable workflow. Leaning on `spur workflow` avoids
+building a runtime before the domain is proven.
+
+**Consequences.** The feature tree (`05_FEATURES`, letter IDs **A–I**) and roadmap (`02_ROADMAP`)
+derive from this ADR. The prior PRD Non-Goals about "multi-mode scaffolding / convergence" are moot
+— those addressed a template product; knowledge-kit is now explicitly multi-plugin. `plugins/kk`
+graduates from an empty skeleton to the platform home. The **LLM wiki**
+(`vendors/llm-wiki.md`, `gbrain`, `deepwiki-open`, `openwiki`) remains **undecided** — parked as map
+fog (feature **I**), pursued only after a go/no-go spike.
+
+### Amendment — 2026-07-24 (plugin model concretized, sub-decision 1)
+
+Planning feature **B** resolved sub-decision 1 to a **skill-first** shape, grounded in the D1/E1
+research (the real instances are an agent skill + a Node CLI, not TS classes):
+
+- **A plugin is a directory with a `plugin.json` manifest** — `{ name, kind, entry }`, where
+  `kind ∈ {ingestion, generator, publish}` and `entry` names the skill or command that runs it.
+- **The "typed contract" is a DATA contract**, not in-process TS interfaces with methods: Zod
+  schemas for `Doc` / `Content` / `Result` in a new `@gobing-ai/kk-core` package (new `packages/*`
+  per ADR-001), exchanged as files/JSON between steps.
+- **`kk invoke <plugin> --in <f> --out <f>`** is the uniform entrypoint a spur workflow step calls
+  — a subcommand of the knowledge-kit binary (per ADR-002) that resolves the manifest entry,
+  validates IO against the kind's contract, runs the skill/CLI, and **fails loud** (dropping the
+  `postsurfing` "always exit 0" anti-pattern found in audit 0002). It is a single-plugin invoker,
+  **not** the deferred DAG runtime.
+- **Discovery** = filesystem scan of `plugins/*/plugin.json` grouped by kind (feature B1).
+
+This supersedes the earlier reading of "TypeScript interfaces … with lifecycle methods" as
+in-process classes; the methods are the ingest→generate→publish step sequence spur workflow runs.
 
 ---
 
