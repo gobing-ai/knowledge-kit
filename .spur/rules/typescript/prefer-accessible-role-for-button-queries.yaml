@@ -1,0 +1,24 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Disabled for knowledge-kit: no apps/web React test suite.
+# Global rule targets apps/web/tests/**; empty-glob causes misconfigured pre-check.
+# Re-enable when a web app with Testing Library button queries is added.
+include:
+  - "apps/web/tests/**/*.test.ts"
+  - "apps/web/tests/**/*.test.tsx"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+
+rules:
+  - id: prefer-accessible-role-for-button-queries
+    enabled: false
+    description: >
+      Do not query button accessible names with `getByLabelText` in web React tests.
+      `<button>` elements are non-labellable per WHATWG spec, causing timing-dependent
+      CI failures when tests run sequentially in a single process.
+      Use `getByRole('button', { name: ... })` instead.
+    severity: warning
+    evaluator:
+      type: rg
+      config:
+        pattern: "getByLabelText\\(['\"]Sort "
