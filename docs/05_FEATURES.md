@@ -5,7 +5,7 @@ owns: STATUS — feature decomposition + state
 authority: derived
 version: 2.0.3
 created_at: 2026-07-22
-updated_at: 2026-07-23
+updated_at: 2026-07-25
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -26,7 +26,7 @@ sync: [T4]
 |----|---------|--------|-------|-------|
 | **A** | CLI monorepo foundation | ✅ done¹ | 0 | Bun + TS + Biome monorepo, `@gobing-ai/*`, gates, Spur init |
 | **B** | kk plugin platform | ⏳ planned | 1 | skill-first seam (ADR-006 amdt 2026-07-24); tasks `0003`–`0005` |
-| B2 | Typed lifecycle contracts | ⏳ ready | 1 | task `0003` (**build first**): Zod Doc/Content/Result in `@gobing-ai/kk-core` |
+| B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003` done: Zod Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
 | B1 | Plugin manifest + registry/discovery | ⏳ planned | 1 | task `0004`: `plugin.json{name,kind,entry}` + fs registry by kind |
 | B3 | Spur workflow integration | ⏳ planned | 1 | task `0005`: `kk invoke --in --out` + workflow template; no DAG runtime |
 | **C** | IngestionPlugin: Karakeep-local | ⏳ current | 1 | read rclone-synced folder as normal FS |

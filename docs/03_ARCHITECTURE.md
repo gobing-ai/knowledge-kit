@@ -5,7 +5,7 @@ owns: HOW — module boundaries, data flow, runtime model, invariants, rationale
 authority: derived
 version: 1.1.0
 created_at: 2026-07-22
-updated_at: 2026-07-22
+updated_at: 2026-07-25
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -22,6 +22,7 @@ apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
 packages/
   utils/            # @gobing-ai/utils — pure helpers, zod re-export, logger
+  kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
 tooling/
   typescript/       # shared tsconfig presets
 .spur/              # Spur config, rules, workflows, templates
@@ -54,6 +55,7 @@ argv
 |--------|--------------|----------------|---------------|
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface, arg coercion, wiring | `@gobing-ai/utils`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
+| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**

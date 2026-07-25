@@ -1,5 +1,5 @@
 {
-    "name": "@gobing-ai/knowledge-kit-utils",
+    "name": "@gobing-ai/utils",
     "type": "module",
     "private": true,
     "exports": {
