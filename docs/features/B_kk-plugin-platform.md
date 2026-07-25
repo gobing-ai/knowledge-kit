@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-07-25T16:23:31.467Z"
+updated_at: "2026-07-25T16:58:42.476Z"
 ---
 
 # B: kk plugin platform
@@ -62,6 +62,35 @@ Feature: kk plugin platform
     Given the kk-core package
     When a consumer imports the inferred Doc, Content, and Result types
     Then the types are available without redefining the shapes
+
+  # Child B1 (plugin manifest + registry) — rolled up for DD-09 / task 0004
+  @core
+  Scenario: R1 — A manifest declares a valid kind and entry
+    Given a plugin directory containing a plugin.json
+    When the manifest is validated against the manifest schema
+    Then a kind of ingestion, generator, or publish is required
+    And an entry naming the skill or command that runs the plugin is required
+
+  @core
+  Scenario: R2 — The registry discovers installed plugins grouped by kind
+    Given several plugin directories each with a valid plugin.json
+    When the registry runs discovery
+    Then every valid plugin is registered under its declared kind
+    And plugins can be listed by kind
+
+  @core
+  Scenario: R3 — A malformed manifest is skipped without aborting the scan
+    Given one plugin directory whose plugin.json is missing a required field
+    When the registry runs discovery
+    Then the malformed plugin is reported as skipped with its path and reason
+    And the remaining valid plugins are still registered
+
+  @edge
+  Scenario: R4 — Duplicate plugin names surface a diagnostic
+    Given two plugin directories declaring the same plugin name
+    When the registry runs discovery
+    Then a duplicate-name diagnostic is reported
+
 ```
 ## Tasks
 
@@ -69,6 +98,7 @@ Feature: kk plugin platform
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0003 | kk-core data contracts: Doc, Content, Result Zod schemas + per-kind contract | done |
+| 0004 | Plugin manifest schema + registry discovery by kind | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

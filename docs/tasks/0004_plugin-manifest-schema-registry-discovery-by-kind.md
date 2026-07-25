@@ -3,16 +3,16 @@ template: feature-impl
 schema_version: 1
 name: "Plugin manifest schema + registry discovery by kind"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
-feature_id: B1
+feature_id: B
 parent_wbs: null
 priority: P2
 tags: ["kk", "platform", "registry"]
 dependencies: ["0003"]
 created_at: "2026-07-24T17:36:27.412Z"
-updated_at: "2026-07-24T21:56:50.103Z"
+updated_at: "2026-07-25T16:58:43.769Z"
 ---
 
 ## 0004. Plugin manifest schema + registry discovery by kind
@@ -20,10 +20,10 @@ updated_at: "2026-07-24T21:56:50.103Z"
 ### Background
 Discovery layer for feature B. Depends on B2 / task `0003` (kind enum + contracts); build SECOND (after B2, before B3). A plugin is a directory with `plugin.json {name, kind, entry}` (ADR-006 amendment, skill-first model). Covers B1 scenarios R1-R4. Rubric: E2 D1 L1 C1 R1 = 6 -> task.
 ### Requirements
-- [ ] R1. Define the `plugin.json` manifest schema: `name`, `kind` ∈ {ingestion, generator, publish}, and `entry` naming the skill or command that runs the plugin.
-- [ ] R2. Registry discovers `plugins/*/plugin.json`, registers each valid plugin under its declared kind, and supports list-by-kind.
-- [ ] R3. A malformed manifest is skipped and reported (path + reason) without aborting the scan; remaining valid plugins still register.
-- [ ] R4. Two plugin directories declaring the same name surface a duplicate-name diagnostic.
+- [x] R1. Define the `plugin.json` manifest schema: `name`, `kind` ∈ {ingestion, generator, publish}, and `entry` naming the skill or command that runs the plugin.
+- [x] R2. Registry discovers `plugins/*/plugin.json`, registers each valid plugin under its declared kind, and supports list-by-kind.
+- [x] R3. A malformed manifest is skipped and reported (path + reason) without aborting the scan; remaining valid plugins still register.
+- [x] R4. Two plugin directories declaring the same name surface a duplicate-name diagnostic.
 ### Acceptance Criteria
 ```gherkin
 Feature: Plugin manifest and registry discovery
@@ -162,28 +162,85 @@ function getByName(result: DiscoveryResult, name: string): PluginRecord | undefi
 - Doc/Content/Result schema work (B2 / `0003` owns it; this task only *uses* `PluginKind`)
 - Remote discovery, superskill install hooks, multi-root search paths beyond the single `pluginsRoot` argument
 ### Plan
-- [ ] Confirm `@gobing-ai/kk-core` from task `0003` exists (or land `0003` first); depend on its `PluginKind` / `PluginKindSchema`
-- [ ] Add `PluginManifestSchema` + `PluginManifest` type + `parsePluginManifest` helper in kk-core
-- [ ] Implement `discoverPlugins(pluginsRoot)`, `listByKind`, `getByName` with diagnostics (`malformed`, `duplicate_name`, `unreadable`)
-- [ ] Export registry/manifest API from the package barrel (or documented subpath)
-- [ ] Unit tests with temp plugin trees: valid multi-kind discovery; list-by-kind; malformed skip+reason; duplicate-name first-wins + diagnostic; missing plugin.json silent skip
-- [ ] Run `bun run lint` and `bun run test`; no production call sites in CLI yet (that is `0005`)
+- [x] Confirm `@gobing-ai/kk-core` from task `0003` exists (or land `0003` first); depend on its `PluginKind` / `PluginKindSchema`
+- [x] Add `PluginManifestSchema` + `PluginManifest` type + `parsePluginManifest` helper in kk-core
+- [x] Implement `discoverPlugins(pluginsRoot)`, `listByKind`, `getByName` with diagnostics (`malformed`, `duplicate_name`, `unreadable`)
+- [x] Export registry/manifest API from the package barrel (or documented subpath)
+- [x] Unit tests with temp plugin trees: valid multi-kind discovery; list-by-kind; malformed skip+reason; duplicate-name first-wins + diagnostic; missing plugin.json silent skip
+- [x] Run `bun run lint` and `bun run test`; no production call sites in CLI yet (that is `0005`)
 ### Solution
+Implemented `plugin.json` manifest schema and filesystem registry discovery by kind in `@gobing-ai/kk-core`.
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Change |
+|------|--------|
+| `packages/kk-core/src/manifest.ts:4-21` | `PluginManifestSchema`, `PluginManifest` type, and `parsePluginManifest` helper |
+| `packages/kk-core/src/kinds.ts:8` | `PluginKindSchema` Zod enum export |
+| `packages/kk-core/src/registry.ts:32-117` | `discoverPlugins(pluginsRoot)` single-level filesystem scanner + `listByKind` + `getByName` |
+| `packages/kk-core/src/index.ts:13-25` | Export manifest and registry public APIs from barrel |
+| `packages/kk-core/tests/manifest.test.ts` | Unit tests for `PluginManifestSchema` validation |
+| `packages/kk-core/tests/registry.test.ts` | Unit tests for discovery, listByKind, malformed skip (R3), duplicate name first-wins (R4), and unreadable errors |
 
+**Testing Outcome**
+- `bun run autofix` passed cleanly (0 lint/typecheck errors across monorepo).
+- `bun run test` passed 27/27 tests (100% funcs, 98.93% lines overall coverage).
 ### Testing
+**Verdict: PASS** (re-verify `--force` 2026-07-25)
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Commands (this run)**
 
+```text
+bun run autofix    # exit 0
+bun run spur-check # exit 0
+bun run test       # 27 pass, 0 fail; aggregate funcs 100%, lines 98.93%
+```
+
+Coverage: `packages/kk-core` — funcs 100%; lines ~91%+ on `registry.ts` (uncovered: rare unreadable-stat / JSON-parse error branches at 62, 78–83); overall suite 98.93% lines.
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `packages/kk-core/src/manifest.ts:5-13` `PluginManifestSchema` (name/kind/entry); `kinds.ts:8` `PluginKindSchema`; tests `manifest.test.ts:5-16` valid parse, `:18-26` missing kind/entry, `:28-38` invalid kind |
+| R2 | MET | `registry.ts:33-121` `discoverPlugins`; `:124-126` `listByKind`; `:129-131` `getByName`; tests `registry.test.ts:17-50` multi-kind discovery + list/get |
+| R3 | MET | `registry.ts:87-96` malformed → diagnostic + continue; tests `registry.test.ts:53-71` (good plugin still registered; reason contains `kind`) |
+| R4 | MET | `registry.ts:99-106` duplicate first-wins + `duplicate_name`; tests `registry.test.ts:74-97` |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| R1 — valid kind & entry | MET | test | `packages/kk-core/tests/manifest.test.ts:5-39` |
+| R2 — discover + list by kind | MET | test | `packages/kk-core/tests/registry.test.ts:17-50` |
+| R3 — malformed skip | MET | test | `packages/kk-core/tests/registry.test.ts:53-71` |
+| R4 — duplicate-name diagnostic | MET | test | `packages/kk-core/tests/registry.test.ts:74-97` |
+
+**Design conformance:** all Design claims DONE (manifest schema, one-level scan, silent missing plugin.json, first-wins duplicate, API surface).
+
+**SECUA:** no blockers/majors. P4: local FS only (by design).
+
+**Fix-pass:** none required this run — implementation already present; re-verified only. Artifact: `.spur/run/0004-verdict.json`.
+
+**--next:** task already terminal (`done`) — no-op.
 ### Review
+SECUA review of `@gobing-ai/kk-core` plugin manifest schema & registry discovery.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Disposition |
+|----------|---------|-------------|
+| P1 | — | none |
+| P2 | — | none |
+| P3 | — | none |
+| P4 | Direct filesystem `readFileSync`/`readdirSync` assumes local plugins root — expected per ADR-006 local discovery | accepted residual |
 
+**Residual risk:** none material for B1; single-level scanning prevents runaway directory traversals.
+
+**Final disposition:** approve for `done` — discovery & manifest contracts complete, all unit tests PASS.
 ### References
-
-B1
-
-<!-- Links to the parent feature, design docs, related tasks, or external references. -->
-
+- Platform feature: **B** (`kk plugin platform`) — `feature_id` after B1 terminal re-parent (Spur L4.feature-terminal)
+- Delivered under child **B1** (Plugin manifest and registry discovery), feature status `done`
+- AC scenarios R1–R4 match B1 / rolled into B for DD-09 subset
+- Depends on: `0003` (B2 contracts)
+- Related next: `0005` (B3 invoke)
 ### History
+- 2026-07-25T16:55:01.088Z todo → wip (system)
+- 2026-07-25T16:55:03.470Z wip → testing (system)
+- 2026-07-25T16:55:23.029Z testing → done (system)

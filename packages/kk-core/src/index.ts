@@ -1,6 +1,5 @@
 /**
- * @gobing-ai/kk-core — pure data contracts for the knowledge-kit plugin platform.
- * Schemas + inferred types + kind resolution only; no I/O or discovery.
+ * @gobing-ai/kk-core — pure data contracts & registry discovery for the knowledge-kit plugin platform.
  */
 
 export {
@@ -9,7 +8,21 @@ export {
     kindContract,
     PLUGIN_KINDS,
     type PluginKind,
+    PluginKindSchema,
 } from './kinds';
+export {
+    type PluginManifest,
+    PluginManifestSchema,
+    parsePluginManifest,
+} from './manifest';
+export {
+    type DiscoveryDiagnostic,
+    type DiscoveryResult,
+    discoverPlugins,
+    getByName,
+    listByKind,
+    type PluginRecord,
+} from './registry';
 export {
     type Content,
     ContentSchema,

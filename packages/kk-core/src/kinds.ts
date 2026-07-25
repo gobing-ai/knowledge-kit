@@ -1,8 +1,11 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 import { ContentSchema, DocListSchema, ResultSchema } from './schemas';
 
 /** Plugin lifecycle kinds supported by the kk platform. */
 export const PLUGIN_KINDS = ['ingestion', 'generator', 'publish'] as const;
+
+/** Zod schema for {@link PluginKind}. */
+export const PluginKindSchema = z.enum(PLUGIN_KINDS);
 
 /** One of the three plugin lifecycle kinds. */
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
