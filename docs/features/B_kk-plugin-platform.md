@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-07-25T16:58:42.476Z"
+updated_at: "2026-07-25T19:35:39.557Z"
 ---
 
 # B: kk plugin platform
@@ -90,7 +90,33 @@ Feature: kk plugin platform
     Given two plugin directories declaring the same plugin name
     When the registry runs discovery
     Then a duplicate-name diagnostic is reported
+# Child B3 (spur workflow integration) — rolled up for DD-09 / task 0005
+  @core
+  Scenario: R1 — kk invoke runs a discovered plugin with file IO
+    Given a discovered plugin and an input file
+    When "kk invoke <plugin> --in <input> --out <output>" runs
+    Then the plugin's declared entry is executed
+    And the output file is written
 
+  @core
+  Scenario: R2 — kk invoke validates IO against the kind's contract
+    Given a discovered plugin of a given kind
+    When kk invoke runs with an input file that violates the kind's input schema
+    Then invocation fails before the entry runs
+    And the error names the schema violation
+
+  @core
+  Scenario: R3 — A spur workflow chains ingestion, generator, and publish
+    Given a spur workflow template referencing one plugin of each kind
+    When the workflow runs
+    Then each step invokes its plugin via kk invoke
+    And each step's output file feeds the next step's input
+
+  @core
+  Scenario: R4 — kk invoke fails loud when a plugin entry errors
+    Given a discovered plugin whose entry exits non-zero
+    When kk invoke runs it
+    Then kk invoke exits non-zero and surfaces the entry's error
 ```
 ## Tasks
 
@@ -99,6 +125,7 @@ Feature: kk plugin platform
 | --- | ---- | ------ |
 | 0003 | kk-core data contracts: Doc, Content, Result Zod schemas + per-kind contract | done |
 | 0004 | Plugin manifest schema + registry discovery by kind | done |
+| 0005 | kk invoke entrypoint + spur workflow pipeline template | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

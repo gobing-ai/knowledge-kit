@@ -1,0 +1,72 @@
+# Linear state-machine workflow template for knowledge-kit plugin platform:
+# ingest -> generate -> publish -> done.
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-ingest-generate-publish
+kind: state-machine
+description: Chained ingestion, generator, and publish plugins via knowledge-kit invoke
+initialState: ingest
+terminalStates:
+  - done
+  - failed
+vars:
+  ingestion_plugin: "karakeep-local"
+  generator_plugin: "content-gen"
+  publish_plugin: "medium-pub"
+  source: "./source"
+  work_dir: "./work"
+  plugins_root: "./plugins"
+
+states:
+  - id: ingest
+    description: Run ingestion plugin to produce document list (docs.json)
+    onEnter:
+      - kind: shell
+        options:
+          command: knowledge-kit invoke ${vars.ingestion_plugin} --in ${vars.source} --out ${vars.work_dir}/docs.json --plugins-root ${vars.plugins_root}
+
+  - id: generate
+    description: Run content generator plugin to produce markdown content (content.json)
+    onEnter:
+      - kind: shell
+        options:
+          command: knowledge-kit invoke ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json --plugins-root ${vars.plugins_root}
+
+  - id: publish
+    description: Run publish plugin to deploy content and receive result (result.json)
+    onEnter:
+      - kind: shell
+        options:
+          command: knowledge-kit invoke ${vars.publish_plugin} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/result.json --plugins-root ${vars.plugins_root}
+
+  - id: done
+    description: Terminal — all three plugin steps succeeded
+  - id: failed
+    description: Terminal — one of the plugin invoke steps failed
+
+transitions:
+  - from: ingest
+    to: generate
+    description: Ingest succeeded — proceed to content generation
+    guard:
+      kind: action-ok
+  - from: ingest
+    to: failed
+    description: Ingest failed — terminate workflow
+
+  - from: generate
+    to: publish
+    description: Content generation succeeded — proceed to publish
+    guard:
+      kind: action-ok
+  - from: generate
+    to: failed
+    description: Generator failed — terminate workflow
+
+  - from: publish
+    to: done
+    description: Publish succeeded — workflow complete
+    guard:
+      kind: action-ok
+  - from: publish
+    to: failed
+    description: Publish failed — terminate workflow

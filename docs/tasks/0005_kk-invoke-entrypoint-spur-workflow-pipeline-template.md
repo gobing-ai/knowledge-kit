@@ -3,16 +3,16 @@ template: feature-impl
 schema_version: 1
 name: "kk invoke entrypoint + spur workflow pipeline template"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
-feature_id: B3
+feature_id: B
 parent_wbs: null
 priority: P2
 tags: ["kk", "platform", "invoke", "workflow"]
 dependencies: ["0003", "0004"]
 created_at: "2026-07-24T17:36:27.415Z"
-updated_at: "2026-07-24T22:05:36.865Z"
+updated_at: "2026-07-25T21:43:43.814Z"
 ---
 
 ## 0005. kk invoke entrypoint + spur workflow pipeline template
@@ -20,10 +20,10 @@ updated_at: "2026-07-24T22:05:36.865Z"
 ### Background
 Integration layer for feature B: the uniform entrypoint spur steps call, plus the pipeline template. Depends on B1 / task `0004` (resolve plugin) and B2 / task `0003` (validate IO); build THIRD (last). `invoke` is a subcommand of the knowledge-kit binary per ADR-002; a single-plugin invoker, NOT a DAG runtime (ADR-006 YAGNI). R4 encodes the Surfdash publish anti-pattern (shell wrappers that always exit 0) to avoid — fail loud instead. Covers B3 scenarios R1-R4. Rubric: E2 D1 L2 C1 R1 = 7 -> task.
 ### Requirements
-- [ ] R1. `knowledge-kit invoke <plugin> --in <input> --out <output>` resolves the manifest entry, runs it, and writes the output file.
-- [ ] R2. Validate input/output against the kind's contract (B2); on an input-schema violation, fail before running the entry and name the violation.
-- [ ] R3. Provide a spur workflow template chaining one ingestion → generator → publish plugin, each step invoking via `knowledge-kit invoke`, each step's output file feeding the next step's input.
-- [ ] R4. Fail loud: when a plugin entry exits non-zero, invoke exits non-zero and surfaces the entry's error (no swallowed errors).
+- [x] R1. `knowledge-kit invoke <plugin> --in <input> --out <output>` resolves the manifest entry, runs it, and writes the output file.
+- [x] R2. Validate input/output against the kind's contract (B2); on an input-schema violation, fail before running the entry and name the violation.
+- [x] R3. Provide a spur workflow template chaining one ingestion → generator → publish plugin, each step invoking via `knowledge-kit invoke`, each step's output file feeding the next step's input.
+- [x] R4. Fail loud: when a plugin entry exits non-zero, invoke exits non-zero and surfaces the entry's error (no swallowed errors).
 ### Acceptance Criteria
 ```gherkin
 Feature: Spur workflow integration
@@ -158,30 +158,90 @@ knowledge-kit invoke ${publish_plugin} --in ${work_dir}/content.json --out ${wor
 - `0003` — Doc/Content/Result schemas + `kindContract`
 - `0004` — `discoverPlugins` / `getByName` / manifest `entry`
 ### Plan
-- [ ] Land or confirm `0003` + `0004` APIs (`kindContract`, `discoverPlugins` / `getByName`, `PluginRecord.entry`)
-- [ ] Add `@gobing-ai/kk-core` workspace dependency on `apps/cli`
-- [ ] Implement testable invoke orchestration module (resolve → validate in → spawn → validate out → exit codes)
-- [ ] Register `invoke` subcommand on `createProgram()` with `--in`, `--out`, optional `--plugins-root`
-- [ ] Unit tests with temp plugin fixtures: happy path writes valid out; bad input fails before spawn; entry non-zero fails loud with message; unknown plugin fails
-- [ ] Author `.spur/workflows/kk-ingest-generate-publish.yaml` chaining three invoke steps; `spur workflow validate` clean
-- [ ] Update `docs/04_DESIGN.md` (command surface) in the same commit as the CLI change (T3)
-- [ ] Run `bun run lint` and `bun run test`
+- [x] Land or confirm `0003` + `0004` APIs (`kindContract`, `discoverPlugins` / `getByName`, `PluginRecord.entry`)
+- [x] Add `@gobing-ai/kk-core` workspace dependency on `apps/cli`
+- [x] Implement testable invoke orchestration module (resolve → validate in → spawn → validate out → exit codes)
+- [x] Register `invoke` subcommand on `createProgram()` with `--in`, `--out`, optional `--plugins-root`
+- [x] Unit tests with temp plugin fixtures: happy path writes valid out; bad input fails before spawn; entry non-zero fails loud with message; unknown plugin fails
+- [x] Author `.spur/workflows/kk-ingest-generate-publish.yaml` chaining three invoke steps; `spur workflow validate` clean
+- [x] Update `docs/04_DESIGN.md` (command surface) in the same commit as the CLI change (T3)
+- [x] Run `bun run lint` and `bun run test`
 ### Solution
+Implemented `knowledge-kit invoke` subcommand in `@gobing-ai/knowledge-kit` (`apps/cli`), wired to B1 discovery and B2 kind contracts, and authored spur workflow template.
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Change |
+|------|--------|
+| `apps/cli/package.json` | Add `@gobing-ai/kk-core: workspace:*` dependency |
+| `apps/cli/src/invoke.ts:19-145` | `runInvoke(opts)` orchestration (resolve → input gate → spawn → fail loud → output gate) |
+| `apps/cli/src/cli.ts:20-37` | Register `invoke` with `<plugin>`, `--in`, `--out`, `--plugins-root`; **`process.exit(code)` on non-zero** (R4 binary fail-loud) |
+| `apps/cli/tests/invoke.test.ts:17-140` | Unit tests for invoke R1, R2, R4, and error branches |
+| `apps/cli/tests/index.test.ts:26-58` | CLI regression: missing plugin → `process.exit(1)` |
+| `.spur/workflows/kk-ingest-generate-publish.yaml:20-39` | Spur state-machine workflow template chaining ingest → generate → publish |
+| `docs/04_DESIGN.md` | Document `invoke` subcommand surface (constitution T3) |
+| `docs/dogfood/2026-07-25-B3-kk-invoke-workflow-dogfood.md` | L4 dogfood for self-ref `.spur/workflows/` path |
 
+**Testing Outcome**
+- `bun run lint` / `bun run test` clean (36 tests).
+- Live CLI: `knowledge-kit invoke missing …` → EXIT:1 (was 0 before fix-pass).
+- `spur workflow validate .spur/workflows/kk-ingest-generate-publish.yaml` clean.
 ### Testing
+**Verdict: PASS** (re-verify `--force` 2026-07-25; fix-pass: CLI exit propagation)
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Commands (this run)**
 
+```text
+bun run lint       # exit 0
+bun run test       # 36 pass, 0 fail; aggregate funcs 100%, lines 98.05%
+bun apps/cli/src/index.ts invoke missing --in /tmp/x --out /tmp/y --plugins-root /tmp  # EXIT:1
+spur workflow validate .spur/workflows/kk-ingest-generate-publish.yaml  # valid
+spur task check 0005  # pass:true
+```
+
+Coverage: `apps/cli/src/invoke.ts` funcs 100%, lines ~91%; `cli.ts` 100%; overall suite 98.05% lines.
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `apps/cli/src/cli.ts:20-37` registers `invoke`; `apps/cli/src/invoke.ts:22-33` discover+getByName, `:82-101` spawn entry with `--in`/`--out`, `:113-145` require+validate written out; test `apps/cli/tests/invoke.test.ts:17-64` R1 happy path writes Content |
+| R2 | MET | `invoke.ts:39-73` input `safeParse` before spawn, field-path error; test `invoke.test.ts:66-103` bad Doc fails exit 1 and marker file never written (entry not run); output gate `:137-143` |
+| R3 | MET | `.spur/workflows/kk-ingest-generate-publish.yaml:20-39` three shell steps `knowledge-kit invoke` chaining `docs.json` → `content.json` → `result.json`; `spur workflow validate` clean |
+| R4 | MET | `invoke.ts:103-110` non-zero entry → same exit code; `cli.ts:28-36` propagates `process.exit(code)` so the binary fails loud (was missing — binary exited 0); tests `invoke.test.ts:105-140` + `index.test.ts` CLI exit-1 for missing plugin; live CLI `EXIT:1` |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| R1 — kk invoke runs discovered plugin with file IO | MET | test | `apps/cli/tests/invoke.test.ts:17-64` |
+| R2 — validates IO against kind contract | MET | test | `apps/cli/tests/invoke.test.ts:66-103` |
+| R3 — spur workflow chains ingest → generate → publish | MET | command | `.spur/workflows/kk-ingest-generate-publish.yaml` + `spur workflow validate` exit 0 |
+| R4 — fails loud on entry non-zero | MET | test+command | `invoke.test.ts:105-140`; `index.test.ts` process.exit(1); live CLI EXIT:1 |
+
+**Design conformance:** all Design claims DONE — Commander `invoke` on `knowledge-kit` binary; pipeline order resolve → input gate → spawn → fail-loud → output gate; CLI process exit propagation; ingestion opaque source; workflow state-machine template (ADR-006, no kk DAG runtime).
+
+**SECUA:** no blockers/majors. P4 residual: local `Bun.spawnSync` of plugin entry only (by design).
+
+**Fix-pass (`--fix all`):** CLI binary did not call `process.exit` on non-zero `runInvoke` result (R4 fail-loud gap — live CLI returned EXIT:0). Fixed in `apps/cli/src/cli.ts:28-36`; regression in `apps/cli/tests/index.test.ts`. Artifact: `.spur/run/0005-verdict.json`.
+
+**--next:** task already terminal (`done`) — no-op.
 ### Review
+SECUA review of `@gobing-ai/knowledge-kit` invoke subcommand & spur workflow template.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Disposition |
+|----------|---------|-------------|
+| P1 | — | none |
+| P2 | — | none |
+| P3 | — | none |
+| P4 | Child process `Bun.spawnSync` handles local script execution; remote execution is out of scope per ADR-006 | accepted residual |
 
+**Residual risk:** none material for B3; fail-loud entry checking prevents swallowed plugin failures.
+
+**Final disposition:** approve for `done` — entrypoint implementation, workflow template, and tests complete, R1–R4 MET.
 ### References
-
-B3
+B (parent platform; was B3 — re-parented after B3 done for L4.feature-terminal)
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
-
 ### History
+- 2026-07-25T17:06:19.753Z todo → wip (system)
+- 2026-07-25T17:06:22.604Z wip → testing (system)
+- 2026-07-25T17:06:28.697Z testing → done (system)

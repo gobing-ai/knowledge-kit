@@ -5,7 +5,7 @@
 [backlog] **B**: kk plugin platform ([B_kk-plugin-platform.md](./B_kk-plugin-platform.md))
     ├── [done] **B1**: Plugin manifest and registry discovery ([B1_plugin-manifest-and-registry-discovery.md](./B1_plugin-manifest-and-registry-discovery.md))
     ├── [done] **B2**: Typed lifecycle contracts ([B2_typed-lifecycle-contracts.md](./B2_typed-lifecycle-contracts.md))
-    └── [backlog] **B3**: Spur workflow integration ([B3_spur-workflow-integration.md](./B3_spur-workflow-integration.md))
+    └── [done] **B3**: Spur workflow integration ([B3_spur-workflow-integration.md](./B3_spur-workflow-integration.md))
 [backlog] **C**: IngestionPlugin: Karakeep-local ([C_ingestionplugin-karakeep-local.md](./C_ingestionplugin-karakeep-local.md))
 [backlog] **D**: ContentGeneratorPlugin ([D_contentgeneratorplugin.md](./D_contentgeneratorplugin.md))
     ├── [backlog] **D1**: Study vendors-storm and pick P1 stand-in ([D1_study-vendors-storm-and-pick-p1-stand-in.md](./D1_study-vendors-storm-and-pick-p1-stand-in.md))

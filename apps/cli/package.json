@@ -13,6 +13,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/utils": "workspace:*",
         "commander": "15.0.0"
     },

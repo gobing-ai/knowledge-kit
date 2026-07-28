@@ -28,7 +28,7 @@ sync: [T4]
 | **B** | kk plugin platform | ⏳ planned | 1 | skill-first seam (ADR-006 amdt 2026-07-24); tasks `0003`–`0005` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003` done: Zod Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004` done: `plugin.json` schema + `discoverPlugins` / `listByKind` in `@gobing-ai/kk-core` |
-| B3 | Spur workflow integration | ⏳ planned | 1 | task `0005`: `kk invoke --in --out` + workflow template; no DAG runtime |
+| B3 | Spur workflow integration | ✅ done | 1 | task `0005` done: `knowledge-kit invoke` + `kk-ingest-generate-publish` workflow template |
 | **C** | IngestionPlugin: Karakeep-local | ⏳ current | 1 | read rclone-synced folder as normal FS |
 | **D** | ContentGeneratorPlugin (reuse-first) | ⏳ current | 1 | stand-in = `wt:technical-content-creation` (stages 0–3); own STORM → H |
 | D1 | ↳ [research] study `vendors/storm` → pick stand-in | ✅ done | 1 | resolved (task `0001`): STORM = 4 modules; stand-in chosen |
