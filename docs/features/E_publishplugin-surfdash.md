@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:14.192Z"
-updated_at: "2026-07-30T22:25:30.489Z"
+updated_at: "2026-07-30T23:50:21.505Z"
 ---
 
 # E: PublishPlugin: Surfdash
@@ -20,12 +20,68 @@ Publish capability: PublishPlugin design, test harness, and channel instances. P
 ```gherkin
 Feature: Publish
 
-  # LEVEL 1 (2026-07-30): placeholder replaced. Parent AC rolls up from enriched children
-  # at Level 2 (B / DD-09 subset pattern). This deferred scenario guards against premature done.
-  Scenario: Level-2 acceptance criteria roll up from children
-    Given the Level-1 enrichment of this parent feature
-    When child features are enriched at Level 2
-    Then their acceptance scenarios roll up here (DD-09 subset pattern)
+  @core
+  Scenario: Publish kind composes into the platform
+    Given a publish plugin discovered by the registry
+    When knowledge-kit invoke runs it with a Content input
+    Then its Result output terminates a spur workflow run fail-loud
+
+  # Child E2 (publish design and test harness) — rolled up for DD-09 (tasks 0018-0019; re-parent on completion)
+  Scenario: Transport abstraction is specified
+    Given the E1 audit (File/CLI vs Browser transports)
+    When the design defines a common transport interface
+    Then Surfdash (FileCli) and a browser target both fit without contract changes
+
+  Scenario: Content-to-frontmatter mapping is specified
+    Given the Content schema and Surfing frontmatter requirements (E1)
+    When the design defines the mapping conventions
+    Then a plugin author can map any Content to target frontmatter fields
+
+  Scenario: Result conventions are specified
+    Given the Result schema and fail-loud mandate
+    When the design defines ok, target, url, and error usage
+    Then success and every failure mode have an explicit Result and exit-code contract
+
+  Scenario: Harness enables offline unit tests for publish plugins
+    Given the publish-harness package
+    When a proof test exercises a fake FileCli transport
+    Then the test passes with no publish side effects outside fixtures
+
+  Scenario: Design cites the generic contract
+    Given the generic plugin-instance contract (ingestion spec section 1)
+    When the publish spec is authored
+    Then it cites section 1 for manifest, invocation, secrets, and exit-code rules
+
+  Scenario: Design is validated against the platform as built
+    Given kindContract('publish') and runInvoke as implemented
+    When the design is reviewed against them
+    Then no requirement contradicts the platform without an ADR entry
+
+  # Child E3 (surfdash publisher tested) — rolled up for DD-09 (tasks 0024-0025; re-parent on completion)
+  Scenario: Plugin is discoverable and invocable
+    Given plugins/surfdash-pub with a valid plugin.json (kind=publish)
+    When the registry discovers it and knowledge-kit invoke runs it
+    Then the entry executes and writes a Result output file
+
+  Scenario: Content publishes to Surfing with a success Result
+    Given a valid Content input file
+    When the plugin runs against the postsurfing transport
+    Then the output parses against ResultSchema with ok true and target surfdash
+
+  Scenario: Frontmatter mapping follows the publish spec
+    Given a Content with title, body, and metadata
+    When the plugin maps it to Surfing frontmatter
+    Then the mapping matches the publish spec conventions
+
+  Scenario: Transport failure produces a fail-loud Result
+    Given the postsurfing transport fails
+    When the plugin runs
+    Then it exits non-zero and the Result carries ok false with the error
+
+  Scenario: Unit tests run offline via the harness
+    Given the publish-harness fake FileCli transport
+    When the plugin unit tests run
+    Then they pass with no publish side effects outside fixtures
 ```
 ## Tasks
 
@@ -39,5 +95,5 @@ _No linked tasks._
 **Deferred multi-channel (absorbed from cancelled G):** nine wt publish targets — medium, juejin, qiita, substack, infoq, wechatmp, x, xhs, zenn. Two transports: File/CLI (Zenn CLI, Qiita API) vs Browser/Playwright. Build order when resumed: Zenn + Qiita first → one browser target to prove BrowserTransport → remaining. Auth via Chrome profiles / `~/.claude/wt/config.jsonc`. Do **not** pre-create E4–E12 empty stubs until Phase 2 planning.
 
 - Level 1 (2026-07-30): E2 cites the generic plugin-instance contract from C1 (task 0012); E2 Level-2 can start once 0012 lands (E1 audit already done). E3 Level-2 waits on the E2 harness.
-- Parent AC to be rolled up from E2/E3 scenarios at Level 2 (DD-09 subset pattern).
+- Level 2 (2026-07-30): E2 enriched (tasks 0018/0019); E3 enriched (tasks 0024/0025, dep-gated on 0018+0019). Parent AC rolled up from E2+E3 (B / DD-09 subset pattern); E1 historical (task 0002 done).
 ## History

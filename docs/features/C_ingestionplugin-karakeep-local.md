@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:11.170Z"
-updated_at: "2026-07-30T22:25:29.907Z"
+updated_at: "2026-07-30T23:49:28.647Z"
 ---
 
 # C: IngestionPlugin: Karakeep-local
@@ -20,12 +20,79 @@ Ingestion capability (roll-up parent): typed ingestion plugin design (C1) plus s
 ```gherkin
 Feature: Ingestion
 
-  # LEVEL 1 (2026-07-30): placeholder replaced. Parent AC rolls up from enriched children
-  # at Level 2 (B / DD-09 subset pattern). This deferred scenario guards against premature done.
-  Scenario: Level-2 acceptance criteria roll up from children
-    Given the Level-1 enrichment of this parent feature
-    When child features are enriched at Level 2
-    Then their acceptance scenarios roll up here (DD-09 subset pattern)
+  @core
+  Scenario: Ingestion kind composes into the platform
+    Given an ingestion plugin discovered by the registry
+    When knowledge-kit invoke runs it
+    Then its DocList output feeds the generator step of a spur workflow
+
+  # Child C1 (ingestion plugin design) — rolled up for DD-09 (tasks 0010-0012 done; re-parent on feature completion per B pattern)
+  Scenario: Source config declaration is specified
+    Given the as-built manifest schema and invoke engine
+    When the design names where per-plugin source config lives
+    Then an FS source and an API source can both be configured without code changes to invoke
+
+  Scenario: Invoke integration contract is specified
+    Given kk invoke spawns an ingestion entry with --in/--out
+    When the design defines --in semantics and the extra-config channel
+    Then a plugin author can predict argv/env for any supported source type
+
+  Scenario: Doc mapping conventions are specified
+    Given the Doc schema in kk-core
+    When the design defines id stability, sourceUri, mediaType, and metadata usage
+    Then re-running an ingestion plugin over unchanged input yields stable Doc ids
+
+  Scenario: Failure semantics are specified
+    Given the fail-loud mandate of ADR-006
+    When the design covers empty output, partial item failure, and diagnostics
+    Then each case has an explicit exit-code and output-file contract
+
+  Scenario: Generic contract is reusable by other kinds
+    Given the design separates generic plugin-instance concerns from ingestion-specific ones
+    When D3 (generator design) starts
+    Then it can cite the generic half instead of re-deriving it
+
+  Scenario: Design is validated against the platform as built
+    Given registry, kindContract, and runInvoke as implemented
+    When the design is reviewed against them
+    Then no requirement contradicts B1/B2 behavior without an ADR entry
+
+  # Child C2 (karakeep-local) — rolled up for DD-09 (tasks 0014-0015; re-parent on completion)
+  @core
+  Scenario: Plugin is discoverable and invocable
+    Given plugins/karakeep-local with a valid plugin.json (kind=ingestion)
+    When the registry discovers it and knowledge-kit invoke runs it
+    Then the entry executes and writes an output file
+
+  @core
+  Scenario: Folder items become contract-valid Docs
+    Given a fixture folder of Karakeep export entries
+    When the plugin runs via knowledge-kit invoke
+    Then the output parses against DocListSchema with one Doc per valid item
+
+  @core
+  Scenario: Doc ids are stable across re-runs
+    Given an unchanged fixture folder
+    When the plugin runs twice
+    Then both runs emit identical Doc ids
+
+  @edge
+  Scenario: Empty source yields empty Doc list with exit 0
+    Given an empty source folder
+    When the plugin runs
+    Then it writes [] and exits 0
+
+  @edge
+  Scenario: Unparsable items are skipped with a warning
+    Given a fixture folder with one corrupt entry among valid ones
+    When the plugin runs
+    Then valid items are emitted, a warning goes to stderr, and exit is 0
+
+  @edge
+  Scenario: Unreadable source fails loud
+    Given a missing source folder
+    When the plugin runs via knowledge-kit invoke
+    Then the exit code is non-zero and the error names the source path
 ```
 ## Tasks
 
@@ -35,5 +102,5 @@ _No linked tasks._
 
 ## Notes
 - Level 1 (2026-07-30): C1 enriched with tasks 0010–0012 (source-config/invoke decision; Doc mapping + failure semantics; design doc + as-built validation). C2 Level-2 AC waits on C1 decisions 0010/0011.
-- Parent AC to be rolled up from C1/C2 scenarios once children are enriched (DD-09 subset pattern, as B does for B1–B3).
+- Level 2 (2026-07-30): C1 done (spec at `docs/design/ingestion-plugin-specification.md`); C2 enriched with tasks 0014/0015. Parent AC rolled up from C1+C2 (B / DD-09 subset pattern); child tasks re-parent here on completion, as B1–B3 did under B.
 ## History

@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:12.592Z"
-updated_at: "2026-07-30T22:25:30.138Z"
+updated_at: "2026-07-30T23:49:55.529Z"
 ---
 
 # D: ContentGeneratorPlugin
@@ -20,12 +20,68 @@ Content generation capability (roll-up parent): ContentGeneratorPlugin design (D
 ```gherkin
 Feature: Content generation
 
-  # LEVEL 1 (2026-07-30): placeholder replaced. Parent AC rolls up from enriched children
-  # at Level 2 (B / DD-09 subset pattern). This deferred scenario guards against premature done.
-  Scenario: Level-2 acceptance criteria roll up from children
-    Given the Level-1 enrichment of this parent feature
-    When child features are enriched at Level 2
-    Then their acceptance scenarios roll up here (DD-09 subset pattern)
+  @core
+  Scenario: Generator kind composes into the platform
+    Given a generator plugin discovered by the registry
+    When knowledge-kit invoke runs it with a DocList input
+    Then its Content output feeds the publish step of a spur workflow
+
+  # Child D3 (generator plugin design) — rolled up for DD-09 (tasks 0016-0017; re-parent on completion)
+  Scenario: Content mapping conventions are specified
+    Given the Content schema in kk-core
+    When the design defines Doc[]-to-Content field conventions
+    Then format, outline, references, and metadata usage are defined without schema changes
+
+  Scenario: Skill-backed entry mechanism is decided
+    Given runInvoke spawns executable entries with --in/--out
+    When the design names how an agent-skill generator runs under kk invoke
+    Then a plugin author can implement the entry without changes to runInvoke
+
+  Scenario: Stand-in versus own-engine criteria are specified
+    Given the D1 research (stand-in = wt:technical-content-creation stages 0-3)
+    When the design records selection criteria
+    Then the conditions for switching from stand-in to own engine (D4) are explicit
+
+  Scenario: Generator failure semantics are specified
+    Given the fail-loud mandate (ADR-006) and C1 generic contract section 1.4
+    When the design covers empty DocList input, engine failure, and invalid output
+    Then each case has an explicit exit-code and output-file contract
+
+  Scenario: Design cites the generic contract
+    Given the generic plugin-instance contract (ingestion spec section 1)
+    When the generator spec is authored
+    Then it cites section 1 for manifest, invocation, secrets, and exit-code rules instead of re-deriving them
+
+  Scenario: Design is validated against the platform as built
+    Given kindContract('generator') and runInvoke as implemented
+    When the design is reviewed against them
+    Then no requirement contradicts the platform without an ADR entry
+
+  # Child D2 (wire existing generator skill to contract) — rolled up for DD-09 (tasks 0022-0023; re-parent on completion)
+  Scenario: Plugin is discoverable and invocable
+    Given plugins/content-gen with a valid plugin.json (kind=generator)
+    When the registry discovers it and knowledge-kit invoke runs it
+    Then the entry executes and writes an output file
+
+  Scenario: Docs become contract-valid Content
+    Given a docs.json fixture of valid Docs
+    When the plugin runs via knowledge-kit invoke
+    Then the output parses against ContentSchema
+
+  Scenario: Stand-in internals are not modified
+    Given the wt:technical-content-creation skill is owned by wt
+    When the adapter delegates to its stages 0-3
+    Then no files under the wt skill are changed
+
+  Scenario: Engine failure fails loud
+    Given a stand-in stage fails for an input
+    When the plugin runs
+    Then it exits non-zero and the error reaches stderr
+
+  Scenario: Empty input follows the generator failure contract
+    Given an empty DocList input file
+    When the plugin runs
+    Then its exit code and output match the generator spec failure semantics
 ```
 ## Tasks
 
@@ -37,5 +93,5 @@ _No linked tasks._
 **D1 resolved (task 0001):** STORM = 4 modules; Phase-1 stand-in = `wt:technical-content-creation` stages 0–3. Own STORM → **D4** (deferred). wt generator harvest → **D5** (deferred).
 
 - Level 1 (2026-07-30): D3 cites the generic plugin-instance contract from C1 (task 0012) instead of re-deriving it; D3 Level-2 waits on 0012. D2 Level-2 waits on D3.
-- Parent AC to be rolled up from D2/D3 scenarios at Level 2 (DD-09 subset pattern).
+- Level 2 (2026-07-30): D3 enriched (tasks 0016/0017); D2 enriched (tasks 0022/0023, dep-gated on 0017). Parent AC rolled up from D3+D2 (B / DD-09 subset pattern); D1 historical (pre-AC-era research, task 0001 done); D4/D5 Phase-2 deferred, not rolled up.
 ## History
