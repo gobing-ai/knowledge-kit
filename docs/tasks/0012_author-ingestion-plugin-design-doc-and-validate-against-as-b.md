@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0010", "0011"]
 created_at: "2026-07-30T21:57:00.272Z"
-updated_at: "2026-07-30T22:49:55.377Z"
+updated_at: "2026-07-30T23:18:22.649Z"
 ---
 
 ## 0012. Author ingestion plugin design doc and validate against as-built platform
@@ -67,6 +67,14 @@ Feature: Ingestion plugin design doc
 - Command run: `bun run lint && bun run test` -> PASS.
 - Numeric Coverage: N/A (specification task).
 - Verdict: PASS.
+
+**Re-audit 2026-07-30 (verifyall --force --fix all):**
+
+- R1–R5 re-verified MET. `docs/design/ingestion-plugin-specification.md` §1 (generic contract, citable by D3) and §2 (ingestion-specific: `--in` per source type, Doc mapping, failure semantics) re-read in full; `docs/04_DESIGN.md` §6 index entry present (T3 same-commit satisfied).
+- Minor note: API-source walkthrough is contract-level (no pagination/auth-flow detail) — adequate for Phase 1; C2+ instances will exercise it.
+- Batch-level rule-evasion findings (536d0c2) recorded under 0010 and repaired in this run.
+- Fix-pass writes disclosed: `.spur/run/0012-verdict.json` (re-derived only).
+- Re-audit verdict: PASS.
 ### Review
 | Priority | Category | Finding | Disposition |
 | --- | --- | --- | --- |

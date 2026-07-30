@@ -1,4 +1,9 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# [STRICT — opt-in] Runtime boundaries. Absorbed from
+# ts-libs/.spur/rules/typescript/runtime-boundaries.yaml. NOT in
+# recommended-pre-check: knowledge-kit does light direct fs/spawn at app edges,
+# so these run as opt-in hygiene with explicit allowlists for sanctioned sites.
+# `no-direct-process-env` is intentionally omitted — config-from-env is by design.
 include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"
@@ -10,21 +15,30 @@ exclude:
 
 rules:
   - id: no-direct-process-spawn
-    description: "Agent/process execution must go through ts-ai-runner / ts-runtime's ProcessExecutor. Sanctioned sites: `spur agent edit` opening $EDITOR and `knowledge-kit invoke` spawning plugin entries."
+    description: "Agent/process execution must go through ts-ai-runner / ts-runtime's ProcessExecutor. Sanctioned direct spawns: `spur agent edit` opening $EDITOR and `knowledge-kit invoke` spawning plugin entries (ADR-006)."
     severity: warning
     evaluator:
-      type: rg
+      type: forbidden-import
       config:
-        pattern: "Bun\\.(spawn|spawnSync)\\s*\\("
-    include:
-      - "apps/**/src/**/*.ts"
-      - "packages/**/src/**/*.ts"
-    exclude:
-      - "**/tests/**"
-      - "**/*.test.ts"
-      - "**/dist/**"
-      - "apps/cli/src/commands/agent.ts"
-      - "apps/cli/src/invoke.ts"
+        forbidden:
+          - specifier: "node:child_process"
+          - specifier: "child_process"
+          - pattern: "Bun\\.(spawn|spawnSync)\\s*\\("
+            matchMode: usage
+          - specifier: "execa"
+          - specifier: "zx"
+        scope:
+          include:
+            - "apps/**/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+          exclude:
+            - "**/tests/**"
+            - "**/*.test.ts"
+            - "**/dist/**"
+            # `spur agent edit` opens the operator's $EDITOR interactively.
+            - "apps/cli/src/commands/agent.ts"
+            # `knowledge-kit invoke` spawns plugin entries by design (ADR-006).
+            - "apps/cli/src/invoke.ts"
 
   - id: no-direct-fs-io
     description: "Prefer ts-runtime's FileSystem seam for fs IO. Light direct fs at app edges (service stat/access, migration loading) is allowlisted."

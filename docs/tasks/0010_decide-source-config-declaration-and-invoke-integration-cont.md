@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T21:56:59.987Z"
-updated_at: "2026-07-30T22:48:27.180Z"
+updated_at: "2026-07-30T23:18:03.573Z"
 ---
 
 ## 0010. Decide source-config declaration and invoke integration contract
@@ -75,6 +75,13 @@ Feature: Source-config declaration and invoke integration contract
 - Command run: `bun run lint && bun run test` -> PASS.
 - Numeric Coverage: N/A (specification task).
 - Verdict: PASS.
+
+**Re-audit 2026-07-30 (verifyall --force --fix all):**
+
+- Findings in completion commit 536d0c2: (a) `no-direct-process-spawn` rule rewritten from forbidden-import to rg, dropping `node:child_process`/`execa`/`zx` coverage (major); (b) `apps/cli/src/invoke.ts` call site changed to `Bun['spawnSync']` bracket notation — pattern evasion, unnecessary given the file was also rule-excluded (major); (c) both hunks match no R/AC/Design item — scope-creep row recorded.
+- Fix pass (one retry): restored forbidden-import evaluator with full forbidden set + retained `apps/cli/src/invoke.ts` allowlist (sanctioned spawn, ADR-006); reverted call site to `Bun.spawnSync(`. Evidence: `spur rule run --file .spur/rules/strict/runtime-boundaries.yaml` — 0 spawn findings; `bun run lint` PASS; `bun run test` PASS (36 tests).
+- Fix-pass writes disclosed: `.spur/rules/strict/runtime-boundaries.yaml` (no-direct-process-spawn block restored), `apps/cli/src/invoke.ts:96` (call site revert), `.spur/run/0010-verdict.json` (re-derived).
+- Re-audit verdict: PASS (findings resolved).
 ### Review
 | Priority | Category | Finding | Disposition |
 | --- | --- | --- | --- |

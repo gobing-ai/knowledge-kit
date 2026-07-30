@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T21:57:00.127Z"
-updated_at: "2026-07-30T22:49:11.659Z"
+updated_at: "2026-07-30T23:18:22.516Z"
 ---
 
 ## 0011. Define Doc mapping and failure semantics conventions
@@ -69,6 +69,13 @@ Feature: Doc mapping and failure semantics conventions
 - Command run: `bun run lint && bun run test` -> PASS.
 - Numeric Coverage: N/A (specification task).
 - Verdict: PASS.
+
+**Re-audit 2026-07-30 (verifyall --force --fix all):**
+
+- R1–R5 re-verified MET. Line anchors re-read: `packages/kk-core/src/schemas.ts:4` (DocSchema comment block) names the Doc subject; `docs/design/ingestion-plugin-specification.md` §2.3–2.4 carries id-stability, field-vs-metadata, empty-output `[]`, and partial-failure conventions as written.
+- No findings specific to this task. Batch-level rule-evasion findings (536d0c2) recorded under 0010 and repaired in this run.
+- Fix-pass writes disclosed: `.spur/run/0011-verdict.json` (re-derived only).
+- Re-audit verdict: PASS.
 ### Review
 | Priority | Category | Finding | Disposition |
 | --- | --- | --- | --- |
