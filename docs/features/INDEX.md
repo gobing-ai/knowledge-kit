@@ -10,7 +10,7 @@
     ├── [backlog] **B4**: CLI surface ([B4_cli-surface.md](./B4_cli-surface.md))
     └── [backlog] **B5**: End-to-end pipeline acceptance ([B5_end-to-end-pipeline-acceptance.md](./B5_end-to-end-pipeline-acceptance.md))
 [backlog] **C**: Ingestion ([C_ingestionplugin-karakeep-local.md](./C_ingestionplugin-karakeep-local.md))
-    ├── [backlog] **C1**: Ingestion plugin design ([C1_ingestion-plugin-design.md](./C1_ingestion-plugin-design.md))
+    ├── [done] **C1**: Ingestion plugin design ([C1_ingestion-plugin-design.md](./C1_ingestion-plugin-design.md))
     └── [backlog] **C2**: Karakeep-local ([C2_karakeep-local.md](./C2_karakeep-local.md))
 [backlog] **D**: Content generation ([D_contentgeneratorplugin.md](./D_contentgeneratorplugin.md))
     ├── [backlog] **D1**: Study vendors-storm and pick P1 stand-in ([D1_study-vendors-storm-and-pick-p1-stand-in.md](./D1_study-vendors-storm-and-pick-p1-stand-in.md))
