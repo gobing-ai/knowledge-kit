@@ -27,7 +27,62 @@ bootstrap:
 
 # ── Spur app section (validated by spurConfigSchema in @gobing-ai/spur-config) ──
 agent:
-  default: pi
+  default: omp
+
+  # ── Executors (ADR-033 adaptive model routing) ──
+  # `tier` is DECLARED, never inferred. Without it, agent-service falls back to a
+  # regex over `name + model + agent` which misclassifies silently.
+  # Selection: a stage takes the CHEAPEST executor whose tier >= its `min_tier`
+  # (cheap=1 < standard=2 < capable-1=3 < capable-2=4 < capable-3=5); array order
+  # is the last-resort tie-break within the exact same tier value.
+  executors:
+    # cheap — mechanical, high-volume work
+    - name: minimax
+      agent: omp
+      model: minimax/MiniMax-M3
+      tier: cheap
+
+    # standard — implementation, tests, wrap-up (omp first: the working default)
+    - name: omp
+      agent: omp
+      tier: standard
+    - name: omp-zai
+      agent: omp
+      model: zai/glm-5.2
+      tier: standard
+    - name: omp-zai-nvidia
+      agent: omp
+      model: nvidia/z-ai/glm-5.2
+      tier: standard
+    - name: omp-zai-volc
+      agent: omp
+      model: volc/glm-5.2
+      tier: standard
+    - name: omp-zai-ollama
+      agent: omp
+      model: ollama/glm-5.2:cloud
+      tier: standard
+
+    # capable-1/2/3 — planning, verification, dogfooding
+    # 1 = low output quality within the capable band, 3 = high.
+    - name: pi-k3
+      agent: pi
+      model: "k3[1m]"
+      tier: capable-1
+    - name: omp-k3-ollama
+      agent: omp
+      model: ollama/kimi-k3:cloud
+      tier: capable-1
+    - name: omp-deepseek
+      agent: omp
+      model: deepseek/deepseek-v4-pro
+      tier: capable-2
+    - name: grok
+      agent: grok
+      tier: capable-2
+    - name: codex
+      agent: codex
+      tier: capable-3
 
 rules:
   paths:
