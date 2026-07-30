@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0024"]
 created_at: "2026-07-30T23:48:35.444Z"
-updated_at: "2026-07-30T23:48:36.203Z"
+updated_at: "2026-07-30T23:56:28.291Z"
 ---
 
 ## 0025. Harden surfdash-pub failure modes
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:48:36.203Z"
 
 
 ### Requirements
-- R1: Transport failure → non-zero exit plus Result ok: false carrying the error.
-- R2: postsurfing non-zero exit is mapped to a fail-loud Result — never swallowed (the wt always-exit-0 anti-pattern).
-- R3: Malformed Content input is rejected by invoke's input validation before the entry runs (contract.input = ContentSchema); the plugin never sees invalid input.
-- R4: Each failure mode has an automated test.
+- R1. Transport failure → non-zero exit plus Result ok: false carrying the error.
+- R2. postsurfing non-zero exit is mapped to a fail-loud Result — never swallowed (the wt always-exit-0 anti-pattern).
+- R3. Malformed Content input is rejected by invoke's input validation before the entry runs (contract.input = ContentSchema); the plugin never sees invalid input.
+- R4. Each failure mode has an automated test.
 ### Acceptance Criteria
 ```gherkin
 Feature: Surfdash publisher tested

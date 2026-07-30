@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:42:20.492Z"
-updated_at: "2026-07-30T23:42:20.879Z"
+updated_at: "2026-07-30T23:56:26.094Z"
 ---
 
 ## 0018. Decide publish transport abstraction and author publish spec
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:42:20.879Z"
 
 
 ### Requirements
-- R1: A common transport interface is defined covering FileCli and Browser/Playwright; Surfdash fits FileCli and a browser target fits without contract changes (E1 audit input).
-- R2: Content→frontmatter mapping conventions are defined against Surfing's frontmatter requirements (E1).
-- R3: Result conventions are defined — ok/target/url/id/message/error usage plus every failure mode with an explicit Result and exit-code contract.
-- R4: `docs/design/publish-plugin-specification.md` authored citing ingestion spec §1 (no re-derivation); `docs/04_DESIGN.md` §6 index row added in the same commit (T3).
+- R1. A common transport interface is defined covering FileCli and Browser/Playwright; Surfdash fits FileCli and a browser target fits without contract changes (E1 audit input).
+- R2. Content→frontmatter mapping conventions are defined against Surfing's frontmatter requirements (E1).
+- R3. Result conventions are defined — ok/target/url/id/message/error usage plus every failure mode with an explicit Result and exit-code contract.
+- R4. `docs/design/publish-plugin-specification.md` authored citing ingestion spec §1 (no re-derivation); `docs/04_DESIGN.md` §6 index row added in the same commit (T3).
 ### Acceptance Criteria
 ```gherkin
 Feature: Publish design and test harness

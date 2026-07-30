@@ -11,7 +11,7 @@ terminalStates:
 vars:
   ingestion_plugin: "karakeep-local"
   generator_plugin: "content-gen"
-  publish_plugin: "medium-pub"
+  publish_plugin: "surfdash-pub"
   source: "./source"
   work_dir: "./work"
   plugins_root: "./plugins"

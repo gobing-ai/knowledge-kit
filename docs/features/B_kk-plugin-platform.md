@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-07-30T22:23:26.221Z"
+updated_at: "2026-07-30T23:54:29.455Z"
 ---
 
 # B: kk plugin platform
@@ -117,6 +117,43 @@ Feature: kk plugin platform
     Given a discovered plugin whose entry exits non-zero
     When kk invoke runs it
     Then kk invoke exits non-zero and surfaces the entry's error
+
+  # Child B4 (CLI surface) — rolled up for DD-09 (tasks 0020-0021; re-parent on completion)
+  Scenario: List shows discovered plugins
+    Given a plugins root with plugins of multiple kinds
+    When knowledge-kit plugins list runs
+    Then plugins print grouped by kind and --json emits machine-readable output
+
+  Scenario: Doctor surfaces discovery diagnostics
+    Given a plugins root with a malformed manifest and a duplicate name
+    When knowledge-kit plugins doctor runs
+    Then each diagnostic names the path and reason and the exit code is non-zero
+
+  Scenario: Plugins root is consistent with invoke
+    Given a non-default plugins directory
+    When plugins list and doctor run with --plugins-root
+    Then they resolve the same registry as invoke with --plugins-root
+
+  Scenario: Surface is documented in the same commit
+    Given the new subcommands
+    When the implementing commit lands
+    Then docs/04_DESIGN.md section 1 documents them in that commit
+
+  # Child B5 (end-to-end pipeline acceptance) — rolled up for DD-09 (tasks 0026-0027; re-parent on completion)
+  @core
+  Scenario: R1 — Vertical run publishes Surfdash from Karakeep-local
+    Given C2 Karakeep-local, D2 generator stand-in, and E3 Surfdash plugins are installable
+    And the B3 ingest-generate-publish workflow template is configured for those plugins
+    When the workflow runs end to end
+    Then a Karakeep-local item becomes a published Surfdash post
+    And each step fails loud on contract or process errors
+
+  @edge
+  Scenario: R2 — Acceptance is platform composition, not a new plugin kind
+    Given the platform composes plugins via spur workflow
+    When the vertical is defined
+    Then it is expressed as a workflow over B3 invoke + C2/D2/E3
+    And no fourth plugin kind is introduced
 ```
 ## Tasks
 
@@ -130,5 +167,7 @@ Feature: kk plugin platform
 
 ## Notes
 Planned 2026-07-24 (/sp:dev-plan B): decomposed into 3 tasks by deliverable boundary — 0003 (B2 contracts) → 0004 (B1 registry) → 0005 (B3 kk invoke + workflow). Seam resolved: skill-first plugin.json{kind,entry} + Zod data contracts + `kk invoke` (ADR-006 amendment). Build order B2→B1→B3.
+
+- 2026-07-30: B4 (tasks 0020/0021) and B5 (tasks 0026/0027) enriched and rolled up into the AC above (DD-09 subset pattern); child tasks re-parent here on completion, as B1–B3 did.
 ## History
 - 2026-07-30T22:23:26.221Z backlog → active (system)

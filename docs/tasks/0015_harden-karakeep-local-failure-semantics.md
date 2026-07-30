@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0014"]
 created_at: "2026-07-30T23:41:03.323Z"
-updated_at: "2026-07-30T23:41:03.953Z"
+updated_at: "2026-07-30T23:56:25.329Z"
 ---
 
 ## 0015. Harden karakeep-local failure semantics
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:41:03.953Z"
 
 
 ### Requirements
-- R1: Empty source folder → the plugin writes `[]` to `--out` and exits 0 (spec §2.4).
-- R2: A corrupt/unparsable entry → warning to stderr, item skipped, valid items still emitted, exit 0.
-- R3: Missing/unreadable source → non-zero exit; the error names the source path.
-- R4: Each failure mode has an automated test (unit or invoke-contract level).
+- R1. Empty source folder → the plugin writes `[]` to `--out` and exits 0 (spec §2.4).
+- R2. A corrupt/unparsable entry → warning to stderr, item skipped, valid items still emitted, exit 0.
+- R3. Missing/unreadable source → non-zero exit; the error names the source path.
+- R4. Each failure mode has an automated test (unit or invoke-contract level).
 ### Acceptance Criteria
 ```gherkin
 Feature: Karakeep-local

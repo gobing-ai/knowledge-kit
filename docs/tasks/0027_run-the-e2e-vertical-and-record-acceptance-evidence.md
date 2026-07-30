@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0026"]
 created_at: "2026-07-30T23:48:59.944Z"
-updated_at: "2026-07-30T23:49:00.727Z"
+updated_at: "2026-07-30T23:56:28.866Z"
 ---
 
 ## 0027. Run the E2E vertical and record acceptance evidence
@@ -22,9 +22,9 @@ updated_at: "2026-07-30T23:49:00.727Z"
 
 
 ### Requirements
-- R1: One `spur workflow run` takes a fixture Karakeep item through content-gen to a published Surfdash post; result.json shows ok: true.
-- R2: Fail-loud chaining is demonstrated: an induced step failure aborts the workflow with a non-zero exit and names the failing step.
-- R3: Evidence is recorded in the task Testing section (commands, outputs) and the verdict artifact.
+- R1. One `spur workflow run` takes a fixture Karakeep item through content-gen to a published Surfdash post; result.json shows ok: true.
+- R2. Fail-loud chaining is demonstrated: an induced step failure aborts the workflow with a non-zero exit and names the failing step.
+- R3. Evidence is recorded in the task Testing section (commands, outputs) and the verdict artifact.
 ### Acceptance Criteria
 ```gherkin
 Feature: End-to-end pipeline acceptance

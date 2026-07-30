@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0016"]
 created_at: "2026-07-30T23:41:42.626Z"
-updated_at: "2026-07-30T23:41:43.261Z"
+updated_at: "2026-07-30T23:56:25.843Z"
 ---
 
 ## 0017. Author generator plugin specification and validate against platform
@@ -22,9 +22,9 @@ updated_at: "2026-07-30T23:41:43.261Z"
 
 
 ### Requirements
-- R1: `docs/design/generator-plugin-specification.md` authored; it cites ingestion spec §1 for manifest/invocation/secrets/exit-code rules instead of re-deriving them.
-- R2: The spec is validated against as-built `kindContract('generator')` and `runInvoke`; every contradiction is resolved or recorded as a proposed ADR entry.
-- R3: `docs/04_DESIGN.md` §6 index row added in the same commit (constitution T3).
+- R1. `docs/design/generator-plugin-specification.md` authored; it cites ingestion spec §1 for manifest/invocation/secrets/exit-code rules instead of re-deriving them.
+- R2. The spec is validated against as-built `kindContract('generator')` and `runInvoke`; every contradiction is resolved or recorded as a proposed ADR entry.
+- R3. `docs/04_DESIGN.md` §6 index row added in the same commit (constitution T3).
 ### Acceptance Criteria
 ```gherkin
 Feature: Generator plugin design

@@ -3,7 +3,7 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.1.2
+version: 2.1.3
 created_at: 2026-07-22
 updated_at: 2026-07-30
 derived_from: [01_PRD, 02_ROADMAP]
@@ -22,7 +22,7 @@ sync: [T4]
 
 ## Status legend
 
-✅ done · 🔶 partial · ⏳ planned/current · 💤 deferred · 🌫️ fog (undecided) · ❌ cancelled
+✅ done · 🔶 partial · ⏳ planned/current · ⏳ ready (decomposed, unblocked) · ⏳ blocked (decomposed, dep-gated) · 💤 deferred · 🌫️ fog (undecided) · ❌ cancelled
 
 ## Feature tree
 
@@ -34,21 +34,21 @@ sync: [T4]
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004`: `plugin.json` + `discoverPlugins` / `listByKind` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003`: Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
 | B3 | Spur workflow integration | ✅ done | 1 | task `0005`: `knowledge-kit invoke` + pipeline workflow template; E2E proof → **B5** |
-| B4 | CLI surface | ⏳ planned | 1 | expand Commander surface for plugin ops (beyond minimal invoke) |
-| B5 | End-to-end pipeline acceptance | ⏳ planned | 1 | C2→D2→E3 composition proof (folded from cancelled **F**) |
-| **C** | Ingestion | ⏳ current | 1 | kind parent: design + source instances |
+| B4 | CLI surface | ⏳ ready | 1 | tasks `0020`/`0021`: `plugins list` + `plugins doctor` (noun group, `--json`) |
+| B5 | End-to-end pipeline acceptance | ⏳ blocked | 1 | tasks `0026`/`0027`; deps on C2 (`0015`), D2 (`0023`), E3 (`0025`) |
+| **C** | Ingestion | ⏳ current | 1 | kind parent; AC rolled up from C1+C2 (DD-09) |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
-| C2 | Karakeep-local | ⏳ current | 1 | rclone-synced folder → Docs (Phase-1 instance) |
-| **D** | Content generation | ⏳ current | 1 | kind parent: research → wire → design; STORM/harvest later |
+| C2 | Karakeep-local | ⏳ current | 1 | tasks `0014`/`0015`; rclone-synced folder → Docs; `0014` in progress |
+| **D** | Content generation | ⏳ current | 1 | kind parent; AC rolled up from D3+D2 (DD-09) |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |
-| D2 | Wire existing generator skill to contract | ⏳ ready | 1 | **unblocked** — wire stand-in stages 0–3 |
-| D3 | Generator plugin design | ⏳ planned | 1 | ContentGeneratorPlugin design / adapter patterns |
+| D2 | Wire existing generator skill to contract | ⏳ blocked | 1 | tasks `0022`/`0023`; gated on D3 spec (`0017`) |
+| D3 | Generator plugin design | ⏳ ready | 1 | tasks `0016`/`0017`; cites C1 generic contract §1 |
 | D4 | Own STORM generator | 💤 deferred | 2 | from cancelled H; ref `vendors/storm` |
 | D5 | wt generator harvest | 💤 deferred | 2 | from cancelled H; lazy Py→TS of wt generator skills |
-| **E** | Publish | ⏳ current | 1 | kind parent: audit → design/harness → Surfdash; multi-channel deferred |
+| **E** | Publish | ⏳ current | 1 | kind parent; AC rolled up from E2+E3 (DD-09); multi-channel deferred |
 | E1 | wt-publish audit | ✅ done | 1 | task `0002`: transports mapped; Surfdash simplest |
-| E2 | Publish design and test harness | ⏳ ready | 1 | **unblocked** — FileCli + Browser transports + frontmatter mapping |
-| E3 | Surfdash publisher (tested) | ⏳ planned | 1 | blocked by E2; wrap `postsurfing.mjs` + tested mapping |
+| E2 | Publish design and test harness | ⏳ ready | 1 | tasks `0018`/`0019`; transport abstraction + `packages/publish-harness` |
+| E3 | Surfdash publisher (tested) | ⏳ blocked | 1 | tasks `0024`/`0025`; gated on E2 (`0018`+`0019`) |
 | **F** | End-to-end vertical | ❌ cancelled | — | folded into **B5** (platform owns composition proof) |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** Notes (deferred multi-channel) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** + **D5** |

@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0020"]
 created_at: "2026-07-30T23:42:55.764Z"
-updated_at: "2026-07-30T23:42:56.395Z"
+updated_at: "2026-07-30T23:56:26.973Z"
 ---
 
 ## 0021. Add plugins doctor subcommand
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:42:56.395Z"
 
 
 ### Requirements
-- R1: `knowledge-kit plugins doctor` validates every manifest under `--plugins-root` and surfaces each `DiscoveryDiagnostic` with path and reason.
-- R2: Missing entry files are reported as diagnostics.
-- R3: Exit code is non-zero when any diagnostic exists, zero when the tree is healthy; `--json` emits diagnostics machine-readably.
-- R4: No new registry logic — diagnostics come from `discoverPlugins` as built.
+- R1. `knowledge-kit plugins doctor` validates every manifest under `--plugins-root` and surfaces each `DiscoveryDiagnostic` with path and reason.
+- R2. Missing entry files are reported as diagnostics.
+- R3. Exit code is non-zero when any diagnostic exists, zero when the tree is healthy; `--json` emits diagnostics machine-readably.
+- R4. No new registry logic — diagnostics come from `discoverPlugins` as built.
 ### Acceptance Criteria
 ```gherkin
 Feature: CLI surface

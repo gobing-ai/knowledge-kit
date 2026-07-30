@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0015", "0023", "0025"]
 created_at: "2026-07-30T23:48:59.810Z"
-updated_at: "2026-07-30T23:49:00.591Z"
+updated_at: "2026-07-30T23:56:28.582Z"
 ---
 
 ## 0026. Wire and dry-run the E2E vertical workflow
@@ -22,9 +22,9 @@ updated_at: "2026-07-30T23:49:00.591Z"
 
 
 ### Requirements
-- R1: Workflow vars in the vertical run are set to `karakeep-local` / `content-gen` / `surfdash-pub` with a real fixture source folder.
-- R2: The workflow validates (`spur workflow validate`) and a staged dry-run confirms each step's IO contract chaining (docs.json → content.json → result.json).
-- R3: The fixture Karakeep item and work dir live under a gitignored scratch path.
+- R1. Workflow vars in the vertical run are set to `karakeep-local` / `content-gen` / `surfdash-pub` with a real fixture source folder.
+- R2. The workflow validates (`spur workflow validate`) and a staged dry-run confirms each step's IO contract chaining (docs.json → content.json → result.json).
+- R3. The fixture Karakeep item and work dir live under a gitignored scratch path.
 ### Acceptance Criteria
 ```gherkin
 Feature: End-to-end pipeline acceptance

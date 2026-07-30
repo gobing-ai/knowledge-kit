@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0022"]
 created_at: "2026-07-30T23:48:00.337Z"
-updated_at: "2026-07-30T23:48:01.085Z"
+updated_at: "2026-07-30T23:56:27.759Z"
 ---
 
 ## 0023. Harden content-gen failure semantics
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:48:01.085Z"
 
 
 ### Requirements
-- R1: A failing stand-in stage → non-zero exit with the error on stderr.
-- R2: Empty DocList input → behavior matching the generator spec failure contract (exit code + output).
-- R3: Stand-in output that violates the mapping is surfaced as an error, never silently written.
-- R4: Each failure mode has an automated test.
+- R1. A failing stand-in stage → non-zero exit with the error on stderr.
+- R2. Empty DocList input → behavior matching the generator spec failure contract (exit code + output).
+- R3. Stand-in output that violates the mapping is surfaced as an error, never silently written.
+- R4. Each failure mode has an automated test.
 ### Acceptance Criteria
 ```gherkin
 Feature: Wire existing generator skill to contract

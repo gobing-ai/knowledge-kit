@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:41:42.492Z"
-updated_at: "2026-07-30T23:41:42.887Z"
+updated_at: "2026-07-30T23:56:25.582Z"
 ---
 
 ## 0016. Decide generator entry mechanism and Content mapping conventions
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:41:42.887Z"
 
 
 ### Requirements
-- R1: Skill-backed entry mechanism decided (executable wrapper CLI vs generated shim vs invoke change — the last escalates to an ADR note), with rationale and argv/env contract for the plugin author.
-- R2: Doc[]→Content field conventions defined against ContentSchema as built: `format` (default markdown), `outline`, `references`, `metadata` usage; no schema changes.
-- R3: Stand-in vs own-engine selection criteria recorded (D1 research as input; explicit conditions for switching to D4).
-- R4: Generator failure semantics defined — empty DocList input, engine failure, invalid output — each with an explicit exit-code and output-file contract (fail-loud per ADR-006 + C1 §1.4).
+- R1. Skill-backed entry mechanism decided (executable wrapper CLI vs generated shim vs invoke change — the last escalates to an ADR note), with rationale and argv/env contract for the plugin author.
+- R2. Doc[]→Content field conventions defined against ContentSchema as built: `format` (default markdown), `outline`, `references`, `metadata` usage; no schema changes.
+- R3. Stand-in vs own-engine selection criteria recorded (D1 research as input; explicit conditions for switching to D4).
+- R4. Generator failure semantics defined — empty DocList input, engine failure, invalid output — each with an explicit exit-code and output-file contract (fail-loud per ADR-006 + C1 §1.4).
 ### Acceptance Criteria
 ```gherkin
 Feature: Generator plugin design

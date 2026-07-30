@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0017"]
 created_at: "2026-07-30T23:48:00.205Z"
-updated_at: "2026-07-30T23:48:00.960Z"
+updated_at: "2026-07-30T23:56:27.487Z"
 ---
 
 ## 0022. Implement content-gen stand-in adapter plugin
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:48:00.960Z"
 
 
 ### Requirements
-- R1: `plugins/content-gen` with a valid `plugin.json` (kind=generator, entry per the generator spec mechanism from 0016/0017).
-- R2: The adapter maps invoke file IO (docs.json → content.json) to stand-in stages 0–3; output satisfies ContentSchema.
-- R3: No modifications to wt-owned skill files — the adapter is the only new code at the boundary.
-- R4: A contract test runs `knowledge-kit invoke` over fixtures and produces ContentSchema-valid output (LLM stages mocked at the adapter boundary per the generator spec test strategy).
+- R1. `plugins/content-gen` with a valid `plugin.json` (kind=generator, entry per the generator spec mechanism from 0016/0017).
+- R2. The adapter maps invoke file IO (docs.json → content.json) to stand-in stages 0–3; output satisfies ContentSchema.
+- R3. No modifications to wt-owned skill files — the adapter is the only new code at the boundary.
+- R4. A contract test runs `knowledge-kit invoke` over fixtures and produces ContentSchema-valid output (LLM stages mocked at the adapter boundary per the generator spec test strategy).
 ### Acceptance Criteria
 ```gherkin
 Feature: Wire existing generator skill to contract

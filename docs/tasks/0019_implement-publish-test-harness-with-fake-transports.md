@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0018"]
 created_at: "2026-07-30T23:42:20.624Z"
-updated_at: "2026-07-30T23:42:21.262Z"
+updated_at: "2026-07-30T23:56:26.341Z"
 ---
 
 ## 0019. Implement publish test harness with fake transports
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:42:21.262Z"
 
 
 ### Requirements
-- R1: `packages/publish-harness` workspace created (`@gobing-ai/publish-harness`), wired into the Bun workspaces build/test graph.
-- R2: Fake FileCli transport + fixtures capture publish invocations with no external effects.
-- R3: A proof test exercises the fake transport end-to-end offline and passes under `bun run test`.
-- R4: Harness API is documented for E3 (TSDoc on exports, per the tsdoc-exports rule).
+- R1. `packages/publish-harness` workspace created (`@gobing-ai/publish-harness`), wired into the Bun workspaces build/test graph.
+- R2. Fake FileCli transport + fixtures capture publish invocations with no external effects.
+- R3. A proof test exercises the fake transport end-to-end offline and passes under `bun run test`.
+- R4. Harness API is documented for E3 (TSDoc on exports, per the tsdoc-exports rule).
 ### Acceptance Criteria
 ```gherkin
 Feature: Publish design and test harness

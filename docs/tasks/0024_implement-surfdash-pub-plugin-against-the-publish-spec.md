@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0018", "0019"]
 created_at: "2026-07-30T23:48:35.305Z"
-updated_at: "2026-07-30T23:48:36.069Z"
+updated_at: "2026-07-30T23:56:28.030Z"
 ---
 
 ## 0024. Implement surfdash-pub plugin against the publish spec
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:48:36.069Z"
 
 
 ### Requirements
-- R1: `plugins/surfdash-pub` with a valid `plugin.json` (kind=publish).
-- R2: Content→Surfing frontmatter mapping per the publish spec; postsurfing CLI invoked via the FileCli transport from 0018.
-- R3: Unit tests use the publish-harness fake FileCli transport (0019) — no external effects; coverage aligns with the repo gate (line/function ≥ 90%).
-- R4: Success path emits a ResultSchema-valid Result (ok: true, target: surfdash).
+- R1. `plugins/surfdash-pub` with a valid `plugin.json` (kind=publish).
+- R2. Content→Surfing frontmatter mapping per the publish spec; postsurfing CLI invoked via the FileCli transport from 0018.
+- R3. Unit tests use the publish-harness fake FileCli transport (0019) — no external effects; coverage aligns with the repo gate (line/function ≥ 90%).
+- R4. Success path emits a ResultSchema-valid Result (ok: true, target: surfdash).
 ### Acceptance Criteria
 ```gherkin
 Feature: Surfdash publisher tested

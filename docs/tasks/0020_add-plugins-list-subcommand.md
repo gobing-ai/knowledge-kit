@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:42:55.633Z"
-updated_at: "2026-07-30T23:42:56.010Z"
+updated_at: "2026-07-30T23:56:26.600Z"
 ---
 
 ## 0020. Add plugins list subcommand
@@ -22,10 +22,10 @@ updated_at: "2026-07-30T23:42:56.010Z"
 
 
 ### Requirements
-- R1: `knowledge-kit plugins list` prints discovered plugins grouped by kind via `logger.out`.
-- R2: `--kind <kind>` narrows output to a single plugin kind.
-- R3: `--json` emits machine-readable registry output.
-- R4: `--plugins-root` resolves the same registry as `invoke --plugins-root`; tests go through the `createProgram()` factory (no parse at module scope).
+- R1. `knowledge-kit plugins list` prints discovered plugins grouped by kind via `logger.out`.
+- R2. `--kind <kind>` narrows output to a single plugin kind.
+- R3. `--json` emits machine-readable registry output.
+- R4. `--plugins-root` resolves the same registry as `invoke --plugins-root`; tests go through the `createProgram()` factory (no parse at module scope).
 ### Acceptance Criteria
 ```gherkin
 Feature: CLI surface
