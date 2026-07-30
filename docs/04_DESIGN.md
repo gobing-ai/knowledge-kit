@@ -112,3 +112,10 @@ File: `.spur/config.yaml`
 | `name` | `knowledge-kit` |
 | `bootstrap.database.driver` | `bun-sqlite` |
 | `bootstrap.database.url` | `.spur/spur.db` |
+
+## 6. Design specifications
+
+| Specification | Path | Description |
+|---------------|------|-------------|
+| Ingestion Plugin Specification | `docs/design/ingestion-plugin-specification.md` | Generic plugin authoring contract + Ingestion Plugin specification |
+

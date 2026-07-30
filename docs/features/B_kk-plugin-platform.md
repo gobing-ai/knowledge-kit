@@ -2,11 +2,11 @@
 schema_version: 1
 id: "B"
 name: Plugin platform
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-07-29T19:06:07.322Z"
+updated_at: "2026-07-30T22:23:26.221Z"
 ---
 
 # B: kk plugin platform
@@ -131,3 +131,4 @@ Feature: kk plugin platform
 ## Notes
 Planned 2026-07-24 (/sp:dev-plan B): decomposed into 3 tasks by deliverable boundary — 0003 (B2 contracts) → 0004 (B1 registry) → 0005 (B3 kk invoke + workflow). Seam resolved: skill-first plugin.json{kind,entry} + Zod data contracts + `kk invoke` (ADR-006 amendment). Build order B2→B1→B3.
 ## History
+- 2026-07-30T22:23:26.221Z backlog → active (system)

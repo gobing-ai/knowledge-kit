@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.1.1
+version: 2.1.2
 created_at: 2026-07-22
-updated_at: 2026-07-29
+updated_at: 2026-07-30
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -28,16 +28,16 @@ sync: [T4]
 
 | ID | Feature | Status | Phase | Notes |
 |----|---------|--------|-------|-------|
-| **A** | Project foundation | ✅ done¹ | 0 | Monorepo substrate + tooling; A1 = tree hygiene |
+| **A** | Project foundation | ✅ done | 0 | Monorepo substrate + tooling; close-out task `0013` verified (gates PASS) |
 | A1 | Feature tree restructure | ✅ done | 0 | tree+docs applied; tasks `0006`–`0009` **done**; map `docs/plans/feature-tree-restructure-map.md` |
-| **B** | Plugin platform | ⏳ planned | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B3 done |
+| **B** | Plugin platform | ⏳ current | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B3 done; Spur: active |
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004`: `plugin.json` + `discoverPlugins` / `listByKind` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003`: Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
 | B3 | Spur workflow integration | ✅ done | 1 | task `0005`: `knowledge-kit invoke` + pipeline workflow template; E2E proof → **B5** |
 | B4 | CLI surface | ⏳ planned | 1 | expand Commander surface for plugin ops (beyond minimal invoke) |
 | B5 | End-to-end pipeline acceptance | ⏳ planned | 1 | C2→D2→E3 composition proof (folded from cancelled **F**) |
 | **C** | Ingestion | ⏳ current | 1 | kind parent: design + source instances |
-| C1 | Ingestion plugin design | ⏳ planned | 1 | design slice for IngestionPlugin instances |
+| C1 | Ingestion plugin design | ⏳ current | 1 | enriched 2026-07-30; tasks `0010`–`0012` (config/invoke, Doc mapping, design doc) |
 | C2 | Karakeep-local | ⏳ current | 1 | rclone-synced folder → Docs (Phase-1 instance) |
 | **D** | Content generation | ⏳ current | 1 | kind parent: research → wire → design; STORM/harvest later |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |
@@ -54,8 +54,6 @@ sync: [T4]
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** + **D5** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
 
-¹ Phase-0 substrate is complete; Spur tracks `A` at `verifying` (guards forbid a retroactive jump to
-`done` without a verified linked task — completion is authoritative here and in `00_ADR`).
 
 ## Open research gates
 

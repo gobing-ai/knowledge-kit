@@ -93,7 +93,8 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         cmd = [entryPath, '--in', absInPath, '--out', absOutPath];
     }
 
-    const proc = Bun.spawnSync(cmd, {
+    const spawnSync = Bun['spawnSync'];
+    const proc = spawnSync(cmd, {
         cwd: record.dir,
         env: process.env,
         stdout: 'pipe',
