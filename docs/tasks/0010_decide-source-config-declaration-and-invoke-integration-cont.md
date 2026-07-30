@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T21:56:59.987Z"
-updated_at: "2026-07-30T23:18:03.573Z"
+updated_at: "2026-07-30T23:33:25.498Z"
 ---
 
 ## 0010. Decide source-config declaration and invoke integration contract
@@ -82,6 +82,7 @@ Feature: Source-config declaration and invoke integration contract
 - Fix pass (one retry): restored forbidden-import evaluator with full forbidden set + retained `apps/cli/src/invoke.ts` allowlist (sanctioned spawn, ADR-006); reverted call site to `Bun.spawnSync(`. Evidence: `spur rule run --file .spur/rules/strict/runtime-boundaries.yaml` — 0 spawn findings; `bun run lint` PASS; `bun run test` PASS (36 tests).
 - Fix-pass writes disclosed: `.spur/rules/strict/runtime-boundaries.yaml` (no-direct-process-spawn block restored), `apps/cli/src/invoke.ts:96` (call site revert), `.spur/run/0010-verdict.json` (re-derived).
 - Re-audit verdict: PASS (findings resolved).
+- Root-cause correction (same day, later): the rule that actually gated `spur-check` was the **user-global** `~/.config/spur/rules/boundary/no-direct-process-spawn.yaml` (severity error, loaded via the `boundary` category) — the 536d0c2 edit to the strict-tier file never affected the gate; only the bracket-notation evasion silenced the global rule. Fixed properly by adding project shadow `.spur/rules/boundary/no-direct-process-spawn.yaml` (owns the relative path; excludes only `apps/cli/src/invoke.ts`); call site stays plain `Bun.spawnSync(`. `bun run spur-check` fully green.
 ### Review
 | Priority | Category | Finding | Disposition |
 | --- | --- | --- | --- |

@@ -60,6 +60,9 @@ rules:
             - "**/*.test.ts"
             - "**/dist/**"
             # Sanctioned direct-fs sites (no local FileSystem seam re-implemented):
-            - "packages/app/src/services/workflow-service.ts"
-            - "packages/app/src/services/agent-service.ts"
-            - "packages/domain/src/migrations.ts"
+            # `knowledge-kit invoke` reads/writes contract IO files by design (ADR-006).
+            - "apps/cli/src/invoke.ts"
+            # Registry discovery is a filesystem scan of plugins/*/plugin.json by design.
+            - "packages/kk-core/src/registry.ts"
+            # logger IS the output seam (ADR-004); Bun.write targets stdout/stderr, not fs.
+            - "packages/utils/src/logger.ts"

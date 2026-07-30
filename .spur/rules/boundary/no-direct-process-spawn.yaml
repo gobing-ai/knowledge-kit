@@ -1,0 +1,37 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Process-spawn boundary — project shadow of the user-global rule
+# (~/.config/spur/rules/boundary/no-direct-process-spawn.yaml). The project
+# layer owns this relative path, so the spur-monorepo allowlist (detached
+# serve, workflow worker, corpus migrator, …) does not leak into knowledge-kit.
+#
+# knowledge-kit has exactly ONE sanctioned direct spawn: `runInvoke` executing
+# a discovered plugin entry (ADR-006 — `kk invoke` is the uniform entrypoint a
+# spur workflow step calls). Everything else goes through ts-runtime seams.
+rules:
+  - id: no-direct-process-spawn
+    description: >
+      Process execution must go through @gobing-ai/ts-runtime ProcessExecutor
+      (or ts-ai-runner for agents). Do not call Bun.spawn/spawnSync, import
+      node:child_process, or pull in execa/zx at app/package sources. The only
+      sanctioned direct spawn is `knowledge-kit invoke` spawning plugin entries.
+    severity: error
+    evaluator:
+      type: forbidden-import
+      config:
+        forbidden:
+          - specifier: "node:child_process"
+          - specifier: "child_process"
+          - pattern: "Bun\\.(spawn|spawnSync)\\s*\\("
+            matchMode: usage
+          - specifier: "execa"
+          - specifier: "zx"
+        scope:
+          include:
+            - "apps/**/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+          exclude:
+            - "**/tests/**"
+            - "**/*.test.ts"
+            - "**/dist/**"
+            # `knowledge-kit invoke` spawns plugin entries by design (ADR-006).
+            - "apps/cli/src/invoke.ts"
