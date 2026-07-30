@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G"
 name: "PublishPlugin rewrite epic"
-status: backlog
+status: cancelled
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:16.826Z"
-updated_at: "2026-07-23T23:40:11.554Z"
+updated_at: "2026-07-29T18:41:33.779Z"
 ---
 
 # G: PublishPlugin rewrite epic
@@ -34,5 +34,6 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-**Per-platform rewrite map (from task 0002):** two transports — File/CLI (Zenn CLI, Qiita API) vs Browser/Playwright (X, Substack, WeChatMP, Medium, Juejin, XHS, InfoQ). **Build order:** Zenn + Qiita first (reuse E2 FileCli/API harness) → one browser target to prove `BrowserTransport` + mock-at-boundary → remaining browser targets. Auth via Chrome profiles / `~/.claude/wt/config.jsonc`. No wt publish skill has tests.
+**Archived 2026-07-29 (A1 restructure).** Multi-channel publish suite absorbed into **E Publish** Notes (deferred). Do not use this root for new work — plan channels under E when Phase 2 starts.
 ## History
+- 2026-07-29T18:39:15.415Z backlog → cancelled (system)

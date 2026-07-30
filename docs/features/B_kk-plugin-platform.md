@@ -1,21 +1,21 @@
 ---
 schema_version: 1
 id: "B"
-name: "kk plugin platform"
+name: Plugin platform
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-07-25T19:35:39.557Z"
+updated_at: "2026-07-29T19:06:07.322Z"
 ---
 
 # B: kk plugin platform
 
 ## Goal
-The type and discovery layer for knowledge-kit plugins: a manifest/registry plus three typed lifecycle contracts (IngestionPlugin, ContentGeneratorPlugin, PublishPlugin) that skills implement and spur workflow orchestrates. No bespoke kk run runtime (YAGNI, per ADR-006).
+Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, three typed lifecycle contracts (Ingestion, ContentGenerator, Publish), spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006).
 ## Scope
-- In: plugin manifest + registry/discovery (B1); typed contracts (B2); spur workflow step integration (B3).
-- Out: dynamic DAG runtime; kk run CLI; plugin hot-reload.
+- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof).
+- Out: dynamic DAG runtime; plugin hot-reload; domain plugin bodies (C/D/E children).
 ## Acceptance Criteria
 ```gherkin
 Feature: kk plugin platform

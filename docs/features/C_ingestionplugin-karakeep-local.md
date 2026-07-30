@@ -1,21 +1,21 @@
 ---
 schema_version: 1
 id: "C"
-name: "IngestionPlugin: Karakeep-local"
+name: Ingestion
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:11.170Z"
-updated_at: "2026-07-23T17:57:11.035Z"
+updated_at: "2026-07-29T18:40:36.153Z"
 ---
 
 # C: IngestionPlugin: Karakeep-local
 
 ## Goal
-IngestionPlugin that ingests Karakeep-collected items from a local folder mirroring the Karakeep R2 bucket (synced out-of-band via rclone), emitting normalized Docs to the pipeline.
+Ingestion capability: typed IngestionPlugin kind and its design + instances. Parent for ingestion plugin design (C1) and concrete sources (C2 Karakeep-local first).
 ## Scope
-- In: read the configured local folder as a normal filesystem; parse Karakeep export entries into Docs.
-- Out: direct R2 API access; rclone automation (assumed precondition); incremental-sync state.
+- In: ingestion plugin design (C1); Karakeep-local instance (C2); future source plugins as siblings.
+- Out: generation and publish; direct R2 API in Phase 1 (rclone-synced folder only under C2).
 ## Acceptance Criteria
 
 ```gherkin

@@ -2,11 +2,11 @@
 schema_version: 1
 id: "H"
 name: "Real STORM generator and wt generator harvest"
-status: backlog
+status: cancelled
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:18.153Z"
-updated_at: "2026-07-23T17:57:25.015Z"
+updated_at: "2026-07-29T18:41:36.343Z"
 ---
 
 # H: Real STORM generator and wt generator harvest
@@ -34,5 +34,6 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-
+**Archived 2026-07-29 (A1 restructure).** Split into **D4 Own STORM generator** and **D5 wt generator harvest**. Do not use this root for new work.
 ## History
+- 2026-07-29T18:41:32.468Z backlog → cancelled (system)

@@ -1,21 +1,21 @@
 ---
 schema_version: 1
 id: "A"
-name: "CLI monorepo foundation"
+name: Project foundation
 status: verifying
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:08.254Z"
-updated_at: "2026-07-23T18:00:23.654Z"
+updated_at: "2026-07-29T18:40:33.292Z"
 ---
 
 # A: CLI monorepo foundation
 
 ## Goal
-Bun + TypeScript + Biome monorepo substrate hosting the kk plugin platform: a Commander CLI shell (@gobing-ai/knowledge-kit), shared @gobing-ai/* packages, and green lint / typecheck / test / build gates. Phase 0 — complete.
+Bun + TypeScript + Biome monorepo substrate and project-level infrastructure: Commander CLI shell (`@gobing-ai/knowledge-kit`), shared `@gobing-ai/*` packages, lint/typecheck/test/build gates, Spur bootstrap, and foundation hygiene (including feature-tree restructure under A1). Phase 0 substrate complete; A1 holds tree reorg work before Phase-1 plugin implementation.
 ## Scope
-- In: apps/cli; packages/utils; tooling/typescript; Biome 2.5.5 + tsc + bun:test gates; Spur bootstrap.
-- Out: plugin runtime and domain commands (Phase 1+, features B–F).
+- In: apps/cli; packages/*; tooling/typescript; Biome + tsc + bun:test gates; Spur bootstrap; feature-tree hygiene (A1).
+- Out: domain plugin implementations (C2/D2/E3 and later); product pipelines beyond invoke scaffolding.
 ## Acceptance Criteria
 ```gherkin
 Feature: CLI monorepo foundation (Phase 0)

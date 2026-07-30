@@ -12,7 +12,7 @@ priority: P2
 tags: ["kk", "platform", "invoke", "workflow"]
 dependencies: ["0003", "0004"]
 created_at: "2026-07-24T17:36:27.415Z"
-updated_at: "2026-07-25T21:43:43.814Z"
+updated_at: "2026-07-29T19:06:57.386Z"
 ---
 
 ## 0005. kk invoke entrypoint + spur workflow pipeline template
@@ -118,7 +118,7 @@ knowledge-kit invoke ${publish_plugin} --in ${work_dir}/content.json --out ${wor
 ```
 
 - Guards: `action-ok` between steps (same pattern as `basic.yaml`). No nested DAG engine inside knowledge-kit.
-- Template is validated with `spur workflow validate`; dry-run optional. Full E2E with real C/D/E plugins is later vertical work (feature F) — this task ships the **template + invoke** with unit/fixture plugins.
+- Template is validated with `spur workflow validate`; dry-run optional. Full E2E with real C/D/E plugins is later vertical work (feature B5) — this task ships the **template + invoke** with unit/fixture plugins.
 
 **Code layout**
 
@@ -144,7 +144,7 @@ knowledge-kit invoke ${publish_plugin} --in ${work_dir}/content.json --out ${wor
 - **Entry = executable path (v1)** vs skill-runtime integration: path spawn is unit-testable without embedding a skill host. Skills wrap a script entry. Rejected for v1: in-process dynamic import of TS classes (contradicts data-contract model).
 - **`--in` dual meaning for ingestion** (source path) vs separate `--source`: keep one flag for spur-template uniformity; document kind-specific semantics in help text.
 - **Validate output after every run** vs trust the entry: always validate — catches bad plugins early for workflow steps.
-- **Template placeholders for plugin names** vs hard-coded fixtures: vars keep the template reusable for feature F without rewriting YAML.
+- **Template placeholders for plugin names** vs hard-coded fixtures: vars keep the template reusable for feature B5 without rewriting YAML.
 
 **Out of scope**
 

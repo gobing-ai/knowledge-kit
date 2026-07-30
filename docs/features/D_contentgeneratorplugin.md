@@ -1,21 +1,21 @@
 ---
 schema_version: 1
 id: "D"
-name: "ContentGeneratorPlugin"
+name: Content generation
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:12.592Z"
-updated_at: "2026-07-23T22:30:15.783Z"
+updated_at: "2026-07-29T18:41:37.787Z"
 ---
 
 # D: ContentGeneratorPlugin
 
 ## Goal
-ContentGeneratorPlugin that turns ingested Docs into a tech article. Phase 1 wires an existing agent skill as the generator (reuse-first); the own STORM implementation is deferred to feature H. Gated by research D1.
+Content generation capability: ContentGeneratorPlugin design and instances. Phase 1 reuses an existing skill (D2) after research (D1); design slice (D3); own STORM (D4) and wt generator harvest (D5) deferred.
 ## Scope
-- In: study STORM and select a stand-in (D1); wire the existing generator skill to the contract (D2).
-- Out: own STORM implementation (feature H); audio and other output formats.
+- In: STORM study / stand-in pick (D1); wire stand-in generator (D2); generator plugin design (D3); own STORM (D4, deferred); wt generator harvest (D5, deferred).
+- Out: publish targets; audio/other formats this phase.
 ## Acceptance Criteria
 
 ```gherkin
@@ -34,5 +34,5 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-**D1 resolved (task 0001, 2026-07-23):** STORM = 4 modules (curation → outline → article → polish), Python/DSPy/litellm — a real port (feature H). Phase-1 stand-in = **`wt:technical-content-creation` stages 0–3** (materials ← Karakeep Docs, research, outline, draft). Integration seam for real STORM: a `KarakeepLocalRM` dspy retrieval module over the synced folder.
+**D1 resolved (task 0001):** STORM = 4 modules; Phase-1 stand-in = `wt:technical-content-creation` stages 0–3. Own STORM → **D4** (deferred). wt generator harvest → **D5** (deferred).
 ## History

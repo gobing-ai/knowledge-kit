@@ -1,21 +1,21 @@
 ---
 schema_version: 1
 id: "F"
-name: "Reference vertical: Karakeep to Surfdash"
-status: backlog
+name: End-to-end vertical
+status: cancelled
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:15.408Z"
-updated_at: "2026-07-23T17:57:20.026Z"
+updated_at: "2026-07-29T19:06:11.575Z"
 ---
 
 # F: Reference vertical: Karakeep to Surfdash
 
 ## Goal
-Prove the platform end-to-end: one spur workflow run takes a Karakeep-local item through the generator to a published Surfdash post. The Phase-1 acceptance demo. Blocked by C, D2, and E3.
+CANCELLED — content moved to B5. Do not implement against this root.
 ## Scope
-- In: a spur workflow composing C to D2 to E3; an end-to-end smoke test.
-- Out: multi-target publish; scheduling and automation.
+- In: spur workflow composing C2 → D2 → E3; end-to-end smoke.
+- Out: multi-target publish; scheduling/automation.
 ## Acceptance Criteria
 
 ```gherkin
@@ -34,5 +34,6 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-
+**Archived 2026-07-29.** End-to-end vertical folded into **B5 End-to-end pipeline acceptance** (under Plugin platform); B3 Notes point at B5. Root F cancelled so the product tree has no non-kind E2E root. Letter F is not an active capability — do not plan new work here.
 ## History
+- 2026-07-29T19:06:08.864Z backlog → cancelled (system)

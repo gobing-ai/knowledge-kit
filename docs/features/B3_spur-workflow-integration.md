@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:17.511Z"
-updated_at: "2026-07-25T19:35:40.796Z"
+updated_at: "2026-07-29T19:06:05.748Z"
 ---
 
 # B3: Spur workflow integration
@@ -54,10 +54,9 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-- Delivery task `0005` implemented `knowledge-kit invoke` + `.spur/workflows/kk-ingest-generate-publish.yaml` and is `done`.
-- Dogfood: `docs/dogfood/2026-07-25-B3-kk-invoke-workflow-dogfood.md` (L4 self-ref workflow path).
-- After B3 reached `done`, Spur L4.feature-terminal forbids tasks linked to a terminal feature; `0005` was re-parented to parent **B**, with B3 AC scenarios rolled into B for DD-09.
-- B3 AC remains the narrative source for spur workflow integration; `_No linked tasks_` under Tasks is expected after re-parent.
+**B3 ships** `knowledge-kit invoke` + the ingest→generate→publish workflow **template** (task 0005 done).
+
+**E2E acceptance** (real C2 + D2 + E3 vertical) is **B5 End-to-end pipeline acceptance** — not a separate root F. B3 remains the integration seam; B5 is the composition proof against real plugins.
 ## History
 - 2026-07-25T17:06:38.938Z backlog → active (system)
 - 2026-07-25T17:06:40.389Z active → verifying (system)

@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 2.0.0
+version: 2.1.0
 created_at: 2026-07-22
-updated_at: 2026-07-23
+updated_at: 2026-07-29
 edit_rules: 99 §6.2
 sync: [T6]
 ---
@@ -64,28 +64,29 @@ per stage, a typed contract per kind, and `spur workflow` as the orchestrator.
 ## Non-Goals (Phase 1)
 
 - A bespoke `kk run` runtime / dynamic DAG engine — `spur workflow` orchestrates instead.
-- The 9 non-Surfdash publish targets — a Phase-2 tested-rewrite epic (feature G).
-- An own STORM implementation and bulk `wt` generator migration / Python→TS — Phase 2 (feature H).
-- Direct Karakeep R2 API access — the rclone-synced local folder is the Phase-1 contract.
-- The **LLM wiki** — explicitly undecided (feature I, map fog).
+- The 9 non-Surfdash publish targets — Phase 2 under **E** (deferred multi-channel; former root G cancelled).
+- An own STORM implementation and bulk `wt` generator migration / Python→TS — Phase 2 as **D4** / **D5** (former root H cancelled).
+- Direct Karakeep R2 API access — the rclone-synced local folder is the Phase-1 contract (**C2**).
+- The **LLM wiki** — explicitly undecided (feature **I**, map fog).
 
 ## In scope (Phase 1)
 
 | Area | Feature | Notes |
 |------|---------|-------|
-| Plugin platform | **B** | manifest + registry (B1), typed contracts (B2), spur-workflow steps (B3) |
-| Ingestion | **C** | Karakeep-local: read rclone-synced folder → Docs |
-| Generation | **D** | study STORM (D1, research) → wire existing skill (D2) |
-| Publish | **E** | wt-publish audit (E1, research) → contract + harness (E2) → tested Surfdash (E3) |
-| Reference vertical | **F** | Karakeep-local → generator → Surfdash via `spur workflow` |
+| Project foundation | **A** | monorepo substrate; **A1** feature-tree restructure (hygiene) |
+| Plugin platform | **B** | B1 registry, B2 contracts, B3 workflow (done); **B4** CLI; **B5** E2E pipeline acceptance (C2→D2→E3) |
+| Ingestion | **C** | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
+| Content generation | **D** | D1 research (done) → **D2** wire stand-in · D3 design |
+| Publish | **E** | E1 audit (done) → **E2** design/harness → **E3** Surfdash |
 
 ## Out of scope / deferred
 
 | Area | Feature | Status |
 |------|---------|--------|
-| Publish suite (9 targets) | G | Phase 2 — tested rewrite each |
-| Own STORM + wt generator harvest (lazy Py→TS) | H | Phase 2 |
-| LLM wiki | I | Undecided — go/no-go spike first |
+| Publish multi-channel suite | **E** (Notes; former G) | Phase 2 — channels under Publish |
+| Own STORM generator | **D4** (former H) | Phase 2 |
+| wt generator harvest | **D5** (former H) | Phase 2 |
+| LLM wiki | **I** | Undecided — go/no-go spike first |
 | Audio / other output formats | — | Deferred |
 
 ## Success criteria (Phase 1)

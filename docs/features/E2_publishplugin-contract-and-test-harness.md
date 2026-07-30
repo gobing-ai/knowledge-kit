@@ -1,12 +1,12 @@
 ---
 schema_version: 1
 id: "E2"
-name: "PublishPlugin contract and test harness"
+name: Publish design and test harness
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:24.219Z"
-updated_at: "2026-07-23T17:57:39.996Z"
+updated_at: "2026-07-29T18:40:30.152Z"
 ---
 
 # E2: PublishPlugin contract and test harness

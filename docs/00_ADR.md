@@ -159,6 +159,16 @@ graduates from an empty skeleton to the platform home. The **LLM wiki**
 (`vendors/llm-wiki.md`, `gbrain`, `deepwiki-open`, `openwiki`) remains **undecided** — parked as map
 fog (feature **I**), pursued only after a go/no-go spike.
 
+### Amendment — 2026-07-29 (feature tree restructure, A1)
+
+Feature tree reorganized under foundation hygiene (**A1**) before Phase-1 plugin implementation:
+
+- Kind-aligned parents: **C Ingestion**, **D Content generation**, **E Publish** (instances are children).
+- **B4 CLI surface** under Plugin platform.
+- **E2E composition proof** is **B5** (under B), not a root letter — root **F** cancelled (folded into B5; B3 Notes point at B5).
+- Roots **G** / **H** **cancelled**: multi-channel publish notes fold under **E**; STORM / wt generator harvest become **D4** / **D5**.
+- Mapping SSOT: `docs/plans/feature-tree-restructure-map.md`. Letter IDs **A–I** remain; F/G/H are historical cancelled roots only.
+
 ### Amendment — 2026-07-24 (plugin model concretized, sub-decision 1)
 
 Planning feature **B** resolved sub-decision 1 to a **skill-first** shape, grounded in the D1/E1

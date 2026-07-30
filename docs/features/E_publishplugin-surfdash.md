@@ -1,21 +1,21 @@
 ---
 schema_version: 1
 id: "E"
-name: "PublishPlugin: Surfdash"
+name: Publish
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:14.192Z"
-updated_at: "2026-07-23T23:40:10.189Z"
+updated_at: "2026-07-29T18:40:43.129Z"
 ---
 
 # E: PublishPlugin: Surfdash
 
 ## Goal
-PublishPlugin that publishes generated markdown to Surfdash (emdash / Cloudflare Worker site). A tested rewrite of the untested wt publish skill. Gated by audit E1.
+Publish capability: PublishPlugin design, test harness, and channel instances. Phase 1 delivers Surfdash (E3) behind the design+harness (E2) after audit (E1). Multi-channel suite (former G) is deferred under this parent — not a separate root.
 ## Scope
-- In: wt-publish audit (E1); PublishPlugin contract + reusable test harness (E2); tested Surfdash publisher (E3).
-- Out: the other 9 publish targets (feature G).
+- In: wt-publish audit (E1); publish design + test harness (E2); Surfdash publisher (E3); future channels reusing E2 (deferred; notes from former G).
+- Out: generator work (D); ingestion (C).
 ## Acceptance Criteria
 
 ```gherkin
@@ -34,5 +34,7 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-**E1 resolved (task 0002, 2026-07-23):** Surfing = Astro/Cloudflare-Pages, **file-based** publish via `postsurfing.mjs` (git commit → CF auto-deploy), **no auth** — the simplest target. Contract needs a **transport abstraction** (FileCli vs Browser Playwright) + per-platform frontmatter mapping. E3 first cut = tested Content→frontmatter mapping wrapping `postsurfing.mjs`. Drop `publish.sh`'s "always exit 0" (fail-loud).
+**E1 resolved (task 0002):** Surfing = file-based publish via `postsurfing.mjs`, no auth. Contract needs transport abstraction (FileCli vs Browser) + frontmatter mapping.
+
+**Deferred multi-channel (absorbed from cancelled G):** nine wt publish targets — medium, juejin, qiita, substack, infoq, wechatmp, x, xhs, zenn. Two transports: File/CLI (Zenn CLI, Qiita API) vs Browser/Playwright. Build order when resumed: Zenn + Qiita first → one browser target to prove BrowserTransport → remaining. Auth via Chrome profiles / `~/.claude/wt/config.jsonc`. Do **not** pre-create E4–E12 empty stubs until Phase 2 planning.
 ## History
