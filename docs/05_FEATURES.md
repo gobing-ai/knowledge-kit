@@ -37,7 +37,7 @@ sync: [T4]
 | B4 | CLI surface | ⏳ planned | 1 | expand Commander surface for plugin ops (beyond minimal invoke) |
 | B5 | End-to-end pipeline acceptance | ⏳ planned | 1 | C2→D2→E3 composition proof (folded from cancelled **F**) |
 | **C** | Ingestion | ⏳ current | 1 | kind parent: design + source instances |
-| C1 | Ingestion plugin design | ⏳ current | 1 | enriched 2026-07-30; tasks `0010`–`0012` (config/invoke, Doc mapping, design doc) |
+| C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ⏳ current | 1 | rclone-synced folder → Docs (Phase-1 instance) |
 | **D** | Content generation | ⏳ current | 1 | kind parent: research → wire → design; STORM/harvest later |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |

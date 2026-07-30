@@ -6,11 +6,11 @@ $schema: "@gobing-ai/spur/schemas/preset.schema.json"
 # or cherry-pick a single rule:
 #   spur rule run --rule no-third-party-http-clients
 #
+# Opt-in boundary hygiene: HTTP-client centralization, runtime fs/spawn seams,
+# and local rule-file structural validation. Not part of recommended-pre-check.
+#
 # `extends: [strict]` references the strict/ category directory (the preset file
 # is named differently to avoid a name↔category collision).
 name: strict-check
-description: >
-  Opt-in boundary hygiene: HTTP-client centralization, runtime fs/spawn seams,
-  and local rule-file structural validation. Not part of recommended-pre-check.
 extends:
   - strict
