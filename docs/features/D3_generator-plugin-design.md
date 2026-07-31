@@ -56,7 +56,7 @@ Feature: Generator plugin design
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0016 | Decide generator entry mechanism and Content mapping conventions | done |
-| 0017 | Author generator plugin specification and validate against platform | todo |
+| 0017 | Author generator plugin specification and validate against platform | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

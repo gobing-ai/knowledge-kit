@@ -15,7 +15,7 @@
 [backlog] **D**: Content generation ([D_contentgeneratorplugin.md](./D_contentgeneratorplugin.md))
     ├── [backlog] **D1**: Study vendors-storm and pick P1 stand-in ([D1_study-vendors-storm-and-pick-p1-stand-in.md](./D1_study-vendors-storm-and-pick-p1-stand-in.md))
     ├── [backlog] **D2**: Wire existing generator skill to contract ([D2_wire-existing-generator-skill-to-contract.md](./D2_wire-existing-generator-skill-to-contract.md))
-    ├── [backlog] **D3**: Generator plugin design ([D3_generator-plugin-design.md](./D3_generator-plugin-design.md))
+    ├── [done] **D3**: Generator plugin design ([D3_generator-plugin-design.md](./D3_generator-plugin-design.md))
     ├── [backlog] **D4**: Own STORM generator ([D4_own-storm-generator.md](./D4_own-storm-generator.md))
     └── [backlog] **D5**: wt generator harvest ([D5_wt-generator-harvest.md](./D5_wt-generator-harvest.md))
 [backlog] **E**: Publish ([E_publishplugin-surfdash.md](./E_publishplugin-surfdash.md))
