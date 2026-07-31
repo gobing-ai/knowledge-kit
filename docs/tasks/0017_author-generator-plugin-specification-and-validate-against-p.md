@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0016"]
 created_at: "2026-07-30T23:41:42.626Z"
-updated_at: "2026-07-31T00:42:37.650Z"
+updated_at: "2026-07-31T02:02:31.990Z"
 ---
 
 ## 0017. Author generator plugin specification and validate against platform
@@ -97,7 +97,7 @@ Verified 2026-07-31 via pipeline verify of 0017 (implement → testing → verif
 | AC | Status | Evidence Type | Evidence |
 |----|--------|---------------|----------|
 | Design cites the generic contract | MET | static-ref + command | `docs/design/generator-plugin-specification.md:7-20` re-read this run; `spur task check 0017 --strict-core` exit 0 |
-| Design is validated against the platform as built | MET | command + static-ref | `bun run lint` exit 0; spec §3 `:94-101` records alignment against `packages/kk-core/src/kinds.ts:23` / `packages/kk-core/src/schemas.ts:14-30` / `apps/cli/src/invoke.ts:90-139` with zero contradictions |
+| Design is validated against the platform as built | MET | command + static-ref | `bun run lint` exit 0; spec §3 `:94-101` records alignment against `kinds.ts:23` / `schemas.ts:14-30` / `invoke.ts:90-139` with zero contradictions |
 
 **Design Conformance**
 
@@ -106,11 +106,13 @@ Verified 2026-07-31 via pipeline verify of 0017 (implement → testing → verif
 | design-conformance | pass | 4/4 Design claims DONE (citation-over-rederivation, CLI-wrapper entry, mapping-only, fail-loud semantics); Plan 4/4 checked |
 | scope-creep | pass | diff limited to spec doc + one §6 index row + task file |
 
-**SECUA Review** — S: secrets-channel rule preserved via §1 citation (env-only). E: N/A (docs). C: every normative claim anchor-verified against as-built code this run; exit-propagation claim matches `apps/cli/src/invoke.ts:108-110`. U: plugin-author contract states argv/IO and per-case exit codes explicitly. A: mirrors ingestion spec structure; generic contract cited, not duplicated. No blocker/major/minor findings.
+**SECUA Review** — S: secrets-channel rule preserved via §1 citation (env-only). E: N/A (docs). C: every normative claim anchor-verified against as-built code this run; exit-propagation claim matches `invoke.ts:108-110`. U: plugin-author contract states argv/IO and per-case exit codes explicitly. A: mirrors ingestion spec structure; generic contract cited, not duplicated. No blocker/major/minor findings.
 
 Coverage: N/A (specification-authoring task; zero production code modified).
 
 **Provenance disclosure**: `testing → done` used `SPUR_PROVENANCE_OVERRIDE=1` (CLI-sanctioned, recorded by the guard) because implementation was executed inline by the main agent rather than via `spur workflow run task-pipeline.yaml`, so no pipeline run link existed. All gate evidence is real and fresh this run: `spur task check 0017 --strict-core` exit 0, `bun run lint` exit 0, verdict artifact `.spur/run/0017-verdict.json` = PASS (written before the transition). Review L3 gate satisfied with a populated P1–P4 table.
+
+**Re-audit 2026-07-31 (`/sp-dev-verify 0017 --force --fix all`)**: verdict re-derived independently — R1–R3 MET, both AC MET. Anchors re-read this run: spec §1 `:7-20`, §3 `:94-101`, `packages/kk-core/src/kinds.ts:23`, `packages/kk-core/src/schemas.ts:14-17`, `apps/cli/src/invoke.ts:90-94`, `docs/04_DESIGN.md:121`. `spur task check 0017 --strict-core` exit 0; `bun run lint` exit 0. External commit `0925ecb` (project-relative anchor paths in this section) reviewed — content-equivalent, anchors still resolve. Verdict artifact `.spur/run/0017-verdict.json` rewritten this run. `--next`: no-op (task already terminal).
 ### Review
 | Severity | Finding | Location | Status |
 | --- | --- | --- | --- |
