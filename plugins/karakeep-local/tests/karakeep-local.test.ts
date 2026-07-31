@@ -61,11 +61,14 @@ describe('karakeep-local failure semantics', () => {
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, 'broken.json'), '{ not valid json', 'utf-8');
         await writeFile(join(dir, 'good.json'), JSON.stringify({ body: 'ok', title: 'Good' }), 'utf-8');
+        // Negative path: plugin warns on the corrupt file intentionally; silence so --dots stays clean.
+        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
         try {
             const docs = await processKarakeepFolder(dir);
             expect(docs.length).toBe(1);
             expect(docs[0]?.title).toBe('Good');
         } finally {
+            errorSpy.mockRestore();
             await rm(dir, { recursive: true, force: true });
         }
     });
@@ -86,12 +89,15 @@ describe('karakeep-local failure semantics', () => {
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, 'content.md'), '# Body', 'utf-8');
         await writeFile(join(dir, 'meta.json'), '{ broken', 'utf-8');
+        // Negative path: plugin warns on the corrupt meta intentionally; silence so --dots stays clean.
+        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
         try {
             const docs = await processKarakeepFolder(join(import.meta.dir, 'tmp-corrupt-meta'));
             expect(docs.length).toBe(1);
             expect(docs[0]?.title).toBe('item1');
             expect(docs[0]?.mediaType).toBe('text/markdown');
         } finally {
+            errorSpy.mockRestore();
             await rm(join(import.meta.dir, 'tmp-corrupt-meta'), { recursive: true, force: true });
         }
     });
