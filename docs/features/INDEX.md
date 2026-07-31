@@ -20,7 +20,7 @@
     └── [backlog] **D5**: wt generator harvest ([D5_wt-generator-harvest.md](./D5_wt-generator-harvest.md))
 [backlog] **E**: Publish ([E_publishplugin-surfdash.md](./E_publishplugin-surfdash.md))
     ├── [backlog] **E1**: wt-publish audit ([E1_wt-publish-audit.md](./E1_wt-publish-audit.md))
-    ├── [backlog] **E2**: Publish design and test harness ([E2_publishplugin-contract-and-test-harness.md](./E2_publishplugin-contract-and-test-harness.md))
+    ├── [done] **E2**: Publish design and test harness ([E2_publishplugin-contract-and-test-harness.md](./E2_publishplugin-contract-and-test-harness.md))
     └── [backlog] **E3**: Surfdash publisher tested ([E3_surfdash-publisher-tested.md](./E3_surfdash-publisher-tested.md))
 [cancelled] **F**: End-to-end vertical ([F_reference-vertical-karakeep-to-surfdash.md](./F_reference-vertical-karakeep-to-surfdash.md))
 [cancelled] **G**: PublishPlugin rewrite epic ([G_publishplugin-rewrite-epic.md](./G_publishplugin-rewrite-epic.md))
