@@ -25,12 +25,16 @@ knowledge-kit --help
 knowledge-kit --version
 knowledge-kit add <a> <b>
 knowledge-kit invoke <plugin> --in <path> --out <path> [--plugins-root <dir>]
+knowledge-kit plugins list [--kind <kind>] [--json] [--plugins-root <dir>]
+knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 ```
 
 | Command | Description |
 |---------|-------------|
 | `add <a> <b>` | Add two integers; print the sum to stdout (via `logger.out`) |
 | `invoke <plugin>` | Invoke a plugin with input/output files and contract validation |
+| `plugins list` | List discovered plugins grouped by kind (`--kind` filter, `--json` format) |
+| `plugins doctor` | Validate plugin manifests and entry files under plugins root |
 
 ### `add`
 
@@ -60,6 +64,39 @@ knowledge-kit invoke <plugin> --in <path> --out <path> [--plugins-root <dir>]
 5. Validates written output file against kind's output schema.
 
 **Implementation:** `apps/cli/src/cli.ts` & `apps/cli/src/invoke.ts`.
+
+### `plugins list`
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`) |
+| `--json` | boolean | no | `false` | Emit machine-readable JSON array of records |
+| `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
+
+**Behavior:**
+1. Scans `--plugins-root` using `discoverPlugins`.
+2. Filters by `--kind` if specified using `listByKind`.
+3. Under `--json`, writes raw `PluginRecord[]` JSON array to stdout via `logger.out`.
+4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`).
+
+**Implementation:** `apps/cli/src/cli.ts`.
+
+### `plugins doctor`
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `--json` | boolean | no | `false` | Emit machine-readable JSON health report |
+| `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
+
+**Behavior:**
+1. Scans `--plugins-root` using `discoverPlugins`.
+2. Verifies `plugin.json` schema validity, unique names, and entry file existence on disk (`missing_entry`).
+3. Under `--json`, writes `{ healthy: boolean, diagnostics: DiscoveryDiagnostic[] }` JSON.
+4. Under standard text, prints formatted diagnostic errors to stderr via `logger.error`.
+5. Exits code `1` if any diagnostic issue exists, `0` if healthy.
+
+**Implementation:** `apps/cli/src/cli.ts`.
+
 
 ## 2. Configuration keys
 

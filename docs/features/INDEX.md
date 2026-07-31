@@ -7,7 +7,7 @@
     ├── [done] **B1**: Plugin manifest and registry discovery ([B1_plugin-manifest-and-registry-discovery.md](./B1_plugin-manifest-and-registry-discovery.md))
     ├── [done] **B2**: Typed lifecycle contracts ([B2_typed-lifecycle-contracts.md](./B2_typed-lifecycle-contracts.md))
     ├── [done] **B3**: Spur workflow integration ([B3_spur-workflow-integration.md](./B3_spur-workflow-integration.md))
-    ├── [backlog] **B4**: CLI surface ([B4_cli-surface.md](./B4_cli-surface.md))
+    ├── [done] **B4**: CLI surface ([B4_cli-surface.md](./B4_cli-surface.md))
     └── [backlog] **B5**: End-to-end pipeline acceptance ([B5_end-to-end-pipeline-acceptance.md](./B5_end-to-end-pipeline-acceptance.md))
 [backlog] **C**: Ingestion ([C_ingestionplugin-karakeep-local.md](./C_ingestionplugin-karakeep-local.md))
     ├── [done] **C1**: Ingestion plugin design ([C1_ingestion-plugin-design.md](./C1_ingestion-plugin-design.md))
