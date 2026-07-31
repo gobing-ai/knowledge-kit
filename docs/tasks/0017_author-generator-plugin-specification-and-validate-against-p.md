@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0016"]
 created_at: "2026-07-30T23:41:42.626Z"
-updated_at: "2026-07-31T02:02:31.990Z"
+updated_at: "2026-07-31T02:04:23.568Z"
 ---
 
 ## 0017. Author generator plugin specification and validate against platform
@@ -97,7 +97,7 @@ Verified 2026-07-31 via pipeline verify of 0017 (implement → testing → verif
 | AC | Status | Evidence Type | Evidence |
 |----|--------|---------------|----------|
 | Design cites the generic contract | MET | static-ref + command | `docs/design/generator-plugin-specification.md:7-20` re-read this run; `spur task check 0017 --strict-core` exit 0 |
-| Design is validated against the platform as built | MET | command + static-ref | `bun run lint` exit 0; spec §3 `:94-101` records alignment against `kinds.ts:23` / `schemas.ts:14-30` / `invoke.ts:90-139` with zero contradictions |
+| Design is validated against the platform as built | MET | command + static-ref | `bun run lint` exit 0; spec §3 `:94-101` records alignment against `packages/kk-core/src/kinds.ts:23` / `packages/kk-core/src/schemas.ts:14-30` / `apps/cli/src/invoke.ts:90-139` with zero contradictions |
 
 **Design Conformance**
 
@@ -106,7 +106,7 @@ Verified 2026-07-31 via pipeline verify of 0017 (implement → testing → verif
 | design-conformance | pass | 4/4 Design claims DONE (citation-over-rederivation, CLI-wrapper entry, mapping-only, fail-loud semantics); Plan 4/4 checked |
 | scope-creep | pass | diff limited to spec doc + one §6 index row + task file |
 
-**SECUA Review** — S: secrets-channel rule preserved via §1 citation (env-only). E: N/A (docs). C: every normative claim anchor-verified against as-built code this run; exit-propagation claim matches `invoke.ts:108-110`. U: plugin-author contract states argv/IO and per-case exit codes explicitly. A: mirrors ingestion spec structure; generic contract cited, not duplicated. No blocker/major/minor findings.
+**SECUA Review** — S: secrets-channel rule preserved via §1 citation (env-only). E: N/A (docs). C: every normative claim anchor-verified against as-built code this run; exit-propagation claim matches `apps/cli/src/invoke.ts:108-110`. U: plugin-author contract states argv/IO and per-case exit codes explicitly. A: mirrors ingestion spec structure; generic contract cited, not duplicated. No blocker/major/minor findings.
 
 Coverage: N/A (specification-authoring task; zero production code modified).
 
