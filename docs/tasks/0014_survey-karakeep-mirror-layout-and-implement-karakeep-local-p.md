@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:41:03.188Z"
-updated_at: "2026-07-31T00:01:35.422Z"
+updated_at: "2026-07-31T00:05:25.454Z"
 ---
 
 ## 0014. Survey Karakeep mirror layout and implement karakeep-local plugin
@@ -94,14 +94,35 @@ Feature: Karakeep-local
 - **id** — first 16 hex chars of sha256 over the item's canonical relative path from the `--in` root (spec §2.3).
 - Unrecognized file types are ignored; folders nest arbitrarily (recursive scan).
 ### Testing
-**Pipeline verify results**
+**Re-audit 2026-07-30 (verify --force --fix all; supersedes pipeline's UNKNOWN verdict):**
 
-- Verdict: UNKNOWN (from verdict artifact)
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | Layout survey now documented in Solution §"Karakeep mirror layout" (added by fix pass); fixtures at `plugins/karakeep-local/tests/fixtures/` |
+| R2 | MET | `plugins/karakeep-local/plugin.json` valid; `knowledge-kit invoke karakeep-local` resolves by name, exit 0 |
+| R3 | MET | `src/index.ts:14-16` sha256(relPath)[:16]; `tests/karakeep-local.test.ts` "Doc IDs are deterministic across re-runs" PASS |
+| R4 | MET | `bun apps/cli/src/index.ts invoke karakeep-local --in plugins/karakeep-local/tests/fixtures --out /tmp/c2-out.json --plugins-root plugins` → exit 0; output DocListSchema-valid (2 docs) |
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| — | — | No requirements recorded; verify verdict UNKNOWN |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+|----|--------|---------------|----------|
+| Plugin is discoverable and invocable | MET | command | invoke E2E exit 0 (above) |
+| Folder items become contract-valid Docs | MET | test | "invocable via knowledge-kit invoke (runInvoke)" + "parses sample fixtures accurately" PASS |
+| Doc ids are stable across re-runs | MET | test | "Doc IDs are deterministic across re-runs" PASS |
+
+**Findings repaired by fix pass (one retry):**
+
+- R1 was PARTIAL (fixtures pinned, no layout write-up) → documented in Solution.
+- Plugin tests were invisible to the gate (`bun run test` scoped `apps packages`) → scripts now include `plugins/`; 44 tests run (was 36).
+- bunfig 90% per-file coverage threshold failed on the plugin (73.39% lines) → 5 tests added (main() happy/missing-args/unreadable-source, corrupt JSON, corrupt meta.json) → 91.59% lines, 100% funcs.
+- Deliverable was untracked at task `done` → committed in this fix pass.
+- Fix-pass writes disclosed: `package.json` (test scripts), `plugins/karakeep-local/tests/karakeep-local.test.ts` (+5 tests), task 0014 Solution/Requirements sections, `.spur/run/0014-verdict.json` (re-derived).
+
+**Residual (minor, reported not fixed):** test imports `../../../apps/cli/src/invoke` — deep relative import; plugins are outside the workspace graph so no alias exists. Recommend a follow-up when a second plugin needs the same integration pattern.
+
+- Coverage: plugin file 91.59% lines / 100% funcs; aggregate 97.40% lines. `bun run spur-check` PASS.
+- Re-audit verdict: PASS.
 ### Review
 **SECU findings** (pipeline verify step — verdict: UNKNOWN)
 
