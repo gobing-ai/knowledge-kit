@@ -1,0 +1,7 @@
+{
+    "name": "karakeep-local",
+    "kind": "ingestion",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Ingests Karakeep local export/mirror folders into Doc objects"
+}

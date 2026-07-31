@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:41:03.188Z"
-updated_at: "2026-07-30T23:53:50.400Z"
+updated_at: "2026-07-31T00:01:35.422Z"
 ---
 
 ## 0014. Survey Karakeep mirror layout and implement karakeep-local plugin
@@ -85,6 +85,14 @@ Feature: Karakeep-local
 - `plugins/karakeep-local/tests/fixtures/*`: Fixtures containing Markdown and JSON exports for test coverage.
 - `plugins/karakeep-local/tests/karakeep-local.test.ts:1-48`: Unit & integration test suite verifying fixture parsing, `id` determinism, and end-to-end `runInvoke` integration.
 
+
+**Karakeep mirror layout (surveyed; pinned in `plugins/karakeep-local/tests/fixtures/`):**
+
+- **Per-item folder** — `<item>/content.md` (body) paired with `<item>/meta.json` (`title`, `sourceUri`, `mediaType`, vendor extras → `metadata`). Pairing is by parent directory.
+- **Standalone JSON note** — `<name>.json` with a required `body` string; `title`/`sourceUri`/`mediaType` optional.
+- **Standalone Markdown** — `<name>.md`; `title` defaults to the relative path, `mediaType` = text/markdown.
+- **id** — first 16 hex chars of sha256 over the item's canonical relative path from the `--in` root (spec §2.3).
+- Unrecognized file types are ignored; folders nest arbitrarily (recursive scan).
 ### Testing
 **Pipeline verify results**
 

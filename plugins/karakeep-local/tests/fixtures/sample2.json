@@ -1,0 +1,5 @@
+{
+    "title": "Standalone JSON Note",
+    "sourceUri": "https://example.com/notes/2",
+    "body": "Body inside JSON note."
+}
