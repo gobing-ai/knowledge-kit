@@ -118,4 +118,5 @@ File: `.spur/config.yaml`
 | Specification | Path | Description |
 |---------------|------|-------------|
 | Ingestion Plugin Specification | `docs/design/ingestion-plugin-specification.md` | Generic plugin authoring contract + Ingestion Plugin specification |
+| Generator Plugin Specification | `docs/design/generator-plugin-specification.md` | Generator-kind authoring contract: Doc[]→Content mapping, skill-backed entry, stand-in criteria, failure semantics |
 
