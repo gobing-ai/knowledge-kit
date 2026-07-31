@@ -70,6 +70,17 @@ describe('karakeep-local failure semantics', () => {
         }
     });
 
+    test('empty source folder yields empty array', async () => {
+        const dir = join(import.meta.dir, 'tmp-empty');
+        await mkdir(dir, { recursive: true });
+        try {
+            const docs = await processKarakeepFolder(dir);
+            expect(docs).toEqual([]);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
     test('corrupt meta.json falls back to defaults for a paired content.md', async () => {
         const dir = join(import.meta.dir, 'tmp-corrupt-meta', 'item1');
         await mkdir(dir, { recursive: true });

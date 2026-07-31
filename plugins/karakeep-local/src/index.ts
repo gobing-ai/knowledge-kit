@@ -30,6 +30,17 @@ async function collectFiles(dir: string): Promise<string[]> {
 }
 
 export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
+    try {
+        const inStat = await stat(inDir);
+        if (!inStat.isDirectory()) {
+            throw new Error(`Source path is not a directory: ${inDir}`);
+        }
+    } catch (err: unknown) {
+        const msg = `Inaccessible source path: ${inDir}`;
+        console.error(`Error: ${msg}`, err);
+        throw new Error(msg, { cause: err });
+    }
+
     const files = await collectFiles(inDir);
     const docs: Doc[] = [];
 
@@ -57,8 +68,8 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
                 processedFiles.add(metaJson);
                 try {
                     metaObj = JSON.parse(await readFile(metaJson, 'utf-8')) as ParsedMeta;
-                } catch {
-                    // Ignore parse error in meta file, fallback to default
+                } catch (err: unknown) {
+                    console.error(`Warning: corrupt/unparsable meta file at ${metaJson}`, err);
                 }
             }
 
@@ -100,9 +111,11 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
                         mediaType: mediaType ?? 'application/json',
                         metadata: Object.keys(extraMeta).length > 0 ? extraMeta : undefined,
                     });
+                } else {
+                    console.error(`Warning: JSON entry missing string body at ${f}`);
                 }
-            } catch {
-                // Ignore unparseable JSON files
+            } catch (err: unknown) {
+                console.error(`Warning: corrupt/unparsable JSON file at ${f}`, err);
             }
         } else if (f.endsWith('.md')) {
             const mdText = await readFile(f, 'utf-8');

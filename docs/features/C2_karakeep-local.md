@@ -62,7 +62,7 @@ Feature: Karakeep-local
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0014 | Survey Karakeep mirror layout and implement karakeep-local plugin | done |
-| 0015 | Harden karakeep-local failure semantics | todo |
+| 0015 | Harden karakeep-local failure semantics | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
