@@ -2,11 +2,11 @@
 schema_version: 1
 id: "B"
 name: Plugin platform
-status: active
+status: verifying
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-07-30T23:54:29.455Z"
+updated_at: "2026-08-02T23:27:15.965Z"
 ---
 
 # B: kk plugin platform
@@ -171,3 +171,4 @@ Planned 2026-07-24 (/sp:dev-plan B): decomposed into 3 tasks by deliverable boun
 - 2026-07-30: B4 (tasks 0020/0021) and B5 (tasks 0026/0027) enriched and rolled up into the AC above (DD-09 subset pattern); child tasks re-parent here on completion, as B1–B3 did.
 ## History
 - 2026-07-30T22:23:26.221Z backlog → active (system)
+- 2026-08-02T23:27:15.965Z active → verifying (system)

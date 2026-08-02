@@ -2,11 +2,11 @@
 schema_version: 1
 id: "C2"
 name: "Karakeep-local"
-status: backlog
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-29T18:41:10.042Z"
-updated_at: "2026-07-30T23:40:40.673Z"
+updated_at: "2026-08-02T23:27:15.673Z"
 ---
 
 # C2: Karakeep-local
@@ -71,3 +71,6 @@ Feature: Karakeep-local
 - Carried from Level 1: rclone sync is an assumed out-of-band precondition; the plugin sees a normal directory (ADR-006).
 - Open questions resolved inside 0014: exact R2 mirror entry layout; item→Doc granularity; asset handling (default: link out via sourceUri/metadata, no download).
 ## History
+- 2026-08-02T23:27:15.124Z backlog → active (system)
+- 2026-08-02T23:27:15.406Z active → verifying (system)
+- 2026-08-02T23:27:15.673Z verifying → done (system)

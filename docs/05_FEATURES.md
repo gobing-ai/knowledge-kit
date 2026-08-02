@@ -30,7 +30,7 @@ sync: [T4]
 |----|---------|--------|-------|-------|
 | **A** | Project foundation | ✅ done | 0 | Monorepo substrate + tooling; close-out task `0013` verified (gates PASS) |
 | A1 | Feature tree restructure | ✅ done | 0 | tree+docs applied; tasks `0006`–`0009` **done**; map `docs/plans/feature-tree-restructure-map.md` |
-| **B** | Plugin platform | ✅ done | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B5 done; Spur: active |
+| **B** | Plugin platform | 🔶 partial | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B5 done; corpus status `verifying` — close-out → task `0028` |
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004`: `plugin.json` + `discoverPlugins` / `listByKind` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003`: Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
 | B3 | Spur workflow integration | ✅ done | 1 | task `0005`: `knowledge-kit invoke` + pipeline workflow template; E2E proof → **B5** |
@@ -38,7 +38,7 @@ sync: [T4]
 | B5 | End-to-end pipeline acceptance | ✅ done | 1 | tasks `0026`/`0027` done; vertical over B3 invoke + C2/D2/E3 proven (fixture → content → `ok:true`); verifyall re-audit PASS + shippable; commits `662ba0b`/`41bf221` |
 | **C** | Ingestion | ⏳ current | 1 | kind parent; AC rolled up from C1+C2 (DD-09) |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
-| C2 | Karakeep-local | ⏳ ready | 1 | tasks `0014`/`0015` done; verifyall + feature close-out pending |
+| C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` |
 | **D** | Content generation | ⏳ current | 1 | kind parent; AC rolled up from D3+D2 (DD-09) |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |
 | D2 | Wire existing generator skill to contract | ⏳ ready | 1 | tasks `0022`/`0023`; D3 spec done (`0017`) — gate satisfied |
