@@ -3,7 +3,7 @@ template: standard
 schema_version: 1
 name: "Harden content-gen failure semantics"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: D2
@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: ["0022"]
 created_at: "2026-07-30T23:48:00.337Z"
-updated_at: "2026-07-30T23:56:27.759Z"
+updated_at: "2026-08-01T04:22:12.660Z"
 ---
 
 ## 0023. Harden content-gen failure semantics
@@ -45,27 +45,86 @@ Feature: Wire existing generator skill to contract
 <!-- Clarifications and decisions made during refinement. Keep empty if none. -->
 
 ### Design
-
-<!-- Chosen approach, key tradeoffs, invariants, and impacted surfaces. Keep snippets short. -->
-
+- **Failure & Diagnostics Semantics**: Fail-loud per ADR-006 and generator plugin spec §2.5.
+- **Failing Engine Stage**: Non-zero exit code `1` with diagnostic message printed to `stderr` via `console.error` in `processGeneratorIO` and `main` (R1).
+- **Empty `DocList` Input (`[]`)**: `TechnicalContentStandInEngine` constructs a valid `Content` output with notice title (`"Notice"`), markdown notice body (`"# Notice\nNo documents provided for generation."`), empty `references`, and exits `0` (R2).
+- **Invalid Mapping Detection**: File access errors and JSON parse errors emit fatal diagnostics to `stderr` and rethrow/exit `1`, preventing silent file generation (R3).
+- **Automated Test Suite**: `plugins/content-gen/tests/content-gen.test.ts` exercises all failure modes (R4).
 ### Plan
-
-<!-- Ordered implementation checklist. Fill before moving to todo/wip. -->
-
+- [x] Implement non-zero exit code `1` and stderr diagnostic output on engine failure (R1).
+- [x] Implement empty `DocList` (`[]`) notice output with exit code `0` in `TechnicalContentStandInEngine` (R2).
+- [x] Implement input file access and malformed JSON error handling to fail loud without silent writes (R3).
+- [x] Add automated unit tests in `plugins/content-gen/tests/content-gen.test.ts` for each failure mode (R4).
 ### Solution
+**Change Map**
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `plugins/content-gen/src/index.ts:14-19,83-86` implements the empty-`DocList` notice contract and validates input/output before writing.
+- `plugins/content-gen/src/index.ts:47-62,101-107` propagates runner/skill/schema failures, writes diagnostics through the stderr logger, returns exit `1`, and removes stale output.
+- `plugins/content-gen/tests/content-gen.test.ts:72-115,135-153,176-191` covers empty input, engine failure diagnostics/non-zero exit/no output, invalid output, malformed input, and the CLI failure path.
 
+**Documented Design Deviation**
+
+- Diagnostics are emitted once by `main` through `@gobing-ai/utils` `logger.error`, rather than duplicated through `console.error` in both IO and CLI layers. The externally observable failure contract is unchanged and the repository no-console constraint is preserved.
 ### Testing
+Re-verified 2026-07-31 with `--force --focus all --fix all` after the bounded repair pass.
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Commands run (fresh)**
 
+- `bun run autofix` -> exit 0; Biome clean and all five workspaces typechecked.
+- `bun test plugins/content-gen` -> exit 0; 10/10 tests passed; `plugins/content-gen/src/index.ts` 100% functions / 97.78% lines.
+- `bun run spur-check` -> exit 0; 65/65 tests passed; aggregate 100% functions / 97.14% lines; all 31 enabled rules passed.
+- `bun run build` -> exit 0; `@gobing-ai/knowledge-kit` bundled successfully.
+
+**Per-Requirement Traceability**
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `plugins/content-gen/src/index.ts:47-59,101-107` converts runner/skill failures into stderr diagnostics and exit `1`; `plugins/content-gen/tests/content-gen.test.ts:86-106,135-142,176-191` verifies propagation. |
+| R2 | MET | `plugins/content-gen/src/index.ts:14-19,83-86` writes the schema-valid notice without invoking the skill; `plugins/content-gen/tests/content-gen.test.ts:72-84` verifies exit-path output. |
+| R3 | MET | `plugins/content-gen/src/index.ts:56-75,83-86,101-107` validates generated Content and removes stale output before/on failure; `plugins/content-gen/tests/content-gen.test.ts:86-115` proves no output remains. |
+| R4 | MET | Automated cases at `plugins/content-gen/tests/content-gen.test.ts:72-115,135-153,176-191` cover empty input, engine failure, invalid output, malformed input, and CLI failure. |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Engine failure fails loud | MET | test | `plugins/content-gen/tests/content-gen.test.ts:86-106,135-142,176-191`; non-zero result, diagnostic propagation, and absent output asserted. |
+| Empty input follows the generator failure contract | MET | test | `plugins/content-gen/tests/content-gen.test.ts:72-84`; valid notice Content and no skill invocation asserted. |
+
+**Design Conformance**
+
+| Check | Status | Evidence |
+| --- | --- | --- |
+| design-conformance | pass | Empty/failure/invalid-output claims DONE; single logger emission is a documented goal-equivalent Solution deviation from duplicate `console.error` calls. |
+| scope-creep | pass | All failure-path changes and tests map to R1-R4. |
+| evidence-rule-pass | pass | Both behavior-bearing scenarios have fresh executable evidence. |
+
+**SECUA Review**
+
+- Security: no shell evaluation; agent prompt/source path are argv entries and JSON-escaped.
+- Efficiency: output cleanup and validation add bounded IO only.
+- Correctness: stale output is removed, all trust boundaries use Zod, and errors remain non-zero with stderr context.
+- Usability: one contextual diagnostic avoids duplicate stack noise while retaining the engine message.
+- Architecture: failure policy remains at the plugin boundary and reuses the project logger.
+- Findings: no blocker, major, or minor findings remain.
+
+**Fix-pass disclosure**
+
+- Repaired failure/output validation at `plugins/content-gen/src/index.ts:47-75,83-107` and executable failure coverage at `plugins/content-gen/tests/content-gen.test.ts:72-191`.
+- Rewrote `.spur/run/0023-verdict.json:1` with the post-fix PASS verdict and exact feature-scenario IDs.
+- `--next`: no-op - task already terminal (`done`).
 ### Review
+| Severity | Finding | Location | Status |
+| --- | --- | --- | --- |
+| P4 | Failure semantics strictly align with generator plugin spec §2.5 | `plugins/content-gen/src/index.ts:63` | Resolved |
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
-
+#### Residual Risk & Final Disposition
+- All failure mode requirements R1–R4 covered by automated tests. Approved for `done`.
 ### References
 
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+- 2026-07-31T17:42:07.061Z todo → wip (system)
+- 2026-07-31T17:42:08.818Z wip → testing (system)
+- 2026-07-31T17:42:10.472Z testing → done (system)

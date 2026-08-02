@@ -1,0 +1,7 @@
+{
+    "name": "content-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Generator plugin delegating Doc[] → Content to wt:technical-content-creation stand-in"
+}
