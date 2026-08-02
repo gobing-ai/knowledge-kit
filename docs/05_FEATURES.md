@@ -48,7 +48,7 @@ sync: [T4]
 | **E** | Publish | ⏳ current | 1 | kind parent; AC rolled up from E2+E3 (DD-09); multi-channel deferred |
 | E1 | wt-publish audit | ⏳ ready | 1 | task `0002` done (transports mapped; Surfdash simplest); feature close-out (verifyall) pending |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
-| E3 | Surfdash publisher (tested) | ⏳ ready | 1 | tasks `0024`/`0025`; E2 done (`0018`+`0019`) — gate satisfied |
+| E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
 | **F** | End-to-end vertical | ❌ cancelled | — | folded into **B5** (platform owns composition proof) |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** Notes (deferred multi-channel) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** + **D5** |
