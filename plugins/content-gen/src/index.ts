@@ -58,8 +58,14 @@ export async function generateWithTechnicalContentSkill(docs: Doc[], inputPath: 
         throw new Error(`Stand-in skill failed: ${envelope.stderr.trim() || `exit ${envelope.exitCode}`}`);
     }
 
-    const match = envelope.stdout.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-    const generated = ContentSchema.parse(JSON.parse(match?.[1] ?? envelope.stdout));
+    // Agents vary: some return a bare fence, others wrap the fence in prose. Extract the
+    // first fenced block anywhere; fall back to the outermost {...} span.
+    const fenced = envelope.stdout.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const start = envelope.stdout.indexOf('{');
+    const end = envelope.stdout.lastIndexOf('}');
+    const candidate =
+        fenced?.[1] ?? (start !== -1 && end > start ? envelope.stdout.slice(start, end + 1) : envelope.stdout);
+    const generated = ContentSchema.parse(JSON.parse(candidate));
     return ContentSchema.parse({
         ...generated,
         title: generated.title ?? docs[0]?.title ?? 'Generated Knowledge Kit Synthesis',

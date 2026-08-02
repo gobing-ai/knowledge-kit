@@ -144,5 +144,7 @@ dist
 /.spur/context/token-ledger.jsonl
 /.spur/context/.session*.json
 /.spur/run/
+/docs/dogfood/*.md
 # Accidental spur runtime under docs/ (corpus root mis-set); never commit
 /docs/.spur/
+/scratch/

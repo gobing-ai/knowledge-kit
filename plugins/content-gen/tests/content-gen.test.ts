@@ -132,6 +132,27 @@ describe('content-gen plugin adapter', () => {
         });
     });
 
+    test('skill runner accepts prose-wrapped fenced Content JSON', async () => {
+        await mkdir(FIXTURES_DIR, { recursive: true });
+        await writeMockSpur({
+            exitCode: 0,
+            stdout: 'Stages 0-3 complete.\n\n```json\n{"body":"draft"}\n```\n\nDone.',
+            stderr: '',
+        });
+
+        expect(await generateWithTechnicalContentSkill([{ id: '1', body: 'test' }], IN_FILE)).toEqual({
+            body: 'draft',
+            title: 'Generated Knowledge Kit Synthesis',
+            format: 'markdown',
+            references: [{ cite: '1' }],
+            metadata: {
+                generator: 'wt:technical-content-creation',
+                stageCount: 4,
+                docIds: ['1'],
+            },
+        });
+    });
+
     test('skill runner surfaces agent failure details', async () => {
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeMockSpur({ exitCode: 1, stdout: '', stderr: 'Engine stage 2 failed' });
