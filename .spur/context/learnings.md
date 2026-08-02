@@ -2,6 +2,30 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## 2026-08-02 — B5 verifyall (tasks 0026/0027)
+
+1. **Pipe masking hides real exit codes.** `spur workflow run … | tail -3; echo $?`
+   reports tail's status (0), not the workflow's. Measure unpiped (`> file 2>&1; echo $?`)
+   or use `$pipestatus[1]` (zsh). A "failed" workflow run looked like exit 0 until re-measured.
+2. **content-gen agent-output extraction must tolerate prose.** Agents rarely return a bare
+   whole-stdout fence; they wrap it in narration. Anchored `/^```…```$/` extraction fails
+   with `JSON Parse error: Unexpected identifier`. Fixed in `662ba0b` (first-fence-anywhere,
+   then outermost `{…}` fallback) — keep that tolerance when touching the stand-in.
+3. **`--agent auto` pool has quota-flaky members.** `oh-pi` returned HTTP 429 code 1310
+   (limit resets 2026-08-07) and failed every nested call at ~27s. For acceptance runs,
+   pin a healthy agent via `KNOWLEDGE_KIT_SPUR_BIN` wrapper rewriting `--agent auto` → a
+   named agent; disclose the pin in Testing.
+4. **Biome honors only the repo `.gitignore`** (`vcs.useIgnoreFile: true`). Paths ignored
+   solely via the user's global gitignore (e.g. `scratch/`) still get linted — and generated
+   artifacts fail the format check. Keep `scratch/` in the repo file.
+5. **Nested `spur agent run --cwd <plugin-dir>` creates an accidental `plugins/<x>/.spur/`
+   runtime** (spur.db + logs). Delete it; never commit (same class as the `/docs/.spur/`
+   gitignore warning).
+6. **karakeep-local skips non-conformant fixtures silently** (missing string `body` →
+   warning + `docs.json: []`, and the chain then "succeeds" on a Notice placeholder).
+   An acceptance run is only real if you inspect the intermediate artifacts, not just
+   the terminal `ok: true`.
+
 ## 2026-08-02 — E3 wrap (tasks 0024/0025)
 
 1. **Verdict artifacts need `acceptanceCriteria[]`, not `checks[]`.** `spur feature check`
