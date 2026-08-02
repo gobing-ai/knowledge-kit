@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E3"
 name: "Surfdash publisher tested"
-status: backlog
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:26.164Z"
-updated_at: "2026-07-30T23:48:35.175Z"
+updated_at: "2026-08-02T22:19:56.942Z"
 ---
 
 # E3: Surfdash publisher tested
@@ -59,3 +59,6 @@ Feature: Surfdash publisher tested
 - E1 resolved (task 0002): Surfing is file-based publish via `postsurfing.mjs`, no auth.
 - Open questions for 0024: exact postsurfing CLI invocation + required frontmatter fields (from E1 audit artifacts); coverage alignment with the repo gate (line/function ≥ 90%).
 ## History
+- 2026-08-02T22:19:56.303Z backlog → active (system)
+- 2026-08-02T22:19:56.674Z active → verifying (system)
+- 2026-08-02T22:19:56.942Z verifying → done (system)

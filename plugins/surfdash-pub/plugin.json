@@ -1,0 +1,7 @@
+{
+    "name": "surfdash-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for Surfdash (Surfing SSG) invoking postsurfing CLI via FileCli transport"
+}
