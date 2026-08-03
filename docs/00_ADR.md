@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.4.0
+version: 1.6.0
 created_at: 2026-05-28
-updated_at: 2026-07-24
+updated_at: 2026-08-02
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -115,9 +115,10 @@ At project initialization, dependencies were refreshed to latest published versi
 
 ## ADR-006 — knowledge-kit is a plugin-based knowledge platform (2026-07-23)
 
-> **Status:** Accepted · **Supersedes:** the "minimal CLI monorepo" product framing of the prior
+> **Status:** Accepted (Amended in part by ADR-007) · **Supersedes:** the "minimal CLI monorepo" product framing of the prior
 > `01_PRD` (v1.1.0). This is a product pivot, not a toolchain change — ADR-001..005 (layout,
 > Commander, `@gobing-ai/*` boundary, testable output, Biome) remain the substrate.
+> **Forward Pointer:** See `ADR-007` (2026-08-02) for the repositioning of knowledge-kit as an ingest → create → publish platform where creation and publishing are first-class co-equal scope, ingestion is optional (`Doc[] | Brief`), and sequential fan-in/fan-out is owned by `kk`.
 
 **Decision.** knowledge-kit is a **collection of agentic knowledge-management plugins** — an
 **ingest → generate → publish** pipeline over knowledge in multiple formats — delivered as Claude
@@ -189,9 +190,57 @@ research (the real instances are an agent skill + a Node CLI, not TS classes):
 This supersedes the earlier reading of "TypeScript interfaces … with lifecycle methods" as
 in-process classes; the methods are the ingest→generate→publish step sequence spur workflow runs.
 
+### Amendment — 2026-08-02 (repositioned as ingest-create-publish platform, ADR-007)
+
+`ADR-007` amends `ADR-006` to reposition knowledge-kit as a spur-orchestrated **ingest → create → publish** platform. Creation and publishing are first-class co-equal capabilities, not downstream consequences of ingestion. Ingestion is optional (`Doc[] | Brief`). Substrate decisions (plugin manifest format, data contract, `kk invoke`, registry discovery) remain binding.
+
+---
+
+## ADR-007 — Reposition knowledge-kit as an ingest-create-publish platform (2026-08-02)
+
+> **Status:** Accepted · **Amends:** ADR-006 (replaces the narrow ingestion-centric product framing and `generate(Doc[])` signature).
+> **Scope:** project-wide, binding.
+
+**Decision.** knowledge-kit is a spur-orchestrated **ingest → create → publish** platform.
+1. **Product framing (R1):** Creation and publishing are first-class co-equal capabilities, not downstream consequences of ingestion.
+2. **Historical name (R2):** The name `knowledge-kit` is historical and deliberately retained; renaming was considered and rejected on migration cost against zero capability gain.
+3. **Optional ingestion (R3):** Ingestion is optional: the content generator contract widens from `generate(Doc[]) → Content` to accept a `Brief` as an alternative input shape (`Doc[] | Brief`), making topic → article a first-class pipeline. Mechanism is delegated to `docs/03_ARCHITECTURE.md` and `docs/04_DESIGN.md` (ticket 0032).
+4. **Sequential fan-in and fan-out owned by `kk` (R4):** Fan-in (N `docs.json` → 1) and fan-out (1 `content.json` → N publishers) are owned by `kk` as sequential step invocations on the existing workflow engine. This decision is grounded in empirical source analysis showing `type: parallel` in `@gobing-ai/ts-dual-workflow-engine@0.4.14` is a schema stub with no executor (`src/types.ts:77`, `src/schema.ts:100`, `schemas/transition-flow-workflow.schema.json:38`). Engine-level concurrency is explicitly deferred, not rejected.
+5. **Partial-success publish semantics (R5):** Fan-out publish yields partial success where successful targets remain published and individually re-runnable, while the overall execution fails loud with a non-zero exit code. This reconciles against the fail-loud hardening of tasks 0023/0025 and avoids the `postsurfing` always-exit-0 anti-pattern from audit 0002 — stating why partial success is not a regression.
+6. **Relationship to ADR-006 and substrate continuity (R6, R7):** ADR-007 amends ADR-006 in part (superseding the narrow ingestion-centric product framing and single input signature), while ADR-001..005 (layout, Commander, `@gobing-ai/*` aliases, testable output, Biome) and ADR-006 substrate decisions (plugin manifest, data contract, `kk invoke`, registry discovery) are unaffected and remain binding.
+
+**Why.** Repositioning knowledge-kit to cover creation and multi-channel publishing explicitly reflects the shipped platform reality, while widening inputs to `Doc[] | Brief` and keeping fan-out execution sequential inside `kk` delivers robust creation and publishing pipelines without premature engine complexity.
+
+**Detail:** `docs/01_PRD.md` (v3 re-cut, ticket 0031), `docs/03_ARCHITECTURE.md` / `docs/04_DESIGN.md` (contract design, tickets 0032–0034), `docs/features/J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md`.
+
+### Amendment — 2026-08-02 (fourth plugin kind `judge`, ticket 0034)
+
+Ticket 0034 resolved LLM-as-judge to a **fourth plugin kind** rather than a generator variant or a
+workflow-level concern. This extends the plugin taxonomy fixed by the ADR-006 2026-07-24 amendment:
+
+- **`kind ∈ {ingestion, generator, publish, judge}`.** A judge plugin is declared in `plugin.json`
+  like any other kind and is discovered by the same registry scan (`kk plugins list --kind judge`).
+- **Contract: `Content → Verdict`**, where `Verdict` carries `verdict ∈ {PASS, FAIL, NEEDS_REVISION}`
+  plus optional `score`, `reasons`, `suggestions`. Schema lands in `@gobing-ai/kk-core` alongside
+  `Doc` / `Content` / `Result`.
+- **Exit-code semantics follow the existing invoker contract:** exit 0 means the judge ran and
+  emitted a schema-valid `Verdict` — *including a FAIL verdict*; non-zero is reserved for runner
+  failure (LLM error, missing input). Gating is therefore read from the verdict payload, not from
+  the process exit status.
+- **Rationale:** evaluation rubrics (technical-accuracy audit, brand-tone check, compliance screen)
+  are reusable across pipelines and worth versioning and testing independently. Folding evaluation
+  into the generator contract would conflate `Doc[] | Brief → Content` with `Content → Verdict` and
+  weaken type safety; inline workflow prompts are neither reusable nor unit-testable.
+- **Deferred:** bounded regenerate-retry loops driven by a rejecting verdict. Gate-only for now;
+  the retry topology remains map-J fog.
+
+Engine-level work is **not** required: `agent.run` is an existing spur action kind and a judge that
+emits a verdict file composes with a shell/`jq` guard on the verdict payload.
+
 ---
 
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
 - **Interactive prompts, colored output** — out of scope until a command requires them.
+

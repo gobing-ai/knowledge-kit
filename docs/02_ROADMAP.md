@@ -3,9 +3,9 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 2.1.1
+version: 3.0.0
 created_at: 2026-07-22
-updated_at: 2026-07-29
+updated_at: 2026-08-02
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.3
 sync: [T5]
@@ -13,30 +13,49 @@ sync: [T5]
 
 # Roadmap
 
-> Derived from `01_PRD` (scope) and `00_ADR` (ADR-006, the platform pivot). Edit when phase status
-> changes. Feature IDs are the `05_FEATURES` / Spur letter tree (reorganized 2026-07-29 under **A1**).
+> Derived from `01_PRD` v3 (scope) and `00_ADR` (ADR-006 platform pivot; **ADR-007** the
+> ingest → create → publish repositioning). Edit when phase status changes. Feature IDs are the
+> `05_FEATURES` / Spur letter tree (reorganized 2026-07-29 under **A1**; re-cut 2026-08-02 under **J**).
 
 ## Phases
 
 | Phase | Status | Features | Items |
 |-------|--------|----------|-------|
 | Phase 0 — Foundation | ✅ done | **A** (+ **A1** hygiene) | Bun workspaces monorepo; `@gobing-ai/*`; Commander shell; Biome + tsc/test gates; Spur init; feature-tree restructure (A1) |
-| **Phase 1 — Plugin platform + vertical** | ⏳ **current** | **B–E** | Plugin platform B (B1–B3 done, B4 CLI, **B5** E2E acceptance) · Ingestion C (C1/C2) · Content generation D (D1–D3) · Publish E (E1–E3) |
-| Phase 2 — Depth | 💤 deferred | **D4, D5, E multi-channel** | Own STORM (**D4**) · wt generator harvest (**D5**) · remaining publish channels under **E** (former G notes) |
-| Phase 3 — LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |
+| Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: **B** close-out (`0028`), karakeep hardening (`0029`), D1/D2 wiring, E1 audit rollup |
+| **Phase 2 — Repositioning + widened contracts** | ⏳ **current** | **J**, **B6**, **B7**, **D** (Brief), **E4** | **J** repositioning (ADR-007, PRD v3, contract designs — this phase's gate) → implementation graduates into **B6** sequential `kk fanin`/`fanout`, **B7** `judge` plugin kind, **D** Brief input contract (`Doc[] \| Brief`), **E4** multi-channel suite harvest |
+| Phase 3 — Generator depth | 💤 deferred | **D4**, **D5** | Own STORM generator (**D4**) · `wt` generator harvest (**D5**) |
+| LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |
 
-Cancelled roots (historical only): **F** (E2E → **B5**), **G** (publish suite → E Notes), **H** (STORM/harvest → D4/D5).
+Cancelled roots (historical only): **F** (E2E → **B5**), **G** (publish suite → **E4**), **H** (STORM/harvest → D4/D5).
 
-## Phase 1 sequencing
+## Phase 2 sequencing
 
-Research gates first — no implementation past `todo` until the gate resolves:
+The map **J** is the gate: authority lands first, then implementation graduates into the homes the
+tree restructure created. No implementation past `todo` until **J** closes.
 
 ```
-B (platform: B1→B2→B3 done; B4 CLI; B5 E2E acceptance)
+J (map: ADR-007 → PRD v3 → contract designs → tree realign → doc sync)
+        │  closes ⇒ graduates
+        ├── B6  kk fanin / kk fanout        (spec: docs/design/fan-in-and-fan-out-specification.md)
+        ├── B7  judge plugin kind           (Content → Verdict; ADR-007 amdt 2026-08-02)
+        ├── D   Brief input contract        (Doc[] | Brief; generator plugins accept both)
+        └── E4  multi-channel suite harvest (Surfing/X/Juejin/Qiita/Medium/Substack/Zenn/InfoQ/XHS
+                                             under the E2 transport contract)
+```
+
+Ordering within Phase 2: **D** (Brief) and **B6** (fan-in/fan-out) are independent and unblock the
+creation-from-brief and multi-channel success criteria respectively; **E4** depends on **B6** for
+aggregate-Result fan-out; **B7** is independent and gate-only.
+
+## Phase 1 sequencing (historical)
+
+```
+B (platform: B1→B2→B3→B4 done; B5 E2E acceptance done)
         │
         ├── C1 design · C2 Karakeep-local ingest
-        ├── D1 [research done] → D2 wire · D3 design
-        └── E1 [research done] → E2 harness → E3 Surfdash
+        ├── D1 research → D2 wire · D3 design
+        └── E1 audit → E2 harness → E3 Surfdash
                                    │
                                    └── B5  (end-to-end: C2 + D2 + E3 via B3 template)
 ```

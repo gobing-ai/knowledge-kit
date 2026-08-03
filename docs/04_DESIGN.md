@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 1.2.0
+version: 2.0.0
 created_at: 2026-07-22
-updated_at: 2026-07-25
+updated_at: 2026-08-02
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -29,12 +29,18 @@ knowledge-kit plugins list [--kind <kind>] [--json] [--plugins-root <dir>]
 knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 ```
 
-| Command | Description |
-|---------|-------------|
-| `add <a> <b>` | Add two integers; print the sum to stdout (via `logger.out`) |
-| `invoke <plugin>` | Invoke a plugin with input/output files and contract validation |
-| `plugins list` | List discovered plugins grouped by kind (`--kind` filter, `--json` format) |
-| `plugins doctor` | Validate plugin manifests and entry files under plugins root |
+| Command | Description | Status |
+|---------|-------------|--------|
+| `add <a> <b>` | Add two integers; print the sum to stdout (via `logger.out`) | shipped |
+| `invoke <plugin>` | Invoke a plugin with input/output files and contract validation | shipped |
+| `plugins list` | List discovered plugins grouped by kind (`--kind` filter, `--json` format) | shipped |
+| `plugins doctor` | Validate plugin manifests and entry files under plugins root | shipped |
+| `fanin` | Merge N `Doc[]` files into one (§1.5) | **specified — not implemented** (B6) |
+| `fanout` | Dispatch one `Content` to N publish targets in sequence (§1.6) | **specified — not implemented** (B6) |
+
+> **Surface status.** Rows marked *specified — not implemented* are designed under ADR-007 and
+> carry a full specification, but no code exists yet; they graduate with feature **B6**. Nothing in
+> §1.5/§1.6 is callable today. Rows marked *shipped* are live in `apps/cli`.
 
 ### `add`
 
@@ -69,7 +75,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
-| `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`) |
+| `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`, `judge`) |
 | `--json` | boolean | no | `false` | Emit machine-readable JSON array of records |
 | `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
 
@@ -77,7 +83,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 1. Scans `--plugins-root` using `discoverPlugins`.
 2. Filters by `--kind` if specified using `listByKind`.
 3. Under `--json`, writes raw `PluginRecord[]` JSON array to stdout via `logger.out`.
-4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`).
+4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`, `judge`).
 
 **Implementation:** `apps/cli/src/cli.ts`.
 
@@ -97,6 +103,79 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 
 **Implementation:** `apps/cli/src/cli.ts`.
 
+### 1.5 `fanin` — *specified, not implemented*
+
+Merges N `Doc[]` files into one. Sibling of `invoke` so the single-plugin invoker contract stays
+intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
+
+```text
+knowledge-kit fanin --in <f1> [--in <f2> …] --out <merged.json> [--dedupe id|uri|none]
+```
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `--in <file>` | string (repeatable) | yes (≥1) | — | Input `Doc[]` JSON files to merge |
+| `--out <file>` | string | yes | — | Output merged `Doc[]` JSON path |
+| `--dedupe <rule>` | `id` \| `uri` \| `none` | no | `id` | Deduplication rule |
+
+**Behavior:** validate each input against `DocListSchema` → dedupe per rule → retain provenance in
+`metadata.sources` (array of contributing source ids) → stable ordering → write merged `Doc[]`.
+Fails loud on any invalid input file.
+
+### 1.6 `fanout` — *specified, not implemented*
+
+Dispatches one `Content` to N publish targets **in sequence**, emitting one aggregate `Result`.
+Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.3, §3–§6.
+
+```text
+knowledge-kit fanout --content <content.json> --target <p1> [--target <p2> …] \
+                     --out <result.json> [--retry-from <prior-result.json>]
+```
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `--content <file>` | string | yes | — | `Content` JSON to publish |
+| `--target <plugin>` | string (repeatable) | yes (≥1) | — | Publish plugin name per target |
+| `--out <file>` | string | yes | — | Aggregate `Result` JSON path |
+| `--retry-from <file>` | string | no | — | Prior `Result`; re-dispatches only non-`published` targets |
+
+**Exit-code contract:**
+
+| Outcome | Exit | Aggregate `Result` |
+|---------|------|--------------------|
+| All targets published | `0` | every entry `published` |
+| Some published, some failed | `1` | mixed entries; successes retain `published` |
+| All targets failed | `1` | every entry `failed` |
+
+Partial success is **not** exit 0 — the run fails loud (ADR-007 R5), while successful targets stay
+published and are individually re-runnable via `--retry-from`.
+
+## 1.7 `plugin.json` manifest surface
+
+Every plugin directory under `--plugins-root` carries a `plugin.json`. Schema:
+`PluginManifestSchema` (`packages/kk-core/src/manifest.ts`), `.passthrough()` — unknown keys are
+preserved, not rejected.
+
+| Field | Type | Required | Status | Description |
+|-------|------|----------|--------|-------------|
+| `name` | string (min 1) | yes | shipped | Unique plugin name; the argument to `kk invoke` |
+| `kind` | `ingestion` \| `generator` \| `publish` \| `judge` | yes | `judge` **specified — not implemented** (B7) | Selects the I/O data contract via `kindContract(kind)` |
+| `entry` | string (min 1) | yes | shipped | Relative path to the executable entry the invoker spawns |
+| `version` | string | no | shipped | Informational |
+| `description` | string | no | shipped | Informational |
+| `accepts` | `('brief' \| 'docs')[]` | no | **specified — not implemented** (D) | Generator-only. Declares which input shapes the plugin handles; defaults to both when absent. Lets a mismatch fail at **resolve time** rather than inside the plugin |
+
+**Resolve-time validation (shipped).** `kk invoke` resolves the manifest, selects the contract with
+`kindContract(record.kind)` (`apps/cli/src/invoke.ts:35`), and validates the input file with
+`contract.input.safeParse(json)` (`apps/cli/src/invoke.ts:65`) **before** spawning the entry — a
+schema violation exits non-zero with `Input schema violation for kind '<kind>': <issues>`.
+
+**Planned extension (feature D).** Once the generator contract widens to `GeneratorInput`
+(`{ brief?, docs? }`, at least one), the same resolve-time step also checks the populated keys
+against `accepts`. A brief-only input handed to an `accepts: ["docs"]` generator fails with a named
+error rather than a silent empty `Content`. **Migration note:** the existing `content-gen` plugin
+does *not* survive this change unchanged — its entry must read `{ docs: Doc[] }` instead of a
+root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 
 ## 2. Configuration keys
 
@@ -125,7 +204,9 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 | Export | Kind | Notes |
 |--------|------|-------|
 | `DocSchema`, `ContentSchema`, `ResultSchema`, `DocListSchema` | Zod schemas | Pure data contract schemas |
+| `BriefSchema`, `GeneratorInputSchema`, `VerdictSchema` | Zod schemas | **Specified, not implemented** (ADR-007; features D, B7) |
 | `Doc`, `Content`, `Result` | types | Inferred TypeScript types |
+| `Brief`, `GeneratorInput`, `Verdict` | types | **Specified, not implemented** (ADR-007; features D, B7) |
 | `PLUGIN_KINDS`, `PluginKind`, `PluginKindSchema` | constants & schema | Supported plugin lifecycle kinds |
 | `kindContract(kind)` | function | Resolves I/O contract per plugin kind |
 | `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |
@@ -157,5 +238,6 @@ File: `.spur/config.yaml`
 | Ingestion Plugin Specification | `docs/design/ingestion-plugin-specification.md` | Generic plugin authoring contract + Ingestion Plugin specification |
 | Generator Plugin Specification | `docs/design/generator-plugin-specification.md` | Generator-kind authoring contract: Doc[]→Content mapping, skill-backed entry, stand-in criteria, failure semantics |
 | Publish Plugin Specification | `docs/design/publish-plugin-specification.md` | Publish-kind authoring contract: transport abstraction, Content→frontmatter mapping, Result conventions, generic §1 citation |
+| Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk fanin` / `kk fanout` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
 
 

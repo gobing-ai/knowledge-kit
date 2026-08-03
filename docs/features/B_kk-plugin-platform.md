@@ -6,15 +6,15 @@ status: verifying
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-08-02T23:27:15.965Z"
+updated_at: "2026-08-03T01:02:01.462Z"
 ---
 
 # B: kk plugin platform
 
 ## Goal
-Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, three typed lifecycle contracts (Ingestion, ContentGenerator, Publish), spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006).
+Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, typed lifecycle contracts (Ingestion, ContentGenerator, Publish, Judge), sequential fan-in/fan-out steps, spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006); fan-out runs sequentially inside kk (ADR-007 R4).
 ## Scope
-- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof).
+- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof); B6 sequential fan-in/fan-out steps; B7 judge plugin kind.
 - Out: dynamic DAG runtime; plugin hot-reload; domain plugin bodies (C/D/E children).
 ## Acceptance Criteria
 ```gherkin
@@ -163,12 +163,14 @@ Feature: kk plugin platform
 | 0003 | kk-core data contracts: Doc, Content, Result Zod schemas + per-kind contract | done |
 | 0004 | Plugin manifest schema + registry discovery by kind | done |
 | 0005 | kk invoke entrypoint + spur workflow pipeline template | done |
+| 0028 | Close out feature B verification | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 Planned 2026-07-24 (/sp:dev-plan B): decomposed into 3 tasks by deliverable boundary — 0003 (B2 contracts) → 0004 (B1 registry) → 0005 (B3 kk invoke + workflow). Seam resolved: skill-first plugin.json{kind,entry} + Zod data contracts + `kk invoke` (ADR-006 amendment). Build order B2→B1→B3.
 
 - 2026-07-30: B4 (tasks 0020/0021) and B5 (tasks 0026/0027) enriched and rolled up into the AC above (DD-09 subset pattern); child tasks re-parent here on completion, as B1–B3 did.
+- 2026-08-03 (0035): B6/B7 homes created for the 0033/0034 designs (map-J realignment). B5's edge scenario "no fourth plugin kind is introduced" was written for the E2E composition; 0034's judge-kind decision adds a fourth kind by explicit decision — the ADR-007 amendment (0036) records the supersession. B6/B7 are new backlog scope outside the 0028 verification window (B1–B5).
 ## History
 - 2026-07-30T22:23:26.221Z backlog → active (system)
 - 2026-08-02T23:27:15.965Z active → verifying (system)

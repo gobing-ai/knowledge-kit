@@ -1,0 +1,61 @@
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: judge-gated-publish
+description: "Example workflow where an LLM-as-judge plugin step gates a publish transition"
+initialState: generate
+terminalStates:
+  - done
+  - failed
+vars:
+  contentFile: ".spur/run/content.json"
+  verdictFile: ".spur/run/verdict.json"
+  spurBin: "spur"
+states:
+  - id: generate
+    description: "Generate content from brief or docs"
+    onEnter:
+      - kind: shell
+        options:
+          command: "echo 'generating content...'"
+  - id: judge
+    description: "Evaluate generated content using judge plugin"
+    onEnter:
+      - kind: shell
+        options:
+          command: "echo '{\"verdict\":\"PASS\",\"score\":0.95}' > ${vars.verdictFile}"
+  - id: publish
+    description: "Publish content after clearing judge gate"
+    onEnter:
+      - kind: shell
+        options:
+          command: "echo 'publishing content...'"
+  - id: done
+    description: "Publish completed successfully"
+  - id: failed
+    description: "Judge rejected content or execution failed"
+
+transitions:
+  - from: generate
+    to: judge
+    description: "Content generated -> proceed to evaluation"
+    guard:
+      kind: always
+  - from: judge
+    to: publish
+    description: "Judge verdict is PASS -> proceed to publish"
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)" = PASS'
+  - from: judge
+    to: failed
+    description: "Judge verdict is not PASS -> block publish"
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)" != PASS'
+  - from: publish
+    to: done
+    description: "Publish done"
+    guard:
+      kind: always

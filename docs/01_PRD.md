@@ -3,99 +3,89 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 2.1.0
+version: 3.1.0
 created_at: 2026-07-22
-updated_at: 2026-07-29
+updated_at: 2026-08-03
+derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
 ---
 
 # Product Requirements — knowledge-kit
 
-> **v2.0.0 pivot (2026-07-23).** knowledge-kit is a **plugin-based knowledge platform**, not a
-> minimal CLI. See `00_ADR` → ADR-006 for the decision and its rationale.
+> **v3.0.0 repositioning (2026-08-02).** knowledge-kit is a spur-orchestrated **ingest → create → publish platform**. Creation and publishing are first-class co-equal capabilities, not downstream consequences of ingestion. Ingestion is optional (`Doc[] | Brief`). See `00_ADR` → ADR-007 for the governing decision.
 
 ## Product
 
-**knowledge-kit** is a **collection of agentic knowledge-management plugins** — an
-**ingest → generate → publish** pipeline over knowledge in multiple formats (tech articles first;
-audio, wikis later). Plugins are Claude Code–style plugins, **distributed by `superskill install`**
-and **orchestrated by `spur workflow`** (Spur is the first-class harness). The `apps/cli` binary
-(`@gobing-ai/knowledge-kit`) hosts the shared runtime and `@gobing-ai/*` libraries; the first
-plugin collection lives in `plugins/kk` and installs via `superskill install kk`.
+**knowledge-kit** is a spur-orchestrated **ingest → create → publish platform** for technical content and knowledge artifacts. Creation (from a brief or topic) and multi-channel publishing are co-equal core capabilities alongside knowledge ingestion. Plugins are Claude Code–style plugins, **distributed by `superskill install`** and **orchestrated by `spur workflow`** (Spur is the first-class harness). The `apps/cli` binary (`@gobing-ai/knowledge-kit`) hosts the shared runtime, invoker, and `@gobing-ai/*` libraries; the first plugin collection lives in `plugins/kk` and installs via `superskill install kk`.
 
-## The framework — three typed plugin kinds
+## The framework — typed plugin contracts
 
-The platform is a **type + discovery layer**: TypeScript contracts discovered by a registry, with
-`spur workflow` composing them. No bespoke `kk run` runtime (deferred, YAGNI).
+The platform is a **type + discovery layer**: TypeScript data contracts discovered by a registry, with `spur workflow` composing them. Sequential fan-in (N→1) and fan-out (1→N) steps are owned by `kk` and run on the workflow engine.
 
-| Kind | Contract (essence) | Phase-1 instance |
-|------|--------------------|------------------|
+| Kind | Contract (essence) | Phase-1 / Initial instance |
+|------|--------------------|----------------------------|
 | `IngestionPlugin` | `ingest(source) → Doc[]` | **Karakeep-local** — read an rclone-synced folder |
-| `ContentGeneratorPlugin` | `generate(Doc[]) → Content` | **Generator (reuse-first)** — wire an existing skill; STORM later |
-| `PublishPlugin` | `publish(Content) → Result` | **Surfdash** — tested rewrite |
+| `ContentGeneratorPlugin` | `generate(Doc[] \| Brief) → Content` | **Generator (reuse-first)** — accepts ingested `Doc[]` or standalone `Brief` (topic → article) |
+| `PublishPlugin` | `publish(Content) → Result` | **Multi-channel publish** — Surfdash (tested rewrite) + `wt` target harvest |
+| `JudgePlugin` | `judge(Content) → Verdict` | **LLM-as-judge** — reusable evaluation rubric gating a pipeline (ADR-007 amdt 2026-08-02) |
 
-A **pipeline** is a `spur workflow` that runs `ingest → generate → publish` as a DAG. The registry
-discovers installed plugins by kind.
+A **pipeline** is a `spur workflow` that runs `ingest → generate → publish` (or standalone
+`create → publish`) as a **sequence of states**, optionally gated by a judge. The workflow engine
+executes one state at a time; where a stage needs many inputs or many outputs, `kk fanin` /
+`kk fanout` collapse that into a single sequential step. The registry discovers installed plugins
+by kind.
 
 ## Users
 
-- **Robin (primary)** — continuous Karakeep collection → generation → Surfdash publishing, as a
-  re-runnable workflow rather than manual per-platform effort.
-- **Plugin developers** — extend the platform with new Ingestion / Generator / Publish plugins
-  against stable typed contracts.
+- **Robin (primary)** — automated creation (topic/brief → article) and multi-channel publishing (Surfdash, Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) alongside continuous Karakeep collection → generation → publish workflows.
+- **Plugin developers** — extend the platform with new Ingestion / Generator / Publish / Judge plugins against stable typed data contracts.
 - **AI coding agents** — operate the platform under Spur / Superskill harness contracts.
 
 ## Problem
 
-Collected knowledge is scattered across sources, and turning it into published content is manual
-and per-platform. knowledge-kit makes the path **composable, testable, and re-runnable**: a plugin
-per stage, a typed contract per kind, and `spur workflow` as the orchestrator.
+Technical content creation and published output are fragmented: turning ideas or collected knowledge into multi-channel published content requires manual per-platform effort or brittle ad-hoc scripts. knowledge-kit makes the entire path **composable, testable, and re-runnable**: a plugin per stage, typed contracts per kind, optional ingestion, sequential fan-in/fan-out, and `spur workflow` as the orchestrator.
 
 ## Goals
 
-- Ship the **kk plugin platform**: a manifest / registry + the three typed lifecycle contracts.
-- Prove one **reference vertical end-to-end**: Karakeep-local → generator → Surfdash via a single
-  `spur workflow` run.
-- Rewrite the **Surfdash publisher with real unit tests**, behind a reusable publish test harness
-  (closing the `wt` publish test-coverage gap).
-- Keep Spur as the lifecycle harness and Superskill as the distribution / capability harness.
+- **Achieved (Phase 1):** Prove the **reference vertical end-to-end** (Karakeep-local → generator → Surfdash via `spur workflow`) and establish the **kk plugin platform** (manifest, registry, `kk invoke`, unit-tested Surfdash publisher).
+- **Current (Phase 2 — Co-equal Creation & Publishing):** Deliver **creation-from-brief** as a first-class user-facing outcome (topic → published article without prior ingest) and harvest the **multi-channel publish suite** under robust data contracts and tests.
+- Maintain Spur as the first-class lifecycle harness and Superskill as the distribution / capability harness.
 
-## Non-Goals (Phase 1)
+## Non-Goals (Current Scope)
 
-- A bespoke `kk run` runtime / dynamic DAG engine — `spur workflow` orchestrates instead.
-- The 9 non-Surfdash publish targets — Phase 2 under **E** (deferred multi-channel; former root G cancelled).
-- An own STORM implementation and bulk `wt` generator migration / Python→TS — Phase 2 as **D4** / **D5** (former root H cancelled).
-- Direct Karakeep R2 API access — the rclone-synced local folder is the Phase-1 contract (**C2**).
-- The **LLM wiki** — explicitly undecided (feature **I**, map fog).
+- Engine-level parallel execution — sequential fan-in/fan-out owned by `kk` satisfies multi-channel publish without premature engine complexity (ADR-007 R4).
+- Package or binary rename — the name `knowledge-kit` is historical and retained (ADR-007 R2).
+- The **LLM wiki** — explicitly undecided map fog (feature **I**), requiring a go/no-go spike first.
 
-## In scope (Phase 1)
+## In scope
 
-| Area | Feature | Notes |
-|------|---------|-------|
-| Project foundation | **A** | monorepo substrate; **A1** feature-tree restructure (hygiene) |
-| Plugin platform | **B** | B1 registry, B2 contracts, B3 workflow (done); **B4** CLI; **B5** E2E pipeline acceptance (C2→D2→E3) |
-| Ingestion | **C** | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
-| Content generation | **D** | D1 research (done) → **D2** wire stand-in · D3 design |
-| Publish | **E** | E1 audit (done) → **E2** design/harness → **E3** Surfdash |
+| Area | Feature | Phase | Notes |
+|------|---------|-------|-------|
+| Project foundation | **A** | Phase 0 | Monorepo substrate; **A1** feature-tree restructure |
+| Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance (done) · Phase 2: **B6** sequential `kk fanin`/`fanout`, **B7** `judge` plugin kind |
+| Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
+| Content generation | **D** | Phase 1/2 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) |
+| Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |
+| Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
+
+A user can answer "can I run this to write an article about X with nothing ingested?" directly from this PRD: **Yes**, by passing a `Brief` to a `ContentGeneratorPlugin` and piping `Content` to a `PublishPlugin`.
 
 ## Out of scope / deferred
 
-| Area | Feature | Status |
-|------|---------|--------|
-| Publish multi-channel suite | **E** (Notes; former G) | Phase 2 — channels under Publish |
-| Own STORM generator | **D4** (former H) | Phase 2 |
-| wt generator harvest | **D5** (former H) | Phase 2 |
-| LLM wiki | **I** | Undecided — go/no-go spike first |
-| Audio / other output formats | — | Deferred |
+| Area | Feature | Status | Reason |
+|------|---------|--------|--------|
+| Engine-level parallel execution | — | Deferred | `kk` sequential fan-out meets requirement without engine complexity (ADR-007 R4) |
+| Package / binary rename | — | Deferred / Rejected | Name is historical; renaming has migration cost with zero capability gain (ADR-007 R2) |
+| LLM wiki | **I** | Undecided | Parked as map fog; requires go/no-go spike first |
+| Own STORM generator | **D4** | Phase 3 | Future generator depth |
+| wt generator harvest | **D5** | Phase 3 | Future generator harvest depth |
 
-## Success criteria (Phase 1)
+## Success criteria
 
-- One `spur workflow` run takes a Karakeep-local item through the generator to a **published
-  Surfdash post**.
-- Every plugin contract (Ingestion / Generator / Publish) has tests; the **Surfdash publisher has
-  real unit coverage**.
-- `superskill install kk` yields a working plugin set; `spur workflow` runs the vertical.
-- No plugin feature advances past `todo` until its **research gate** is `done` (D1 gates D2; E1
-  gates E3).
+- Creation-from-brief (topic → published article without prior ingest) executes end-to-end via a `spur workflow`.
+- Multi-channel fan-out publish runs sequentially via `kk`, returning aggregate `Result` status with fail-loud exit on partial failure.
+- The `Generator` contract accepts either input shape — ingested `Doc[]`, a standalone `Brief`, or
+  both — while `Ingestion` (`source → Doc[]`), `Publish` (`Content → Result`) and `Judge`
+  (`Content → Verdict`) keep their own single-shape contracts.
 - Existing gates stay green: `bun run lint`, `bun run test`, `bun run build`.

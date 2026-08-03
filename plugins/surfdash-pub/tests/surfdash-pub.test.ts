@@ -1,8 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
+import { logger } from '@gobing-ai/utils';
 import { runInvoke } from '../../../apps/cli/src/invoke';
 import {
     getPublishTransport,
@@ -183,7 +184,13 @@ describe('surfdash-pub plugin', () => {
     test('main CLI entry handles argument parsing and failure paths', async () => {
         const origArgv = process.argv;
         process.argv = ['bun', 'index.ts'];
-        expect(await main()).toBe(1);
+        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        try {
+            expect(await main()).toBe(1);
+            expect(errorSpy).toHaveBeenCalled();
+        } finally {
+            errorSpy.mockRestore();
+        }
 
         const tmpDir = join(process.cwd(), '.tmp-test-main');
         await mkdir(tmpDir, { recursive: true });

@@ -1,20 +1,20 @@
 ---
 schema_version: 1
 id: "E"
-name: Publish
+name: Multi-channel publish
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:14.192Z"
-updated_at: "2026-07-30T23:50:21.505Z"
+updated_at: "2026-08-03T01:02:01.987Z"
 ---
 
 # E: PublishPlugin: Surfdash
 
 ## Goal
-Publish capability: PublishPlugin design, test harness, and channel instances. Phase 1 delivers Surfdash (E3) behind the design+harness (E2) after audit (E1). Multi-channel suite (former G) is deferred under this parent — not a separate root.
+Multi-channel publish: PublishPlugin design, test harness, and channel instances. Phase 1 delivered Surfdash (E3) behind the design+harness (E2) after audit (E1). The multi-channel suite — Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS — is in scope (PRD v3, promoted from former-G deferral) and lands as E4, a phased harvest under robust contracts and tests.
 ## Scope
-- In: wt-publish audit (E1); publish design + test harness (E2); Surfdash publisher (E3); future channels reusing E2 (deferred; notes from former G).
+- In: wt-publish audit (E1); publish design + test harness (E2); Surfdash publisher (E3); multi-channel suite harvest (E4, PRD v3 in-scope); future channels under E4's pattern.
 - Out: generator work (D); ingestion (C).
 ## Acceptance Criteria
 ```gherkin

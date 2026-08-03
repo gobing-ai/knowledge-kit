@@ -9,9 +9,30 @@ Does **not** restate skill runbooks or the full `spur` / `superskill` verb catal
 
 ## Project
 
-**knowledge-kit** — Bun + TypeScript + Biome CLI monorepo. Product binary:
-`@gobing-ai/knowledge-kit` (`apps/cli`). Shared libraries: `@gobing-ai/*` (e.g.
-`@gobing-ai/utils`). Spur project name: `knowledge-kit`.
+**knowledge-kit** — a spur-orchestrated **ingest → create → publish** platform, built as a
+Bun + TypeScript + Biome CLI monorepo. Product binary: `@gobing-ai/knowledge-kit` (`apps/cli`).
+Shared libraries: `@gobing-ai/*` (e.g. `@gobing-ai/utils`, `@gobing-ai/kk-core`). Spur project
+name: `knowledge-kit`.
+
+> **The name is historical.** knowledge-kit is not only a knowledge-management tool: content
+> creation and multi-channel publishing are first-class, co-equal capabilities, and **ingestion is
+> optional** — a pipeline may start from a `Brief` (topic → article) with no ingested documents.
+> See `docs/00_ADR.md` → **ADR-007** for the repositioning; renaming was considered and rejected.
+
+**The product model.** Plugins are directories with a `plugin.json` manifest, discovered by a
+registry scan, in four kinds:
+
+| Kind | Contract |
+|------|----------|
+| `ingestion` | `source → Doc[]` (optional in a pipeline) |
+| `generator` | `Doc[] \| Brief → Content` |
+| `publish` | `Content → Result` |
+| `judge` | `Content → Verdict` (gate-only; verdict read from payload, not exit status) |
+
+A **pipeline** is a `spur workflow` whose states shell out to `kk` subcommands. **`kk` owns steps;
+`spur workflow` owns orchestration** — never the reverse. The workflow engine executes one node at
+a time (`type: parallel` is an inert schema field — see `docs/03_ARCHITECTURE.md`), so fan-in and
+fan-out are `kk`'s own sequential subcommands, not engine features.
 
 This project uses two complementary first-class harness tools:
 
@@ -28,13 +49,18 @@ Prefer these entry surfaces over ad-hoc process unless the operator overrides fo
 
 ```
 apps/
-  cli/          # @gobing-ai/knowledge-kit — Commander binary
+  cli/          # @gobing-ai/knowledge-kit — Commander binary (invoke, plugins, fanin*, fanout*)
 packages/
   utils/        # @gobing-ai/utils — helpers, zod re-export, logger
+  kk-core/      # @gobing-ai/kk-core — Doc/Brief/Content/Result/Verdict contracts + kindContract
 tooling/
   typescript/   # shared tsconfig presets
+plugins/        # plugin collection — one dir per plugin, each with plugin.json
+docs/design/    # per-kind authoring specs (ingestion, generator, publish, fan-in/fan-out)
 .spur/          # Spur config, rules, workflows, templates
 ```
+
+`*` = specified under ADR-007, not yet implemented (feature **B6**). See `docs/04_DESIGN.md` §1.
 
 - **Runtime / package manager / test runner:** Bun `1.3.14`. Prefer `bun:*` APIs over `node:*`
   unless Bun lacks the API.

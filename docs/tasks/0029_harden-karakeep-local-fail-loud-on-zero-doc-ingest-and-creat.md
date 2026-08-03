@@ -6,13 +6,13 @@ description: ""
 status: backlog
 type: task
 profile: standard
-feature_id: null
+feature_id: C
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-08-02T23:29:27.561Z"
-updated_at: "2026-08-02T23:29:58.652Z"
+updated_at: "2026-08-03T01:03:54.742Z"
 ---
 
 ## 0029. Harden karakeep-local: fail loud on zero-doc ingest and create --out parent dir

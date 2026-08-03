@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 1.1.0
+version: 2.0.0
 created_at: 2026-07-22
-updated_at: 2026-07-25
+updated_at: 2026-08-02
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -22,7 +22,7 @@ apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
 packages/
   utils/            # @gobing-ai/utils — pure helpers, zod re-export, logger
-  kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
+  kk-core/          # @gobing-ai/kk-core — Doc/Brief/Content/Result/Verdict Zod contracts + kindContract
 tooling/
   typescript/       # shared tsconfig presets
 .spur/              # Spur config, rules, workflows, templates
@@ -49,13 +49,90 @@ argv
   → stdout / stderr
 ```
 
+## Pipeline model
+
+> Mechanism for ADR-007. `kk` owns **steps**; `spur workflow` owns **orchestration**. The two never
+> trade places: no DAG runtime inside `kk`, no domain logic inside a workflow YAML.
+
+### Execution substrate — sequential by design
+
+`spur workflow` runs on `@gobing-ai/ts-dual-workflow-engine`, which executes **one node at a time**.
+The `transition-flow` schema declares a node `type` of `action | gate | parallel | decision`, but no
+executor reads that field — verified at `0.4.14`: `parallel` occurs only in `src/types.ts:77`,
+`src/schema.ts:100`, and `schemas/transition-flow-workflow.schema.json:38`, and `src/service.ts:24`
+documents deliberate per-run serialization. **Authoring a `parallel` node does not fan out.**
+
+Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary sequential steps
+(ADR-007 R4). Engine-level concurrency is deferred, not rejected.
+
+### Plugin kinds
+
+Four kinds, discovered by the same `plugins/*/plugin.json` registry scan (ADR-006 amdt 2026-07-24;
+ADR-007 amdt 2026-08-02):
+
+| Kind | Contract | Notes |
+|------|----------|-------|
+| `ingestion` | `source → Doc[]` | Optional — a pipeline may start from a `Brief` instead |
+| `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
+| `publish` | `Content → Result` | Fan-out dispatches N of these |
+| `judge` | `Content → Verdict` | Gate-only; verdict read from payload, not exit status |
+
+### Generator input dispatch
+
+The widened generator input is a **combined shape**, not a strict union:
+
+```text
+GeneratorInput = { brief?: Brief, docs?: Doc[] }   refine: brief || docs.length > 0
+```
+
+A strict `Brief | Doc[]` union would foreclose the composite case ("write about X *using these
+sources*"), which is the most useful of the three. `kk invoke` validates the input against the
+resolved plugin's kind contract before running the entry and **fails loud** on mismatch — a
+brief-only input handed to a docs-only generator is a named error, never an empty `Content`.
+
+### Fan-in / fan-out
+
+Siblings of `invoke`, so the single-plugin invoker contract stays intact (ADR-006):
+
+```text
+kk fanin   --in <f1> [--in <f2> …] --out <merged.json> [--dedupe id|uri|none]
+kk fanout  --content <content.json> --target <p1> [--target <p2> …]
+           --out <result.json> [--retry-from <prior-result.json>]
+```
+
+- **Fan-in (N→1):** merge `Doc[]` sets; dedupe on primary `id` by default; provenance retained in
+  `metadata.sources`; stable ordering.
+- **Fan-out (1→N):** dispatch `Content` to N publishers **in sequence**; emit one aggregate `Result`
+  with a per-target entry (`published | failed | skipped`) plus summary counters.
+- **Partial success:** successful targets stay published and are individually re-runnable via
+  `--retry-from`; the process still exits **non-zero** so the run fails loud (ADR-007 R5). This
+  preserves the 0023/0025 hardening — a target that failed is never reported as success — while
+  avoiding the all-or-nothing trap where one expired token withholds four healthy publishes.
+
+Full specification: `docs/design/fan-in-and-fan-out-specification.md`.
+
+### Pipeline data flow
+
+```text
+[ingestion…]  ──┐                                   ┌── publish target 1
+[ingestion…]  ──┼─→ kk fanin ─→ docs.json ─┐        ├── publish target 2
+[ingestion…]  ──┘                          ├─→ kk invoke <generator> ─→ content.json
+                     Brief (no ingest) ────┘            │                    │
+                                                        ├─→ kk invoke <judge> ─→ verdict.json
+                                                        │        (gate: guard reads verdict)
+                                                        └─→ kk fanout ─→ result.json ─→ [targets…]
+```
+
+Every arrow is a file on disk validated against a `@gobing-ai/kk-core` schema; every box is one
+`spur workflow` state whose `onEnter` shells a `kk` subcommand.
+
 ## Module boundaries
 
 | Module | Package name | Responsibility | May depend on |
 |--------|--------------|----------------|---------------|
-| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface, arg coercion, wiring | `@gobing-ai/utils`, `commander` |
+| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`invoke`, `fanin`, `fanout`, `plugins`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
-| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
+| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Brief/Content/Result/Verdict schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**
