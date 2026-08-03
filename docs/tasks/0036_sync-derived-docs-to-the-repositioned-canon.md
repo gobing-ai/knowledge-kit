@@ -12,7 +12,7 @@ priority: P2
 tags: ["meta"]
 dependencies: ["0031", "0032", "0033", "0034", "0035"]
 created_at: "2026-08-03T00:11:45.228Z"
-updated_at: "2026-08-03T01:53:20.915Z"
+updated_at: "2026-08-03T03:28:32.115Z"
 ---
 
 ## 0036. Sync derived docs to the repositioned canon
@@ -98,6 +98,9 @@ Scenario: The doc corpus passes its own gate
 
 - [ ] Contradiction searches recorded in Testing with their commands and results (R10).
 - [ ] `AGENTS.md` edited at the real file, symlinks untouched (R6).
+- [x] [docs-only] No derived doc contradicts the new canon
+- [x] [docs-only] Frontmatter contracts stay valid after the sweep
+
 - [ ] Map **J** closes: every ticket done, Not-yet-specified reviewed for graduation or carry-over.
 ### Q&A
 

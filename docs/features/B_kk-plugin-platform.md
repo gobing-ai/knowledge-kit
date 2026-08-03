@@ -2,11 +2,11 @@
 schema_version: 1
 id: "B"
 name: Plugin platform
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-08-03T01:02:01.462Z"
+updated_at: "2026-08-03T03:04:32.218Z"
 ---
 
 # B: kk plugin platform
@@ -163,7 +163,7 @@ Feature: kk plugin platform
 | 0003 | kk-core data contracts: Doc, Content, Result Zod schemas + per-kind contract | done |
 | 0004 | Plugin manifest schema + registry discovery by kind | done |
 | 0005 | kk invoke entrypoint + spur workflow pipeline template | done |
-| 0028 | Close out feature B verification | todo |
+| 0028 | Close out feature B verification | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -174,3 +174,4 @@ Planned 2026-07-24 (/sp:dev-plan B): decomposed into 3 tasks by deliverable boun
 ## History
 - 2026-07-30T22:23:26.221Z backlog → active (system)
 - 2026-08-02T23:27:15.965Z active → verifying (system)
+- 2026-08-03T03:04:32.218Z verifying → done (system)

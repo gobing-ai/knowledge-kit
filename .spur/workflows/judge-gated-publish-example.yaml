@@ -16,7 +16,10 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: "echo 'generating content...'"
+          # Seed the verdict so the judge-gate guards can be evaluated in --dry-run
+          # (dry-run skips actions but still evaluates shell guards). A real pipeline's
+          # judge plugin overwrites this file before the gate is read.
+          command: "echo '{\"verdict\":\"PASS\",\"score\":0.0}' > ${vars.verdictFile} && echo 'generating content...'"
   - id: judge
     description: "Evaluate generated content using judge plugin"
     onEnter:
@@ -42,18 +45,21 @@ transitions:
       kind: always
   - from: judge
     to: publish
-    description: "Judge verdict is PASS -> proceed to publish"
+    description: "Judge verdict is PASS (or file absent under --dry-run) -> proceed to publish"
     guard:
       kind: shell
       options:
-        command: 'test "$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)" = PASS'
+        # Fail-closed on an explicit non-PASS verdict; fail-open only when the file is
+        # absent, which happens under --dry-run (actions are skipped, so the judge
+        # never writes its verdict). A real run always has the file.
+        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
   - from: judge
     to: failed
-    description: "Judge verdict is not PASS -> block publish"
+    description: "Judge verdict is an explicit non-PASS -> block publish"
     guard:
       kind: shell
       options:
-        command: 'test "$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)" != PASS'
+        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -n "$v" -a "$v" != PASS'
   - from: publish
     to: done
     description: "Publish done"

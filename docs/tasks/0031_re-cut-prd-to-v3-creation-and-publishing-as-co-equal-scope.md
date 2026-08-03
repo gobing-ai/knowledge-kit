@@ -12,7 +12,7 @@ priority: P2
 tags: ["meta"]
 dependencies: ["0030"]
 created_at: "2026-08-03T00:11:44.563Z"
-updated_at: "2026-08-03T00:44:32.904Z"
+updated_at: "2026-08-03T03:28:31.864Z"
 ---
 
 ## 0031. Re-cut PRD to v3 — creation and publishing as co-equal scope
@@ -64,6 +64,8 @@ settles *what the scope is*; those propagate it.
       one in-scope row (checked after 0036 propagates; stated as the contract here).
 - [ ] A reader can answer "can I run this to write an article about X with nothing ingested?" from
       the PRD alone, and the answer is yes.
+- [x] [docs-only] Scope authority reflects co-equal publishing
+
 - [ ] Map **J** → *Decisions so far* gains one line: WBS + title + gist.
 ### Q&A
 

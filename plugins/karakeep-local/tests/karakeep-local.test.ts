@@ -73,6 +73,21 @@ describe('karakeep-local failure semantics', () => {
         }
     });
 
+    test('standalone markdown file is parsed as a Doc', async () => {
+        const dir = join(import.meta.dir, 'tmp-standalone-md');
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, 'standalone.md'), '# Standalone Content', 'utf-8');
+        try {
+            const docs = await processKarakeepFolder(dir);
+            expect(docs.length).toBe(1);
+            expect(docs[0]?.title).toBe('standalone.md');
+            expect(docs[0]?.mediaType).toBe('text/markdown');
+            expect(docs[0]?.body).toBe('# Standalone Content');
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
     test('empty source folder yields empty array', async () => {
         const dir = join(import.meta.dir, 'tmp-empty');
         await mkdir(dir, { recursive: true });
@@ -143,6 +158,57 @@ describe('karakeep-local failure semantics', () => {
             errorSpy.mockRestore();
             exitSpy.mockRestore();
             await rm(out, { force: true });
+        }
+    });
+
+    test('processKarakeepFolder throws if inDir is a file not a directory', async () => {
+        const filePath = join(import.meta.dir, 'tmp-not-a-dir.txt');
+        await writeFile(filePath, 'hello', 'utf-8');
+        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            await expect(processKarakeepFolder(filePath)).rejects.toThrow('Inaccessible source path');
+        } finally {
+            errorSpy.mockRestore();
+            await rm(filePath, { force: true });
+        }
+    });
+
+    test('main exits 1 on non-empty source yielding zero docs', async () => {
+        const dir = join(import.meta.dir, 'tmp-all-rejected');
+        const out = join(import.meta.dir, 'tmp-rejected-out.json');
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, 'bad1.json'), JSON.stringify({ title: 'No body' }), 'utf-8');
+        process.argv = ['bun', 'index.ts', '--in', dir, '--out', out];
+
+        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+        const exitSpy = spyOn(process, 'exit').mockImplementation(((code?: number) => {
+            throw new Error(`exit:${code}`);
+        }) as never);
+
+        try {
+            await expect(main()).rejects.toThrow('exit:1');
+            expect(errorSpy).toHaveBeenCalled();
+            expect(errorSpy.mock.calls.some((call) => call[0].includes('zero ingestible documents'))).toBe(true);
+        } finally {
+            errorSpy.mockRestore();
+            exitSpy.mockRestore();
+            await rm(dir, { recursive: true, force: true });
+            await rm(out, { force: true });
+        }
+    });
+
+    test('main creates nested --out parent directory if it does not exist', async () => {
+        const outDir = join(import.meta.dir, 'tmp-nested-dir');
+        const out = join(outDir, 'output.json');
+        process.argv = ['bun', 'index.ts', '--in', FIXTURES_DIR, '--out', out];
+
+        try {
+            await main();
+            const parsed = JSON.parse(await readFile(out, 'utf-8'));
+            expect(Array.isArray(parsed)).toBe(true);
+            expect(parsed.length).toBeGreaterThanOrEqual(2);
+        } finally {
+            await rm(outDir, { recursive: true, force: true });
         }
     });
 });

@@ -12,7 +12,7 @@ priority: P2
 tags: ["meta"]
 dependencies: ["0031"]
 created_at: "2026-08-03T00:11:45.097Z"
-updated_at: "2026-08-03T01:14:44.252Z"
+updated_at: "2026-08-03T03:28:31.991Z"
 ---
 
 ## 0035. Realign the feature tree to the repositioned scope
@@ -91,6 +91,8 @@ Scenario: The restructure was CLI-gated
 
 - [x] Dry-run output reviewed before apply (R6).
 - [x] `spur feature list` matches `docs/05_FEATURES.md` (R7).
+- [x] [docs-only] The feature tree matches the stated scope
+
 - [x] Map **J** → *Decisions so far* gains one line.
 ### Q&A
 

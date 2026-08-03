@@ -2,11 +2,11 @@
 schema_version: 1
 id: "J"
 name: "Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map)"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-08-03T00:10:18.831Z"
-updated_at: "2026-08-03T01:57:09.970Z"
+updated_at: "2026-08-03T03:37:34.765Z"
 ---
 
 # J: Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map)
@@ -82,8 +82,8 @@ Feature: Doc corpus states the ingest → create → publish platform consistent
 | 0032 | Design the Brief contract and optional-ingestion generator input | done |
 | 0033 | Design fan-in merge and partial-success Result semantics | done |
 | 0034 | Decide the LLM-as-judge step shape and plugin-kind taxonomy | done |
-| 0035 | Realign the feature tree to the repositioned scope | todo |
-| 0036 | Sync derived docs to the repositioned canon | todo |
+| 0035 | Realign the feature tree to the repositioned scope | done |
+| 0036 | Sync derived docs to the repositioned canon | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -188,3 +188,4 @@ the doc map (decision → `00`, scope → `01`, mechanism → `03`, surface → 
 ## History
 - 2026-08-03T00:36:40.754Z backlog → active (system)
 - 2026-08-03T01:57:09.970Z active → verifying (system)
+- 2026-08-03T03:37:34.765Z verifying → done (system)

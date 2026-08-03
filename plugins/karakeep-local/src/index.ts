@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { Doc } from '@gobing-ai/kk-core';
@@ -145,7 +145,19 @@ export async function main() {
     }
 
     try {
+        const candidateFiles = await collectFiles(values.in);
         const docs = await processKarakeepFolder(values.in);
+
+        if (docs.length === 0 && candidateFiles.length > 0) {
+            console.error(`Fatal: source yielded zero ingestible documents at ${values.in}`);
+            process.exit(1);
+        }
+
+        const outDir = dirname(values.out);
+        if (outDir && outDir !== '.') {
+            await mkdir(outDir, { recursive: true });
+        }
+
         await writeFile(values.out, JSON.stringify(docs, null, 2), 'utf-8');
     } catch (err: unknown) {
         console.error('Fatal error during karakeep-local ingestion:', err);

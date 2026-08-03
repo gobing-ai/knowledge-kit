@@ -12,7 +12,7 @@ priority: P2
 tags: ["meta"]
 dependencies: []
 created_at: "2026-08-03T00:11:44.427Z"
-updated_at: "2026-08-03T00:20:30.009Z"
+updated_at: "2026-08-03T03:28:31.725Z"
 ---
 
 ## 0030. Author ADR-007 — reposition knowledge-kit as an ingest-create-publish platform
@@ -64,6 +64,8 @@ the `generate(Doc[])` signature change. Read the full ADR-006 text before choosi
 - [x] The engine-stub finding is cited with file:line evidence, so a future reader can re-verify
       it against a newer engine version rather than trusting the claim.
 - [x] `docs/00_ADR.md` frontmatter `version` and `updated_at` are bumped.
+- [x] [docs-only] The repositioning has an authority decision
+
 - [x] Map **J** → Notes → *Decisions so far* gains one line: WBS + title + one-line gist.
 ### Q&A
 
