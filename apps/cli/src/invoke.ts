@@ -12,6 +12,53 @@ export interface InvokeOptions {
     processExit?: (code: number) => void;
 }
 
+/** Options for the sole sanctioned plugin-entry spawn (ADR-006). */
+export interface PluginEntrySpawnOptions {
+    /** Absolute path to the plugin entry script. */
+    entryPath: string;
+    /** Working directory for the spawned process (the plugin package dir). */
+    cwd: string;
+    /** Absolute path passed as `--in`. */
+    inPath: string;
+    /** Absolute path passed as `--out`. */
+    outPath: string;
+}
+
+/** Outcome of spawning a plugin entry (exit code + captured streams). */
+export interface PluginEntrySpawnResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+}
+
+/**
+ * Spawn a plugin entry with the `--in` / `--out` contract (ADR-006).
+ *
+ * This is the **only** sanctioned direct process spawn in the CLI surface
+ * (`no-direct-process-spawn` allowlists `invoke.ts`). Callers such as
+ * `fanout` must go through this helper rather than calling `Bun.spawnSync`
+ * themselves.
+ */
+export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpawnResult {
+    const cmd: string[] =
+        opts.entryPath.endsWith('.ts') || opts.entryPath.endsWith('.js')
+            ? [process.execPath, opts.entryPath, '--in', opts.inPath, '--out', opts.outPath]
+            : [opts.entryPath, '--in', opts.inPath, '--out', opts.outPath];
+
+    const proc = Bun.spawnSync(cmd, {
+        cwd: opts.cwd,
+        env: process.env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+
+    return {
+        exitCode: proc.exitCode === null ? 1 : proc.exitCode,
+        stdout: proc.stdout.toString().trim(),
+        stderr: proc.stderr.toString().trim(),
+    };
+}
+
 /**
  * Execute a discovered plugin with file IO and contract validation.
  * @returns exit code (0 on success, non-zero on error)
@@ -86,24 +133,15 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         return 1;
     }
 
-    let cmd: string[];
-    if (entryPath.endsWith('.ts') || entryPath.endsWith('.js')) {
-        cmd = [process.execPath, entryPath, '--in', absInPath, '--out', absOutPath];
-    } else {
-        cmd = [entryPath, '--in', absInPath, '--out', absOutPath];
-    }
-
-    const proc = Bun.spawnSync(cmd, {
+    const proc = spawnPluginEntry({
+        entryPath,
         cwd: record.dir,
-        env: process.env,
-        stdout: 'pipe',
-        stderr: 'pipe',
+        inPath: absInPath,
+        outPath: absOutPath,
     });
 
     if (proc.exitCode !== 0) {
-        const stdoutStr = proc.stdout.toString().trim();
-        const stderrStr = proc.stderr.toString().trim();
-        const errMsg = stderrStr || stdoutStr || `Plugin entry exited with code ${proc.exitCode}`;
+        const errMsg = proc.stderr || proc.stdout || `Plugin entry exited with code ${proc.exitCode}`;
         logger.error(`Plugin entry '${record.name}' failed (exit code ${proc.exitCode}): ${errMsg}`);
         const exitCode = proc.exitCode !== 0 ? proc.exitCode : 1;
         opts.processExit?.(exitCode);

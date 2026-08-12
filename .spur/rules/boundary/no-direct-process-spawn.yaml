@@ -4,9 +4,11 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # layer owns this relative path, so the spur-monorepo allowlist (detached
 # serve, workflow worker, corpus migrator, …) does not leak into knowledge-kit.
 #
-# knowledge-kit has exactly ONE sanctioned direct spawn: `runInvoke` executing
-# a discovered plugin entry (ADR-006 — `kk invoke` is the uniform entrypoint a
-# spur workflow step calls). Everything else goes through ts-runtime seams.
+# knowledge-kit has exactly ONE sanctioned direct spawn: `spawnPluginEntry` in
+# `apps/cli/src/invoke.ts` (used by `runInvoke` and `fanout`'s default dispatch
+# for ADR-006 plugin-entry execution). Everything else goes through ts-runtime
+# seams. Callers must import `spawnPluginEntry` — never call Bun.spawnSync
+# outside invoke.ts.
 rules:
   - id: no-direct-process-spawn
     description: >
