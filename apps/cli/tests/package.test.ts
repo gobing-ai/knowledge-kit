@@ -13,7 +13,7 @@ const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8')) as {
 describe('package publish metadata (R1/R2)', () => {
     it('keeps the package name and exposes kk plus the knowledge-kit alias on the same dist artifact', () => {
         expect(pkg.name).toBe('@gobing-ai/knowledge-kit');
-        expect(pkg.bin['kk']).toBe('./dist/index.js');
+        expect(pkg.bin.kk).toBe('./dist/index.js');
         expect(pkg.bin['knowledge-kit']).toBe('./dist/index.js');
     });
 
