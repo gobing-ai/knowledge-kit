@@ -38,7 +38,10 @@ export function discoverPlugins(pluginsRoot: string): DiscoveryResult {
 
     let entries: string[];
     try {
-        entries = readdirSync(absRoot);
+        // Sort for deterministic results: readdir order is filesystem-dependent
+        // (APFS is alphabetical, ext4 is hash-ordered), which would make
+        // duplicate-name "first-wins" and list ordering platform-dependent.
+        entries = readdirSync(absRoot).sort();
     } catch (err: unknown) {
         return {
             plugins: [],
