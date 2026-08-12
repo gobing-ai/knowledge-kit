@@ -125,6 +125,7 @@ Feature: Ingestion
 | 0014 | Survey Karakeep mirror layout and implement karakeep-local plugin | done |
 | 0015 | Harden karakeep-local failure semantics | done |
 | 0029 | Harden karakeep-local: fail loud on zero-doc ingest and create --out parent dir | done |
+| 0039 | Close out feature C verification (roll-up carrier) | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

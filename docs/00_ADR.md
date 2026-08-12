@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.7.1
+version: 1.7.2
 created_at: 2026-05-28
-updated_at: 2026-08-11
+updated_at: 2026-08-12
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -169,6 +169,10 @@ Feature tree reorganized under foundation hygiene (**A1**) before Phase-1 plugin
 - **E2E composition proof** is **B5** (under B), not a root letter — root **F** cancelled (folded into B5; B3 Notes point at B5).
 - Roots **G** / **H** **cancelled**: multi-channel publish notes fold under **E**; STORM / wt generator harvest become **D4** / **D5**.
 - Mapping SSOT: `docs/plans/feature-tree-restructure-map.md`. Letter IDs **A–I** remain; F/G/H are historical cancelled roots only.
+
+### Amendment — 2026-08-12 (F repurposed)
+
+Root **F** is no longer a cancelled root. It is repurposed as the **kk plugin collection** parent: all `plugins/kk` capabilities (agent skills, slash commands, subagents) live under F or a child feature; kk-judge migrated **B7 → F1** (intake task `0038`). The 2026-07-29 statement "F/G/H are historical cancelled roots only" now holds for **G/H only**. The cancelled F slot was freed by removing its file (`cancelled` is terminal in spur — no lifecycle transition out); the allocator re-minted F as the first free root letter.
 
 ### Amendment — 2026-07-24 (plugin model concretized, sub-decision 1)
 

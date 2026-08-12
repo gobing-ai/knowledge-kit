@@ -1,15 +1,15 @@
 ---
 schema_version: 1
-id: "B7"
+id: "F1"
 name: LLM-as-judge agent skills
 status: verifying
 priority: P2
 tags: []
 created_at: "2026-08-03T01:02:09.752Z"
-updated_at: "2026-08-08T00:20:04.088Z"
+updated_at: "2026-08-12T01:59:16.769Z"
 ---
 
-# B7: LLM-as-judge agent skills
+# F1: LLM-as-judge agent skills
 
 ## Goal
 Leverage LLM-as-judge by orchestrating existing `agent.run` workflow steps backed by core agent skills, rather than creating a separate platform plugin kind (`kind: judge`). Follow the "Fat Skill, thin the others" principle to centralize all evaluation rubrics, prompt templates, and verdict generation logic into core agent skills, exposing thin slash command or subagent wrappers as needed.
@@ -50,3 +50,5 @@ Feature: LLM-as-judge agent skills and workflow integration
 ## History
 - 2026-08-08T00:20:03.925Z backlog → active (system)
 - 2026-08-08T00:20:04.088Z active → verifying (system)
+- 2026-08-12T01:53:10.373Z moved B7 → K1 (system)
+- 2026-08-12T01:59:16.769Z moved K1 → F1 (system)

@@ -90,6 +90,7 @@ Feature: Content generation
 | 0017 | Author generator plugin specification and validate against platform | done |
 | 0022 | Implement content-gen stand-in adapter plugin | done |
 | 0023 | Harden content-gen failure semantics | done |
+| 0040 | Close out feature D verification (roll-up carrier) | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

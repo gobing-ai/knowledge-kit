@@ -92,6 +92,7 @@ Feature: Publish
 | 0019 | Implement publish test harness with fake transports | done |
 | 0024 | Implement surfdash-pub plugin against the publish spec | done |
 | 0025 | Harden surfdash-pub failure modes | done |
+| 0041 | Close out feature E verification (roll-up carrier) | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

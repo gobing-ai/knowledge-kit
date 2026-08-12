@@ -6,15 +6,15 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-08-08T00:05:13.162Z"
+updated_at: "2026-08-12T01:59:34.067Z"
 ---
 
 # B: kk plugin platform
 
 ## Goal
-Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, typed lifecycle contracts (Ingestion, ContentGenerator, Publish), sequential fan-in/fan-out steps, LLM-as-judge agent skills (B7), spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006); fan-out runs sequentially inside kk (ADR-007 R4). LLM-as-judge is delivered as agent skills + `agent.run`, not a plugin kind (ADR-007 amdt 2026-08-07).
+Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, typed lifecycle contracts (Ingestion, ContentGenerator, Publish), sequential fan-in/fan-out steps, LLM-as-judge agent skills (F1, under F), spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006); fan-out runs sequentially inside kk (ADR-007 R4). LLM-as-judge is delivered as agent skills + `agent.run`, not a plugin kind (ADR-007 amdt 2026-08-07).
 ## Scope
-- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof); B6 sequential fan-in/fan-out steps; B7 LLM-as-judge agent skills (fat skill `kk-judge` + thin wrappers; `agent.run` gate).
+- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof); B6 sequential fan-in/fan-out steps; F1 LLM-as-judge agent skills (under F — kk plugin collection; fat skill `kk-judge` + thin wrappers; `agent.run` gate).
 - Out: dynamic DAG runtime; plugin hot-reload; domain plugin bodies (C/D/E children).
 ## Acceptance Criteria
 ```gherkin

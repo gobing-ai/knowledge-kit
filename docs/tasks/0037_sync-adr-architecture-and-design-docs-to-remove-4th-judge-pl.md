@@ -6,13 +6,13 @@ description: "End-to-end delivery of LLM-as-judge via agent skills, workflow int
 status: done
 type: task
 profile: standard
-feature_id: B7
+feature_id: F1
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-08-03T06:36:52.680Z"
-updated_at: "2026-08-12T01:23:01.988Z"
+updated_at: "2026-08-12T01:59:16.769Z"
 ---
 
 ## 0037. LLM-as-judge agent skills and workflow integration

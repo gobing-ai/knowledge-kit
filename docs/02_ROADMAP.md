@@ -3,9 +3,9 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.1.0
+version: 3.1.1
 created_at: 2026-07-22
-updated_at: 2026-08-07
+updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.3
 sync: [T5]
@@ -22,12 +22,12 @@ sync: [T5]
 | Phase | Status | Features | Items |
 |-------|--------|----------|-------|
 | Phase 0 — Foundation | ✅ done | **A** (+ **A1** hygiene) | Bun workspaces monorepo; `@gobing-ai/*`; Commander shell; Biome + tsc/test gates; Spur init; feature-tree restructure (A1) |
-| Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: **B** close-out (`0028`), karakeep hardening (`0029`), D1/D2 wiring, E1 audit rollup |
-| **Phase 2 — Repositioning + widened contracts** | ⏳ **current** | **J**, **B6**, **B7**, **D** (Brief), **E4** | **J** repositioning (ADR-007, PRD v3, contract designs — this phase's gate) → implementation graduates into **B6** sequential `kk fanin`/`fanout`, **B7** LLM-as-judge agent skills, **D** Brief input contract (`Doc[] \| Brief`), **E4** multi-channel suite harvest |
+| Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: C/D/E parent close-out (L4 composition-scenario coverage pending — carriers `0039`–`0041`); E1 rollup (`0002` done, feature backlog) |
+| **Phase 2 — Repositioning + widened contracts** | ⏳ **current** | **J**, **B6**, **F** (kk plugin collection), **F1**, **D** (Brief), **E4** | **J** repositioning (ADR-007, PRD v3, contract designs — this phase's gate) → implementation graduates into **B6** sequential `kk fanin`/`fanout`, **F1** LLM-as-judge agent skills (under **F**), **D** Brief input contract (`Doc[] \| Brief`), **E4** multi-channel suite harvest |
 | Phase 3 — Generator depth | 💤 deferred | **D4**, **D5** | Own STORM generator (**D4**) · `wt` generator harvest (**D5**) |
 | LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |
 
-Cancelled roots (historical only): **F** (E2E → **B5**), **G** (publish suite → **E4**), **H** (STORM/harvest → D4/D5).
+Cancelled roots (historical only): **G** (publish suite → **E4**), **H** (STORM/harvest → D4/D5).
 
 ## Phase 2 sequencing
 
@@ -38,7 +38,8 @@ tree restructure created. No implementation past `todo` until **J** closes.
 J (map: ADR-007 → PRD v3 → contract designs → tree realign → doc sync)
         │  closes ⇒ graduates
         ├── B6  kk fanin / kk fanout        (spec: docs/design/fan-in-and-fan-out-specification.md)
-        ├── B7  LLM-as-judge agent skills  (fat skill kk-judge + wrappers; agent.run gate; ADR-007 amdt 2026-08-07)
+        ├── F   kk plugin collection       (parent for plugins/kk capabilities; B7 migrated in as F1)
+        ├── F1  LLM-as-judge agent skills  (under F; fat skill kk-judge + wrappers; agent.run gate; ADR-007 amdt 2026-08-07)
         ├── D   Brief input contract        (Doc[] | Brief; generator plugins accept both)
         └── E4  multi-channel suite harvest (Surfing/X/Juejin/Qiita/Medium/Substack/Zenn/InfoQ/XHS
                                              under the E2 transport contract)
@@ -46,7 +47,7 @@ J (map: ADR-007 → PRD v3 → contract designs → tree realign → doc sync)
 
 Ordering within Phase 2: **D** (Brief) and **B6** (fan-in/fan-out) are independent and unblock the
 creation-from-brief and multi-channel success criteria respectively; **E4** depends on **B6** for
-aggregate-Result fan-out; **B7** is independent and gate-only.
+aggregate-Result fan-out; **F1** is independent and gate-only.
 
 ## Phase 1 sequencing (historical)
 
