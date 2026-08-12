@@ -10,6 +10,7 @@
     "license": "Apache-2.0",
     "type": "module",
     "bin": {
+        "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js"
     },
     "files": [
@@ -19,6 +20,7 @@
         "start": "bun run src/index.ts",
         "dev": "bun run src/index.ts",
         "build": "bun build src/index.ts --target=bun --outdir=dist",
+        "prepack": "bun run build",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
         "typecheck": "tsc --noEmit"
     },

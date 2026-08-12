@@ -61,19 +61,14 @@ describe('runInvoke', () => {
             const outFile = join(root, 'content.json');
             writeFileSync(inFile, JSON.stringify([{ id: 'd1', body: 'Doc 1 content' }]));
 
-            let exitCode: number | undefined;
             const res = await runInvoke({
                 plugin: 'my-gen',
                 inPath: inFile,
                 outPath: outFile,
                 pluginsRoot: root,
-                processExit: (c) => {
-                    exitCode = c;
-                },
             });
 
             expect(res).toBe(0);
-            expect(exitCode).toBeUndefined();
 
             const text = await Bun.file(outFile).text();
             const outData = JSON.parse(text);
@@ -103,19 +98,14 @@ describe('runInvoke', () => {
             const outFile = join(root, 'content.json');
             writeFileSync(inFile, JSON.stringify([{ id: 'd1' }])); // missing required 'body'
 
-            let exitCode: number | undefined;
             const res = await runInvoke({
                 plugin: 'my-gen',
                 inPath: inFile,
                 outPath: outFile,
                 pluginsRoot: root,
-                processExit: (c) => {
-                    exitCode = c;
-                },
             });
 
             expect(res).toBe(1);
-            expect(exitCode).toBe(1);
             expect(Bun.file(markerFile).size).toBe(0);
         });
     });
@@ -141,19 +131,14 @@ describe('runInvoke', () => {
             const outFile = join(root, 'result.json');
             writeFileSync(inFile, JSON.stringify({ body: 'Article content' }));
 
-            let exitCode: number | undefined;
             const res = await runInvoke({
                 plugin: 'my-failing-pub',
                 inPath: inFile,
                 outPath: outFile,
                 pluginsRoot: root,
-                processExit: (c) => {
-                    exitCode = c;
-                },
             });
 
             expect(res).toBe(2);
-            expect(exitCode).toBe(2);
         });
     });
 
@@ -181,19 +166,14 @@ describe('runInvoke', () => {
             mkdirSync(sourceDir, { recursive: true });
             const outFile = join(root, 'docs.json');
 
-            let exitCode: number | undefined;
             const res = await runInvoke({
                 plugin: 'my-ingest',
                 inPath: sourceDir,
                 outPath: outFile,
                 pluginsRoot: root,
-                processExit: (c) => {
-                    exitCode = c;
-                },
             });
 
             expect(res).toBe(0);
-            expect(exitCode).toBeUndefined();
         });
     });
 
@@ -213,7 +193,6 @@ describe('runInvoke', () => {
                 inPath: join(root, 'nonexistent.json'),
                 outPath: join(root, 'out.json'),
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
 
@@ -225,7 +204,6 @@ describe('runInvoke', () => {
                 inPath: badJsonPath,
                 outPath: join(root, 'out.json'),
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
         });
@@ -246,7 +224,6 @@ describe('runInvoke', () => {
                 inPath: join(root, 'missing-source'),
                 outPath: join(root, 'out.json'),
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
         });
@@ -270,7 +247,6 @@ describe('runInvoke', () => {
                 inPath: inFile,
                 outPath: join(root, 'out.json'),
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
 
@@ -286,7 +262,6 @@ describe('runInvoke', () => {
                 inPath: inFile,
                 outPath: join(root, 'out.json'),
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
 
@@ -306,7 +281,6 @@ describe('runInvoke', () => {
                 inPath: inFile,
                 outPath: outFile,
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
 
@@ -325,7 +299,6 @@ describe('runInvoke', () => {
                 inPath: inFile,
                 outPath: outFile,
                 pluginsRoot: root,
-                processExit: () => {},
             });
             expect(res).toBe(1);
         });
@@ -333,19 +306,14 @@ describe('runInvoke', () => {
 
     it('fails when plugin name is not found in registry', async () => {
         await withTempDir(async (root) => {
-            let exitCode: number | undefined;
             const res = await runInvoke({
                 plugin: 'non-existent',
                 inPath: 'in.json',
                 outPath: 'out.json',
                 pluginsRoot: root,
-                processExit: (c) => {
-                    exitCode = c;
-                },
             });
 
             expect(res).toBe(1);
-            expect(exitCode).toBe(1);
         });
     });
 });

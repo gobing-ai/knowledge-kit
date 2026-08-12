@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Publish kk bin and prepack artifact"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: A2
@@ -13,7 +13,7 @@ tags: ["cli", "npm"]
 dependencies: ["0049"]
 ac_numbering: task-local
 created_at: "2026-08-12T17:19:19.259Z"
-updated_at: "2026-08-12T17:20:27.819Z"
+updated_at: "2026-08-12T19:45:15.640Z"
 ---
 
 ## 0051. Publish kk bin and prepack artifact
@@ -31,9 +31,9 @@ Rubric: E2 D1 L1 C0 R0 = 4 → own task because pack metadata and 04 T3 are a di
 Out of scope: npm Trusted Publisher, GitHub OIDC, .github/workflows/, bun --compile natives.
 
 ### Requirements
-- [ ] R1. apps/cli/package.json `bin.kk` and `bin.knowledge-kit` both point at `./dist/index.js`; package name stays `@gobing-ai/knowledge-kit`.
-- [ ] R2. `prepack` runs the existing bun build so `dist/index.js` exists before npm pack validates bins.
-- [ ] R3. docs/04_DESIGN.md §1 documents `kk` as the binary in the same commit, and AGENTS.md product-binary wording matches; ADR-010 already records the package-name invariant.
+- [x] R1. apps/cli/package.json `bin.kk` and `bin.knowledge-kit` both point at `./dist/index.js`; package name stays `@gobing-ai/knowledge-kit`.
+- [x] R2. `prepack` runs the existing bun build so `dist/index.js` exists before npm pack validates bins.
+- [x] R3. docs/04_DESIGN.md §1 documents `kk` as the binary in the same commit, and AGENTS.md product-binary wording matches; ADR-010 already records the package-name invariant.
 ### Acceptance Criteria
 ```gherkin
 Feature: kk npm bin and prepack
@@ -69,7 +69,7 @@ Feature: kk npm bin and prepack
 ### Design
 Chosen approach: dual bin keys on the same dist/index.js artifact; add `"prepack": "bun run build"` next to the existing build script. Rewrite 04 §1 examples from `knowledge-kit` to `kk` in that commit. Do not add release.yml or Trusted Publisher config.
 
-Reason: npm ≥ 11 checks bin existence before lifecycle scripts (spur lesson); dual bin keeps old scripts working.
+Reason: `files: ["dist/"]` limits the tarball to dist + package.json, so without prepack the tarball omits `dist/index.js` and consumers silently lose the `kk` bin (npm does not validate bin existence at pack or install time). prepack guarantees the artifact both bins name exists in the tarball; dual bin keeps old `knowledge-kit` invocations working.
 
 Rejected alternatives:
 - Only rename bin to kk with no alias: breaks existing knowledge-kit invocations in the same release.
@@ -87,17 +87,38 @@ Invariants:
 4. Update AGENTS.md binary wording.
 5. Run apps/cli tests and typecheck.
 ### Solution
-
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+- `apps/cli/package.json:13-14` — `bin` now exposes two keys, `kk` and `knowledge-kit`, both pointing at `./dist/index.js`; `apps/cli/package.json:23` adds `"prepack": "bun run build"` next to the existing `build` script (R1/R2). Package name unchanged.
+- `apps/cli/tests/package.test.ts` (new) — static contract test: package name stays `@gobing-ai/knowledge-kit`, both bin keys point at `./dist/index.js`, and `prepack` runs the build (R1/R2).
+- `docs/04_DESIGN.md:21` — §1 header now `Binary: kk` (alias `knowledge-kit`); `docs/04_DESIGN.md:24,113,135` rewrite the §1 example blocks and §1.5 `fanin` / §1.6 `fanout` command examples to the `kk` prefix (flags unchanged, per design invariant); `docs/04_DESIGN.md:289` syncs the §4 package-surface row to `bin: kk` (alias `knowledge-kit`) → `dist/index.js` Bun-target bundle staged by `prepack` (R3, T3 same-commit).
+- `AGENTS.md:13` — product-binary line names `kk` (package `@gobing-ai/knowledge-kit`); `AGENTS.md:183-184` documents `bin: { kk, knowledge-kit } → ./dist/index.js` with prepack (ADR-010 R5) (R3).
+- ADR-010 already records the invariant (package name unchanged, operator binary `kk`, prepack builds dist) — no ADR edit needed.
 ### Testing
+**Force re-verify 2026-08-12** (`/sp-dev-verifyall --feature A2 --force --fix all`).
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Per-requirement**
 
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `apps/cli/package.json:2` name `@gobing-ai/knowledge-kit`; `apps/cli/package.json:13-15` `bin.kk` and `bin.knowledge-kit` both `./dist/index.js`. Test `apps/cli/tests/package.test.ts:14`. |
+| R2 | MET | `apps/cli/package.json:23` `"prepack": "bun run build"`. This run: `bun run prepack` in `apps/cli` created `apps/cli/dist/index.js` (644420 B, `#!/usr/bin/env bun`); `npm pack --dry-run` tarball lists `dist/index.js` + `package.json`. Test `apps/cli/tests/package.test.ts:20`. |
+| R3 | MET | `docs/04_DESIGN.md:21` `Binary: kk (alias knowledge-kit)`; examples `docs/04_DESIGN.md:24-29`; package-surface `docs/04_DESIGN.md:289`. `AGENTS.md:13` product binary `kk`; `AGENTS.md:183-184` bin + prepack. ADR-010 in `docs/00_ADR.md`. |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| R1 — npm bin exposes kk and a knowledge-kit alias | MET | test | `apps/cli/tests/package.test.ts:14` asserts name + both bins → `./dist/index.js`. |
+| R2 — prepack stages the dist artifact that bin.kk names | MET | command | This run `bun run prepack` then `npm pack --dry-run` includes `dist/index.js`. Test `apps/cli/tests/package.test.ts:20`. |
+| [doc-only] R3 — Surface docs and ADR name the kk binary | MET | static-ref | `docs/04_DESIGN.md:21`; `AGENTS.md:13`; `AGENTS.md:183-184`; ADR-010. |
+
+Coverage: N/A (packaging + docs; runtime covered by `apps/cli/tests/package.test.ts` 2 tests this run).
 ### Review
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|---------|
+| P4 | correctness | `docs/tasks/0051_publish-kk-bin-and-prepack-artifact.md` | Prior review noted npm ≥11 does not fail-loud on missing bins; prepack is still required so the tarball contains `dist/index.js` |
+| P4 | — | — | No P1–P3 product findings on 2026-08-12 force re-verify |
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
-
+Force re-verify SECUA (`--focus all`): metadata-only; this run `prepack` + `npm pack --dry-run` shipped `dist/index.js`. Dual bin + 04/AGENTS/`kk` prefix match ADR-010.
 ### References
 
 A2
@@ -105,3 +126,6 @@ A2
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+- 2026-08-12T18:25:02.148Z todo → wip (system)
+- 2026-08-12T18:32:13.569Z wip → testing (system)
+- 2026-08-12T18:32:17.959Z testing → done (system)

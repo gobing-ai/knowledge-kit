@@ -3,98 +3,89 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectionForKind } from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
-import { createProgram } from '../src/cli';
+import { main } from '../src/main';
 
 const FIXTURES_DIR = join(import.meta.dir, '../../../plugins');
 
+interface RunResult {
+    code: number;
+    out: string;
+    err: string;
+}
+
+/** Run main with captured stdout/stderr; argv omits node/script (main slices them). */
+async function run(args: string[]): Promise<RunResult> {
+    let out = '';
+    let err = '';
+    const code = await main(['node', 'test', ...args], {
+        stdout: (text: string) => {
+            out += text;
+        },
+        stderr: (text: string) => {
+            err += text;
+        },
+    });
+    return { code, out, err };
+}
+
+/** Capture logger.out (command action stdout) into a string. */
+function captureOut(): { read: () => string; restore: () => void } {
+    let text = '';
+    const originalOut = logger.out;
+    logger.out = (msg: string) => {
+        text += msg;
+    };
+    return { read: () => text, restore: () => (logger.out = originalOut) };
+}
+
 describe('plugins subcommands', () => {
     it('plugins list prints discovered plugins and supports --json', async () => {
-        const program = createProgram();
-        program.exitOverride();
-
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-
+        const { read, restore } = captureOut();
         try {
-            await program.parseAsync(['node', 'test', 'plugins', 'list', '--plugins-root', FIXTURES_DIR, '--json']);
-            const parsed = JSON.parse(outText);
+            const { code } = await run(['plugins', 'list', '--plugins-root', FIXTURES_DIR, '--json']);
+            expect(code).toBe(0);
+            const parsed = JSON.parse(read());
             expect(Array.isArray(parsed)).toBe(true);
             expect(parsed.some((p: { name: string }) => p.name === 'karakeep-local')).toBe(true);
         } finally {
-            logger.out = originalOut;
+            restore();
         }
     });
 
     it('plugins list supports --kind filter and formatted text output', async () => {
-        const program = createProgram();
-        program.exitOverride();
-
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-
+        const { read, restore } = captureOut();
         try {
-            await program.parseAsync([
-                'node',
-                'test',
-                'plugins',
-                'list',
-                '--kind',
-                'ingestion',
-                '--plugins-root',
-                FIXTURES_DIR,
-            ]);
-            expect(outText).toContain('INGESTION PLUGINS');
-            expect(outText).toContain('karakeep-local');
+            const { code } = await run(['plugins', 'list', '--kind', 'ingestion', '--plugins-root', FIXTURES_DIR]);
+            expect(code).toBe(0);
+            expect(read()).toContain('INGESTION PLUGINS');
+            expect(read()).toContain('karakeep-local');
         } finally {
-            logger.out = originalOut;
+            restore();
         }
     });
 
     it('plugins doctor reports clean status for healthy plugins root', async () => {
-        const program = createProgram();
-        program.exitOverride();
-
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-
+        const { read, restore } = captureOut();
         try {
-            await program.parseAsync(['node', 'test', 'plugins', 'doctor', '--plugins-root', FIXTURES_DIR]);
-            expect(outText).toContain('healthy');
+            const { code } = await run(['plugins', 'doctor', '--plugins-root', FIXTURES_DIR]);
+            expect(code).toBe(0);
+            expect(read()).toContain('healthy');
         } finally {
-            logger.out = originalOut;
+            restore();
         }
     });
 
     it('plugins list exits 1 on invalid --kind argument', async () => {
-        const exits: number[] = [];
-        const originalExit = process.exit;
         const originalError = logger.error;
-        process.exit = ((code?: number) => {
-            exits.push(code ?? 0);
-            throw new Error(`process.exit(${code ?? 0})`);
-        }) as typeof process.exit;
-        logger.error = () => {};
-
+        let errText = '';
+        logger.error = (msg: string) => {
+            errText += msg;
+        };
         try {
-            const program = createProgram();
-            program.exitOverride();
-            try {
-                await program.parseAsync(['node', 'test', 'plugins', 'list', '--kind', 'invalid-kind']);
-            } catch {
-                // Ignore process.exit mock
-            }
-            expect(exits).toContain(1);
+            const { code } = await run(['plugins', 'list', '--kind', 'invalid-kind']);
+            expect(code).toBe(1);
+            expect(errText).toContain('Invalid plugin kind');
         } finally {
-            process.exit = originalExit;
             logger.error = originalError;
         }
     });
@@ -102,38 +93,26 @@ describe('plugins subcommands', () => {
     it('plugins list outputs notice when no plugins are found', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-empty-plugins');
         await mkdir(tmpDir, { recursive: true });
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-
+        const { read, restore } = captureOut();
         try {
-            const program = createProgram();
-            program.exitOverride();
-            await program.parseAsync(['node', 'test', 'plugins', 'list', '--plugins-root', tmpDir]);
-            expect(outText).toContain('No plugins found.');
+            const { code } = await run(['plugins', 'list', '--plugins-root', tmpDir]);
+            expect(code).toBe(0);
+            expect(read()).toContain('No plugins found.');
         } finally {
-            logger.out = originalOut;
+            restore();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
 
     it('plugins doctor handles --json output mode for healthy and unhealthy states', async () => {
-        const program = createProgram();
-        program.exitOverride();
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-
+        const { read, restore } = captureOut();
         try {
-            await program.parseAsync(['node', 'test', 'plugins', 'doctor', '--plugins-root', FIXTURES_DIR, '--json']);
-            const parsed = JSON.parse(outText);
+            const { code } = await run(['plugins', 'doctor', '--plugins-root', FIXTURES_DIR, '--json']);
+            expect(code).toBe(0);
+            const parsed = JSON.parse(read());
             expect(parsed.healthy).toBe(true);
         } finally {
-            logger.out = originalOut;
+            restore();
         }
     });
 
@@ -152,33 +131,45 @@ describe('plugins subcommands', () => {
             'utf-8',
         );
 
-        const exits: number[] = [];
-        const originalExit = process.exit;
-        let outText = '';
-        const originalOut = logger.out;
-        process.exit = ((code?: number) => {
-            exits.push(code ?? 0);
-            throw new Error(`process.exit(${code ?? 0})`);
-        }) as typeof process.exit;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-
+        const { read, restore } = captureOut();
         try {
-            const program = createProgram();
-            program.exitOverride();
-            try {
-                await program.parseAsync(['node', 'test', 'plugins', 'doctor', '--plugins-root', tmpDir, '--json']);
-            } catch {
-                // Ignore process.exit mock
-            }
-            expect(exits).toContain(1);
-            const parsed = JSON.parse(outText);
+            const { code } = await run(['plugins', 'doctor', '--plugins-root', tmpDir, '--json']);
+            expect(code).toBe(1);
+            const parsed = JSON.parse(read());
             expect(parsed.healthy).toBe(false);
             expect(parsed.diagnostics.some((d: { code: string }) => d.code === 'missing_entry')).toBe(true);
         } finally {
-            process.exit = originalExit;
-            logger.out = originalOut;
+            restore();
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('plugins doctor exits 1 with text diagnostics for an unhealthy root', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-doctor-missing-entry-text');
+        const pluginDir = join(tmpDir, collectionForKind('ingestion'), 'missing-entry-plugin');
+        await mkdir(pluginDir, { recursive: true });
+        await writeFile(
+            join(pluginDir, 'plugin.json'),
+            JSON.stringify({
+                name: 'missing-entry-plugin',
+                kind: 'ingestion',
+                entry: './non-existent-file.js',
+                version: '1.0.0',
+            }),
+            'utf-8',
+        );
+
+        const originalError = logger.error;
+        let errText = '';
+        logger.error = (msg: string) => {
+            errText += msg;
+        };
+        try {
+            const { code } = await run(['plugins', 'doctor', '--plugins-root', tmpDir]);
+            expect(code).toBe(1);
+            expect(errText).toContain('missing_entry');
+        } finally {
+            logger.error = originalError;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -202,9 +193,8 @@ describe('fanin subcommand', () => {
         await writeFile(bFile, JSON.stringify([{ id: 'd2', body: 'second' }]), 'utf-8');
 
         try {
-            const program = createProgram();
-            program.exitOverride();
-            await program.parseAsync(['node', 'test', 'fanin', '--in', aFile, '--in', bFile, '--out', outFile]);
+            const { code } = await run(['fanin', '--in', aFile, '--in', bFile, '--out', outFile]);
+            expect(code).toBe(0);
 
             const merged = JSON.parse(await readFile(outFile, 'utf-8'));
             expect(merged.map((d: { id: string }) => d.id)).toEqual(['d1', 'd2']);
@@ -219,34 +209,12 @@ describe('fanin subcommand', () => {
         await mkdir(tmpDir, { recursive: true });
         const missing = join(tmpDir, 'nope.json');
 
-        const exits: number[] = [];
-        const originalExit = process.exit;
         const originalError = logger.error;
-        process.exit = ((code?: number) => {
-            exits.push(code ?? 0);
-            throw new Error(`process.exit(${code ?? 0})`);
-        }) as typeof process.exit;
         logger.error = () => {};
-
         try {
-            const program = createProgram();
-            program.exitOverride();
-            try {
-                await program.parseAsync([
-                    'node',
-                    'test',
-                    'fanin',
-                    '--in',
-                    missing,
-                    '--out',
-                    join(tmpDir, 'merged.json'),
-                ]);
-            } catch {
-                // Ignore process.exit mock
-            }
-            expect(exits).toContain(1);
+            const { code } = await run(['fanin', '--in', missing, '--out', join(tmpDir, 'merged.json')]);
+            expect(code).toBe(1);
         } finally {
-            process.exit = originalExit;
             logger.error = originalError;
             await rm(tmpDir, { recursive: true, force: true });
         }
@@ -260,36 +228,20 @@ describe('fanout subcommand', () => {
         const contentFile = join(tmpDir, 'content.json');
         await writeFile(contentFile, JSON.stringify({ title: 'Demo', body: 'hello world' }), 'utf-8');
 
-        const exits: number[] = [];
-        const originalExit = process.exit;
         const originalError = logger.error;
-        process.exit = ((code?: number) => {
-            exits.push(code ?? 0);
-            throw new Error(`process.exit(${code ?? 0})`);
-        }) as typeof process.exit;
         logger.error = () => {};
-
         try {
-            const program = createProgram();
-            program.exitOverride();
-            try {
-                await program.parseAsync([
-                    'node',
-                    'test',
-                    'fanout',
-                    '--content',
-                    contentFile,
-                    '--target',
-                    'no-such-publish-plugin',
-                    '--out',
-                    join(tmpDir, 'result.json'),
-                ]);
-            } catch {
-                // Ignore process.exit mock
-            }
-            expect(exits).toContain(2);
+            const { code } = await run([
+                'fanout',
+                '--content',
+                contentFile,
+                '--target',
+                'no-such-publish-plugin',
+                '--out',
+                join(tmpDir, 'result.json'),
+            ]);
+            expect(code).toBe(2);
         } finally {
-            process.exit = originalExit;
             logger.error = originalError;
             await rm(tmpDir, { recursive: true, force: true });
         }
@@ -320,21 +272,8 @@ describe('fanout subcommand', () => {
         const outFile = join(tmpDir, 'result.json');
         await writeFile(contentFile, JSON.stringify({ title: 'Demo', body: 'hello world' }), 'utf-8');
 
-        const exits: number[] = [];
-        const originalExit = process.exit;
-        const originalError = logger.error;
-        process.exit = ((code?: number) => {
-            exits.push(code ?? 0);
-            throw new Error(`process.exit(${code ?? 0})`);
-        }) as typeof process.exit;
-        logger.error = () => {};
-
         try {
-            const program = createProgram();
-            program.exitOverride();
-            await program.parseAsync([
-                'node',
-                'test',
+            const { code } = await run([
                 'fanout',
                 '--content',
                 contentFile,
@@ -345,14 +284,12 @@ describe('fanout subcommand', () => {
                 '--plugins-root',
                 tmpDir,
             ]);
+            expect(code).toBe(0);
 
-            expect(exits).toEqual([]);
             const result = JSON.parse(await readFile(outFile, 'utf-8'));
             expect(result.ok).toBe(true);
             expect(result.targets[0]).toMatchObject({ target: 'fake-pub', status: 'published' });
         } finally {
-            process.exit = originalExit;
-            logger.error = originalError;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

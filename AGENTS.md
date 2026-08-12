@@ -10,7 +10,7 @@ Does **not** restate skill runbooks or the full `spur` / `superskill` verb catal
 ## Project
 
 **knowledge-kit** — a spur-orchestrated **ingest → create → publish** platform, built as a
-Bun + TypeScript + Biome CLI monorepo. Product binary: `@gobing-ai/knowledge-kit` (`apps/cli`).
+Bun + TypeScript + Biome CLI monorepo. Product binary: `kk` (package `@gobing-ai/knowledge-kit`, `apps/cli`).
 Shared libraries: `@gobing-ai/*` (e.g. `@gobing-ai/utils`, `@gobing-ai/kk-core`). Spur project
 name: `knowledge-kit`.
 
@@ -180,8 +180,8 @@ bun run spur-check      # lint + pre-check + test (dots) + post-check
 bun run spur-check:full # lint + pre-check + test:full (detailed) + post-check
 ```
 
-CLI binary: `@gobing-ai/knowledge-kit` exposes `bin: { knowledge-kit: "./src/index.ts" }` (Bun
-only). After `bun run build`, the bundle is at `apps/cli/dist/index.js`.
+CLI binary: `@gobing-ai/knowledge-kit` exposes `bin: { kk: "./dist/index.js", "knowledge-kit":
+"./dist/index.js" }`; `prepack` runs the bun build so npm pack sees the bundle (ADR-010 R5).
 
 ### Verification gate (all must pass before "done")
 

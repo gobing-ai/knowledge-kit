@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.11.0
+version: 1.12.0
 created_at: 2026-05-28
 updated_at: 2026-08-12
 edit_rules: 99 §6.1
@@ -64,7 +64,9 @@ side-effect-free at construction.
 
 `createProgram()` remains the side-effect-free factory. New nouns are registered by
 `registerXCommand` modules under `apps/cli/src/commands/`; `createProgram()` only wires name,
-version, global options, and those register calls. Action bodies do not grow `cli.ts`. See ADR-010 R2.
+version, global options, and those register calls. Action bodies do not grow `cli.ts`. `index.ts`
+no longer calls `createProgram().parse()` — it is `process.exit(await main())` under
+`import.meta.main`, and `main()` owns `parseAsync` and the exit seam. See ADR-010 R2/R3.
 
 ---
 
@@ -342,8 +344,9 @@ fork.
 
 ## ADR-010 — Product CLI: `kk` binary, register-per-command tree (2026-08-12)
 
-> **Status:** Accepted (design) · **Date:** 2026-08-12 · **Amends:** ADR-002 (registration site),
-> ADR-004 (bin name/path), ADR-007 R2 (package vs operator binary). Feature **A2**.
+> **Status:** Accepted · **Date:** 2026-08-12 · **Amends:** ADR-002 (registration + parse site),
+> ADR-004 (bin name/path), ADR-007 R2 (package vs operator binary). Feature **A2** — shipped
+> 2026-08-12 (tasks 0049–0051).
 
 **Decision.** The product CLI is the `kk` binary published as `@gobing-ai/knowledge-kit`.
 

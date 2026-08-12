@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { createProgram } from './cli';
+import { main } from './main';
 
 if (import.meta.main) {
-    createProgram().parse();
+    process.exit(await main());
 }

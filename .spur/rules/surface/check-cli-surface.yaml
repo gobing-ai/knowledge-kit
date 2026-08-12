@@ -1,7 +1,10 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # CLI surface consistency for knowledge-kit.
-# Product binary uses createProgram() in apps/cli/src/cli.ts (not a commands/ dir
-# of registerXxxCommand files).
+# Product binary uses createProgram() in apps/cli/src/cli.ts as a side-effect-free
+# factory that only registers commands; each shipped noun lives in
+# apps/cli/src/commands/<noun>.ts as a registerXCommand module. Command modules
+# never call parse (main owns parsing + the exit seam) and never call process.exit
+# (fail-loud actions throw a CommanderError that main maps to the exit code).
 
 include:
   - "apps/cli/src/**/*.ts"
@@ -25,10 +28,23 @@ rules:
     include:
       - "apps/cli/src/cli.ts"
 
+  - id: cli-commands-register-modules
+    description: >
+      Every command module under apps/cli/src/commands/ must export a
+      registerXCommand(program) function that wires the noun's subcommand tree.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "export function register[A-Za-z]+Command\\("
+        mode: require
+    include:
+      - "apps/cli/src/commands/*.ts"
+
   - id: cli-no-parse-at-module-scope
     description: >
       Do not call .parse() at module scope in apps/cli/src — only from index
-      under import.meta.main (keeps createProgram testable).
+      under import.meta.main (keeps createProgram testable and side-effect free).
     severity: error
     evaluator:
       type: rg
@@ -36,3 +52,16 @@ rules:
         pattern: "\\.parse\\("
     include:
       - "apps/cli/src/cli.ts"
+      - "apps/cli/src/commands/*.ts"
+
+  - id: cli-commands-no-process-exit
+    description: >
+      Command modules must not call process.exit — fail-loud actions throw a
+      CommanderError that main() maps to the returned exit code (R3).
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "process\\.exit"
+    include:
+      - "apps/cli/src/commands/*.ts"

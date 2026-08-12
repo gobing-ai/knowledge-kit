@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { logger } from '@gobing-ai/utils';
+import { main } from '../src/main';
 
 describe('cli', () => {
     it('createProgram returns a commander instance with add and invoke commands', async () => {
@@ -25,38 +26,24 @@ describe('cli', () => {
     });
 
     it('invoke command exits non-zero when plugin is missing (R4 CLI fail-loud)', async () => {
-        const exits: number[] = [];
-        const originalExit = process.exit;
         const originalError = logger.error;
-        process.exit = ((code?: number) => {
-            exits.push(code ?? 0);
-            throw new Error(`process.exit(${code ?? 0})`);
-        }) as typeof process.exit;
         logger.error = () => {};
 
         try {
-            const { createProgram } = await import('../src/cli');
-            const program = createProgram();
-            program.exitOverride();
-            try {
-                await program.parseAsync([
-                    'node',
-                    'test',
-                    'invoke',
-                    'non-existent',
-                    '--in',
-                    'in.json',
-                    '--out',
-                    'out.json',
-                    '--plugins-root',
-                    '/tmp',
-                ]);
-            } catch {
-                // process.exit mock throws so the test process is not killed
-            }
-            expect(exits).toContain(1);
+            const code = await main([
+                'node',
+                'test',
+                'invoke',
+                'non-existent',
+                '--in',
+                'in.json',
+                '--out',
+                'out.json',
+                '--plugins-root',
+                '/tmp',
+            ]);
+            expect(code).toBe(1);
         } finally {
-            process.exit = originalExit;
             logger.error = originalError;
         }
     });

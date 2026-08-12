@@ -3,7 +3,7 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.6.0
+version: 2.7.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [01_PRD, 02_ROADMAP]
@@ -42,6 +42,7 @@ sync: [T4]
 |----|---------|--------|-------|-------|
 | **A** | Project foundation | ✅ done | 0 | Monorepo substrate + tooling; close-out task `0013` verified (gates PASS) |
 | A1 | Feature tree restructure | ✅ done | 0 | tree+docs applied; tasks `0006`–`0009` **done**; map `docs/plans/feature-tree-restructure-map.md` |
+| A2 | kk product CLI surface | ✅ done | 2 | tasks `0049`–`0051` done; operator binary `kk` (package `@gobing-ai/knowledge-kit` unchanged); register-per-command tree; `bin.kk` + `knowledge-kit` alias + `prepack`; ADR-010; spec `docs/design/kk-cli-surface.md` |
 | **B** | Plugin platform | ✅ done | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B6 done; task `0028` verified; kk-judge moved under **F** as F1 |
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004`: `plugin.json` + `discoverPlugins` / `listByKind` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003`: Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |

@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.6.0
+version: 2.7.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -18,15 +18,15 @@ sync: [T3]
 
 ## 1. CLI commands
 
-Package: `@gobing-ai/knowledge-kit` · Binary: `knowledge-kit` · Path: `apps/cli`.
+Package: `@gobing-ai/knowledge-kit` · Binary: `kk` (alias `knowledge-kit`) · Path: `apps/cli`.
 
 ```text
-knowledge-kit --help
-knowledge-kit --version
-knowledge-kit add <a> <b>
-knowledge-kit invoke <plugin> --in <path> --out <path> [--plugins-root <dir>]
-knowledge-kit plugins list [--kind <kind>] [--json] [--plugins-root <dir>]
-knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
+kk --help
+kk --version
+kk add <a> <b>
+kk invoke <plugin> --in <path> --out <path> [--plugins-root <dir>]
+kk plugins list [--kind <kind>] [--json] [--plugins-root <dir>]
+kk plugins doctor [--json] [--plugins-root <dir>]
 ```
 
 | Command | Description | Status |
@@ -51,7 +51,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 
 **Output:** decimal sum followed by newline on stdout. Exit 0 on success.
 
-**Implementation:** `apps/cli/src/cli.ts` → `add` from `@gobing-ai/utils`.
+**Implementation:** `apps/cli/src/commands/add.ts` (`registerAddCommand`) → `add` from `@gobing-ai/utils`.
 
 ### `invoke`
 
@@ -69,7 +69,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 4. On non-zero entry exit, fails loud and surfaces error message (returns entry exit code).
 5. Validates written output file against kind's output schema.
 
-**Implementation:** `apps/cli/src/cli.ts` & `apps/cli/src/invoke.ts`.
+**Implementation:** `apps/cli/src/commands/invoke.ts` (`registerInvokeCommand`) & `apps/cli/src/invoke.ts` (engine).
 
 ### `plugins list`
 
@@ -85,7 +85,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 3. Under `--json`, writes raw `PluginRecord[]` JSON array to stdout via `logger.out`.
 4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`).
 
-**Implementation:** `apps/cli/src/cli.ts`.
+**Implementation:** `apps/cli/src/commands/plugins.ts` (`registerPluginsCommand`).
 
 ### `plugins doctor`
 
@@ -102,7 +102,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 4. Under standard text, prints formatted diagnostic errors to stderr via `logger.error`.
 5. Exits code `1` if any diagnostic issue exists, `0` if healthy.
 
-**Implementation:** `apps/cli/src/cli.ts`.
+**Implementation:** `apps/cli/src/commands/plugins.ts` (`registerPluginsCommand`).
 
 ### 1.5 `fanin` — shipped (B6)
 
@@ -110,7 +110,7 @@ Merges N `Doc[]` files into one. Sibling of `invoke` so the single-plugin invoke
 intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
 
 ```text
-knowledge-kit fanin --in <f1> [--in <f2> …] --out <merged.json>
+kk fanin --in <f1> [--in <f2> …] --out <merged.json>
 ```
 
 | Option | Type | Required | Default | Description |
@@ -132,8 +132,8 @@ Dispatches one `Content` to N publish targets **in sequence**, emitting one aggr
 Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.3, §3–§6.
 
 ```text
-knowledge-kit fanout --content <content.json> --target <p1> [--target <p2> …] \
-                     --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
+kk fanout --content <content.json> --target <p1> [--target <p2> …] \
+          --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
 ```
 
 | Option | Type | Required | Default | Description |
@@ -286,7 +286,7 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 |--------|------|-------|
 | `createProgram()` | function | Side-effect-free Commander factory |
 | `runInvoke(opts)` | function | Invoke execution & contract validation engine |
-| `bin: knowledge-kit` | binary | `./src/index.ts` under Bun |
+| `bin: kk` (alias `knowledge-kit`) | binary | `dist/index.js` — Bun-target bundle staged by `prepack` (ADR-010) |
 
 ## 5. Spur project config (harness)
 
@@ -306,6 +306,6 @@ File: `.spur/config.yaml`
 | Generator Plugin Specification | `docs/design/generator-plugin-specification.md` | Generator-kind authoring contract: Doc[]→Content mapping, owned STORM engine (D4), failure semantics |
 | Publish Plugin Specification | `docs/design/publish-plugin-specification.md` | Publish-kind authoring contract: transport abstraction, Content→frontmatter mapping, Result conventions, generic §1 citation |
 | Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk fanin` / `kk fanout` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
-| kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, global help/version/verbose, `registerXCommand` tree, npm `bin.kk` + `knowledge-kit` alias (A2 / ADR-010; **Accepted design**) |
+| kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, global help/version/verbose, `registerXCommand` tree, npm `bin.kk` + `knowledge-kit` alias (A2 / ADR-010; **shipped** 2026-08-12) |
 
 

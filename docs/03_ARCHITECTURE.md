@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.5.0
+version: 2.6.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -157,7 +157,7 @@ Every arrow is a file on disk validated against a `@gobing-ai/kk-core` schema; e
 
 | Module | Package name | Responsibility | May depend on |
 |--------|--------------|----------------|---------------|
-| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`invoke`, `fanin`, `fanout`, `plugins`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
+| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`add`, `invoke`, `plugins`, `fanin`, `fanout`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |

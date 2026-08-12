@@ -30,9 +30,9 @@ To respect this boundary while providing sequential fan-in/fan-out capabilities:
 - Neither subcommand manages workflow DAG execution or state transitions (which remain owned by `spur workflow`).
 
 ```text
-knowledge-kit invoke <plugin> --in <f> --out <f>
-knowledge-kit fanin --in <f1> [--in <f2> ...] --out <out.json> [--dedupe <rule>]
-knowledge-kit fanout --content <content.json> --target <p1> [--target <p2> ...] --out <result.json> [--retry-from <prior-result.json>]
+kk invoke <plugin> --in <f> --out <f>
+kk fanin --in <f1> [--in <f2> ...] --out <out.json> [--dedupe <rule>]
+kk fanout --content <content.json> --target <p1> [--target <p2> ...] --out <result.json> [--retry-from <prior-result.json>]
 ```
 
 ### 1.2 `fanin` CLI Specification
@@ -127,7 +127,7 @@ export interface AggregateResult {
 A subsequent `fanout` execution can resume from a partial-success `Result` JSON file:
 
 ```bash
-knowledge-kit fanout \
+kk fanout \
   --content article.json \
   --target surfdash --target medium --target xhs \
   --retry-from prior-result.json \

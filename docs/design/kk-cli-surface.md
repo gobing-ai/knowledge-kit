@@ -1,8 +1,8 @@
 # kk product CLI surface
 
 Feature **A2**. Design satellite for the operator-facing `kk` binary, command-module tree, and
-npm pack artifact. Status: **Accepted (design)** pending design-approval; implementation
-graduates into `apps/cli`.
+npm pack artifact. Status: **Shipped** (2026-08-12, tasks 0049–0051); implementation lives in
+`apps/cli`, ADR-010 is Accepted, and the T3 doc/rule touches listed in §8 all landed.
 
 > Chosen approach: spur-shaped `registerXCommand` tree + `kk` npm bin + lean runtime
 > (no spur ApplicationRuntime / DB / banner). Reason: docs already say `kk`; a single
@@ -21,7 +21,7 @@ graduates into `apps/cli`.
 | D5 | npm ships Bun-target `dist/index.js`; `prepack` builds it | Native `bun --compile` this feature; Trusted Publisher this feature | Operator owns OIDC later; native binaries are a later slice |
 | D6 | Globals: `--help`/`-h`, `--version`/`-V`, `--verbose`/`-v`. `--json` stays per-command | Global `--json`; `--cli-verbose` (spur name) | Commander defaults + one diagnostic flag; `--json` already lives on `plugins *` |
 
-Authority: **ADR-010** (Accepted design). Amendments on ADR-002 / ADR-004 / ADR-007 R2.
+Authority: **ADR-010** (Accepted). Amendments on ADR-002 / ADR-004 / ADR-007 R2.
 
 ## 2. Module layout
 
@@ -113,8 +113,11 @@ Unknown commands: non-zero exit, stderr names the command (Commander default).
 }
 ```
 
-`prepack` exists so `npm pack` / a later `npm publish` see `dist/index.js` (npm ≥ 11 checks bin
-existence before lifecycle scripts).
+`prepack` exists so `npm pack` / a later `npm publish` include `dist/index.js`: `files:
+["dist/"]` limits the tarball to `dist/` + `package.json`, and npm does **not** validate bin
+existence at pack or install time — a missing bin target installs silently with no
+`node_modules/.bin` shim. prepack is what guarantees the artifact both bins name is in the
+tarball.
 
 **Out of this satellite:** npm Trusted Publisher, GitHub OIDC, `.github/workflows/`, native
 multi-arch `bun --compile` binaries.

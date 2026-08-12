@@ -9,7 +9,6 @@ export interface InvokeOptions {
     inPath: string;
     outPath: string;
     pluginsRoot?: string;
-    processExit?: (code: number) => void;
 }
 
 /** Options for the sole sanctioned plugin-entry spawn (ADR-006). */
@@ -75,7 +74,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
                 logger.error(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);
             }
         }
-        opts.processExit?.(1);
         return 1;
     }
 
@@ -86,7 +84,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     if (contract.input !== null) {
         if (!existsSync(absInPath)) {
             logger.error(`Input file does not exist: ${absInPath}`);
-            opts.processExit?.(1);
             return 1;
         }
         let inContent: string;
@@ -94,7 +91,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
             inContent = readFileSync(absInPath, 'utf-8');
         } catch (err: unknown) {
             logger.error(`Failed to read input file ${absInPath}: ${err instanceof Error ? err.message : String(err)}`);
-            opts.processExit?.(1);
             return 1;
         }
 
@@ -105,7 +101,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
             logger.error(
                 `Input file ${absInPath} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
             );
-            opts.processExit?.(1);
             return 1;
         }
 
@@ -115,13 +110,11 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
                 .map((i) => `${i.path.join('.') || 'root'}: ${i.message}`)
                 .join('; ');
             logger.error(`Input schema violation for kind '${record.kind}': ${issues}`);
-            opts.processExit?.(1);
             return 1;
         }
     } else {
         if (!existsSync(absInPath)) {
             logger.error(`Source path does not exist: ${absInPath}`);
-            opts.processExit?.(1);
             return 1;
         }
     }
@@ -129,7 +122,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     const entryPath = isAbsolute(record.entry) ? record.entry : resolve(record.dir, record.entry);
     if (!existsSync(entryPath)) {
         logger.error(`Plugin entry script does not exist: ${entryPath}`);
-        opts.processExit?.(1);
         return 1;
     }
 
@@ -144,13 +136,11 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         const errMsg = proc.stderr || proc.stdout || `Plugin entry exited with code ${proc.exitCode}`;
         logger.error(`Plugin entry '${record.name}' failed (exit code ${proc.exitCode}): ${errMsg}`);
         const exitCode = proc.exitCode !== 0 ? proc.exitCode : 1;
-        opts.processExit?.(exitCode);
         return exitCode;
     }
 
     if (!existsSync(absOutPath)) {
         logger.error(`Plugin entry succeeded but did not write output file: ${absOutPath}`);
-        opts.processExit?.(1);
         return 1;
     }
 
@@ -159,7 +149,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         outContent = readFileSync(absOutPath, 'utf-8');
     } catch (err: unknown) {
         logger.error(`Failed to read output file ${absOutPath}: ${err instanceof Error ? err.message : String(err)}`);
-        opts.processExit?.(1);
         return 1;
     }
 
@@ -168,7 +157,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         outJson = JSON.parse(outContent);
     } catch (err: unknown) {
         logger.error(`Output file ${absOutPath} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
-        opts.processExit?.(1);
         return 1;
     }
 
@@ -176,7 +164,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     if (!outResult.success) {
         const issues = outResult.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
         logger.error(`Output schema violation for kind '${record.kind}': ${issues}`);
-        opts.processExit?.(1);
         return 1;
     }
 

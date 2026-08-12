@@ -165,3 +165,12 @@
 - A dry-run install still stages a `.rulesync/` directory — remove it after the run or `git status` shows noise.
 - Fixed-constant knobs (3 revision rounds) are fine for a first consumer; add a config knob only when a second consumer appears.
 - Skill-internal prompt-injection surface is real: any verbatim-copied input (briefs) is a data/instruction boundary — state it in the skill invariants.
+## 2026-08-12 — A2 batch (0049, 0050, 0051)
+- Commander 15 changed bare-invocation semantics: a program with subcommands and no action handler routes missing-subcommand to `help({error:true})` → exit 1; a root `.action()` disables the implicit `help [command]` command. Fix: keep createProgram action-free, handle empty argv in main() with `program.help()`, and call `.addHelpCommand()` explicitly only if a root action is ever needed.
+- Subcommands copy `_exitCallback`/`_outputConfiguration` at creation time. `exitOverride()`/`configureOutput()` called after subcommand creation do NOT reach them — `kk help <cmd>` silently called `process.exit`. Re-inherit via `cmd.copyInheritedSettings(program)` after configuring, recursing into nested groups (`plugins list`).
+- `process.exit` in test mocks (`process.exit = fn`) is brittle with Commander 15 exitOverride; prefer `main()` returning exit codes over mocked process.exit.
+- CommanderError exit codes map 1:1 to process exit codes under exitOverride; fail-loud paths should `throw new CommanderError(code, ...)` instead of calling process.exit.
+- bun's coverage threshold is enforced per-file (functions >= 90%); default-writer lambdas in main() need a no-options test to stay covered.
+- fanout test R6 fails under `bun run --filter` (cwd = package dir) but passes from workspace root — a cwd artifact of `process.cwd()`-based plugins root, not a code bug.
+- npm does NOT validate bin existence at pack time; `files: ["dist/"]` + prepack is what guarantees the tarball contains the artifact the bin keys name. Missing-bin installs fail silently (no shim created).
+
