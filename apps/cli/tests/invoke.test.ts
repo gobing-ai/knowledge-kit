@@ -2,8 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
 import { runInvoke } from '../src/invoke';
+
+function pluginDirOf(root: string, kind: PluginKind, name: string): string {
+    return join(root, collectionForKind(kind), name);
+}
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-invoke-test-'));
@@ -29,7 +34,7 @@ describe('runInvoke', () => {
 
     it('R1 — runs discovered plugin entry and verifies written output', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'gen-plugin');
+            const pluginDir = pluginDirOf(root, 'generator', 'gen-plugin');
             const scriptsDir = join(pluginDir, 'scripts');
             mkdirSync(scriptsDir, { recursive: true });
 
@@ -78,7 +83,7 @@ describe('runInvoke', () => {
 
     it('R2 — fails before entry spawn when input violates kind schema', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'gen-plugin');
+            const pluginDir = pluginDirOf(root, 'generator', 'gen-plugin');
             const scriptsDir = join(pluginDir, 'scripts');
             mkdirSync(scriptsDir, { recursive: true });
 
@@ -117,7 +122,7 @@ describe('runInvoke', () => {
 
     it('R4 — fails loud when plugin entry exits non-zero', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'failing-plugin');
+            const pluginDir = pluginDirOf(root, 'publish', 'failing-plugin');
             const scriptsDir = join(pluginDir, 'scripts');
             mkdirSync(scriptsDir, { recursive: true });
 
@@ -154,7 +159,7 @@ describe('runInvoke', () => {
 
     it('handles ingestion kind with source path and output validation', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'ingest-plugin');
+            const pluginDir = pluginDirOf(root, 'ingestion', 'ingest-plugin');
             const scriptsDir = join(pluginDir, 'scripts');
             mkdirSync(scriptsDir, { recursive: true });
 
@@ -194,7 +199,7 @@ describe('runInvoke', () => {
 
     it('fails when input file is missing or contains invalid JSON', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'gen-plugin');
+            const pluginDir = pluginDirOf(root, 'generator', 'gen-plugin');
             mkdirSync(pluginDir, { recursive: true });
             writeFileSync(
                 join(pluginDir, 'plugin.json'),
@@ -228,7 +233,7 @@ describe('runInvoke', () => {
 
     it('fails when ingestion source path is missing', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'ingest-plugin');
+            const pluginDir = pluginDirOf(root, 'ingestion', 'ingest-plugin');
             mkdirSync(pluginDir, { recursive: true });
             writeFileSync(
                 join(pluginDir, 'plugin.json'),
@@ -249,7 +254,7 @@ describe('runInvoke', () => {
 
     it('fails when plugin entry script is missing or output file is missing/invalid', async () => {
         await withTempDir(async (root) => {
-            const pluginDir = join(root, 'bad-entry-plugin');
+            const pluginDir = pluginDirOf(root, 'generator', 'bad-entry-plugin');
             mkdirSync(pluginDir, { recursive: true });
             writeFileSync(
                 join(pluginDir, 'plugin.json'),

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Content, Result } from '@gobing-ai/kk-core';
+import { type Content, collectionForKind, type PluginKind, type Result } from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
 import {
     type AggregateResult,
@@ -89,8 +89,8 @@ function priorResult(): AggregateResult {
 }
 
 /** Write a publish plugin named `fake-pub` under `pluginsRoot` whose entry runs `script` on --in/--out. */
-function writeFakePublishPlugin(pluginsRoot: string, script: string, kind = 'publish'): void {
-    const dir = join(pluginsRoot, 'fake-pub');
+function writeFakePublishPlugin(pluginsRoot: string, script: string, kind: PluginKind = 'publish'): void {
+    const dir = join(pluginsRoot, collectionForKind(kind), 'fake-pub');
     mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(
         join(dir, 'plugin.json'),
@@ -685,7 +685,7 @@ describe('runFanout', () => {
         await withTempDir(async (root) => {
             const pluginsRoot = join(root, 'plugins');
             // plugin.json declares an entry that does not exist on disk.
-            const dir = join(pluginsRoot, 'ghost');
+            const dir = join(pluginsRoot, collectionForKind('publish'), 'ghost');
             mkdirSync(dir, { recursive: true });
             writeFileSync(
                 join(dir, 'plugin.json'),

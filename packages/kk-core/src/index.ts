@@ -3,11 +3,17 @@
  */
 
 export {
+    collectionForKind,
     isPluginKind,
     type KindContract,
+    KK_CAPABILITY_COLLECTION,
     kindContract,
+    kindForCollection,
+    PLUGIN_COLLECTION_KINDS,
+    PLUGIN_KIND_COLLECTIONS,
     PLUGIN_KINDS,
     type PluginKind,
+    type PluginKindCollection,
     PluginKindSchema,
 } from './kinds';
 export {

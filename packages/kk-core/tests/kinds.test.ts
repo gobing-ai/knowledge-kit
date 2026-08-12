@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { ContentSchema, DocListSchema, isPluginKind, kindContract, PLUGIN_KINDS, ResultSchema } from '../src/index';
+import {
+    ContentSchema,
+    collectionForKind,
+    DocListSchema,
+    isPluginKind,
+    KK_CAPABILITY_COLLECTION,
+    kindContract,
+    kindForCollection,
+    PLUGIN_KIND_COLLECTIONS,
+    PLUGIN_KINDS,
+    ResultSchema,
+} from '../src/index';
 
 describe('kindContract', () => {
     it('resolves ingestion → output Doc[] and null input', () => {
@@ -38,5 +49,21 @@ describe('PluginKind helpers', () => {
     it('isPluginKind guards known kinds', () => {
         expect(isPluginKind('ingestion')).toBe(true);
         expect(isPluginKind('nope')).toBe(false);
+    });
+
+    it('maps kinds to ADR-009 collection directories and back', () => {
+        expect(PLUGIN_KIND_COLLECTIONS).toEqual({
+            ingestion: 'ingestions',
+            generator: 'generations',
+            publish: 'publishings',
+        });
+        expect(collectionForKind('ingestion')).toBe('ingestions');
+        expect(collectionForKind('generator')).toBe('generations');
+        expect(collectionForKind('publish')).toBe('publishings');
+        expect(kindForCollection('ingestions')).toBe('ingestion');
+        expect(kindForCollection('generations')).toBe('generator');
+        expect(kindForCollection('publishings')).toBe('publish');
+        expect(kindForCollection(KK_CAPABILITY_COLLECTION)).toBeUndefined();
+        expect(kindForCollection('content-gen')).toBeUndefined();
     });
 });

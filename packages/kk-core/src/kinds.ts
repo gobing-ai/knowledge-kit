@@ -10,6 +10,42 @@ export const PluginKindSchema = z.enum(PLUGIN_KINDS);
 /** One of the three plugin lifecycle kinds. */
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
 
+/**
+ * Kind-collection directory names under `plugins/` (ADR-009).
+ * Folder names are the plural collection labels, not the `kind` enum values.
+ */
+export const PLUGIN_KIND_COLLECTIONS = {
+    ingestion: 'ingestions',
+    generator: 'generations',
+    publish: 'publishings',
+} as const satisfies Record<PluginKind, string>;
+
+/** Reverse map: collection directory name → plugin kind. */
+export const PLUGIN_COLLECTION_KINDS = {
+    ingestions: 'ingestion',
+    generations: 'generator',
+    publishings: 'publish',
+} as const;
+
+/** Claude Code capability collection — never a kk-core registry plugin (ADR-009). */
+export const KK_CAPABILITY_COLLECTION = 'kk';
+
+/** Directory name of a kind collection (`ingestions` / `generations` / `publishings`). */
+export type PluginKindCollection = (typeof PLUGIN_KIND_COLLECTIONS)[PluginKind];
+
+/** Collection directory for a plugin kind. */
+export function collectionForKind(kind: PluginKind): PluginKindCollection {
+    return PLUGIN_KIND_COLLECTIONS[kind];
+}
+
+/** Plugin kind for a collection directory name, or `undefined` if it is not a kind collection. */
+export function kindForCollection(name: string): PluginKind | undefined {
+    if (name in PLUGIN_COLLECTION_KINDS) {
+        return PLUGIN_COLLECTION_KINDS[name as PluginKindCollection];
+    }
+    return undefined;
+}
+
 /** Resolved I/O schemas for a plugin kind (data contract, not class methods). */
 export interface KindContract {
     kind: PluginKind;

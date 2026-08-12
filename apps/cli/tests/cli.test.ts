@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { collectionForKind } from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
 import { createProgram } from '../src/cli';
 
@@ -138,7 +139,7 @@ describe('plugins subcommands', () => {
 
     it('plugins doctor detects missing entry file and handles unhealthy --json mode', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-doctor-missing-entry');
-        const pluginDir = join(tmpDir, 'missing-entry-plugin');
+        const pluginDir = join(tmpDir, collectionForKind('ingestion'), 'missing-entry-plugin');
         await mkdir(pluginDir, { recursive: true });
         await writeFile(
             join(pluginDir, 'plugin.json'),
@@ -296,14 +297,15 @@ describe('fanout subcommand', () => {
 
     it('accepts --plugins-root and resolves publish targets under the given root', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-fanout-plugins-root');
-        await mkdir(join(tmpDir, 'fake-pub', 'src'), { recursive: true });
+        const pluginDir = join(tmpDir, collectionForKind('publish'), 'fake-pub');
+        await mkdir(join(pluginDir, 'src'), { recursive: true });
         await writeFile(
-            join(tmpDir, 'fake-pub', 'plugin.json'),
+            join(pluginDir, 'plugin.json'),
             JSON.stringify({ name: 'fake-pub', kind: 'publish', entry: './src/index.ts', version: '1.0.0' }),
             'utf-8',
         );
         await writeFile(
-            join(tmpDir, 'fake-pub', 'src', 'index.ts'),
+            join(pluginDir, 'src', 'index.ts'),
             [
                 "import { readFileSync, writeFileSync } from 'node:fs';",
                 'const argv = process.argv.slice(2);',
