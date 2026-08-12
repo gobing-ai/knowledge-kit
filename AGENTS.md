@@ -19,8 +19,9 @@ name: `knowledge-kit`.
 > optional** — a pipeline may start from a `Brief` (topic → article) with no ingested documents.
 > See `docs/00_ADR.md` → **ADR-007** for the repositioning; renaming was considered and rejected.
 
-**The product model.** Plugins are directories with a `plugin.json` manifest, discovered by a
-registry scan, in three kinds:
+**The product model.** Product plugins are directories with a `plugin.json` manifest, discovered
+under kind collections (`plugins/ingestions|generations|publishings/<name>/`, ADR-009). Agent
+skills, slash commands, subagents, hooks, and rules live only in `plugins/kk`. Three kinds:
 
 | Kind | Contract |
 |------|----------|
@@ -58,7 +59,11 @@ packages/
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports
 tooling/
   typescript/     # shared tsconfig presets
-plugins/          # plugin collection — one dir per plugin, each with plugin.json
+plugins/
+  ingestions/     # product ingestion plugins (`kind: ingestion`)
+  generations/    # product generator plugins (`kind: generator`)
+  publishings/    # product publish plugins (`kind: publish`)
+  kk/             # Claude Code plugin: skills, commands, agents, hooks, rules
 docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan-in/fan-out)
 .spur/            # Spur config, rules, workflows, templates
 ```

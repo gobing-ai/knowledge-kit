@@ -52,7 +52,7 @@
         "@types/bun": "1.3.14",
       },
     },
-    "plugins/content-gen": {
+    "plugins/generations/content-gen": {
       "name": "@gobing-ai/content-gen",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
@@ -62,7 +62,7 @@
         "@types/bun": "1.3.14",
       },
     },
-    "plugins/qiita-pub": {
+    "plugins/publishings/qiita-pub": {
       "name": "@gobing-ai/qiita-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
@@ -73,7 +73,7 @@
         "@types/bun": "1.3.14",
       },
     },
-    "plugins/surfdash-pub": {
+    "plugins/publishings/surfdash-pub": {
       "name": "@gobing-ai/surfdash-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
@@ -84,7 +84,7 @@
         "@types/bun": "1.3.14",
       },
     },
-    "plugins/zenn-pub": {
+    "plugins/publishings/zenn-pub": {
       "name": "@gobing-ai/zenn-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
@@ -115,7 +115,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.5", "", { "os": "win32", "cpu": "x64" }, "sha512-bIBFo+n6MIxdNcVFy5CrurbKiZQiUciK3bt8+O9I4wjFZNTfXLpi+giq47522eXqW5NBc9ulx7dR1SlZKi2J5g=="],
 
-    "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/content-gen"],
+    "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/generations/content-gen"],
 
     "@gobing-ai/kk-core": ["@gobing-ai/kk-core@workspace:packages/kk-core"],
 
@@ -123,13 +123,13 @@
 
     "@gobing-ai/publish-harness": ["@gobing-ai/publish-harness@workspace:packages/publish-harness"],
 
-    "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/qiita-pub"],
+    "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/publishings/qiita-pub"],
 
-    "@gobing-ai/surfdash-pub": ["@gobing-ai/surfdash-pub@workspace:plugins/surfdash-pub"],
+    "@gobing-ai/surfdash-pub": ["@gobing-ai/surfdash-pub@workspace:plugins/publishings/surfdash-pub"],
 
     "@gobing-ai/utils": ["@gobing-ai/utils@workspace:packages/utils"],
 
-    "@gobing-ai/zenn-pub": ["@gobing-ai/zenn-pub@workspace:plugins/zenn-pub"],
+    "@gobing-ai/zenn-pub": ["@gobing-ai/zenn-pub@workspace:plugins/publishings/zenn-pub"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

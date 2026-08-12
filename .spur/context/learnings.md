@@ -2,6 +2,11 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## Learning: plugins/ is four fixed collections (ADR-009)
+
+- **Convention/quirk:** Product plugins live at `plugins/ingestions|generations|publishings/<name>/`. Agent skills, commands, agents, hooks, and rules live only under `plugins/kk`. Workspaces are the three kind globs, never `plugins/*`. `discoverPlugins` skips `kk` and reports `misplaced` / `kind_mismatch`.
+- **Why it matters:** A plugin dropped at `plugins/<name>` is invisible (or doctor-unhealthy) and the old one-level scan cannot tell `kk` from a product plugin. tsconfig `extends` and `apps/cli` test imports need one extra `../` after the extra collection folder.
+
 ## 2026-08-12 — sp-dev-find-conflict dogfood (run 20260812-010531)
 
 1. **Dogfood runs ≥ 3 min must dual-write ledger rows per-step, not at finalize.**
