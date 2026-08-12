@@ -26,6 +26,8 @@
         "lint": "biome check . && bun run typecheck",
         "format": "biome check . --write",
         "autofix": "bun run format && bun run typecheck",
+        "bump-ver": "bun scripts/release.ts bump-ver",
+        "drop-tags": "bun scripts/release.ts drop-tags",
         "check": "bun run lint && bun run test",
         "check:full": "bun run lint && bun run test:full"
     },
