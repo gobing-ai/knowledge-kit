@@ -2,11 +2,11 @@
 schema_version: 1
 id: "C"
 name: Ingestion
-status: verifying
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:11.170Z"
-updated_at: "2026-08-12T01:24:59.770Z"
+updated_at: "2026-08-12T04:17:58.588Z"
 ---
 
 # C: IngestionPlugin: Karakeep-local
@@ -125,7 +125,7 @@ Feature: Ingestion
 | 0014 | Survey Karakeep mirror layout and implement karakeep-local plugin | done |
 | 0015 | Harden karakeep-local failure semantics | done |
 | 0029 | Harden karakeep-local: fail loud on zero-doc ingest and create --out parent dir | done |
-| 0039 | Close out feature C verification (roll-up carrier) | todo |
+| 0039 | Close out feature C verification (roll-up carrier) | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -134,3 +134,5 @@ Feature: Ingestion
 ## History
 - 2026-08-12T01:17:16.435Z backlog → active (system)
 - 2026-08-12T01:17:16.559Z active → verifying (system)
+- 2026-08-12T04:08:52.975Z verifying → done (system)
+- 2026-08-12T04:17:58.588Z done → active (system)

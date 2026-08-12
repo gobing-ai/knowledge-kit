@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E"
 name: Multi-channel publish
-status: verifying
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:14.192Z"
-updated_at: "2026-08-12T01:20:28.463Z"
+updated_at: "2026-08-12T04:17:58.912Z"
 ---
 
 # E: PublishPlugin: Surfdash
@@ -92,7 +92,7 @@ Feature: Publish
 | 0019 | Implement publish test harness with fake transports | done |
 | 0024 | Implement surfdash-pub plugin against the publish spec | done |
 | 0025 | Harden surfdash-pub failure modes | done |
-| 0041 | Close out feature E verification (roll-up carrier) | todo |
+| 0041 | Close out feature E verification (roll-up carrier) | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -105,3 +105,5 @@ Feature: Publish
 ## History
 - 2026-08-12T01:20:28.337Z backlog → active (system)
 - 2026-08-12T01:20:28.463Z active → verifying (system)
+- 2026-08-12T04:08:53.545Z verifying → done (system)
+- 2026-08-12T04:17:58.912Z done → active (system)

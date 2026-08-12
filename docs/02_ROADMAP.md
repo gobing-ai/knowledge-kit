@@ -3,7 +3,7 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.1.1
+version: 3.1.3
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -22,7 +22,7 @@ sync: [T5]
 | Phase | Status | Features | Items |
 |-------|--------|----------|-------|
 | Phase 0 — Foundation | ✅ done | **A** (+ **A1** hygiene) | Bun workspaces monorepo; `@gobing-ai/*`; Commander shell; Biome + tsc/test gates; Spur init; feature-tree restructure (A1) |
-| Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: C/D/E parent close-out (L4 composition-scenario coverage pending — carriers `0039`–`0041`); E1 rollup (`0002` done, feature backlog) |
+| Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: C/D/E reopened (`active`) as living kind parents for plugin intake; E1 close-out (`0002` done; feature backlog — AC placeholder never enriched) |
 | **Phase 2 — Repositioning + widened contracts** | ⏳ **current** | **J**, **B6**, **F** (kk plugin collection), **F1**, **D** (Brief), **E4** | **J** repositioning (ADR-007, PRD v3, contract designs — this phase's gate) → implementation graduates into **B6** sequential `kk fanin`/`fanout`, **F1** LLM-as-judge agent skills (under **F**), **D** Brief input contract (`Doc[] \| Brief`), **E4** multi-channel suite harvest |
 | Phase 3 — Generator depth | 💤 deferred | **D4**, **D5** | Own STORM generator (**D4**) · `wt` generator harvest (**D5**) |
 | LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |

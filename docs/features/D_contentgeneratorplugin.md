@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D"
 name: Content generation
-status: verifying
+status: active
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:12.592Z"
-updated_at: "2026-08-12T01:20:28.088Z"
+updated_at: "2026-08-12T04:17:58.732Z"
 ---
 
 # D: ContentGeneratorPlugin
@@ -90,7 +90,7 @@ Feature: Content generation
 | 0017 | Author generator plugin specification and validate against platform | done |
 | 0022 | Implement content-gen stand-in adapter plugin | done |
 | 0023 | Harden content-gen failure semantics | done |
-| 0040 | Close out feature D verification (roll-up carrier) | todo |
+| 0040 | Close out feature D verification (roll-up carrier) | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -101,3 +101,5 @@ Feature: Content generation
 ## History
 - 2026-08-12T01:20:27.965Z backlog → active (system)
 - 2026-08-12T01:20:28.088Z active → verifying (system)
+- 2026-08-12T04:08:53.265Z verifying → done (system)
+- 2026-08-12T04:17:58.732Z done → active (system)

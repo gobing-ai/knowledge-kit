@@ -3,7 +3,7 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.4.3
+version: 2.4.5
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [01_PRD, 02_ROADMAP]
@@ -20,6 +20,8 @@ sync: [T4]
 > Publish). Roots F/G/H cancelled (E2E → **B5**; multi-channel → E Notes; STORM/harvest → D4/D5).
 > Map: `docs/plans/feature-tree-restructure-map.md`.
 >
+> **2026-08-12 (C/D/E close-out + reopen):** kind parents **C/D/E** closed their verification via roll-up carriers `0039`–`0041` (0028 pattern), then **reopened to `active`** as living kind parents for plugin intake (the `done → active` reopen edge was added to the project's `.spur/workflows/feature-lifecycle.yaml` — the project copy predated spur's design-§7.5 reopen). Intake task `0038` cancelled as redundant with F's AC; intake annotation tasks `0042`–`0044` created then removed — the reopen edge makes FSM anchors unnecessary.
+>
 > **2026-08-12 (F repurposed):** root **F** repurposed from the cancelled E2E vertical to the **kk plugin collection** — parent for all `plugins/kk` capabilities (skills, commands, subagents); kk-judge migrated **B7 → F1**. F is no longer a cancelled root; **G/H** remain historical cancelled roots. (Slot freed by removing the cancelled F file; `cancelled` is terminal in spur.)
 >
 > **2026-08-07 (0037):** LLM-as-judge repositioned from fourth plugin kind to **agent skills + `agent.run`**
@@ -30,7 +32,7 @@ sync: [T4]
 
 ## Status legend
 
-✅ done · 🔶 partial · ⏳ planned/current · ⏳ ready (decomposed, unblocked) · ⏳ blocked (decomposed, dep-gated) · ⏳ backlog (tree: backlog) · ⏳ verifying (tree: verifying — roll-up/close-out in progress) · 💤 deferred · 🌫️ fog (undecided) · ❌ cancelled
+✅ done · 🔶 partial · ⏳ planned/current · ⏳ ready (decomposed, unblocked) · ⏳ blocked (decomposed, dep-gated) · ⏳ backlog (tree: backlog) · ⏳ active (tree: active — open for intake) · ⏳ verifying (tree: verifying — roll-up/close-out in progress) · 💤 deferred · 🌫️ fog (undecided) · ❌ cancelled
 
 ## Feature tree
 
@@ -45,21 +47,21 @@ sync: [T4]
 | B4 | CLI surface | ✅ done | 1 | tasks `0020`/`0021` done: `plugins list` + `plugins doctor` (noun group, `--json`); verifyall re-audit PASS + shippable; commit `fed9412` |
 | B5 | End-to-end pipeline acceptance | ✅ done | 1 | tasks `0026`/`0027` done; vertical over B3 invoke + C2/D2/E3 proven (fixture → content → `ok:true`); verifyall re-audit PASS + shippable; commits `662ba0b`/`41bf221` |
 | B6 | Sequential fan-in/fan-out steps | ⏳ backlog | 2 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`) |
-| **C** | Ingestion | ⏳ verifying | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007) |
+| **C** | Ingestion | ⏳ active | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007); closed via carrier `0039`, then **reopened for plugin intake** |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` (edge on parent C) |
-| **D** | Content generation | ⏳ verifying | 1 | kind parent; re-cut: `Doc[] \| Brief`, creation co-equal with ingestion (ADR-007 R3); AC rolled up from D3+D2 (DD-09) |
+| **D** | Content generation | ⏳ active | 1 | kind parent; re-cut: `Doc[] \| Brief`, creation co-equal with ingestion (ADR-007 R3); AC rolled up from D3+D2 (DD-09); closed via carrier `0040`, then **reopened for plugin intake** |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |
 | D2 | Wire existing generator skill to contract | ✅ done | 1 | tasks `0022`/`0023`; D3 spec done (`0017`) — gate satisfied |
 | D3 | Generator plugin design | ✅ done | 1 | tasks `0016`/`0017` done; cites C1 generic contract §1 |
 | D4 | Own STORM generator | 💤 deferred | 3 | from cancelled H; ref `vendors/storm`; Phase 3 (PRD v3) |
 | D5 | wt generator harvest | 💤 deferred | 3 | from cancelled H; lazy Py→TS of wt generator skills; Phase 3 (PRD v3) |
-| **E** | Multi-channel publish | ⏳ verifying | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4** |
+| **E** | Multi-channel publish | ⏳ active | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4**; closed via carrier `0041`, then **reopened for plugin intake** |
 | E1 | wt-publish audit | ⏳ backlog | 1 | task `0002` done (transports mapped; Surfdash simplest); feature close-out (verifyall) pending |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
 | E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
 | E4 | Multi-channel suite harvest | ⏳ backlog | 2 | promoted from former-G deferral (PRD v3); Surfing/X/Juejin/Qiita/Medium/Substack/Zenn/InfoQ/XHS under E2 transport |
-| **F** | kk plugin collection | ⏳ backlog | 2 | collection parent for `plugins/kk` capabilities (skills, commands, subagents); F1 = kk-judge agent skills (migrated from B7); intake task `0038` |
+| **F** | kk plugin collection | ⏳ backlog | 2 | collection parent for `plugins/kk` capabilities (skills, commands, subagents); F1 = kk-judge agent skills (migrated from B7); intake task `0038` cancelled — convention lives in F's AC |
 | F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `kk-judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** + **D5** |

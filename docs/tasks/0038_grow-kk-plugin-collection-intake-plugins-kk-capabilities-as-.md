@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Grow kk plugin collection: intake plugins/kk capabilities as child features"
-status: todo
+status: cancelled
 template: feature-impl
 created_at: 2026-08-12T01:44:12.763Z
-updated_at: "2026-08-12T02:09:19.354Z"
+updated_at: "2026-08-12T04:02:25.986Z"
 feature_id: F
 ---
 
@@ -59,3 +59,4 @@ Feature: Grow kk plugin collection
 <!-- P1–P4 findings table (Severity / File / Finding / Recommendation). (Filled at `done`.) -->
 
 ### History
+- 2026-08-12T04:02:25.986Z todo → cancelled (system)
