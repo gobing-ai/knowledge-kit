@@ -227,7 +227,7 @@ describe('article stage (R2)', () => {
     test('fails loud when the draft body cites an unknown document ID omitted from citations', async () => {
         const runner = jsonRunner({
             ...VALID_ARTICLE,
-            body: VALID_ARTICLE.body + '\n\nUnverified claim [doc-999].',
+            body: `${VALID_ARTICLE.body}\n\nUnverified claim [doc-999].`,
         });
 
         await expect(articleStage(runner, VALID_CURATION, VALID_OUTLINE, DOCS, INPUT_PATH)).rejects.toThrow(
@@ -300,7 +300,7 @@ describe('polish stage (R3)', () => {
     test('fails loud when polish introduces a citation to an unknown document ID', async () => {
         const runner = jsonRunner({
             ...VALID_POLISH,
-            body: VALID_POLISH.body + '\n\nRelated work [doc-999].',
+            body: `${VALID_POLISH.body}\n\nRelated work [doc-999].`,
         });
 
         await expect(polishStage(runner, VALID_ARTICLE, DOCS, INPUT_PATH)).rejects.toThrow(
@@ -462,6 +462,7 @@ console.log(JSON.stringify({ exitCode: 0, stdout: JSON.stringify(result), stderr
         const result = await curationStage(spurStageRunner, DOCS, INPUT_PATH);
 
         expect(result.perspectives.map((perspective) => perspective.name)).toEqual(['Architect', 'Operator']);
-        expect(result.perspectives[0]!.evidence).toEqual(['doc-1']);
+        expect(result.perspectives).toHaveLength(2);
+        expect(result.perspectives[0]?.evidence).toEqual(['doc-1']);
     });
 });

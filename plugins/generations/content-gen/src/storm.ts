@@ -124,7 +124,7 @@ function assertKnownEvidence(stage: string, ids: string[], allowed: Set<string>)
 function bodyCitations(body: string): string[] {
     const ids: string[] = [];
     for (const match of body.matchAll(/\[([^\]()\s]+)\](?!\()/g)) {
-        const id = match[1]!;
+        const id = match[0].slice(1, -1);
         // Only id-shaped tokens (containing a separator) are citation candidates, so prose
         // brackets like "[edit]" or ordinals "[2]" are not treated as citations.
         if (/[^A-Za-z0-9]/.test(id)) ids.push(id);
