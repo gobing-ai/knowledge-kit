@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.2.0
+version: 2.3.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -28,7 +28,7 @@ plugins/
   surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
   zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
   qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
-  content-gen/      # @gobing-ai/content-gen — generator plugin (stand-in)
+  content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
   karakeep-local/   # ingestion plugin — rclone-synced folder → Doc[] (not a workspace)
   kk/               # platform capability collection (skills, commands, subagents)
 tooling/
@@ -86,10 +86,13 @@ ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment):
 | `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
 | `publish` | `Content → Result` | Fan-out dispatches N of these |
 
-> **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
-> (ADR-007 amdt 2026-08-07). The fat skill `kk-judge` emits a `Verdict` (`PASS` / `FAIL` /
+> **Agent capabilities are not plugin kinds.** Quality gating ships as the `kk-judge` agent skill +
+> `agent.run` (ADR-007 amdt 2026-08-07): the fat skill emits a `Verdict` (`PASS` / `FAIL` /
 > `NEEDS_REVISION` + reasoning) consumed by an `agent.run` step whose transition is guarded by a
-> `shell`/`jq` check on the verdict payload. See `plugins/kk/skills/kk-judge/SKILL.md`.
+> `shell`/`jq` check on the verdict payload. Topic-core authoring ships the same way — the
+> `kk-topic` fat skill (create/init/outline/draft; feature F2) is an agent capability under
+> `plugins/kk`, never a `generator` plugin instance (ADR-006 amdt 2026-08-12). See
+> `plugins/kk/skills/kk-topic/SKILL.md`.
 
 ### Generator input dispatch
 

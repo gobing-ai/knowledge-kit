@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.3.0
+version: 2.4.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -288,7 +288,7 @@ File: `.spur/config.yaml`
 | Specification | Path | Description |
 |---------------|------|-------------|
 | Ingestion Plugin Specification | `docs/design/ingestion-plugin-specification.md` | Generic plugin authoring contract + Ingestion Plugin specification |
-| Generator Plugin Specification | `docs/design/generator-plugin-specification.md` | Generator-kind authoring contract: Doc[]→Content mapping, skill-backed entry, stand-in criteria, failure semantics |
+| Generator Plugin Specification | `docs/design/generator-plugin-specification.md` | Generator-kind authoring contract: Doc[]→Content mapping, owned STORM engine (D4), failure semantics |
 | Publish Plugin Specification | `docs/design/publish-plugin-specification.md` | Publish-kind authoring contract: transport abstraction, Content→frontmatter mapping, Result conventions, generic §1 citation |
 | Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk fanin` / `kk fanout` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
 

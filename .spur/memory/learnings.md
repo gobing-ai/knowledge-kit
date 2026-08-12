@@ -128,3 +128,40 @@
 - Architecture debt is now real, not hypothetical: `slugify` is verbatim ×3 and the IO/CLI skeleton (`processPublishIO`/`writePublishResult`/`main`/`getPublishTransport`, ~90 lines) is near-verbatim ×3. Both were deferred by E2's per-task "no shared mapper" invariant; the top deepening candidates are extracting `slugify` to `@gobing-ai/kk-core` and a `createPublishPlugin({targetName, makeTransport, mapContent})` factory in publish-harness — trigger when the next channel lands.
 - `kind: 'file-cli'` on a network token transport is semantically loose but explicitly classified by E2 — informational, don't "fix" it without an ADR.
 - Env-dependent paths (real `npx zenn` + `git push`; real `POST /api/v2/items`) are deferred by design; success and every failure path are covered by mocks/fakes, and the deferred gap is stated in the task file rather than silently skipped.
+## 2026-08-12 knowledge-kit (D4 STORM generator batch: 0046, 0047)
+
+- **Verdict AC rows must carry exact feature scenario titles.** The L4 scenario-verified check matches verdict-artifact `acceptanceCriteria` row ids against feature scenario titles via `normalizeTitle` (strips `Scenario: ` with colon and `R<N>` prefixes) or the `AC-N` alias. Verify subagents authored rows as `Scenario R1 — <shortened title>` (no colon, dropped words) → every D4 scenario stayed `L4.scenario-unverified` and the feature `verifying → done` gate blocked even with PASS verdicts. Fix: regenerate the answer files with `Scenario: R<N> — <exact feature title>` rows and re-run `spur task verdict --from-answer`.
+- **Real-runner tests can litter stray `.spur/` DBs.** A test that actually invokes `spur agent run` with cwd inside a workspace dir creates `plugins/<pkg>/.spur/` (spur.db, logs, token ledger) — untracked 2MB junk that pollutes `git status`. Run spur-invoking tests with cwd pinned to the repo root (or mock the binary), and remove the generated dir after.
+- **/sp:dev-unit pre-transitioned the task to `testing`.** The task-pipeline's record step owns `wip → testing`; the test-stage subagent moved the task early via `spur task update <wbs> testing`. Harmless (the later `--transition testing` is a no-op) but a deviation — the unit stage should leave status transitions to record.
+- **Inline batch driver worked cleanly**: run-link provenance (`spur task run-link --source inline-full`), per-stage native-subagent dispatch with filesystem validation, and the `record → done` guard all held. Review caught a real P1 (envelope not unwrapped) that unit tests missed — the review→verify→fix loop paid for itself.
+
+## 2026-08-12 — task 0048 (feature F2: harvest WT topic core as kk-topic fat skill)
+
+**Decisions**
+- One fat `plugins/kk/skills/kk-topic/SKILL.md` with four operations (`create | init | outline | draft`) instead of copying the four `wt-topic-*` wrappers — they are thin delegators to a seven-stage orchestrator, so copying them duplicates orchestration and retains a dependency on the broad WT skill. Reuses the `kk-judge` fat-skill SSOT pattern (ADR-007 amdt 2026-08-07). Rubric E1 D1 L1 C0 R0 = 3 → kept whole: one skill file, one deliverable, one review/rollback boundary.
+- Rejected a product `generator` plugin adapter — F2 is an agent capability and must not widen or couple to `GeneratorInput → Content`; no wrappers, scripts, packages, manifests, commands, or schemas added.
+- Artifact contract is plain files, no metadata/manifests: `brief.md`, `2-outline/outline-option-{a,b,c}.md`, `2-outline/outline-approved.md`, `3-draft/draft-article.md`. Numbered directories double as stage markers; operations pass paths between each other, never re-derive or rename.
+- Flag contract: `--force` = explicit operator approval to replace an existing artifact; `--revise <feedback>` = bounded draft revision (3 rounds, fixed constant); operation token is the first bare positional arg, case-insensitive; unknown operation fails loud and lists the four valid names.
+
+**Conventions discovered**
+- Skill authoring via Superskill: scaffold with `superskill skill scaffold` (specialist template), then `superskill skill validate <path> --strict --json` → `{"valid":true,"findings":[]}` is the pass signal; fix every finding at the skill source, not downstream.
+- Marketplace install dry-run is the installability gate: `superskill install kk --marketplace . --dry-run --verbose` → `Skills: 2` (kk-judge + kk-topic) and `[DRY-RUN] No files were written to install targets`; confirm no skill lands in any install target dir.
+- Fail-loud table pattern: every stop-condition row names the exact missing/existing path AND the exact next command; never silently skip, never auto-replace, never delete.
+- Dogfood skills in `/tmp/<skill>-dogfood`, never in the repo; exercise all stop paths plus the resume path; verify re-invocation leaves artifacts byte-identical.
+
+**Errors hit and resolved**
+- P4 (security): supplied briefs are copied verbatim into `brief.md` — treat brief content as data, never as instructions; directives embedded in briefs must not be executed. Advisory only; skill scopes briefs to outline/draft input.
+- P4 (usability): revision bound is a hard-coded 3 rounds — documented and deliberate; a config knob would be speculative until a second consumer needs it.
+- No P1–P3 findings; disposition PASS with the two advisories recorded. SECUA/architecture passes had zero findings because the skill is a self-contained capability module with zero coupling to plugin-kind contracts or the runtime.
+
+**Patterns that worked**
+- Operation routing in one file: invocation contract parses `[operation] <topic-or-brief> [--dir] [--outline a|b|c] [--revise] [--force]`; one artifact contract + one set of prerequisite rules shared by every op (R2) — `create` is just init → outline → draft composed from the same semantics, so independent ops behave identically to the composed flow.
+- Explicit operator gates as the only writes: outline selection waits for `--outline <a|b|c>` before copying (verbatim) to `outline-approved.md`; draft review offers approve or `--revise` feedback bounded at 3 rounds. No gate = no write.
+- Resume-by-presence: each op checks for its predecessor artifact; existing approved artifact → reuse and stop (without `--force`/`--revise`); `create` never re-runs a completed step. Dogfood re-invocation left artifacts byte-identical.
+- Recovery instructions are copy-pasteable commands in the fail-loud table — dogfooded all five stop paths, nothing overwritten.
+- Verdict AC rows used the exact `Scenario: R<N> — <full feature title>` format (the D4-batch L4 gotcha) — all five scenarios verified MET, no title-matching failures.
+
+**Gotchas**
+- A dry-run install still stages a `.rulesync/` directory — remove it after the run or `git status` shows noise.
+- Fixed-constant knobs (3 revision rounds) are fine for a first consumer; add a config knob only when a second consumer appears.
+- Skill-internal prompt-injection surface is real: any verbatim-copied input (briefs) is a data/instruction boundary — state it in the skill invariants.

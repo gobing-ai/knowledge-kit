@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.8.0
+version: 1.9.0
 created_at: 2026-05-28
 updated_at: 2026-08-12
 edit_rules: 99 §6.1
@@ -174,6 +174,12 @@ Feature tree reorganized under foundation hygiene (**A1**) before Phase-1 plugin
 
 Root **F** is no longer a cancelled root. It is repurposed as the **kk plugin collection** parent: all `plugins/kk` capabilities (agent skills, slash commands, subagents) live under F or a child feature; kk-judge migrated **B7 → F1** (intake task `0038`). The 2026-07-29 statement "F/G/H are historical cancelled roots only" now holds for **G/H only**. The cancelled F slot was freed by removing its file (`cancelled` is terminal in spur — no lifecycle transition out); the allocator re-minted F as the first free root letter.
 
+### Amendment — 2026-08-12 (WT topic-core harvest rehomed D5 → F2)
+
+The WT agent-skill harvest moves from **D5** to **F2** under the kk plugin collection; its first
+delivery is one fat `kk-topic` skill covering topic-core authoring. **Why:** `plugins/kk` agent
+capabilities belong under F, while D remains the home for product `generator` plugin instances.
+
 ### Amendment — 2026-07-24 (plugin model concretized, sub-decision 1)
 
 Planning feature **B** resolved sub-decision 1 to a **skill-first** shape, grounded in the D1/E1
@@ -281,4 +287,3 @@ boundaries), `docs/04_DESIGN.md` §3–§4, feature E4.
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
 - **Interactive prompts, colored output** — out of scope until a command requires them.
-

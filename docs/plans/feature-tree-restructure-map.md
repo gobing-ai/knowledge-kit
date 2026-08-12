@@ -124,3 +124,13 @@ Operator decision after A1 apply: free active root **F**.
 | B3 | extend Notes | points E2E acceptance at B5 (template stays B3) |
 
 Active Phase-1 tree roots: **A, B, C, D, E, I** (+ cancelled F/G/H historical).
+
+## Amendment — 2026-08-12 (D5 rehomed under F)
+
+Operator-approved correction after the 2026-08-12 ADR-006 amendment made **F** the exclusive parent
+for `plugins/kk` agent capabilities. D5's `topic-*` / `image-*` / `info-*` skill harvest is an agent
+capability collection, not a product `generator` plugin satisfying `GeneratorInput → Content`.
+
+| old_id | disposition | new_parent | expected_new_id | wave | notes |
+| --- | --- | --- | --- | --- | --- |
+| D5 | reparent-under:F | F | F2 | 4 | Keep Goal; narrow the first delivery to the cohesive topic-core path during planning. |

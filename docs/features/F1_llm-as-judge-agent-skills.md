@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F1"
 name: LLM-as-judge agent skills
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-08-03T01:02:09.752Z"
-updated_at: "2026-08-12T01:59:16.769Z"
+updated_at: "2026-08-12T16:22:44.098Z"
 ---
 
 # F1: LLM-as-judge agent skills
@@ -52,3 +52,4 @@ Feature: LLM-as-judge agent skills and workflow integration
 - 2026-08-08T00:20:04.088Z active → verifying (system)
 - 2026-08-12T01:53:10.373Z moved B7 → K1 (system)
 - 2026-08-12T01:59:16.769Z moved K1 → F1 (system)
+- 2026-08-12T16:22:44.098Z verifying → done (system)

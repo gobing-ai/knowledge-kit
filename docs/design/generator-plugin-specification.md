@@ -37,9 +37,9 @@ The generator entry is an **executable CLI wrapper** inside the plugin directory
 
 - `plugin.json` declares `{ "kind": "generator", "entry": "./src/index.ts" }` (or a `.js` /
   executable entry; see generic §1.2 for the spawn rule per entry type).
-- The wrapper reads the `Doc[]` JSON array from `--in`, formats stage-0 material inputs, invokes
-  the backing engine (Phase 1: the stand-in agent skill, §2.4) via a helper script or CLI, parses
-  the resulting article markdown, constructs a `Content` object per §2.3, and writes it as JSON to
+- The wrapper reads the `Doc[]` JSON array from `--in`, formats stage material inputs, invokes
+  the backing engine (the owned STORM pipeline, §2.4) via the shared stage runner, parses the
+  resulting article markdown, constructs a `Content` object per §2.3, and writes it as JSON to
   `--out`.
 - The wrapper owns argv parsing (`--in` / `--out`) and the failure semantics of §2.5.
 
@@ -61,18 +61,22 @@ changes**:
   `Doc.title` → `title`, and `Doc.id` / `Doc.metadata` → `cite`. All three sub-fields are optional
   in the schema; emit what the input docs provide.
 - **`metadata`**: Generator provenance and vendor-specific data, e.g.
-  `{ generator: "wt:technical-content-creation", stageCount: 4, docIds: string[] }`.
+  `{ generator: "kk:storm", stageCount: 4, docIds: string[] }` (D4 owned engine; §2.4).
 
-### 2.4 Stand-in vs Own-Engine Selection Criteria
+### 2.4 Own Engine (D4) — STORM Pipeline
 
-- **Phase 1 stand-in**: `wt:technical-content-creation` (stages 0–3: material intake → research
-  brief → outline → draft), per the D1 research decision (task 0001), fronted by
-  `wt:info-research` / `wt:super-researcher`.
-- **Switch to the own engine (D4 — STORM) when either condition holds**:
-  - Persona-driven multi-perspective curation or a DSPy-based iterative retrieval loop over the
-    internal corpus (`KarakeepLocalRM`) is required.
-  - Exact per-section citation grounding (`url_to_info`) is required beyond top-level source
-    mapping.
+The D4 switch-over is **implemented** (task 0047): the owned STORM engine replaced the Phase-1
+stand-in `wt:technical-content-creation` (stages 0–3: material intake → research brief → outline →
+draft, per the D1 research decision in task 0001). The stand-in is **no longer invoked**.
+
+- **Engine**: four grounded stages — curation, outline, article, polish — implemented in
+  `plugins/content-gen/src/storm.ts` and orchestrated by `generateWithStormPipeline`
+  (`plugins/content-gen/src/index.ts`), driven through the same `spur agent run` boundary the
+  stand-in used. No Python runtime, direct LLM-provider client, plugin kind, or schema was added.
+- **Why now**: D4 requires persona-driven multi-perspective curation and exact per-section
+  citation grounding to supplied documents — the D1-selected switch conditions originally
+  recorded in task 0016 §3. The switch keeps `Doc[] → Content` contract, argv, file IO, empty-input,
+  and failure semantics unchanged (§2.2, §2.5).
 
 ### 2.5 Failure & Diagnostics Semantics
 

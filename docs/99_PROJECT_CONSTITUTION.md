@@ -375,6 +375,11 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/03_ARCHITECTURE.md`
 
+- [2026-08-12] knowledge-kit: The F2 batch (0046–0048) synced `00`/`01`/`05` and the generator
+  spec but skipped `03`/`04` — the `03` tree comment still called content-gen a "stand-in" and the
+  `04` §6 spec-table row still cited "skill-backed entry, stand-in criteria" after the owned STORM
+  engine (0047) shipped. §5 same-commit obligations bind every key doc a change touches, not just
+  the ones a task names; run the §7 audit at batch exit.
 - [2026-06-11] spur-new: The module list still described a hand-rolled parser two ADRs after it
   was replaced — stale module descriptions survive migrations silently (§6.4 rule 4).
 - [2026-06-12] spur-new: A wildcard dependency edge (`apps/* ──► packages/{…}`) hid three real

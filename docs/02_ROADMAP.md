@@ -3,7 +3,7 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.1.3
+version: 3.2.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -24,10 +24,10 @@ sync: [T5]
 | Phase 0 — Foundation | ✅ done | **A** (+ **A1** hygiene) | Bun workspaces monorepo; `@gobing-ai/*`; Commander shell; Biome + tsc/test gates; Spur init; feature-tree restructure (A1) |
 | Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: C/D/E reopened (`active`) as living kind parents for plugin intake; E1 close-out (`0002` done; feature backlog — AC placeholder never enriched) |
 | **Phase 2 — Repositioning + widened contracts** | ⏳ **current** | **J**, **B6**, **F** (kk plugin collection), **F1**, **D** (Brief), **E4** | **J** repositioning (ADR-007, PRD v3, contract designs — this phase's gate) → implementation graduates into **B6** sequential `kk fanin`/`fanout`, **F1** LLM-as-judge agent skills (under **F**), **D** Brief input contract (`Doc[] \| Brief`), **E4** multi-channel suite harvest |
-| Phase 3 — Generator depth | 💤 deferred | **D4**, **D5** | Own STORM generator (**D4**) · `wt` generator harvest (**D5**) |
+| **Phase 3 — Generator + authoring depth** | ⏳ **current** | **D4**, **F2** | Own STORM generator (**D4**) · topic-core authoring skill (**F2**, one fat `kk-topic` skill) |
 | LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |
 
-Cancelled roots (historical only): **G** (publish suite → **E4**), **H** (STORM/harvest → D4/D5).
+Cancelled roots (historical only): **G** (publish suite → **E4**), **H** (STORM/harvest → D4; former D5 rehomed as **F2**).
 
 ## Phase 2 sequencing
 
