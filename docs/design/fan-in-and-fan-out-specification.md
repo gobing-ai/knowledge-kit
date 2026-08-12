@@ -2,6 +2,20 @@
 
 This specification defines the CLI surface, data contracts, exit codes, deduplication, and retry semantics for `fanin` (N→1 `Doc[]` merge) and `fanout` (1→N `Content` multi-target publish). It fulfills **Task 0033** (Feature **J**) and feeds target sections in `03_ARCHITECTURE.md` and `04_DESIGN.md`.
 
+> **Dated correction (2026-08-11).** Feature **B6** (tasks 0042/0043) implemented this spec — `kk
+> fanin` and `kk fanout` are shipped in `apps/cli`. Shipped-surface deltas vs the text below:
+>
+> 1. **`--dedupe <id|uri|none>` (§1.2) is not shipped.** Task 0042 deferred it: id dedupe (default)
+>    is the only implemented rule; add the flag if a `uri`-dedupe consumer appears. `04_DESIGN`
+>    §1.5 carries the deferral.
+> 2. **`fanout` ships `--plugins-root <dir>` (default `./plugins`)** — added during implementation
+>    (task 0043), consistent with every sibling plugin-aware command; §1.3's table below predates it.
+> 3. **Exit-code contract (§4) shipped as specified**, including CLI/input error → `2` (usage
+>    errors, invalid `--content`, unresolvable target, `--out` write failure). Retry semantics (§5)
+>    shipped as specified.
+> 4. **§7's "Task 0036" reference is historical** — the target sections were applied to
+>    `03`/`04` by tasks 0042/0043 (B6), not 0036.
+
 ---
 
 ## 1. CLI Surface & Boundary Justification (R1, R3)

@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.1.1
+version: 2.1.2
 created_at: 2026-07-22
-updated_at: 2026-08-11
+updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -100,13 +100,14 @@ brief-only input handed to a docs-only generator is a named error, never an empt
 Siblings of `invoke`, so the single-plugin invoker contract stays intact (ADR-006):
 
 ```text
-kk fanin   --in <f1> [--in <f2> …] --out <merged.json> [--dedupe id|uri|none]
+kk fanin   --in <f1> [--in <f2> …] --out <merged.json>
 kk fanout  --content <content.json> --target <p1> [--target <p2> …]
-           --out <result.json> [--retry-from <prior-result.json>]
+           --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
 ```
 
-- **Fan-in (N→1):** merge `Doc[]` sets; dedupe on primary `id` by default; provenance retained in
-  `metadata.sources`; stable ordering.
+- **Fan-in (N→1):** merge `Doc[]` sets; dedupe on primary `id` (first-seen wins); provenance
+  retained in `metadata.sources`; stable ordering. Spec §1.2's `--dedupe` flag is deferred — id
+  dedupe is the only rule (task 0042).
 - **Fan-out (1→N):** dispatch `Content` to N publishers **in sequence**; emit one aggregate `Result`
   with a per-target entry (`published | failed | skipped`) plus summary counters.
 - **Partial success:** successful targets stay published and are individually re-runnable via

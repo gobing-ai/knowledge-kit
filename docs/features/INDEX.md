@@ -9,7 +9,7 @@
     ├── [done] **B3**: Spur workflow integration ([B3_spur-workflow-integration.md](./B3_spur-workflow-integration.md))
     ├── [done] **B4**: CLI surface ([B4_cli-surface.md](./B4_cli-surface.md))
     ├── [done] **B5**: End-to-end pipeline acceptance ([B5_end-to-end-pipeline-acceptance.md](./B5_end-to-end-pipeline-acceptance.md))
-    └── [backlog] **B6**: Sequential fan-in/fan-out steps ([B6_sequential-fan-in-fan-out-steps.md](./B6_sequential-fan-in-fan-out-steps.md))
+    └── [done] **B6**: Sequential fan-in/fan-out steps ([B6_sequential-fan-in-fan-out-steps.md](./B6_sequential-fan-in-fan-out-steps.md))
 [active] **C**: Ingestion ([C_ingestionplugin-karakeep-local.md](./C_ingestionplugin-karakeep-local.md))
     ├── [done] **C1**: Ingestion plugin design ([C1_ingestion-plugin-design.md](./C1_ingestion-plugin-design.md))
     └── [done] **C2**: Karakeep-local ([C2_karakeep-local.md](./C2_karakeep-local.md))

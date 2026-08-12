@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.1.0
+version: 2.2.0
 created_at: 2026-07-22
-updated_at: 2026-08-07
+updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -35,12 +35,12 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 | `invoke <plugin>` | Invoke a plugin with input/output files and contract validation | shipped |
 | `plugins list` | List discovered plugins grouped by kind (`--kind` filter, `--json` format) | shipped |
 | `plugins doctor` | Validate plugin manifests and entry files under plugins root | shipped |
-| `fanin` | Merge N `Doc[]` files into one (§1.5) | **specified — not implemented** (B6) |
-| `fanout` | Dispatch one `Content` to N publish targets in sequence (§1.6) | **specified — not implemented** (B6) |
+| `fanin` | Merge N `Doc[]` files into one (§1.5) | shipped (B6) |
+| `fanout` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (B6) |
 
-> **Surface status.** Rows marked *specified — not implemented* are designed under ADR-007 and
-> carry a full specification, but no code exists yet; they graduate with feature **B6**. Nothing in
-> §1.5/§1.6 is callable today. Rows marked *shipped* are live in `apps/cli`.
+> **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
+> registrations). `fanin` / `fanout` shipped with feature **B6** (tasks 0042/0043) — §1.5/§1.6 are
+> callable today. The spec's `--dedupe` flag is deliberately deferred, not shipped — see §1.5.
 
 ### `add`
 
@@ -103,52 +103,65 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 
 **Implementation:** `apps/cli/src/cli.ts`.
 
-### 1.5 `fanin` — *specified, not implemented*
+### 1.5 `fanin` — shipped (B6)
 
 Merges N `Doc[]` files into one. Sibling of `invoke` so the single-plugin invoker contract stays
 intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
 
 ```text
-knowledge-kit fanin --in <f1> [--in <f2> …] --out <merged.json> [--dedupe id|uri|none]
+knowledge-kit fanin --in <f1> [--in <f2> …] --out <merged.json>
 ```
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `--in <file>` | string (repeatable) | yes (≥1) | — | Input `Doc[]` JSON files to merge |
 | `--out <file>` | string | yes | — | Output merged `Doc[]` JSON path |
-| `--dedupe <rule>` | `id` \| `uri` \| `none` | no | `id` | Deduplication rule |
 
-**Behavior:** validate each input against `DocListSchema` → dedupe per rule → retain provenance in
-`metadata.sources` (array of contributing source ids) → stable ordering → write merged `Doc[]`.
-Fails loud on any invalid input file.
+**Behavior:** validate each input against `DocListSchema` (missing / unreadable / invalid-JSON /
+schema-violating file exits `1` naming the file) → dedupe by `Doc.id` (first-seen wins; later
+duplicates contribute only their provenance) → append `metadata.sources: Array<{ file,
+sourceUri? }>` in `--in` order → keep first-appearance order → write merged `Doc[]`. Exit `0` on
+success, `2` on usage errors. **Deferred:** spec §1.2's `--dedupe <id|uri|none>` flag is **not
+shipped** — id dedupe (default) is the only rule; add the flag if a `uri`-dedupe consumer appears
+(task 0042).
 
-### 1.6 `fanout` — *specified, not implemented*
+### 1.6 `fanout` — shipped (B6)
 
 Dispatches one `Content` to N publish targets **in sequence**, emitting one aggregate `Result`.
 Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.3, §3–§6.
 
 ```text
 knowledge-kit fanout --content <content.json> --target <p1> [--target <p2> …] \
-                     --out <result.json> [--retry-from <prior-result.json>]
+                     --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
 ```
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `--content <file>` | string | yes | — | `Content` JSON to publish |
-| `--target <plugin>` | string (repeatable) | yes (≥1) | — | Publish plugin name per target |
+| `--target <plugin>` | string (repeatable) | yes (≥1)\* | — | Publish plugin name per target |
 | `--out <file>` | string | yes | — | Aggregate `Result` JSON path |
-| `--retry-from <file>` | string | no | — | Prior `Result`; re-dispatches only non-`published` targets |
+| `--retry-from <file>` | string | no | — | Prior `Result`; published/skipped targets carried as `skipped` (url/id preserved), only prior failures re-dispatched |
+| `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
+
+\* `--target` is required unless `--retry-from` supplies the retry set; explicit `--target` values
+then narrow the dispatch to the still-unpublished subset.
+
+**Behavior:** validate `--content` against `ContentSchema` and every target against the publish
+registry (malformed flags, invalid content, or an unresolvable target exits `2`) → dispatch targets
+sequentially, one `TargetOutcome` per target → write the aggregate `{ ok, summary: { total,
+succeeded, failed, skipped }, targets }` (spec §3.1) to `--out`.
 
 **Exit-code contract:**
 
 | Outcome | Exit | Aggregate `Result` |
 |---------|------|--------------------|
-| All targets published | `0` | every entry `published` |
+| All targets published | `0` | every dispatched entry `published` (carried retry entries `skipped`) |
 | Some published, some failed | `1` | mixed entries; successes retain `published` |
 | All targets failed | `1` | every entry `failed` |
+| CLI / input error (malformed flags, invalid `--content`, unresolvable target, `--out` write failure) | `2` | nothing written to `--out` |
 
 Partial success is **not** exit 0 — the run fails loud (ADR-007 R5), while successful targets stay
-published and are individually re-runnable via `--retry-from`.
+published and are individually re-runnable via `--retry-from` (spec §5).
 
 ## 1.7 `plugin.json` manifest surface
 
@@ -204,9 +217,9 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | Export | Kind | Notes |
 |--------|------|-------|
 | `DocSchema`, `ContentSchema`, `ResultSchema`, `DocListSchema` | Zod schemas | Pure data contract schemas |
-| `BriefSchema`, `GeneratorInputSchema` | Zod schemas | **Specified, not implemented** (ADR-007; features D, B6) |
+| `BriefSchema`, `GeneratorInputSchema` | Zod schemas | **Specified, not implemented** (ADR-007 R3; feature D) |
 | `Doc`, `Content`, `Result` | types | Inferred TypeScript types |
-| `Brief`, `GeneratorInput` | types | **Specified, not implemented** (ADR-007; features D, B6) |
+| `Brief`, `GeneratorInput` | types | **Specified, not implemented** (ADR-007 R3; feature D) |
 | `PLUGIN_KINDS`, `PluginKind`, `PluginKindSchema` | constants & schema | Supported plugin lifecycle kinds |
 | `kindContract(kind)` | function | Resolves I/O contract per plugin kind |
 | `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |

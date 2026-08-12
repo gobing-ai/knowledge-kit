@@ -51,7 +51,7 @@ Prefer these entry surfaces over ad-hoc process unless the operator overrides fo
 
 ```
 apps/
-  cli/            # @gobing-ai/knowledge-kit — Commander binary (invoke, plugins, fanin*, fanout*)
+  cli/            # @gobing-ai/knowledge-kit — Commander binary (invoke, plugins, fanin, fanout)
 packages/
   utils/          # @gobing-ai/utils — helpers, zod re-export, logger
   kk-core/        # @gobing-ai/kk-core — Doc/Brief/Content/Result contracts + kindContract
@@ -63,7 +63,7 @@ docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan
 .spur/            # Spur config, rules, workflows, templates
 ```
 
-`*` = specified under ADR-007, not yet implemented (feature **B6**). See `docs/04_DESIGN.md` §1.
+`*` = specified under ADR-007, not yet implemented. See `docs/04_DESIGN.md` §1.
 
 - **Runtime / package manager / test runner:** Bun `1.3.14`. Prefer `bun:*` APIs over `node:*`
   unless Bun lacks the API.
