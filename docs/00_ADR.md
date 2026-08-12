@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.10.0
+version: 1.11.0
 created_at: 2026-05-28
 updated_at: 2026-08-12
 edit_rules: 99 §6.1
@@ -60,6 +60,12 @@ constructable in tests without invoking `process.argv`.
 **Consequences.** New subcommands are registered inside `createProgram()`. The factory must stay
 side-effect-free at construction.
 
+### Amendment — 2026-08-12 (register-per-command; ADR-010)
+
+`createProgram()` remains the side-effect-free factory. New nouns are registered by
+`registerXCommand` modules under `apps/cli/src/commands/`; `createProgram()` only wires name,
+version, global options, and those register calls. Action bodies do not grow `cli.ts`. See ADR-010 R2.
+
 ---
 
 ## ADR-003 — `@gobing-ai/*` workspace aliases as the only cross-package boundary
@@ -92,6 +98,11 @@ run `bun run build` and repoint `bin` to `dist/index.js` before publishing.
 
 1. Production code uses `logger` from `@gobing-ai/utils` (stdio via Bun write APIs).
 2. Workspace scope is `@gobing-ai/*`; product package is `@gobing-ai/knowledge-kit`.
+
+### Amendment — 2026-08-12 (operator binary `kk`; ADR-010)
+
+Primary npm `bin` is `kk` → the Bun-target bundle `dist/index.js`. `knowledge-kit` is a
+compatibility alias for the same artifact. Dev still runs `bun run src/index.ts`. See ADR-010 R1/R5.
 
 ---
 
@@ -229,6 +240,11 @@ under kind collections (`plugins/ingestions|generations|publishings/<name>/plugi
 
 **Detail:** `docs/01_PRD.md` (v3 re-cut, ticket 0031), `docs/03_ARCHITECTURE.md` / `docs/04_DESIGN.md` (contract design, tickets 0032–0034), `docs/features/J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md`.
 
+### Amendment — 2026-08-12 (R2 package name vs operator binary)
+
+R2 retains the **package** name `knowledge-kit` / `@gobing-ai/knowledge-kit`. The
+**operator-facing binary** is `kk` (ADR-010). This is not a package rename.
+
 ### Amendment — 2026-08-07 (LLM-as-judge repositioned to agent skills; supersedes 2026-08-02 judge-kind amendment, ticket 0037)
 
 > **Status:** Accepted · **Supersedes:** the 2026-08-02 amendment on this ADR (fourth plugin kind `judge`).
@@ -321,6 +337,33 @@ make a plugin dropped at `plugins/<name>` a doctor/rule failure instead of a sil
 fork.
 
 **Detail:** `docs/03_ARCHITECTURE.md` layout, `docs/04_DESIGN.md` §1.7, `docs/design/ingestion-plugin-specification.md` §1.5.
+
+---
+
+## ADR-010 — Product CLI: `kk` binary, register-per-command tree (2026-08-12)
+
+> **Status:** Accepted (design) · **Date:** 2026-08-12 · **Amends:** ADR-002 (registration site),
+> ADR-004 (bin name/path), ADR-007 R2 (package vs operator binary). Feature **A2**.
+
+**Decision.** The product CLI is the `kk` binary published as `@gobing-ai/knowledge-kit`.
+
+1. **Operator binary (R1):** `program.name` and the primary npm `bin` key are `kk`. The package
+   name `@gobing-ai/knowledge-kit` is unchanged. A `knowledge-kit` bin alias points at the same artifact.
+2. **Command modules (R2):** Each noun lives in `apps/cli/src/commands/<noun>.ts` as
+   `registerXCommand(program)`. `createProgram()` stays the side-effect-free factory and only
+   wires name, version, global options, and register calls.
+3. **Exit seam (R3):** `main(argv) → number`. Command actions must not call `process.exit`. Only
+   the `import.meta.main` entry may exit.
+4. **Version (R4):** Commander `--version` / `-V` prints `apps/cli/package.json` `version`.
+5. **Publish artifact (R5):** npm ships the Bun-target bundle (`dist/index.js`). `prepack` builds
+   it so `npm pack` sees `bin.kk`. Native `bun --compile` binaries and npm Trusted Publisher /
+   GitHub OIDC are out of this decision.
+6. **Globals (R6):** `--help`/`-h`, `--version`/`-V`, `--verbose`/`-v`. `--json` stays per-command.
+
+**Why.** Docs and workflows already say `kk`; a single `cli.ts` cannot grow; a lying version and
+a missing bin file cannot be published honestly.
+
+**Detail:** `docs/design/kk-cli-surface.md`, `docs/03_ARCHITECTURE.md` (CLI entry), feature A2.
 
 ---
 

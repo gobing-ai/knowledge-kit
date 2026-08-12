@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.4.0
+version: 2.5.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -48,19 +48,24 @@ workspaces (`karakeep-local` and `kk` are not).
 
 - **Runtime / PM / tests:** Bun `1.3.14` (`packageManager` pin). Prefer `bun:*` over `node:*`.
 - **Lint / format:** Biome **2.5.5** (root `devDependency` + `.prototools`).
-- **CLI entry:** `apps/cli/src/index.ts` → `createProgram().parse()` when `import.meta.main`.
-- **Command tree:** `createProgram()` is side-effect-free at construction.
+- **CLI entry:** `apps/cli/src/index.ts` → `process.exit(await main())` when `import.meta.main`.
+  `main(argv) → number` (ADR-010 R3). `createProgram()` stays side-effect-free.
+- **Command tree:** `apps/cli/src/commands/<noun>.ts` exports `registerXCommand`; `createProgram()`
+  only wires name (`kk`), version, global `--verbose`, and those register calls (ADR-010 R2).
 - **Output:** product messages go through `@gobing-ai/utils` `logger` (`out` / `info` / `error`).
+  `--verbose` gates extra `info`; it must not interleave into `--json` payloads.
 
 ## Data flow (command path)
 
 ```text
 argv
-  → createProgram().parse()
-  → subcommand action
+  → main(argv)
+  → createProgram().parseAsync(argv)
+  → registerXCommand action
   → @gobing-ai/* pure logic
   → logger.out / logger.info / logger.error
   → stdout / stderr
+  → main returns exit code
 ```
 
 ## Pipeline model

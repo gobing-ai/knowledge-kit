@@ -3,7 +3,7 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.3.0
+version: 3.4.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR]
@@ -55,14 +55,14 @@ Technical content creation and published output are fragmented: turning ideas or
 ## Non-Goals (Current Scope)
 
 - Engine-level parallel execution — sequential fan-in/fan-out owned by `kk` satisfies multi-channel publish without premature engine complexity (ADR-007 R4).
-- Package or binary rename — the name `knowledge-kit` is historical and retained (ADR-007 R2).
+- Package rename — the name `knowledge-kit` / `@gobing-ai/knowledge-kit` is historical and retained (ADR-007 R2). The operator binary is `kk` (ADR-010 / feature A2); that is not a package rename.
 - The **LLM wiki** — explicitly undecided map fog (feature **I**), requiring a go/no-go spike first.
 
 ## In scope
 
 | Area | Feature | Phase | Notes |
 |------|---------|-------|-------|
-| Project foundation | **A** | Phase 0 | Monorepo substrate; **A1** feature-tree restructure |
+| Project foundation | **A** | Phase 0/2 | Monorepo substrate; **A1** feature-tree restructure; **A2** `kk` product CLI surface (help/version/verbose, command tree, npm `bin.kk`) |
 | Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance · Phase 2: **B6** sequential `kk fanin`/`fanout` |
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
 | Content generation | **D** | Phase 1/2 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) |
@@ -77,7 +77,7 @@ A user can answer "can I run this to write an article about X with nothing inges
 | Area | Feature | Status | Reason |
 |------|---------|--------|--------|
 | Engine-level parallel execution | — | Deferred | `kk` sequential fan-out meets requirement without engine complexity (ADR-007 R4) |
-| Package / binary rename | — | Deferred / Rejected | Name is historical; renaming has migration cost with zero capability gain (ADR-007 R2) |
+| Package rename | — | Rejected | Package `@gobing-ai/knowledge-kit` is historical (ADR-007 R2). Operator binary `kk` is in scope (A2 / ADR-010). |
 | LLM wiki | **I** | Undecided | Parked as map fog; requires go/no-go spike first |
 | Own STORM generator | **D4** | Phase 3 | Future generator depth |
 | Remaining WT agent-skill families | Future **F** children | Deferred | Image, auxiliary research, adaptation, and publishing require separate intake after F2 topic core |
