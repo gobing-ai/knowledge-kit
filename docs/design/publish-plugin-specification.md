@@ -59,6 +59,6 @@ For targets expecting frontmatter (e.g. static site generators like Surfing/Astr
 
 - **Core Verification**: Tested against `kindContract('publish')` in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts:24`) and `runInvoke` execution in `apps/cli/src/invoke.ts`.
 - **Schema Impact**: Zero Zod schema changes or core framework modifications required.
-- **Shipped reference instances**: `plugins/surfdash-pub` (E3), `plugins/zenn-pub` and
-  `plugins/qiita-pub` (E4) — each implements `PublishTransport` with `kind: 'file-cli'`, its own
+- **Shipped reference instances**: `plugins/publishings/surfdash-pub` (E3), `plugins/publishings/zenn-pub` and
+  `plugins/publishings/qiita-pub` (E4) — each implements `PublishTransport` with `kind: 'file-cli'`, its own
   target mapper, and env-only secrets; all three are offline-tested via `FakeFileCliTransport`.

@@ -29,6 +29,22 @@ All plugins are spawned by `runInvoke(opts)` via `Bun.spawnSync`:
 - **Exit Code 0**: Signifies successful execution. The plugin entry MUST write a JSON file to `--out` that satisfies the kind's output schema (`kindContract(kind).output`).
 - **Exit Code != 0**: Signifies a execution failure. The plugin MUST output diagnostic errors to `stderr`.
 
+### 1.5 On-disk layout (ADR-009)
+Product plugins MUST live under the kind collection that matches `plugin.json.kind`:
+
+| `kind` | Path |
+|--------|------|
+| `ingestion` | `plugins/ingestions/<name>/` |
+| `generator` | `plugins/generations/<name>/` |
+| `publish` | `plugins/publishings/<name>/` |
+
+Agent skills, slash commands, subagents, hooks, and rules MUST live under `plugins/kk/`
+(`skills/`, `commands/`, `agents/`, `hooks/`, `rules/`). They are not product plugins.
+
+A kk-core `plugin.json` at `plugins/<name>/` (outside a collection) is `misplaced`. A
+`kind` that does not match its collection is `kind_mismatch`. `discoverPlugins` skips
+`plugins/kk`.
+
 ---
 
 ## 2. Ingestion-Specific Contract

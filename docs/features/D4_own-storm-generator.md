@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-29T18:41:12.782Z"
-updated_at: "2026-08-12T14:36:28.863Z"
+updated_at: "2026-08-12T16:44:19.751Z"
 ---
 
 # D4: Own STORM generator
@@ -14,7 +14,7 @@ updated_at: "2026-08-12T14:36:28.863Z"
 ## Goal
 Replace the D2 stand-in with an owned Bun/TypeScript STORM pipeline that performs curation, outline generation, grounded article generation, and polishing behind the existing `ContentGeneratorPlugin` contract.
 ## Scope
-- In: replace the internals of `plugins/content-gen` with a four-stage STORM pipeline; reuse the existing `spur agent run` boundary once per stage; ground research and citations only in the supplied `Doc[]`; preserve the current `Doc[] → Content` invoke contract and failure semantics; add deterministic stage-boundary and end-to-end contract tests.
+- In: replace the internals of `plugins/generations/content-gen` with a four-stage STORM pipeline; reuse the existing `spur agent run` boundary once per stage; ground research and citations only in the supplied `Doc[]`; preserve the current `Doc[] → Content` invoke contract and failure semantics; add deterministic stage-boundary and end-to-end contract tests.
 - Out: Python or DSPy at runtime; a direct LLM-provider transport; external-web retrieval; new plugin kinds or schemas; `Brief`/`GeneratorInput` contract widening; publish-channel work.
 ## Acceptance Criteria
 ```gherkin

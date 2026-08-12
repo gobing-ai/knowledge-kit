@@ -6,16 +6,16 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-08-12T01:52:51.276Z"
-updated_at: "2026-08-12T01:59:33.689Z"
+updated_at: "2026-08-12T16:43:45.591Z"
 ---
 
 # F: kk plugin collection
 
 ## Goal
-Collection parent for the `plugins/kk` capability collection. Every agent skill, slash command, and subagent shipped under `plugins/kk` has a home here — as feature F itself or a child feature. Mirrors the kind-parent pattern of C/D/E: capabilities land as children (first child **F1** = kk-judge agent skills, migrated from B7).
+Collection parent for the `plugins/kk` Claude Code plugin. Every agent skill, slash command, subagent, hook, and rule shipped under `plugins/kk` has a home here — as feature F itself or a child feature. Mirrors the kind-parent pattern of C/D/E: capabilities land as children (first child **F1** = kk-judge agent skills, migrated from B7).
 ## Scope
-- In: all capabilities under `plugins/kk/` (`skills/`, `agents/`, slash commands); child features per capability; migration of the kk-judge feature (B7 → F1) into the collection; intake of future `plugins/kk` capabilities (task 0038).
-- Out: plugin-kind instances outside `plugins/kk` (content-gen, karakeep-local, surfdash-pub stay under C/D/E); the C/D/E kind-parent trees; engine/runtime work.
+- In: all capabilities under `plugins/kk/` (`skills/`, `commands/`, `agents/`, `hooks/`, `rules/`); child features per capability; migration of the kk-judge feature (B7 → F1) into the collection; intake of future `plugins/kk` capabilities (task 0038).
+- Out: product plugin instances under `plugins/ingestions|generations|publishings` (C/D/E); the C/D/E kind-parent trees; engine/runtime work; Spur constraint rules (`.spur/rules/`).
 ## Acceptance Criteria
 ```gherkin
 Feature: kk plugin collection
@@ -23,7 +23,7 @@ Feature: kk plugin collection
   @core
   Scenario: Capabilities have a home node
     Given the plugins/kk directory ships agent capabilities
-    When a capability is added (skill, slash command, or subagent)
+    When a capability is added (skill, slash command, subagent, hook, or rule)
     Then it is represented by feature F or a child feature of F
 
   @core

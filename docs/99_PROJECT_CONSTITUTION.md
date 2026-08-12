@@ -3,7 +3,7 @@ name: Project Constitution
 doc: 99_PROJECT_CONSTITUTION
 owns: PROCESS — how the key files are maintained
 authority: authoritative-on-process
-version: 1.3.0
+version: 1.3.1
 created_at: 2026-05-31T17:30:43.643Z
 updated_at: 2026-08-12T00:00:00.000Z
 ---
@@ -342,6 +342,10 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/00_ADR.md`
 
+- [2026-08-12] knowledge-kit: Product plugins sat at `plugins/<name>` while `plugins/kk` held
+  agent capabilities — one-level discovery (`plugins/*/plugin.json`) could not tell them apart
+  and invited mixed layout. Kind collections + skip-`kk` is ADR-009; do not reintroduce a flat
+  `plugins/*` workspace glob or one-level scan.
 - [2026-06-11] spur-new: Draft ADRs that bundled a principle + a deferred design + a mechanism
   choice + implementation tips had to be unbundled on operator review. Split before proposing,
   not after (now §6.1 rules 1–2).
@@ -375,6 +379,9 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/03_ARCHITECTURE.md`
 
+- [2026-08-12] knowledge-kit: The `plugins/` tree diagram listed product plugins at the root
+  (`plugins/surfdash-pub`, …) after ADR-009 kind collections shipped — same-commit 03 layout
+  must match the on-disk collections, not the historical flat tree.
 - [2026-08-12] knowledge-kit: The F2 batch (0046–0048) synced `00`/`01`/`05` and the generator
   spec but skipped `03`/`04` — the `03` tree comment still called content-gen a "stand-in" and the
   `04` §6 spec-table row still cited "skill-backed entry, stand-in criteria" after the owned STORM
@@ -423,6 +430,9 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `AGENTS.md`
 
+- [2026-08-12] knowledge-kit: The layout block said "one dir per plugin" after kind collections
+  were decided — agents then scaffold at `plugins/<name>`. The layout tree in AGENTS.md is a
+  T3/T1 surface; keep it identical to ADR-009.
 - [2026-06-11] spur-new: The command-surface block was missing 11 shipped verbs across 4 nouns;
   it had been edited from memory. Regenerate factual blocks from code registrations, never from
   recall (§6.7 rule 1).

@@ -70,8 +70,8 @@ stand-in `wt:technical-content-creation` (stages 0–3: material intake → rese
 draft, per the D1 research decision in task 0001). The stand-in is **no longer invoked**.
 
 - **Engine**: four grounded stages — curation, outline, article, polish — implemented in
-  `plugins/content-gen/src/storm.ts` and orchestrated by `generateWithStormPipeline`
-  (`plugins/content-gen/src/index.ts`), driven through the same `spur agent run` boundary the
+  `plugins/generations/content-gen/src/storm.ts` and orchestrated by `generateWithStormPipeline`
+  (`plugins/generations/content-gen/src/index.ts`), driven through the same `spur agent run` boundary the
   stand-in used. No Python runtime, direct LLM-provider client, plugin kind, or schema was added.
 - **Why now**: D4 requires persona-driven multi-perspective curation and exact per-section
   citation grounding to supplied documents — the D1-selected switch conditions originally

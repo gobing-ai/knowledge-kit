@@ -6,13 +6,13 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:21.375Z"
-updated_at: "2026-08-12T01:17:03.694Z"
+updated_at: "2026-08-12T16:43:44.993Z"
 ---
 
 # D2: Wire existing generator skill to contract
 
 ## Goal
-First ContentGeneratorPlugin instance: `plugins/content-gen` (kind=generator) — an adapter delegating `Doc[] → Content` to the D1-chosen stand-in (`wt:technical-content-creation` stages 0–3) via the entry mechanism decided in the generator spec (D3), invocable via `knowledge-kit invoke`, with unit + contract tests. Implementation is gated on the D3 spec (task 0017) via task dependencies.
+First ContentGeneratorPlugin instance: `plugins/generations/content-gen` (kind=generator) — an adapter delegating `Doc[] → Content` to the D1-chosen stand-in (`wt:technical-content-creation` stages 0–3) via the entry mechanism decided in the generator spec (D3), invocable via `knowledge-kit invoke`, with unit + contract tests. Implementation is gated on the D3 spec (task 0017) via task dependencies.
 ## Scope
 - In: `plugin.json` manifest; adapter entry translating invoke file IO (docs.json → content.json) to stand-in stages 0–3; ContentSchema-valid output; failure semantics per the generator spec; unit tests with LLM stages mocked at the adapter boundary.
 - Out: own STORM engine (D4); wt skill harvest (D5); stand-in skill internals (owned by wt); publish stage (E).

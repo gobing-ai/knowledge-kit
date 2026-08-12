@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.9.0
+version: 1.10.0
 created_at: 2026-05-28
 updated_at: 2026-08-12
 edit_rules: 99 §6.1
@@ -200,6 +200,12 @@ research (the real instances are an agent skill + a Node CLI, not TS classes):
 This supersedes the earlier reading of "TypeScript interfaces … with lifecycle methods" as
 in-process classes; the methods are the ingest→generate→publish step sequence spur workflow runs.
 
+### Amendment — 2026-08-12 (kind-collection layout; supersedes one-level discovery)
+
+The one-level scan `plugins/*/plugin.json` is superseded by **ADR-009**. Product plugins live
+under kind collections (`plugins/ingestions|generations|publishings/<name>/plugin.json`);
+`plugins/kk` is the Claude Code capability plugin and is never a kk-core registry entry.
+
 ### Amendment — 2026-08-02 (repositioned as ingest-create-publish platform, ADR-007)
 
 `ADR-007` amends `ADR-006` to reposition knowledge-kit as a spur-orchestrated **ingest → create → publish** platform. Creation and publishing are first-class co-equal capabilities, not downstream consequences of ingestion. Ingestion is optional (`Doc[] | Brief`). Substrate decisions (plugin manifest format, data contract, `kk invoke`, registry discovery) remain binding.
@@ -280,6 +286,41 @@ transport kind is never needed.
 
 **Detail:** `docs/design/publish-plugin-specification.md` §2, `docs/03_ARCHITECTURE.md` (module
 boundaries), `docs/04_DESIGN.md` §3–§4, feature E4.
+
+---
+
+## ADR-009 — `plugins/` is four fixed collections (2026-08-12)
+
+> **Status:** Accepted · **Date:** 2026-08-12 · **Amends:** ADR-006 discovery (one-level
+> `plugins/*/plugin.json`). **Scope:** project-wide, binding.
+
+**Decision.** The `plugins/` tree has exactly four top-level collections:
+
+| Collection | Holds | Manifest `kind` |
+|------------|-------|-----------------|
+| `plugins/ingestions/<name>/` | product ingestion plugins | `ingestion` |
+| `plugins/generations/<name>/` | product generator plugins | `generator` |
+| `plugins/publishings/<name>/` | product publish plugins | `publish` |
+| `plugins/kk/` | Claude Code capability plugin | not a kk-core kind |
+
+1. **Product plugins** are directories with a kk-core `plugin.json` (`name`, `kind`, `entry`)
+   and live only under the matching kind collection. `kind` MUST match the collection.
+2. **Agent capabilities** (skills, slash commands, subagents, hooks, rules) live only under
+   `plugins/kk/` (`skills/`, `commands/`, `agents/`, `hooks/`, `rules/`). They are not plugin
+   kinds and are not registered by `discoverPlugins`.
+3. **Discovery** scans kind collections only (`plugins/<collection>/*/plugin.json`). A
+   `--plugins-root` that *is* a kind collection scans that collection's children. `plugins/kk`
+   is skipped even if it has a Claude Code `plugin.json`. A kk-core `plugin.json` at
+   `plugins/<name>/` (top-level, outside a collection) is `misplaced`; a kind that does not
+   match its collection is `kind_mismatch`.
+4. **Workspaces** are `plugins/ingestions/*`, `plugins/generations/*`, `plugins/publishings/*`.
+   `plugins/kk` is not a Bun workspace.
+
+**Why.** Kind-aligned folders keep product plugins and agent capabilities from mixing, and
+make a plugin dropped at `plugins/<name>` a doctor/rule failure instead of a silent layout
+fork.
+
+**Detail:** `docs/03_ARCHITECTURE.md` layout, `docs/04_DESIGN.md` §1.7, `docs/design/ingestion-plugin-specification.md` §1.5.
 
 ---
 

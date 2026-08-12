@@ -6,13 +6,13 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-29T18:41:10.042Z"
-updated_at: "2026-08-02T23:27:15.673Z"
+updated_at: "2026-08-12T16:43:44.854Z"
 ---
 
 # C2: Karakeep-local
 
 ## Goal
-First IngestionPlugin instance: a plugin directory (`plugins/karakeep-local/plugin.json`, kind=ingestion) whose entry reads a local folder mirroring the Karakeep R2 bucket (rclone-synced out-of-band) and emits `Doc[]` per `docs/design/ingestion-plugin-specification.md` §2, invocable via `knowledge-kit invoke`, with unit + contract tests.
+First IngestionPlugin instance: a plugin directory (`plugins/ingestions/karakeep-local/plugin.json`, kind=ingestion) whose entry reads a local folder mirroring the Karakeep R2 bucket (rclone-synced out-of-band) and emits `Doc[]` per `docs/design/ingestion-plugin-specification.md` §2, invocable via `knowledge-kit invoke`, with unit + contract tests.
 ## Scope
 - In: Karakeep mirror layout survey + pinned fixtures; folder scan; entry parsing → Doc mapping per spec §2.3 (deterministic ids from canonical source path); failure semantics per spec §2.4; `plugin.json` manifest; unit tests plus invoke-contract tests.
 - Out: direct R2 API access (Phase 2+); rclone automation (out-of-band precondition, ADR-006); incremental-sync state (deferred — the id rule must not preclude it); asset/media download (link out via sourceUri/metadata); generator/publish stages.

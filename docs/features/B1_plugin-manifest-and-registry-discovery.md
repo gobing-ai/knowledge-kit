@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:14.977Z"
-updated_at: "2026-07-25T16:58:44.960Z"
+updated_at: "2026-08-12T16:43:44.689Z"
 ---
 
 # B1: Plugin manifest and registry discovery
@@ -14,7 +14,7 @@ updated_at: "2026-07-25T16:58:44.960Z"
 ## Goal
 Define the kk plugin manifest schema and a registry that discovers installed plugins by kind (Ingestion / Generator / Publish).
 ## Scope
-- In: `plugin.json` manifest schema (name, kind, entry); a registry that discovers `plugins/*/plugin.json` and groups by kind; list-by-kind; skip-and-report on malformed manifests.
+- In: `plugin.json` manifest schema (name, kind, entry); a registry that discovers product plugins under kind collections (`plugins/ingestions|generations|publishings/<name>/plugin.json`, ADR-009) and groups by kind; list-by-kind; skip-and-report on malformed, misplaced, and kind-mismatched manifests; `plugins/kk` is never a kk-core registry entry.
 - Out: the data contracts (B2); invocation and workflow wiring (B3); remote/registry-server discovery.
 ## Acceptance Criteria
 ```gherkin

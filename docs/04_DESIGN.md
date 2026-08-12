@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.4.0
+version: 2.5.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -96,7 +96,8 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 
 **Behavior:**
 1. Scans `--plugins-root` using `discoverPlugins`.
-2. Verifies `plugin.json` schema validity, unique names, and entry file existence on disk (`missing_entry`).
+2. Verifies `plugin.json` schema validity, unique names, kind/collection match (`kind_mismatch`),
+   no top-level stray manifests (`misplaced`), and entry file existence on disk (`missing_entry`).
 3. Under `--json`, writes `{ healthy: boolean, diagnostics: DiscoveryDiagnostic[] }` JSON.
 4. Under standard text, prints formatted diagnostic errors to stderr via `logger.error`.
 5. Exits code `1` if any diagnostic issue exists, `0` if healthy.
@@ -165,7 +166,19 @@ published and are individually re-runnable via `--retry-from` (spec §5).
 
 ## 1.7 `plugin.json` manifest surface
 
-Every plugin directory under `--plugins-root` carries a `plugin.json`. Schema:
+Product plugins live under kind collections (ADR-009):
+
+| Collection | `kind` | Example |
+|------------|--------|---------|
+| `plugins/ingestions/<name>/` | `ingestion` | `plugins/ingestions/karakeep-local` |
+| `plugins/generations/<name>/` | `generator` | `plugins/generations/content-gen` |
+| `plugins/publishings/<name>/` | `publish` | `plugins/publishings/surfdash-pub` |
+
+`--plugins-root` defaults to `./plugins` (the tree that contains those collections). Passing a
+collection directory itself is also valid. `plugins/kk` is the Claude Code capability plugin
+and is never discovered as a kk-core plugin.
+
+Every product plugin directory carries a `plugin.json`. Schema:
 `PluginManifestSchema` (`packages/kk-core/src/manifest.ts`), `.passthrough()` — unknown keys are
 preserved, not rejected.
 
@@ -225,10 +238,12 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `Doc`, `Content`, `Result` | types | Inferred TypeScript types |
 | `Brief`, `GeneratorInput` | types | **Specified, not implemented** (ADR-007 R3; feature D) |
 | `PLUGIN_KINDS`, `PluginKind`, `PluginKindSchema` | constants & schema | Supported plugin lifecycle kinds |
+| `PLUGIN_KIND_COLLECTIONS`, `PLUGIN_COLLECTION_KINDS`, `KK_CAPABILITY_COLLECTION` | constants | ADR-009 collection folder map |
+| `collectionForKind(kind)`, `kindForCollection(name)` | functions | Kind ↔ collection directory |
 | `kindContract(kind)` | function | Resolves I/O contract per plugin kind |
 | `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |
-| `discoverPlugins(root)`, `listByKind`, `getByName` | functions | Filesystem discovery and registry filtering |
-| `PluginRecord`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types |
+| `discoverPlugins(root)`, `listByKind`, `getByName` | functions | Kind-collection discovery and registry filtering |
+| `PluginRecord`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types (`misplaced`, `kind_mismatch` codes) |
 
 ### `@gobing-ai/publish-harness` (`packages/publish-harness`)
 
@@ -238,7 +253,7 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `PublishTransportPayload` | interface | `{ content: Content, options?: Record<string, unknown> }` |
 | `FakeFileCliTransport` | class | Offline fake for unit tests; `setNextResult`, records call log |
 
-### `@gobing-ai/surfdash-pub` (`plugins/surfdash-pub`, kind `publish`)
+### `@gobing-ai/surfdash-pub` (`plugins/publishings/surfdash-pub`, kind `publish`)
 
 | Export | Kind | Notes |
 |--------|------|-------|
@@ -247,7 +262,7 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1 |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
 
-### `@gobing-ai/zenn-pub` (`plugins/zenn-pub`, kind `publish`)
+### `@gobing-ai/zenn-pub` (`plugins/publishings/zenn-pub`, kind `publish`)
 
 | Export | Kind | Notes |
 |--------|------|-------|
@@ -256,7 +271,7 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; writes fail-loud `Result` |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
 
-### `@gobing-ai/qiita-pub` (`plugins/qiita-pub`, kind `publish`)
+### `@gobing-ai/qiita-pub` (`plugins/publishings/qiita-pub`, kind `publish`)
 
 | Export | Kind | Notes |
 |--------|------|-------|

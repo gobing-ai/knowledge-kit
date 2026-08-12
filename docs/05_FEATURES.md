@@ -3,7 +3,7 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.5.0
+version: 2.6.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [01_PRD, 02_ROADMAP]
@@ -60,9 +60,9 @@ sync: [T4]
 | **E** | Multi-channel publish | ⏳ active | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4**; closed via carrier `0041`, then **reopened for plugin intake** |
 | E1 | wt-publish audit | ⏳ backlog | 1 | task `0002` done (transports mapped; Surfdash simplest); feature close-out (verifyall) pending |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
-| E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
-| E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/zenn-pub`, `plugins/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
-| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents); F1 = kk-judge; F2 = topic-core authoring |
+| E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/publishings/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
+| E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/publishings/zenn-pub`, `plugins/publishings/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
+| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules); F1 = kk-judge; F2 = topic-core authoring |
 | F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `kk-judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
 | F2 | Topic-core authoring skill | ⏳ ready | 3 | task `0048`: one fat `kk-topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |

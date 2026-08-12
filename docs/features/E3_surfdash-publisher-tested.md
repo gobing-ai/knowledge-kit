@@ -6,13 +6,13 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:26.164Z"
-updated_at: "2026-08-02T22:19:56.942Z"
+updated_at: "2026-08-12T16:43:45.136Z"
 ---
 
 # E3: Surfdash publisher tested
 
 ## Goal
-Surfdash PublishPlugin instance: `plugins/surfdash-pub` (kind=publish) — publishes `Content` to Surfing via the `postsurfing` CLI behind the publish spec's transport abstraction (E2), tested with the publish-harness fake FileCli transport. Real unit coverage, fail-loud — never the wt always-exit-0 pattern (ADR-006). Implementation is gated on E2 (tasks 0018/0019) via task dependencies.
+Surfdash PublishPlugin instance: `plugins/publishings/surfdash-pub` (kind=publish) — publishes `Content` to Surfing via the `postsurfing` CLI behind the publish spec's transport abstraction (E2), tested with the publish-harness fake FileCli transport. Real unit coverage, fail-loud — never the wt always-exit-0 pattern (ADR-006). Implementation is gated on E2 (tasks 0018/0019) via task dependencies.
 ## Scope
 - In: `plugin.json` manifest; Content→Surfing frontmatter mapping per the publish spec; postsurfing CLI adapter (FileCli transport); unit tests via publish-harness (offline, no external effects); fail-loud Result output.
 - Out: the nine deferred channels (Phase 2, see E Notes); scheduling/automation; postsurfing internals; auth (Surfing needs none).

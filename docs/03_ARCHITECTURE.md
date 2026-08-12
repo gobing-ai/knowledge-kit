@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.3.0
+version: 2.4.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -25,20 +25,24 @@ packages/
   kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2)
 plugins/
-  surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
-  zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
-  qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
-  content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
-  karakeep-local/   # ingestion plugin — rclone-synced folder → Doc[] (not a workspace)
-  kk/               # platform capability collection (skills, commands, subagents)
+  ingestions/
+    karakeep-local/   # ingestion plugin — rclone-synced folder → Doc[] (not a workspace)
+  generations/
+    content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
+  publishings/
+    surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
+    zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
+    qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
+  kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules
 tooling/
   typescript/       # shared tsconfig presets
 .spur/              # Spur config, rules, workflows, templates
 ```
 
 Workspaces reference each other only via `@gobing-ai/*` (`workspace:*`). Registry discovery
-scans `plugins/*/plugin.json` (ADR-006 amdt 2026-07-24); only plugin dirs with a `package.json`
-are `@gobing-ai/*` workspaces (`karakeep-local`, `kk` are not).
+scans kind collections (`plugins/ingestions|generations|publishings/*/plugin.json`, ADR-009);
+`plugins/kk` is skipped. Only product-plugin dirs with a `package.json` are `@gobing-ai/*`
+workspaces (`karakeep-local` and `kk` are not).
 
 ## Runtime model
 
@@ -77,8 +81,8 @@ Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary
 
 ### Plugin kinds
 
-Three kinds, discovered by the same `plugins/*/plugin.json` registry scan (ADR-006 amdt 2026-07-24;
-ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment):
+Three kinds, discovered under the matching kind collection (ADR-009; ADR-007 amdt 2026-08-07
+supersedes the 2026-08-02 fourth-kind amendment):
 
 | Kind | Contract | Notes |
 |------|----------|-------|
@@ -152,9 +156,9 @@ Every arrow is a file on disk validated against a `@gobing-ai/kk-core` schema; e
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |
-| `plugins/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
-| `plugins/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
-| `plugins/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
+| `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
+| `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
+| `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**
