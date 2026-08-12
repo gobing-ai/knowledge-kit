@@ -28,10 +28,12 @@ jobs:
 
       # Trusted Publishing requires npm >= 11.5.1 and Node >= 22.
       # setup-bun provides Bun for build/test; npm publish runs on system Node.
+      # registry-url writes .npmrc so npm resolves the OIDC token exchange.
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - name: Upgrade npm for OIDC support
         run: npm install -g npm@^11.5.1
@@ -42,8 +44,19 @@ jobs:
         # on runners. Publish runs never commit, so hooks are not needed here.
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Build
-        run: bun run build
+      - name: Verify version match
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TAG_VERSION="${TAG#@gobing-ai/knowledge-kit-v}"
+          CLI_VERSION=$(node -e "console.log(require('./apps/cli/package.json').version)")
+          if [ "${CLI_VERSION}" != "${TAG_VERSION}" ]; then
+              echo "CLI version mismatch: tag=${TAG_VERSION}, package.json=${CLI_VERSION}" >&2
+              exit 1
+          fi
+          echo "Publishing @gobing-ai/knowledge-kit@${CLI_VERSION}"
 
+      # scripts/publish.ts strips private workspace:* deps (kk-core, utils are
+      # bundled into dist/ at build time), builds the CLI so bin files exist
+      # when npm validates them, then publishes with Trusted Publishing (OIDC).
       - name: Publish
-        run: npm publish --workspace apps/cli --provenance --access public
+        run: bun scripts/publish.ts apps/cli
