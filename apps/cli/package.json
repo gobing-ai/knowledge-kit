@@ -14,13 +14,16 @@
         "knowledge-kit": "./dist/index.js"
     },
     "files": [
-        "dist/"
+        "dist/",
+        "plugins/",
+        ".claude-plugin/"
     ],
     "scripts": {
         "start": "bun run src/index.ts",
         "dev": "bun run src/index.ts",
         "build": "bun build src/index.ts --target=bun --outdir=dist",
-        "prepack": "bun run build",
+        "build:bundle": "bun run build && bun run ../../scripts/bundle-plugins.ts",
+        "prepack": "bun run build:bundle",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
         "typecheck": "tsc --noEmit"
     },

@@ -57,10 +57,11 @@ async function publish(target: string | undefined): Promise<void> {
         console.log(`Stripped ${changed} private workspace dep(s) from the manifest`);
     }
 
-    // Build before npm publish so bin files exist when npm validates them.
-    // npm >= 11 checks bin file existence BEFORE running lifecycle scripts, so
-    // relying on prepack alone causes npm to strip the bin entry.
-    const build = Bun.spawnSync(['bun', 'run', 'build'], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Build (bundle + stage plugins/marketplace) before npm publish so bin
+    // files exist when npm validates them. npm >= 11 checks bin file existence
+    // BEFORE running lifecycle scripts, so relying on prepack alone causes npm
+    // to strip the bin entry.
+    const build = Bun.spawnSync(['bun', 'run', 'build:bundle'], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
     if (build.exitCode !== 0) {
         if (changed > 0) await Bun.write(manifestPath, original);
         console.error(build.stderr.toString().trim());
