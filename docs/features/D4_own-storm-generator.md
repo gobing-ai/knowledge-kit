@@ -86,7 +86,7 @@ Feature: Own STORM generator
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0046 | Build grounded STORM curation and outline stages | done |
-| 0047 | Generate contract-valid Content through the owned STORM pipeline | testing |
+| 0047 | Generate contract-valid Content through the owned STORM pipeline | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
