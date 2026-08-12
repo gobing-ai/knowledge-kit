@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-07-29T18:41:14.020Z"
-updated_at: "2026-07-30T23:54:02.465Z"
+updated_at: "2026-08-12T01:22:50.505Z"
 ---
 
 # D5: wt generator harvest
@@ -20,11 +20,11 @@ Harvest wt generator skills (topic-*, image-*, info-*) into the kk generator tax
 ```gherkin
 Feature: wt generator harvest
 
-  # DEFERRED (Phase 2): placeholder removed 2026-07-30. Real scenarios are authored
-  # at Phase-2 entry, when this feature is scheduled (docs/02_ROADMAP.md).
-  Scenario: Phase-2 acceptance criteria are authored
-    Given this feature is deferred to Phase 2
-    When Phase-2 planning schedules it
+  # DEFERRED (Phase 3): placeholder removed 2026-07-30. Real scenarios are authored
+  # at Phase-3 entry, when this feature is scheduled (docs/02_ROADMAP.md).
+  Scenario: Phase-3 acceptance criteria are authored
+    Given this feature is deferred to Phase 3
+    When Phase-3 planning schedules it
     Then real acceptance scenarios replace this deferred scenario
 ```
 ## Tasks
@@ -34,5 +34,5 @@ _No linked tasks._
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-- 2026-07-30: placeholder AC replaced with an explicit Phase-2 deferred marker; real scenarios authored at Phase-2 entry (see docs/02_ROADMAP.md).
+- 2026-07-30: placeholder AC replaced with an explicit Phase-3 deferred marker; real scenarios authored at Phase-3 entry (see docs/02_ROADMAP.md).
 ## History

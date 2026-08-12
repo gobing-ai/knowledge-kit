@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-08-03T06:36:52.680Z"
-updated_at: "2026-08-08T00:19:59.086Z"
+updated_at: "2026-08-12T01:23:01.988Z"
 ---
 
 ## 0037. LLM-as-judge agent skills and workflow integration
@@ -95,24 +95,22 @@ Feature: LLM-as-judge agent skills and workflow integration
 - `.spur/workflows/` (example workflow updates)
 
 ### Plan
-
 1. **Phase 1: Architecture & Documentation Sync**
-   - [ ] Amend `docs/00_ADR.md` (ADR-007): remove `judge` as a 4th plugin kind; record decision to use `agent.run` + fat skills.
-   - [ ] Update `docs/01_PRD.md` and `docs/03_ARCHITECTURE.md`: restore 3-kind taxonomy (`ingestion`, `generator`, `publish`).
-   - [ ] Update `docs/04_DESIGN.md` and `docs/05_FEATURES.md`: update CLI/manifest surface documentation and feature B7 status.
-   - [ ] Verify `packages/kk-core/src/types/kinds.ts`: ensure `PLUGIN_KINDS` array contains only `'ingestion'`, `'generator'`, `'publish'`.
+   - [x] Amend `docs/00_ADR.md` (ADR-007): remove `judge` as a 4th plugin kind; record decision to use `agent.run` + fat skills.
+   - [x] Update `docs/01_PRD.md` and `docs/03_ARCHITECTURE.md`: restore 3-kind taxonomy (`ingestion`, `generator`, `publish`).
+   - [x] Update `docs/04_DESIGN.md` and `docs/05_FEATURES.md`: update CLI/manifest surface documentation and feature B7 status.
+   - [x] Verify `packages/kk-core/src/kinds.ts`: ensure `PLUGIN_KINDS` array contains only `'ingestion'`, `'generator'`, `'publish'`.
 
 2. **Phase 2: Core Fat Skill (`kk-judge`) Implementation**
-   - [ ] Scaffold `plugins/kk/skills/kk-judge/SKILL.md` with YAML frontmatter, evaluation rubrics, prompt templates, and verdict output contracts.
-   - [ ] Implement verdict JSON output format supporting `PASS`, `FAIL`, `NEEDS_REVISION`, reasoning summary, and feedback notes.
+   - [x] Scaffold `plugins/kk/skills/kk-judge/SKILL.md` with YAML frontmatter, evaluation rubrics, prompt templates, and verdict output contracts.
+   - [x] Implement verdict JSON output format supporting `PASS`, `FAIL`, `NEEDS_REVISION`, reasoning summary, and feedback notes.
 
 3. **Phase 3: Thin Wrappers (Slash Commands / Subagents)**
-   - [ ] Author thin subagent manifest(s) in `plugins/kk/agents/` (e.g. tech accuracy, compliance) delegating to `kk-judge`.
+   - [x] Author thin subagent manifest(s) in `plugins/kk/agents/` (e.g. tech accuracy, compliance) delegating to `kk-judge`.
 
 4. **Phase 4: Workflow Integration & Verification**
-   - [ ] Update sample workflow files (e.g. `docs/design/judge-gated-publish-example.yaml`) to show `type: agent.run` targeting `kk-judge` followed by a shell/`jq` verdict guard.
-   - [ ] Run `bun run check` / `spur feature check B7` to verify quality gates and requirement traceability.
-
+   - [x] Update sample workflow files (e.g. `.spur/workflows/judge-gated-publish-example.yaml`) to show `type: agent.run` targeting `kk-judge` followed by a shell/`jq` verdict guard.
+   - [x] Run `bun run check` / `spur feature check B7` to verify quality gates and requirement traceability.
 ### Solution
 **Doc sync (R1) — 3-kind taxonomy restored.** ADR-007 amdt 2026-08-07
 (`docs/00_ADR.md:216`) supersedes the 2026-08-02 `judge`-as-4th-kind amendment; `01_PRD.md`,

@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: C2
+feature_id: C
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:41:03.188Z"
-updated_at: "2026-07-31T00:05:25.454Z"
+updated_at: "2026-08-12T01:20:21.152Z"
 ---
 
 ## 0014. Survey Karakeep mirror layout and implement karakeep-local plugin

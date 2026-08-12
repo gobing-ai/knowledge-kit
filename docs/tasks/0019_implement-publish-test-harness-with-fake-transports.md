@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: E2
+feature_id: E
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0018"]
 created_at: "2026-07-30T23:42:20.624Z"
-updated_at: "2026-07-31T03:35:09.164Z"
+updated_at: "2026-08-12T01:20:21.964Z"
 ---
 
 ## 0019. Implement publish test harness with fake transports

@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: E3
+feature_id: E
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0024"]
 created_at: "2026-07-30T23:48:35.444Z"
-updated_at: "2026-08-02T21:55:48.711Z"
+updated_at: "2026-08-12T01:20:22.193Z"
 ---
 
 ## 0025. Harden surfdash-pub failure modes

@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: D3
+feature_id: D
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T23:41:42.492Z"
-updated_at: "2026-07-31T00:33:34.174Z"
+updated_at: "2026-08-12T01:20:21.384Z"
 ---
 
 ## 0016. Decide generator entry mechanism and Content mapping conventions

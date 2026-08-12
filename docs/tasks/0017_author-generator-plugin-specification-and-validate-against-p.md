@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: D3
+feature_id: D
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0016"]
 created_at: "2026-07-30T23:41:42.626Z"
-updated_at: "2026-07-31T02:04:23.568Z"
+updated_at: "2026-08-12T01:20:21.502Z"
 ---
 
 ## 0017. Author generator plugin specification and validate against platform

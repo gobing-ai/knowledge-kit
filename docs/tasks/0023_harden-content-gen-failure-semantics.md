@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: D2
+feature_id: D
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0022"]
 created_at: "2026-07-30T23:48:00.337Z"
-updated_at: "2026-08-01T04:22:12.660Z"
+updated_at: "2026-08-12T01:20:21.733Z"
 ---
 
 ## 0023. Harden content-gen failure semantics

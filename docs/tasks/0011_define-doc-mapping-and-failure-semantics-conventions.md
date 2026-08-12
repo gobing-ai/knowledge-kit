@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: C1
+feature_id: C
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: []
 created_at: "2026-07-30T21:57:00.127Z"
-updated_at: "2026-07-30T23:18:22.516Z"
+updated_at: "2026-08-12T01:20:20.917Z"
 ---
 
 ## 0011. Define Doc mapping and failure semantics conventions

@@ -6,13 +6,13 @@ description: ""
 status: done
 type: task
 profile: standard
-feature_id: C1
+feature_id: C
 parent_wbs: null
 priority: P2
 tags: []
 dependencies: ["0010", "0011"]
 created_at: "2026-07-30T21:57:00.272Z"
-updated_at: "2026-07-30T23:18:22.649Z"
+updated_at: "2026-08-12T01:20:21.036Z"
 ---
 
 ## 0012. Author ingestion plugin design doc and validate against as-built platform

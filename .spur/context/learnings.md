@@ -2,6 +2,22 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## 2026-08-12 — sp-dev-find-conflict dogfood (run 20260812-010531)
+
+1. **Dogfood runs ≥ 3 min must dual-write ledger rows per-step, not at finalize.**
+   monitor-ledger.md's fast-run exemption (< 3 min) does not apply once a run crosses
+   that wall; a run that batch-writes rows for a ≥ 3-min run must self-report a P3
+   (protocol violation). Plan for per-step dual-writes when the testee is a multi-step
+   audit like find-conflict.
+2. **DD-09 roll-up close-out needs a carrier task (0028 pattern).** A parent at
+   `verifying` whose AC carries composition scenarios ("X kind composes into the
+   platform") can't reach `done` until a linked task's AC carries those titles verbatim
+   and its verdict has PASS + MET rows keyed to them. Re-linking child impl tasks to the
+   parent (feature_id) is the sanctioned first step; the parent-level scenarios then need
+   a dedicated carrier. Feature-check `--strict` elevates L4 warnings to errors at the
+   verifying→done guard — "PASS with warnings" at `spur feature check` does not mean
+   the sync guard will let the feature through.
+
 ## 2026-08-02 — B5 verifyall (tasks 0026/0027)
 
 1. **Pipe masking hides real exit codes.** `spur workflow run … | tail -3; echo $?`
