@@ -12,7 +12,7 @@ priority: P2
 tags: []
 dependencies: []
 created_at: "2026-08-02T23:29:27.561Z"
-updated_at: "2026-08-03T03:13:01.899Z"
+updated_at: "2026-08-03T03:48:21.017Z"
 ---
 
 ## 0029. Harden karakeep-local: fail loud on zero-doc ingest and create --out parent dir
@@ -216,37 +216,51 @@ session). Follow the existing `spyOn(console, 'error').mockImplementation(() => 
   - Added unit test verifying `main()` creates nested `--out` parent directories recursively before writing output (R2).
 
 ### Testing
-
 - Verdict: **PASS**
-- Commands run:
-  - `bun run lint`: clean (0 Biome / TypeScript errors)
-  - `bun run test`: 80 pass, 0 fail (karakeep-local functions 100%, lines 92.97% >= 90% target)
+- Commands run (re-verified this pass):
+  - `bun run lint`: clean (0 Biome / TypeScript errors, 6 workspaces)
+  - `bun run test`: 81 pass, 0 fail, 200 expect() calls, 14 files
+  - `bun run spur-check`: coverage-gate ✓, every-export-has-tsdoc ✓
+
+**Re-verify note (citation repair, this pass).** The prior Testing cited correct files but stale
+line ranges (off by ~15–20 lines). Each anchor was re-read at the cited lines per the
+anti-stale-citation rule; the content exists and is correct — only the coordinates were wrong.
+Corrected here: R1 src `148-153` (was `148-154`), R1 test `176-199` (was `159-180`), R2 test
+`200-213` (was `182-194`), empty-source test `91-101` (was `76-85`). Implementation work is genuine;
+the error was in the evidence strings, not the code.
 
 **Per-Requirement Traceability**
 
 | Req | Status | Evidence |
 | --- | ------ | -------- |
-| R1 | MET | `plugins/karakeep-local/src/index.ts:148-154`, `plugins/karakeep-local/tests/karakeep-local.test.ts:159-180` — `main()` checks candidate file count and exits `1` with log when `candidateFiles.length > 0` and `docs.length === 0`. |
-| R2 | MET | `plugins/karakeep-local/src/index.ts:156-159`, `plugins/karakeep-local/tests/karakeep-local.test.ts:182-194` — `main()` creates nested `--out` parent directory recursively before writing output file. |
+| R1 | MET | `plugins/karakeep-local/src/index.ts:148-153` (`collectFiles` then `processKarakeepFolder`; `if (docs.length === 0 && candidateFiles.length > 0)` → error naming the source + `process.exit(1)`), `plugins/karakeep-local/tests/karakeep-local.test.ts:176-199` (`main exits 1 on non-empty source yielding zero docs` — asserts exit 1 and the "zero ingestible documents" message) |
+| R2 | MET | `plugins/karakeep-local/src/index.ts:156-159` (`dirname(values.out)`, skip `'.'`, `mkdir(outDir, { recursive: true })` before `writeFile`), `plugins/karakeep-local/tests/karakeep-local.test.ts:200-213` (`main creates nested --out parent directory if it does not exist` — asserts output written into a previously-missing nested dir) |
+| R3 | MET | Regression tests for both behaviors at `plugins/karakeep-local/tests/karakeep-local.test.ts:176-199` and `:200-213`; `bun run test` 81 pass / 0 fail and `bun run spur-check` green (above) |
 
 **Acceptance Criteria Verification**
 
 | AC | Status | Evidence Type | Evidence |
 | --- | ------ | ------------- | -------- |
-| Scenario: All-rejected non-empty source exits non-zero | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:159-180` |
-| Scenario: Missing --out parent directory is created | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:182-194` |
-| Scenario: Empty source folder yields empty array | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:76-85` |
-| Scenario: Partial rejection still emits valid items with exit 0 | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:59-74` |
+| Empty source yields empty Doc list with exit 0 | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:91-101` (`empty source folder yields empty array`, asserts `[]`) |
+| Unparsable items are skipped with a warning | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:59-74` (`corrupt standalone JSON is skipped, valid items still emitted`, `docs.length === 1`) |
+| Unreadable source fails loud | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:148-162` (`main exits 1 on unreadable source`) |
+| All-rejected non-empty source fails loud | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:176-199` — exit 1, error names zero-ingestible, no `[]` success |
+| Output parent directory is created before writing | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:200-213` — nested missing parent created, output written |
+| Partial rejection still emits valid items with exit 0 | MET | test | `plugins/karakeep-local/tests/karakeep-local.test.ts:59-74` — valid item emitted, warning spied, no exit |
 
 **Design Conformance**
 
 | Claim | Status | Evidence |
 | ----- | ------ | -------- |
-| Thin CLI guard in main() for all-rejected zero-doc | DONE | `plugins/karakeep-local/src/index.ts:148-154` |
-| Recursive mkdir for out-dir in main() | DONE | `plugins/karakeep-local/src/index.ts:156-159` |
+| Thin CLI guard in `main()` for all-rejected zero-doc | DONE | `plugins/karakeep-local/src/index.ts:148-153` |
+| Surface candidate-file count without a second walk (shared `collectFiles`) | DONE | `plugins/karakeep-local/src/index.ts:19-30` `collectFiles` reused by both `processKarakeepFolder` (:44) and `main` (:148) — no double `readdir` |
+| Recursive mkdir for out-dir in `main()` (surfdash-pub pattern) | DONE | `plugins/karakeep-local/src/index.ts:156-159` |
+| New negative-path tests spy `console.error`/`process.exit` | DONE | `plugins/karakeep-local/tests/karakeep-local.test.ts:182-186` (`spyOn(console,'error')`, `spyOn(process,'exit')`, `try/finally mockRestore`) |
 
-**SECUA Review** — PASS. Defensive directory creation and validation logic; zero security risk.
-
+**SECUA Review** — PASS. The change adds a count-then-guard and a recursive `mkdir`. `collectFiles`
+uses `readdir({recursive:true})` + `stat` (no shell, no injection surface); paths come from CLI argv
+under operator control. The out-dir guard skips `'.'`, preventing an accidental recursive mkdir on
+cwd. No secrets, no unsafe input, no raw-console leak in the new tests (error/exit are spied).
 ### Review
 
 | Severity | Finding | Location | Status |

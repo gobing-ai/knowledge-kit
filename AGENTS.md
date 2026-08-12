@@ -20,14 +20,16 @@ name: `knowledge-kit`.
 > See `docs/00_ADR.md` → **ADR-007** for the repositioning; renaming was considered and rejected.
 
 **The product model.** Plugins are directories with a `plugin.json` manifest, discovered by a
-registry scan, in four kinds:
+registry scan, in three kinds:
 
 | Kind | Contract |
 |------|----------|
 | `ingestion` | `source → Doc[]` (optional in a pipeline) |
 | `generator` | `Doc[] \| Brief → Content` |
 | `publish` | `Content → Result` |
-| `judge` | `Content → Verdict` (gate-only; verdict read from payload, not exit status) |
+
+> **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
+> (ADR-007 amdt 2026-08-07). See `plugins/kk/skills/kk-judge/SKILL.md`.
 
 A **pipeline** is a `spur workflow` whose states shell out to `kk` subcommands. **`kk` owns steps;
 `spur workflow` owns orchestration** — never the reverse. The workflow engine executes one node at
@@ -49,15 +51,16 @@ Prefer these entry surfaces over ad-hoc process unless the operator overrides fo
 
 ```
 apps/
-  cli/          # @gobing-ai/knowledge-kit — Commander binary (invoke, plugins, fanin*, fanout*)
+  cli/            # @gobing-ai/knowledge-kit — Commander binary (invoke, plugins, fanin*, fanout*)
 packages/
-  utils/        # @gobing-ai/utils — helpers, zod re-export, logger
-  kk-core/      # @gobing-ai/kk-core — Doc/Brief/Content/Result/Verdict contracts + kindContract
+  utils/          # @gobing-ai/utils — helpers, zod re-export, logger
+  kk-core/        # @gobing-ai/kk-core — Doc/Brief/Content/Result contracts + kindContract
+  publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports
 tooling/
-  typescript/   # shared tsconfig presets
-plugins/        # plugin collection — one dir per plugin, each with plugin.json
-docs/design/    # per-kind authoring specs (ingestion, generator, publish, fan-in/fan-out)
-.spur/          # Spur config, rules, workflows, templates
+  typescript/     # shared tsconfig presets
+plugins/          # plugin collection — one dir per plugin, each with plugin.json
+docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan-in/fan-out)
+.spur/            # Spur config, rules, workflows, templates
 ```
 
 `*` = specified under ADR-007, not yet implemented (feature **B6**). See `docs/04_DESIGN.md` §1.

@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.6.0
+version: 1.7.1
 created_at: 2026-05-28
-updated_at: 2026-08-02
+updated_at: 2026-08-11
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -213,29 +213,38 @@ in-process classes; the methods are the ingest→generate→publish step sequenc
 
 **Detail:** `docs/01_PRD.md` (v3 re-cut, ticket 0031), `docs/03_ARCHITECTURE.md` / `docs/04_DESIGN.md` (contract design, tickets 0032–0034), `docs/features/J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md`.
 
-### Amendment — 2026-08-02 (fourth plugin kind `judge`, ticket 0034)
+### Amendment — 2026-08-07 (LLM-as-judge repositioned to agent skills; supersedes 2026-08-02 judge-kind amendment, ticket 0037)
 
-Ticket 0034 resolved LLM-as-judge to a **fourth plugin kind** rather than a generator variant or a
-workflow-level concern. This extends the plugin taxonomy fixed by the ADR-006 2026-07-24 amendment:
+> **Status:** Accepted · **Supersedes:** the 2026-08-02 amendment on this ADR (fourth plugin kind `judge`).
 
-- **`kind ∈ {ingestion, generator, publish, judge}`.** A judge plugin is declared in `plugin.json`
-  like any other kind and is discovered by the same registry scan (`kk plugins list --kind judge`).
-- **Contract: `Content → Verdict`**, where `Verdict` carries `verdict ∈ {PASS, FAIL, NEEDS_REVISION}`
-  plus optional `score`, `reasons`, `suggestions`. Schema lands in `@gobing-ai/kk-core` alongside
-  `Doc` / `Content` / `Result`.
-- **Exit-code semantics follow the existing invoker contract:** exit 0 means the judge ran and
-  emitted a schema-valid `Verdict` — *including a FAIL verdict*; non-zero is reserved for runner
-  failure (LLM error, missing input). Gating is therefore read from the verdict payload, not from
-  the process exit status.
-- **Rationale:** evaluation rubrics (technical-accuracy audit, brand-tone check, compliance screen)
-  are reusable across pipelines and worth versioning and testing independently. Folding evaluation
-  into the generator contract would conflate `Doc[] | Brief → Content` with `Content → Verdict` and
-  weaken type safety; inline workflow prompts are neither reusable nor unit-testable.
-- **Deferred:** bounded regenerate-retry loops driven by a rejecting verdict. Gate-only for now;
-  the retry topology remains map-J fog.
+Ticket 0037 repositioned LLM-as-judge from a **fourth plugin kind** to an **agent-skill-centric model**.
+The 2026-08-02 amendment is superseded in full:
 
-Engine-level work is **not** required: `agent.run` is an existing spur action kind and a judge that
-emits a verdict file composes with a shell/`jq` guard on the verdict payload.
+- **Plugin taxonomy reverts to three kinds:** `kind ∈ {ingestion, generator, publish}`. No `judge`
+  kind exists in `PLUGIN_KINDS`, `kindContract`, `PluginManifestSchema`, or the `kk plugins` CLI.
+  This is the taxonomy shipped in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts`) — the
+  runtime never gained a fourth kind, so this is a doc-only correction.
+- **LLM-as-judge is delivered via agent skills + `agent.run`.** Evaluation rubrics, prompt templates,
+  and verdict emission live in a **fat skill** (`plugins/kk/skills/kk-judge`). Specialized personas
+  (tech-accuracy, brand-tone, compliance) are **thin wrappers** (slash commands / subagents) that
+  delegate to the fat skill. No engine changes are required: `agent.run` is an existing spur action
+  kind that writes a verdict file; a `shell`/`jq` guard reads the verdict payload to gate transitions.
+- **Verdict contract** (`PASS` / `FAIL` / `NEEDS_REVISION` + reasoning) is defined by the skill's
+  output format and validated by a `VerdictSchema` utility in `@gobing-ai/kk-core`, but it is **not**
+  wired into `kindContract` — the verdict is a skill output, not a plugin-kind contract.
+- **Rationale:** the fourth-kind model (0034) added platform surface (contract + registry branch +
+  CLI enum) for a capability that is more naturally an agent skill. Skills allow prompt/rubric
+  iteration without recompiling or changing manifests, and compose with the existing `agent.run` +
+  shell-guard pattern with zero engine work. The codebase never implemented the fourth kind, making
+  the rollback a documentation-only correction.
+- **Historical note:** the 2026-08-02 amendment and tasks 0034/0035/0036 are retained as historical
+  records of a decision that was subsequently superseded. This amendment records the supersession.
+- **Amendment (2026-08-11):** corrects the preceding paragraph — no `VerdictSchema` utility exists
+  in `@gobing-ai/kk-core`, nor was one built by ticket 0037 (`packages/kk-core/src/schemas.ts`
+  exports `Doc` / `Content` / `Result` / `DocList` only). The verdict contract is defined by the
+  `kk-judge` skill's output format (`plugins/kk/skills/kk-judge/SKILL.md` §Verdict output contract)
+  and validated by the workflow's `shell`/`jq` guard on the verdict payload. The "validated by a
+  `VerdictSchema` utility" phrasing is withdrawn; nothing else in this amendment changes.
 
 ---
 

@@ -6,15 +6,15 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:09.865Z"
-updated_at: "2026-08-03T03:04:32.218Z"
+updated_at: "2026-08-08T00:05:13.162Z"
 ---
 
 # B: kk plugin platform
 
 ## Goal
-Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, typed lifecycle contracts (Ingestion, ContentGenerator, Publish, Judge), sequential fan-in/fan-out steps, spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006); fan-out runs sequentially inside kk (ADR-007 R4).
+Plugin platform: type + discovery layer for knowledge-kit plugins — manifest/registry, typed lifecycle contracts (Ingestion, ContentGenerator, Publish), sequential fan-in/fan-out steps, LLM-as-judge agent skills (B7), spur workflow integration, and CLI surface (B4) for the plugin seam. Skills implement plugins; spur orchestrates. No bespoke kk-run DAG runtime (YAGNI, ADR-006); fan-out runs sequentially inside kk (ADR-007 R4). LLM-as-judge is delivered as agent skills + `agent.run`, not a plugin kind (ADR-007 amdt 2026-08-07).
 ## Scope
-- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof); B6 sequential fan-in/fan-out steps; B7 judge plugin kind.
+- In: B1 manifest+registry; B2 typed contracts; B3 spur workflow integration; B4 CLI surface; B5 end-to-end pipeline acceptance (composition proof); B6 sequential fan-in/fan-out steps; B7 LLM-as-judge agent skills (fat skill `kk-judge` + thin wrappers; `agent.run` gate).
 - Out: dynamic DAG runtime; plugin hot-reload; domain plugin bodies (C/D/E children).
 ## Acceptance Criteria
 ```gherkin
@@ -171,6 +171,7 @@ Planned 2026-07-24 (/sp:dev-plan B): decomposed into 3 tasks by deliverable boun
 
 - 2026-07-30: B4 (tasks 0020/0021) and B5 (tasks 0026/0027) enriched and rolled up into the AC above (DD-09 subset pattern); child tasks re-parent here on completion, as B1–B3 did.
 - 2026-08-03 (0035): B6/B7 homes created for the 0033/0034 designs (map-J realignment). B5's edge scenario "no fourth plugin kind is introduced" was written for the E2E composition; 0034's judge-kind decision adds a fourth kind by explicit decision — the ADR-007 amendment (0036) records the supersession. B6/B7 are new backlog scope outside the 0028 verification window (B1–B5).
+- 2026-08-07 (0037): ADR-007 amdt 2026-08-07 **supersedes** the 2026-08-02 fourth-kind amendment. LLM-as-judge repositioned from a plugin kind to **agent skills + `agent.run`**. Plugin taxonomy reverts to three kinds (`ingestion`, `generator`, `publish`) — the runtime never gained a fourth. B7 now homes the fat skill `kk-judge` + thin wrappers (tech-accuracy, brand-tone, compliance); the `agent.run` step emits a verdict file gated by a `shell`/`jq` guard. B5's edge scenario "no fourth plugin kind is introduced" is now the steady state, not a future constraint.
 ## History
 - 2026-07-30T22:23:26.221Z backlog → active (system)
 - 2026-08-02T23:27:15.965Z active → verifying (system)

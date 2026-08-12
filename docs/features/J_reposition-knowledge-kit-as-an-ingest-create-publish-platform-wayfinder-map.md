@@ -101,7 +101,12 @@ the doc map (decision → `00`, scope → `01`, mechanism → `03`, surface → 
 `sp:sys-architecture` (contract/boundary tickets) · `sp:expert-spur` + `sp:dev-featurechange`
 (feature-tree restructure — CLI-gated, never raw Write on `docs/features`).
 
----
+**Update 2026-08-07 (task 0037):** The 0034 decision below (fourth plugin kind `judge`) was
+**superseded** by ADR-007 amdt 2026-08-07. LLM-as-judge moved to **agent skills + `agent.run`**
+(fat skill `kk-judge` + thin wrappers). Plugin taxonomy reverts to three kinds. The historical
+0034 text is retained as a record of the superseded decision. "Judge retry topology" under *Not yet
+specified* is now scoped to the skill/wrapper model, not a plugin kind.
+
 
 ### Decisions so far
 

@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.0.0
+version: 2.1.1
 created_at: 2026-07-22
-updated_at: 2026-08-02
+updated_at: 2026-08-11
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -22,7 +22,8 @@ apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
 packages/
   utils/            # @gobing-ai/utils — pure helpers, zod re-export, logger
-  kk-core/          # @gobing-ai/kk-core — Doc/Brief/Content/Result/Verdict Zod contracts + kindContract
+  kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
+  publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2)
 tooling/
   typescript/       # shared tsconfig presets
 .spur/              # Spur config, rules, workflows, templates
@@ -67,15 +68,19 @@ Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary
 
 ### Plugin kinds
 
-Four kinds, discovered by the same `plugins/*/plugin.json` registry scan (ADR-006 amdt 2026-07-24;
-ADR-007 amdt 2026-08-02):
+Three kinds, discovered by the same `plugins/*/plugin.json` registry scan (ADR-006 amdt 2026-07-24;
+ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment):
 
 | Kind | Contract | Notes |
 |------|----------|-------|
 | `ingestion` | `source → Doc[]` | Optional — a pipeline may start from a `Brief` instead |
 | `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
 | `publish` | `Content → Result` | Fan-out dispatches N of these |
-| `judge` | `Content → Verdict` | Gate-only; verdict read from payload, not exit status |
+
+> **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
+> (ADR-007 amdt 2026-08-07). The fat skill `kk-judge` emits a `Verdict` (`PASS` / `FAIL` /
+> `NEEDS_REVISION` + reasoning) consumed by an `agent.run` step whose transition is guarded by a
+> `shell`/`jq` check on the verdict payload. See `plugins/kk/skills/kk-judge/SKILL.md`.
 
 ### Generator input dispatch
 
@@ -118,8 +123,8 @@ Full specification: `docs/design/fan-in-and-fan-out-specification.md`.
 [ingestion…]  ──┼─→ kk fanin ─→ docs.json ─┐        ├── publish target 2
 [ingestion…]  ──┘                          ├─→ kk invoke <generator> ─→ content.json
                      Brief (no ingest) ────┘            │                    │
-                                                        ├─→ kk invoke <judge> ─→ verdict.json
-                                                        │        (gate: guard reads verdict)
+                                                        ├─→ agent.run kk-judge ─→ verdict.json
+                                                        │        (gate: shell/jq guard reads verdict)
                                                         └─→ kk fanout ─→ result.json ─→ [targets…]
 ```
 
@@ -132,7 +137,8 @@ Every arrow is a file on disk validated against a `@gobing-ai/kk-core` schema; e
 |--------|--------------|----------------|---------------|
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`invoke`, `fanin`, `fanout`, `plugins`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
-| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Brief/Content/Result/Verdict schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
+| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
+| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**

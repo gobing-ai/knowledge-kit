@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.3.0
+version: 2.4.1
 created_at: 2026-07-22
-updated_at: 2026-08-03
+updated_at: 2026-08-11
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -20,10 +20,10 @@ sync: [T4]
 > Publish). Roots F/G/H cancelled (E2E → **B5**; multi-channel → E Notes; STORM/harvest → D4/D5).
 > Map: `docs/plans/feature-tree-restructure-map.md`.
 >
-> **2026-08-03 (J):** Tree realigned to PRD v3 scope — creation and multi-channel publishing as
-> co-equal. **E** renamed "Multi-channel publish"; **B6** (sequential fan-in/fan-out) and **B7**
-> (judge plugin kind) home the 0033/0034 designs under the platform; **E4** harvests the promoted
-> multi-channel suite; D4/D5 deferred to Phase 3. Map:
+> **2026-08-07 (0037):** LLM-as-judge repositioned from fourth plugin kind to **agent skills + `agent.run`**
+> (ADR-007 amdt 2026-08-07, superseding the 2026-08-02 amendment). **B7** renamed "LLM-as-judge
+> agent skills"; plugin taxonomy reverts to three kinds (`ingestion`, `generator`, `publish`).
+> Fat skill `kk-judge` + thin wrappers deliver verdict gating with zero engine work. Map:
 > `docs/plans/feature-tree-restructure-map-j.md`.
 
 ## Status legend
@@ -43,7 +43,7 @@ sync: [T4]
 | B4 | CLI surface | ✅ done | 1 | tasks `0020`/`0021` done: `plugins list` + `plugins doctor` (noun group, `--json`); verifyall re-audit PASS + shippable; commit `fed9412` |
 | B5 | End-to-end pipeline acceptance | ✅ done | 1 | tasks `0026`/`0027` done; vertical over B3 invoke + C2/D2/E3 proven (fixture → content → `ok:true`); verifyall re-audit PASS + shippable; commits `662ba0b`/`41bf221` |
 | B6 | Sequential fan-in/fan-out steps | ⏳ backlog | 2 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`) |
-| B7 | Judge plugin kind | ⏳ backlog | 2 | home for 0034 decision: fourth kind `judge` (`Content → Verdict`); recorded by ADR-007 amdt 2026-08-02 (task `0036`) |
+| B7 | LLM-as-judge agent skills | ⏳ current | 2 | home for 0034/0037: fat skill `kk-judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
 | **C** | Ingestion | ⏳ current | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007) |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` (edge on parent C) |
@@ -62,7 +62,7 @@ sync: [T4]
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** + **D5** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
-| **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ⏳ current | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035); closes after 0036 doc sync |
+| **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |
 
 
 ## Open research gates

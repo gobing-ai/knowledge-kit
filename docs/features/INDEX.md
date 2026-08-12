@@ -10,7 +10,7 @@
     ├── [done] **B4**: CLI surface ([B4_cli-surface.md](./B4_cli-surface.md))
     ├── [done] **B5**: End-to-end pipeline acceptance ([B5_end-to-end-pipeline-acceptance.md](./B5_end-to-end-pipeline-acceptance.md))
     ├── [backlog] **B6**: Sequential fan-in/fan-out steps ([B6_sequential-fan-in-fan-out-steps.md](./B6_sequential-fan-in-fan-out-steps.md))
-    └── [backlog] **B7**: Judge plugin kind ([B7_sequential-fan-in-fan-out-steps.md](./B7_sequential-fan-in-fan-out-steps.md))
+    └── [verifying] **B7**: LLM-as-judge agent skills ([B7_sequential-fan-in-fan-out-steps.md](./B7_sequential-fan-in-fan-out-steps.md))
 [backlog] **C**: Ingestion ([C_ingestionplugin-karakeep-local.md](./C_ingestionplugin-karakeep-local.md))
     ├── [done] **C1**: Ingestion plugin design ([C1_ingestion-plugin-design.md](./C1_ingestion-plugin-design.md))
     └── [done] **C2**: Karakeep-local ([C2_karakeep-local.md](./C2_karakeep-local.md))
@@ -29,5 +29,5 @@
 [cancelled] **G**: PublishPlugin rewrite epic ([G_publishplugin-rewrite-epic.md](./G_publishplugin-rewrite-epic.md))
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
 [backlog] **I**: LLM wiki ([I_llm-wiki.md](./I_llm-wiki.md))
-[verifying] **J**: Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) ([J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md](./J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md))
+[done] **J**: Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) ([J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md](./J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md))
 <!-- END AUTO-GENERATED -->

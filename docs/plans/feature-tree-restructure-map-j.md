@@ -9,8 +9,12 @@ not raw ID surgery.
 **Task:** 0035 (realign the feature tree)
 **Precedent:** A1 map `docs/plans/feature-tree-restructure-map.md` (tasks 0006–0009) — this map's
 blast-radius template and apply-order pattern. A1 close-out learnings applied: basename lag is
-accepted (id+name authoritative); no status jumps; no per-channel stub explosion.
 
+> **Supersession (2026-08-07, task 0037).** Decision #3 below ("Judge home = B7", fourth plugin kind)
+> was **superseded** by ADR-007 amdt 2026-08-07: LLM-as-judge moved from a plugin kind to agent
+> skills + `agent.run`. B7 remains the home, now scoped to **agent skills** (fat skill `kk-judge` +
+> thin wrappers), not a fourth plugin kind. The historical decision text below is retained as a
+> record of what 0034 decided and 0037 superseded.
 ## Locked decisions
 
 1. **No new root letters.** PRD v3 in-scope areas (Project foundation A · Plugin platform B ·

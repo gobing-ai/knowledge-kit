@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.1.0
+version: 3.2.0
 created_at: 2026-07-22
-updated_at: 2026-08-03
+updated_at: 2026-08-07
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -28,18 +28,18 @@ The platform is a **type + discovery layer**: TypeScript data contracts discover
 | `IngestionPlugin` | `ingest(source) → Doc[]` | **Karakeep-local** — read an rclone-synced folder |
 | `ContentGeneratorPlugin` | `generate(Doc[] \| Brief) → Content` | **Generator (reuse-first)** — accepts ingested `Doc[]` or standalone `Brief` (topic → article) |
 | `PublishPlugin` | `publish(Content) → Result` | **Multi-channel publish** — Surfdash (tested rewrite) + `wt` target harvest |
-| `JudgePlugin` | `judge(Content) → Verdict` | **LLM-as-judge** — reusable evaluation rubric gating a pipeline (ADR-007 amdt 2026-08-02) |
 
 A **pipeline** is a `spur workflow` that runs `ingest → generate → publish` (or standalone
-`create → publish`) as a **sequence of states**, optionally gated by a judge. The workflow engine
-executes one state at a time; where a stage needs many inputs or many outputs, `kk fanin` /
-`kk fanout` collapse that into a single sequential step. The registry discovers installed plugins
-by kind.
+`create → publish`) as a **sequence of states**. An optional LLM-as-judge gate (an `agent.run`
+step backed by the `kk-judge` skill) may evaluate generated `Content` before publish; the gate
+reads a verdict file, not a plugin-kind contract. The workflow engine executes one state at a
+time; where a stage needs many inputs or many outputs, `kk fanin` / `kk fanout` collapse that
+into a single sequential step. The registry discovers installed plugins by kind.
 
 ## Users
 
 - **Robin (primary)** — automated creation (topic/brief → article) and multi-channel publishing (Surfdash, Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) alongside continuous Karakeep collection → generation → publish workflows.
-- **Plugin developers** — extend the platform with new Ingestion / Generator / Publish / Judge plugins against stable typed data contracts.
+- **Plugin developers** — extend the platform with new Ingestion / Generator / Publish plugins against stable typed data contracts.
 - **AI coding agents** — operate the platform under Spur / Superskill harness contracts.
 
 ## Problem
@@ -63,7 +63,7 @@ Technical content creation and published output are fragmented: turning ideas or
 | Area | Feature | Phase | Notes |
 |------|---------|-------|-------|
 | Project foundation | **A** | Phase 0 | Monorepo substrate; **A1** feature-tree restructure |
-| Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance (done) · Phase 2: **B6** sequential `kk fanin`/`fanout`, **B7** `judge` plugin kind |
+| Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance (done) · Phase 2: **B6** sequential `kk fanin`/`fanout`, **B7** LLM-as-judge agent skills |
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
 | Content generation | **D** | Phase 1/2 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) |
 | Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |
@@ -86,6 +86,6 @@ A user can answer "can I run this to write an article about X with nothing inges
 - Creation-from-brief (topic → published article without prior ingest) executes end-to-end via a `spur workflow`.
 - Multi-channel fan-out publish runs sequentially via `kk`, returning aggregate `Result` status with fail-loud exit on partial failure.
 - The `Generator` contract accepts either input shape — ingested `Doc[]`, a standalone `Brief`, or
-  both — while `Ingestion` (`source → Doc[]`), `Publish` (`Content → Result`) and `Judge`
-  (`Content → Verdict`) keep their own single-shape contracts.
+  both — while `Ingestion` (`source → Doc[]`) and `Publish` (`Content → Result`) keep their own
+  single-shape contracts. LLM-as-judge runs as an `agent.run` skill, not a plugin contract.
 - Existing gates stay green: `bun run lint`, `bun run test`, `bun run build`.

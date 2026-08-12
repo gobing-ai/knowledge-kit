@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.0.0
+version: 2.1.0
 created_at: 2026-07-22
-updated_at: 2026-08-02
+updated_at: 2026-08-07
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -75,7 +75,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
-| `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`, `judge`) |
+| `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`) |
 | `--json` | boolean | no | `false` | Emit machine-readable JSON array of records |
 | `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
 
@@ -83,7 +83,7 @@ knowledge-kit plugins doctor [--json] [--plugins-root <dir>]
 1. Scans `--plugins-root` using `discoverPlugins`.
 2. Filters by `--kind` if specified using `listByKind`.
 3. Under `--json`, writes raw `PluginRecord[]` JSON array to stdout via `logger.out`.
-4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`, `judge`).
+4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`).
 
 **Implementation:** `apps/cli/src/cli.ts`.
 
@@ -159,7 +159,7 @@ preserved, not rejected.
 | Field | Type | Required | Status | Description |
 |-------|------|----------|--------|-------------|
 | `name` | string (min 1) | yes | shipped | Unique plugin name; the argument to `kk invoke` |
-| `kind` | `ingestion` \| `generator` \| `publish` \| `judge` | yes | `judge` **specified — not implemented** (B7) | Selects the I/O data contract via `kindContract(kind)` |
+| `kind` | `ingestion` \| `generator` \| `publish` | yes | shipped | Selects the I/O data contract via `kindContract(kind)` |
 | `entry` | string (min 1) | yes | shipped | Relative path to the executable entry the invoker spawns |
 | `version` | string | no | shipped | Informational |
 | `description` | string | no | shipped | Informational |
@@ -204,9 +204,9 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | Export | Kind | Notes |
 |--------|------|-------|
 | `DocSchema`, `ContentSchema`, `ResultSchema`, `DocListSchema` | Zod schemas | Pure data contract schemas |
-| `BriefSchema`, `GeneratorInputSchema`, `VerdictSchema` | Zod schemas | **Specified, not implemented** (ADR-007; features D, B7) |
+| `BriefSchema`, `GeneratorInputSchema` | Zod schemas | **Specified, not implemented** (ADR-007; features D, B6) |
 | `Doc`, `Content`, `Result` | types | Inferred TypeScript types |
-| `Brief`, `GeneratorInput`, `Verdict` | types | **Specified, not implemented** (ADR-007; features D, B7) |
+| `Brief`, `GeneratorInput` | types | **Specified, not implemented** (ADR-007; features D, B6) |
 | `PLUGIN_KINDS`, `PluginKind`, `PluginKindSchema` | constants & schema | Supported plugin lifecycle kinds |
 | `kindContract(kind)` | function | Resolves I/O contract per plugin kind |
 | `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |
