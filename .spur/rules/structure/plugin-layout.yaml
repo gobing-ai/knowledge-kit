@@ -1,0 +1,90 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# ADR-009 plugin tree — product plugins under kind collections; capabilities under plugins/kk.
+# Prevents the flat `plugins/<name>` layout from returning.
+include:
+  - "plugins/**"
+  - "package.json"
+exclude:
+  - "**/node_modules/**"
+rules:
+  - id: no-toplevel-product-plugin-json
+    description: >
+      Product plugin.json must live under plugins/ingestions|generations|publishings/<name>/.
+      A plugin.json at plugins/<name>/ (except plugins/kk/plugin.json) is ADR-009 drift.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "."
+    include:
+      - "plugins/*/plugin.json"
+    exclude:
+      - "plugins/kk/plugin.json"
+
+  - id: plugin-kind-matches-ingestions
+    description: "plugins/ingestions/**/plugin.json must declare kind ingestion (ADR-009)."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\"kind\"\\s*:\\s*\"(generator|publish)\""
+    include:
+      - "plugins/ingestions/**/plugin.json"
+
+  - id: plugin-kind-matches-generations
+    description: "plugins/generations/**/plugin.json must declare kind generator (ADR-009)."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\"kind\"\\s*:\\s*\"(ingestion|publish)\""
+    include:
+      - "plugins/generations/**/plugin.json"
+
+  - id: plugin-kind-matches-publishings
+    description: "plugins/publishings/**/plugin.json must declare kind publish (ADR-009)."
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "\"kind\"\\s*:\\s*\"(ingestion|generator)\""
+    include:
+      - "plugins/publishings/**/plugin.json"
+
+  - id: capabilities-only-under-kk
+    description: >
+      Agent skills, slash commands, subagents, hooks, and rules belong in plugins/kk
+      (ADR-009). Do not author them under product plugin collections.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "."
+    include:
+      - "plugins/ingestions/**/SKILL.md"
+      - "plugins/generations/**/SKILL.md"
+      - "plugins/publishings/**/SKILL.md"
+      - "plugins/ingestions/**/commands/**"
+      - "plugins/generations/**/commands/**"
+      - "plugins/publishings/**/commands/**"
+      - "plugins/ingestions/**/agents/**"
+      - "plugins/generations/**/agents/**"
+      - "plugins/publishings/**/agents/**"
+      - "plugins/ingestions/**/hooks/**"
+      - "plugins/generations/**/hooks/**"
+      - "plugins/publishings/**/hooks/**"
+      - "plugins/ingestions/**/rules/**"
+      - "plugins/generations/**/rules/**"
+      - "plugins/publishings/**/rules/**"
+
+  - id: no-flat-plugins-workspace-glob
+    description: >
+      Root package.json workspaces must use plugins/ingestions|generations|publishings/*,
+      never a flat plugins/* glob (ADR-009).
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        pattern: "[\"']plugins/\\*[\"']"
+    include:
+      - "package.json"
