@@ -1,33 +1,49 @@
 "$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
 kind: state-machine
 name: judge-gated-publish
-description: "Example workflow where an LLM-as-judge plugin step gates a publish transition"
+description: "Example workflow where an LLM-as-judge agent.run step gates a publish transition"
 initialState: generate
 terminalStates:
   - done
   - failed
+failureStates:
+  - failed
 vars:
   contentFile: ".spur/run/content.json"
   verdictFile: ".spur/run/verdict.json"
+  rubric: "general"
+  maxRetries: "2"
+  # attempt is mutated by the revise loop; initialize to 0.
+  attempt: "0"
   spurBin: "spur"
 states:
   - id: generate
-    description: "Generate content from brief or docs"
+    description: "Generate content from brief or docs (kk invoke <generator>)"
     onEnter:
       - kind: shell
         options:
-          # Seed the verdict so the judge-gate guards can be evaluated in --dry-run
-          # (dry-run skips actions but still evaluates shell guards). A real pipeline's
-          # judge plugin overwrites this file before the gate is read.
+          # Seed the verdict so the judge gate guards can be evaluated in --dry-run
+          # (dry-run skips actions but still evaluates shell guards). A real run's
+          # judge step overwrites this file before the gate is read.
           command: "echo '{\"verdict\":\"PASS\",\"score\":0.0}' > ${vars.verdictFile} && echo 'generating content...'"
   - id: judge
-    description: "Evaluate generated content using judge plugin"
+    description: "Evaluate generated content via the kk-judge skill (agent.run)"
     onEnter:
-      - kind: shell
+      # `agent.run` is registered by the kk workflow host: it spawns an agent that loads the
+      # kk-judge skill, evaluates the content against ${vars.rubric}, and writes the verdict
+      # JSON to ${vars.verdictFile}. Under `spur workflow run` (dry-run), this action is
+      # skipped — the seeded verdict above keeps the gate evaluable. See
+      # plugins/kk/skills/kk-judge/SKILL.md and references/workflow-integration.md.
+      - kind: agent.run
         options:
-          command: "echo '{\"verdict\":\"PASS\",\"score\":0.95}' > ${vars.verdictFile}"
+          skill: kk-judge
+          prompt: |
+            Evaluate the content at ${vars.contentFile} against the ${vars.rubric} rubric.
+            Load plugins/kk/skills/kk-judge/SKILL.md and its references/rubrics.md.
+            Write the verdict JSON to ${vars.verdictFile} per the contract in SKILL.md.
+            Print the verdict path as the last line of stdout.
   - id: publish
-    description: "Publish content after clearing judge gate"
+    description: "Publish content after clearing judge gate (kk fanout)"
     onEnter:
       - kind: shell
         options:
@@ -35,7 +51,7 @@ states:
   - id: done
     description: "Publish completed successfully"
   - id: failed
-    description: "Judge rejected content or execution failed"
+    description: "Judge rejected content (FAIL) or retries exhausted (NEEDS_REVISION)"
 
 transitions:
   - from: generate
@@ -43,6 +59,8 @@ transitions:
     description: "Content generated -> proceed to evaluation"
     guard:
       kind: always
+
+  # PASS -> publish.
   - from: judge
     to: publish
     description: "Judge verdict is PASS (or file absent under --dry-run) -> proceed to publish"
@@ -53,13 +71,28 @@ transitions:
         # absent, which happens under --dry-run (actions are skipped, so the judge
         # never writes its verdict). A real run always has the file.
         command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
+
+  # NEEDS_REVISION -> back to generate with a bounded retry budget.
   - from: judge
-    to: failed
-    description: "Judge verdict is an explicit non-PASS -> block publish"
+    to: generate
+    description: "Judge verdict is NEEDS_REVISION and retry budget remains -> regenerate with feedback"
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -n "$v" -a "$v" != PASS'
+        # Allow the revise loop only while the attempt counter is below maxRetries.
+        # The shell kind cannot mutate vars, so the host (or a sidecar note action) is
+        # responsible for incrementing attempt on each loop in a real run.
+        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test "$v" = NEEDS_REVISION -a "$attempt" -lt "$maxRetries"'
+
+  # FAIL, or NEEDS_REVISION with no retries left -> failed.
+  - from: judge
+    to: failed
+    description: "Judge verdict is FAIL, or NEEDS_REVISION with retries exhausted -> block publish"
+    guard:
+      kind: shell
+      options:
+        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -n "$v" && { test "$v" = FAIL || test "$v" = NEEDS_REVISION -a "$attempt" -ge "$maxRetries"; }'
+
   - from: publish
     to: done
     description: "Publish done"
