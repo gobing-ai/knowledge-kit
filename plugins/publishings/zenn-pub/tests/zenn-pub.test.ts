@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { logger } from '@gobing-ai/utils';
-import { runInvoke } from '../../../apps/cli/src/invoke';
+import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     generateZennSlug,
     getPublishTransport,

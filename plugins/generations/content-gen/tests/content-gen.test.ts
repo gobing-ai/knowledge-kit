@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ContentSchema, type Doc } from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
-import { runInvoke } from '../../../apps/cli/src/invoke';
+import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { main, processGeneratorIO } from '../src/index';
 
 const FIXTURES_DIR = join(import.meta.dir, 'fixtures');

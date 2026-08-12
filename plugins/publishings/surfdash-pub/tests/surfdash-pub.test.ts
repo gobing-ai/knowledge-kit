@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
 import { logger } from '@gobing-ai/utils';
-import { runInvoke } from '../../../apps/cli/src/invoke';
+import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     getPublishTransport,
     main,

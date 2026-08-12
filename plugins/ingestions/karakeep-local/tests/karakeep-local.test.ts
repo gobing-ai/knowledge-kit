@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runInvoke } from '../../../apps/cli/src/invoke';
+import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { main, processKarakeepFolder } from '../src/index';
 
 const FIXTURES_DIR = join(import.meta.dir, 'fixtures');
