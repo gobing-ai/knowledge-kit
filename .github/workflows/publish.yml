@@ -55,6 +55,21 @@ jobs:
           fi
           echo "Publishing @gobing-ai/knowledge-kit@${CLI_VERSION}"
 
+      # Guard the silent-empty-pack failure class: the tarball must ship the
+      # kk plugin + marketplace (staged by bundle-plugins) and dist/, and must
+      # NOT ship test files from the kind-collection plugins.
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          (cd apps/cli && bun run build:bundle)
+          cd apps/cli
+          PACK_LIST=$(npm pack --dry-run 2>&1)
+          echo "$PACK_LIST" | grep -q 'plugins/kk/plugin.json'
+          echo "$PACK_LIST" | grep -q '.claude-plugin/marketplace.json'
+          echo "$PACK_LIST" | grep -q 'dist/index.js'
+          ! echo "$PACK_LIST" | grep -q '/tests/'
+          echo "Release assets OK (kk plugin + marketplace + dist in pack)"
+
       # scripts/publish.ts strips private workspace:* deps (kk-core, utils are
       # bundled into dist/ at build time), builds the CLI so bin files exist
       # when npm validates them, then publishes with Trusted Publishing (OIDC).
