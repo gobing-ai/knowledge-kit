@@ -760,4 +760,36 @@ describe('runFanout', () => {
             expect(outData.targets[0].error).toContain('wrote an invalid Result');
         });
     });
+
+    it('R6 — fan-out composes the harvested zenn-pub and qiita-pub pair under the fake transport', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            const origEnv = process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
+            process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
+            try {
+                const code = await runFanout(
+                    ['--content', contentFile, '--target', 'zenn-pub', '--target', 'qiita-pub', '--out', outFile],
+                    { pluginsRoot: join(process.cwd(), 'plugins') },
+                );
+
+                expect(code).toBe(0);
+                const outData = JSON.parse(await Bun.file(outFile).text());
+                expect(outData.ok).toBe(true);
+                expect(outData.summary).toEqual({ total: 2, succeeded: 2, failed: 0, skipped: 0 });
+                // One per-target entry per channel, in --target order.
+                expect(outData.targets.map((t: TargetOutcome) => t.target)).toEqual(['zenn-pub', 'qiita-pub']);
+                for (const t of outData.targets as TargetOutcome[]) {
+                    expect(t.status).toBe('published');
+                    expect(t.ok).toBe(true);
+                    expect(typeof t.url).toBe('string');
+                }
+            } finally {
+                if (origEnv !== undefined) process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = origEnv;
+                else delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
+            }
+        });
+    });
 });

@@ -23,7 +23,7 @@
     ├── [backlog] **E1**: wt-publish audit ([E1_wt-publish-audit.md](./E1_wt-publish-audit.md))
     ├── [done] **E2**: Publish design and test harness ([E2_publishplugin-contract-and-test-harness.md](./E2_publishplugin-contract-and-test-harness.md))
     ├── [done] **E3**: Surfdash publisher tested ([E3_surfdash-publisher-tested.md](./E3_surfdash-publisher-tested.md))
-    └── [backlog] **E4**: Multi-channel suite harvest ([E4_multi-channel-suite-harvest.md](./E4_multi-channel-suite-harvest.md))
+    └── [done] **E4**: Multi-channel suite harvest ([E4_multi-channel-suite-harvest.md](./E4_multi-channel-suite-harvest.md))
 [backlog] **F**: kk plugin collection ([F_kk-plugin-collection.md](./F_kk-plugin-collection.md))
     └── [verifying] **F1**: LLM-as-judge agent skills ([F1_llm-as-judge-agent-skills.md](./F1_llm-as-judge-agent-skills.md))
 [cancelled] **G**: PublishPlugin rewrite epic ([G_publishplugin-rewrite-epic.md](./G_publishplugin-rewrite-epic.md))

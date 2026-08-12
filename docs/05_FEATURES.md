@@ -60,7 +60,7 @@ sync: [T4]
 | E1 | wt-publish audit | ⏳ backlog | 1 | task `0002` done (transports mapped; Surfdash simplest); feature close-out (verifyall) pending |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
 | E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
-| E4 | Multi-channel suite harvest | ⏳ backlog | 2 | promoted from former-G deferral (PRD v3); Surfing/X/Juejin/Qiita/Medium/Substack/Zenn/InfoQ/XHS under E2 transport |
+| E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/zenn-pub`, `plugins/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
 | **F** | kk plugin collection | ⏳ backlog | 2 | collection parent for `plugins/kk` capabilities (skills, commands, subagents); F1 = kk-judge agent skills (migrated from B7); intake task `0038` cancelled — convention lives in F's AC |
 | F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `kk-judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |

@@ -1,0 +1,7 @@
+{
+    "name": "zenn-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for Zenn (zenn.dev) invoking Zenn CLI via FileCli transport"
+}

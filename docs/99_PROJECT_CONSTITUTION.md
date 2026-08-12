@@ -3,9 +3,9 @@ name: Project Constitution
 doc: 99_PROJECT_CONSTITUTION
 owns: PROCESS — how the key files are maintained
 authority: authoritative-on-process
-version: 1.2.0
+version: 1.3.0
 created_at: 2026-05-31T17:30:43.643Z
-updated_at: 2026-06-12T00:00:00.000Z
+updated_at: 2026-08-12T00:00:00.000Z
 ---
 
 # Project Constitution — How to Organize the Project
@@ -390,6 +390,10 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/04_DESIGN.md`
 
+- [2026-08-12] knowledge-kit: `zenn-pub` / `qiita-pub` shipped as new workspace packages with
+  env-only secrets (`ZENN_REPO`, `QIITA_TOKEN`) and the `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` harness
+  switch — none had `04` §3/§4 rows until the post-ship drift audit. Env vars and package
+  surfaces are T3 surface too, not just CLI commands; same-commit sync covers §3/§4 tables.
 - [2026-06-11] spur-new: The same-commit sync rule was honored only when "doc sync" was made an
   explicit scheduled item in the batch plan. Discipline-by-memory fails; schedule it (§5 last
   row).

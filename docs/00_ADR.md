@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.7.2
+version: 1.8.0
 created_at: 2026-05-28
 updated_at: 2026-08-12
 edit_rules: 99 §6.1
@@ -249,6 +249,31 @@ The 2026-08-02 amendment is superseded in full:
   `kk-judge` skill's output format (`plugins/kk/skills/kk-judge/SKILL.md` §Verdict output contract)
   and validated by the workflow's `shell`/`jq` guard on the verdict payload. The "validated by a
   `VerdictSchema` utility" phrasing is withdrawn; nothing else in this amendment changes.
+
+---
+
+## ADR-008 — Publish transports: one shared `PublishTransport` contract, `file-cli` first (2026-08-12)
+
+> **Status:** Accepted · **Date:** 2026-08-12 · **Records:** the E2 transport decision (tasks
+> 0018/0019, 2026-07) that shipped as `@gobing-ai/publish-harness` and until now lived only in
+> `docs/design/publish-plugin-specification.md` §2. Recorded here as binding at the first
+> multi-channel harvest (E4: `zenn-pub`, `qiita-pub`).
+
+**Decision.** Every publish plugin implements the shared `PublishTransport` abstraction from
+`@gobing-ai/publish-harness` with two transport kinds: `file-cli` — anything the plugin process
+executes itself, whether a child-process CLI (Surfdash `postsurfing`, Zenn CLI via `npx zenn`) or
+a token-API call made by the plugin (Qiita API v2 via `fetch`) — and `browser` (Playwright
+automation; **deferred** until a target requires it). Target-specific `Content` → frontmatter/body
+mapping stays inside the plugin (no shared mapper, no per-target core schema, no new transport
+kind); secrets are env-only (spec §2.4). Fan-out sequencing over the channels is `kk`'s job
+(ADR-007 R4), not the transport's.
+
+**Why.** Classifying by execution mechanism rather than network usage lets token APIs (Qiita)
+reuse the same offline-testable harness (`FakeFileCliTransport`) as local CLIs, so a third
+transport kind is never needed.
+
+**Detail:** `docs/design/publish-plugin-specification.md` §2, `docs/03_ARCHITECTURE.md` (module
+boundaries), `docs/04_DESIGN.md` §3–§4, feature E4.
 
 ---
 

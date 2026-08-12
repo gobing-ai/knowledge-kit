@@ -62,8 +62,30 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/qiita-pub": {
+      "name": "@gobing-ai/qiita-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/utils": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/surfdash-pub": {
       "name": "@gobing-ai/surfdash-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/utils": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/zenn-pub": {
+      "name": "@gobing-ai/zenn-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
@@ -101,9 +123,13 @@
 
     "@gobing-ai/publish-harness": ["@gobing-ai/publish-harness@workspace:packages/publish-harness"],
 
+    "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/qiita-pub"],
+
     "@gobing-ai/surfdash-pub": ["@gobing-ai/surfdash-pub@workspace:plugins/surfdash-pub"],
 
     "@gobing-ai/utils": ["@gobing-ai/utils@workspace:packages/utils"],
+
+    "@gobing-ai/zenn-pub": ["@gobing-ai/zenn-pub@workspace:plugins/zenn-pub"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

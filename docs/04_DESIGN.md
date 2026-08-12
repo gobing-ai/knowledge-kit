@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.2.0
+version: 2.3.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -201,6 +201,10 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | Var | Required | Description |
 |-----|----------|-------------|
 | `NODE_ENV` | no | Set to `test` by workspace test scripts |
+| `POSTSURFING_BIN` | no (surfdash-pub) | Path to the `postsurfing` binary the Surfdash transport invokes (default: on PATH) |
+| `ZENN_REPO` | yes (zenn-pub) | Zenn/GitHub repository path the Zenn transport publishes into (`npx zenn` + `git add/commit/push`) |
+| `QIITA_TOKEN` | yes (qiita-pub) | Qiita API v2 token; sent as `Authorization: Bearer <token>` on `POST /api/v2/items` |
+| `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` | no | `fake` selects `FakeFileCliTransport` instead of the real transport — the offline harness switch, identical across `surfdash-pub` / `zenn-pub` / `qiita-pub` |
 
 ## 4. Public package surface
 
@@ -225,6 +229,41 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |
 | `discoverPlugins(root)`, `listByKind`, `getByName` | functions | Filesystem discovery and registry filtering |
 | `PluginRecord`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types |
+
+### `@gobing-ai/publish-harness` (`packages/publish-harness`)
+
+| Export | Kind | Notes |
+|--------|------|-------|
+| `PublishTransport` | interface | `{ kind: 'file-cli' \| 'browser', publish(payload): Promise<Result> }` (ADR-008) |
+| `PublishTransportPayload` | interface | `{ content: Content, options?: Record<string, unknown> }` |
+| `FakeFileCliTransport` | class | Offline fake for unit tests; `setNextResult`, records call log |
+
+### `@gobing-ai/surfdash-pub` (`plugins/surfdash-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+|--------|------|-------|
+| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH) |
+| `mapContentToSurfingMarkdown(content)` | function | Renders Surfdash markdown + frontmatter (title, description, tags, date, canonical_url, published) |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1 |
+| `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
+
+### `@gobing-ai/zenn-pub` (`plugins/zenn-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+|--------|------|-------|
+| `ZennCliFileCliTransport` | class | `file-cli` transport: `npx --yes zenn new:article` + `articles/<slug>.md` write + git push; requires `ZENN_REPO` |
+| `mapContentToZennMarkdown(content)` | function | Renders Zenn frontmatter (title, type, emoji, topics, published, slug) + body |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; writes fail-loud `Result` |
+| `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
+
+### `@gobing-ai/qiita-pub` (`plugins/qiita-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+|--------|------|-------|
+| `QiitaApiTransport` | class | `file-cli` transport: `POST /api/v2/items` via `fetch` with Bearer token; requires `QIITA_TOKEN` |
+| `mapContentToQiitaMarkdown(content)` | function | Renders Qiita frontmatter (title, block-style tags, private) + body |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; writes fail-loud `Result` |
+| `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
 
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
 

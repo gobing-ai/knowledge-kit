@@ -1,0 +1,7 @@
+{
+    "name": "qiita-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for Qiita (qiita.com) posting articles via the Qiita API v2 token transport"
+}

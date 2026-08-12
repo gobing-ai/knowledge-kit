@@ -26,8 +26,13 @@ export interface PublishTransport {
     publish(payload: PublishTransportPayload): Promise<Result>;
 }
 ```
-- **File/CLI Transports (`file-cli`)**: Local execution using child processes or file manipulators (e.g. Surfdash `postsurfing` CLI). Does not require network credentials.
-- **Browser Transports (`browser`)**: Automated browser automation (Playwright) operating against authenticated sessions/profiles.
+- **File/CLI Transports (`file-cli`)**: Executed by the plugin process itself — child-process
+  CLIs or file manipulators (Surfdash `postsurfing` CLI, Zenn CLI via `npx zenn`) *or* direct API
+  calls made by the plugin (Qiita API v2 via `fetch` with a bearer token). Classification is by
+  **execution mechanism, not network usage**: a token-API channel is still `file-cli` as long as
+  the plugin runs it without browser automation (ADR-008).
+- **Browser Transports (`browser`)**: Automated browser automation (Playwright) operating against
+  authenticated sessions/profiles. **Deferred — no shipped channel uses it yet.**
 
 ### 2.3 Content → Frontmatter Mapping Conventions
 For targets expecting frontmatter (e.g. static site generators like Surfing/Astro), the plugin maps `Content` properties to target-specific frontmatter fields:
@@ -54,3 +59,6 @@ For targets expecting frontmatter (e.g. static site generators like Surfing/Astr
 
 - **Core Verification**: Tested against `kindContract('publish')` in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts:24`) and `runInvoke` execution in `apps/cli/src/invoke.ts`.
 - **Schema Impact**: Zero Zod schema changes or core framework modifications required.
+- **Shipped reference instances**: `plugins/surfdash-pub` (E3), `plugins/zenn-pub` and
+  `plugins/qiita-pub` (E4) — each implements `PublishTransport` with `kind: 'file-cli'`, its own
+  target mapper, and env-only secrets; all three are offline-tested via `FakeFileCliTransport`.
