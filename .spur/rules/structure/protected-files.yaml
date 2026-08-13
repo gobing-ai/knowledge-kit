@@ -27,6 +27,9 @@ rules:
             - "/node_modules/"
             - "/dist/"
             - "vendors/"
+            # Gitignored plugin staging tree (npm-tarball copy of root plugins/);
+            # mirrors the canonical tree, which is out of scope by design.
+            - "apps/cli/plugins/"
 
   - id: no-unsafe-git-commands
     description: "Unsafe git commands (force-push, hard reset) can overwrite history or cause data loss (AGENTS.md CRITICAL safety)."

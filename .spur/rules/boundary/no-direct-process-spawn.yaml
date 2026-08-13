@@ -37,3 +37,7 @@ rules:
             - "**/dist/**"
             # `knowledge-kit invoke` spawns plugin entries by design (ADR-006).
             - "apps/cli/src/invoke.ts"
+            # Gitignored plugin staging tree (copied from root plugins/ for npm
+            # tarball bundling); product plugin transports spawn their own CLIs
+            # by design, same as the canonical root plugins/ tree it mirrors.
+            - "apps/cli/plugins/**"

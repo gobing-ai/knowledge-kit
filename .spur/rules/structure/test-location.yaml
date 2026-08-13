@@ -53,3 +53,6 @@ rules:
       ## pure re-export for UI components
       - "apps/web/src/ui.ts"
       - "apps/web/src/modules/config.ts"
+      ## Gitignored plugin staging tree (npm-tarball copy of root plugins/);
+      ## root plugins/ sources are out of scope; the copy carries no tests by design.
+      - "apps/cli/plugins/**"
