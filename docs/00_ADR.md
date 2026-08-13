@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.14.0
+version: 1.15.0
 created_at: 2026-05-28
-updated_at: 2026-08-12
+updated_at: 2026-08-13
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -346,6 +346,12 @@ fork.
 
 **Detail:** `docs/03_ARCHITECTURE.md` layout, `docs/04_DESIGN.md` §1.7, `docs/design/ingestion-plugin-specification.md` §1.5.
 
+### Amendment — 2026-08-13 (multi-root discovery; ADR-012)
+
+Clause 3 still governs **per-root** layout and diagnostics. Default runtime discovery is no
+longer a single CWD `./plugins` scan — see **ADR-012**. `--plugins-root` remains the exclusive
+single-root override and still obeys this layout.
+
 ---
 
 ## ADR-010 — Product CLI: `kk` binary, register-per-command tree (2026-08-12)
@@ -413,6 +419,64 @@ Feature A21 shipped with task 0052: `kk executor run|fan-in|fan-out` and `kk plu
 live in `apps/cli` (`registerExecutorCommand` / `registerPluginCommand`). Hidden one-release
 aliases `invoke` / top-level `fanin` / `fanout` / `plugins *` reach the same engines and are not
 listed in `kk --help`; `kk add` is removed. Status moves from `Accepted (design)` to `Accepted`.
+
+---
+
+## ADR-012 — Multi-root plugin discovery; built-ins ship with kk (2026-08-13)
+
+> **Status:** Accepted (design) · **Date:** 2026-08-13 · **Amends:** ADR-006 discovery,
+> ADR-009 clause 3 (scan is per-root; default runtime is a merge). Feature **B7**.
+
+**Decision.** Product-plugin discovery is a **merged multi-root scan** in `@gobing-ai/kk-core`.
+
+1. **Same contract every root (R1):** built-in and default-global roots are ADR-009
+   kind-collection trees. User-supplied plugins use the same `plugin.json` + `kind`/`entry`
+   contract. `plugins/kk` is never a kk-core registry entry. Injected extra paths may also
+   be a single `plugin.json` directory (see R6 amendment).
+2. **Built-ins are packaged, not statically imported (R2):** kind collections staged by
+   `bundle-plugins` ship with `@gobing-ai/knowledge-kit` and are a default discovery root,
+   resolved from the package (not from CWD). They are on-disk directories discovered at
+   runtime. They do not go through spur PluginHost, workflow action/guard extensions, or a
+   compile-time import table.
+3. **Default roots (R3), low → high (later wins on `name`):** (1) package-shipped built-in
+   tree; (2) `~/.kk/plugins` if present; (3) CWD `./plugins` if present and not the same
+   realpath as (1); (4) `KK_PLUGIN_PATH` colon-separated extra roots. A same-name collision
+   registers the higher-priority plugin and emits a diagnostic naming both paths.
+4. **`--plugins-root` is exclusive (R4):** the flag stays a single-root override (tests and
+   isolation). It does not merge with the default roots.
+5. **Workflow YAML is composition, not discovery (R5):** a pipeline names plugins via
+   `kk executor run|fan-out`. kk does not register product plugins as custom workflow
+   action kinds, and it does not call spur's deferred PluginLoader / plugin-sdk.
+
+**Why.** End users cannot extend kk if the only scan replaces the shipped tree, and an
+installed `kk` cannot see packaged built-ins if the default root is CWD `./plugins`.
+
+**Detail:** `docs/design/multi-root-plugin-discovery.md`, `docs/03_ARCHITECTURE.md`
+(accepted design — ADR-012), feature B7.
+
+### Amendment — 2026-08-13 (dynamic extra paths; `~/.kk/plugins` is a default, not a lock)
+
+Operator feedback on B7: a `spur workflow` YAML already injects locations via vars (today
+`plugins_root` + `--plugins-root`). Forcing user plugins to live only under
+`~/.kk/plugins/<collection>/<name>/` would make runtime path injection pointless.
+
+1. **`~/.kk/plugins` is the default global store (R3 unchanged as a default).** It is not
+   the only user-plugin location and it does not replace path injection.
+2. **Dynamic extra paths (R6):** repeatable `--plugins-path <dir>` (and `KK_PLUGIN_PATH`)
+   **union** with the default roots. A workflow injects any folder this way. An extra path
+   may be a plugins tree, a kind collection, **or a single directory that contains
+   `plugin.json`**. Extra paths do not drop built-ins or `~/.kk/plugins`.
+3. **`--plugins-root` stays exclusive (R4)** for tests and isolation only. It is not the
+   workflow injection flag. Combining `--plugins-root` with `--plugins-path` is a usage
+   error (exit 2).
+4. **R5 restated:** workflow YAML remains the pipeline SSOT. It names plugins via
+   `kk executor *` **and** may inject extra discovery folders via `--plugins-path`. It
+   still does not register product plugins as custom workflow action kinds.
+5. **Two channels (2026-08-13):** (a) product plugins stay `plugin.json` name-lookup
+   on the kk registry (built-ins, `~/.kk/plugins`, `--plugins-path`); (b) custom
+   workflow **kinds** come from YAML `extensions.actions` / `extensions.guards`
+   (rule-style; ts-libs C1 + spur-new D4). B7 does not add `kind: kk.publish` to
+   Spur builtins and does not load product plugins as workflow extension modules.
 
 ---
 

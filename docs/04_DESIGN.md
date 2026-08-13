@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.10.0
+version: 2.11.0
 created_at: 2026-07-22
-updated_at: 2026-08-12
+updated_at: 2026-08-13
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -15,6 +15,17 @@ sync: [T3]
 
 > Derived. Concrete shapes — every command, flag, config key, env var, schema, and DTO.
 > Edit in the **same commit** as the surface change (constitution T3).
+
+## 0. Design satellites
+
+| Satellite | Area | Status |
+|-----------|------|--------|
+| [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
+| [fan-in-and-fan-out-specification.md](design/fan-in-and-fan-out-specification.md) | Sequential `executor fan-in` / `fan-out` | shipped (B6) |
+| [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
+| [generator-plugin-specification.md](design/generator-plugin-specification.md) | Generator kind contract | shipped (D3) |
+| [publish-plugin-specification.md](design/publish-plugin-specification.md) | Publish kind + transports | shipped (E2) |
+| [multi-root-plugin-discovery.md](design/multi-root-plugin-discovery.md) | Built-in + user plugin discovery merge | accepted design (B7, ADR-012) |
 
 ## 1. CLI commands
 

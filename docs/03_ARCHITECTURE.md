@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.8.0
+version: 2.9.0
 created_at: 2026-07-22
-updated_at: 2026-08-12
+updated_at: 2026-08-13
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -39,10 +39,11 @@ tooling/
 .spur/              # Spur config, rules, workflows, templates
 ```
 
-Workspaces reference each other only via `@gobing-ai/*` (`workspace:*`). Registry discovery
-scans kind collections (`plugins/ingestions|generations|publishings/*/plugin.json`, ADR-009);
-`plugins/kk` is skipped. Only product-plugin dirs with a `package.json` are `@gobing-ai/*`
-workspaces (`karakeep-local` and `kk` are not).
+Workspaces reference each other only via `@gobing-ai/*` (`workspace:*`). Per-root registry
+discovery scans kind collections (`plugins/ingestions|generations|publishings/*/plugin.json`,
+ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root merge**
+(ADR-012; accepted design below). Only product-plugin dirs with a `package.json` are
+`@gobing-ai/*` workspaces (`karakeep-local` and `kk` are not).
 
 ## Runtime model
 
@@ -166,7 +167,7 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 |--------|--------------|----------------|---------------|
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
-| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
+| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |
 | `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
 | `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
@@ -179,9 +180,35 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 2. Anything the CLI needs from a package must be exported from that package’s public entry.
 3. Command registration stays inside `createProgram()`; no parse/IO at import time.
 4. Shared code grows as new `packages/*` workspaces, not folders inside `apps/cli`.
-5. Registry discovery order is deterministic: `discoverPlugins` sorts `readdir` results, so
+5. Per-root discovery order is deterministic: `discoverPlugins` sorts `readdir` results, so
    duplicate-name first-wins and list ordering are platform-independent (ADR-008 fan-out
-   depends on stable target resolution).
+   depends on stable target resolution). Across roots, ADR-012 priority (later wins) plus a
+   `shadowed` diagnostic replaces silent first-wins.
+
+## Multi-root discovery (accepted design — ADR-012; not yet built)
+
+`discoverPlugins(root)` remains the ADR-009 per-root scanner. Default CLI discovery calls
+`discoverAllPlugins()`:
+
+```text
+builtin (package plugins/)
+  → ~/.kk/plugins              (default global store, if present)
+  → <cwd>/plugins              (if present and not builtin realpath)
+  → KK_PLUGIN_PATH entries     (left → right)
+  → --plugins-path entries     (repeatable; any folder)
+  → union by name; later wins; shadowed diagnostic on collision
+```
+
+`--plugins-path` is the **dynamic** seam: a `spur workflow` var (or the CLI) names any
+folder — a plugins tree, a kind collection, or a single `plugin.json` directory — without
+dropping built-ins or `~/.kk/plugins`. `--plugins-root` skips the union (exclusive
+single-root: tests and isolation only). Combining the two flags is a usage error.
+
+Built-ins are the `bundle-plugins` staged tree next to the published `kk` package, not a
+static import table and not spur PluginHost / workflow action kinds. Workflow YAML still
+shells `kk executor run|fan-out <name>` — composition stays in spur; discovery stays in kk.
+
+Full signatures: `docs/design/multi-root-plugin-discovery.md`.
 
 ## Quality boundary
 

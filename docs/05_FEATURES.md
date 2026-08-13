@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.9.0
+version: 2.10.0
 created_at: 2026-07-22
-updated_at: 2026-08-12
+updated_at: 2026-08-13
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -44,13 +44,14 @@ sync: [T4]
 | A1 | Feature tree restructure | ✅ done | 0 | tree+docs applied; tasks `0006`–`0009` **done**; map `docs/plans/feature-tree-restructure-map.md` |
 | A2 | kk product CLI surface | ✅ done | 2 | tasks `0049`–`0051` done; operator binary `kk` (package `@gobing-ai/knowledge-kit` unchanged); register-per-command tree; `bin.kk` + `knowledge-kit` alias + `prepack`; ADR-010; spec `docs/design/kk-cli-surface.md` |
 | A21 | Two-layer CLI nouns (executor + plugin) | ✅ done | 2 | task `0052` done; `kk executor run\|fan-in\|fan-out` + `kk plugin status`; hidden aliases; `add` retired; ADR-011; dogfood `docs/dogfood/2026-08-12-A21-two-layer-cli-dogfood.md` |
-| **B** | Plugin platform | ✅ done | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B6 done; task `0028` verified; kk-judge moved under **F** as F1 |
+| **B** | Plugin platform | ✅ done | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B6 done; task `0028` verified; kk-judge moved under **F** as F1; **B7** is new intake (multi-root discovery) |
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004`: `plugin.json` + `discoverPlugins` / `listByKind` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003`: Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
 | B3 | Spur workflow integration | ✅ done | 1 | task `0005`: `knowledge-kit invoke` + pipeline workflow template; E2E proof → **B5** |
 | B4 | CLI surface | ✅ done | 1 | tasks `0020`/`0021` done: `plugins list` + `plugins doctor` (noun group, `--json`); verifyall re-audit PASS + shippable; commit `fed9412` |
 | B5 | End-to-end pipeline acceptance | ✅ done | 1 | tasks `0026`/`0027` done; vertical over B3 invoke + C2/D2/E3 proven (fixture → content → `ok:true`); verifyall re-audit PASS + shippable; commits `662ba0b`/`41bf221` |
 | B6 | Sequential fan-in/fan-out steps | ✅ done | 2 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`); tasks `0042`/`0043` done (fanin merge + fanout retry-from); docs synced 2026-08-12 |
+| B7 | Multi-root plugin auto-discovery | ⏳ backlog | 2 | ADR-012 accepted design (amended: `--plugins-path` additive any-folder injection; `~/.kk/plugins` default global store; `--plugins-root` isolation only); satellite `docs/design/multi-root-plugin-discovery.md`. **Not** the historical judge B7 (that work is **F1**). |
 | **C** | Ingestion | ⏳ active | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007); closed via carrier `0039`, then **reopened for plugin intake** |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` (edge on parent C) |

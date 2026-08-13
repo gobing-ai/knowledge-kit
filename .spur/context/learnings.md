@@ -2,6 +2,11 @@
 
 Conventions / decisions discovered the hard way. Newest first.
 
+## Learning: workflow YAML names kinds; rule YAML loads modules
+
+- **Convention/quirk:** A workflow `guard`/`action` is only `{ kind, options }` looked up on `WorkflowEngineHost` (`evaluateGuard` / `runAction`). Implementations are registered in-process (`createDefaultWorkflowEngineHost` + `registerSpurBuiltins`). `loadWorkflowExtensionsIntoHost` is library-only — `spur workflow run` never calls it. `type: gate` is unread. The YAML that *does* list module paths is the **rule** engine: `extensions.evaluators: [./file.ts]` relative to the YAML (`collectExtensions` + `loadExtensionsIntoHost`).
+- **Why it matters:** B7 copies kind-lookup (plugin name → kk registry) + YAML-injected extra folders (`--plugins-path`). It must not add `kind: kk.publish` to Spur's host or dynamic-import plugin TS as workflow extensions.
+
 ## Learning: plugins/ is four fixed collections (ADR-009)
 
 - **Convention/quirk:** Product plugins live at `plugins/ingestions|generations|publishings/<name>/`. Agent skills, commands, agents, hooks, and rules live only under `plugins/kk`. Workspaces are the three kind globs, never `plugins/*`. `discoverPlugins` skips `kk` and reports `misplaced` / `kind_mismatch`.
