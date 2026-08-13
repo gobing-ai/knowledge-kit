@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.12.0
+version: 1.14.0
 created_at: 2026-05-28
 updated_at: 2026-08-12
 edit_rules: 99 §6.1
@@ -207,7 +207,8 @@ research (the real instances are an agent skill + a Node CLI, not TS classes):
   — a subcommand of the knowledge-kit binary (per ADR-002) that resolves the manifest entry,
   validates IO against the kind's contract, runs the skill/CLI, and **fails loud** (dropping the
   `postsurfing` "always exit 0" anti-pattern found in audit 0002). It is a single-plugin invoker,
-  **not** the deferred DAG runtime.
+  **not** the deferred DAG runtime. **Amended 2026-08-12 by ADR-011:** the canonical path is
+  `kk executor run`; `invoke` remains a hidden alias.
 - **Discovery** = filesystem scan of `plugins/*/plugin.json` grouped by kind (feature B1).
 
 This supersedes the earlier reading of "TypeScript interfaces … with lifecycle methods" as
@@ -222,6 +223,11 @@ under kind collections (`plugins/ingestions|generations|publishings/<name>/plugi
 ### Amendment — 2026-08-02 (repositioned as ingest-create-publish platform, ADR-007)
 
 `ADR-007` amends `ADR-006` to reposition knowledge-kit as a spur-orchestrated **ingest → create → publish** platform. Creation and publishing are first-class co-equal capabilities, not downstream consequences of ingestion. Ingestion is optional (`Doc[] | Brief`). Substrate decisions (plugin manifest format, data contract, `kk invoke`, registry discovery) remain binding.
+
+### Amendment — 2026-08-12 (two-layer CLI nouns; ADR-011)
+
+The uniform step entrypoint is **`kk executor run`**. `kk invoke` is a hidden compatibility alias.
+Registry inspection is **`kk plugin status`**. See **ADR-011**.
 
 ---
 
@@ -255,7 +261,7 @@ Ticket 0037 repositioned LLM-as-judge from a **fourth plugin kind** to an **agen
 The 2026-08-02 amendment is superseded in full:
 
 - **Plugin taxonomy reverts to three kinds:** `kind ∈ {ingestion, generator, publish}`. No `judge`
-  kind exists in `PLUGIN_KINDS`, `kindContract`, `PluginManifestSchema`, or the `kk plugins` CLI.
+  kind exists in `PLUGIN_KINDS`, `kindContract`, `PluginManifestSchema`, or the `kk plugin status` CLI.
   This is the taxonomy shipped in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts`) — the
   runtime never gained a fourth kind, so this is a doc-only correction.
 - **LLM-as-judge is delivered via agent skills + `agent.run`.** Evaluation rubrics, prompt templates,
@@ -367,6 +373,46 @@ fork.
 a missing bin file cannot be published honestly.
 
 **Detail:** `docs/design/kk-cli-surface.md`, `docs/03_ARCHITECTURE.md` (CLI entry), feature A2.
+
+### Amendment — 2026-08-12 (two first-layer nouns; ADR-011)
+
+R2's register-per-noun tree now has exactly two first-layer nouns: `executor` and `plugin`. The
+scaffold `add` command is retired. Hidden aliases preserve `invoke` / `fanin` / `fanout` /
+`plugins *` for one release. See **ADR-011**.
+
+---
+
+## ADR-011 — Two-layer `kk` CLI nouns: `executor` + `plugin` (2026-08-12)
+
+> **Status:** Accepted (shipped — A21; amdt 2026-08-12) · **Date:** 2026-08-12 · **Amends:** ADR-006 (named `kk invoke`
+> entrypoint), ADR-007 R6 (substrate wording), ADR-010 R2 (which nouns exist). Feature **A21**.
+
+**Decision.** The operator-facing `kk` tree is a two-layer noun+verb surface.
+
+1. **Nouns (R1):** First-layer nouns are exactly `executor` and `plugin`. Globals
+   (`--help`/`--version`/`--verbose`) are not nouns.
+2. **Executor (R2):** `kk executor run` is the uniform single-plugin step (former `kk invoke`).
+   `kk executor fan-in` and `kk executor fan-out` are the sequential merge and publish-dispatch
+   steps (former `kk fanin` / `kk fanout`). Hyphenated names are canonical.
+3. **Plugin (R3):** `kk plugin status` is the only inspection verb. It replaces `plugins list` and
+   `plugins doctor`: inventory plus health, including tree-level discovery diagnostics. Exit `1`
+   when any diagnostic exists.
+4. **Compatibility (R4):** Hidden one-release aliases keep `invoke`, top-level `fanin`/`fanout`,
+   `plugins`, `plugins list`, and `plugins doctor`. Docs and the B3 workflow template use the new
+   names in the implementing commit.
+5. **Retirement (R5):** `kk add` is removed.
+
+**Why.** A mixed-depth tree (`add` + three first-layer verbs + `plugins *`) cannot grow without
+inventing a third shape; `executor` is the step runner ADR-007 already assigned to `kk`.
+
+**Detail:** `docs/design/kk-cli-surface.md`, feature A21.
+
+### Amendment — 2026-08-12 (shipped; A21)
+
+Feature A21 shipped with task 0052: `kk executor run|fan-in|fan-out` and `kk plugin status` are
+live in `apps/cli` (`registerExecutorCommand` / `registerPluginCommand`). Hidden one-release
+aliases `invoke` / top-level `fanin` / `fanout` / `plugins *` reach the same engines and are not
+listed in `kk --help`; `kk add` is removed. Status moves from `Accepted (design)` to `Accepted`.
 
 ---
 

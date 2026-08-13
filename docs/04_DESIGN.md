@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.7.0
+version: 2.10.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -23,37 +23,28 @@ Package: `@gobing-ai/knowledge-kit` · Binary: `kk` (alias `knowledge-kit`) · P
 ```text
 kk --help
 kk --version
-kk add <a> <b>
-kk invoke <plugin> --in <path> --out <path> [--plugins-root <dir>]
-kk plugins list [--kind <kind>] [--json] [--plugins-root <dir>]
-kk plugins doctor [--json] [--plugins-root <dir>]
+kk executor run <plugin> --in <path> --out <path> [--plugins-root <dir>]
+kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json>
+kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
+                   --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
+kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>]
 ```
 
 | Command | Description | Status |
 |---------|-------------|--------|
-| `add <a> <b>` | Add two integers; print the sum to stdout (via `logger.out`) | shipped |
-| `invoke <plugin>` | Invoke a plugin with input/output files and contract validation | shipped |
-| `plugins list` | List discovered plugins grouped by kind (`--kind` filter, `--json` format) | shipped |
-| `plugins doctor` | Validate plugin manifests and entry files under plugins root | shipped |
-| `fanin` | Merge N `Doc[]` files into one (§1.5) | shipped (B6) |
-| `fanout` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (B6) |
+| `executor run <plugin>` | Invoke a plugin with input/output files and contract validation | shipped (A21) |
+| `executor fan-in` | Merge N `Doc[]` files into one (§1.5) | shipped (A21) |
+| `executor fan-out` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (A21) |
+| `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
-> registrations). `fanin` / `fanout` shipped with feature **B6** (tasks 0042/0043) — §1.5/§1.6 are
-> callable today. The spec's `--dedupe` flag is deliberately deferred, not shipped — see §1.5.
+> registrations). The first-layer nouns are exactly `executor` and `plugin` (ADR-011, feature
+> **A21**); the engines shipped with **A2** / **B6** keep their flags and exit codes, only the
+> canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
+> still reach the same engines but are not listed in `kk --help`. §1.5/§1.6 are callable today. The
+> spec's `--dedupe` flag is deliberately deferred, not shipped — see §1.5.
 
-### `add`
-
-| Arg | Type | Coercion | Required |
-|-----|------|----------|----------|
-| `a` | number | `Number.parseInt(v, 10)` | yes |
-| `b` | number | `Number.parseInt(v, 10)` | yes |
-
-**Output:** decimal sum followed by newline on stdout. Exit 0 on success.
-
-**Implementation:** `apps/cli/src/commands/add.ts` (`registerAddCommand`) → `add` from `@gobing-ai/utils`.
-
-### `invoke`
+### `executor run`
 
 | Arg / Option | Type | Required | Default | Description |
 |--------------|------|----------|---------|-------------|
@@ -69,48 +60,42 @@ kk plugins doctor [--json] [--plugins-root <dir>]
 4. On non-zero entry exit, fails loud and surfaces error message (returns entry exit code).
 5. Validates written output file against kind's output schema.
 
-**Implementation:** `apps/cli/src/commands/invoke.ts` (`registerInvokeCommand`) & `apps/cli/src/invoke.ts` (engine).
+**Implementation:** `apps/cli/src/commands/executor.ts` (`registerExecutorCommand`, `executor run`) & `apps/cli/src/invoke.ts` (engine).
 
-### `plugins list`
+### `plugin status`
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`) |
-| `--json` | boolean | no | `false` | Emit machine-readable JSON array of records |
+| `--json` | boolean | no | `false` | Emit the machine-readable unified health report |
 | `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
 
 **Behavior:**
 1. Scans `--plugins-root` using `discoverPlugins`.
-2. Filters by `--kind` if specified using `listByKind`.
-3. Under `--json`, writes raw `PluginRecord[]` JSON array to stdout via `logger.out`.
-4. Under standard text, prints records grouped by kind (`ingestion`, `generator`, `publish`).
+2. Filters by `--kind` if specified. Health is **tree-wide**: `healthy` and `diagnostics` are
+   computed over the full discovered tree before filtering, so a `--kind` report can be
+   `healthy: false` with every listed plugin healthy (unfiltered diagnostics name the offenders).
+3. Builds the unified report `{ healthy, plugins, diagnostics }` — one entry per discovered
+   `PluginRecord` augmented with `healthy` and `diagnostics`; tree-level discovery diagnostics
+   (`misplaced`, `kind_mismatch`, `malformed`, `duplicate_name`, `unreadable`) stay in the
+   top-level `diagnostics` array and are never dropped.
+4. `missing_entry` (entry file absent on disk) attaches to the owning plugin's `diagnostics` and
+   counts toward that plugin's `healthy: false`.
+5. Under `--json`, writes the unified object to stdout via `logger.out`; under standard text,
+   prints records grouped by kind with a per-plugin `[healthy]` / `[unhealthy]` mark, then any
+   diagnostics to stderr via `logger.error`.
+6. Exits code `1` when any diagnostic exists (plugin-level or tree-level), `0` when healthy.
 
-**Implementation:** `apps/cli/src/commands/plugins.ts` (`registerPluginsCommand`).
+**Implementation:** `apps/cli/src/commands/plugin.ts` (`registerPluginCommand`).
 
-### `plugins doctor`
+### 1.5 `executor fan-in` — shipped (A21; engine B6)
 
-| Option | Type | Required | Default | Description |
-|--------|------|----------|---------|-------------|
-| `--json` | boolean | no | `false` | Emit machine-readable JSON health report |
-| `--plugins-root <dir>` | string | no | `./plugins` | Root directory containing plugins |
-
-**Behavior:**
-1. Scans `--plugins-root` using `discoverPlugins`.
-2. Verifies `plugin.json` schema validity, unique names, kind/collection match (`kind_mismatch`),
-   no top-level stray manifests (`misplaced`), and entry file existence on disk (`missing_entry`).
-3. Under `--json`, writes `{ healthy: boolean, diagnostics: DiscoveryDiagnostic[] }` JSON.
-4. Under standard text, prints formatted diagnostic errors to stderr via `logger.error`.
-5. Exits code `1` if any diagnostic issue exists, `0` if healthy.
-
-**Implementation:** `apps/cli/src/commands/plugins.ts` (`registerPluginsCommand`).
-
-### 1.5 `fanin` — shipped (B6)
-
-Merges N `Doc[]` files into one. Sibling of `invoke` so the single-plugin invoker contract stays
-intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
+Merges N `Doc[]` files into one. Sibling of `executor run` so the single-plugin invoker contract
+stays intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
+Canonical path is `kk executor fan-in`; `kk fanin` is a hidden one-release alias (ADR-011).
 
 ```text
-kk fanin --in <f1> [--in <f2> …] --out <merged.json>
+kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json>
 ```
 
 | Option | Type | Required | Default | Description |
@@ -126,14 +111,15 @@ success, `2` on usage errors. **Deferred:** spec §1.2's `--dedupe <id|uri|none>
 shipped** — id dedupe (default) is the only rule; add the flag if a `uri`-dedupe consumer appears
 (task 0042).
 
-### 1.6 `fanout` — shipped (B6)
+### 1.6 `executor fan-out` — shipped (A21; engine B6)
 
 Dispatches one `Content` to N publish targets **in sequence**, emitting one aggregate `Result`.
 Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.3, §3–§6.
+Canonical path is `kk executor fan-out`; `kk fanout` is a hidden one-release alias (ADR-011).
 
 ```text
-kk fanout --content <content.json> --target <p1> [--target <p2> …] \
-          --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
+kk executor fan-out --content <content.json> --target <p1> [--target <p2> …] \
+                    --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
 ```
 
 | Option | Type | Required | Default | Description |
@@ -184,14 +170,14 @@ preserved, not rejected.
 
 | Field | Type | Required | Status | Description |
 |-------|------|----------|--------|-------------|
-| `name` | string (min 1) | yes | shipped | Unique plugin name; the argument to `kk invoke` |
+| `name` | string (min 1) | yes | shipped | Unique plugin name; the argument to `kk executor run` |
 | `kind` | `ingestion` \| `generator` \| `publish` | yes | shipped | Selects the I/O data contract via `kindContract(kind)` |
 | `entry` | string (min 1) | yes | shipped | Relative path to the executable entry the invoker spawns |
 | `version` | string | no | shipped | Informational |
 | `description` | string | no | shipped | Informational |
 | `accepts` | `('brief' \| 'docs')[]` | no | **specified — not implemented** (D) | Generator-only. Declares which input shapes the plugin handles; defaults to both when absent. Lets a mismatch fail at **resolve time** rather than inside the plugin |
 
-**Resolve-time validation (shipped).** `kk invoke` resolves the manifest, selects the contract with
+**Resolve-time validation (shipped).** `kk executor run` resolves the manifest, selects the contract with
 `kindContract(record.kind)` (`apps/cli/src/invoke.ts:35`), and validates the input file with
 `contract.input.safeParse(json)` (`apps/cli/src/invoke.ts:65`) **before** spawning the entry — a
 schema violation exits non-zero with `Input schema violation for kind '<kind>': <issues>`.
@@ -305,7 +291,7 @@ File: `.spur/config.yaml`
 | Ingestion Plugin Specification | `docs/design/ingestion-plugin-specification.md` | Generic plugin authoring contract + Ingestion Plugin specification |
 | Generator Plugin Specification | `docs/design/generator-plugin-specification.md` | Generator-kind authoring contract: Doc[]→Content mapping, owned STORM engine (D4), failure semantics |
 | Publish Plugin Specification | `docs/design/publish-plugin-specification.md` | Publish-kind authoring contract: transport abstraction, Content→frontmatter mapping, Result conventions, generic §1 citation |
-| Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk fanin` / `kk fanout` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
-| kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, global help/version/verbose, `registerXCommand` tree, npm `bin.kk` + `knowledge-kit` alias (A2 / ADR-010; **shipped** 2026-08-12) |
+| Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk executor fan-in` / `kk executor fan-out` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
+| kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, two-noun tree `executor` + `plugin` (A21 / ADR-011 **shipped** 2026-08-12); A2 bin/help/register tree **shipped** 2026-08-12 |
 
 

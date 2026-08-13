@@ -38,51 +38,47 @@ function captureOut(): { read: () => string; restore: () => void } {
     return { read: () => text, restore: () => (logger.out = originalOut) };
 }
 
-describe('plugins subcommands', () => {
-    it('plugins list prints discovered plugins and supports --json', async () => {
+describe('plugin status subcommand', () => {
+    it('plugin status --json emits the unified health report and exits 0', async () => {
         const { read, restore } = captureOut();
         try {
-            const { code } = await run(['plugins', 'list', '--plugins-root', FIXTURES_DIR, '--json']);
+            const { code } = await run(['plugin', 'status', '--plugins-root', FIXTURES_DIR, '--json']);
             expect(code).toBe(0);
-            const parsed = JSON.parse(read());
-            expect(Array.isArray(parsed)).toBe(true);
-            expect(parsed.some((p: { name: string }) => p.name === 'karakeep-local')).toBe(true);
+            const parsed = JSON.parse(read()) as {
+                healthy: boolean;
+                plugins: Array<{ name: string }>;
+                diagnostics: unknown[];
+            };
+            expect(typeof parsed.healthy).toBe('boolean');
+            expect(Array.isArray(parsed.plugins)).toBe(true);
+            expect(Array.isArray(parsed.diagnostics)).toBe(true);
+            expect(parsed.plugins.some((p) => p.name === 'karakeep-local')).toBe(true);
         } finally {
             restore();
         }
     });
 
-    it('plugins list supports --kind filter and formatted text output', async () => {
+    it('plugin status supports --kind filter and formatted text output with health marks', async () => {
         const { read, restore } = captureOut();
         try {
-            const { code } = await run(['plugins', 'list', '--kind', 'ingestion', '--plugins-root', FIXTURES_DIR]);
+            const { code } = await run(['plugin', 'status', '--kind', 'ingestion', '--plugins-root', FIXTURES_DIR]);
             expect(code).toBe(0);
             expect(read()).toContain('INGESTION PLUGINS');
             expect(read()).toContain('karakeep-local');
+            expect(read()).toContain('[healthy]');
         } finally {
             restore();
         }
     });
 
-    it('plugins doctor reports clean status for healthy plugins root', async () => {
-        const { read, restore } = captureOut();
-        try {
-            const { code } = await run(['plugins', 'doctor', '--plugins-root', FIXTURES_DIR]);
-            expect(code).toBe(0);
-            expect(read()).toContain('healthy');
-        } finally {
-            restore();
-        }
-    });
-
-    it('plugins list exits 1 on invalid --kind argument', async () => {
+    it('plugin status exits 1 on invalid --kind argument', async () => {
         const originalError = logger.error;
         let errText = '';
         logger.error = (msg: string) => {
             errText += msg;
         };
         try {
-            const { code } = await run(['plugins', 'list', '--kind', 'invalid-kind']);
+            const { code } = await run(['plugin', 'status', '--kind', 'invalid-kind']);
             expect(code).toBe(1);
             expect(errText).toContain('Invalid plugin kind');
         } finally {
@@ -90,12 +86,12 @@ describe('plugins subcommands', () => {
         }
     });
 
-    it('plugins list outputs notice when no plugins are found', async () => {
+    it('plugin status outputs notice when no plugins are found', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-empty-plugins');
         await mkdir(tmpDir, { recursive: true });
         const { read, restore } = captureOut();
         try {
-            const { code } = await run(['plugins', 'list', '--plugins-root', tmpDir]);
+            const { code } = await run(['plugin', 'status', '--plugins-root', tmpDir]);
             expect(code).toBe(0);
             expect(read()).toContain('No plugins found.');
         } finally {
@@ -104,20 +100,8 @@ describe('plugins subcommands', () => {
         }
     });
 
-    it('plugins doctor handles --json output mode for healthy and unhealthy states', async () => {
-        const { read, restore } = captureOut();
-        try {
-            const { code } = await run(['plugins', 'doctor', '--plugins-root', FIXTURES_DIR, '--json']);
-            expect(code).toBe(0);
-            const parsed = JSON.parse(read());
-            expect(parsed.healthy).toBe(true);
-        } finally {
-            restore();
-        }
-    });
-
-    it('plugins doctor detects missing entry file and handles unhealthy --json mode', async () => {
-        const tmpDir = join(import.meta.dir, 'tmp-doctor-missing-entry');
+    it('plugin status --json exits 1 with plugin-level missing_entry for an unhealthy root', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-status-missing-entry');
         const pluginDir = join(tmpDir, collectionForKind('ingestion'), 'missing-entry-plugin');
         await mkdir(pluginDir, { recursive: true });
         await writeFile(
@@ -133,19 +117,27 @@ describe('plugins subcommands', () => {
 
         const { read, restore } = captureOut();
         try {
-            const { code } = await run(['plugins', 'doctor', '--plugins-root', tmpDir, '--json']);
+            const { code } = await run(['plugin', 'status', '--plugins-root', tmpDir, '--json']);
             expect(code).toBe(1);
-            const parsed = JSON.parse(read());
+            const parsed = JSON.parse(read()) as {
+                healthy: boolean;
+                plugins: Array<{ name: string; healthy: boolean; diagnostics: Array<{ code: string }> }>;
+            };
             expect(parsed.healthy).toBe(false);
-            expect(parsed.diagnostics.some((d: { code: string }) => d.code === 'missing_entry')).toBe(true);
+            expect(parsed.plugins.find((p) => p.name === 'missing-entry-plugin')?.healthy).toBe(false);
+            expect(
+                parsed.plugins
+                    .find((p) => p.name === 'missing-entry-plugin')
+                    ?.diagnostics.some((d) => d.code === 'missing_entry'),
+            ).toBe(true);
         } finally {
             restore();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
 
-    it('plugins doctor exits 1 with text diagnostics for an unhealthy root', async () => {
-        const tmpDir = join(import.meta.dir, 'tmp-doctor-missing-entry-text');
+    it('plugin status exits 1 with text diagnostics for an unhealthy root', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-status-missing-entry-text');
         const pluginDir = join(tmpDir, collectionForKind('ingestion'), 'missing-entry-plugin');
         await mkdir(pluginDir, { recursive: true });
         await writeFile(
@@ -164,18 +156,21 @@ describe('plugins subcommands', () => {
         logger.error = (msg: string) => {
             errText += msg;
         };
+        const originalOut = logger.out;
+        logger.out = () => {};
         try {
-            const { code } = await run(['plugins', 'doctor', '--plugins-root', tmpDir]);
+            const { code } = await run(['plugin', 'status', '--plugins-root', tmpDir]);
             expect(code).toBe(1);
             expect(errText).toContain('missing_entry');
         } finally {
             logger.error = originalError;
+            logger.out = originalOut;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
 });
 
-describe('fanin subcommand', () => {
+describe('executor fan-in subcommand', () => {
     it('merges repeated --in inputs into one deduplicated --out file', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-fanin-merge');
         await mkdir(tmpDir, { recursive: true });
@@ -193,7 +188,7 @@ describe('fanin subcommand', () => {
         await writeFile(bFile, JSON.stringify([{ id: 'd2', body: 'second' }]), 'utf-8');
 
         try {
-            const { code } = await run(['fanin', '--in', aFile, '--in', bFile, '--out', outFile]);
+            const { code } = await run(['executor', 'fan-in', '--in', aFile, '--in', bFile, '--out', outFile]);
             expect(code).toBe(0);
 
             const merged = JSON.parse(await readFile(outFile, 'utf-8'));
@@ -212,7 +207,7 @@ describe('fanin subcommand', () => {
         const originalError = logger.error;
         logger.error = () => {};
         try {
-            const { code } = await run(['fanin', '--in', missing, '--out', join(tmpDir, 'merged.json')]);
+            const { code } = await run(['executor', 'fan-in', '--in', missing, '--out', join(tmpDir, 'merged.json')]);
             expect(code).toBe(1);
         } finally {
             logger.error = originalError;
@@ -221,7 +216,7 @@ describe('fanin subcommand', () => {
     });
 });
 
-describe('fanout subcommand', () => {
+describe('executor fan-out subcommand', () => {
     it('propagates a non-zero exit when a target cannot be resolved to a publish plugin', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-fanout-missing');
         await mkdir(tmpDir, { recursive: true });
@@ -232,7 +227,8 @@ describe('fanout subcommand', () => {
         logger.error = () => {};
         try {
             const { code } = await run([
-                'fanout',
+                'executor',
+                'fan-out',
                 '--content',
                 contentFile,
                 '--target',
@@ -274,7 +270,8 @@ describe('fanout subcommand', () => {
 
         try {
             const { code } = await run([
-                'fanout',
+                'executor',
+                'fan-out',
                 '--content',
                 contentFile,
                 '--target',
@@ -290,6 +287,89 @@ describe('fanout subcommand', () => {
             expect(result.ok).toBe(true);
             expect(result.targets[0]).toMatchObject({ target: 'fake-pub', status: 'published' });
         } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('hidden one-release aliases', () => {
+    it('kk invoke reaches the executor run engine (missing plugin exits 1)', async () => {
+        const originalError = logger.error;
+        logger.error = () => {};
+        try {
+            const { code } = await run([
+                'invoke',
+                'non-existent',
+                '--in',
+                'in.json',
+                '--out',
+                'out.json',
+                '--plugins-root',
+                '/tmp',
+            ]);
+            expect(code).toBe(1);
+        } finally {
+            logger.error = originalError;
+        }
+    });
+
+    it('kk fanin and kk fanout reach the executor fan-in/fan-out engines', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-alias-fanin');
+        await mkdir(tmpDir, { recursive: true });
+
+        const originalError = logger.error;
+        logger.error = () => {};
+        try {
+            const faninCode = await run(['fanin', '--in', join(tmpDir, 'nope.json'), '--out', join(tmpDir, 'm.json')]);
+            expect(faninCode.code).toBe(1);
+
+            const contentFile = join(tmpDir, 'content.json');
+            await writeFile(contentFile, JSON.stringify({ title: 'Demo', body: 'hello world' }), 'utf-8');
+            const fanoutCode = await run([
+                'fanout',
+                '--content',
+                contentFile,
+                '--target',
+                'no-such-publish-plugin',
+                '--out',
+                join(tmpDir, 'result.json'),
+            ]);
+            expect(fanoutCode.code).toBe(2);
+        } finally {
+            logger.error = originalError;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('kk plugins list and kk plugins doctor reach the plugin status engine with the unified JSON object', async () => {
+        const { read, restore } = captureOut();
+        try {
+            const { code } = await run(['plugins', 'list', '--plugins-root', FIXTURES_DIR, '--json']);
+            expect(code).toBe(0);
+            const parsed = JSON.parse(read()) as { healthy: boolean; plugins: unknown[]; diagnostics: unknown[] };
+            expect(typeof parsed.healthy).toBe('boolean');
+            expect(Array.isArray(parsed.plugins)).toBe(true);
+        } finally {
+            restore();
+        }
+
+        const tmpDir = join(import.meta.dir, 'tmp-alias-doctor');
+        const pluginDir = join(tmpDir, collectionForKind('ingestion'), 'broken');
+        await mkdir(pluginDir, { recursive: true });
+        await writeFile(
+            join(pluginDir, 'plugin.json'),
+            JSON.stringify({ name: 'broken', kind: 'ingestion', entry: './missing.js', version: '1.0.0' }),
+            'utf-8',
+        );
+        const { read: readDoctor, restore: restoreDoctor } = captureOut();
+        try {
+            const { code } = await run(['plugins', 'doctor', '--plugins-root', tmpDir, '--json']);
+            expect(code).toBe(1);
+            const parsed = JSON.parse(readDoctor()) as { healthy: boolean; plugins: Array<{ name: string }> };
+            expect(parsed.healthy).toBe(false);
+            expect(parsed.plugins.some((p) => p.name === 'broken')).toBe(true);
+        } finally {
+            restoreDoctor();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

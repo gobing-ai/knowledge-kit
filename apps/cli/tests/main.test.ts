@@ -30,28 +30,49 @@ async function run(args: string[]): Promise<RunResult> {
     return { code, out, err };
 }
 
+/**
+ * Extract every visible first-layer command name from Commander help output.
+ * Group aliases render as `name|alias` (e.g. `plugin|plugins`) — split on `|`
+ * so each visible name is checked individually instead of being masked by a
+ * loose regex that can only match a bare name at line start.
+ */
+function visibleCommandNames(out: string): string[] {
+    const names: string[] = [];
+    for (const line of out.split('\n')) {
+        const entry = line.match(/^\s+([a-z][a-z0-9-]*(\|[a-z][a-z0-9-]*)*)\s/);
+        const namesPart = entry?.[1];
+        if (namesPart) {
+            names.push(...namesPart.split('|'));
+        }
+    }
+    return names;
+}
+
 describe('kk main exit seam', () => {
-    it('R1 — bare invocation and --help/-h exit 0 and list shipped commands', async () => {
+    it('R1 — bare invocation and --help/-h exit 0 and list only executor and plugin as visible commands', async () => {
         for (const args of [[], ['--help'], ['-h']]) {
             const { code, out } = await run(args);
             expect(code).toBe(0);
-            expect(out).toContain('kk');
-            for (const cmd of ['add', 'invoke', 'plugins', 'fanin', 'fanout']) {
-                expect(out).toContain(cmd);
-            }
+            expect(out).toContain('executor');
+            expect(out).toContain('plugin');
+            // Exact visible command list: the two kk nouns plus Commander's built-in
+            // `help` command (`kk help executor` is a shipped path). No legacy names
+            // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
+            // `plugin|plugins` — the loose line-start regex could not see that.
+            expect(visibleCommandNames(out).sort()).toEqual(['executor', 'help', 'plugin']);
         }
     });
 
-    it('R2 — help invoke and invoke --help describe --in and --out', async () => {
-        for (const args of [
-            ['help', 'invoke'],
-            ['invoke', '--help'],
-        ]) {
-            const { code, out } = await run(args);
-            expect(code).toBe(0);
-            expect(out).toContain('--in');
-            expect(out).toContain('--out');
-        }
+    it('R2 — executor run --help describes --in and --out; help executor names fan-in/fan-out', async () => {
+        const { code, out } = await run(['executor', 'run', '--help']);
+        expect(code).toBe(0);
+        expect(out).toContain('--in');
+        expect(out).toContain('--out');
+
+        const helpExecutor = await run(['help', 'executor']);
+        expect(helpExecutor.code).toBe(0);
+        expect(helpExecutor.out).toContain('fan-in');
+        expect(helpExecutor.out).toContain('fan-out');
     });
 
     it('R3 — --version/-V print the package version, never the hard-coded 0.0.0', async () => {
@@ -65,33 +86,31 @@ describe('kk main exit seam', () => {
     });
 
     it('falls back to the real stdout/stderr writers when no overrides are passed', async () => {
-        // Exercises the default writer lambdas in main() (no options object).
-        expect(await main(['node', 'test', '--version'])).toBe(0);
-        // Error path → default writeErr lambda.
-        expect(await main(['node', 'test', 'not-a-command'])).toBe(1);
-    });
-
-    it('R4 — global --verbose is accepted and does not change the result writer', async () => {
-        for (const args of [
-            ['--verbose', 'add', '1', '2'],
-            ['add', '1', '2', '-v'],
-        ]) {
-            let outText = '';
-            const originalOut = logger.out;
-            logger.out = (msg: string) => {
-                outText += msg;
-            };
-            try {
-                const { code } = await run(args);
-                expect(code).toBe(0);
-                expect(outText).toBe('3\n');
-            } finally {
-                logger.out = originalOut;
-            }
+        // Exercises the default writer lambdas in main() (no options object) and
+        // proves they route through the logger seam, not raw process stdio.
+        const originalOut = logger.out;
+        const originalError = logger.error;
+        let outText = '';
+        let errText = '';
+        logger.out = (msg: string) => {
+            outText += msg;
+        };
+        logger.error = (msg: string) => {
+            errText += msg;
+        };
+        try {
+            expect(await main(['node', 'test', '--version'])).toBe(0);
+            expect(outText).toContain(pkg.version);
+            // Error path → default writeErr lambda.
+            expect(await main(['node', 'test', 'not-a-command'])).toBe(1);
+            expect(errText).toContain('not-a-command');
+        } finally {
+            logger.out = originalOut;
+            logger.error = originalError;
         }
     });
 
-    it('R4 — --verbose plus plugins list --json still emits a pure JSON array', async () => {
+    it('R4 — global --verbose is accepted and does not change the result writer', async () => {
         const fixturesDir = join(import.meta.dir, '../../../plugins');
         let outText = '';
         const originalOut = logger.out;
@@ -99,20 +118,20 @@ describe('kk main exit seam', () => {
             outText += msg;
         };
         try {
-            const { code } = await run(['--verbose', 'plugins', 'list', '--json', '--plugins-root', fixturesDir]);
+            const { code } = await run(['--verbose', 'plugin', 'status', '--json', '--plugins-root', fixturesDir]);
             expect(code).toBe(0);
             // The entire stdout parses as JSON — no verbose diagnostics mixed into the stream.
             const parsed: unknown = JSON.parse(outText);
-            expect(Array.isArray(parsed)).toBe(true);
-            expect((parsed as Array<{ name: string }>).some((p) => p.name === 'karakeep-local')).toBe(true);
+            expect(typeof (parsed as { healthy: boolean }).healthy).toBe('boolean');
+            expect(Array.isArray((parsed as { plugins: unknown[] }).plugins)).toBe(true);
         } finally {
             logger.out = originalOut;
         }
     });
 
     it('R5 — unknown command exits non-zero and names the command on stderr', async () => {
-        const { code, err } = await run(['not-a-command']);
+        const { code, err } = await run(['not-a-noun']);
         expect(code).not.toBe(0);
-        expect(err).toContain('not-a-command');
+        expect(err).toContain('not-a-noun');
     });
 });

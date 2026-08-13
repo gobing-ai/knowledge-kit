@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.6.0
+version: 2.8.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR, 01_PRD]
@@ -112,18 +112,18 @@ GeneratorInput = { brief?: Brief, docs?: Doc[] }   refine: brief || docs.length 
 ```
 
 A strict `Brief | Doc[]` union would foreclose the composite case ("write about X *using these
-sources*"), which is the most useful of the three. `kk invoke` validates the input against the
-resolved plugin's kind contract before running the entry and **fails loud** on mismatch — a
+sources*"), which is the most useful of the three. `kk executor run` validates the input against
+the resolved plugin's kind contract before running the entry and **fails loud** on mismatch — a
 brief-only input handed to a docs-only generator is a named error, never an empty `Content`.
 
 ### Fan-in / fan-out
 
-Siblings of `invoke`, so the single-plugin invoker contract stays intact (ADR-006):
+Siblings of `executor run`, so the single-plugin invoker contract stays intact (ADR-006):
 
 ```text
-kk fanin   --in <f1> [--in <f2> …] --out <merged.json>
-kk fanout  --content <content.json> --target <p1> [--target <p2> …]
-           --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
+kk executor fan-in  --in <f1> [--in <f2> …] --out <merged.json>
+kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
+                    --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
 ```
 
 - **Fan-in (N→1):** merge `Doc[]` sets; dedupe on primary `id` (first-seen wins); provenance
@@ -141,23 +141,30 @@ Full specification: `docs/design/fan-in-and-fan-out-specification.md`.
 ### Pipeline data flow
 
 ```text
-[ingestion…]  ──┐                                   ┌── publish target 1
-[ingestion…]  ──┼─→ kk fanin ─→ docs.json ─┐        ├── publish target 2
-[ingestion…]  ──┘                          ├─→ kk invoke <generator> ─→ content.json
-                     Brief (no ingest) ────┘            │                    │
-                                                        ├─→ agent.run kk-judge ─→ verdict.json
-                                                        │        (gate: shell/jq guard reads verdict)
-                                                        └─→ kk fanout ─→ result.json ─→ [targets…]
+[ingestion…]  ──┐                                        ┌── publish target 1
+[ingestion…]  ──┼─→ kk executor fan-in ─→ docs.json ─┐   ├── publish target 2
+[ingestion…]  ──┘                                    ├─→ kk executor run <generator> ─→ content.json
+                     Brief (no ingest) ─────────────┘            │                    │
+                                                                 ├─→ agent.run kk-judge ─→ verdict.json
+                                                                 │        (gate: shell/jq guard reads verdict)
+                                                                 └─→ kk executor fan-out ─→ result.json ─→ [targets…]
 ```
 
 Every arrow is a file on disk validated against a `@gobing-ai/kk-core` schema; every box is one
 `spur workflow` state whose `onEnter` shells a `kk` subcommand.
 
+### Two-layer CLI nouns (shipped — ADR-011, feature A21)
+
+Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-out` /
+`kk plugin status`. Engines and file contracts above are unchanged. Hidden one-release aliases
+(`invoke` / `fanin` / `fanout` / `plugins *`) keep the old names working but are not listed in
+`kk --help`.
+
 ## Module boundaries
 
 | Module | Package name | Responsibility | May depend on |
 |--------|--------------|----------------|---------------|
-| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`add`, `invoke`, `plugins`, `fanin`, `fanout`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
+| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract` | `zod` only (no I/O) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |

@@ -52,7 +52,7 @@ Prefer these entry surfaces over ad-hoc process unless the operator overrides fo
 
 ```
 apps/
-  cli/            # @gobing-ai/knowledge-kit — Commander binary (invoke, plugins, fanin, fanout)
+  cli/            # @gobing-ai/knowledge-kit — Commander binary (executor, plugin)
 packages/
   utils/          # @gobing-ai/utils — helpers, zod re-export, logger
   kk-core/        # @gobing-ai/kk-core — Doc/Brief/Content/Result contracts + kindContract

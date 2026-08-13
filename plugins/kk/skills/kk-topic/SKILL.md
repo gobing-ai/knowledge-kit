@@ -31,7 +31,7 @@ Research, illustration, platform adaptation, and publishing are deliberately **o
 
 Do **not** use this skill for: materials extraction or research, image generation, platform
 adaptation, publishing, style-profile infrastructure, or anything requiring a runtime
-plugin (`kk invoke`, `plugin.json`, `GeneratorInput → Content`).
+plugin (`kk executor run`, `plugin.json`, `GeneratorInput → Content`).
 
 ## Invocation contract
 

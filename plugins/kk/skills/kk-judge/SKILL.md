@@ -60,7 +60,7 @@ Every evaluation writes a JSON verdict file. The default path is
 ## Evaluation procedure
 
 1. **Read the Content** from the path given in the evaluation request (the `content.json` written
-   by the preceding `kk invoke <generator>` step).
+   by the preceding `kk executor run <generator>` step).
 2. **Select the rubric** — either named in the request (`tech-accuracy`, `brand-tone`,
    `compliance`, `general`) or loaded by a thin wrapper. Default: `general`.
 3. **Evaluate each criterion** in the rubric. For each, produce a `pass` / `fail` / `warn` status

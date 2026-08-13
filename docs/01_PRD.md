@@ -3,7 +3,7 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.4.0
+version: 3.5.0
 created_at: 2026-07-22
 updated_at: 2026-08-12
 derived_from: [00_ADR]
@@ -33,8 +33,9 @@ A **pipeline** is a `spur workflow` that runs `ingest → generate → publish` 
 `create → publish`) as a **sequence of states**. An optional LLM-as-judge gate (an `agent.run`
 step backed by the `kk-judge` skill) may evaluate generated `Content` before publish; the gate
 reads a verdict file, not a plugin-kind contract. The workflow engine executes one state at a
-time; where a stage needs many inputs or many outputs, `kk fanin` / `kk fanout` collapse that
-into a single sequential step. The registry discovers installed plugins by kind.
+time; where a stage needs many inputs or many outputs, `kk executor fan-in` /
+`kk executor fan-out` collapse that into a single sequential step. The registry discovers
+installed plugins by kind.
 
 ## Users
 
@@ -48,7 +49,7 @@ Technical content creation and published output are fragmented: turning ideas or
 
 ## Goals
 
-- **Achieved (Phase 1):** Prove the **reference vertical end-to-end** (Karakeep-local → generator → Surfdash via `spur workflow`) and establish the **kk plugin platform** (manifest, registry, `kk invoke`, unit-tested Surfdash publisher).
+- **Achieved (Phase 1):** Prove the **reference vertical end-to-end** (Karakeep-local → generator → Surfdash via `spur workflow`) and establish the **kk plugin platform** (manifest, registry, `kk executor run`, unit-tested Surfdash publisher).
 - **Current (Phase 2 — Co-equal Creation & Publishing):** Deliver **creation-from-brief** as a first-class user-facing outcome (topic → published article without prior ingest) and harvest the **multi-channel publish suite** under robust data contracts and tests.
 - Maintain Spur as the first-class lifecycle harness and Superskill as the distribution / capability harness.
 
@@ -63,7 +64,7 @@ Technical content creation and published output are fragmented: turning ideas or
 | Area | Feature | Phase | Notes |
 |------|---------|-------|-------|
 | Project foundation | **A** | Phase 0/2 | Monorepo substrate; **A1** feature-tree restructure; **A2** `kk` product CLI surface (help/version/verbose, command tree, npm `bin.kk`) |
-| Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance · Phase 2: **B6** sequential `kk fanin`/`fanout` |
+| Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance · Phase 2: **B6** sequential `kk executor fan-in`/`fan-out` · **A21** two-noun CLI (`executor` + `plugin`) |
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
 | Content generation | **D** | Phase 1/2 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) |
 | Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |

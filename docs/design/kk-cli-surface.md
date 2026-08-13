@@ -1,12 +1,11 @@
 # kk product CLI surface
 
-Feature **A2**. Design satellite for the operator-facing `kk` binary, command-module tree, and
-npm pack artifact. Status: **Shipped** (2026-08-12, tasks 0049–0051); implementation lives in
-`apps/cli`, ADR-010 is Accepted, and the T3 doc/rule touches listed in §8 all landed.
+Feature **A2** (shipped 2026-08-12, tasks 0049–0051) plus **A21** two-noun tree
+(**shipped** — ADR-011, task 0052). Operator-facing `kk` binary, command-module
+tree, and npm pack artifact.
 
-> Chosen approach: spur-shaped `registerXCommand` tree + `kk` npm bin + lean runtime
-> (no spur ApplicationRuntime / DB / banner). Reason: docs already say `kk`; a single
-> `cli.ts` cannot grow; the package name stays `@gobing-ai/knowledge-kit` (ADR-007 R2).
+> Chosen approach (A2): spur-shaped `registerXCommand` tree + `kk` npm bin + lean runtime.
+> Chosen approach (A21): first-layer nouns are exactly `executor` and `plugin`; engines stay.
 
 ---
 
@@ -20,8 +19,13 @@ npm pack artifact. Status: **Shipped** (2026-08-12, tasks 0049–0051); implemen
 | D4 | Version from `apps/cli/package.json` | Hard-coded `.version('0.0.0')` | `--version` must match the published package |
 | D5 | npm ships Bun-target `dist/index.js`; `prepack` builds it | Native `bun --compile` this feature; Trusted Publisher this feature | Operator owns OIDC later; native binaries are a later slice |
 | D6 | Globals: `--help`/`-h`, `--version`/`-V`, `--verbose`/`-v`. `--json` stays per-command | Global `--json`; `--cli-verbose` (spur name) | Commander defaults + one diagnostic flag; `--json` already lives on `plugins *` |
+| D7 | First-layer nouns: `executor`, `plugin` only | Kind-nouns; first-layer `run`/`fan-in`/`fan-out`; single noun `plugin` for all verbs | Operator taxonomy; fan-in is a step, not a plugin op (ADR-011) |
+| D8 | `executor run` ≡ current `invoke` engine + flags | New invoker; kind-specific run verbs | ADR-006 substrate stays; only the path changes |
+| D9 | `plugin status` replaces `list` + `doctor`; JSON `{ healthy, plugins[], diagnostics }`; exit 1 if any diagnostic | Keep two verbs; health-only as a plugin field with no tree diagnostics | `misplaced` / `kind_mismatch` are not attributes of a registered plugin |
+| D10 | Hidden one-release aliases: `invoke`, top-level `fanin`/`fanout`, `plugins` / `list` / `doctor` | Hard cut; visible deprecated aliases that warn on stdout | B3 workflow still shells `knowledge-kit invoke`; do not pollute `--json` |
+| D11 | Delete `kk add` | Keep add as a third first-layer verb | "Only two nouns" is false if add stays |
 
-Authority: **ADR-010** (Accepted). Amendments on ADR-002 / ADR-004 / ADR-007 R2.
+Authority: **ADR-010** (Accepted) + **ADR-011** (Accepted — shipped A21 2026-08-12). Amendments on ADR-002 / ADR-004 / ADR-006 / ADR-007 R6.
 
 ## 2. Module layout
 
@@ -31,11 +35,10 @@ apps/cli/src/
   main.ts                  # main(argv, options?) → Promise<number>
   config.ts                # CLI_CONFIG { binaryName: 'kk', binaryLabel: 'kk', binaryVersion }
   cli.ts                   # createProgram(): name, version, global opts, register* calls
-  commands/add.ts
-  commands/invoke.ts
-  commands/plugins.ts
-  commands/fanin.ts
-  commands/fanout.ts
+  commands/executor.ts   # A21: run, fan-in, fan-out + hidden invoke/fanin/fanout
+  commands/plugin.ts     # A21: status + hidden plugins/list/doctor
+  # deleted by A21: commands/add.ts, invoke.ts, plugins.ts, fanin.ts, fanout.ts
+  invoke.ts | fanin.ts | fanout.ts   # engines stay (not command modules)
 ```
 
 `createProgram()` stays the side-effect-free factory (ADR-002, `.spur/rules/surface/check-cli-surface.yaml`).
@@ -59,11 +62,8 @@ export function createProgram(): Command;
 
 export function main(argv?: string[], options?: MainOptions): Promise<number>;
 
-export function registerAddCommand(program: Command): void;
-export function registerInvokeCommand(program: Command): void;
-export function registerPluginsCommand(program: Command): void;
-export function registerFaninCommand(program: Command): void;
-export function registerFanoutCommand(program: Command): void;
+export function registerExecutorCommand(program: Command): void; // A21
+export function registerPluginCommand(program: Command): void;   // A21
 ```
 
 Version load: read `apps/cli/package.json` at module init (or a generated `binaryVersion` constant
@@ -80,17 +80,31 @@ kk --help | -h | help
 kk help <command>
 kk --version | -V
 kk --verbose | -v <command> …
-kk add <a> <b>
-kk invoke <plugin> --in <path> --out <path> [--plugins-root <dir>]
-kk plugins list [--kind <kind>] [--json] [--plugins-root <dir>]
-kk plugins doctor [--json] [--plugins-root <dir>]
-kk fanin --in <f>… --out <path>
-kk fanout --content <path> --target <p>… --out <path> [--retry-from <path>] [--plugins-root <dir>]
+kk executor run     <plugin> --in <path> --out <path> [--plugins-root <dir>]
+kk executor fan-in  --in <f>… --out <path>
+kk executor fan-out --content <path> --target <p>… --out <path> [--retry-from <path>] [--plugins-root <dir>]
+kk plugin status    [--kind <kind>] [--json] [--plugins-root <dir>]
 ```
 
-Shipped verb flags and exit codes are **unchanged**. `--verbose` may write diagnostics via
-`logger.info` to stdout; it must not interleave into a command's `--json` payload (diagnostics
-go to stderr, or are suppressed when `--json` is set).
+Hidden aliases (not listed in `kk --help`): `invoke` → `executor run`; `fanin` → `executor fan-in`;
+`fanout` → `executor fan-out`; `plugins` → `plugin`; `plugins list` / `plugins doctor` →
+`plugin status`.
+
+`plugin status --json` shape:
+
+```ts
+{
+  healthy: boolean;
+  plugins: Array<PluginRecord & { healthy: boolean; diagnostics: DiscoveryDiagnostic[] }>;
+  diagnostics: DiscoveryDiagnostic[]; // tree-level leftover (misplaced, kind_mismatch, …)
+}
+```
+
+Exit: `0` when `healthy`, `1` when any diagnostic exists, `2` on usage errors.
+
+Engine flag names and exit codes for run / fan-in / fan-out are **unchanged**. `--verbose` may
+write diagnostics via `logger.info`; it must not interleave into a command's `--json` payload
+(diagnostics go to stderr, or are suppressed when `--json` is set).
 
 Unknown commands: non-zero exit, stderr names the command (Commander default).
 
@@ -129,7 +143,8 @@ multi-arch `bun --compile` binaries.
 3. `--version` equals `apps/cli/package.json` `version`.
 4. New nouns add a file under `commands/` and one `register*` call. They do not grow
    `cli.ts` with action bodies.
-5. Pipeline verbs `invoke` / `fanin` / `fanout` / `plugins` keep flag names and exit codes.
+5. Pipeline engines keep flag names and exit codes; canonical paths are `executor run|fan-in|fan-out`
+   and `plugin status` (ADR-011). Hidden aliases are not shown in `kk --help`.
 6. Output stays on `@gobing-ai/utils` `logger`.
 7. No `process.exit` outside `index.ts`.
 8. Same-commit T3: `docs/04_DESIGN.md` §1 binary prefix becomes `kk` with the implementing commit.
@@ -139,8 +154,10 @@ multi-arch `bun --compile` binaries.
 - In-process `main(['--help'])` / `main(['--version'])` / `main(['help', 'invoke'])` exit 0.
 - `--version` stdout equals `package.json` version and is not `0.0.0`.
 - `main(['not-a-command'])` non-zero.
-- `main(['--verbose', 'add', '1', '2'])` exit 0.
-- `main(['--verbose', 'plugins', 'list', '--json', …])` stdout remains a JSON array.
+- `main(['--verbose', 'executor', 'run', …])` / `main(['--verbose', 'plugin', 'status', '--json', …])`.
+- `plugin status --json` stdout is the unified object (not a bare array).
+- Hidden `invoke` / `fanin` / `fanout` / `plugins list|doctor` reach the same engines.
+- `main(['add', '1', '2'])` non-zero; `commands/add.ts` is absent.
 - Existing invoke / fanin / fanout / plugins tests switch from `process.exit` mocks to
   `main` return codes.
 - `package.json` `bin.kk` and `bin.knowledge-kit` point at `./dist/index.js`.

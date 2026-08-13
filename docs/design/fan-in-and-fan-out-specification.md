@@ -15,6 +15,11 @@ This specification defines the CLI surface, data contracts, exit codes, deduplic
 >    shipped as specified.
 > 4. **§7's "Task 0036" reference is historical** — the target sections were applied to
 >    `03`/`04` by tasks 0042/0043 (B6), not 0036.
+>
+> **Dated correction (2026-08-12).** ADR-011 (feature A21) made the canonical paths
+> `kk executor fan-in` / `kk executor fan-out` / `kk executor run`; `kk fanin` / `kk fanout` /
+> `kk invoke` are hidden one-release aliases. §1.1–§1.3, §5, and §7 below now use the canonical
+> names; flags, exit codes, and retry semantics are unchanged.
 
 ---
 
@@ -22,27 +27,30 @@ This specification defines the CLI surface, data contracts, exit codes, deduplic
 
 ### 1.1 Sibling Commands vs `invoke` Extension
 
-`kk invoke` is explicitly constrained by ADR-006 as a **single-plugin invoker** (`kk invoke <plugin> --in <path> --out <path>`), not a DAG execution engine.
+`kk executor run` is the uniform single-plugin step (ADR-011; former `kk invoke`, which remains a
+hidden one-release alias), constrained by ADR-006 as a **single-plugin invoker**
+(`kk executor run <plugin> --in <path> --out <path>`), not a DAG execution engine.
 
 To respect this boundary while providing sequential fan-in/fan-out capabilities:
-- **`kk fanin`** and **`kk fanout`** are added as **sibling subcommands** to `invoke`.
+- **`kk executor fan-in`** and **`kk executor fan-out`** are siblings of `executor run` (ADR-011);
+  `kk fanin` / `kk fanout` are hidden one-release aliases.
 - They are pure utility tools owned by `kk` for sequential file aggregation and multi-target dispatch.
 - Neither subcommand manages workflow DAG execution or state transitions (which remain owned by `spur workflow`).
 
 ```text
-kk invoke <plugin> --in <f> --out <f>
-kk fanin --in <f1> [--in <f2> ...] --out <out.json> [--dedupe <rule>]
-kk fanout --content <content.json> --target <p1> [--target <p2> ...] --out <result.json> [--retry-from <prior-result.json>]
+kk executor run <plugin> --in <f> --out <f>
+kk executor fan-in --in <f1> [--in <f2> ...] --out <out.json> [--dedupe <rule>]
+kk executor fan-out --content <content.json> --target <p1> [--target <p2> ...] --out <result.json> [--retry-from <prior-result.json>]
 ```
 
-### 1.2 `fanin` CLI Specification
+### 1.2 `executor fan-in` CLI Specification
 | Flag / Arg | Type | Required | Description |
 |---|---|---|---|
 | `--in <file>` | string (repeatable) | yes (>=1) | Input `Doc[]` JSON files to merge |
 | `--out <file>` | string | yes | Output merged `Doc[]` JSON file path |
 | `--dedupe <rule>` | enum (`id` \| `uri` \| `none`) | no (default: `id`) | Deduplication rule for merging |
 
-### 1.3 `fanout` CLI Specification
+### 1.3 `executor fan-out` CLI Specification
 | Flag / Arg | Type | Required | Description |
 |---|---|---|---|
 | `--content <file>` | string | yes | Source `ContentSchema` JSON file path |
@@ -127,7 +135,7 @@ export interface AggregateResult {
 A subsequent `fanout` execution can resume from a partial-success `Result` JSON file:
 
 ```bash
-kk fanout \
+kk executor fan-out \
   --content article.json \
   --target surfdash --target medium --target xhs \
   --retry-from prior-result.json \
@@ -214,8 +222,8 @@ This specification names its target integration sections for Task 0036:
 
 1. **`docs/03_ARCHITECTURE.md`**:
    - Section: **`## 3. Data flow (command path)`** & **`## 4. Module boundaries`**
-   - Content: Document `kk fanin` and `kk fanout` data flow, sequential execution model, deduplication rules, and partial-success result aggregation.
+   - Content: Document `kk executor fan-in` and `kk executor fan-out` data flow, sequential execution model, deduplication rules, and partial-success result aggregation.
 
 2. **`docs/04_DESIGN.md`**:
    - Section: **`## 1. CLI commands`**
-   - Content: Add command specifications for `fanin` and `fanout` (flags, options, exit codes, worked JSON payload example).
+   - Content: Add command specifications for `executor fan-in` and `executor fan-out` (flags, options, exit codes, worked JSON payload example).

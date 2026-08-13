@@ -3,7 +3,7 @@
 "$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
 name: kk-ingest-generate-publish
 kind: state-machine
-description: Chained ingestion, generator, and publish plugins via knowledge-kit invoke
+description: Chained ingestion, generator, and publish plugins via kk executor run
 initialState: ingest
 terminalStates:
   - done
@@ -22,26 +22,26 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: knowledge-kit invoke ${vars.ingestion_plugin} --in ${vars.source} --out ${vars.work_dir}/docs.json --plugins-root ${vars.plugins_root}
+          command: kk executor run ${vars.ingestion_plugin} --in ${vars.source} --out ${vars.work_dir}/docs.json --plugins-root ${vars.plugins_root}
 
   - id: generate
     description: Run content generator plugin to produce markdown content (content.json)
     onEnter:
       - kind: shell
         options:
-          command: knowledge-kit invoke ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json --plugins-root ${vars.plugins_root}
+          command: kk executor run ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json --plugins-root ${vars.plugins_root}
 
   - id: publish
     description: Run publish plugin to deploy content and receive result (result.json)
     onEnter:
       - kind: shell
         options:
-          command: knowledge-kit invoke ${vars.publish_plugin} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/result.json --plugins-root ${vars.plugins_root}
+          command: kk executor run ${vars.publish_plugin} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/result.json --plugins-root ${vars.plugins_root}
 
   - id: done
     description: Terminal — all three plugin steps succeeded
   - id: failed
-    description: Terminal — one of the plugin invoke steps failed
+    description: Terminal — one of the plugin run steps failed
 
 transitions:
   - from: ingest

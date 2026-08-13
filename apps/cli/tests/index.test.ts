@@ -3,29 +3,29 @@ import { logger } from '@gobing-ai/utils';
 import { main } from '../src/main';
 
 describe('cli', () => {
-    it('createProgram returns a commander instance with add and invoke commands', async () => {
+    it('createProgram returns a commander instance with executor and plugin groups', async () => {
         const { createProgram } = await import('../src/cli');
         const program = createProgram();
-        const addCmd = program.commands.find((c) => c.name() === 'add');
-        const invokeCmd = program.commands.find((c) => c.name() === 'invoke');
-        expect(addCmd).toBeDefined();
-        expect(invokeCmd).toBeDefined();
+        const executor = program.commands.find((c) => c.name() === 'executor');
+        const plugin = program.commands.find((c) => c.name() === 'plugin');
+        expect(executor).toBeDefined();
+        expect(plugin).toBeDefined();
+        // add is no longer registered (R7).
+        expect(program.commands.find((c) => c.name() === 'add')).toBeUndefined();
     });
 
-    it('add command runs without throwing', async () => {
-        const origWrite = Bun.write;
-        // biome-ignore lint/suspicious/noExplicitAny: suppressing test output to terminal
-        Bun.write = (() => Promise.resolve(0)) as any;
+    it('add command is gone: kk add exits non-zero (R7 CLI)', async () => {
+        const originalError = logger.error;
+        logger.error = () => {};
         try {
-            const { createProgram } = await import('../src/cli');
-            const program = createProgram();
-            expect(() => program.parse(['add', '3', '4'], { from: 'user' })).not.toThrow();
+            const code = await main(['node', 'test', 'add', '1', '2']);
+            expect(code).not.toBe(0);
         } finally {
-            Bun.write = origWrite;
+            logger.error = originalError;
         }
     });
 
-    it('invoke command exits non-zero when plugin is missing (R4 CLI fail-loud)', async () => {
+    it('executor run exits non-zero when plugin is missing (R4 CLI fail-loud)', async () => {
         const originalError = logger.error;
         logger.error = () => {};
 
@@ -33,7 +33,8 @@ describe('cli', () => {
             const code = await main([
                 'node',
                 'test',
-                'invoke',
+                'executor',
+                'run',
                 'non-existent',
                 '--in',
                 'in.json',

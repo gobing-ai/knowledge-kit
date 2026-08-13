@@ -1,9 +1,6 @@
 import { Command } from 'commander';
-import { registerAddCommand } from './commands/add';
-import { registerFaninCommand } from './commands/fanin';
-import { registerFanoutCommand } from './commands/fanout';
-import { registerInvokeCommand } from './commands/invoke';
-import { registerPluginsCommand } from './commands/plugins';
+import { registerExecutorCommand } from './commands/executor';
+import { registerPluginCommand } from './commands/plugin';
 import { CLI_CONFIG } from './config';
 
 /**
@@ -20,11 +17,8 @@ export function createProgram(): Command {
         .version(CLI_CONFIG.binaryVersion)
         .option('-v, --verbose', 'enable verbose diagnostics');
 
-    registerAddCommand(program);
-    registerInvokeCommand(program);
-    registerFaninCommand(program);
-    registerFanoutCommand(program);
-    registerPluginsCommand(program);
+    registerExecutorCommand(program);
+    registerPluginCommand(program);
 
     return program;
 }

@@ -21,9 +21,9 @@ together by **spur workflows** — `kk` owns each step, `spur` owns the orchestr
 | --- | --- | --- |
 | Plugin platform | ✅ | `plugin.json` manifests + registry discovery; three kinds — `ingestion`, `generator`, `publish` |
 | Typed contracts | ✅ | `Doc` / `Brief` / `Content` / `Result` + per-kind `kindContract` in `@gobing-ai/kk-core` |
-| CLI surface | ✅ | `plugins list` / `plugins doctor`, `invoke`, `fanin`, `fanout` — register-per-command tree (ADR-010) |
+| CLI surface | ✅ | Two-noun tree `executor run\|fan-in\|fan-out` + `plugin status` (ADR-010/011) |
 | Pipeline orchestration | ✅ | `spur workflow` shells out to `kk` subcommands; proven end-to-end (fixture → content → `ok:true`) |
-| Fan-in / fan-out | ✅ | Sequential `kk fanin` (dedupe merge) and `kk fanout` (multi-target publish with retry) steps |
+| Fan-in / fan-out | ✅ | Sequential `kk executor fan-in` (dedupe merge) and `kk executor fan-out` (multi-target publish with retry) steps |
 | Ingestion | ✅ | `karakeep-local` plugin (`source → Doc[]`) |
 | Generation | ✅ | Owned STORM pipeline behind the generator contract (`content-gen`) |
 | Publishing | ✅ | `surfdash-pub`, `zenn-pub`, `qiita-pub` on a shared transport harness; more channels on the roadmap |
@@ -75,14 +75,15 @@ Requires [Bun 1.3.14](https://bun.sh) (`proto use` installs the pinned toolchain
 
 | Command | What it does |
 | --- | --- |
-| `kk plugins list` | List discovered plugins grouped by kind (`--kind`, `--json`, `--plugins-root`) |
-| `kk plugins doctor` | Validate plugin manifests and entries under the plugins root (`--json`) |
-| `kk invoke <plugin> <input> <output>` | Invoke a plugin with input/output files and contract validation |
-| `kk fanin` | Merge N `Doc[]` JSON inputs into one deduplicated `Doc[]` output |
-| `kk fanout` | Publish one `Content` JSON to N targets, aggregating per-target results |
-| `kk add` | Demo command (adds two numbers) — template for new shipped commands |
+| `kk executor run <plugin> --in <path> --out <path>` | Invoke a plugin with input/output files and contract validation |
+| `kk executor fan-in` | Merge N `Doc[]` JSON inputs into one deduplicated `Doc[]` output |
+| `kk executor fan-out` | Publish one `Content` JSON to N targets, aggregating per-target results |
+| `kk plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind`, `--json`) |
 | `kk -v, --verbose` | Enable verbose diagnostics |
 | `kk --help` / `kk <command> --help` | Full flag reference |
+
+Hidden one-release aliases (`invoke`, `fanin`, `fanout`, `plugins list`, `plugins doctor`) still
+work but are not listed in `kk --help` (ADR-011).
 
 ---
 
