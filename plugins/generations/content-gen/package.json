@@ -7,7 +7,8 @@
     },
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
-        "@gobing-ai/utils": "workspace:*"
+        "@gobing-ai/utils": "workspace:*",
+        "zod": "4.4.3"
     },
     "devDependencies": {
         "@types/bun": "1.3.14"
