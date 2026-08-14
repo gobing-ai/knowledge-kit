@@ -420,6 +420,8 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/04_DESIGN.md`
 
+- [2026-08-13] knowledge-kit: The C3 wayfinder batch (0054/0055) landed a registry-visible ingestion plugin (`plugins/ingestions/web-search`, workspace member `@gobing-ai/web-search`) plus a state-machine workflow while C3 was still an unshipped research map — prototype surface is T3 surface too: sync 03 (tree, module table, workspace-membership note) and 04 (§4 package row) at the research-batch doc-sync exit, don't defer to graduated implementation.
+
 - [2026-08-12] knowledge-kit: ADR-011 renamed canonical paths to `kk executor run|fan-in|fan-out`, but the fan-in/fan-out spec under `docs/design/` still specified `kk invoke`/`kk fanin`/`kk fanout` after A21 shipped — design specs are T3 surface too; the same-commit rename sweep must grep every spec under `docs/design/`, not just `kk-cli-surface.md`.
 - [2026-08-12] knowledge-kit: `zenn-pub` / `qiita-pub` shipped as new workspace packages with
   env-only secrets (`ZENN_REPO`, `QIITA_TOKEN`) and the `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` harness

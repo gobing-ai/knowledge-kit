@@ -1,0 +1,7 @@
+{
+    "name": "web-search",
+    "kind": "ingestion",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Ingests web search results for a topic into Doc objects (fixture stub — no live Firecrawl in v1)"
+}

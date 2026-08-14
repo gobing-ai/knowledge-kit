@@ -198,6 +198,7 @@ describe('discoverPlugins', () => {
             'karakeep-local',
             'qiita-pub',
             'surfdash-pub',
+            'web-search',
             'zenn-pub',
         ]);
         expect(getByName(res, 'karakeep-local')?.kind).toBe('ingestion');
@@ -503,6 +504,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'karakeep-local',
                 'qiita-pub',
                 'surfdash-pub',
+                'web-search',
                 'zenn-pub',
             ]);
             expect(res.plugins.every((p) => p.origin === 'builtin')).toBe(true);

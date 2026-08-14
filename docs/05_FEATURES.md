@@ -5,7 +5,7 @@ owns: STATUS — feature decomposition + state
 authority: derived
 version: 2.11.0
 created_at: 2026-07-22
-updated_at: 2026-08-13
+updated_at: 2026-08-14
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -55,6 +55,7 @@ sync: [T4]
 | **C** | Ingestion | ⏳ active | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007); closed via carrier `0039`, then **reopened for plugin intake** |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` (edge on parent C) |
+| C3 | STORM topic-research workflow | ✅ done | 3 | wayfinder map; tasks `0054`/`0055` done; `.spur/workflows/kk-storm-research.yaml` + fixture `plugins/ingestions/web-search`; live Firecrawl not in this map; dogfood `docs/dogfood/2026-08-14-C3-storm-research-workflow-dogfood.md` |
 | **D** | Content generation | ⏳ active | 1 | kind parent; re-cut: `Doc[] \| Brief`, creation co-equal with ingestion (ADR-007 R3); AC rolled up from D3+D2 (DD-09); closed via carrier `0040`, then **reopened for plugin intake** |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |
 | D2 | Wire existing generator skill to contract | ✅ done | 1 | tasks `0022`/`0023`; D3 spec done (`0017`) — gate satisfied |

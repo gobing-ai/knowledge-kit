@@ -1,0 +1,14 @@
+{
+    "name": "@gobing-ai/web-search",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/bun": "1.3.14"
+    }
+}

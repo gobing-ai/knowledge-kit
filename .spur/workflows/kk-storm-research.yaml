@@ -1,0 +1,87 @@
+# STORM topic-research dry-run prototype (C3): prepare -> ingest -> generate -> done.
+#
+# State-machine clone of kk-ingest-generate-publish minus publish: the `prepare`
+# state materializes the operator's `topic` `--vars` into the web-search `--in`
+# JSON (0054 keys: topic/maxResults/fixture), then chains `kk executor run`
+# ingest (web-search) -> generate (content-gen). Dry-runs to the Content-written
+# terminal (`done`). No publish state by design — publish/judge are C3 fog.
+#
+# Success edges use `guard: { kind: always }` (repo convention,
+# .spur/workflows/task-pipeline.yaml:232,237,254): real-run action failure
+# short-circuits the run at the state (default onError=fail policy), so the
+# success edge only ever fires after the action actually succeeded; `always`
+# additionally lets `--dry-run` walk to `done` (the `action-ok` guard would
+# deny in dry-run — actions are not executed — and walk to `failed`).
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-storm-research
+kind: state-machine
+description: STORM topic-research dry-run — materialize topic vars into web-search --in, chain ingest + generate, no publish
+initialState: prepare
+terminalStates:
+  - done
+  - failed
+vars:
+  topic: ""                 # REQUIRED at run (--vars '{"topic":"<brief topic>"}')
+  maxResults: "8"           # written into --in JSON (0054 maxResults, default 8)
+  work_dir: "./work"        # artifact dir (topic.json, docs.json, content.json)
+  plugins_path: "./plugins" # --plugins-path for kk executor run
+  ingestion_plugin: "web-search"
+  generator_plugin: "content-gen"
+
+states:
+  - id: prepare
+    description: "Materialize topic --vars into the web-search --in JSON (fixture: true so the stub never bills)"
+    onEnter:
+      - kind: shell
+        options:
+          command: mkdir -p ${vars.work_dir}
+      - kind: shell
+        options:
+          command: "jq -n --arg topic \"${vars.topic}\" --arg maxResults \"${vars.maxResults}\" '{topic: $topic, maxResults: ($maxResults | tonumber), fixture: true}' > ${vars.work_dir}/topic.json"
+
+  - id: ingest
+    description: Run web-search ingestion plugin to produce document list (docs.json)
+    onEnter:
+      - kind: shell
+        options:
+          command: kk executor run ${vars.ingestion_plugin} --in ${vars.work_dir}/topic.json --out ${vars.work_dir}/docs.json --plugins-path ${vars.plugins_path}
+
+  - id: generate
+    description: Run content generator plugin to produce markdown content (content.json)
+    onEnter:
+      - kind: shell
+        options:
+          command: kk executor run ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json --plugins-path ${vars.plugins_path}
+
+  - id: done
+    description: Terminal — topic materialized, ingested, and generated; content.json written. No publish state by design (C3 dry-run).
+  - id: failed
+    description: Terminal — one of the steps failed
+
+transitions:
+  - from: prepare
+    to: ingest
+    description: Topic JSON materialized — proceed to web-search ingestion
+    guard:
+      kind: always
+  - from: prepare
+    to: failed
+    description: Topic JSON materialization failed — terminate workflow
+
+  - from: ingest
+    to: generate
+    description: Ingestion succeeded — proceed to content generation
+    guard:
+      kind: always
+  - from: ingest
+    to: failed
+    description: Ingestion failed — terminate workflow
+
+  - from: generate
+    to: done
+    description: Content generation succeeded — workflow complete (Content written)
+    guard:
+      kind: always
+  - from: generate
+    to: failed
+    description: Generator failed — terminate workflow

@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.12.0
+version: 2.13.0
 created_at: 2026-07-22
 updated_at: 2026-08-13
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -294,6 +294,16 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `mapContentToQiitaMarkdown(content)` | function | Renders Qiita frontmatter (title, block-style tags, private) + body |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; writes fail-loud `Result` |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
+
+### `@gobing-ai/web-search` (`plugins/ingestions/web-search`, kind `ingestion`)
+
+| Export | Kind | Notes |
+|--------|------|-------|
+| `buildFixtureDocs(topic, maxResults)` | function | Canned `Doc[]` from fixture entries; `id` = sha256(`sourceUri`) hex prefix — deterministic per ingestion spec §2.3 |
+| `parseInput(raw)` | function | Validates `--in` JSON per the 0054 contract; throws on invalid JSON / missing or blank `topic` / non-positive `maxResults` |
+| `main()` | function | `--in`/`--out` IO per the ingestion spec §2; exit 0 success / 1 failure |
+
+`--in` JSON (API source, ingestion spec §2.2): `{ "topic": string (required), "maxResults": int (default 8; caps the emitted fixture list), "fixture": boolean }`. v1 ships **no live Firecrawl path**: `fixture: true` selects the stub; absent/false exits 1 with no `--out` (fail loud). Prototype surface for feature **C3**; graduated implementation pending.
 
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
 
