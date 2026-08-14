@@ -198,3 +198,43 @@
 - `missing_entry` is per-plugin data (attaches to the owning record, counts toward its health), while discovery codes without a record are tree-level — the split is a contract, not an implementation detail; fixtures must cover both placements.
 - Pipeline verify is verdict-based and does not measure code coverage (N/A for this task); manual CLI probes of exit codes and help output are the evidence that matters alongside the suite.
 - Reviewer-run CLI probes (help text, alias routing, `--kind bogus`) caught what unit tests missed — on command-tree reshapes, probe the actual binary before approving.
+
+## 2026-08-13 — task 0053 (feature B7: discover built-in and user plugins via a merged registry, ADR-012)
+
+**Decisions**
+- Merged multi-root discovery in `@gobing-ai/kk-core`: `discoverAllPlugins` + `resolvePluginRoots` (ADR-012), while `discoverPlugins` stays the per-root scanner with a new `origin` param defaulting to `'path'`. Root priority low → high: package-shipped builtin tree → `~/.kk/plugins` (user) → CWD `./plugins` (project, realpath-deduped against builtin) → `KK_PLUGIN_PATH` entries (path) → repeatable `--plugins-path` (path). A later/higher root shadows an earlier same-name plugin.
+- `--plugins-root` remains the exclusive single-root override (isolation/tests, ADR-012 R4); `--plugins-path` is additive and repeatable. Combining them is a usage error → exit 2, enforced in every command module (ADR-012 R6). The merge function itself silently ignores `extraPaths` under an exclusive root (`resolvePluginRoots` returns early) — CLI enforcement is the only user-facing guard, so it must live in each command, not once in the shared resolver.
+- New `shadowed` diagnostic code joins the tree-level set (`misplaced`, `kind_mismatch`, `malformed`, `duplicate_name`, `unreadable`). Losing manifest path is the diagnostic `path`; the winning manifest + origin is named in `reason`.
+- `PluginOrigin = 'builtin' | 'project' | 'user' | 'path'` stamps every `PluginRecord`; `kk plugin status --json` surfaces it. A `--plugins-path` dir whose folder itself contains `plugin.json` is a single-plugin dir (kind from manifest, no collection constraint — ADR-012 R6 amendment); trees/collections still go through per-root ADR-009 scans.
+- Builtin root (`resolveBuiltinRoot`) is found by walking up from the executing module (`import.meta.url` → dirname → up) to the first dir containing a kind collection — bundled CLI at `<pkg>/dist/index.js` → `<pkg>/plugins`; monorepo sources fall back to repo-root `plugins/`. Walk terminates at the fs root → `undefined`.
+- R12 keeps two separate channels: B3 workflow template now shells `kk executor run <plugin> … --plugins-path ${vars.plugins_path}` (renamed from `plugins_root`); no `extensions.actions`/`extensions.guards` blocks, no product plugins as workflow extension modules.
+- ADR-first: ADR-012 accepted + two amendments (dynamic extra paths, shipped status) recorded during the task; status moved `Accepted (design)` → `Accepted` in the same commit.
+
+**Conventions discovered**
+- Every discovery root is injectable (`DiscoverAllOptions`: `cwd`, `env`, `homeDir`, `packagePluginsRoot`, `extraPaths`, `pluginsRoot`) so unit tests never touch a real `$HOME` or CWD. All tests pass explicit roots; the D2 test omits `packagePluginsRoot` to exercise the real walk-up against the repo-root `plugins/` tree (asserts 5 plugins, all origin builtin, no `plugins/kk`).
+- One discovery per run: `runFanout` hoists a single `discoverAllPlugins` and passes `DiscoveryResult` down to `validateTargets` + `pluginDispatch` — the 0043 P4 N+1 discovery finding resolved here, not just patched per command.
+- All plugin-aware commands (invoke, fanout, plugin status) route through the merged entry point so a single-plugin-dir root behaves identically on every command — the P3-4 carryover from 0043's review (missing `--plugins-root` + per-target discovery) closed.
+- Repeatable flag collector: commander is last-wins on repeated options → `collectPath(value, acc)` push-accumulator (same pattern as 0042's `collectIn`).
+- Exit-code contract held: 0 healthy / 1 any diagnostic / 2 usage error; exclusivity thrown as `CommanderError(2, 'kk.plugin.root-path-conflict', …)` in command modules, `EXIT_INPUT` in fanout's argv parser.
+- Spec-referencing comments (`ADR-012 R3/R4/R6`, `D2`) in code kept the review traceability pass quick and made implementation-vs-design drift explicit.
+
+**Errors hit and resolved**
+- Realpath collision (R9): a CWD `plugins/` tree that is the same realpath as the builtin tree (symlink) double-scanned and would emit spurious `duplicate_name`/`shadowed` noise. Fixed with `sameRealpath` + `scannedRealpaths` set; the symlinked project tree is scanned once and keeps `origin: builtin`.
+- Single-plugin-dir unreadable manifest: `plugin.json` exists (classification fires) but cannot be read — must surface an `unreadable` diagnostic, not vanish silently. Pinned with a `plugin.json`-as-directory fixture (EISDIR), mirroring the new invoke tests where an input/output path passes `existsSync` but throws `EISDIR` on `readFileSync` → exit 1.
+- Missing/broken `--plugins-path` values: empty value, repeated flag, and missing-argument parse paths each got an explicit error and exit-2 test (`--plugins-root requires a directory path`, `may be specified only once`, `--plugins-path requires a directory path`) — the argv parser is exhaustively probed, not just the happy path.
+- N+1 discovery and per-command root semantics drift (0043 P3/P4): both fixed by the single hoisted merged discovery, eliminating the divergence where fanout's hardcoded `./plugins` default and invoke's root semantics disagreed.
+
+**Patterns that worked**
+- Injected-roots fixture pattern: `writePlugin(root, kind, name)` helper + every test passing `{ packagePluginsRoot, homeDir, cwd, env }` — deterministic, no real home, no real CWD; priority-order assertion `['builtin','user','project','path','path']` pins both root order AND origin stamping in one test.
+- Requirement-prefixed test names (`R1 — …`, `R5 — …`) tied each test to an AC row, making the verdict-artifact evidence column mechanical (`registry.test.ts:210` style line anchors verified by the reviewer).
+- Symlink fixture for R9 (`symlinkSync(builtin, cwd/plugins, 'dir')`) — the realpath edge pinned mechanically instead of hand-waved.
+- CLI tests via `runCaptured` (code + out + err): R6 asserts `origin` fields in status JSON, R10 drives a real plugin-entry spawn through a single-plugin dir (fanout R10), R11 asserts exit 2 + `mutually exclusive` message — through the real binary path, not mocked handlers.
+- The merged entry point as the single choke point: `discoverAllPlugins` is the only discovery call in invoke/fanout/plugin status, so R4 (exclusive), R10 (single-dir union), and R11 (flag conflict) behaviors are consistent across all three commands by construction.
+
+**Gotchas**
+- `KK_PLUGIN_PATH` splits on `:` and silently skips entries that aren't directories (`isDirectory` check) — a typo'd path yields no diagnostic. Same for non-existent `--plugins-path` dirs.
+- Shadowed diagnostic path is the **losing** manifest, not the winner — tests must assert `shadow.path === builtin manifest` and read the winner from `reason`.
+- Project origin is invisible when the CWD tree collides with builtin (R9) — a test asserting all four origins must use a cwd whose `plugins/` is a distinct tree.
+- `resolveBuiltinRoot` walk-up is path-sensitive: tests running from a package dir vs repo root can resolve different builtin trees — always inject `packagePluginsRoot` except in the D2 test that deliberately exercises the walk.
+- Verify pipeline remains verdict-based and does not measure code coverage (N/A here); the 84-test targeted run (registry 32 new + invoke + plugin + fanout) at 0 fail is the evidence, alongside exit-code CLI probes.
+- Pipeline verdict PASS with only P4 findings; uncommitted in the working tree (23 files, +1110/−100) at task close — commit still pending.

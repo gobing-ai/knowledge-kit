@@ -1,7 +1,15 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { type Content, ContentSchema, discoverPlugins, getByName, type Result, ResultSchema } from '@gobing-ai/kk-core';
+import {
+    type Content,
+    ContentSchema,
+    type DiscoveryResult,
+    discoverAllPlugins,
+    getByName,
+    type Result,
+    ResultSchema,
+} from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
 import { spawnPluginEntry } from './invoke';
 
@@ -42,6 +50,7 @@ export interface FanoutOptions {
     outPath: string;
     retryFromPath?: string;
     pluginsRoot?: string;
+    pluginsPath?: string[];
 }
 
 /** Runner dependencies; tests inject a fake dispatch so no real publishers run. */
@@ -242,9 +251,10 @@ function readAggregateResult(path: string): AggregateResult | null {
     };
 }
 
-/** Parse `--content <file> [--target <plugin> ...] --out <file> [--retry-from <file>] [--plugins-root <dir>]` from an argv slice. */
+/** Parse `--content <file> [--target <plugin> ...] --out <file> [--retry-from <file>] [--plugins-root <dir>] [--plugins-path <dir> ...]` from an argv slice. */
 function parseArgs(argv: string[]): FanoutOptions {
     const targets: string[] = [];
+    const pluginsPath: string[] = [];
     let contentPath: string | undefined;
     let outPath: string | undefined;
     let retryFromPath: string | undefined;
@@ -294,6 +304,12 @@ function parseArgs(argv: string[]): FanoutOptions {
                 throw new Error('--plugins-root may be specified only once');
             }
             pluginsRoot = value;
+        } else if (arg === '--plugins-path') {
+            const value = argv[++i];
+            if (value === undefined) {
+                throw new Error('--plugins-path requires a directory path');
+            }
+            pluginsPath.push(value);
         } else {
             throw new Error(`Unknown argument: ${arg}`);
         }
@@ -315,6 +331,7 @@ function parseArgs(argv: string[]): FanoutOptions {
         outPath,
         ...(retryFromPath !== undefined ? { retryFromPath } : {}),
         ...(pluginsRoot !== undefined ? { pluginsRoot } : {}),
+        ...(pluginsPath.length > 0 ? { pluginsPath } : {}),
     };
 }
 
@@ -326,10 +343,10 @@ function parseArgs(argv: string[]): FanoutOptions {
  * Process spawn goes through `spawnPluginEntry` in `invoke.ts` — the only
  * sanctioned `Bun.spawnSync` site under `no-direct-process-spawn`.
  */
-async function pluginDispatch(target: string, contentPath: string, pluginsRoot: string): Promise<ResultEntry> {
-    const record = getByName(discoverPlugins(pluginsRoot), target);
+async function pluginDispatch(target: string, contentPath: string, discovery: DiscoveryResult): Promise<ResultEntry> {
+    const record = getByName(discovery, target);
     if (record?.kind !== 'publish') {
-        throw new Error(`Publish plugin '${target}' not found under ${resolve(pluginsRoot)}`);
+        throw new Error(`Publish plugin '${target}' not found in the merged plugin registry`);
     }
 
     const entryPath = isAbsolute(record.entry) ? record.entry : resolve(record.dir, record.entry);
@@ -364,8 +381,7 @@ async function pluginDispatch(target: string, contentPath: string, pluginsRoot: 
 }
 
 /** Check every target resolves to a publish plugin; log and return false otherwise (spec §4 input error). */
-function validateTargets(targets: Target[], pluginsRoot: string): boolean {
-    const discovery = discoverPlugins(pluginsRoot);
+function validateTargets(targets: Target[], discovery: DiscoveryResult): boolean {
     const missing: string[] = [];
     for (const target of targets) {
         const record = getByName(discovery, target);
@@ -374,7 +390,7 @@ function validateTargets(targets: Target[], pluginsRoot: string): boolean {
         }
     }
     if (missing.length > 0) {
-        logger.error(`Unknown publish target(s): ${missing.join(', ')} under ${resolve(pluginsRoot)}`);
+        logger.error(`Unknown publish target(s): ${missing.join(', ')}`);
         for (const diag of discovery.diagnostics) {
             logger.error(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);
         }
@@ -385,7 +401,7 @@ function validateTargets(targets: Target[], pluginsRoot: string): boolean {
 
 /**
  * Run the `kk fanout` CLI handler.
- * @param argv `--content <file> [--target <plugin> ...] --out <file> [--retry-from <file>] [--plugins-root <dir>]` (no subcommand name)
+ * @param argv `--content <file> [--target <plugin> ...] --out <file> [--retry-from <file>] [--plugins-root <dir>] [--plugins-path <dir> ...]` (no subcommand name)
  * @param deps optional injected dispatch / pluginsRoot (tests) — default dispatch runs publish plugin entries
  * @returns exit code per spec §4: 0 all succeeded, 1 partial/total failure, 2 CLI/input error
  */
@@ -403,7 +419,17 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
         return EXIT_INPUT;
     }
 
-    const pluginsRoot = deps.pluginsRoot ?? opts.pluginsRoot ?? './plugins';
+    if (opts.pluginsRoot !== undefined && (opts.pluginsPath?.length ?? 0) > 0) {
+        logger.error('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)');
+        return EXIT_INPUT;
+    }
+    // One discovery per run: `--plugins-root` stays an exclusive single-root
+    // override; otherwise union the default roots with `--plugins-path`
+    // (ADR-012). Both route through the merged entry point so a single-plugin
+    // dir root behaves identically on every command (P3-4).
+    const pluginsRoot = deps.pluginsRoot ?? opts.pluginsRoot;
+    const discovery = discoverAllPlugins({ pluginsRoot, extraPaths: opts.pluginsPath });
+
     let prior: AggregateResult | undefined;
     let skipped: TargetOutcome[] = [];
     let targets = opts.targets;
@@ -428,8 +454,8 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
         targets = opts.targets.length > 0 ? opts.targets.filter((t) => !carried.has(t)) : selectRetryTargets(prior);
     }
 
-    const dispatch = deps.dispatch ?? ((t: Target) => pluginDispatch(t, opts.contentPath, pluginsRoot));
-    if (deps.dispatch === undefined && !validateTargets(targets, pluginsRoot)) {
+    const dispatch = deps.dispatch ?? ((t: Target) => pluginDispatch(t, opts.contentPath, discovery));
+    if (deps.dispatch === undefined && !validateTargets(targets, discovery)) {
         return EXIT_INPUT;
     }
 

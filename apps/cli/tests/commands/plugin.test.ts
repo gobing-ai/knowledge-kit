@@ -14,6 +14,7 @@ interface PluginStatusJson {
     plugins: Array<{
         name: string;
         kind: string;
+        origin?: string;
         healthy: boolean;
         diagnostics: Array<{ code: string; path: string; reason: string }>;
     }>;
@@ -247,5 +248,84 @@ describe('registerPluginCommand', () => {
         } finally {
             await rm(tmpDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('merged multi-root discovery (ADR-012)', () => {
+    it('R6 — default plugin status reports origin per plugin (builtin + path)', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-status-origin');
+        const pluginDir = join(tmpDir, collectionForKind('generator'), 'path-gen');
+        await mkdir(join(pluginDir, 'src'), { recursive: true });
+        await writeFile(
+            join(pluginDir, 'plugin.json'),
+            JSON.stringify({ name: 'path-gen', kind: 'generator', entry: './src/index.ts', version: '1.0.0' }),
+            'utf-8',
+        );
+        await writeFile(join(pluginDir, 'src', 'index.ts'), 'export {};\n', 'utf-8');
+
+        // Run from a cwd without a ./plugins tree so only the built-in root and
+        // the KK_PLUGIN_PATH root are discovered (each test file runs in its own
+        // process, so chdir cannot leak into other files).
+        const cwd = join(tmpDir, 'cwd');
+        await mkdir(cwd, { recursive: true });
+        const originalCwd = process.cwd();
+        const originalPath = process.env.KK_PLUGIN_PATH;
+        process.chdir(cwd);
+        process.env.KK_PLUGIN_PATH = tmpDir;
+        try {
+            const { code, out } = await runCaptured(['plugin', 'status', '--json']);
+            // The package-shipped tree stays registered next to the path root.
+            expect(code).toBe(0);
+            const parsed = JSON.parse(out) as PluginStatusJson;
+            expect(parsed.plugins.find((p) => p.name === 'content-gen')?.origin).toBe('builtin');
+            expect(parsed.plugins.find((p) => p.name === 'path-gen')?.origin).toBe('path');
+        } finally {
+            if (originalPath === undefined) {
+                delete process.env.KK_PLUGIN_PATH;
+            } else {
+                process.env.KK_PLUGIN_PATH = originalPath;
+            }
+            process.chdir(originalCwd);
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('R10 — --plugins-path unions a single plugin dir with the built-in tree', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-status-plugins-path');
+        await mkdir(tmpDir, { recursive: true });
+        await writeFile(
+            join(tmpDir, 'plugin.json'),
+            JSON.stringify({ name: 'extra-gen', kind: 'generator', entry: './entry.ts', version: '1.0.0' }),
+            'utf-8',
+        );
+        await writeFile(join(tmpDir, 'entry.ts'), 'export {};\n', 'utf-8');
+
+        const cwd = join(tmpDir, 'cwd');
+        await mkdir(cwd, { recursive: true });
+        const originalCwd = process.cwd();
+        process.chdir(cwd);
+        try {
+            const { code, out } = await runCaptured(['plugin', 'status', '--json', '--plugins-path', tmpDir]);
+            expect(code).toBe(0);
+            const parsed = JSON.parse(out) as PluginStatusJson;
+            expect(parsed.plugins.some((p) => p.name === 'content-gen' && p.origin === 'builtin')).toBe(true);
+            expect(parsed.plugins.some((p) => p.name === 'extra-gen' && p.origin === 'path')).toBe(true);
+        } finally {
+            process.chdir(originalCwd);
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('R11 — --plugins-root and --plugins-path together exit 2', async () => {
+        const { code, err } = await runCaptured([
+            'plugin',
+            'status',
+            '--plugins-root',
+            '/tmp',
+            '--plugins-path',
+            '/tmp',
+        ]);
+        expect(code).toBe(2);
+        expect(err).toContain('mutually exclusive');
     });
 });

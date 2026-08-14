@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
     type DiscoveryDiagnostic,
-    discoverPlugins,
+    discoverAllPlugins,
     isPluginKind,
     type PluginKind,
     type PluginRecord,
@@ -33,19 +33,26 @@ interface StatusOptions {
     kind?: string;
     json?: boolean;
     pluginsRoot?: string;
+    pluginsPath?: string[];
+}
+
+/** Collect repeated `--plugins-path` values into an array (commander last-wins otherwise). */
+function collectPath(value: string, acc: string[]): string[] {
+    acc.push(value);
+    return acc;
 }
 
 /**
- * Build the unified health report for a plugins root.
+ * Build the unified health report over the merged multi-root registry.
  *
  * Tree-level discovery diagnostics (`misplaced`, `kind_mismatch`, `malformed`,
- * `duplicate_name`, `unreadable`) stay in the top-level `diagnostics` array —
- * they are never dropped just because they are not attached to a PluginRecord.
- * `missing_entry` attaches to the owning plugin's `diagnostics` and counts
- * toward that plugin's `healthy: false`.
+ * `duplicate_name`, `shadowed`, `unreadable`) stay in the top-level
+ * `diagnostics` array — they are never dropped just because they are not
+ * attached to a PluginRecord. `missing_entry` attaches to the owning plugin's
+ * `diagnostics` and counts toward that plugin's `healthy: false`.
  */
-function buildStatusReport(root: string): PluginStatusJson {
-    const discovery = discoverPlugins(root);
+function buildStatusReport(opts: { pluginsRoot?: string; pluginsPath?: string[] }): PluginStatusJson {
+    const discovery = discoverAllPlugins({ pluginsRoot: opts.pluginsRoot, extraPaths: opts.pluginsPath });
 
     const plugins = discovery.plugins.map((record) => {
         const diagnostics: StatusDiagnostic[] = [];
@@ -88,8 +95,15 @@ function printDiagnostics(report: PluginStatusJson): void {
  * the returned process exit code — the module never exits the process.
  */
 function statusAction(options: StatusOptions): void {
-    const root = options.pluginsRoot ?? './plugins';
-    const report = buildStatusReport(root);
+    if (options.pluginsRoot !== undefined && (options.pluginsPath?.length ?? 0) > 0) {
+        logger.error('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)\n');
+        throw new CommanderError(
+            2,
+            'kk.plugin.root-path-conflict',
+            '--plugins-root and --plugins-path are mutually exclusive',
+        );
+    }
+    const report = buildStatusReport({ pluginsRoot: options.pluginsRoot, pluginsPath: options.pluginsPath });
 
     let records = report.plugins;
     if (options.kind) {
@@ -149,7 +163,8 @@ function registerStatusVerb(parent: Command, name: string, description: string, 
         .description(description)
         .option('--kind <kind>', 'Filter plugins by kind (ingestion, generator, publish)')
         .option('--json', 'Output machine-readable unified health report')
-        .option('--plugins-root <dir>', 'Root directory containing plugins')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
         .action(statusAction);
 }
 

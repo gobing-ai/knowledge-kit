@@ -20,6 +20,14 @@ This specification defines the CLI surface, data contracts, exit codes, deduplic
 > `kk executor fan-in` / `kk executor fan-out` / `kk executor run`; `kk fanin` / `kk fanout` /
 > `kk invoke` are hidden one-release aliases. §1.1–§1.3, §5, and §7 below now use the canonical
 > names; flags, exit codes, and retry semantics are unchanged.
+>
+> **Dated correction (2026-08-13).** ADR-012 (feature B7, task 0053) replaced the
+> single-root default: `fan-out` resolves targets through the **merged multi-root registry**
+> (`discoverAllPlugins`). Correction 2 (2026-08-11) is superseded — `--plugins-root` no longer
+> defaults to `./plugins`; it is the exclusive single-root override (isolation/tests only, no
+> union). Repeatable `--plugins-path <dir>` unions extra roots (tree, kind collection, or single
+> `plugin.json` directory) with the defaults. Combining `--plugins-root` with `--plugins-path`
+> is a usage error → exit `2` (extends §4's CLI/Input Error row). Retry semantics unchanged.
 
 ---
 

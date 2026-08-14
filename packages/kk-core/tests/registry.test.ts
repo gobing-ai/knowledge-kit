@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     collectionForKind,
+    discoverAllPlugins,
     discoverPlugins,
     getByName,
     KK_CAPABILITY_COLLECTION,
     listByKind,
     type PluginKind,
+    resolvePluginRoots,
 } from '../src/index';
 
 function withTempDir(fn: (dir: string) => void): void {
@@ -201,5 +203,328 @@ describe('discoverPlugins', () => {
         expect(getByName(res, 'karakeep-local')?.kind).toBe('ingestion');
         expect(getByName(res, 'content-gen')?.kind).toBe('generator');
         expect(getByName(res, 'surfdash-pub')?.dir).toContain(`${collectionForKind('publish')}/surfdash-pub`);
+    });
+});
+
+describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => {
+    it('R1 — default discovery registers the package-shipped tree and skips plugins/kk', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'ingest-a');
+            writePlugin(builtin, 'generator', 'gen-b');
+            // plugins/kk must never register as a kk-core plugin (ADR-009).
+            const kkDir = join(builtin, KK_CAPABILITY_COLLECTION);
+            mkdirSync(kkDir, { recursive: true });
+            writeFileSync(join(kkDir, 'plugin.json'), JSON.stringify({ name: 'kk', version: '1.0.0' }));
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: {},
+            });
+            expect(res.diagnostics).toHaveLength(0);
+            expect(res.plugins.map((p) => p.name).sort()).toEqual(['gen-b', 'ingest-a']);
+            expect(res.plugins.every((p) => p.origin === 'builtin')).toBe(true);
+        });
+    });
+
+    it('R2 — a user plugin under ~/.kk/plugins merges with built-ins', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'publish', 'builtin-pub');
+            const home = join(tmp, 'home');
+            writePlugin(join(home, '.kk', 'plugins'), 'publish', 'my-pub');
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: home,
+                cwd: join(tmp, 'cwd'),
+                env: {},
+            });
+            expect(getByName(res, 'builtin-pub')?.origin).toBe('builtin');
+            const user = getByName(res, 'my-pub');
+            expect(user?.origin).toBe('user');
+            expect(user?.kind).toBe('publish');
+            expect(res.diagnostics).toHaveLength(0);
+        });
+    });
+
+    it('R4 — --plugins-root scans only that tree; built-ins are not registered', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'builtin-only');
+            const isolated = join(tmp, 'isolated');
+            writePlugin(isolated, 'publish', 'isolated-pub');
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: {},
+                pluginsRoot: isolated,
+            });
+            expect(res.plugins.map((p) => p.name)).toEqual(['isolated-pub']);
+            expect(res.plugins[0]?.origin).toBe('path');
+            expect(res.diagnostics).toHaveLength(0);
+        });
+    });
+
+    it('R5 — a higher-priority root shadows a duplicate name with a naming diagnostic', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            const builtinDir = writePlugin(builtin, 'ingestion', 'same-name');
+            const home = join(tmp, 'home');
+            const userDir = writePlugin(join(home, '.kk', 'plugins'), 'ingestion', 'same-name');
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: home,
+                cwd: join(tmp, 'cwd'),
+                env: {},
+            });
+            expect(res.plugins).toHaveLength(1);
+            expect(res.plugins[0]?.origin).toBe('user');
+            expect(res.plugins[0]?.dir).toBe(userDir);
+
+            const shadow = res.diagnostics.find((d) => d.code === 'shadowed');
+            expect(shadow?.path).toBe(join(builtinDir, 'plugin.json'));
+            expect(shadow?.reason).toContain(join(userDir, 'plugin.json'));
+        });
+    });
+
+    it('R6 — each plugin record reports its origin (builtin | project | user | path)', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'a-builtin');
+            const home = join(tmp, 'home');
+            writePlugin(join(home, '.kk', 'plugins'), 'ingestion', 'b-user');
+            const cwd = join(tmp, 'cwd');
+            writePlugin(join(cwd, 'plugins'), 'ingestion', 'c-project');
+            const envRoot = join(tmp, 'env-root');
+            writePlugin(envRoot, 'ingestion', 'd-path');
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: home,
+                cwd,
+                env: { KK_PLUGIN_PATH: envRoot },
+            });
+            expect(getByName(res, 'a-builtin')?.origin).toBe('builtin');
+            expect(getByName(res, 'b-user')?.origin).toBe('user');
+            expect(getByName(res, 'c-project')?.origin).toBe('project');
+            expect(getByName(res, 'd-path')?.origin).toBe('path');
+        });
+    });
+
+    it('R7 — a KK_PLUGIN_PATH root registers its plugins with origin path', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'generator', 'builtin-gen');
+            const pathRoot = join(tmp, 'extra');
+            writePlugin(pathRoot, 'generator', 'path-ing');
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: { KK_PLUGIN_PATH: pathRoot },
+            });
+            expect(getByName(res, 'path-ing')?.origin).toBe('path');
+            expect(getByName(res, 'builtin-gen')?.origin).toBe('builtin');
+        });
+    });
+
+    it('R8 — a misplaced plugin.json on an extra tree root is reported without aborting the merge', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'ok-builtin');
+            const extra = join(tmp, 'extra');
+            writePlugin(extra, 'generator', 'ok-extra');
+            // A plugin dir directly at the extra root (not under a kind collection) -> misplaced.
+            const strayDir = join(extra, 'stray');
+            mkdirSync(strayDir, { recursive: true });
+            const strayManifest = join(strayDir, 'plugin.json');
+            writeFileSync(strayManifest, JSON.stringify({ name: 'stray', kind: 'publish', entry: 'e' }));
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: {},
+                extraPaths: [extra],
+            });
+            expect(getByName(res, 'ok-builtin')?.origin).toBe('builtin');
+            expect(getByName(res, 'ok-extra')?.origin).toBe('path');
+            const misplaced = res.diagnostics.find((d) => d.code === 'misplaced');
+            expect(misplaced?.path).toBe(strayManifest);
+        });
+    });
+
+    it('R9 — a project plugins tree that is the builtin realpath is scanned once', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'shared-a');
+            const cwd = join(tmp, 'cwd');
+            mkdirSync(cwd, { recursive: true });
+            symlinkSync(builtin, join(cwd, 'plugins'), 'dir');
+
+            const res = discoverAllPlugins({ packagePluginsRoot: builtin, homeDir: join(tmp, 'home'), cwd, env: {} });
+            expect(res.plugins).toHaveLength(1);
+            expect(res.plugins[0]?.origin).toBe('builtin');
+            expect(res.diagnostics).toHaveLength(0);
+        });
+    });
+
+    it('R10 — a single-plugin --plugins-path directory unions with built-in and user roots', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'generator', 'builtin-gen');
+            const home = join(tmp, 'home');
+            writePlugin(join(home, '.kk', 'plugins'), 'publish', 'global-pub');
+            // Single plugin dir: plugin.json lives in the folder itself (ADR-012 R6).
+            const single = join(tmp, 'single');
+            mkdirSync(single, { recursive: true });
+            writeFileSync(
+                join(single, 'plugin.json'),
+                JSON.stringify({ name: 'extra-gen', kind: 'generator', entry: 'sp:entry' }),
+            );
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: home,
+                cwd: join(tmp, 'cwd'),
+                env: {},
+                extraPaths: [single],
+            });
+            expect(getByName(res, 'builtin-gen')?.origin).toBe('builtin');
+            expect(getByName(res, 'global-pub')?.origin).toBe('user');
+            const extra = getByName(res, 'extra-gen');
+            expect(extra?.origin).toBe('path');
+            expect(extra?.kind).toBe('generator');
+            expect(res.diagnostics).toHaveLength(0);
+        });
+    });
+
+    it('emits unreadable when a single-plugin-dir manifest cannot be read (skip-and-report)', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'ok-builtin');
+            // `plugin.json` is a directory here: it exists (so the single-plugin
+            // classification fires) but cannot be read (EISDIR) — the manifest
+            // must surface an `unreadable` diagnostic, not vanish silently.
+            const single = join(tmp, 'single');
+            mkdirSync(join(single, 'plugin.json'), { recursive: true });
+
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: {},
+                extraPaths: [single],
+            });
+            expect(getByName(res, 'ok-builtin')).toBeDefined();
+            const diag = res.diagnostics.find((d) => d.code === 'unreadable');
+            expect(diag?.path).toBe(join(single, 'plugin.json'));
+        });
+    });
+
+    it('R11 — --plugins-root is exclusive even when extra paths are offered', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'builtin-only');
+            const isolated = join(tmp, 'isolated');
+            writePlugin(isolated, 'publish', 'isolated-pub');
+            const extra = join(tmp, 'extra');
+            writePlugin(extra, 'generator', 'extra-gen');
+
+            const opts = {
+                packagePluginsRoot: builtin,
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: {},
+                extraPaths: [extra],
+                pluginsRoot: isolated,
+            };
+            expect(resolvePluginRoots(opts)).toEqual([{ origin: 'path', root: isolated }]);
+            const res = discoverAllPlugins(opts);
+            expect(res.plugins.map((p) => p.name)).toEqual(['isolated-pub']);
+            expect(res.diagnostics).toHaveLength(0);
+        });
+    });
+
+    it('resolves default roots low → high (builtin, user, project, env path, extra path)', () => {
+        withTempDir((tmp) => {
+            const builtin = join(tmp, 'builtin');
+            writePlugin(builtin, 'ingestion', 'x');
+            const home = join(tmp, 'home');
+            writePlugin(join(home, '.kk', 'plugins'), 'ingestion', 'y');
+            const cwd = join(tmp, 'cwd');
+            writePlugin(join(cwd, 'plugins'), 'ingestion', 'z');
+            const envRoot = join(tmp, 'env-root');
+            writePlugin(envRoot, 'ingestion', 'e');
+            const extraRoot = join(tmp, 'extra-root');
+            writePlugin(extraRoot, 'ingestion', 'f');
+
+            const roots = resolvePluginRoots({
+                packagePluginsRoot: builtin,
+                homeDir: home,
+                cwd,
+                env: { KK_PLUGIN_PATH: envRoot },
+                extraPaths: [extraRoot],
+            });
+            expect(roots.map((r) => r.origin)).toEqual(['builtin', 'user', 'project', 'path', 'path']);
+
+            // The same merged scan resolves every origin.
+            const res = discoverAllPlugins({
+                packagePluginsRoot: builtin,
+                homeDir: home,
+                cwd,
+                env: { KK_PLUGIN_PATH: envRoot },
+                extraPaths: [extraRoot],
+            });
+            expect(res.plugins.map((p) => p.origin)).toEqual(['builtin', 'user', 'project', 'path', 'path']);
+        });
+    });
+
+    it('D2 — resolves the package-shipped builtin root by walking up when not injected', () => {
+        withTempDir((tmp) => {
+            // No packagePluginsRoot: resolveBuiltinRoot walks up from the module
+            // to the packaged `<pkg>/plugins` tree (here: the repo-root plugins/
+            // tree). No user/project/env roots exist, so builtin is the only root.
+            const res = discoverAllPlugins({
+                homeDir: join(tmp, 'home'),
+                cwd: join(tmp, 'cwd'),
+                env: {},
+            });
+            expect(res.diagnostics).toHaveLength(0);
+            expect(res.plugins.map((p) => p.name).sort()).toEqual([
+                'content-gen',
+                'karakeep-local',
+                'qiita-pub',
+                'surfdash-pub',
+                'zenn-pub',
+            ]);
+            expect(res.plugins.every((p) => p.origin === 'builtin')).toBe(true);
+        });
+    });
+
+    it('emits unreadable when a kind collection cannot be read, without aborting the scan', () => {
+        withTempDir((root) => {
+            writePlugin(root, 'ingestion', 'ok-ingest');
+            const locked = join(root, collectionForKind('publish'));
+            mkdirSync(locked, { recursive: true });
+            chmodSync(locked, 0o000);
+            try {
+                const res = discoverPlugins(root);
+                expect(res.plugins.map((p) => p.name)).toEqual(['ok-ingest']);
+                expect(res.diagnostics).toHaveLength(1);
+                expect(res.diagnostics[0]?.code).toBe('unreadable');
+                expect(res.diagnostics[0]?.path).toBe(locked);
+            } finally {
+                // Restore permissions so the temp-dir cleanup can recurse.
+                chmodSync(locked, 0o755);
+            }
+        });
     });
 });

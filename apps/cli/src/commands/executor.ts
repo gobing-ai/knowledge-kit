@@ -8,6 +8,7 @@ interface RunOptions {
     in: string;
     out: string;
     pluginsRoot?: string;
+    pluginsPath?: string[];
 }
 
 /** Options accepted by the `executor fan-in` verb (and its hidden `fanin` alias). */
@@ -23,15 +24,30 @@ interface FanoutOptions {
     out: string;
     retryFrom?: string;
     pluginsRoot?: string;
+    pluginsPath?: string[];
+}
+
+/** Collect repeated `--plugins-path` values into an array (commander last-wins otherwise). */
+function collectPath(value: string, acc: string[]): string[] {
+    acc.push(value);
+    return acc;
 }
 
 /** Fail-loud paths throw a CommanderError carrying the runner's exit code; main() maps it to the process exit code. */
 async function runInvokeAction(plugin: string, options: RunOptions): Promise<void> {
+    if (options.pluginsRoot !== undefined && (options.pluginsPath?.length ?? 0) > 0) {
+        throw new CommanderError(
+            2,
+            'kk.executor.run.root-path-conflict',
+            '--plugins-root and --plugins-path are mutually exclusive',
+        );
+    }
     const code = await runInvoke({
         plugin,
         inPath: options.in,
         outPath: options.out,
         pluginsRoot: options.pluginsRoot,
+        pluginsPath: options.pluginsPath,
     });
     if (code !== 0) {
         throw new CommanderError(code, 'kk.executor.run.failed', `invoke failed with exit code ${code}`);
@@ -76,6 +92,9 @@ async function runFanoutAction(options: FanoutOptions): Promise<void> {
     if (options.pluginsRoot) {
         argv.push('--plugins-root', options.pluginsRoot);
     }
+    for (const path of options.pluginsPath ?? []) {
+        argv.push('--plugins-path', path);
+    }
 
     const code = await runFanout(argv);
     if (code !== 0) {
@@ -100,7 +119,8 @@ export function registerExecutorCommand(program: Command): void {
         .argument('<plugin>', 'Name of the plugin to invoke')
         .requiredOption('--in <path>', 'Input file path (or source path for ingestion)')
         .requiredOption('--out <path>', 'Output file path')
-        .option('--plugins-root <dir>', 'Root directory containing plugins')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
         .action(runInvokeAction);
 
     executor
@@ -119,7 +139,8 @@ export function registerExecutorCommand(program: Command): void {
         .option('--target <plugin>', 'Target publish plugin name (repeatable)', collectTarget, [])
         .requiredOption('--out <path>', 'Aggregate Result JSON file path')
         .option('--retry-from <path>', 'Prior Result JSON file to retry only previously failed targets')
-        .option('--plugins-root <dir>', 'Root directory containing plugins')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
         .action(runFanoutAction);
 
     // Hidden one-release aliases (ADR-011 R4): same engines, same flags, not
@@ -130,7 +151,8 @@ export function registerExecutorCommand(program: Command): void {
         .argument('<plugin>', 'Name of the plugin to invoke')
         .requiredOption('--in <path>', 'Input file path (or source path for ingestion)')
         .requiredOption('--out <path>', 'Output file path')
-        .option('--plugins-root <dir>', 'Root directory containing plugins')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
         .action(runInvokeAction);
 
     program
@@ -147,6 +169,7 @@ export function registerExecutorCommand(program: Command): void {
         .option('--target <plugin>', 'Target publish plugin name (repeatable)', collectTarget, [])
         .requiredOption('--out <path>', 'Aggregate Result JSON file path')
         .option('--retry-from <path>', 'Prior Result JSON file to retry only previously failed targets')
-        .option('--plugins-root <dir>', 'Root directory containing plugins')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
         .action(runFanoutAction);
 }

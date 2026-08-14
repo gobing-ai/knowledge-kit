@@ -761,6 +761,113 @@ describe('runFanout', () => {
         });
     });
 
+    it('R10 — --plugins-path resolves a publish plugin in a single-plugin dir via merged discovery', async () => {
+        await withTempDir(async (root) => {
+            // Single plugin dir: plugin.json lives in the folder itself (ADR-012 R6).
+            const extra = join(root, 'extra');
+            mkdirSync(join(extra, 'src'), { recursive: true });
+            writeFileSync(
+                join(extra, 'plugin.json'),
+                JSON.stringify({ name: 'extra-pub', kind: 'publish', entry: './src/index.ts', version: '1.0.0' }),
+            );
+            writeFileSync(
+                join(extra, 'src', 'index.ts'),
+                [
+                    "import { readFileSync, writeFileSync } from 'node:fs';",
+                    'const argv = process.argv.slice(2);',
+                    "const inPath = argv[argv.indexOf('--in') + 1];",
+                    "const outPath = argv[argv.indexOf('--out') + 1];",
+                    "readFileSync(inPath, 'utf-8');",
+                    "writeFileSync(outPath, JSON.stringify({ ok: true, target: 'extra-pub', url: 'https://example.com/extra', id: 'extra-1', message: 'published' }));",
+                ].join('\n'),
+            );
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            const code = await runFanout([
+                '--content',
+                contentFile,
+                '--target',
+                'extra-pub',
+                '--out',
+                outFile,
+                '--plugins-path',
+                extra,
+            ]);
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.ok).toBe(true);
+            expect(outData.targets[0]).toMatchObject({ target: 'extra-pub', status: 'published' });
+        });
+    });
+
+    it('R11 — --plugins-root and --plugins-path together exit 2 (mutually exclusive)', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = join(root, 'content.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            const code = await runFanout(
+                [
+                    '--content',
+                    contentFile,
+                    '--target',
+                    'a',
+                    '--out',
+                    join(root, 'r.json'),
+                    '--plugins-root',
+                    '/tmp',
+                    '--plugins-path',
+                    '/tmp',
+                ],
+                { dispatch: makeDispatch().dispatch },
+            );
+
+            expect(code).toBe(2);
+            expect(errLog.join('\n')).toContain('mutually exclusive');
+        });
+    });
+
+    it('fails with exit code 2 on --plugins-root / --plugins-path parse errors', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = join(root, 'content.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            // --plugins-root without a value.
+            errLog = [];
+            expect(await runFanout(['--content', contentFile, '--target', 'a', '--out', 'x', '--plugins-root'])).toBe(
+                2,
+            );
+            expect(errLog.join('\n')).toContain('--plugins-root requires a directory path');
+
+            // --plugins-root specified twice.
+            errLog = [];
+            expect(
+                await runFanout([
+                    '--content',
+                    contentFile,
+                    '--target',
+                    'a',
+                    '--out',
+                    'x',
+                    '--plugins-root',
+                    '/tmp',
+                    '--plugins-root',
+                    '/tmp',
+                ]),
+            ).toBe(2);
+            expect(errLog.join('\n')).toContain('--plugins-root may be specified only once');
+
+            // --plugins-path without a value.
+            errLog = [];
+            expect(await runFanout(['--content', contentFile, '--target', 'a', '--out', 'x', '--plugins-path'])).toBe(
+                2,
+            );
+            expect(errLog.join('\n')).toContain('--plugins-path requires a directory path');
+        });
+    });
+
     it('R6 — fan-out composes the harvested zenn-pub and qiita-pub pair under the fake transport', async () => {
         await withTempDir(async (root) => {
             const contentFile = join(root, 'content.json');

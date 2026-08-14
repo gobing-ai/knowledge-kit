@@ -76,6 +76,45 @@ describe('runInvoke', () => {
         });
     });
 
+    it('R3 — resolves a plugin that exists only on an extra --plugins-path root', async () => {
+        await withTempDir(async (root) => {
+            // The plugin exists ONLY on the extra root — not on any default root.
+            const extraRoot = join(root, 'extra');
+            const pluginDir = pluginDirOf(extraRoot, 'generator', 'extra-gen');
+            mkdirSync(join(pluginDir, 'scripts'), { recursive: true });
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'extra-gen', kind: 'generator', entry: 'scripts/run.ts' }),
+            );
+            writeFileSync(
+                join(pluginDir, 'scripts', 'run.ts'),
+                [
+                    "import { readFileSync, writeFileSync } from 'node:fs';",
+                    'const args = process.argv.slice(2);',
+                    "const inPath = args[args.indexOf('--in') + 1];",
+                    "const outPath = args[args.indexOf('--out') + 1];",
+                    "const docs = JSON.parse(readFileSync(inPath, 'utf-8'));",
+                    "writeFileSync(outPath, JSON.stringify({ body: '# Extra gen on ' + docs.length + ' docs', format: 'markdown' }));",
+                ].join('\n'),
+            );
+
+            const inFile = join(root, 'docs.json');
+            const outFile = join(root, 'content.json');
+            writeFileSync(inFile, JSON.stringify([{ id: 'd1', body: 'Doc 1' }]));
+
+            const res = await runInvoke({
+                plugin: 'extra-gen',
+                inPath: inFile,
+                outPath: outFile,
+                pluginsPath: [extraRoot],
+            });
+
+            expect(res).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.body).toBe('# Extra gen on 1 docs');
+        });
+    });
+
     it('R2 — fails before entry spawn when input violates kind schema', async () => {
         await withTempDir(async (root) => {
             const pluginDir = pluginDirOf(root, 'generator', 'gen-plugin');
@@ -203,6 +242,56 @@ describe('runInvoke', () => {
                 plugin: 'my-gen',
                 inPath: badJsonPath,
                 outPath: join(root, 'out.json'),
+                pluginsRoot: root,
+            });
+            expect(res).toBe(1);
+        });
+    });
+
+    it('fails when the input file exists but cannot be read (EISDIR)', async () => {
+        await withTempDir(async (root) => {
+            const pluginDir = pluginDirOf(root, 'generator', 'gen-plugin');
+            mkdirSync(pluginDir, { recursive: true });
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'my-gen', kind: 'generator', entry: 'run.ts' }),
+            );
+            writeFileSync(join(pluginDir, 'run.ts'), 'console.log("ok");');
+
+            // A directory passes existsSync but readFileSync throws EISDIR.
+            const res = await runInvoke({
+                plugin: 'my-gen',
+                inPath: root,
+                outPath: join(root, 'out.json'),
+                pluginsRoot: root,
+            });
+            expect(res).toBe(1);
+        });
+    });
+
+    it('fails when the output file exists but cannot be read back (EISDIR)', async () => {
+        await withTempDir(async (root) => {
+            const pluginDir = pluginDirOf(root, 'generator', 'gen-plugin');
+            mkdirSync(pluginDir, { recursive: true });
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'my-gen', kind: 'generator', entry: 'run.ts' }),
+            );
+            // Entry "writes" its output as a directory: existsSync passes but
+            // readFileSync throws when the output contract is validated.
+            const outPath = join(root, 'out-dir');
+            writeFileSync(
+                join(pluginDir, 'run.ts'),
+                `import { mkdirSync } from 'node:fs'; mkdirSync(${JSON.stringify(outPath)}, { recursive: true });`,
+            );
+
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, JSON.stringify([{ id: 'd1', body: 'b' }]));
+
+            const res = await runInvoke({
+                plugin: 'my-gen',
+                inPath: inFile,
+                outPath,
                 pluginsRoot: root,
             });
             expect(res).toBe(1);

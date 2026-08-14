@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.15.0
+version: 1.16.0
 created_at: 2026-05-28
 updated_at: 2026-08-13
 edit_rules: 99 §6.1
@@ -424,8 +424,8 @@ listed in `kk --help`; `kk add` is removed. Status moves from `Accepted (design)
 
 ## ADR-012 — Multi-root plugin discovery; built-ins ship with kk (2026-08-13)
 
-> **Status:** Accepted (design) · **Date:** 2026-08-13 · **Amends:** ADR-006 discovery,
-> ADR-009 clause 3 (scan is per-root; default runtime is a merge). Feature **B7**.
+> **Status:** Accepted · **Date:** 2026-08-13 · **Amends:** ADR-006 discovery,
+> ADR-009 clause 3 (scan is per-root; default runtime is a merge). Feature **B7** (shipped — task 0053).
 
 **Decision.** Product-plugin discovery is a **merged multi-root scan** in `@gobing-ai/kk-core`.
 
@@ -452,7 +452,7 @@ listed in `kk --help`; `kk add` is removed. Status moves from `Accepted (design)
 installed `kk` cannot see packaged built-ins if the default root is CWD `./plugins`.
 
 **Detail:** `docs/design/multi-root-plugin-discovery.md`, `docs/03_ARCHITECTURE.md`
-(accepted design — ADR-012), feature B7.
+(Multi-root discovery), feature B7.
 
 ### Amendment — 2026-08-13 (dynamic extra paths; `~/.kk/plugins` is a default, not a lock)
 
@@ -477,6 +477,15 @@ Operator feedback on B7: a `spur workflow` YAML already injects locations via va
    workflow **kinds** come from YAML `extensions.actions` / `extensions.guards`
    (rule-style; ts-libs C1 + spur-new D4). B7 does not add `kind: kk.publish` to
    Spur builtins and does not load product plugins as workflow extension modules.
+
+### Amendment — 2026-08-13 (shipped; B7)
+
+Feature B7 shipped with task 0053: `discoverAllPlugins` / `resolvePluginRoots` are live in
+`@gobing-ai/kk-core` (origin-stamped `PluginRecord`s, `shadowed` diagnostic, realpath dedupe);
+repeatable `--plugins-path` lands on `kk executor run` / `kk executor fan-out` / `kk plugin
+status`; `KK_PLUGIN_PATH` is honored; `--plugins-root` is the exclusive single-root override and
+combining it with `--plugins-path` exits `2`. The B3 workflow template injects
+`--plugins-path ${vars.plugins_path}`. Status moves from `Accepted (design)` to `Accepted`.
 
 ---
 

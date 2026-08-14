@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { discoverPlugins, getByName, kindContract } from '@gobing-ai/kk-core';
+import { discoverAllPlugins, getByName, kindContract } from '@gobing-ai/kk-core';
 import { logger } from '@gobing-ai/utils';
 
 /** Options for running a plugin invocation. */
@@ -8,7 +8,10 @@ export interface InvokeOptions {
     plugin: string;
     inPath: string;
     outPath: string;
+    /** Exclusive single-root override (`--plugins-root`); disables default roots. */
     pluginsRoot?: string;
+    /** Additive extra roots (`--plugins-path`, repeatable); union with defaults. */
+    pluginsPath?: string[];
 }
 
 /** Options for the sole sanctioned plugin-entry spawn (ADR-006). */
@@ -63,12 +66,14 @@ export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpaw
  * @returns exit code (0 on success, non-zero on error)
  */
 export async function runInvoke(opts: InvokeOptions): Promise<number> {
-    const pluginsRoot = opts.pluginsRoot ?? './plugins';
+    // Exclusive `--plugins-root` and additive `--plugins-path` share one merged
+    // entry point; resolvePluginRoots ignores extraPaths under an exclusive root
+    // (P3-4: a single-plugin-dir root behaves the same on every command).
+    const discovery = discoverAllPlugins({ pluginsRoot: opts.pluginsRoot, extraPaths: opts.pluginsPath });
 
-    const discovery = discoverPlugins(pluginsRoot);
     const record = getByName(discovery, opts.plugin);
     if (!record) {
-        logger.error(`Plugin '${opts.plugin}' not found under ${resolve(pluginsRoot)}`);
+        logger.error(`Plugin '${opts.plugin}' not found in the merged plugin registry`);
         if (discovery.diagnostics.length > 0) {
             for (const diag of discovery.diagnostics) {
                 logger.error(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);

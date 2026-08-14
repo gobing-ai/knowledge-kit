@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.9.0
+version: 2.10.0
 created_at: 2026-07-22
 updated_at: 2026-08-13
 derived_from: [00_ADR, 01_PRD]
@@ -42,7 +42,7 @@ tooling/
 Workspaces reference each other only via `@gobing-ai/*` (`workspace:*`). Per-root registry
 discovery scans kind collections (`plugins/ingestions|generations|publishings/*/plugin.json`,
 ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root merge**
-(ADR-012; accepted design below). Only product-plugin dirs with a `package.json` are
+(ADR-012 — see Multi-root discovery below). Only product-plugin dirs with a `package.json` are
 `@gobing-ai/*` workspaces (`karakeep-local` and `kk` are not).
 
 ## Runtime model
@@ -124,7 +124,8 @@ Siblings of `executor run`, so the single-plugin invoker contract stays intact (
 ```text
 kk executor fan-in  --in <f1> [--in <f2> …] --out <merged.json>
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
-                    --out <result.json> [--retry-from <prior-result.json>] [--plugins-root <dir>]
+                    --out <result.json> [--retry-from <prior-result.json>]
+                    [--plugins-root <dir>] [--plugins-path <dir> …]
 ```
 
 - **Fan-in (N→1):** merge `Doc[]` sets; dedupe on primary `id` (first-seen wins); provenance
@@ -185,7 +186,7 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
    depends on stable target resolution). Across roots, ADR-012 priority (later wins) plus a
    `shadowed` diagnostic replaces silent first-wins.
 
-## Multi-root discovery (accepted design — ADR-012; not yet built)
+## Multi-root discovery (ADR-012)
 
 `discoverPlugins(root)` remains the ADR-009 per-root scanner. Default CLI discovery calls
 `discoverAllPlugins()`:

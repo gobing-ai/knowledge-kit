@@ -22,7 +22,7 @@ name: `knowledge-kit`.
 **The product model.** Product plugins are directories with a `plugin.json` manifest, discovered
 under kind collections (`plugins/ingestions|generations|publishings/<name>/`, ADR-009). Default
 runtime discovery is a multi-root union (package-shipped built-ins + user/project/`KK_PLUGIN_PATH`,
-ADR-012 — accepted design, feature B7). Agent
+ADR-012 — shipped, feature B7). Agent
 skills, slash commands, subagents, hooks, and rules live only in `plugins/kk`. Three kinds:
 
 | Kind | Contract |

@@ -111,6 +111,31 @@ describe('registerExecutorCommand', () => {
         }
     });
 
+    it('R11 — --plugins-root and --plugins-path together are a usage error (exit 2)', async () => {
+        const originalError = logger.error;
+        logger.error = () => {};
+        try {
+            const code = await main([
+                'node',
+                'test',
+                'executor',
+                'run',
+                'any-plugin',
+                '--in',
+                'in.json',
+                '--out',
+                'out.json',
+                '--plugins-root',
+                '/tmp',
+                '--plugins-path',
+                '/tmp',
+            ]);
+            expect(code).toBe(2);
+        } finally {
+            logger.error = originalError;
+        }
+    });
+
     it('main surfaces a failing plugin entry exit code through executor run (R2)', async () => {
         const tmpDir = join(import.meta.dir, 'tmp-cmd-run-entry-exit');
         const pluginDir = join(tmpDir, collectionForKind('publish'), 'failing-entry');

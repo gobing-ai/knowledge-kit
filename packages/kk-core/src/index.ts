@@ -22,12 +22,16 @@ export {
     parsePluginManifest,
 } from './manifest';
 export {
+    type DiscoverAllOptions,
     type DiscoveryDiagnostic,
     type DiscoveryResult,
+    discoverAllPlugins,
     discoverPlugins,
     getByName,
     listByKind,
+    type PluginOrigin,
     type PluginRecord,
+    resolvePluginRoots,
 } from './registry';
 export {
     type Content,

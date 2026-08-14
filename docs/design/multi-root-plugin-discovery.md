@@ -1,12 +1,12 @@
 # Multi-root plugin auto-discovery
 
-Feature **B7** (accepted design — ADR-012, 2026-08-13). Runtime discovery of
+Feature **B7** (shipped — ADR-012, 2026-08-13; task 0053). Runtime discovery of
 package-shipped built-in plugins plus user/project kind-collection plugins.
 
 > Chosen approach: extend `@gobing-ai/kk-core` `discoverPlugins` with root resolution + merge.
 > Rejected: restore spur PluginLoader; register kk kinds as workflow action extensions.
 
-Authority: **ADR-012** (Accepted (design)). Amends ADR-009 clause 3 (per-root layout stays).
+Authority: **ADR-012** (Accepted). Amends ADR-009 clause 3 (per-root layout stays).
 
 ---
 
@@ -184,7 +184,7 @@ New diagnostic code (in addition to B1): `shadowed` — `path` is the losing man
 
 ---
 
-## 5. Surface (lands in `04_DESIGN.md` in the implementing commit — T3)
+## 5. Surface (shipped — landed in `04_DESIGN.md` §1/§3 with task 0053; T3)
 
 - Env: `KK_PLUGIN_PATH` (optional, colon-separated extra paths; additive)
 - CLI: default discovery switches from `discoverPlugins('./plugins')` to `discoverAllPlugins()`

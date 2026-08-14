@@ -1,7 +1,12 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { KK_CAPABILITY_COLLECTION, kindForCollection, PLUGIN_COLLECTION_KINDS, type PluginKind } from './kinds';
 import { PluginManifestSchema } from './manifest';
+
+/** Where a discovered plugin was found (ADR-012 R3). */
+export type PluginOrigin = 'builtin' | 'project' | 'user' | 'path';
 
 /** Discovered plugin record. */
 export interface PluginRecord {
@@ -10,15 +15,35 @@ export interface PluginRecord {
     entry: string;
     dir: string;
     manifestPath: string;
+    origin: PluginOrigin;
     version?: string;
     description?: string;
 }
 
 /** Diagnostic emitted during discovery when a plugin fails checks or clashes. */
 export interface DiscoveryDiagnostic {
-    code: 'malformed' | 'duplicate_name' | 'unreadable' | 'misplaced' | 'kind_mismatch';
+    code: 'malformed' | 'duplicate_name' | 'unreadable' | 'misplaced' | 'kind_mismatch' | 'shadowed';
     path: string;
     reason: string;
+}
+
+/**
+ * Options for {@link discoverAllPlugins} / {@link resolvePluginRoots}. Every
+ * root is injectable so unit tests never touch a real `$HOME` (design §6).
+ */
+export interface DiscoverAllOptions {
+    /** Working directory; the `./plugins` project root resolves against it. */
+    cwd?: string;
+    /** Environment snapshot; `KK_PLUGIN_PATH` (colon-separated) is read from it. */
+    env?: { KK_PLUGIN_PATH?: string };
+    /** Home directory; `~/.kk/plugins` resolves against it. Defaults to `os.homedir()`. */
+    homeDir?: string;
+    /** Package-shipped built-in tree (ADR-012 D2); injectable for tests. */
+    packagePluginsRoot?: string;
+    /** Additive extra roots (`--plugins-path`, repeatable). */
+    extraPaths?: readonly string[];
+    /** Exclusive single-root override (`--plugins-root`); disables the default roots. */
+    pluginsRoot?: string;
 }
 
 /** Output of {@link discoverPlugins}. */
@@ -34,8 +59,12 @@ export interface DiscoveryResult {
  *   scan its immediate children for `plugin.json`.
  * - Otherwise treat it as the `plugins/` root: scan each kind collection, skip `kk`,
  *   and emit `misplaced` for a kk-core `plugin.json` sitting at the top level.
+ *
+ * `origin` stamps every discovered record; the merged registry
+ * ({@link discoverAllPlugins}) passes each root's origin. A bare single-root scan
+ * defaults to `path`.
  */
-export function discoverPlugins(pluginsRoot: string): DiscoveryResult {
+export function discoverPlugins(pluginsRoot: string, origin: PluginOrigin = 'path'): DiscoveryResult {
     const absRoot = resolve(pluginsRoot);
     const plugins: PluginRecord[] = [];
     const diagnostics: DiscoveryDiagnostic[] = [];
@@ -48,7 +77,7 @@ export function discoverPlugins(pluginsRoot: string): DiscoveryResult {
 
     const rootAsCollection = kindForCollection(basename(absRoot));
     if (rootAsCollection) {
-        scanCollection(absRoot, rootAsCollection, plugins, diagnostics, seenNames);
+        scanCollection(absRoot, rootAsCollection, origin, plugins, diagnostics, seenNames);
         return { plugins, diagnostics };
     }
 
@@ -62,7 +91,7 @@ export function discoverPlugins(pluginsRoot: string): DiscoveryResult {
         }
         const expectedKind = kindForCollection(entryName);
         if (expectedKind) {
-            scanCollection(dirPath, expectedKind, plugins, diagnostics, seenNames);
+            scanCollection(dirPath, expectedKind, origin, plugins, diagnostics, seenNames);
             continue;
         }
         const strayManifest = join(dirPath, 'plugin.json');
@@ -80,9 +109,177 @@ export function discoverPlugins(pluginsRoot: string): DiscoveryResult {
     return { plugins, diagnostics };
 }
 
+/**
+ * Resolve the ordered discovery roots (ADR-012 R3), low → high priority — a
+ * later root shadows an earlier `name`:
+ *
+ * 1. package-shipped built-in tree (always, when resolvable)
+ * 2. `~/.kk/plugins` (when present)
+ * 3. CWD `./plugins` (when present and not the built-in tree's realpath)
+ * 4. `KK_PLUGIN_PATH` entries, left → right
+ * 5. `extraPaths` (`--plugins-path`), left → right
+ *
+ * `pluginsRoot` (`--plugins-root`) is an exclusive single-root override: it
+ * disables the default roots entirely (isolation/tests only, ADR-012 R4).
+ */
+export function resolvePluginRoots(opts: DiscoverAllOptions = {}): readonly { origin: PluginOrigin; root: string }[] {
+    if (opts.pluginsRoot !== undefined) {
+        return [{ origin: 'path', root: opts.pluginsRoot }];
+    }
+
+    const roots: { origin: PluginOrigin; root: string }[] = [];
+
+    const builtinRoot = resolveBuiltinRoot(opts.packagePluginsRoot);
+    if (builtinRoot !== undefined) {
+        roots.push({ origin: 'builtin', root: builtinRoot });
+    }
+
+    const userRoot = join(opts.homeDir ?? homedir(), '.kk', 'plugins');
+    if (isDirectory(userRoot)) {
+        roots.push({ origin: 'user', root: userRoot });
+    }
+
+    const projectRoot = join(opts.cwd ?? process.cwd(), 'plugins');
+    if (isDirectory(projectRoot) && !(builtinRoot !== undefined && sameRealpath(projectRoot, builtinRoot))) {
+        roots.push({ origin: 'project', root: projectRoot });
+    }
+
+    const env = opts.env ?? process.env;
+    for (const entry of (env.KK_PLUGIN_PATH ?? '').split(':').filter((e) => e !== '')) {
+        if (isDirectory(entry)) {
+            roots.push({ origin: 'path', root: entry });
+        }
+    }
+    for (const extra of opts.extraPaths ?? []) {
+        if (extra !== '' && isDirectory(extra)) {
+            roots.push({ origin: 'path', root: extra });
+        }
+    }
+
+    return roots;
+}
+
+/**
+ * Discover plugins across the merged multi-root registry (ADR-012).
+ *
+ * Each resolved root is scanned with {@link discoverPlugins}, so ADR-009
+ * per-root layout and diagnostics apply unchanged. Roots that share the same
+ * realpath are scanned once (R9 — no spurious `duplicate_name`/`shadowed`
+ * noise). A same-name plugin on a later/higher-priority root shadows the
+ * earlier one and emits a `shadowed` diagnostic naming both manifests (R5).
+ */
+export function discoverAllPlugins(opts: DiscoverAllOptions = {}): DiscoveryResult {
+    const roots = resolvePluginRoots(opts);
+    const diagnostics: DiscoveryDiagnostic[] = [];
+    const byName = new Map<string, PluginRecord>();
+    const scannedRealpaths = new Set<string>();
+
+    for (const { origin, root } of roots) {
+        let real: string;
+        try {
+            real = realpathSync(root);
+        } catch {
+            continue;
+        }
+        if (scannedRealpaths.has(real)) {
+            continue;
+        }
+        scannedRealpaths.add(real);
+
+        // A path root (`--plugins-path` / `KK_PLUGIN_PATH`) may be a single
+        // plugin directory whose folder itself contains `plugin.json`; its kind
+        // comes from the manifest, with no collection-folder constraint
+        // (ADR-012 R6 amendment). Trees/collections go through the per-root
+        // scanner with ADR-009 layout checks.
+        if (origin === 'path' && existsSync(join(root, 'plugin.json'))) {
+            const records: PluginRecord[] = [];
+            const rootDiagnostics: DiscoveryDiagnostic[] = [];
+            consumeManifest(root, null, origin, records, rootDiagnostics, new Set<string>());
+            diagnostics.push(...rootDiagnostics);
+            for (const record of records) {
+                mergeByName(record, byName, diagnostics);
+            }
+            continue;
+        }
+
+        const scan = discoverPlugins(root, origin);
+        diagnostics.push(...scan.diagnostics);
+        for (const record of scan.plugins) {
+            mergeByName(record, byName, diagnostics);
+        }
+    }
+
+    return { plugins: [...byName.values()], diagnostics };
+}
+
+/** Register a plugin by name; a same-name plugin shadows the earlier one (R5). */
+function mergeByName(
+    record: PluginRecord,
+    byName: Map<string, PluginRecord>,
+    diagnostics: DiscoveryDiagnostic[],
+): void {
+    const existing = byName.get(record.name);
+    if (existing !== undefined) {
+        diagnostics.push({
+            code: 'shadowed',
+            path: existing.manifestPath,
+            reason: `Plugin name "${record.name}" shadowed by ` + `${record.manifestPath} (origin: ${record.origin})`,
+        });
+    }
+    byName.set(record.name, record);
+}
+
+/**
+ * Resolve the package-shipped built-in tree (ADR-012 D2): the `plugins/`
+ * directory next to the running `kk` package. A bundled CLI lives at
+ * `<pkg>/dist/index.js` → `<pkg>/plugins`; monorepo sources resolve up to the
+ * repo-root `plugins/` tree. Found by walking up from the executing module;
+ * injectable via {@link DiscoverAllOptions.packagePluginsRoot} for tests.
+ */
+function resolveBuiltinRoot(injected: string | undefined): string | undefined {
+    if (injected !== undefined) {
+        return injected;
+    }
+    let dir = dirname(fileURLToPath(import.meta.url));
+    for (;;) {
+        const candidate = join(dir, 'plugins');
+        if (isPluginsTree(candidate)) {
+            return candidate;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) {
+            return undefined;
+        }
+        dir = parent;
+    }
+}
+
+/** True when `dir` is a directory containing at least one kind collection (a plugins tree, ADR-009). */
+function isPluginsTree(dir: string): boolean {
+    if (!isDirectory(dir)) {
+        return false;
+    }
+    for (const collection of Object.keys(PLUGIN_COLLECTION_KINDS)) {
+        if (isDirectory(join(dir, collection))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** True when both paths exist and resolve to the same realpath. */
+function sameRealpath(a: string, b: string): boolean {
+    try {
+        return realpathSync(a) === realpathSync(b);
+    } catch {
+        return false;
+    }
+}
+
 function scanCollection(
     collectionDir: string,
     expectedKind: PluginKind,
+    origin: PluginOrigin,
     plugins: PluginRecord[],
     diagnostics: DiscoveryDiagnostic[],
     seenNames: Set<string>,
@@ -98,13 +295,14 @@ function scanCollection(
         if (!isDirectory(dirPath)) {
             continue;
         }
-        consumeManifest(dirPath, expectedKind, plugins, diagnostics, seenNames);
+        consumeManifest(dirPath, expectedKind, origin, plugins, diagnostics, seenNames);
     }
 }
 
 function consumeManifest(
     dirPath: string,
-    expectedKind: PluginKind,
+    expectedKind: PluginKind | null,
+    origin: PluginOrigin,
     plugins: PluginRecord[],
     diagnostics: DiscoveryDiagnostic[],
     seenNames: Set<string>,
@@ -113,8 +311,18 @@ function consumeManifest(
     let content: string;
     try {
         content = readFileSync(manifestPath, 'utf-8');
-    } catch {
-        // Non-plugin directory without plugin.json -> silent skip
+    } catch (err: unknown) {
+        // No manifest -> not a plugin directory; silent skip (ADR-009).
+        // A manifest that exists but cannot be read -> skip-and-report (P3-2):
+        // a vanished plugin must not be indistinguishable from an absent one.
+        if ((err as { code?: string } | null)?.code === 'ENOENT') {
+            return;
+        }
+        diagnostics.push({
+            code: 'unreadable',
+            path: manifestPath,
+            reason: err instanceof Error ? err.message : String(err),
+        });
         return;
     }
 
@@ -142,7 +350,9 @@ function consumeManifest(
     }
 
     const manifest = parsed.data;
-    if (manifest.kind !== expectedKind) {
+    // `expectedKind === null` is the single-plugin-directory case (ADR-012 R6):
+    // the kind comes from the manifest, no collection-folder constraint.
+    if (expectedKind !== null && manifest.kind !== expectedKind) {
         diagnostics.push({
             code: 'kind_mismatch',
             path: manifestPath,
@@ -167,6 +377,7 @@ function consumeManifest(
         entry: manifest.entry,
         dir: dirPath,
         manifestPath,
+        origin,
         version: manifest.version,
         description: manifest.description,
     });
