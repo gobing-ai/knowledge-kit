@@ -1,3 +1,22 @@
+## [0.0.5] - 2026-08-14
+
+### Added
+
+- ship STORM topic-research workflow dry-run (C3) (046fdca)
+- discover plugins across merged multi-root registry (6bbb67b)
+- reshape kk into executor and plugin command nouns (f7a6c92)
+
+### Fixed
+
+- wire executor and plugin nouns and sync A21 docs (e670560)
+
+### Other
+
+- enhance docs/99_PROJECT_CONSTITUTION.md (676e85c)
+- enhance docs/99_PROJECT_CONSTITUTION.md (009686b)
+- plan multi-root plugin auto-discovery (B7, ADR-012) (3690aa3)
+- exclude gitignored plugin staging tree from rules (e37dd4c)
+
 ## [0.0.1] - 2026-08-12
 
 ### Added
