@@ -5,19 +5,19 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Task 0060 (C4) — kk-storm-research skill + generic /kk-workflow command (markdown-only
+ * Task 0060 (C4) — storm-research skill + generic /workflow-run command (markdown-only
  * plugin capability files; no TS unit surface). Encodes the R2 ACs that are static invariants
  * of the delivered command:
  *  - 0056 topicId shell-vs-Node equivalence: the actual topicId shell block embedded in
- *    kk-workflow.md §4 is extracted and executed, and its output must equal a Node reference
+ *    workflow-run.md §4 is extracted and executed, and its output must equal a Node reference
  *    of the frozen 0056 algorithm. A drift in the frozen shell (silent workspace-path change)
  *    fails here, not in a duplicated copy.
  *  - Frozen run procedure: XOR guard, create-on-first-run config heredoc, 0056 three-root copy
  *    rule, and the `spur workflow run --vars` 0059 var set.
  * Functional behavior (actual workflow run) is verified separately via `spur workflow` (verify stage).
  */
-describe('kk-workflow command (0060)', () => {
-    const cmdPath = join(import.meta.dir, '../../../plugins/kk/commands/kk-workflow.md');
+describe('workflow-run command (0060)', () => {
+    const cmdPath = join(import.meta.dir, '../../../plugins/kk/commands/workflow-run.md');
     const cmd = readFileSync(cmdPath, 'utf-8');
 
     // --- 0056 topicId: shell-vs-Node equivalence -------------------------------
@@ -39,7 +39,7 @@ describe('kk-workflow command (0060)', () => {
     // Extract and execute the real topicId shell block from the command markdown.
     function shellTopicId(raw: string): string {
         const block = [...cmd.matchAll(/```bash\n([\s\S]*?)```/g)].find((m) => m[1]?.includes('topic_id='));
-        if (!block) throw new Error('topicId shell block not found in kk-workflow.md');
+        if (!block) throw new Error('topicId shell block not found in workflow-run.md');
         const script = `set -e\nraw="$1"\nworks_dir="$2"\n${block[1]}\nprintf '%s\\n' "$topic_id"`;
         return execFileSync('bash', ['-c', script, '_', raw, '/tmp/kk-works'], {
             encoding: 'utf-8',
@@ -58,7 +58,7 @@ describe('kk-workflow command (0060)', () => {
         '',
     ];
 
-    it('R2 — topicId shell (executed from kk-workflow.md) equals the 0056 Node reference', () => {
+    it('R2 — topicId shell (executed from workflow-run.md) equals the 0056 Node reference', () => {
         for (const raw of topicIdCases) {
             expect(shellTopicId(raw)).toBe(referenceTopicId(raw));
         }
