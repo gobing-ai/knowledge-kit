@@ -1,20 +1,24 @@
 ## 2026-08-07 — task 0037 (feature B7: LLM-as-judge agent skills)
 
 **Decisions**
+
 - ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment. LLM-as-judge is an agent skill + `agent.run`, not a plugin kind. Taxonomy reverts to three kinds. The runtime never gained a fourth, so this is a doc-only correction.
 - `VerdictSchema` referenced in the amendment as a kk-core utility was aspirational and never existed in `packages/kk-core/src/schemas.ts`. The verdict contract lives in the skill's output format (SKILL.md §"Verdict output contract") — consistent with the skill-first model.
 
 **Patterns that worked**
+
 - Fat-skill / thin-wrapper: one `plugins/kk/skills/kk-judge/SKILL.md` owns the evaluation procedure, rubrics, prompt template, and verdict contract; three `plugins/kk/agents/kk-judge-*.md` wrappers fix a rubric and forward. Zero evaluation logic duplicated.
 - Workflow gating via `agent.run` + `shell`/`jq` guard on the verdict file — no engine work, no new plugin kind.
 
 **Gotchas**
+
 - `spur task verdict --from-answer` parser: AC evidence must be `command` type (executable) for behavior-bearing scenarios; `static-ref` yields PARTIAL with "Executable evidence missing" even when the prose is correct. The evidence-rule wants commands that can be run.
 - Pipeline `review`/`verify`/`record` stages shell out to `omp`, which routes to Bedrock; an expired AWS security token (HTTP 403) fails the whole stage. Recovery: complete remaining stages inline as the host session (which is itself omp), re-deriving the verdict via `spur task verdict --from-answer` and running `spur task record`/`update done` directly.
 
 ## 2026-08-12 — task 0042 (feature B6: kk fanin merge command)
 
 **Decisions**
+
 - New command module `apps/cli/src/fanin.ts` as a sibling of `invoke.ts`, registered via Commander in `cli.ts` (ADR-006 boundary). Command modules stay commander-free: `runFanin(argv)` owns the whole CLI contract (flag parsing, exit codes), so it is standalone-testable without the commander layer.
 - Dedupe identity is the Doc `id` (kk-core contract); first-seen occurrence wins, later duplicates contribute only their source to `metadata.sources` (spec §2.1/§2.2). Rejected last-wins: first-wins preserves the earliest source's content and matches the spec's identity rule.
 - Provenance entries are `{ file, sourceUri? }` objects, appended in `--in` flag order; documents keep first-appearance order (§2.3). Pure function `mergeDocLists(inputs, sources)` keeps merge/dedupe logic separate from CLI I/O so tests drive it directly.
@@ -22,18 +26,21 @@
 - Deferred (documented, not silent): spec §1.2's `--dedupe id|uri|none` secondary-rule flag — id dedupe (default) is the only requirement; add the flag if a uri-dedupe consumer appears. Review classified this CHANGED vs the spec's CLI surface but PASS-acceptable because the task's `### Design` never committed to the flag and the Solution note asserts goal-equivalent intent.
 
 **Patterns that worked**
+
 - Pure function + `runXxx(argv): Promise<number>` handler + commander registration, with the commander action re-serializing parsed options back into an argv slice so `runFanin` re-parses. Slightly redundant (P4 review finding — `invoke` hands an options object instead), but keeps the handler commander-free and gives it its own exit-code contract.
 - Repeatable flags need a collector function: commander is last-wins on repeated options by default — `.option('--in <path>', ..., collectIn, [])` with a push-accumulator is required.
 - Non-zero propagation: the commander action calls `process.exit(code)` when `runFanin` returns non-zero so the binary fails loud; `runFanin` alone only returns a code.
 - Tests layered three deep: unit tests on `mergeDocLists` (14 tests covering dedupe, provenance order, deterministic ordering, within-file dup, empty inputs, no-mutation invariant, sourceUri carryover), `runFanin` CLI-path tests, and an end-to-end test through commander in `cli.test.ts`.
 
 **Gotchas**
+
 - `parseArgs` consumes any token after `--in` as the path value, so a value beginning with `-` (e.g. `--in --out x.json`) is swallowed as a file path and surfaces as a file error (exit 1) rather than a usage error (exit 2). Pathological input; fails loud either way — accepted.
 - kk-core schemas are reused read-only; validation at the CLI boundary means schema changes surface as file errors naming the file, which keeps error messages actionable.
 
 ## 2026-08-12 — task 0043 (feature B6: kk fanout dispatch with retry-from)
 
 **Decisions**
+
 - New `apps/cli/src/fanout.ts` registered as `kk fanout` (ADR-006 sibling). Sequential per-target dispatch — engine-level parallelism explicitly rejected (ADR-007 R4, feature scope). Rejected retry-all-on-failure: spec §5 retries only prior failures.
 - Kept `--retry-from` in the same CLI file instead of a separate task: it is a flag-level feature with the same review gate; a child rubric would have scored ~4 (below the 5 decompose threshold). Rejected split recorded in the task file.
 - DI for transport: `runFanout(argv, deps?)` with `deps.dispatch` lets tests inject fake transports — 21 tests exercise failures, retry, and narrowing without any real publisher. Default dispatch runs each target's publish-plugin entry with the same `--in`/`--out` contract as `kk invoke`.
@@ -41,6 +48,7 @@
 - Retry semantics (§5.1): prior published/skipped targets are carried as `status: "skipped"` with their prior `url`/`id` preserved; only prior failures (or still-unpublished `--target` names) are re-dispatched; a fresh aggregate is written. `selectRetryTargets(prior)` is a pure function returning exactly the prior failed targets — retry set is always a subset of prior failures.
 
 **Errors hit and resolved**
+
 - P3: `kk fanout` initially exposed no `--plugins-root` option while every sibling plugin-aware command (`invoke`, `plugins list`, `plugins doctor`) has one; the runner hardcoded `./plugins` relative to CWD and the test-only `deps.pluginsRoot` couldn't be set from the CLI (verified: `--plugins-root` → commander "unknown option", exit 1). Resolved by adding the option and threading it into `runFanout`.
 - P3: output write failure returned exit 1, conflating a target-failure signal with an output I/O error under spec §4; `spur workflow` reads exit 1 as "some targets failed" when nothing was published and no result was written. The spec's exit-2 (CLI/Input Error) bucket fits a bad `--out` path better — align or extend the exit-code contract.
 - P4: temp-file leak — when a plugin writes its result file then exits non-zero, `pluginDispatch` throws before the `rmSync(outTmp)` finally runs (verified empirically: two `kk-fanout-*` files left in the OS tmpdir). Fix: wrap spawn+parse in one try/finally.
@@ -50,12 +58,14 @@
 - P4 (architecture, C1 weak locality): plugin-entry execution (resolve entry → spawn with `--in`/`--out` → parse `ResultSchema`) is duplicated between `invoke.ts` and `fanout`'s default dispatch — extract a shared `runPluginEntry` helper used by both if a third consumer appears.
 
 **Patterns that worked**
+
 - Transport injection (fake publish plugins) as the test seam: tests cover success, non-zero exit, and wrong-kind rejection through the real plugin-entry spawn path — the risky spawn/parse code is exercised end-to-end without network side effects.
 - Skipped-carry retry semantics: published targets stay published in the new aggregate (with url/id), only failures re-dispatch — mirrors real publish idempotency expectations and makes `--retry-from` safe to run repeatedly.
 - Same `--in`/`--out` plugin-entry contract as `kk invoke` reused for default dispatch — one convention across sibling commands, even though the execution code itself is duplicated (see P4 above).
 - Review verification discipline: each review finding was empirically verified (`--plugins-root` unknown-option reproduction, tmpdir leak count) rather than asserted; final gate ran `bun test tests/fanout.test.ts tests/cli.test.ts` → 40 pass, `bun run typecheck` clean, plus CLI smoke with fake plugins (all-success exit 0, partial exit 1, retry-from re-dispatches only failures, exit reflects the new aggregate).
 
 **Gotchas**
+
 - Batch verification summary: `bun test` 59 pass / 0 fail (21 new fanout tests; fanout.ts 91.6% lines / 95% funcs coverage). Pipeline verify is verdict-based and does not measure code coverage — coverage numbers come from the test run, not the verify stage.
 - Both B6 commands share the same handoff pattern (commander action rebuilds argv slice for the `runXxx` handler) — consistent within the batch, but a deliberate divergence from `invoke`'s options-object handoff; review flagged aligning if a third utility subcommand appears.
 - Spec-referencing comments (`spec §2.1` etc.) in code made the review traceability pass quick and kept implementation vs spec drift explicit — used consistently in both modules.
@@ -63,11 +73,13 @@
 ## 2026-08-12 — task 0044 (feature E4: harvest Zenn publish channel, `plugins/zenn-pub`)
 
 **Decisions**
+
 - Harvest strategy: absorb the wt-publish-to-zenn skill flow as a kk PublishPlugin mirroring `plugins/surfdash-pub` (E3) — publish-kind manifest, `--in`/`--out` invocation, `ContentSchema` → `ResultSchema`, fail-loud exit semantics per publish-plugin spec §2.5. Rejected wrap-in-place (a skill can't be discovered by `kk plugins`/composed by `kk fanout`) and browser/Playwright transport (audited Zenn CLI/GitHub path is the low-risk FileCli route).
 - E2 invariants honored: no new transport kind, core schema, CLI command, or shared mapper; Zenn-specific mapping stays inside the plugin. Secrets env-only (`ZENN_REPO`, inherited git credentials) — never in `plugin.json` or Result metadata (spec §2.4).
 - Deliberate deviation from E3: validation failure writes an error Result to `--out` (spec §2.5 literal) where Surfdash throws without writing. Result shape and fail-loud exit semantics unchanged.
 
 **Errors hit and resolved**
+
 - `Bun.spawn` must pass `env: process.env` explicitly — env overrides (e.g. PATH-injected mock bins) silently don't apply otherwise. Root cause found while testing.
 - Review P2 (major, PARTIAL verdict): `resolveArticleFields` ran twice per publish — once directly, once inside `mapContentToZennMarkdown`. With a short title and no `metadata.slug`, `generateZennSlug` re-rolls `Date.now()` per call; straddling a millisecond boundary makes `new:article --slug slugA` and `writeFile slugB` diverge, and `git add .` commits both — a stray Zenn template article ships while Result url/id track slugB. Fix: resolve fields once in `publish` and render from the resolved values. Tests missed it because the mocked-CLI title was 24 chars (no timestamp suffix) — fixtures with deterministic slugs can't catch nondeterminism.
 - Review P3: `git add .` stages the entire Zenn repo, sweeping unrelated working-tree changes into the publish commit; the wt skill's own reference uses scoped `git add articles/<slug>.md`. Also propagates the P2 stray file.
@@ -75,12 +87,14 @@
 - Review P4: lazy `require('@gobing-ai/publish-harness')` is a CJS-ism in an ESM package; static top-level import is cleaner.
 
 **Patterns that worked**
+
 - Offline harness: `FakeFileCliTransport` (via `KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake'`, same switch as E3) + a spy transport + mocked npx/git bins injected on PATH. All child-process paths tested with zero external effects; no network in the suite.
 - Result contract identical to E3: `{ok, target: 'zenn', url: https://zenn.dev/articles/<slug>, id: slug, message}`; every path goes through `ResultSchema.parse` and test outputs are re-validated with `ResultSchema.parse`.
 - Fail-loud probe: `env -u ZENN_REPO bun plugins/zenn-pub/src/index.ts --in … --out …` → exit 1, `ok:false` error Result written to `--out`, diagnostic on stderr — a real probe of the §2.5 contract, not just unit tests.
 - `generateZennSlug` audited from the wt skill: lowercase `[a-z0-9-_]`, min 12 chars (timestamp base36 suffix), max 100.
 
 **Gotchas**
+
 - Verify pipeline verdicts don't measure code coverage — coverage numbers come from the test run (`bun test --coverage`), not the verify stage.
 - Deterministic-only fixtures hide nondeterministic logic (see P2): when a function uses time as entropy, tests need a fixed-slug or fixed-clock path to pin it.
 - Deliberate-deviation notes belong in the task file (E3-throws vs §2.5-writes) or reviewers flag it as drift on the next task.
@@ -88,11 +102,13 @@
 ## 2026-08-12 — task 0045 (feature E4: harvest Qiita publish channel, `plugins/qiita-pub`)
 
 **Decisions**
+
 - Qiita harvested as `QiitaApiTransport`: Bun native `fetch` POST to `https://qiita.com/api/v2/items` with `Authorization: Bearer <token>`, token read env-only (`QIITA_TOKEN`). Transport `kind` stays `'file-cli'` — E2 (task 0002 audit) already classifies the Qiita token API under File/CLI; no `PublishTransport` contract change. No HTTP-client dependency added.
 - `renderQiitaMarkdown` split from the mapper so `publish` resolves fields once and the rendered article agrees with the API payload. `private` defaults `false`, honors `metadata.private`, and falls back to `!metadata.published` so the shared E2 `published` flag composes across channels (E3/E4 convention).
 - R6 fan-out proof lands as a test-only addition to `apps/cli/tests/fanout.test.ts` — production fan-out code (`apps/cli/src/fanout.ts`) untouched. Also shipped a small `packages/kk-core/src/registry.ts` `.sort()` change for readdir determinism (duplicate-name first-wins, stable list order across filesystems).
 
 **Errors hit and resolved**
+
 - Review P3: `slugify` uses `\w` without the `u` flag (ASCII-only) — a non-ASCII tag (e.g. Japanese, plausible for Qiita) or punctuation-only tag collapses to an empty slug → `tags: [{name: ""}]` → HTTP 400 with an opaque diagnostic. Consider collapsing empty slugs into a clear mapping-time validation error.
 - Review P3: `mapContentToQiitaMarkdown` is exported and tested but orphaned — the transport sends `payload.content.body` + resolved fields straight to the API (frontmatter embedded in the API body would render literally). Correct behavior, but unlike E3/E4 transports it doesn't consume its mapper's output; document it as the Qiita-CLI-facing surface or drop the "rendered article and API payload agree" rationale.
 - Review P4: duplicate tags after slugification (e.g. `['Web Dev','web-dev']` → two `web-dev`) → API 400, no dedupe — resolved in `resolveQiitaFields` (dedupe + empty-slug validation error).
@@ -101,12 +117,14 @@
 - Review P4: `response.text()` reads the error body unbounded into the error Result; capped at 1000 chars in the non-2xx diagnostic.
 
 **Patterns that worked**
+
 - Mocked `fetch` + `FakeFileCliTransport` + spy transport: success asserts request shape (Bearer header, payload, tag dedupe), HTTP 403 rejection, network rejection, missing-token (no fetch), unmappable tag → error Result without fetch — full failure surface offline.
 - R6 pair-composition proof: `runFanout` test dispatches one Content to `--target zenn-pub --target qiita-pub` through the real plugin entries (`spawnPluginEntry`) with `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`; asserts exit 0, `targets == ['zenn-pub','qiita-pub']`, each `status:'published'`, `summary {total:2, succeeded:2}`. Isolated re-run via `-t "R6"` pins the proof independent of the rest of the suite.
 - Tag handling: slugified form is always Qiita-API-acceptable (alphanumeric/hyphen/underscore only); dedupe happens in field resolution, not at render time.
 - Unreachable-code honesty: `import.meta.main` bootstrap guard is the sole uncovered function (unreachable under module import) — coverage target still met; noted rather than contorted around.
 
 **Gotchas**
+
 - Error-body capping matters in API transports: unbounded `response.text()` in error Results is a diagnosability/time bomb; cap it in the Result path.
 - A mapper can be contract-complete (R1: renders markdown with frontmatter) yet orphaned at runtime when the API takes structured payloads — keep the runtime path's consumption and the R1 surface's purpose explicit or reviewers will flag the mismatch.
 - Fan-out tests against real plugin entries need the fake-transport env var threaded through the spawn — the `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` switch is now the cross-plugin offline convention (E3/E4/E5).
@@ -114,6 +132,7 @@
 ## 2026-08-12 — cross-task (E4 wave: 0044 + 0045)
 
 **Conventions discovered**
+
 - Publish plugin skeleton, now ×3: `plugin.json` (`name: <target>-pub`, `kind: publish`, `entry: ./src/index.ts`), `package.json` with only `@gobing-ai/kk-core` + `@gobing-ai/publish-harness` + `@gobing-ai/utils` (`workspace:*`), `tsconfig.json` extends `tooling/typescript/base.json`. Wiring deps via `bun install` bumps the workspace count (23 → 24).
 - `getPublishTransport` default vs `FakeFileCliTransport` under `KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake'` — the standard offline test seam.
 - Result contract: `{ok, target, url, id, message}` / `{ok:false, target, error}`; every path `ResultSchema.parse`-validated; tests re-validate outputs.
@@ -121,16 +140,19 @@
 - Mock child-process bins via PATH injection for FileCli transports; mock global `fetch` for API transports. Both keep every test offline.
 
 **Patterns that worked**
+
 - Audit-first harvest: read the wt skill's scripts (slug generation, API URL/payload builders, github-integration reference) and port decisions into the task's Design section before scaffolding — every ported line traces to an audited source.
 - Error Results written to `--out` before throwing (spec §2.5 literal) — fanout reads the aggregate result file even on failure.
 
 **Gotchas**
+
 - Architecture debt is now real, not hypothetical: `slugify` is verbatim ×3 and the IO/CLI skeleton (`processPublishIO`/`writePublishResult`/`main`/`getPublishTransport`, ~90 lines) is near-verbatim ×3. Both were deferred by E2's per-task "no shared mapper" invariant; the top deepening candidates are extracting `slugify` to `@gobing-ai/kk-core` and a `createPublishPlugin({targetName, makeTransport, mapContent})` factory in publish-harness — trigger when the next channel lands.
 - `kind: 'file-cli'` on a network token transport is semantically loose but explicitly classified by E2 — informational, don't "fix" it without an ADR.
 - Env-dependent paths (real `npx zenn` + `git push`; real `POST /api/v2/items`) are deferred by design; success and every failure path are covered by mocks/fakes, and the deferred gap is stated in the task file rather than silently skipped.
+
 ## 2026-08-12 knowledge-kit (D4 STORM generator batch: 0046, 0047)
 
-- **Verdict AC rows must carry exact feature scenario titles.** The L4 scenario-verified check matches verdict-artifact `acceptanceCriteria` row ids against feature scenario titles via `normalizeTitle` (strips `Scenario: ` with colon and `R<N>` prefixes) or the `AC-N` alias. Verify subagents authored rows as `Scenario R1 — <shortened title>` (no colon, dropped words) → every D4 scenario stayed `L4.scenario-unverified` and the feature `verifying → done` gate blocked even with PASS verdicts. Fix: regenerate the answer files with `Scenario: R<N> — <exact feature title>` rows and re-run `spur task verdict --from-answer`.
+- **Verdict AC rows must carry exact feature scenario titles.** The L4 scenario-verified check matches verdict-artifact `acceptanceCriteria` row ids against feature scenario titles via `normalizeTitle` (strips `Scenario:` with colon and `R<N>` prefixes) or the `AC-N` alias. Verify subagents authored rows as `Scenario R1 — <shortened title>` (no colon, dropped words) → every D4 scenario stayed `L4.scenario-unverified` and the feature `verifying → done` gate blocked even with PASS verdicts. Fix: regenerate the answer files with `Scenario: R<N> — <exact feature title>` rows and re-run `spur task verdict --from-answer`.
 - **Real-runner tests can litter stray `.spur/` DBs.** A test that actually invokes `spur agent run` with cwd inside a workspace dir creates `plugins/<pkg>/.spur/` (spur.db, logs, token ledger) — untracked 2MB junk that pollutes `git status`. Run spur-invoking tests with cwd pinned to the repo root (or mock the binary), and remove the generated dir after.
 - **/sp:dev-unit pre-transitioned the task to `testing`.** The task-pipeline's record step owns `wip → testing`; the test-stage subagent moved the task early via `spur task update <wbs> testing`. Harmless (the later `--transition testing` is a no-op) but a deviation — the unit stage should leave status transitions to record.
 - **Inline batch driver worked cleanly**: run-link provenance (`spur task run-link --source inline-full`), per-stage native-subagent dispatch with filesystem validation, and the `record → done` guard all held. Review caught a real P1 (envelope not unwrapped) that unit tests missed — the review→verify→fix loop paid for itself.
@@ -138,23 +160,27 @@
 ## 2026-08-12 — task 0048 (feature F2: harvest WT topic core as kk-topic fat skill)
 
 **Decisions**
+
 - One fat `plugins/kk/skills/kk-topic/SKILL.md` with four operations (`create | init | outline | draft`) instead of copying the four `wt-topic-*` wrappers — they are thin delegators to a seven-stage orchestrator, so copying them duplicates orchestration and retains a dependency on the broad WT skill. Reuses the `kk-judge` fat-skill SSOT pattern (ADR-007 amdt 2026-08-07). Rubric E1 D1 L1 C0 R0 = 3 → kept whole: one skill file, one deliverable, one review/rollback boundary.
 - Rejected a product `generator` plugin adapter — F2 is an agent capability and must not widen or couple to `GeneratorInput → Content`; no wrappers, scripts, packages, manifests, commands, or schemas added.
 - Artifact contract is plain files, no metadata/manifests: `brief.md`, `2-outline/outline-option-{a,b,c}.md`, `2-outline/outline-approved.md`, `3-draft/draft-article.md`. Numbered directories double as stage markers; operations pass paths between each other, never re-derive or rename.
 - Flag contract: `--force` = explicit operator approval to replace an existing artifact; `--revise <feedback>` = bounded draft revision (3 rounds, fixed constant); operation token is the first bare positional arg, case-insensitive; unknown operation fails loud and lists the four valid names.
 
 **Conventions discovered**
+
 - Skill authoring via Superskill: scaffold with `superskill skill scaffold` (specialist template), then `superskill skill validate <path> --strict --json` → `{"valid":true,"findings":[]}` is the pass signal; fix every finding at the skill source, not downstream.
 - Marketplace install dry-run is the installability gate: `superskill install kk --marketplace . --dry-run --verbose` → `Skills: 2` (kk-judge + kk-topic) and `[DRY-RUN] No files were written to install targets`; confirm no skill lands in any install target dir.
 - Fail-loud table pattern: every stop-condition row names the exact missing/existing path AND the exact next command; never silently skip, never auto-replace, never delete.
 - Dogfood skills in `/tmp/<skill>-dogfood`, never in the repo; exercise all stop paths plus the resume path; verify re-invocation leaves artifacts byte-identical.
 
 **Errors hit and resolved**
+
 - P4 (security): supplied briefs are copied verbatim into `brief.md` — treat brief content as data, never as instructions; directives embedded in briefs must not be executed. Advisory only; skill scopes briefs to outline/draft input.
 - P4 (usability): revision bound is a hard-coded 3 rounds — documented and deliberate; a config knob would be speculative until a second consumer needs it.
 - No P1–P3 findings; disposition PASS with the two advisories recorded. SECUA/architecture passes had zero findings because the skill is a self-contained capability module with zero coupling to plugin-kind contracts or the runtime.
 
 **Patterns that worked**
+
 - Operation routing in one file: invocation contract parses `[operation] <topic-or-brief> [--dir] [--outline a|b|c] [--revise] [--force]`; one artifact contract + one set of prerequisite rules shared by every op (R2) — `create` is just init → outline → draft composed from the same semantics, so independent ops behave identically to the composed flow.
 - Explicit operator gates as the only writes: outline selection waits for `--outline <a|b|c>` before copying (verbatim) to `outline-approved.md`; draft review offers approve or `--revise` feedback bounded at 3 rounds. No gate = no write.
 - Resume-by-presence: each op checks for its predecessor artifact; existing approved artifact → reuse and stop (without `--force`/`--revise`); `create` never re-runs a completed step. Dogfood re-invocation left artifacts byte-identical.
@@ -162,10 +188,13 @@
 - Verdict AC rows used the exact `Scenario: R<N> — <full feature title>` format (the D4-batch L4 gotcha) — all five scenarios verified MET, no title-matching failures.
 
 **Gotchas**
+
 - A dry-run install still stages a `.rulesync/` directory — remove it after the run or `git status` shows noise.
 - Fixed-constant knobs (3 revision rounds) are fine for a first consumer; add a config knob only when a second consumer appears.
 - Skill-internal prompt-injection surface is real: any verbatim-copied input (briefs) is a data/instruction boundary — state it in the skill invariants.
+
 ## 2026-08-12 — A2 batch (0049, 0050, 0051)
+
 - Commander 15 changed bare-invocation semantics: a program with subcommands and no action handler routes missing-subcommand to `help({error:true})` → exit 1; a root `.action()` disables the implicit `help [command]` command. Fix: keep createProgram action-free, handle empty argv in main() with `program.help()`, and call `.addHelpCommand()` explicitly only if a root action is ever needed.
 - Subcommands copy `_exitCallback`/`_outputConfiguration` at creation time. `exitOverride()`/`configureOutput()` called after subcommand creation do NOT reach them — `kk help <cmd>` silently called `process.exit`. Re-inherit via `cmd.copyInheritedSettings(program)` after configuring, recursing into nested groups (`plugins list`).
 - `process.exit` in test mocks (`process.exit = fn`) is brittle with Commander 15 exitOverride; prefer `main()` returning exit codes over mocked process.exit.
@@ -177,23 +206,27 @@
 ## 2026-08-13 — task 0052 (feature A21: reshape kk into two-layer executor and plugin nouns)
 
 **Decisions**
+
 - Two Commander groups as the only first-layer nouns — `registerExecutorCommand` (`commands/executor.ts`) and `registerPluginCommand` (`commands/plugin.ts`), one file per noun per ADR-010. Actions call the existing engines (`runInvoke` / `runFanin` / `runFanout` / `discoverPlugins`) and throw `CommanderError` — signatures unchanged, zero second implementations. Hyphenated verbs are canonical (`fan-in`, `fan-out`) with camelCase aliases; `add` deleted outright.
 - Hidden aliases are `hidden: true` commands (or hidden delegation commands) calling the same action functions — no dual JSON shapes behind `list`/`doctor`, no visible aliases warning on stdout (would pollute `--json`). Approved one-release aliases, not a hard cut.
 - `plugin status --json` is one unified contract `{ healthy, plugins, diagnostics }`: `missing_entry` attaches to the owning plugin's `diagnostics` and counts toward its `healthy:false`; tree-level codes (`misplaced`, `kind_mismatch`, `malformed`, `duplicate_name`) stay in top-level `diagnostics` and are never dropped just because they lack a `PluginRecord`. Exit 0 healthy / 1 any diagnostic.
 - ADR-first: ADR-011 (nouns) plus ADR-006/ADR-010 amendments landed during planning, so R8 is doc-only and verified present rather than authored mid-commit.
 
 **Errors hit and resolved**
+
 - P2 (PARTIAL verdict, disposition needs-fix): Commander 15 renders group `.alias()` in help — the `plugin` group's `plugins` alias showed up as `plugin|plugins` in `kk --help`, violating the R1/R6 "not visible" sub-condition and contradicting the docs' "hidden aliases not listed" claim. Only `hidden: true` commands are omitted. Test blind spot: the help assertion matched `commandEntry = /^\s+(add|invoke|fanin|fanout|…/` but not the group alias. Resolved by replacing the group alias with a hidden top-level `plugins` delegation command carrying hidden `status`/`list`/`doctor` subcommands; the exact-list assertion `['executor','help','plugin']` now fails against the old defect.
 - P4: `plugin status --kind <k> --json` filters `plugins[]` but reports `healthy`/`diagnostics` over the unfiltered tree — `healthy:false` can name plugins absent from `plugins[]`. Matches R5's "exit 1 when any diagnostic exists" wording; documented tree-wide health semantics in `docs/04_DESIGN.md` §1 rather than changing the contract.
 - P4: flag declarations duplicated per verb between the executor group and hidden top-level aliases (~30 lines); and `runFaninAction`/`runFanoutAction` re-serialize commander options into an argv slice the engines re-parse (round-trip). Both pre-existing or invariant-preserving — recorded as advisory follow-ups (shared registration builder, typed options entry points), not changed.
 
 **Patterns that worked**
+
 - Thin registration modules: group + subcommand + hidden aliases all forward to the same action functions; no `process.exit` in command modules — sole exit seam is `index.ts`, `main()` maps `CommanderError` codes. `createProgram()` stays a side-effect-free factory.
 - Design invariants written into the task and verified mechanically: `git diff HEAD -- apps/cli/src/{invoke,fanin,fanout}.ts` empty proves engines untouched; tree diagnostics verified with a `misplaced` fixture.
 - Test suites drive `main()` end-to-end over tmp fixture plugin roots — registration, help names, engine exit codes (failing plugin entry's exit 3 surfaces), hidden-alias routing, and the unified JSON all exercised through the real binary path. Engine unit tests kept unchanged; only command-module tests rewritten.
 - Review verification discipline paid off: the reviewer ran `kk --help` and caught the group-alias visibility the test suite missed; every finding (probe `kk not-a-noun` exit 1 names itself, `kk plugin status --kind bogus` exit 1, broken-root JSON placement) was verified by fresh run before being recorded. 5/5 chosen-approach claims DONE with one CHANGED nuance, stated explicitly.
 
 **Gotchas**
+
 - Commander 15 does NOT hide group `.alias()` from help — only `hidden: true` commands are omitted. Never assume `.alias()` is invisible; assert the exact visible command list (`['executor','help','plugin']`), which also catches regressions the regex-based check misses.
 - `missing_entry` is per-plugin data (attaches to the owning record, counts toward its health), while discovery codes without a record are tree-level — the split is a contract, not an implementation detail; fixtures must cover both placements.
 - Pipeline verify is verdict-based and does not measure code coverage (N/A for this task); manual CLI probes of exit codes and help output are the evidence that matters alongside the suite.
@@ -202,6 +235,7 @@
 ## 2026-08-13 — task 0053 (feature B7: discover built-in and user plugins via a merged registry, ADR-012)
 
 **Decisions**
+
 - Merged multi-root discovery in `@gobing-ai/kk-core`: `discoverAllPlugins` + `resolvePluginRoots` (ADR-012), while `discoverPlugins` stays the per-root scanner with a new `origin` param defaulting to `'path'`. Root priority low → high: package-shipped builtin tree → `~/.kk/plugins` (user) → CWD `./plugins` (project, realpath-deduped against builtin) → `KK_PLUGIN_PATH` entries (path) → repeatable `--plugins-path` (path). A later/higher root shadows an earlier same-name plugin.
 - `--plugins-root` remains the exclusive single-root override (isolation/tests, ADR-012 R4); `--plugins-path` is additive and repeatable. Combining them is a usage error → exit 2, enforced in every command module (ADR-012 R6). The merge function itself silently ignores `extraPaths` under an exclusive root (`resolvePluginRoots` returns early) — CLI enforcement is the only user-facing guard, so it must live in each command, not once in the shared resolver.
 - New `shadowed` diagnostic code joins the tree-level set (`misplaced`, `kind_mismatch`, `malformed`, `duplicate_name`, `unreadable`). Losing manifest path is the diagnostic `path`; the winning manifest + origin is named in `reason`.
@@ -211,6 +245,7 @@
 - ADR-first: ADR-012 accepted + two amendments (dynamic extra paths, shipped status) recorded during the task; status moved `Accepted (design)` → `Accepted` in the same commit.
 
 **Conventions discovered**
+
 - Every discovery root is injectable (`DiscoverAllOptions`: `cwd`, `env`, `homeDir`, `packagePluginsRoot`, `extraPaths`, `pluginsRoot`) so unit tests never touch a real `$HOME` or CWD. All tests pass explicit roots; the D2 test omits `packagePluginsRoot` to exercise the real walk-up against the repo-root `plugins/` tree (asserts 5 plugins, all origin builtin, no `plugins/kk`).
 - One discovery per run: `runFanout` hoists a single `discoverAllPlugins` and passes `DiscoveryResult` down to `validateTargets` + `pluginDispatch` — the 0043 P4 N+1 discovery finding resolved here, not just patched per command.
 - All plugin-aware commands (invoke, fanout, plugin status) route through the merged entry point so a single-plugin-dir root behaves identically on every command — the P3-4 carryover from 0043's review (missing `--plugins-root` + per-target discovery) closed.
@@ -219,12 +254,14 @@
 - Spec-referencing comments (`ADR-012 R3/R4/R6`, `D2`) in code kept the review traceability pass quick and made implementation-vs-design drift explicit.
 
 **Errors hit and resolved**
+
 - Realpath collision (R9): a CWD `plugins/` tree that is the same realpath as the builtin tree (symlink) double-scanned and would emit spurious `duplicate_name`/`shadowed` noise. Fixed with `sameRealpath` + `scannedRealpaths` set; the symlinked project tree is scanned once and keeps `origin: builtin`.
 - Single-plugin-dir unreadable manifest: `plugin.json` exists (classification fires) but cannot be read — must surface an `unreadable` diagnostic, not vanish silently. Pinned with a `plugin.json`-as-directory fixture (EISDIR), mirroring the new invoke tests where an input/output path passes `existsSync` but throws `EISDIR` on `readFileSync` → exit 1.
 - Missing/broken `--plugins-path` values: empty value, repeated flag, and missing-argument parse paths each got an explicit error and exit-2 test (`--plugins-root requires a directory path`, `may be specified only once`, `--plugins-path requires a directory path`) — the argv parser is exhaustively probed, not just the happy path.
 - N+1 discovery and per-command root semantics drift (0043 P3/P4): both fixed by the single hoisted merged discovery, eliminating the divergence where fanout's hardcoded `./plugins` default and invoke's root semantics disagreed.
 
 **Patterns that worked**
+
 - Injected-roots fixture pattern: `writePlugin(root, kind, name)` helper + every test passing `{ packagePluginsRoot, homeDir, cwd, env }` — deterministic, no real home, no real CWD; priority-order assertion `['builtin','user','project','path','path']` pins both root order AND origin stamping in one test.
 - Requirement-prefixed test names (`R1 — …`, `R5 — …`) tied each test to an AC row, making the verdict-artifact evidence column mechanical (`registry.test.ts:210` style line anchors verified by the reviewer).
 - Symlink fixture for R9 (`symlinkSync(builtin, cwd/plugins, 'dir')`) — the realpath edge pinned mechanically instead of hand-waved.
@@ -232,15 +269,18 @@
 - The merged entry point as the single choke point: `discoverAllPlugins` is the only discovery call in invoke/fanout/plugin status, so R4 (exclusive), R10 (single-dir union), and R11 (flag conflict) behaviors are consistent across all three commands by construction.
 
 **Gotchas**
+
 - `KK_PLUGIN_PATH` splits on `:` and silently skips entries that aren't directories (`isDirectory` check) — a typo'd path yields no diagnostic. Same for non-existent `--plugins-path` dirs.
 - Shadowed diagnostic path is the **losing** manifest, not the winner — tests must assert `shadow.path === builtin manifest` and read the winner from `reason`.
 - Project origin is invisible when the CWD tree collides with builtin (R9) — a test asserting all four origins must use a cwd whose `plugins/` is a distinct tree.
 - `resolveBuiltinRoot` walk-up is path-sensitive: tests running from a package dir vs repo root can resolve different builtin trees — always inject `packagePluginsRoot` except in the D2 test that deliberately exercises the walk.
 - Verify pipeline remains verdict-based and does not measure code coverage (N/A here); the 84-test targeted run (registry 32 new + invoke + plugin + fanout) at 0 fail is the evidence, alongside exit-code CLI probes.
 - Pipeline verdict PASS with only P4 findings; uncommitted in the working tree (23 files, +1110/−100) at task close — commit still pending.
+
 ## 2026-08-14 — tasks 0054 + 0055 (feature C3: STORM topic-research workflow)
 
 **Decisions**
+
 - 0054 is a research-artifact ticket (wayfinder:research): the deliverable is a cited contract, not code. Solution holds 8 labeled blocks — `--in` JSON schema, env/auth, call sequence, Doc mapping, fail-loud table, C1 tension note, dated citations, handoff to 0055 — so `plugins/ingestions/web-search` can be scaffolded without an operator round-trip. wayfinder one-ticket rule: no implement tickets graduated from the research session.
 - Ingest contract locked to one HTTP call: `POST https://api.firecrawl.dev/v2/search` with `query` = topic (verbatim, no v1 query expansion), `limit` = maxResults, `scrapeOptions.formats: ["markdown"]` — two-step search-then-scrape rejected because no blocker exists (markdown returns per result in one response, fetched 2026-08-14).
 - Doc mapping: `id` = `sha256(url).hex.slice(0,16)` (same id-stability idea as karakeep-local's path hash, applied to resource URI), `body` = scraped markdown (required), `title`/`sourceUri` SHOULD (D4 `assertKnownEvidence` citation gate needs `id`, and `storm.ts:326` maps `sourceUri`/`title` onto `Content.references`), `mediaType: text/markdown`, `metadata {query, rank, position, scraped_at}`. No dedup pass in v1 — identical URLs → identical ids.
@@ -249,6 +289,7 @@
 - Fixture stub is the v1 `web-search` entry: no network, no Firecrawl SDK; `fixture: true` always set by the workflow so the stub never bills. After verify's P3 fix, a non-fixture run exits 1 with "live Firecrawl not implemented in v1" rather than silently emitting fabricated docs.
 
 **Conventions discovered**
+
 - Secrets are `process.env`-only for API sources (C1 §1.3): `FIRECRAWL_API_KEY` confirmed from Firecrawl's own curl sample, never in `--in` or `plugin.json`, never in workflow YAML vars.
 - `kindContract('ingestion')` = `{ input: null, output: DocListSchema }` — ingest plugins take no kind input and must emit schema-valid `Doc[]` through the `--out` file (C1 invoke shape `kk executor run <plugin> --in <json> --out <docs.json>`).
 - New workspace plugin member: copy `plugins/generations/content-gen/package.json` + `tsconfig.json` (workspace glob `plugins/ingestions/*` already covers it — no root `package.json` edit needed). Do NOT copy karakeep-local's missing-package.json layout or C2's test gap.
@@ -258,6 +299,7 @@
 - Task AC is `ac_numbering: task-local` (C3 is a wayfinder-map without BDD AC) — expected L4 subset warnings vs the feature AC are not defects.
 
 **Errors hit and resolved**
+
 - `action-ok` guard denies in `--dry-run` (the batch's headline finding): the spur engine (@gobing-ai/spur@0.3.47) replaces every onEnter/onExit action with `EMPTY_OUTCOME` in dry-run mode, so `lastActionResult` stays `undefined` and the builtin `action-ok` guard (`lastActionResult?.ok === true`) always denies — the walk falls to the unguarded `failed` edge and dry-runs to `failed`. Proven empirically: B3's own template (`kk-ingest-generate-publish.yaml`, which uses action-ok) dry-runs to `failed`. Fix: linear success edges use `guard: { kind: always }` (repo convention — `task-pipeline.yaml:232,237,254`); real-run safety unchanged because a failed shell action short-circuits at the state under the default `onError: fail` policy. Review verified this against engine source before approving.
 - P3 at review (0055): live-mode fail-soft — `fixture` absent/false still emitted fixture Docs + exit 0, a surprising recovery that could feed fake citations into content-gen. Fixed at verify: exit 1 + stderr when `fixture !== true`, no `--out`; tests updated and a regression test added (12 pass).
 - P4 nits at review (0054, research ticket): `limit` clamp-vs-reject contradiction (Block 1 "API clamps" vs Block 3 "400 on out-of-range" — OpenAPI constrains but doesn't document runtime behavior; fixed by one line: plugin validates positive int, out-of-range lands on the HTTP-error row); degenerate 200 body (`success:true` with `data` absent would throw on `data.web` — clause added mapping `data` absent → malformed-response row); line-number drift in Block 6 (`:23` vs `:24`). None blocked 0055.
@@ -266,6 +308,7 @@
 - Native-subagent dispatch for pipeline `agent.run` stages: rd3 specialist agents (super-coder etc.) re-spawn a pi/omp subprocess that fails with "No model selected" — use generic `task` agents for inline stage dispatch instead.
 
 **Patterns that worked**
+
 - Contract-first ticket chain: 0054 writes the 8-block contract with frozen premises ("confirm or correct, do not silently replace"), 0055 implements against it; the Block 8 handoff listed exactly the `--in` keys the workflow must write, and the Solution's keys matched the Design's starting keys exactly — zero drift, no re-derivation.
 - Verify remediates review findings in the same stage (`--fix all`): P3 fixed in code with a regression test, P4s explicitly dispositioned (fixed / recorded-with-comment / kept-with-verification) — the verdict artifact then carries each disposition as evidence.
 - Fixture-with-citation-survival: canned `Doc[]` built to the 0054 Doc mapping (stable 16-hex ids, sourceUri/title/markdown) so every fixture Doc survives D4's `assertKnownEvidence` gate — the stub is a faithful downstream stand-in, not fake-shaped data.
@@ -274,6 +317,7 @@
 - Review re-verification discipline: reviewer re-fetched Firecrawl live, re-ran the dry-run, and verified the guard deviation against engine source before recording findings — every finding pinned to evidence.
 
 **Gotchas**
+
 - Success edges in dry-run workflows: never rely on `action-ok` for the *success* path — in `--dry-run` no actions execute, so action-ok always denies. Use `guard: { kind: always }` on linear success edges; real-run failure is handled by the default onError=fail policy, not the guard.
 - In workflow YAML, quote the `$schema` value (`"@gobing-ai/spur/schemas/state-machine-workflow.schema.json"`) or YAML may mangle it.
 - Zero-hit vs zero-body are different failure classes: only the true empty result may exit 0; "hits but no usable bodies" must fail loud or it is indistinguishable from an empty topic downstream.
@@ -281,3 +325,50 @@
 - Both tasks' working-tree changes are uncommitted at batch close (staged/added files incl. the workflow YAML, web-search plugin, and task files) — commit pending.
 - Verify pipeline is verdict-based and measures no code coverage; the evidence that matters is `spur workflow validate`/`run --dry-run --json`, the plugin test run (12 pass), and CLI exit-code probes via the repo binary.
 
+# 2026-08-14 — Feature C4 batch (0056–0060)
+
+## 0056 — Specify the kk config, works workspace, and workflow-install contract
+
+- **Convention (frozen names):** Design frozen names (config keys `works_dir`/`workflows_dir`/`defaults.maxResults`/`defaults.fixture`, topicId algorithm, 6-file works layout) are copied verbatim into the `## Solution` contract — no renames; dated citations must all resolve (16/16 verified).
+- **Convention (topic-id ownership):** the *invoker* (0060 command or the operator) computes `topicId` (normalize → slug48 → sha256[0:8]) and passes an already-resolved `work_dir`; workflow `prepare` only `mkdir` + materializes files into `${vars.work_dir}`. Decided in the refineall cross-task pass — keeps workflow YAML free of hash shell.
+- **Convention (never overwrite user files):** config.yaml is create-on-first-run with compiled defaults; dest workflow copy uses byte-compare — identical = no-op, different = warn + leave, only operator `--force` replaces. Fail-loud rows each record condition → exit → files written → recovery.
+- **Pattern that worked:** spec-authoring tasks deliver as 8 labeled Solution blocks with a fail-loud table and pinned handoff keys for downstream tasks (0059 vars, 0060 steps), so implementers never re-derive contract decisions.
+- **Gotcha:** C4 is a `wayfinder-map` feature (no Gherkin) with task-local AC numbering — DD-09 "AC subset" warnings vs the feature AC are expected, not defects (same as 0054/0055 vs C3).
+- **Gotcha:** input is strictly XOR (`topic` vs `input_file`); both-set and both-empty are separate fail-loud rows, not one "invalid input" bucket.
+
+## 0057 — Implement the live Firecrawl client in web-search
+
+- **Pattern that worked:** `SearchDeps` seam (inject `fetch`/`env`/`now`) keeps tests fully offline while `main` passes `globalThis.fetch` — 29 tests, 100% funcs / 99.50% lines on `index.ts`. Do not monkey-patch global fetch in tests.
+- **Convention (fail loud):** missing `FIRECRAWL_API_KEY` → exit 1, stderr exactly `web-search failed: FIRECRAWL_API_KEY is unset`, no `--out` written; the fixture branch never reads the key. Single `POST /v2/search` with Bearer auth; no npm SDK, no silent retry in v1.
+- **Convention (stable ids):** `computeId` stays `sha256(url).hex[0:16]` and is now exported; a test pins format, stability, and differentiation so id stability survives refactors.
+- **Error hit / deferred:** non-JSON 4xx/5xx bodies render an empty diagnostic (`Firecrawl HTTP 502:` trailing space) — `extractError` needs a truncated-body fallback; P4, deferred. Also 401 vs 402 share one generic message (acceptable v1).
+- **Gotcha (verdict parser):** AC-table rows whose status is a Dimension word ("Usability", "Architecture") are silently dropped from the verdict JSON (`ac-row-dropped: fail` check). Keep SECUA dimension words out of AC status cells; statuses must be MET/PARTIAL/UNMET/N/A.
+- **Residual:** live behavior verified only against fake fetch responses — do one manual smoke run with a real key before calling the live path production-proven.
+
+## 0058 — Prototype the Content-to-markdown research-report helper
+
+- **Convention (private kk-core ≠ shippable import):** `@gobing-ai/kk-core` is `private: true`, so end-user scripts cannot import it. Ship `plugins/kk/scripts/render-md.ts` as a self-contained copy carrying a `SYNC:` comment pointing back at `packages/kk-core/src/render-md.ts`; prove byte-identical *output* via a characterization test that spawns `bun <script> --in --out`.
+- **Pattern that worked:** one hardcoded markdown template — no Handlebars/Mustache. Double-H1 rule: if `body` already starts with `# <title>` (or `# Untitled`), emit body as the leading heading; missing/blank outline and empty references omit those sections.
+- **Pattern that worked:** `main()` + `import.meta.main` CLI shape with `--in`/`--out`; missing args or invalid JSON → stderr + exit 1 + no `--out` (matches repo fail-loud convention).
+- **Convention (T3):** kk-core surface additions (`renderContentMarkdown`, `renderContentMarkdownFile`, `main`) go into `docs/04_DESIGN.md` §4 in the same commit.
+- **Gotcha:** the script/kk-core mirror is byte-identical *output*, not byte-identical files — a future `ContentSchema` change can drift the structural copy; the characterization test is the only tripwire.
+
+## 0059 — Prototype the daily kk-storm-research workflow
+
+- **Pattern that worked:** dual workflow YAML (SSOT `.spur/workflows/kk-storm-research.yaml` + install source `plugins/kk/workflows/kk-storm-research.yaml`) kept byte-identical — asserted by a test (`expect(install).toBe(ssot)`) and `cmp`; both validate. Edit the SSOT, copy, never edit the install copy.
+- **Convention (vars):** all workflow vars are strings; `fixture` defaults `"false"` in YAML, CI/dry-run passes `"true"`, and prepare writes `($fixture == "true")` — never hardcode `true` in a state.
+- **Error hit and resolved:** review flagged unquoted `${vars.*}` in workflow shell commands as P3 (paths with spaces word-split `mkdir`/redirects/`--in`). Fixed by quoting all shell interpolations (17 quoted refs; remaining bare ones are comments only) and re-syncing both copies byte-identical.
+- **Pattern that worked:** `kk` owns steps, `spur workflow` owns orchestration — states shell to `kk executor run` and `bun render_script`; the local-doc merge is generate's `onEnter[0]` jq prepend onto `docs.json` instead of changing the web-search `--in` schema.
+- **Gotcha (portability):** `shasum -a 256` is the macOS/Perl name; minimal Linux images have `sha256sum`. The 0056 canonical algorithm is Node sha256 — matter for 0060/Linux daily use.
+- **Gotcha (dry-run semantics):** `--dry-run` proves machine shape (`transitionsTaken: 4`, `finalState: done`) but executes no actions — file-mode prepare and the local-doc merge had only static coverage until the verify stage exercised them; plan an executed file-mode run, not just dry-run.
+- **Gotcha (verdict parser):** 5 AC rows dropped from the verdict for dimension-word statuses ("Correctness", "Security", "Test depth", "Portability") — same parser constraint as 0057.
+
+## 0060 — Author the kk-storm-research skill and generic kk-workflow command
+
+- **Pattern that worked (testing markdown deliverables):** `apps/cli/tests/kk-workflow-command.test.ts` extracts and *executes* the real topicId shell block from `kk-workflow.md` §4 and asserts 9/9 equality against a Node reference of the frozen 0056 algorithm, plus string-invariant checks (XOR guard, config heredoc, 3-root copy rule, 7-var `--vars` set, ADR-011 guard). 7/7 pass. This is the template for guarding future markdown/shell capability files.
+- **Convention (separation):** skill owns craft (`plugins/kk/skills/kk-storm-research/SKILL.md`), command owns the thin run procedure (`plugins/kk/commands/kk-workflow.md`, 129 lines < 150 cap) — and never merge a research skill into `kk-topic`.
+- **Convention (ADR-011 honored):** no new `kk` first-layer noun — the command shells to `spur workflow run "$dest" --vars`; `apps/cli/src/cli.ts` still registers only executor + plugin.
+- **Convention (discovery):** skills/commands/workflows under `plugins/kk/` are directory-discovered — no `plugin.json` or marketplace edit needed to add a capability.
+- **Gotcha (quoting):** `--vars` JSON embeds `$TOPIC`/`$INPUT_FILE` unescaped — a topic containing `"`/`\`/`$` yields malformed JSON or stray expansion. Acceptable for agent-executed markdown (LLM assembles the quote); harden with `jq -n --arg` if a programmatic runner ever consumes the command.
+- **Gotcha (config literal):** the config heredoc writes literal `$HOME` into `config.yaml` (`works_dir: "$HOME/.config/kk/works"`) — the future TS config loader must expand `$HOME`; recorded as deferred-loader scope.
+- **Gotcha (arg parsing):** a single hyphenated-token topic (`my-topic`) parses as the workflow *name* and trips the XOR error with non-obvious recovery — recovery is `--in` or an explicit `kk-storm-research` name prefix; the skill states this.

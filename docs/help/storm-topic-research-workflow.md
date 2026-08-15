@@ -1,19 +1,26 @@
 # STORM Topic-Research Workflow (`kk-storm-research`)
 
 Turn one research topic into a grounded STORM `Content` report by composing the `web-search`
-ingestion plugin with the existing `content-gen` generator — no publish step. This is the C3
-dry-run prototype (feature C3, tasks 0054 + 0055): the workflow shape is proven end-to-end, but
-the ingest side is a **fixture stub** — there is no live Firecrawl client in v1.
+ingestion plugin with the `content-gen` generator and the `render-md` helper — no publish step.
+This is the C4 daily-usable workflow (feature C4): the machine accepts a topic **sentence XOR a
+markdown file**, writes the 0056 works layout, and dry-runs to `done` with a `content.md` sidecar.
 
-```
-topic (--vars)  →  web-search (ingest)  →  content-gen (generate)  →  Content (content.json)
-        │                │                            │
-   work/topic.json   work/docs.json              work/content.json
+The ingest side is a **fixture stub** by default — there is no live Firecrawl client in v1
+(0057 is the live client; 0059 keeps `fixture` switchable and does not implement Firecrawl).
+
+```mermaid
+flowchart LR
+    T["topic sentence --vars"] -->|"prepare → work/topic.json"| W["web-search (ingest)"]
+    F["markdown file --vars"] -->|"prepare → work/input.md + local-doc.json"| W
+    W -->|"ingest → work/docs.json"| G["content-gen (generate)"]
+    G -->|"generate → work/content.json"| R["render-md (render)"]
+    R -->|"render → work/content.md"| C["Content + content.md sidecar"]
 ```
 
-Pieces: workflow `.spur/workflows/kk-storm-research.yaml` · plugin
-`plugins/ingestions/web-search/` · ingest contract `docs/tasks/0054_specify-the-firecrawl-topic-to-doc-ingest-contract.md`
-(Solution blocks 1–8).
+Pieces: workflow `.spur/workflows/kk-storm-research.yaml` (install source
+`plugins/kk/workflows/kk-storm-research.yaml`) · plugin `plugins/ingestions/web-search/` ·
+render helper `plugins/kk/scripts/render-md.ts` · ingest contract
+`docs/tasks/0054_specify-the-firecrawl-topic-to-doc-ingest-contract.md`.
 
 ## Prerequisites
 
@@ -48,41 +55,64 @@ spur workflow validate .spur/workflows/kk-storm-research.yaml --json
 ### 2. Dry-run — no network, no LLM, no writes to `work/`
 
 ```bash
-spur workflow run .spur/workflows/kk-storm-research.yaml --dry-run --run-id dry-1 --json
+spur workflow run .spur/workflows/kk-storm-research.yaml --dry-run --run-id dry-1 \
+  --vars '{"topic":"<your research topic>","fixture":"true"}'
 ```
 
-Expect `status: done` with terminal state `done` (3 transitions:
-`prepare → ingest → generate`). Success edges use `guard: { kind: always }`, which is what lets
-dry-run walk to `done` — do not switch them to `action-ok` (that guard denies in dry-run because
-no actions execute).
+Expect `status: done` with terminal state `done` (4 transitions:
+`prepare → ingest → generate → render`). Success edges use `guard: { kind: always }`, which is
+what lets dry-run walk to `done` — do not switch them to `action-ok` (that guard denies in
+dry-run because no actions execute).
 
-### 3. Real run
+Pass `fixture: "true"` for any dry-run / CI / dogfood invocation so the stub is selected; a real
+daily run omits it (or passes `"false"`).
+
+### 3. Real run — sentence input
 
 ```bash
 spur workflow run .spur/workflows/kk-storm-research.yaml \
-  --vars '{"topic":"<your research topic>","maxResults":"8"}'
+  --vars '{"topic":"<your research topic>","maxResults":"8","work_dir":"./work/demo-topic"}'
+```
+
+### 4. Real run — file input (XOR)
+
+Pass exactly one of `topic` / `input_file`. File mode copies the file to `input.md`, writes the
+0056 `local-doc.json` one-element `Doc[]`, and derives the query from the first ATX H1 (else the
+basename).
+
+```bash
+spur workflow run .spur/workflows/kk-storm-research.yaml \
+  --vars '{"input_file":"./note.md","fixture":"true","work_dir":"./work/demo-topic"}'
 ```
 
 What happens per state:
 
 | State | Action | Writes |
-|---|---|---|
-| `prepare` | materializes the `--vars` into the ingest `--in` JSON (always `"fixture": true`) | `${work_dir}/topic.json` |
-| `ingest` | `kk executor run web-search --in topic.json --out docs.json --plugins-path ./plugins` | `${work_dir}/docs.json` (3 canned `Doc[]`) |
-| `generate` | `kk executor run content-gen --in docs.json --out content.json --plugins-path ./plugins` | `${work_dir}/content.json` (STORM `Content`) |
+| --- | --- | --- |
+| `prepare` | `mkdir work_dir`; XOR guard (exactly one of `topic`/`input_file`); sentence mode materializes `topic.json`; file mode copies `input.md`, writes `local-doc.json`, writes `topic.json` | `${work_dir}/topic.json` (+ `input.md`, `local-doc.json` in file mode) |
+| `ingest` | `kk executor run web-search --in topic.json --out docs.json --plugins-path ./plugins` | `${work_dir}/docs.json` |
+| `generate` | prepends `local-doc.json` onto `docs.json` when present, then `kk executor run content-gen --in docs.json --out content.json` | `${work_dir}/content.json` (STORM `Content`) |
+| `render` | `bun plugins/kk/scripts/render-md.ts --in content.json --out content.md` | `${work_dir}/content.md` (markdown sidecar) |
 
 Monitor a long run: `spur workflow trace <run-id> --json`.
 
 ## Workflow vars (all strings)
 
+`work_dir` is the **resolved** topic directory (`$works_root/<topic-id>`), computed by the
+invoker (the `/kk-workflow` command, 0060, or the operator) and passed as `--vars`. `prepare`
+never hashes the topic-id in YAML.
+
 | Var | Default | Role |
-|---|---|---|
-| `topic` | — (required at run) | the research topic; sent verbatim as the ingest query |
-| `maxResults` | `"8"` | caps the ingested item count (written into `--in` as an int) |
-| `work_dir` | `"./work"` | artifact dir (`topic.json`, `docs.json`, `content.json`) |
+| --- | --- | --- |
+| `topic` | `""` | sentence-mode query; ignored when `input_file` set (XOR) |
+| `input_file` | `""` | file-mode markdown path when non-empty (XOR) |
+| `maxResults` | `"8"` | caps the ingested item count (written into `topic.json` as an int) |
+| `fixture` | `"false"` | `"true"` selects the fixture stub; CI/dry-run must pass `"true"` |
+| `work_dir` | `"./work"` | resolved topic dir (`$works_root/<topic-id>`) — invoker sets this |
 | `plugins_path` | `"./plugins"` | `--plugins-path` for `kk executor run` |
 | `ingestion_plugin` | `"web-search"` | executor name |
 | `generator_plugin` | `"content-gen"` | executor name |
+| `render_script` | `"plugins/kk/scripts/render-md.ts"` | 0058 shipped render runner |
 
 ## Using `web-search` directly
 
@@ -97,105 +127,111 @@ v1 stub behavior: `fixture: true` emits canned `Doc[]` (stable `sha256(sourceUri
 markdown bodies — citation-safe for D4). `fixture` absent/false selects the **not-implemented**
 live path: exit 1 with `live Firecrawl not implemented in v1 (pass "fixture": true to use the
 fixture stub)`, no `--out`. Missing/invalid `topic` → exit 1. No `FIRECRAWL_API_KEY` is used in
-v1 (env-only by contract; the live client is future work).
+v1 (env-only by contract; the live client is task 0057).
 
 ## Limitations (v1 scope)
 
-- **No live Firecrawl** — ingest is the fixture stub; the future live path (`POST
-  https://api.firecrawl.dev/v2/search` + `scrapeOptions.formats: ["markdown"]`) is specified in
-  the 0054 contract but not implemented.
-- **No query expansion** — `topic` is sent verbatim as the single query.
+- **No live Firecrawl** — ingest is the fixture stub unless 0057's live client is wired up; the
+  future live path (`POST https://api.firecrawl.dev/v2/search` +
+  `scrapeOptions.formats: ["markdown"]`) is specified in the 0054 contract.
+- **No query expansion** — `topic` (or the derived file query) is sent verbatim as the single query.
 - **Generate requires the spur agent** — `content-gen` runs its STORM stages via `spur agent run`.
-- **No publish state** — by design; the workflow terminates at Content-written `done`. Publish,
-  judge gate, and a human-readable `content.md` sidecar are out of scope for C3.
+- **No publish state** — by design; the workflow terminates at `content.md` rendered `done`.
+  Publish and the judge gate are out of scope for C4.
+- **Config loader / `/kk-workflow` command** — 0060 ships the `kk-storm-research` skill + generic
+  workflow command (topic-id computation, config create, YAML install to `$workflows_dir`).
+  Until then, the operator passes `work_dir` and `--vars` directly.
 
 ## Under the hood (maintainer guide)
 
-Everything the end-user sections above describe is composed of exactly two artifacts: the
-workflow state machine and the `web-search` plugin. The third input — *how* ingest must behave —
-is not code at all: it is the 0054 contract in the task file's Solution (blocks 1–8). The plugin
-and workflow are written *against* that contract; when you change behavior, update the contract
-first or note the deliberate departure in the same change.
+The workflow state machine, the `web-search` plugin, and the `render-md` helper compose exactly
+three artifacts. The *how ingest must behave* is the 0054 contract (Solution blocks 1–8); *how
+the works layout + XOR prepare must behave* is the 0056 contract; *how render must behave* is the
+0058 contract. Update the contract first when behavior changes, or note the deliberate departure
+in the same change.
+
+The architecture at a glance:
+
+```mermaid
+flowchart TD
+    subgraph W["workflow — kk-storm-research.yaml"]
+        direction LR
+        P["prepare"] --> IN["ingest"] --> GE["generate"] --> R["render"] --> DN["done"]
+    end
+
+    subgraph WP["web-search plugin — plugins/ingestions/web-search/"]
+        direction TB
+        M["main() — parse --in / --out"] --> PI["parseInput (schema validation)"]
+        PI --> FX{"fixture: true?"}
+        FX -->|yes| BD["buildFixtureDocs → Doc[]"]
+        FX -->|no| LX["exit 1 — live Firecrawl not implemented (v1)"]
+    end
+
+    IN -->|"kk executor run web-search"| M
+    GE -->|"kk executor run content-gen"| CG["content-gen plugin — STORM via spur agent run"]
+    R -->|"bun render-md.ts --in/--out"| RM["render-md helper — content.md"]
+
+    C5["0054 ingest contract — docs/tasks/0054"] -.->|"contract of record"| PI
+    C6["0056 works/XOR contract — docs/tasks/0056"] -.->|"prepare + local-doc mapping"| P
+    C8["0058 render contract — docs/tasks/0058"] -.->|"render argv"| RM
+```
 
 ### File inventory
 
 | File | Role |
-|---|---|
-| `.spur/workflows/kk-storm-research.yaml` | the orchestration: `prepare → ingest → generate → done/failed` |
-| `plugins/ingestions/web-search/plugin.json` | manifest (`name: web-search`, `kind: ingestion`, `entry: ./src/index.ts`) — registry discovery (ADR-009) |
+| --- | --- |
+| `.spur/workflows/kk-storm-research.yaml` | the orchestration: `prepare → ingest → generate → render → done/failed` (repo SSOT) |
+| `plugins/kk/workflows/kk-storm-research.yaml` | **byte-identical** install source (ships in the npm tree) |
+| `plugins/ingestions/web-search/plugin.json` | manifest (`name: web-search`, `kind: ingestion`) — registry discovery (ADR-009) |
 | `plugins/ingestions/web-search/src/index.ts` | the executable: `--in`/`--out` entry, validation, fixture Doc builder |
-| `plugins/ingestions/web-search/tests/web-search.test.ts` | 12 tests: contract behavior + fail-loud paths |
-| `plugins/ingestions/web-search/package.json` + `tsconfig.json` | workspace member `@gobing-ai/web-search` (copied from `content-gen`) so typecheck/CI cover it |
-| `docs/tasks/0054_specify-the-firecrawl-topic-to-doc-ingest-contract.md` | **authoritative ingest contract** (Solution blocks 1–8: `--in` schema, env/auth, call sequence, Doc mapping, fail-loud table, C1-tension note, citations, 0055 handoff) |
-| `docs/03_ARCHITECTURE.md` / `docs/04_DESIGN.md` | tree + module rows for `@gobing-ai/web-search` (T3: sync in the same commit as surface changes) |
+| `plugins/kk/scripts/render-md.ts` | the render helper: `--in content.json --out content.md` (0058) |
+| `docs/tasks/0054_...ingest-contract.md` | **authoritative ingest contract** |
+| `docs/tasks/0056_...works-contract.md` | **authoritative works layout + XOR prepare + local-doc mapping** |
+| `docs/tasks/0058_...render-helper.md` | **authoritative render argv** |
 
 ### How the workflow works
 
-- **State machine.** `prepare` runs two shell actions: `mkdir -p ${vars.work_dir}`, then a `jq`
-  that materializes the operator `--vars` into `${work_dir}/topic.json`
-  (`{topic, maxResults (tonumber), fixture: true}`). `ingest` and `generate` are single
-  `kk executor run` shell actions chaining `web-search` → `content-gen`. `done`/`failed` are
-  terminals — there is no publish state.
-- **All vars are strings** (`spur workflow --vars` rejects non-string values) — numeric-looking
-  vars like `maxResults: "8"` are coerced at materialization time with `($maxResults | tonumber)`.
+- **State machine.** `prepare` runs a single shell action: `mkdir -p ${work_dir}`, an XOR guard
+  (exactly one of `topic`/`input_file`; both or neither → exit 1, no writes), then branches —
+  sentence mode writes `topic.json` only; file mode copies `input.md`, writes `local-doc.json`
+  (0056 mapping), and writes `topic.json` with a derived query (H1 or basename). `ingest` and
+  `generate` are `kk executor run` shell actions; `render` shells `bun render-md.ts`. `done`/
+  `failed` are terminals.
+- **All vars are strings** (`spur workflow --vars` rejects non-string values) — `maxResults` is
+  coerced at materialization with `($maxResults | tonumber)`, and `fixture` becomes boolean only
+  when the string equals `"true"`.
 - **Why success edges use `guard: { kind: always }`** (the one non-obvious decision — do not
   "fix" it): the engine evaluates `action-ok` as `lastActionResult?.ok === true`, and in
   `--dry-run` no actions execute (engine substitutes an empty outcome), so `action-ok` **always
   denies** and the walk falls to `failed` — dry-runs would never reach `done`. Real-run safety is
   unchanged: a failed shell action short-circuits at the state under the default `onError: fail`
   policy, before transitions are evaluated. `always` on the *success* edge is therefore correct
-  in both modes. (Same convention as `.spur/workflows/task-pipeline.yaml:232,237,254`.)
+  in both modes. (Same convention as `.spur/workflows/task-pipeline.yaml`.)
 - **Quote the `$schema`** value in the YAML or YAML parsing mangles it.
+- **Install-source identity (R2).** `.spur/workflows/kk-storm-research.yaml` and
+  `plugins/kk/workflows/kk-storm-research.yaml` are kept byte-identical (0056 copy rule). Editing
+  one without the other breaks R2.
 
-### How the plugin works
+## Testing & verification
 
-`main()` flow: `parseArgs` (`--in`/`--out`) → missing args = stderr + exit 1 → read `--in` →
-`parseInput` (throws on invalid JSON / non-object / missing-or-blank `topic` / non-positive
-`maxResults`) → **fixture branch**: `fixture !== true` → stderr `live Firecrawl not implemented
-in v1…` + exit 1 (the not-implemented live path fails loud rather than fabricating docs) →
-`buildFixtureDocs` → `DocListSchema.parse` → `mkdir` + write `--out` → exit 0.
-
-- **Doc mapping** (0054 block 4): `id` = `sha256(sourceUri).hex.slice(0,16)` (`computeId`,
-  same id-stability idea as `karakeep-local`), `body` = fixture markdown (required), `title`/
-  `sourceUri` SHOULD, `mediaType: text/markdown`, `metadata {query, rank (0-based), position,
-  scraped_at (per-run ISO — determinism is required only for `id`)}`. Every emitted Doc survives
-  D4's `assertKnownEvidence` citation gate (`content-gen/src/storm.ts`).
-- **Invocation contract**: `kindContract('ingestion')` = `{ input: null, output:
-  DocListSchema }`; the plugin is spawned by the sanctioned `runInvoke` path
-  (`apps/cli/src/invoke.ts`), never a hand-rolled spawn. Tests go through `runInvoke` to prove
-  the executor path.
-- **No network code exists.** No `fetch`, no Firecrawl SDK, no `FIRECRAWL_API_KEY` read — by
-  design in v1.
-
-### Testing & verification
-
-- Plugin: `bun test plugins/ingestions/web-search/tests/web-search.test.ts` — 12 tests covering
-  schema-valid output, deterministic ids across runs, `maxResults` cap, the `runInvoke` executor
-  path, live-mode fail-loud (stderr asserted), missing-topic fail-loud, `parseInput` edge cases,
-  missing-args, and write-failure. Coverage ≈ 100% functions / 99% lines on `src/index.ts`.
-  Fail-loud tests capture `console.error` and assert the message — keep that pattern; a
-  regression that leaks stderr into the runner output is a test bug.
 - Workflow: `spur workflow validate .spur/workflows/kk-storm-research.yaml --json` then
-  `--dry-run` (must reach `status: done`) — the dry-run is the executable proof of the machine's
-  shape.
-- Full gate after any change: `bun run lint && bun run test && bun run build` (the plugin is a
-  workspace member, so typecheck/lint already cover it).
+  `--dry-run` (must reach `status: done` with 4 transitions) — the dry-run is the executable
+  proof of the machine's shape.
+- Install-source identity: `cmp .spur/workflows/kk-storm-research.yaml
+  plugins/kk/workflows/kk-storm-research.yaml`.
+- Full gate after any change: `bun run lint && bun run test && bun run build`.
 
-### Enhancing it
+## Enhancing it
 
-- **Live Firecrawl path** (the big one): implement the `fixture !== true` branch per 0054
-  blocks 2–5 — `POST https://api.firecrawl.dev/v2/search` with
-  `scrapeOptions.formats: ["markdown"]`, `Authorization: Bearer ${process.env.FIRECRAWL_API_KEY}`
-  (env-only, never in `--in`/`plugin.json`), map `data.web[]` per the Doc-mapping table, honor
-  the 8-row fail-loud table (zero hits → `[]` + exit 0; hits-but-zero-bodies → exit 1 — the
-  documented C1 departure). Keep `fixture: true` as the offline stub.
-- **Query expansion**: currently `topic` is the single verbatim query. Expansion belongs either
-  in the plugin (expand before the request) or in a new `prepare` step — decide per 0054's
-  "expansion is C3 fog" note and record the decision in the contract.
-- **Publish / judge gate / `content.md` sidecar**: out of scope for C3 by design. To add them,
-  clone the shape from `.spur/workflows/kk-ingest-generate-publish.yaml` (the workflow this one
-  was cut from) — do not bolt publish states onto this prototype without re-opening C3.
-- **Contract drift rule**: the 0054 Solution is the contract of record. If a change makes the
-  plugin or workflow depart from it (fail-loud row, Doc mapping field, env name), update the
-  task's Solution in the same change and re-run the fail-loud tests — the tests encode the
-  contract.
+- **Live Firecrawl path** (0057): implement the `fixture !== true` branch per 0054 blocks 2–5 —
+  `POST https://api.firecrawl.dev/v2/search` with `scrapeOptions.formats: ["markdown"]`,
+  `Authorization: Bearer ${process.env.FIRECRAWL_API_KEY}` (env-only), map `data.web[]` per the
+  Doc-mapping table, honor the fail-loud table. Keep `fixture: true` as the offline stub.
+- **Topic-id computation + config + YAML install** (0060): the `/kk-workflow` command computes
+  `topicId` and passes `work_dir`, creates the config on first run, and copies the install-source
+  YAML to `$workflows_dir/kk-storm-research.yaml`.
+- **Publish / judge gate**: out of scope for C4 by design; do not bolt publish states onto this
+  prototype without re-opening the feature.
+- **Contract drift rule**: the 0054/0056/0058 Solutions are the contracts of record. If a change
+  makes the workflow depart from them, update the task's Solution in the same change and re-run
+  the dry-run + byte-identity checks.

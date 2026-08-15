@@ -11,7 +11,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "bin": {
         "knowledge-kit": "./dist/index.js",
       },
@@ -27,6 +27,7 @@
     "packages/kk-core": {
       "name": "@gobing-ai/kk-core",
       "dependencies": {
+        "@gobing-ai/utils": "workspace:*",
         "zod": "4.4.3",
       },
       "devDependencies": {

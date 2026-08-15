@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.11.0
+version: 2.12.0
 created_at: 2026-07-22
-updated_at: 2026-08-13
+updated_at: 2026-08-14
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -27,14 +27,14 @@ packages/
 plugins/
   ingestions/
     karakeep-local/   # ingestion plugin — rclone-synced folder → Doc[] (not a workspace)
-    web-search/       # @gobing-ai/web-search — ingestion plugin: topic → Doc[] (v1 fixture stub, no live Firecrawl; C3)
+    web-search/       # @gobing-ai/web-search — ingestion plugin: topic → Doc[] (live Firecrawl client + offline fixture stub; C4)
   generations/
     content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
   publishings/
     surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
     zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
     qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
-  kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules
+  kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
 tooling/
   typescript/       # shared tsconfig presets
 .spur/              # Spur config, rules, workflows, templates
@@ -92,7 +92,7 @@ Three kinds, discovered under the matching kind collection (ADR-009; ADR-007 amd
 supersedes the 2026-08-02 fourth-kind amendment):
 
 | Kind | Contract | Notes |
-|------|----------|-------|
+| ------ | ---------- | ------- |
 | `ingestion` | `source → Doc[]` | Optional — a pipeline may start from a `Brief` instead |
 | `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
 | `publish` | `Content → Result` | Fan-out dispatches N of these |
@@ -166,12 +166,12 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 ## Module boundaries
 
 | Module | Package name | Responsibility | May depend on |
-|--------|--------------|----------------|---------------|
+| -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
 | `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |
-| `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; v1 fixture stub, no live Firecrawl (C3) | `@gobing-ai/kk-core` |
+| `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core` |
 | `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
 | `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
 | `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
@@ -216,7 +216,7 @@ Full signatures: `docs/design/multi-root-plugin-discovery.md`.
 ## Quality boundary
 
 | Gate | Command |
-|------|---------|
+| ------ | --------- |
 | Lint + typecheck | `bun run lint` (Biome 2.5.5 + tsc) |
 | Tests | `bun run test` |
 | Build | `bun run build` |

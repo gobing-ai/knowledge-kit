@@ -33,6 +33,7 @@ export {
     type PluginRecord,
     resolvePluginRoots,
 } from './registry';
+export { main, renderContentMarkdown, renderContentMarkdownFile } from './render-md';
 export {
     type Content,
     ContentSchema,

@@ -1,72 +1,160 @@
-# STORM topic-research dry-run prototype (C3): prepare -> ingest -> generate -> done.
+---
+# STORM topic-research daily workflow (C4):
+#   prepare -> ingest -> generate -> render -> done|failed.
 #
-# State-machine clone of kk-ingest-generate-publish minus publish: the `prepare`
-# state materializes the operator's `topic` `--vars` into the web-search `--in`
-# JSON (0054 keys: topic/maxResults/fixture), then chains `kk executor run`
-# ingest (web-search) -> generate (content-gen). Dry-runs to the Content-written
-# terminal (`done`). No publish state by design — publish/judge are C3 fog.
+# State-machine extension of the C3 dry-run prototype. Adds the 0056 XOR
+# prepare + works layout, the generate local-doc merge, and the 0058 render
+# sidecar state. No publish, no judge — by design (C4 scope).
 #
-# Success edges use `guard: { kind: always }` (repo convention,
-# .spur/workflows/task-pipeline.yaml:232,237,254): real-run action failure
-# short-circuits the run at the state (default onError=fail policy), so the
-# success edge only ever fires after the action actually succeeded; `always`
-# additionally lets `--dry-run` walk to `done` (the `action-ok` guard would
-# deny in dry-run — actions are not executed — and walk to `failed`).
+# 0056 contract (docs/tasks/0056 ... Solution blocks 1-8): `work_dir` is the
+# RESOLVED topic dir (`$works_root/<topic-id>`), computed by the invoker
+# (0060/operator) and passed as `--vars`. prepare only `mkdir` + materializes
+# files into `${vars.work_dir}`; it never hashes the topic-id in YAML. XOR:
+# exactly one of `topic`/`input_file` must be non-empty.
+#
+# 0058 contract (docs/tasks/0058 ... Solution): render shells
+#   bun plugins/kk/scripts/render-md.ts --in <work_dir>/content.json \
+#     --out <work_dir>/content.md
+#
+# Success edges use `guard: { kind: always }` (repo convention — see the C3
+# file and task-pipeline.yaml): a real-run action failure short-circuits at
+# the state under the default onError=fail policy; `always` lets `--dry-run`
+# walk to `done` (actions don't execute in dry-run, so `action-ok` would
+# always deny and fall to `failed`).
 "$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
 name: kk-storm-research
 kind: state-machine
-description: STORM topic-research dry-run — materialize topic vars into web-search --in, chain ingest + generate, no publish
+description: >-
+  STORM daily topic research — XOR prepare into 0056 works layout, chain
+  ingest + generate, render content.md sidecar
 initialState: prepare
 terminalStates:
   - done
   - failed
 vars:
-  topic: ""                 # REQUIRED at run (--vars '{"topic":"<brief topic>"}')
-  maxResults: "8"           # written into --in JSON (0054 maxResults, default 8)
-  work_dir: "./work"        # artifact dir (topic.json, docs.json, content.json)
+  topic: "" # sentence-mode query; ignored when input_file set (XOR)
+  input_file: "" # file-mode markdown path when non-empty (XOR)
+  maxResults: "8" # written into topic.json as int (0054 maxResults)
+  fixture: "false" # "true" selects the stub; CI/dry-run must pass "true"
+  work_dir: "./work" # RESOLVED topic dir ($works_root/<topic-id>)
   plugins_path: "./plugins" # --plugins-path for kk executor run
   ingestion_plugin: "web-search"
   generator_plugin: "content-gen"
+  render_script: "plugins/kk/scripts/render-md.ts" # 0058 shipped runner
 
 states:
   - id: prepare
-    description: "Materialize topic --vars into the web-search --in JSON (fixture: true so the stub never bills)"
+    description: >-
+      mkdir work_dir; XOR guard; sentence mode writes topic.json; file mode
+      copies input.md, writes local-doc.json and topic.json with a derived
+      query
     onEnter:
       - kind: shell
         options:
-          command: mkdir -p ${vars.work_dir}
-      - kind: shell
-        options:
-          command: "jq -n --arg topic \"${vars.topic}\" --arg maxResults \"${vars.maxResults}\" '{topic: $topic, maxResults: ($maxResults | tonumber), fixture: true}' > ${vars.work_dir}/topic.json"
+          command: >-
+            set -e;
+            mkdir -p "${vars.work_dir}";
+            if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
+            echo "XOR violation: both topic and input_file set" >&2; exit 1;
+            fi;
+            if [ -z "${vars.topic}" ] && [ -z "${vars.input_file}" ]; then
+            echo "XOR violation: neither topic nor input_file set" >&2;
+            exit 1;
+            fi;
+            if [ -n "${vars.topic}" ]; then
+            jq -n --arg topic "${vars.topic}" --arg maxResults
+            "${vars.maxResults}" --arg fixture "${vars.fixture}"
+            '{topic: $topic, maxResults: ($maxResults | tonumber),
+            fixture: ($fixture == "true")}' > "${vars.work_dir}/topic.json";
+            exit 0;
+            fi;
+            if [ -f "${vars.input_file}" ]; then
+            cp "${vars.input_file}" "${vars.work_dir}/input.md";
+            ABS=$(cd "$(dirname "${vars.input_file}")" && pwd)/$(basename
+            "${vars.input_file}");
+            QUERY=$(grep -m1 '^# ' "${vars.input_file}" | sed 's/^# *//'
+            || true);
+            if [ -z "$QUERY" ]; then
+            QUERY=$(basename "${vars.input_file}" | sed 's/\.[^.]*$//');
+            fi;
+            if [ -z "$QUERY" ]; then
+            echo "no query derivable (no H1 and empty basename)" >&2;
+            exit 1;
+            fi;
+            ID=$(printf 'file://%s' "$ABS" | shasum -a 256 | cut -c1-16);
+            jq -n --arg id "$ID" --arg body "$(cat "${vars.input_file}")"
+            --arg title "$QUERY" --arg sourceUri "file://$ABS" --arg query
+            "$QUERY" '{id: $id, body: $body, title: $title, sourceUri:
+            $sourceUri, mediaType: "text/markdown",
+            metadata: {query: $query, rank: -1, position: 0}}'
+            > "${vars.work_dir}/local-doc.json";
+            jq -n --arg topic "$QUERY" --arg maxResults
+            "${vars.maxResults}" --arg fixture "${vars.fixture}"
+            '{topic: $topic, maxResults: ($maxResults | tonumber),
+            fixture: ($fixture == "true")}' > "${vars.work_dir}/topic.json";
+            else
+            echo "input_file not readable: ${vars.input_file}" >&2; exit 1;
+            fi
 
   - id: ingest
-    description: Run web-search ingestion plugin to produce document list (docs.json)
+    description: >-
+      Run web-search ingestion plugin to produce document list (docs.json)
     onEnter:
       - kind: shell
         options:
-          command: kk executor run ${vars.ingestion_plugin} --in ${vars.work_dir}/topic.json --out ${vars.work_dir}/docs.json --plugins-path ${vars.plugins_path}
+          command: >-
+            kk executor run "${vars.ingestion_plugin}" --in
+            "${vars.work_dir}/topic.json" --out "${vars.work_dir}/docs.json"
+            --plugins-path "${vars.plugins_path}"
 
   - id: generate
-    description: Run content generator plugin to produce markdown content (content.json)
+    description: >-
+      Prepend local-doc (when present) onto docs.json, then run content
+      generator to produce content.json
     onEnter:
       - kind: shell
         options:
-          command: kk executor run ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json --plugins-path ${vars.plugins_path}
+          command: >-
+            if [ -f "${vars.work_dir}/local-doc.json" ]; then
+            jq -s '[.[0]] + .[1]' "${vars.work_dir}/local-doc.json"
+            "${vars.work_dir}/docs.json" > "${vars.work_dir}/docs.json.tmp"
+            && mv "${vars.work_dir}/docs.json.tmp" "${vars.work_dir}/docs.json";
+            fi
+      - kind: shell
+        options:
+          command: >-
+            kk executor run "${vars.generator_plugin}" --in
+            "${vars.work_dir}/docs.json" --out "${vars.work_dir}/content.json"
+            --plugins-path "${vars.plugins_path}"
+
+  - id: render
+    description: >-
+      Render content.json to the markdown sidecar content.md via the 0058
+      shipped script
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun "${vars.render_script}" --in "${vars.work_dir}/content.json"
+            --out "${vars.work_dir}/content.md"
 
   - id: done
-    description: Terminal — topic materialized, ingested, and generated; content.json written. No publish state by design (C3 dry-run).
+    description: >-
+      Terminal — topic materialized, ingested, generated, and rendered to
+      content.md. No publish/judge by design (C4).
   - id: failed
     description: Terminal — one of the steps failed
 
 transitions:
   - from: prepare
     to: ingest
-    description: Topic JSON materialized — proceed to web-search ingestion
+    description: Works materialized — proceed to web-search ingestion
     guard:
       kind: always
   - from: prepare
     to: failed
-    description: Topic JSON materialization failed — terminate workflow
+    description: >-
+      prepare failed (XOR violation / unreadable input) — terminate workflow
 
   - from: ingest
     to: generate
@@ -78,10 +166,19 @@ transitions:
     description: Ingestion failed — terminate workflow
 
   - from: generate
-    to: done
-    description: Content generation succeeded — workflow complete (Content written)
+    to: render
+    description: Content generated — render the markdown sidecar
     guard:
       kind: always
   - from: generate
     to: failed
-    description: Generator failed — terminate workflow
+    description: Generation failed — terminate workflow
+
+  - from: render
+    to: done
+    description: content.md rendered — workflow complete
+    guard:
+      kind: always
+  - from: render
+    to: failed
+    description: Render failed — terminate workflow
