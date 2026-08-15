@@ -1,3 +1,21 @@
+## [0.0.7] - 2026-08-14
+
+### Added
+
+- ship daily-usable STORM research pipeline (C4) (719d659)
+
+### Changed
+
+- drop kk- prefix from plugin capability names (2d400fa)
+- update plugin capability references to unprefixed names (c646b8e)
+- point judge example and workflow-run tests at new names (9860d15)
+
+### Other
+
+- align capability references with unprefixed plugin names (6624626)
+- mark C4 batch done (0056-0060, feature C4) (c625408)
+- ignore nested .spur runtime state in plugins (20c9da0)
+
 ## [0.0.5] - 2026-08-14
 
 ### Added
