@@ -31,7 +31,7 @@ The platform is a **type + discovery layer**: TypeScript data contracts discover
 
 A **pipeline** is a `spur workflow` that runs `ingest → generate → publish` (or standalone
 `create → publish`) as a **sequence of states**. An optional LLM-as-judge gate (an `agent.run`
-step backed by the `kk-judge` skill) may evaluate generated `Content` before publish; the gate
+step backed by the `judge` skill) may evaluate generated `Content` before publish; the gate
 reads a verdict file, not a plugin-kind contract. The workflow engine executes one state at a
 time; where a stage needs many inputs or many outputs, `kk executor fan-in` /
 `kk executor fan-out` collapse that into a single sequential step. The registry discovers
@@ -68,7 +68,7 @@ Technical content creation and published output are fragmented: turning ideas or
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
 | Content generation | **D** | Phase 1/2 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) |
 | Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |
-| Agent capabilities | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`kk-topic`: topic/brief → approved outline + draft) |
+| Agent capabilities | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) |
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
 
 A user can answer "can I run this to write an article about X with nothing ingested?" directly from this PRD: **Yes**, by passing a `Brief` to a `ContentGeneratorPlugin` and piping `Content` to a `PublishPlugin`.
@@ -86,7 +86,7 @@ A user can answer "can I run this to write an article about X with nothing inges
 ## Success criteria
 
 - Creation-from-brief (topic → published article without prior ingest) executes end-to-end via a `spur workflow`.
-- The installable `kk-topic` skill turns a topic or supplied brief into an approved outline and draft without pulling image, adaptation, or publishing work into the first delivery.
+- The installable `topic` skill turns a topic or supplied brief into an approved outline and draft without pulling image, adaptation, or publishing work into the first delivery.
 - Multi-channel fan-out publish runs sequentially via `kk`, returning aggregate `Result` status with fail-loud exit on partial failure.
 - The `Generator` contract accepts either input shape — ingested `Doc[]`, a standalone `Brief`, or
   both — while `Ingestion` (`source → Doc[]`) and `Publish` (`Content → Result`) keep their own

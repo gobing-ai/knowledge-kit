@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-07-29T18:41:14.020Z"
-updated_at: "2026-08-12T16:23:13.087Z"
+updated_at: "2026-08-15T04:13:05.589Z"
 ---
 
 # F2: wt generator harvest
@@ -14,7 +14,7 @@ updated_at: "2026-08-12T16:23:13.087Z"
 ## Goal
 Harvest the WT topic-core authoring behavior into `plugins/kk` as one reusable agent skill that turns a topic or supplied Markdown brief into an approved outline and draft without becoming a knowledge-kit runtime plugin.
 ## Scope
-- In: one fat `kk-topic` skill; `create`, `init`, `outline`, and `draft` operations; minimal file-backed artifacts; two or three outline options with explicit selection; draft approval or bounded revision; prerequisite validation and safe resume behavior; Superskill validation and install dry-run.
+- In: one fat `topic` skill; `create`, `init`, `outline`, and `draft` operations; minimal file-backed artifacts; two or three outline options with explicit selection; draft approval or bounded revision; prerequisite validation and safe resume behavior; Superskill validation and install dry-run.
 - Out: materials extraction and research; image generation; platform adaptation; publishing; saved style-profile infrastructure; thin wrappers; product `plugin.json`; `kk invoke`; changes to `GeneratorInput` or `Content`; TypeScript or Python scripts.
 ## Acceptance Criteria
 ```gherkin
@@ -23,7 +23,7 @@ Feature: kk topic-core authoring
   @core
   Scenario: R1 — Create an approved draft from a topic or supplied brief
     Given a topic or Markdown brief and a new target directory
-    When the kk-topic create operation runs
+    When the topic create operation runs
     Then it writes two or three outline options
     And waits for explicit outline selection before writing the approved outline
     And writes a draft from that approved outline
@@ -33,13 +33,13 @@ Feature: kk topic-core authoring
   Scenario: R2 — Run each topic-core operation independently
     Given a topic-core workspace containing the required predecessor artifact
     When init, outline, or draft is requested directly
-    Then kk-topic performs only the requested operation
+    Then topic performs only the requested operation
     And uses the same artifact paths and validation rules as create
 
   @core
   Scenario: R3 — Resume from existing approved artifacts without overwriting content
     Given a topic-core workspace containing an approved outline or draft
-    When kk-topic is invoked again
+    When topic is invoked again
     Then it reuses completed predecessor artifacts
     And stops before replacing an existing artifact without explicit operator approval
 
@@ -47,13 +47,13 @@ Feature: kk topic-core authoring
   Scenario: R4 — Install and validate the topic-core skill through Superskill
     Given the repository kk marketplace plugin
     When Superskill validates the skill and performs an install dry-run
-    Then kk-topic is discovered as an installable skill
+    Then topic is discovered as an installable skill
     And no target installation files are written by the dry-run
 
   @edge
   Scenario: R5 — Missing or unsafe inputs fail loud
     Given an empty topic, a missing prerequisite artifact, or an existing initialization target
-    When the corresponding kk-topic operation runs
+    When the corresponding topic operation runs
     Then it stops with a specific recovery instruction
     And does not overwrite existing content
 ```
@@ -66,7 +66,8 @@ Feature: kk topic-core authoring
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-- 2026-08-12: moved D5 → F2 under the kk plugin collection; narrowed the first delivery to one fat `kk-topic` skill. Image, research, adaptation, and publishing families remain deferred for separate intake.
+- 2026-08-12: moved D5 → F2 under the kk plugin collection; narrowed the first delivery to one fat `topic` skill. Image, research, adaptation, and publishing families remain deferred for separate intake.
+- 2026-08-14: skill directory/frontmatter renamed `kk-topic` → `topic` so `superskill install kk` does not emit `kk:kk-topic`.
 ## History
 
 - 2026-08-12T14:10:31.681Z moved D5 → F2 (system)

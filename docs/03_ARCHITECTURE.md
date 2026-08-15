@@ -35,6 +35,7 @@ plugins/
     zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
     qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
+                      # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
   typescript/       # shared tsconfig presets
 .spur/              # Spur config, rules, workflows, templates
@@ -97,13 +98,15 @@ supersedes the 2026-08-02 fourth-kind amendment):
 | `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
 | `publish` | `Content → Result` | Fan-out dispatches N of these |
 
-> **Agent capabilities are not plugin kinds.** Quality gating ships as the `kk-judge` agent skill +
+> **Agent capabilities are not plugin kinds.** Quality gating ships as the `judge` agent skill +
 > `agent.run` (ADR-007 amdt 2026-08-07): the fat skill emits a `Verdict` (`PASS` / `FAIL` /
 > `NEEDS_REVISION` + reasoning) consumed by an `agent.run` step whose transition is guarded by a
 > `shell`/`jq` check on the verdict payload. Topic-core authoring ships the same way — the
-> `kk-topic` fat skill (create/init/outline/draft; feature F2) is an agent capability under
+> `topic` fat skill (create/init/outline/draft; feature F2) is an agent capability under
 > `plugins/kk`, never a `generator` plugin instance (ADR-006 amdt 2026-08-12). See
-> `plugins/kk/skills/kk-topic/SKILL.md`.
+> `plugins/kk/skills/topic/SKILL.md`. Capability names omit a leading `kk-` so
+> `superskill install kk` yields `kk:judge` / `kk:topic` / `/kk:workflow-run`
+> (ADR-009 amdt 2026-08-14).
 
 ### Generator input dispatch
 
@@ -148,7 +151,7 @@ Full specification: `docs/design/fan-in-and-fan-out-specification.md`.
 [ingestion…]  ──┼─→ kk executor fan-in ─→ docs.json ─┐   ├── publish target 2
 [ingestion…]  ──┘                                    ├─→ kk executor run <generator> ─→ content.json
                      Brief (no ingest) ─────────────┘            │                    │
-                                                                 ├─→ agent.run kk-judge ─→ verdict.json
+                                                                 ├─→ agent.run judge ─→ verdict.json
                                                                  │        (gate: shell/jq guard reads verdict)
                                                                  └─→ kk executor fan-out ─→ result.json ─→ [targets…]
 ```

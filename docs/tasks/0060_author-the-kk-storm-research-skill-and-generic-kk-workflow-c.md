@@ -13,7 +13,7 @@ tags: []
 dependencies: ["0056", "0059"]
 ac_numbering: task-local
 created_at: "2026-08-14T07:25:44.519Z"
-updated_at: "2026-08-15T02:42:28.647Z"
+updated_at: "2026-08-15T04:13:05.743Z"
 ---
 
 ## 0060. Author the kk-storm-research skill and generic kk-workflow command
@@ -117,20 +117,22 @@ Each entry cites the first changed line per file (`file:line`).
 ### Testing
 **Verdict: PASS** (re-verify `--force` 2026-08-14)
 
+**Rename (2026-08-14).** Capability files dropped the `kk-` prefix so `superskill install kk` yields `kk:storm-research` / `/kk:workflow-run` (not `kk:kk-*`). Current paths: `plugins/kk/skills/storm-research/SKILL.md`, `plugins/kk/commands/workflow-run.md`, `apps/cli/tests/workflow-run-command.test.ts`. Product workflow stem `kk-storm-research` is unchanged.
+
 **Per-Requirement Traceability**
 
 | Req | Status | Evidence |
 | --- | --- | --- |
-| R1 | MET | `plugins/kk/skills/kk-storm-research/SKILL.md` — XOR invoke `:42-59`; `topicId` `:80-94`; works layout `:96-107`; live vs fixture + `FIRECRAWL_API_KEY` `:113-123`; fail-loud table `:125-135`; better-report a–d `:140-151`; "Do not merge this into `kk-topic`" `:24`. Re-read this run. |
-| R2 | MET | `plugins/kk/commands/kk-workflow.md` (129 lines). Tests `apps/cli/tests/kk-workflow-command.test.ts` 7 pass / 39 expect this run (topicId shell vs 0056 Node, XOR, config create, 3-root copy, 7-var `--vars`, thin-wrapper/ADR-011). |
+| R1 | MET | `plugins/kk/skills/storm-research/SKILL.md` — XOR invoke `:42-59`; `topicId` `:80-94`; works layout `:96-107`; live vs fixture + `FIRECRAWL_API_KEY` `:113-123`; fail-loud table `:125-135`; better-report a–d `:140-151`; "Do not merge this into `topic`" `:24`. Re-read this run. |
+| R2 | MET | `plugins/kk/commands/workflow-run.md` (129 lines). Tests `apps/cli/tests/workflow-run-command.test.ts` 7 pass / 39 expect this run (topicId shell vs 0056 Node, XOR, config create, 3-root copy, 7-var `--vars`, thin-wrapper/ADR-011). |
 | R3 | MET | `apps/cli/src/cli.ts:20-21` registers only `registerExecutorCommand` + `registerPluginCommand`. `apps/cli/src/commands/` = `executor.ts`, `plugin.ts` (ls this run). |
 
 **Acceptance Criteria Verification**
 
 | AC | Status | Evidence Type | Evidence |
 | --- | --- | --- | --- |
-| Scenario: R1 — Skill covers run and craft [docs-only] | MET | static-ref | `plugins/kk/skills/kk-storm-research/SKILL.md:24,42-59,80-94,96-107,113-123,140-151` (re-read this run). |
-| Scenario: R2 — Generic command shells to spur | MET | test | `NODE_ENV=test bun test apps/cli/tests/kk-workflow-command.test.ts` — 7 pass / 0 fail this run. |
+| Scenario: R1 — Skill covers run and craft [docs-only] | MET | static-ref | `plugins/kk/skills/storm-research/SKILL.md:24,42-59,80-94,96-107,113-123,140-151` (re-read this run). |
+| Scenario: R2 — Generic command shells to spur | MET | test | `NODE_ENV=test bun test apps/cli/tests/workflow-run-command.test.ts` — 7 pass / 0 fail this run. |
 | Scenario: R3 — CLI nouns unchanged | MET | command | `apps/cli/src/cli.ts:20-21`; `ls apps/cli/src/commands/` → `executor.ts` `plugin.ts` this run. |
 
 **SECUA Review**
@@ -139,7 +141,7 @@ No P1–P3. No new Commander noun. Command stays under 150 lines.
 
 **design-conformance:** DONE — command steps 1–6 and skill craft match Design.
 
-Coverage: N/A (plugin capability files; command contract covered by `apps/cli/tests/kk-workflow-command.test.ts`).
+Coverage: N/A (plugin capability files; command contract covered by `apps/cli/tests/workflow-run-command.test.ts`).
 ### Review
 | Priority | Finding | Disposition |
 |----------|---------|-------------|

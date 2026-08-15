@@ -27,8 +27,8 @@ together by **spur workflows** — `kk` owns each step, `spur` owns the orchestr
 | Ingestion | ✅ | `karakeep-local` plugin (`source → Doc[]`) |
 | Generation | ✅ | Owned STORM pipeline behind the generator contract (`content-gen`) |
 | Publishing | ✅ | `surfdash-pub`, `zenn-pub`, `qiita-pub` on a shared transport harness; more channels on the roadmap |
-| Quality gating | 🚧 | `kk-judge` LLM-as-judge skills (tech-accuracy, brand-tone, compliance) wired via `agent.run` |
-| Authoring skills | 🚧 | `kk-topic` topic-core skill (`create`, `init`, `outline`, `draft`) |
+| Quality gating | 🚧 | `judge` LLM-as-judge skills (tech-accuracy, brand-tone, compliance) wired via `agent.run` |
+| Authoring skills | 🚧 | `topic` topic-core skill (`create`, `init`, `outline`, `draft`) |
 | Distribution | ✅ | npm tarball ships `plugins/kk` + marketplace — install into any coding agent via `superskill install` |
 
 Status legend: ✅ shipped · 🚧 in flight. Full per-feature detail lives in `docs/05_FEATURES.md`.
@@ -99,7 +99,7 @@ kinds:
 | `publish` | `Content → Result` | `surfdash-pub`, `zenn-pub`, `qiita-pub` |
 
 **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
-(ADR-007). The judge lives in the `kk` plugin collection: `plugins/kk/skills/kk-judge`.
+(ADR-007). The judge lives in the `kk` plugin collection: `plugins/kk/skills/judge`.
 
 Core contracts (`Doc`, `Brief`, `Content`, `Result`) and the `kindContract` per kind live in
 `@gobing-ai/kk-core`. A **pipeline** is a `spur workflow` whose states shell out to `kk`

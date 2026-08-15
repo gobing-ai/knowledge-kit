@@ -190,7 +190,7 @@ Root **F** is no longer a cancelled root. It is repurposed as the **kk plugin co
 ### Amendment — 2026-08-12 (WT topic-core harvest rehomed D5 → F2)
 
 The WT agent-skill harvest moves from **D5** to **F2** under the kk plugin collection; its first
-delivery is one fat `kk-topic` skill covering topic-core authoring. **Why:** `plugins/kk` agent
+delivery is one fat `topic` skill covering topic-core authoring. **Why:** `plugins/kk` agent
 capabilities belong under F, while D remains the home for product `generator` plugin instances.
 
 ### Amendment — 2026-07-24 (plugin model concretized, sub-decision 1)
@@ -265,7 +265,7 @@ The 2026-08-02 amendment is superseded in full:
   This is the taxonomy shipped in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts`) — the
   runtime never gained a fourth kind, so this is a doc-only correction.
 - **LLM-as-judge is delivered via agent skills + `agent.run`.** Evaluation rubrics, prompt templates,
-  and verdict emission live in a **fat skill** (`plugins/kk/skills/kk-judge`). Specialized personas
+  and verdict emission live in a **fat skill** (`plugins/kk/skills/judge`). Specialized personas
   (tech-accuracy, brand-tone, compliance) are **thin wrappers** (slash commands / subagents) that
   delegate to the fat skill. No engine changes are required: `agent.run` is an existing spur action
   kind that writes a verdict file; a `shell`/`jq` guard reads the verdict payload to gate transitions.
@@ -282,7 +282,7 @@ The 2026-08-02 amendment is superseded in full:
 - **Amendment (2026-08-11):** corrects the preceding paragraph — no `VerdictSchema` utility exists
   in `@gobing-ai/kk-core`, nor was one built by ticket 0037 (`packages/kk-core/src/schemas.ts`
   exports `Doc` / `Content` / `Result` / `DocList` only). The verdict contract is defined by the
-  `kk-judge` skill's output format (`plugins/kk/skills/kk-judge/SKILL.md` §Verdict output contract)
+  `judge` skill's output format (`plugins/kk/skills/judge/SKILL.md` §Verdict output contract)
   and validated by the workflow's `shell`/`jq` guard on the verdict payload. The "validated by a
   `VerdictSchema` utility" phrasing is withdrawn; nothing else in this amendment changes.
 
@@ -351,6 +351,14 @@ fork.
 Clause 3 still governs **per-root** layout and diagnostics. Default runtime discovery is no
 longer a single CWD `./plugins` scan — see **ADR-012**. `--plugins-root` remains the exclusive
 single-root override and still obeys this layout.
+
+### Amendment — 2026-08-14 (capability names omit the plugin prefix)
+
+`superskill install kk` prefixes every skill, slash command, and subagent with the plugin name
+`kk`. Capability files under `plugins/kk` therefore **must not** start with `kk-` (else install
+yields `kk:kk-judge`). Current names: `judge`, `topic`, `storm-research`, `/workflow-run`,
+`judge-tech` / `judge-tone` / `judge-compliance`. Product workflow YAML stems (`kk-storm-research`)
+are not installable agent capabilities and keep their existing names.
 
 ---
 

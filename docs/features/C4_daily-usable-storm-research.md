@@ -6,13 +6,13 @@ status: done
 priority: P1
 tags: ["wayfinder-map"]
 created_at: "2026-08-14T07:24:49.711Z"
-updated_at: "2026-08-15T01:18:55.590Z"
+updated_at: "2026-08-15T04:13:05.149Z"
 ---
 
 # C4: Daily-usable STORM research
 
 ## Goal
-**Destination.** An operator can run `kk-storm-research` from any working directory — from a topic sentence or a markdown input file — and get a markdown research report (plus `content.json`) in `~/.config/kk/works/<topic-id>/`, using live Firecrawl retrieval, via the `kk-storm-research` skill and a generic `/kk-workflow` command that shells to `spur workflow run`.
+**Destination.** An operator can run `kk-storm-research` from any working directory — from a topic sentence or a markdown input file — and get a markdown research report (plus `content.json`) in `~/.config/kk/works/<topic-id>/`, using live Firecrawl retrieval, via the `storm-research` skill and a generic `/workflow-run` command that shells to `spur workflow run`.
 ## Scope
 - In:
   - Thin product config at `~/.config/kk/config.yaml` (default `works_dir`, run defaults). Not a platform rewrite.
@@ -22,8 +22,8 @@ updated_at: "2026-08-15T01:18:55.590Z"
   - Live Firecrawl client in `plugins/ingestions/web-search` per the 0054 contract. Fixture path stays for CI.
   - Daily machine: `prepare → ingest → generate → render` (no judge, no query expansion, no publish).
   - Shared `Content → markdown` helper plus one research-report template. `content.json` remains the machine contract.
-  - Fat skill `kk-storm-research` (how to run **and** how to get a better report).
-  - Generic slash command `/kk-workflow <name>` that shells to `spur workflow run`, defaulting to `kk-storm-research`.
+  - Fat skill `storm-research` (how to run **and** how to get a better report).
+  - Generic slash command `/workflow-run <name>` that shells to `spur workflow run`, defaulting to `kk-storm-research`.
 - Out:
   - Redrawing or reopening **C3** (that map stays `done`).
   - Publish channels / E-kind work.
@@ -35,7 +35,7 @@ updated_at: "2026-08-15T01:18:55.590Z"
   - A new `kk` first-layer CLI noun (ADR-011: `executor` + `plugin` only).
   - A general template engine (Mustache/Handlebars-style) — waits for a second consumer.
   - Moving Spur harness workflows (`task-pipeline.yaml`, etc.) out of `.spur/workflows`.
-  - `kk-judge` gate and query expansion (fog — may graduate later).
+  - `judge` gate and query expansion (fog — may graduate later).
 ## Acceptance Criteria
 This is a **wayfinder map**, not a BDD feature. The `wayfinder-map` tag tells `feature check` to skip Gherkin AC validation.
 
@@ -61,14 +61,14 @@ Per-task research PASS is not feature done.
 ## Notes
 Domain context and standing preferences for every session on this map.
 
-**Product model (do not invert).** `kk` owns steps; `spur workflow` owns orchestration (AGENTS.md, ADR-007). Three plugin kinds only. LLM-as-judge is a skill + `agent.run`, not a kind. Slash commands and skills live under `plugins/kk` (feature **F**).
+**Product model (do not invert).** `kk` owns steps; `spur workflow` owns orchestration (AGENTS.md, ADR-007). Three plugin kinds only. LLM-as-judge is a skill + `agent.run`, not a kind. Slash commands and skills live under `plugins/kk` (feature **F**). Capability names omit a leading `kk-` so `superskill install kk` yields `kk:storm-research` / `/kk:workflow-run`, not `kk:kk-*`. The product workflow stem `kk-storm-research` is unchanged.
 
 **Learnings from C3 (do not re-derive).**
 - C3 proved the compose-plugins sample: topic `--vars` → fixture `web-search` → `content-gen` → `content.json`. Biggest progress was establishing that sample on existing inner/outer foundations.
 - Ingest contract of record: `docs/tasks/0054_specify-the-firecrawl-topic-to-doc-ingest-contract.md` Solution blocks 1–8. Live path is specified, not implemented (`fixture !== true` still exit 1).
 - Workflow conventions that must survive: quote `"$schema"`; all vars are strings; success edges `guard: { kind: always }` so `--dry-run` reaches `done` (do not “fix” to `action-ok`).
 - `Content.body` is already markdown (`format` defaults to `markdown`). The daily gap is a **file sidecar**, not a schema change. Publish plugins consume `Content` JSON — keep writing `content.json`.
-- `kk-topic` (F2) is topic-*authoring* and explicitly excludes research. Do not merge this skill into it.
+- `topic` (F2) is topic-*authoring* and explicitly excludes research. Do not merge this skill into it.
 - `docs/04_DESIGN.md` §2: no product config file exists yet. Spur config stays under `.spur/config.yaml`.
 - ADR-011: first-layer `kk` nouns are `executor` and `plugin` only. Daily invoke is a slash command + skill, not a new `kk workflow` noun.
 - C3 dogfood P4: live Firecrawl is the leftover that makes the path real.
@@ -80,7 +80,7 @@ Domain context and standing preferences for every session on this map.
 | `~/.config/kk/config.yaml` + `works/<topic-id>/` | In — thin enabler. |
 | Global product-workflow folder | In — `~/.config/kk/workflows/` (plural). Repo YAML remains SSOT; copies are install/sync. |
 | Enrich `kk-storm-research.yaml` | In — only the four v1 states. |
-| Finish postponed parts | In — Firecrawl first. Other C3 deferrals (judge, sidecar, sugar) are split: sidecar = render; sugar = `/kk-workflow`; judge stays fog. |
+| Finish postponed parts | In — Firecrawl first. Other C3 deferrals (judge, sidecar, sugar) are split: sidecar = render; sugar = `/workflow-run`; judge stays fog. |
 | Sentence **or** markdown file in; markdown out | In — prepare I/O + render sidecar. |
 | Skill + slash commands | In — specific skill + generic command. |
 | Template markdown library | Narrowed — `Content → markdown` helper + one research template. Not a general engine. |
@@ -91,21 +91,21 @@ Domain context and standing preferences for every session on this map.
 
 - Whether a future map should add a `kk` first-layer noun for workflows (would need an ADR-011 amendment). Not this map — slash command is the invoke surface.
 - Where query expansion should live (plugin vs `prepare`) when that fog graduates.
-- Where a `kk-judge` gate sits (after generate vs after render) when that fog graduates.
+- Where a `judge` gate sits (after generate vs after render) when that fog graduates.
 
 ### Decisions so far
 
 - Destination is daily-usable STORM research; **C3 stays `done`**; this is a new child **C4** under **C** (discovery, 2026-08-14).
 - Daily runs must work from any working directory. Product workflows are installed/copied to `~/.config/kk/workflows/`. Config is thin (`works_dir` + defaults). YAML is authored in the repo (discovery, 2026-08-14).
 - v1 daily machine is `prepare → ingest → generate → render`. Judge, query expansion, Co-STORM, and publish are out of the v1 machine (discovery, 2026-08-14).
-- Invoke: fat skill `kk-storm-research` + generic `/kk-workflow` command. Do not merge into `kk-topic` (discovery, 2026-08-14).
+- Invoke: fat skill `storm-research` + generic `/workflow-run` command. Do not merge into `topic` (discovery, 2026-08-14; capability rename 2026-08-14).
 - Render: shared `Content → markdown` helper + one research-report template, not a general template engine (discovery, 2026-08-14).
 - No new `kk` CLI first-layer noun this map (ADR-011, codebase).
 
 ### Not yet specified
 
 - Query expansion beyond “topic is the single query.”
-- `kk-judge` gate after generate (F1 exists; wiring into this machine is later).
+- `judge` gate after generate (F1 exists; wiring into this machine is later).
 - Resume / idempotency when `works/<topic-id>/` already exists (overwrite vs refuse vs increment).
 - Cost / billing UX for live Firecrawl beyond 0054 fail-loud (missing key, 429, 402).
 - Exact topic-id algorithm (kebab vs hash vs date-slug) — the config contract ticket locks this; do not invent it in other tickets.

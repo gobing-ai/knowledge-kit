@@ -24,12 +24,12 @@ sync: [T4]
 >
 > **2026-08-12 (F repurposed):** root **F** repurposed from the cancelled E2E vertical to the **kk plugin collection** — parent for all `plugins/kk` capabilities (skills, commands, subagents); kk-judge migrated **B7 → F1**. F is no longer a cancelled root; **G/H** remain historical cancelled roots. (Slot freed by removing the cancelled F file; `cancelled` is terminal in spur.)
 >
-> **2026-08-12 (D5 → F2):** the WT agent-skill harvest moved under **F** to honor that collection boundary. F2 is narrowed to one fat `kk-topic` skill for topic-core authoring; remaining WT families require later intake.
+> **2026-08-12 (D5 → F2):** the WT agent-skill harvest moved under **F** to honor that collection boundary. F2 is narrowed to one fat `topic` skill for topic-core authoring; remaining WT families require later intake.
 >
 > **2026-08-07 (0037):** LLM-as-judge repositioned from fourth plugin kind to **agent skills + `agent.run`**
 > (ADR-007 amdt 2026-08-07, superseding the 2026-08-02 amendment). **B7** renamed "LLM-as-judge
 > agent skills"; plugin taxonomy reverts to three kinds (`ingestion`, `generator`, `publish`).
-> Fat skill `kk-judge` + thin wrappers deliver verdict gating with zero engine work. Map:
+> Fat skill `judge` + thin wrappers deliver verdict gating with zero engine work. Map:
 > `docs/plans/feature-tree-restructure-map-j.md`.
 
 ## Status legend
@@ -56,7 +56,7 @@ sync: [T4]
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` (edge on parent C) |
 | C3 | STORM topic-research workflow | ✅ done | 3 | wayfinder map; tasks `0054`/`0055` done; `.spur/workflows/kk-storm-research.yaml` + fixture `plugins/ingestions/web-search`; live Firecrawl not in this map; dogfood `docs/dogfood/2026-08-14-C3-storm-research-workflow-dogfood.md` |
-| C4 | Daily-usable STORM research | ✅ done | 3 | wayfinder map; tasks `0056`–`0060` done; live Firecrawl + md in/out + `~/.config/kk/works/<topic-id>/` + `kk-storm-research` skill + `/kk-workflow`; dogfood `docs/dogfood/2026-08-14-C4-daily-usable-storm-research-dogfood.md`; verifyall Shippable PASS |
+| C4 | Daily-usable STORM research | ✅ done | 3 | wayfinder map; tasks `0056`–`0060` done; live Firecrawl + md in/out + `~/.config/kk/works/<topic-id>/` + `storm-research` skill + `/workflow-run`; dogfood `docs/dogfood/2026-08-14-C4-daily-usable-storm-research-dogfood.md`; verifyall Shippable PASS |
 | **D** | Content generation | ⏳ active | 1 | kind parent; re-cut: `Doc[] \| Brief`, creation co-equal with ingestion (ADR-007 R3); AC rolled up from D3+D2 (DD-09); closed via carrier `0040`, then **reopened for plugin intake** |
 | D1 | Study vendors/storm → pick stand-in | ✅ done | 1 | task `0001`: stand-in = `wt:technical-content-creation` |
 | D2 | Wire existing generator skill to contract | ✅ done | 1 | tasks `0022`/`0023`; D3 spec done (`0017`) — gate satisfied |
@@ -67,9 +67,9 @@ sync: [T4]
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
 | E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/publishings/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
 | E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/publishings/zenn-pub`, `plugins/publishings/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
-| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules); F1 = kk-judge; F2 = topic-core authoring |
-| F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `kk-judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
-| F2 | Topic-core authoring skill | ⏳ ready | 3 | task `0048`: one fat `kk-topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
+| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules); F1 = judge; F2 = topic-core authoring |
+| F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
+| F2 | Topic-core authoring skill | ⏳ ready | 3 | task `0048`: one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
