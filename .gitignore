@@ -142,8 +142,9 @@ dist
 .turbo
 /.rulesync/
 /.spur/spur.*
-.spur/spur.db*
+**/.spur/spur.db*
 /.spur/context/token-ledger.jsonl
+**/.spur/context/token-ledger.jsonl
 /.spur/context/.session*.json
 /.spur/run/
 /.spur/memory/sessions/*-checkpoint.md
