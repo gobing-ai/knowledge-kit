@@ -1,4 +1,5 @@
 ---
+name: workflow-run
 description: >-
   Run STORM daily research end to end — a topic sentence XOR a markdown file becomes a
   grounded content.md report. Installs the workflow YAML on first run (0056 copy rule),
@@ -7,8 +8,8 @@ description: >-
 argument-hint: "[name] <topic|--in file> [--fixture] [--force]"
 ---
 
-Thin wrapper around the **kk-storm-research** skill. Read
-`plugins/kk/skills/kk-storm-research/SKILL.md` first — it is the craft SSOT (query framing,
+Thin wrapper around the **storm-research** skill. Read
+`plugins/kk/skills/storm-research/SKILL.md` first — it is the craft SSOT (query framing,
 evidence verification, better-report practices, fail-loud rows). This command owns the run
 procedure: config create, YAML install, topic-id computation, and the `spur workflow run`.
 No new `kk` CLI noun (ADR-011) — everything here is shell + the workflow.

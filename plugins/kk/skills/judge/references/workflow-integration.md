@@ -1,4 +1,4 @@
-# Workflow integration — kk-judge in a spur workflow
+# Workflow integration — judge in a spur workflow
 
 Spur's workflow engine executes one node at a time (`type: parallel` is an inert schema field —
 see `docs/03_ARCHITECTURE.md`). The judge step is therefore a single `agent.run` node followed
@@ -13,10 +13,10 @@ by a `shell` node that guards the transition to `publish`.
     Evaluate the generated content against the {{rubric}} rubric.
     Content: {{content_path}}
     Write the verdict to {{verdict_path}}.
-  skill: kk-judge
+  skill: judge
 ```
 
-- `agent.run` spawns an agent that loads the `kk-judge` skill, performs the evaluation, and writes
+- `agent.run` spawns an agent that loads the `judge` skill, performs the evaluation, and writes
   the verdict JSON to `{{verdict_path}}` (typically `.spur/run/verdict-judge.json`).
 - The verdict file is the only durable artifact. The agent's prose output is not the contract.
 
@@ -28,22 +28,22 @@ The guard runs as a `shell` step after `judge`. It reads the verdict and gates t
 #!/usr/bin/env sh
 verdict_path="{{verdict_path}}"
 if [ ! -f "$verdict_path" ]; then
-  echo "kk-judge: verdict file not found at $verdict_path"
+  echo "judge: verdict file not found at $verdict_path"
   exit 1
 fi
 verdict=$(jq -r '.verdict' "$verdict_path")
 case "$verdict" in
   PASS)
-    echo "kk-judge: PASS"
+    echo "judge: PASS"
     exit 0
     ;;
   FAIL|NEEDS_REVISION)
-    echo "kk-judge: $verdict — see $verdict_path for findings"
+    echo "judge: $verdict — see $verdict_path for findings"
     jq -r '.findings[]? | select(.status=="fail") | "  FAIL: \(.criterion): \(.detail)"' "$verdict_path"
     exit 1
     ;;
   *)
-    echo "kk-judge: unrecognized verdict '$verdict' in $verdict_path"
+    echo "judge: unrecognized verdict '$verdict' in $verdict_path"
     exit 1
     ;;
 esac
@@ -60,7 +60,7 @@ esac
 
 For a bounded regenerate-retry loop, wire the workflow so that a `NEEDS_REVISION` verdict routes
 back to the `generate` step with the verdict's `feedback` as additional input. Cap retries (the
-example workflow uses 2). This is workflow-level orchestration — `kk-judge` itself is stateless
+example workflow uses 2). This is workflow-level orchestration — `judge` itself is stateless
 and re-runnable.
 
 ```

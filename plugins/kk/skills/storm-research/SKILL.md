@@ -1,16 +1,16 @@
 ---
-name: kk-storm-research
+name: storm-research
 description: >-
-  Use the kk-storm-research skill to run daily STORM research — turn a research topic
+  Use the storm-research skill to run daily STORM research — turn a research topic
   sentence or a markdown source file into a grounded STORM Content report with a content.md
   sidecar ("research X", "produce a research report on X", "run today's STORM research",
   "turn this brief into a researched report"). The machine is the 0059 workflow
   (prepare → ingest → generate → render) over the 0056 works layout. Research is separate from
-  authoring: kk-topic owns init→outline→draft and this skill never merges into kk-topic.
+  authoring: topic owns init→outline→draft and this skill never merges into topic.
 version: 0.1.0
 ---
 
-# kk-storm-research — STORM daily research (topic sentence XOR markdown file → content.md)
+# storm-research — STORM daily research (topic sentence XOR markdown file → content.md)
 
 ## Purpose
 
@@ -20,8 +20,8 @@ the `content-gen` generator, and the `render-md` helper. The machine is the 0059
 (`prepare → ingest → generate → render → done|failed`); this skill owns the **craft** — framing
 the query, deciding when to re-run ingest, and verifying the report against the evidence.
 
-Research is **not** authoring. `kk-topic` owns `init → outline → draft` from an approved
-outline; this skill owns evidence gathering. **Do not merge this into `kk-topic`.**
+Research is **not** authoring. `topic` owns `init → outline → draft` from an approved
+outline; this skill owns evidence gathering. **Do not merge this into `topic`.**
 
 ## When to use / not to use
 
@@ -34,14 +34,14 @@ Use when:
 
 Do **not** use for:
 
-- Authoring an article from a topic with no research need — that is `kk-topic`.
-- Quality gating / judging generated content — that is `kk-judge`.
+- Authoring an article from a topic with no research need — that is `topic`.
+- Quality gating / judging generated content — that is `judge`.
 - Publishing, platform adaptation, or illustration — out of C4 scope.
 - Anything requiring a raw `kk executor run` chain when the workflow already composes it.
 
 ## Invocation contract
 
-Same arguments as `/kk-workflow` (the thin command delegates here for craft):
+Same arguments as `/workflow-run` (the thin command delegates here for craft):
 
 ```
 [workflow-name] <topic | --in <file>> [--fixture] [--force]
@@ -58,8 +58,8 @@ Same arguments as `/kk-workflow` (the thin command delegates here for craft):
 **XOR rule:** exactly one of `<topic>` / `--in <file>` must be set. Both set or both empty →
 fail loud, no writes. `--in` and a bare topic token are mutually exclusive.
 
-The operator invocation in practice is `/kk-workflow <topic>` or `/kk-workflow --in <file>`; the
-skill is also callable directly as `Skill(skill="kk-storm-research", args="<topic|--in file> ...")`.
+The operator invocation in practice is `/workflow-run <topic>` or `/workflow-run --in <file>`; the
+skill is also callable directly as `Skill(skill="storm-research", args="<topic|--in file> ...")`.
 
 ## How to run
 
@@ -106,7 +106,7 @@ Per-topic workspace at `$works_dir/<topic-id>/`:
 | `content.json` | generate | STORM `Content` (machine contract) |
 | `content.md` | render | markdown sidecar report |
 
-Contrast: `kk-topic`'s authoring workspace is `./<kebab-case(topic)>` with `brief.md` /
+Contrast: `topic`'s authoring workspace is `./<kebab-case(topic)>` with `brief.md` /
 `2-outline/` / `3-draft/` and explicitly excludes research. C4 works live under `$works_dir`,
 outside any repo.
 

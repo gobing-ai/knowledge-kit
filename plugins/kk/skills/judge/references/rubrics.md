@@ -1,6 +1,6 @@
-# Rubrics — kk-judge evaluation criteria
+# Rubrics — judge evaluation criteria
 
-Loaded by the kk-judge skill at evaluation time. Each rubric defines criteria, weights,
+Loaded by the judge skill at evaluation time. Each rubric defines criteria, weights,
 must-pass flags, and the score thresholds that map to verdicts.
 
 ## Scoring model

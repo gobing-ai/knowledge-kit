@@ -1,10 +1,10 @@
 ---
-name: kk-judge
-description: This skill should be used when an LLM evaluation gate is needed in a knowledge-kit pipeline — "judge this content", "evaluate against rubric", "quality gate before publish", "check technical accuracy", "review brand tone", "compliance check", or when a spur workflow step of type `agent.run` targets the kk-judge skill to emit a PASS/FAIL/NEEDS_REVISION verdict. Centralizes evaluation rubrics, prompt templates, and structured verdict emission for generated Content.
+name: judge
+description: This skill should be used when an LLM evaluation gate is needed in a knowledge-kit pipeline — "judge this content", "evaluate against rubric", "quality gate before publish", "check technical accuracy", "review brand tone", "compliance check", or when a spur workflow step of type `agent.run` targets the judge skill to emit a PASS/FAIL/NEEDS_REVISION verdict. Centralizes evaluation rubrics, prompt templates, and structured verdict emission for generated Content.
 version: 0.1.0
 ---
 
-# kk-judge — LLM-as-judge evaluation skill
+# judge — LLM-as-judge evaluation skill
 
 ## Purpose
 
@@ -107,7 +107,7 @@ Content to evaluate: {{content_path}}
 Rubric: {{rubric}}              # general | tech-accuracy | brand-tone | compliance
 Output verdict to: {{verdict_path}}
 
-Load the rubric definition from plugins/kk/skills/kk-judge/references/rubrics.md (section: {{rubric}}).
+Load the rubric definition from plugins/kk/skills/judge/references/rubrics.md (section: {{rubric}}).
 Evaluate the content against every criterion in that rubric.
 For each criterion, quote the specific passage and assign pass | fail | warn.
 Decide the verdict: any must-pass fail → FAIL; else score < threshold → NEEDS_REVISION; else PASS.

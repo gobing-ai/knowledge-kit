@@ -1,7 +1,7 @@
 ---
-name: kk-topic
+name: topic
 description: >-
-  Use the kk-topic skill to author technical content from a topic or Markdown
+  Use the topic skill to author technical content from a topic or Markdown
   brief — "create an article from this topic", "turn this brief into a draft",
   "generate outline options", "initialize a topic workspace", "resume my draft".
   Runs the topic-core authoring loop (init → outline → draft) through four
@@ -9,7 +9,7 @@ description: >-
   cohesive topic-authoring core, harvested from the WT 7-stage wrappers.
 ---
 
-# kk-topic — topic-core authoring (create | init | outline | draft)
+# topic — topic-core authoring (create | init | outline | draft)
 
 ## Purpose
 
@@ -159,7 +159,7 @@ silently skip, never auto-replace, never delete.
 ## Prompt template (Skill() / agent.run)
 
 ```
-Skill(skill="kk-topic",
+Skill(skill="topic",
   args="<operation> <topic-or-brief> [--dir <target>] [--outline <a|b|c>] [--revise <feedback>] [--force]")
 ```
 
