@@ -13,7 +13,7 @@ tags: []
 dependencies: []
 ac_numbering: task-local
 created_at: "2026-08-14T07:25:43.924Z"
-updated_at: "2026-08-14T21:51:59.744Z"
+updated_at: "2026-08-15T02:42:27.432Z"
 ---
 
 ## 0056. Specify the kk config, works workspace, and workflow-install contract
@@ -35,9 +35,9 @@ wayfinder:research — C4 Daily-usable STORM research.
 
 **Out of this ticket:** implementing a TypeScript config loader; editing the workflow YAML (0059); live Firecrawl (0057); render helper (0058); skill/command files (0060).
 ### Requirements
-- [ ] R1. Solution contains eight labeled blocks that an implementer can follow without asking the operator: (1) config schema with the frozen keys `works_dir`, `workflows_dir`, `defaults.maxResults`, `defaults.fixture`; (2) works layout file names; (3) topic-id algorithm as specified in Design; (4) prepare XOR + local-Doc mapping; (5) workflow-install copy rule; (6) fail-loud table; (7) dated citations; (8) handoff keys for 0059 and 0060. Confirm or cite-amend the Design frozen names — do not silently rename them.
-- [ ] R2. Fail-loud table covers: missing/unreadable `KK_CONFIG`; unreadable `--in` file; XOR violation (topic and input_file both set); topic-id empty after normalize; dest YAML exists with different bytes (no overwrite); source YAML missing. Each row: condition → exit → files written → recovery.
-- [ ] R3. Solution states missing config is **create-on-first-run** with compiled defaults and never overwrites an existing `config.yaml`.
+- [x] R1. Solution contains eight labeled blocks that an implementer can follow without asking the operator: (1) config schema with the frozen keys `works_dir`, `workflows_dir`, `defaults.maxResults`, `defaults.fixture`; (2) works layout file names; (3) topic-id algorithm as specified in Design; (4) prepare XOR + local-Doc mapping; (5) workflow-install copy rule; (6) fail-loud table; (7) dated citations; (8) handoff keys for 0059 and 0060. Confirm or cite-amend the Design frozen names — do not silently rename them.
+- [x] R2. Fail-loud table covers: missing/unreadable `KK_CONFIG`; unreadable `--in` file; XOR violation (topic and input_file both set); topic-id empty after normalize; dest YAML exists with different bytes (no overwrite); source YAML missing. Each row: condition → exit → files written → recovery.
+- [x] R3. Solution states missing config is **create-on-first-run** with compiled defaults and never overwrites an existing `config.yaml`.
 ### Acceptance Criteria
 ```gherkin
 Feature: kk config, works workspace, and workflow-install contract
@@ -265,16 +265,31 @@ Rows 2–4 hold even when the workspace dir already exists (re-run on the same t
 
 **0060 consumes:** create-on-first-run config (Block 1); the copy rule (Block 5); the XOR args (Block 4); env names (`KK_CONFIG`, `KK_WORKS_DIR`, `KK_WORKFLOWS_DIR`); dest `$workflows_dir/<name>.yaml`; **compute `topicId` and pass `work_dir`** (the invoker owns hashing — Block 3).
 ### Testing
-**Pipeline verify results**
+**Verdict: PASS** (re-verify `--force` 2026-08-14; research artifact, no runtime coverage)
 
-- Verdict: PASS (from verdict artifact)
+**Per-Requirement Traceability**
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | 8 labeled blocks in ## Solution (task file :157-:262): frozen config keys works_dir/workflows_dir/defaults.maxResults/defaults.fixture verbatim vs Design; 6-file works layout; topicId normalize->slug48->sha256[0:8]; prepare XOR + local-Doc mapping; 3-root workflow-copy rule with byte-compare; dated citations 16/16 resolve; 0059/0060 handoff keys pinned. No renames of Design frozen names. |
-| R2 | MET | Fail-loud table rows 1a/1b/2/3/4/5/6 (task file :233-:245): unreadable KK_CONFIG, invalid types, unreadable --in, XOR both-set/both-empty, empty topic-id, dest-different-bytes, source-missing — each with condition/exit/files-written/recovery. Missing-config reconciled to R3 create-on-first-run (documented closed Q&A). |
-| R3 | MET | Block 1 (:171): create-on-first-run with compiled defaults; existing config.yaml never overwritten; no merge/rewrite/timestamp touch; only operator --force replaces (none in v1). |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `docs/tasks/0056_specify-the-kk-config-works-workspace-and-workflow-install-c.md:157-266` — Solution blocks 1–8: frozen keys `works_dir`/`workflows_dir`/`defaults.maxResults`/`defaults.fixture` (block 1 :159-166); 6-file works layout (block 2 :175-186); `topicId` normalize→slug48→sha256[0:8] (block 3 :190-201); XOR + local-Doc (block 4 :203-221); 3-root copy rule (block 5 :224-231); citations (block 7 :249-260); 0059/0060 handoff (block 8 :262-266). Re-read this run. |
+| R2 | MET | Fail-loud table rows 1a/1b/2/3/4/5/6 at `:237-245` — each names condition, exit, files written, recovery. Missing-config is create-on-first-run (not a fail-loud row), documented at `:235`. |
+| R3 | MET | Block 1 `:171` — create-on-first-run with compiled defaults; existing `config.yaml` never overwritten. |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: R1 — Contract is implementable without guessing [docs-only] | MET | static-ref | Solution blocks 1–8 at `:157-266` (re-read this run). Research contract; no runtime path. |
+| Scenario: R2 — Fail-loud rows are explicit [docs-only] | MET | static-ref | Table `:237-245` (re-read this run). |
+| Scenario: R3 — Missing config is created, never overwritten [docs-only] | MET | static-ref | Block 1 `:171` (re-read this run). |
+
+**SECUA Review**
+
+No production code in this ticket. P4 none.
+
+**design-conformance:** 0056 Design frozen names appear verbatim in Solution. Block 5 historical note about C3 `fixture: true` is the world at research time; 0059 later amended the YAML (documented handoff, not silent drift).
+
+Coverage: N/A (documentation-only change; no runtime code path added).
 ### Review
 Review run 2026-08-14 (three-dimensional: functional traceability + SECUA + architecture; spec-authoring task — deliverable is the `## Solution` contract, no production code diff).
 

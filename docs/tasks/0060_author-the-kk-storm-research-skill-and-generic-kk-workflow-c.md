@@ -13,7 +13,7 @@ tags: []
 dependencies: ["0056", "0059"]
 ac_numbering: task-local
 created_at: "2026-08-14T07:25:44.519Z"
-updated_at: "2026-08-14T22:52:48.891Z"
+updated_at: "2026-08-15T02:42:28.647Z"
 ---
 
 ## 0060. Author the kk-storm-research skill and generic kk-workflow command
@@ -33,9 +33,9 @@ wayfinder:task — C4 Daily-usable STORM research. Blocked on 0056 (install + wo
 
 **Out of this ticket:** TypeScript config loader package; live Firecrawl; ContentSchema; a storm-only `/kk-storm-research` command; new Commander noun.
 ### Requirements
-- [ ] R1. Add `plugins/kk/skills/kk-storm-research/SKILL.md` with: how to run (XOR topic/`--in`, `work_dir`, fixture vs live, `FIRECRAWL_API_KEY`); the 0056 topic-id algorithm; fail-loud when YAML or works cannot be resolved; **and** at least these four better-report practices: (a) prefer a specific question over a noun phrase; (b) do not treat `fixture: true` as research; (c) re-run ingest only when the query or sources must change, else reuse `docs.json`; (d) read `content.md` citations against `docs.json` ids. Do not merge into `kk-topic`.
-- [ ] R2. Add `plugins/kk/commands/kk-workflow.md` wrapping that skill. Args: `[name] <topic|--in <file>> [--fixture] [--force]`. Default `name=kk-storm-research`. First-run: create config (0056), copy YAML (0056), compute `topicId`, `mkdir` works, `spur workflow run` against dest YAML with 0059 vars. No new `kk` first-layer noun.
-- [ ] R3. `apps/cli/src/cli.ts` / `commands/` still register only `executor` and `plugin` after this ticket.
+- [x] R1. Add `plugins/kk/skills/kk-storm-research/SKILL.md` with: how to run (XOR topic/`--in`, `work_dir`, fixture vs live, `FIRECRAWL_API_KEY`); the 0056 topic-id algorithm; fail-loud when YAML or works cannot be resolved; **and** at least these four better-report practices: (a) prefer a specific question over a noun phrase; (b) do not treat `fixture: true` as research; (c) re-run ingest only when the query or sources must change, else reuse `docs.json`; (d) read `content.md` citations against `docs.json` ids. Do not merge into `kk-topic`.
+- [x] R2. Add `plugins/kk/commands/kk-workflow.md` wrapping that skill. Args: `[name] <topic|--in <file>> [--fixture] [--force]`. Default `name=kk-storm-research`. First-run: create config (0056), copy YAML (0056), compute `topicId`, `mkdir` works, `spur workflow run` against dest YAML with 0059 vars. No new `kk` first-layer noun.
+- [x] R3. `apps/cli/src/cli.ts` / `commands/` still register only `executor` and `plugin` after this ticket.
 ### Acceptance Criteria
 ```gherkin
 Feature: kk-storm-research skill and generic kk-workflow command
@@ -115,21 +115,31 @@ Each entry cites the first changed line per file (`file:line`).
 | `plugins/ingestions/web-search/tests/web-search.test.ts:6` |
 | `plugins/ingestions/web-search/tests/web-search.test.ts:94` |
 ### Testing
-**Pipeline verify results**
+**Verdict: PASS** (re-verify `--force` 2026-08-14)
 
-- Verdict: PASS (from verdict artifact)
+**Per-Requirement Traceability**
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | `plugins/kk/skills/kk-storm-research/SKILL.md` — names invoke contract (XOR topic/`--in`, `--fixture`, `--force`), 0056 `topicId()` algorithm verbatim (normalize → slug48 → sha256[0:8], empty→`topic`), 0056 works layout (6-file table incl. `local-doc.json`), live vs fixture (`FIRECRAWL_API_KEY` env-only), full fail-loud table (0056 rows each with recovery), and all four better-report practices (a question-over-noun, b fixture≠research, c reuse `docs.json`, d cite-vs-`docs.json` ids) plus cap-`maxResults` + primary-sources extras; explicitly "Do not merge this into `kk-topic`" |
-| R2 | MET | `plugins/kk/commands/kk-workflow.md` (129 lines < 150) — thin wrapper with frozen steps 1–6: arg parse (default `name=kk-storm-research`, `^[a-z0-9][a-z0-9-]*$`, not `--in`) + XOR guard; create-on-first-run config (never overwrite); 0056 three-root copy rule (`KK_WORKFLOWS_SOURCE` → `plugins/kk/workflows` → `.spur/workflows`, `--force`, `cmp -s`); invoker-computed `topicId` → resolved `work_dir` + `mkdir -p`; `spur workflow run "$dest" --vars` with exact 7-var set (`topic`,`input_file`,`maxResults`,`fixture`,`work_dir`,`plugins_path`,`render_script`) all strings; reports `work_dir`/`content.md`/`content.json`. Guard: `apps/cli/tests/kk-workflow-command.test.ts` 7/7 pass, 39 expect |
-| R3 | MET | `apps/cli/src/cli.ts:13-28` — `createProgram()` registers only `registerExecutorCommand` + `registerPluginCommand`; `apps/cli/src/commands/` holds only `executor.ts`/`plugin.ts`; `grep` for `.command(` shows no new first-layer noun |
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `plugins/kk/skills/kk-storm-research/SKILL.md` — XOR invoke `:42-59`; `topicId` `:80-94`; works layout `:96-107`; live vs fixture + `FIRECRAWL_API_KEY` `:113-123`; fail-loud table `:125-135`; better-report a–d `:140-151`; "Do not merge this into `kk-topic`" `:24`. Re-read this run. |
+| R2 | MET | `plugins/kk/commands/kk-workflow.md` (129 lines). Tests `apps/cli/tests/kk-workflow-command.test.ts` 7 pass / 39 expect this run (topicId shell vs 0056 Node, XOR, config create, 3-root copy, 7-var `--vars`, thin-wrapper/ADR-011). |
+| R3 | MET | `apps/cli/src/cli.ts:20-21` registers only `registerExecutorCommand` + `registerPluginCommand`. `apps/cli/src/commands/` = `executor.ts`, `plugin.ts` (ls this run). |
 
-| Acceptance Criteria | Status | Evidence Type | Evidence |
-|---------------------|--------|---------------|----------|
-| R2 — Generic command shells to spur | MET | test | `apps/cli/tests/kk-workflow-command.test.ts` — 7/7 pass, 39 expect (`NODE_ENV=test bun test apps/cli/tests/kk-workflow-command.test.ts`); extracts+executes the real topicId shell block from `kk-workflow.md` §4, equals 0056 Node reference across 9 edge cases; string-invariant checks on XOR guard, config heredoc, 3-root copy rule, 7-var `--vars` set, ADR-011 guard |
-| R3 — CLI nouns unchanged | MET | command | `apps/cli/src/cli.ts:20-21` registers only executor/plugin; `apps/cli/src/commands/` = `executor.ts`,`plugin.ts`; `kk executor --help` shows no new first-layer noun |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: R1 — Skill covers run and craft [docs-only] | MET | static-ref | `plugins/kk/skills/kk-storm-research/SKILL.md:24,42-59,80-94,96-107,113-123,140-151` (re-read this run). |
+| Scenario: R2 — Generic command shells to spur | MET | test | `NODE_ENV=test bun test apps/cli/tests/kk-workflow-command.test.ts` — 7 pass / 0 fail this run. |
+| Scenario: R3 — CLI nouns unchanged | MET | command | `apps/cli/src/cli.ts:20-21`; `ls apps/cli/src/commands/` → `executor.ts` `plugin.ts` this run. |
+
+**SECUA Review**
+
+No P1–P3. No new Commander noun. Command stays under 150 lines.
+
+**design-conformance:** DONE — command steps 1–6 and skill craft match Design.
+
+Coverage: N/A (plugin capability files; command contract covered by `apps/cli/tests/kk-workflow-command.test.ts`).
 ### Review
 | Priority | Finding | Disposition |
 |----------|---------|-------------|

@@ -13,7 +13,7 @@ tags: []
 dependencies: []
 ac_numbering: task-local
 created_at: "2026-08-14T07:25:44.225Z"
-updated_at: "2026-08-14T22:16:55.409Z"
+updated_at: "2026-08-15T02:42:28.045Z"
 ---
 
 ## 0058. Prototype the Content-to-markdown research-report helper
@@ -33,10 +33,10 @@ wayfinder:prototype — C4 Daily-usable STORM research. Independent of 0056/0057
 
 **Out of this ticket:** wiring the helper into YAML (0059); a general template engine; changing ContentSchema; D4 retrieval; a `kk render` CLI noun.
 ### Requirements
-- [ ] R1. Add `renderContentMarkdown(content: Content): string` in `@gobing-ai/kk-core` using the frozen template. Export it from `packages/kk-core/src/index.ts`. Unit tests: full Content; missing title → H1 `Untitled`; empty/missing outline and references omit those sections; if `body` already starts with `# <title>` do not prepend a second H1.
-- [ ] R2. Add `renderContentMarkdownFile(inPath: string, outPath: string): Promise<void>` (read JSON, `ContentSchema.parse`, write markdown). Add `import.meta.main` CLI on the same module: `--in <content.json> --out <content.md>`.
-- [ ] R3. Ship a no-checkout runner at `plugins/kk/scripts/render-md.ts` that produces **byte-identical** output to `renderContentMarkdown` for the same Content (characterization test). 0059 render state must call this script, not a new `kk` noun. Record the exact argv in Solution.
-- [ ] R4. Same commit: add the two exports to `docs/04_DESIGN.md` §4 `@gobing-ai/kk-core` table (T3).
+- [x] R1. Add `renderContentMarkdown(content: Content): string` in `@gobing-ai/kk-core` using the frozen template. Export it from `packages/kk-core/src/index.ts`. Unit tests: full Content; missing title → H1 `Untitled`; empty/missing outline and references omit those sections; if `body` already starts with `# <title>` do not prepend a second H1.
+- [x] R2. Add `renderContentMarkdownFile(inPath: string, outPath: string): Promise<void>` (read JSON, `ContentSchema.parse`, write markdown). Add `import.meta.main` CLI on the same module: `--in <content.json> --out <content.md>`.
+- [x] R3. Ship a no-checkout runner at `plugins/kk/scripts/render-md.ts` that produces **byte-identical** output to `renderContentMarkdown` for the same Content (characterization test). 0059 render state must call this script, not a new `kk` noun. Record the exact argv in Solution.
+- [x] R4. Same commit: add the two exports to `docs/04_DESIGN.md` §4 `@gobing-ai/kk-core` table (T3).
 ### Acceptance Criteria
 ```gherkin
 Feature: Content-to-markdown research-report helper
@@ -116,17 +116,33 @@ Feature: Content-to-markdown research-report helper
 
 **Exact argv (0059 render state / CLI):** `bun plugins/kk/scripts/render-md.ts --in <work_dir>/content.json --out <work_dir>/content.md`. Missing `--in`/`--out` or invalid JSON/schema → stderr + exit 1, no `--out` written.
 ### Testing
-**Pipeline verify results**
+**Verdict: PASS** (re-verify `--force` 2026-08-14)
 
-- Verdict: PASS (from verdict artifact)
+**Per-Requirement Traceability**
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | `renderContentMarkdown(content: Content): string` in `packages/kk-core/src/render-md.ts:18`, re-exported at `packages/kk-core/src/index.ts:36`. Frozen template verified: full Content renders fields; missing title → H1 `Untitled`; missing/blank outline and empty references omit those sections; body already starting with `# <title>` gets no second H1. Tests: `packages/kk-core/tests/render-md.test.ts` (8 pure-function cases) — all PASS. |
-| R2 | MET | `renderContentMarkdownFile(inPath, outPath)` at `render-md.ts:74` reads JSON, `ContentSchema.parse`, writes markdown. `main()` CLI at `render-md.ts:80` + `import.meta.main` at `:100`: `--in <content.json> --out <content.md>`; missing args / invalid JSON-schema → stderr + exit 1, no `--out`. Tests: file/CLI cases — `main` returns 0 happy path, 1 on missing args, 1 on invalid JSON — all PASS. |
-| R3 | MET | Shipped no-checkout runner `plugins/kk/scripts/render-md.ts` (self-contained copy with `SYNC:` comment, no `@gobing-ai/kk-core` import). Byte-identical output proven by characterization test spawning `bun <script> --in --out` (2 cases) — PASS. Exact argv now recorded in task `### Solution`: `bun plugins/kk/scripts/render-md.ts --in <work_dir>/content.json --out <work_dir>/content.md`. No new `kk` first-layer noun (ADR-011). |
-| R4 | MET | `docs/04_DESIGN.md` §4 `@gobing-ai/kk-core` table now lists `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()` (T3 same-commit). Task 0058 status remains `wip`; no `## Review` written (pipeline-owned). |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `packages/kk-core/src/render-md.ts:19-27` `renderContentMarkdown`; re-export `packages/kk-core/src/index.ts:36`. Frozen template: H1 from title else Untitled; no second H1 when body starts with `# ${heading}`; outline/refs omitted when empty. Tests: `packages/kk-core/tests/render-md.test.ts` 16 pass this run. |
+| R2 | MET | `renderContentMarkdownFile` at `packages/kk-core/src/render-md.ts:75-79`; `main` CLI `:82-100` with `--in`/`--out`; missing args / invalid JSON → exit 1. File/CLI tests in the same suite — PASS this run. |
+| R3 | MET | `plugins/kk/scripts/render-md.ts:1-10` SYNC comment; characterization tests spawn `bun <script> --in --out` and assert byte-identical output (2 cases, PASS this run). 0059 render argv at `.spur/workflows/kk-storm-research.yaml:137-139`. |
+| R4 | MET | `docs/04_DESIGN.md:265` kk-core table lists `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()`. Re-read this run. |
+
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: R1 — Content renders to markdown | MET | test | `NODE_ENV=test bun test packages/kk-core/tests/render-md.test.ts` — Untitled H1 + no-double-H1 cases PASS this run. |
+| Scenario: R2 — File + CLI exist | MET | test | Same file — `renderContentMarkdownFile` + `main` happy/missing-args/invalid-JSON PASS this run. |
+| Scenario: R3 — 0059 can call a shipped script | MET | test | Characterization tests PASS this run; render state `.spur/workflows/kk-storm-research.yaml:137-139`. |
+| Scenario: R4 — DESIGN surface lists the exports [docs-only] | MET | static-ref | `docs/04_DESIGN.md:265` (re-read this run). |
+
+**SECUA Review**
+
+No P1–P3. Pure function, no IO in `renderContentMarkdown`. No new `kk` noun.
+
+**design-conformance:** DONE — frozen export names and template match Design.
+
+Coverage: `packages/kk-core/src/render-md.ts` 100% funcs / 98.59% lines this run.
 ### Review
 **SECU findings** (pipeline verify step — verdict: PASS)
 

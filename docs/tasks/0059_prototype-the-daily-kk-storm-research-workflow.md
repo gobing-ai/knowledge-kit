@@ -13,7 +13,7 @@ tags: []
 dependencies: ["0056", "0058"]
 ac_numbering: task-local
 created_at: "2026-08-14T07:25:44.371Z"
-updated_at: "2026-08-14T22:38:21.316Z"
+updated_at: "2026-08-15T02:42:28.344Z"
 ---
 
 ## 0059. Prototype the daily kk-storm-research workflow
@@ -33,10 +33,10 @@ wayfinder:prototype — C4 Daily-usable STORM research. Blocked on 0056 (paths/v
 
 **Out of this ticket:** live Firecrawl (0057); TypeScript config loader; skill/command files (0060); judge gate.
 ### Requirements
-- [ ] R1. Update `.spur/workflows/kk-storm-research.yaml` to `prepare → ingest → generate → render → done|failed`. prepare implements 0056 XOR + works layout. generate's first shell prepends `local-doc.json` when present. render calls `bun ${vars.render_script} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/content.md`. `spur workflow validate` and `--dry-run` reach `status: done`. Keep `always` success edges and quoted `$schema`.
-- [ ] R2. Also write `plugins/kk/workflows/kk-storm-research.yaml` byte-identical to the repo SSOT (0056 install source).
-- [ ] R3. Solution records the vars table (all strings, frozen defaults), how CI passes `fixture: "true"`, and production gaps (0057 key, 0060 copy, config create).
-- [ ] R4. Update `docs/help/storm-topic-research-workflow.md` in the same change to the four-state machine, XOR input, and `content.md` sidecar.
+- [x] R1. Update `.spur/workflows/kk-storm-research.yaml` to `prepare → ingest → generate → render → done|failed`. prepare implements 0056 XOR + works layout. generate's first shell prepends `local-doc.json` when present. render calls `bun ${vars.render_script} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/content.md`. `spur workflow validate` and `--dry-run` reach `status: done`. Keep `always` success edges and quoted `$schema`.
+- [x] R2. Also write `plugins/kk/workflows/kk-storm-research.yaml` byte-identical to the repo SSOT (0056 install source).
+- [x] R3. Solution records the vars table (all strings, frozen defaults), how CI passes `fixture: "true"`, and production gaps (0057 key, 0060 copy, config create).
+- [x] R4. Update `docs/help/storm-topic-research-workflow.md` in the same change to the four-state machine, XOR input, and `content.md` sidecar.
 ### Acceptance Criteria
 ```gherkin
 Feature: Daily kk-storm-research workflow prototype
@@ -169,24 +169,33 @@ CI/dogfood/dry-run invoke with `--vars '{"fixture":"true",...}'`; `prepare` writ
 `status: done`, `finalState: done`, `transitionsTaken: 4` (prepare→ingest→generate→render).
 `cmp` confirms both YAML files byte-identical. Dry-run proof matches AC Scenario R1.
 ### Testing
-**Pipeline verify results**
+**Verdict: PASS** (re-verify `--force` 2026-08-14)
 
-- Verdict: PASS (from verdict artifact)
+**Per-Requirement Traceability**
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | `.spur/workflows/kk-storm-research.yaml:44-99` — `prepare→ingest→generate→render→done |
-| R2 | MET | `cmp .spur/workflows/kk-storm-research.yaml plugins/kk/workflows/kk-storm-research.yaml` → byte-identical this run (sha256 `ef9761bc…f34d` both). Both copies validate (`valid: true`). Test `apps/cli/tests/storm-research-workflow.test.ts:22-25` asserts byte-identity. |
-| R3 | MET | Task `## Solution`: frozen vars table (9 vars, all strings — `""`,`""`,`"8"`,`"false"`,`"./work"`,`"./plugins"`,`"web-search"`,`"content-gen"`,`"plugins/kk/scripts/render-md.ts"`); fixture default `"false"`, CI passes `"true"`, prepare writes `($fixture == "true")` never hardcodes `true` (`:54`); production gaps named (0057 key, 0060 copy, config create). Test `apps/cli/tests/storm-research-workflow.test.ts:35-37` asserts fixture default + no hardcoded true. |
-| R4 | MET | `docs/help/storm-topic-research-workflow.md` — four-state machine (mermaid `:16-24`), sentence-XOR-file input (`:10-11`, `:83-86`), `content.md` sidecar, vars table (`:110-116`), state table (`:92-95`), install-source identity (`:27-28`). Test `apps/cli/tests/storm-research-workflow.test.ts:64-69`. |
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `.spur/workflows/kk-storm-research.yaml:45-146` states prepare/ingest/generate/render/done/failed. XOR in prepare `:57-63`. local-doc merge generate `:117-122` (`jq -s '[.[0]] + .[1]'` — wraps the object 0056 Block 4 described as a one-element array; goal-equivalent, noted in design-conformance). Render `:137-139`. This run: `spur workflow validate … --json` → `valid: true`; `spur workflow run … --dry-run --run-id verifyall-c4-0059 --vars '{"topic":"STORM topic research","fixture":"true","work_dir":"./work/demo-topic"}' --json` → `status: done`, `finalState: done`, `transitionsTaken: 4`. |
+| R2 | MET | `cmp -s .spur/workflows/kk-storm-research.yaml plugins/kk/workflows/kk-storm-research.yaml` → IDENTICAL this run. Test `apps/cli/tests/storm-research-workflow.test.ts` R2 case PASS. |
+| R3 | MET | YAML vars `:34-43` all strings; `fixture: "false"`; prepare uses `($fixture == "true")` at `:68,94` (never hardcoded true). Test R3 case PASS this run. |
+| R4 | MET | `docs/help/storm-topic-research-workflow.md` documents four states, XOR, `content.md`. Test R4 case PASS this run. |
 
-| Acceptance Criteria | Status | Evidence Type | Evidence |
-|---------------------|--------|---------------|----------|
-| Scenario: R1 — Dry-run walks prepare to render terminal | MET | command | `spur workflow validate .spur/workflows/kk-storm-research.yaml --json` → `valid: true`; `spur workflow run … --dry-run --vars '{"topic":"STORM topic research","fixture":"true","work_dir":"./work/demo-topic"}' --json` → `status: done`, `finalState: done`, `transitionsTaken: 4` (prepare→ingest→generate→render). States include prepare/ingest/generate/render; no publish/judge (`apps/cli/tests/storm-research-workflow.test.ts:27-30`). |
-| Scenario: R2 — Install-source YAML is identical | MET | test | `apps/cli/tests/storm-research-workflow.test.ts:22-25` (`expect(install).toBe(ssot)`) + `cmp` this run → identical, sha256 `ef9761bc…f34d` both. |
-| Scenario: R3 — Vars and gaps are recorded [docs-only] | MET | static-ref | Task `## Solution`: all 9 vars strings, fixture switchable (`"false"` default, CI passes `"true"`, prepare `($fixture == "true")`), production gaps named (0057 key / 0060 copy / config create). Docs-only/recording AC — no runtime behavior; test asserts the switchable-fixture invariant (`apps/cli/tests/storm-research-workflow.test.ts:35-37`). |
-| Scenario: R4 — Help doc matches the machine | MET | test | `apps/cli/tests/storm-research-workflow.test.ts:64-69` — help contains STORM Topic-Research Workflow, sentence XOR markdown file, content.md, render. |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: R1 — Dry-run walks prepare to render terminal | MET | command | `spur workflow validate .spur/workflows/kk-storm-research.yaml --json` → `ok:true, valid:true`. `spur workflow run … --dry-run --run-id verifyall-c4-0059 --vars '{"topic":"STORM topic research","fixture":"true","work_dir":"./work/demo-topic"}' --json` → `status: done`, `transitionsTaken: 4`. |
+| Scenario: R2 — Install-source YAML is identical | MET | command | `cmp -s` IDENTICAL this run + test `apps/cli/tests/storm-research-workflow.test.ts` R2 PASS. |
+| Scenario: R3 — Vars and gaps are recorded [docs-only] | MET | static-ref | YAML `:34-43` + task Solution; fixture switchable. Test R3 PASS. |
+| Scenario: R4 — Help doc matches the machine | MET | test | `apps/cli/tests/storm-research-workflow.test.ts` R4 PASS this run. |
+
+**SECUA Review**
+
+No P1–P3. Success edges remain `always`. `$schema` quoted (`:24`).
+
+**design-conformance:** 8/9 claims DONE. 1 CHANGED: 0056 Block 4 said `local-doc.json` is a one-element `Doc[]`; prepare writes a single object (`:84-90`) and generate wraps with `[.[0]] + .[1]` (`:119`). Goal-equivalent; dogfood P1-1 regression test covers the wrap.
+
+Coverage: N/A (workflow YAML + help; runtime covered by dry-run command + `apps/cli/tests/storm-research-workflow.test.ts` 9 pass this run).
 ### Review
 Review run 2026-08-14 (three-dimensional: functional traceability + SECUA + architecture; `/sp-dev-review 0059 --auto` review stage — read-only, no production edits, no status transition).
 

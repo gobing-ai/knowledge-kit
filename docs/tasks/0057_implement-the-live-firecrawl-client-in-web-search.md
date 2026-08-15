@@ -13,7 +13,7 @@ tags: []
 dependencies: []
 ac_numbering: task-local
 created_at: "2026-08-14T07:25:44.076Z"
-updated_at: "2026-08-14T22:01:37.357Z"
+updated_at: "2026-08-15T02:43:42.342Z"
 ---
 
 ## 0057. Implement the live Firecrawl client in web-search
@@ -33,9 +33,9 @@ wayfinder:task — C4 Daily-usable STORM research. Independent of 0056/0058/0059
 
 **Out of this ticket:** query expansion; config.yaml; workflow YAML (0059 may flip default `fixture`); render helper; skill/command; changing `kindContract`.
 ### Requirements
-- [ ] R1. Replace the `fixture !== true` stub with `searchFirecrawl` per 0054 blocks 2–5. Keep `fixture: true` → `buildFixtureDocs` unchanged. Inject `fetch` so CI never hits the network. Tests: live happy path (fake `data.web` with markdown); fixture regression; simulated rows 2–8 of the 0054 fail-loud table that can be faked (missing key, HTTP 401/429, zero hits, partial skip, hits-but-no-bodies, malformed `success:true` with null `data`).
-- [ ] R2. Missing `FIRECRAWL_API_KEY` on a live run: stderr exactly `web-search failed: FIRECRAWL_API_KEY is unset`, exit 1, no `--out`. Fixture runs do not read the key.
-- [ ] R3. Export `computeId` (same algorithm) so 0059's local-Doc mapping can stay consistent if a later helper imports it. Do not change the hash.
+- [x] R1. Replace the `fixture !== true` stub with `searchFirecrawl` per 0054 blocks 2–5. Keep `fixture: true` → `buildFixtureDocs` unchanged. Inject `fetch` so CI never hits the network. Tests: live happy path (fake `data.web` with markdown); fixture regression; simulated rows 2–8 of the 0054 fail-loud table that can be faked (missing key, HTTP 401/429, zero hits, partial skip, hits-but-no-bodies, malformed `success:true` with null `data`).
+- [x] R2. Missing `FIRECRAWL_API_KEY` on a live run: stderr exactly `web-search failed: FIRECRAWL_API_KEY is unset`, exit 1, no `--out`. Fixture runs do not read the key.
+- [x] R3. Export `computeId` (same algorithm) so 0059's local-Doc mapping can stay consistent if a later helper imports it. Do not change the hash.
 ### Acceptance Criteria
 ```gherkin
 Feature: Live Firecrawl client in web-search
@@ -125,22 +125,31 @@ Each entry cites the first changed line per file (`file:line`).
 | `plugins/ingestions/web-search/tests/web-search.test.ts:6` |
 | `plugins/ingestions/web-search/tests/web-search.test.ts:94` |
 ### Testing
-**Pipeline verify results**
+**Verdict: PASS** (re-verify `--force` 2026-08-14)
 
-- Verdict: PASS (from verdict artifact)
+**Per-Requirement Traceability**
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | plugins/ingestions/web-search/src/index.ts:61-191 — searchFirecrawl implements the live path per 0054 Blocks 2-5: single POST https://api.firecrawl.dev/v2/search (line 76-93), Bearer auth from deps.env.FIRECRAWL_API_KEY (line 73), body { query, limit, sources:["web"], scrapeOptions:{formats:["markdown"]} } (lines 89-95), data.web[] mapping with computeId(url) id (lines 150-166). SearchDeps seam (lines 49-53) injects fetch/env/now; main passes globalThis.fetch (line 280). Fixture path buildFixtureDocs (lines 196-215) unchanged; fixture:true regression tests pass (tests/web-search.test.ts:38-92). Tests tests/web-search.test.ts:94-171,177-370 cover live happy path, 401, 429, transport error, zero-hits, partial skip, all-empty, malformed data, success:false. 29 tests pass, 0 fail (this run). |
-| R2 | MET | plugins/ingestions/web-search/src/index.ts:72-78 — throws Error('FIRECRAWL_API_KEY is unset') when env key absent; main catch (line 291-292) prefixes 'web-search failed: ' and returns 1. Fixture branch (lines 296-305) never reads the key. Test tests/web-search.test.ts:154-171 asserts exact stderr 'web-search failed: FIRECRAWL_API_KEY is unset', exit 1, and no --out (rejects.toThrow on readFile). Verified fresh this run: 29 pass. |
-| R3 | MET | plugins/ingestions/web-search/src/index.ts:44 — 'export function computeId(uri)' same sha256(url).hex.slice(0,16) algorithm, unchanged from the prior internal helper. Test tests/web-search.test.ts:384-390 asserts /^[0-9a-f]{16}$/, stability (computeId(uri)===computeId(uri)), and differentiation (computeId(uri)!==computeId(uri+'/other')). 29 pass this run. |
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `plugins/ingestions/web-search/src/index.ts:78-178` `searchFirecrawl` — POST `https://api.firecrawl.dev/v2/search` (`:87-99`), Bearer from `deps.env.FIRECRAWL_API_KEY` (`:79-83,91`), body `{query, limit, sources:["web"], scrapeOptions:{formats:["markdown"]}}` (`:93-98`), `data.web[]` mapped with `computeId(url)` (`:146-170`). `SearchDeps` at `:53-57`; `main` injects `globalThis.fetch` at `:271-275`. Fixture `buildFixtureDocs` still used when `fixture` (`:288-295`). Tests `plugins/ingestions/web-search/tests/web-search.test.ts` — 29 pass this run (live happy path, 401, 429, transport, zero-hits, partial, all-empty, malformed data, success:false). |
+| R2 | MET | `plugins/ingestions/web-search/src/index.ts:79-83` throws `FIRECRAWL_API_KEY is unset`; `main` catch at `:282-284` prefixes `web-search failed: ` and returns 1 (no `--out`). Fixture branch `:288-295` does not read the key. Test asserts exact stderr + exit 1 + no `--out` (this run). |
+| R3 | MET | `plugins/ingestions/web-search/src/index.ts:45-47` `export function computeId` — `sha256(uri).digest('hex').slice(0, 16)`. Test asserts `/^[0-9a-f]{16}$/` and stability (this run). |
 
-| Acceptance Criteria | Status | Evidence Type | Evidence |
-|---------------------|--------|---------------|----------|
-| R1 — Live path maps search hits to Docs | MET | test | tests/web-search.test.ts:94-111 (live mode uses injected fetch, id = computeId(url)); :118-133 (main() writes schema-valid Doc[] via DocListSchema.parse to --out); fixture:true still emits canned Docs (:38-92). Coverage: index.ts 100% funcs / 99.50% lines. |
-| R2 — Live path fails loud without a key | MET | test | tests/web-search.test.ts:154-171 — exit 1, no --out written, stderr exactly 'web-search failed: FIRECRAWL_API_KEY is unset'. |
-| R3 — computeId stays stable and exported | MET | test | tests/web-search.test.ts:384-390 — same 16-char hex for same uri, different for uri+'/other', exported from src/index.ts:44. |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+**Acceptance Criteria Verification**
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| Scenario: R1 — Live path maps search hits to Docs | MET | test | `NODE_ENV=test bun test plugins/ingestions/web-search/tests/web-search.test.ts` — 29 pass / 0 fail this run (live happy path + fixture regression). |
+| Scenario: R2 — Live path fails loud without a key | MET | test | Same file — R2 test: exit 1, no `--out`, stderr `web-search failed: FIRECRAWL_API_KEY is unset`. |
+| Scenario: R3 — computeId stays stable and exported | MET | test | Same file — R3 test: same 16-hex for same uri. Export at `plugins/ingestions/web-search/src/index.ts:45`. |
+
+**SECUA Review**
+
+No P1–P3. Secrets stay env-only. No silent 429 retry (`:112-114`).
+
+**design-conformance:** DONE — frozen names `searchFirecrawl`, `FetchLike`, `SearchDeps`, `computeId` match Design.
+
+Coverage: `plugins/ingestions/web-search/src/index.ts` 100% funcs / 99.50% lines this run.
 ### Review
 | Priority | Dimension | Location | Finding |
 | --- | --- | --- | --- |

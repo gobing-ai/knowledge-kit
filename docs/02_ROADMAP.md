@@ -3,9 +3,9 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.8.0
+version: 3.9.0
 created_at: 2026-07-22
-updated_at: 2026-08-14
+updated_at: 2026-08-15
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.3
 sync: [T5]
@@ -24,7 +24,7 @@ sync: [T5]
 | Phase 0 — Foundation | ✅ done | **A** (+ **A1** hygiene) | Bun workspaces monorepo; `@gobing-ai/*`; Commander shell; Biome + tsc/test gates; Spur init; feature-tree restructure (A1) |
 | Phase 1 — Plugin platform + reference vertical | 🔶 partial | **B–E** | Platform **B1–B5 done** — manifest/registry, typed contracts, workflow integration, CLI surface, and the **E2E vertical proven** (Karakeep-local → generator → Surfdash in one `spur workflow` run). Ingestion **C1/C2 done** · generator design **D3 done** · publish **E2/E3 done**. Residue: C/D/E reopened (`active`) as living kind parents for plugin intake; E1 close-out (`0002` done; feature backlog — AC placeholder never enriched) |
 | **Phase 2 — Repositioning + widened contracts** | ⏳ **current** | **J**, **B6**, **A2**, **A21**, **B7**, **F** (kk plugin collection), **F1**, **D** (Brief), **E4** | **J** repositioning (ADR-007, PRD v3, contract designs — this phase's gate) → **B6** sequential `kk executor fan-in`/`fan-out` **done**, **A2** `kk` product CLI surface **done**, **A21** two-noun tree **done** (`executor` + `plugin`; ADR-011), **B7** multi-root plugin auto-discovery **done** (ADR-012 shipped), **F1** LLM-as-judge agent skills (under **F**), **D** Brief input contract (`Doc[] \| Brief`), **E4** multi-channel suite harvest |
-| **Phase 3 — Generator + authoring depth** | ⏳ **current** | **D4**, **F2**, **C4** | Own STORM generator (**D4**) · topic-core authoring skill (**F2**, one fat `kk-topic` skill) · daily-usable STORM research (**C4**, wayfinder map; successor to done **C3**) |
+| **Phase 3 — Generator + authoring depth** | ⏳ **current** | **D4**, **F2**, **C4** | Own STORM generator (**D4**, done) · topic-core authoring skill (**F2**, one fat `kk-topic` skill) · daily-usable STORM research (**C4**, done — successor to **C3**) |
 | LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |
 
 Cancelled roots (historical only): **G** (publish suite → **E4**), **H** (STORM/harvest → D4; former D5 rehomed as **F2**).
