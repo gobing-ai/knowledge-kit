@@ -11,7 +11,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "bin": {
         "knowledge-kit": "./dist/index.js",
       },
@@ -73,6 +73,17 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/publishings/emdash-pub": {
+      "name": "@gobing-ai/emdash-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/utils": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/publishings/qiita-pub": {
       "name": "@gobing-ai/qiita-pub",
       "dependencies": {
@@ -127,6 +138,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.5", "", { "os": "win32", "cpu": "x64" }, "sha512-bIBFo+n6MIxdNcVFy5CrurbKiZQiUciK3bt8+O9I4wjFZNTfXLpi+giq47522eXqW5NBc9ulx7dR1SlZKi2J5g=="],
 
     "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/generations/content-gen"],
+
+    "@gobing-ai/emdash-pub": ["@gobing-ai/emdash-pub@workspace:plugins/publishings/emdash-pub"],
 
     "@gobing-ai/kk-core": ["@gobing-ai/kk-core@workspace:packages/kk-core"],
 

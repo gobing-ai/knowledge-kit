@@ -195,6 +195,7 @@ describe('discoverPlugins', () => {
         expect(res.diagnostics).toHaveLength(0);
         expect(res.plugins.map((p) => p.name).sort()).toEqual([
             'content-gen',
+            'emdash-pub',
             'karakeep-local',
             'qiita-pub',
             'surfdash-pub',
@@ -501,6 +502,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             expect(res.diagnostics).toHaveLength(0);
             expect(res.plugins.map((p) => p.name).sort()).toEqual([
                 'content-gen',
+                'emdash-pub',
                 'karakeep-local',
                 'qiita-pub',
                 'surfdash-pub',

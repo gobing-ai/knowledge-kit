@@ -1,0 +1,7 @@
+{
+    "name": "emdash-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for EmDash CMS creating posts via the REST token transport"
+}

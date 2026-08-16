@@ -5,7 +5,7 @@ owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var,
 authority: derived
 version: 2.14.0
 created_at: 2026-07-22
-updated_at: 2026-08-14
+updated_at: 2026-08-15
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -25,6 +25,7 @@ sync: [T3]
 | [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
 | [generator-plugin-specification.md](design/generator-plugin-specification.md) | Generator kind contract | shipped (D3) |
 | [publish-plugin-specification.md](design/publish-plugin-specification.md) | Publish kind + transports | shipped (E2) |
+| [emdash-pub.md](design/emdash-pub.md) | EmDash CMS publish channel | shipped (E5) |
 | [multi-root-plugin-discovery.md](design/multi-root-plugin-discovery.md) | Built-in + user plugin discovery merge | shipped (B7, ADR-012) |
 
 ## 1. CLI commands
