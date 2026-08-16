@@ -113,8 +113,13 @@ function stageError(stage: string, detail: string): Error {
     return new Error(`${stage} stage failed: ${detail}`);
 }
 
+/** Strip markdown footnote markers agents prepend to citation ids (`^doc-1` → `doc-1`). */
+function bareCitationId(id: string): string {
+    return id.replace(/^\^+/, '');
+}
+
 function assertKnownEvidence(stage: string, ids: string[], allowed: Set<string>): void {
-    const unknown = ids.filter((id) => !allowed.has(id));
+    const unknown = ids.map(bareCitationId).filter((id) => !allowed.has(id));
     if (unknown.length > 0) {
         throw stageError(stage, `cites unknown document ID(s): ${[...new Set(unknown)].join(', ')}`);
     }
@@ -289,9 +294,11 @@ export async function polishStage(
     // Machine-verify the preservation mandate: every heading and citation in the draft must
     // survive, and polish must not introduce citations to unknown document IDs.
     const polishedHeadings = bodyHeadings(result.body);
-    const polishedCitations = bodyCitations(result.body);
+    const polishedCitations = bodyCitations(result.body).map(bareCitationId);
     const droppedHeadings = bodyHeadings(article.body).filter((heading) => !polishedHeadings.includes(heading));
-    const droppedCitations = bodyCitations(article.body).filter((citation) => !polishedCitations.includes(citation));
+    const droppedCitations = bodyCitations(article.body)
+        .map(bareCitationId)
+        .filter((citation) => !polishedCitations.includes(citation));
     if (droppedHeadings.length > 0 || droppedCitations.length > 0) {
         const dropped: string[] = [];
         if (droppedHeadings.length > 0) dropped.push(`dropped heading(s): ${droppedHeadings.join(', ')}`);
@@ -320,7 +327,7 @@ export async function generateWithStormPipeline(
     return ContentSchema.parse({
         title:
             polished.title ?? article.title ?? outline.title ?? docs[0]?.title ?? 'Generated Knowledge Kit Synthesis',
-        body: polished.body,
+        body: polished.body.replace(/\[\^([^\]()\s]+)\](?!\()/g, '[$1]'),
         format: 'markdown',
         outline: polished.outline ?? outline.outline,
         references: docs.map((doc) => ({ url: doc.sourceUri, title: doc.title, cite: doc.id })),

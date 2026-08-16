@@ -235,6 +235,18 @@ describe('article stage (R2)', () => {
         );
     });
 
+    test('accepts markdown footnote-style citation ids (^doc-1) as known evidence', async () => {
+        const runner = jsonRunner({
+            ...VALID_ARTICLE,
+            body: VALID_ARTICLE.body.replaceAll('[doc-1]', '[^doc-1]'),
+            citations: ['^doc-1', 'doc-2'],
+        });
+
+        const result = await articleStage(runner, VALID_CURATION, VALID_OUTLINE, DOCS, INPUT_PATH);
+
+        expect(result.citations).toEqual(['^doc-1', 'doc-2']);
+    });
+
     test('fails loud on malformed output', async () => {
         const runner = jsonRunner({ body: '' });
 
@@ -343,6 +355,27 @@ describe('owned STORM pipeline (R1)', () => {
             ],
             metadata: { generator: 'kk:storm', stageCount: 4, docIds: ['doc-1', 'doc-2'] },
         });
+    });
+
+    test('survives caret-vs-bare citation drift between stages and normalizes the final body', async () => {
+        const { runner } = scriptedRunner([
+            { exitCode: 0, stdout: JSON.stringify(VALID_CURATION), stderr: '' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_OUTLINE), stderr: '' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_ARTICLE), stderr: '' },
+            {
+                exitCode: 0,
+                stdout: JSON.stringify({
+                    ...VALID_POLISH,
+                    body: VALID_POLISH.body.replaceAll('[doc-2]', '[^doc-2]'),
+                }),
+                stderr: '',
+            },
+        ]);
+
+        const content = await generateWithStormPipeline(DOCS, INPUT_PATH, runner);
+
+        expect(content.body).toContain('Body text [doc-2].');
+        expect(content.body).not.toContain('[^doc-2]');
     });
 
     test('a failed stage aborts the pipeline with a stage-specific diagnostic', async () => {
