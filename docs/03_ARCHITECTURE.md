@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.12.0
+version: 2.13.0
 created_at: 2026-07-22
-updated_at: 2026-08-14
+updated_at: 2026-08-15
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -166,6 +166,41 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 `kk plugin status`. Engines and file contracts above are unchanged. Hidden one-release aliases
 (`invoke` / `fanin` / `fanout` / `plugins *`) keep the old names working but are not listed in
 `kk --help`.
+
+### Evidence cache and report digestion (accepted design — ADR-013; not yet built)
+
+Feature C5. The live `web-search` ingest path (0057) gains a scrape → normalize → cache
+stage between search and `docs.json` write:
+
+```text
+web-search live path (C5)
+  /v2/search ──→ Doc[] (snippet bodies, 0057)
+       │ per Doc with usable sourceUri:
+       ▼
+  /v2/scrape (formats: ["markdown"]) ─→ markitdown (PATH binary) ─→ references/<doc-id>.md
+       │  failure or unusable content: warn, keep snippet body, continue
+       ▼
+  docs.json body = normalized cached content (Doc[] shape unchanged — ADR-013)
+```
+
+- **Owner.** The ingestion plugin (`plugins/ingestions/web-search`) — the component that
+  already owns the `Doc[]` contract. No new workflow state, no second component reading
+  `docs.json` (rejected: a `fetch-refs` state splits one contract across two owners).
+- **`references/` location.** `works/<topic-id>/references/`, derived from the plugin's
+  `--out` directory — no new `--in` field, no new env var, no new `kk` noun. Amends the
+  frozen 0056 works layout (ADR-013).
+- **Cache key.** Doc id = `sha256(sourceUri)` 16-hex. File existence ⇒ reuse, no re-scrape
+  (R4); the key is URL-derived, so reuse is independent of the query that produced it.
+- **`markitdown`.** Invoked as an external binary (it is one today), availability-checked
+  before scraping. Live mode without it on PATH exits 1 naming it and writes no `docs.json`
+  (R5). Fixture mode never scrapes and needs neither the key nor the binary (R9).
+- **Report digestion.** content-gen's STORM prompt mandates synthesis over one-line listing
+  (digest, don't index — R6). Render (`renderContentMarkdown` in `@gobing-ai/kk-core` and
+  its byte-identical `plugins/kk/scripts/render-md.ts` copy) drops the `## Outline` replay
+  and keeps the compact References list whose cite ids resolve to `references/<id>.md`
+  (R7).
+
+Full spec: `docs/design/storm-evidence-cache.md`.
 
 ## Module boundaries
 

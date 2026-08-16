@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.16.0
+version: 1.17.0
 created_at: 2026-05-28
-updated_at: 2026-08-13
+updated_at: 2026-08-15
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -494,6 +494,35 @@ repeatable `--plugins-path` lands on `kk executor run` / `kk executor fan-out` /
 status`; `KK_PLUGIN_PATH` is honored; `--plugins-root` is the exclusive single-root override and
 combining it with `--plugins-path` exits `2`. The B3 workflow template injects
 `--plugins-path ${vars.plugins_path}`. Status moves from `Accepted (design)` to `Accepted`.
+
+---
+
+## ADR-013 — Per-reference evidence cache + report digestion in STORM (2026-08-15)
+
+> **Status:** Accepted (design) · **Date:** 2026-08-15 · **Amends:** the frozen 0056 works
+> layout (adds `references/`) · **Feature:** C5 — not yet built.
+
+**Decision.** The STORM research workflow gains a durable per-reference evidence cache,
+owned by the `web-search` ingestion plugin. After search returns `Doc[]`, each source with
+a usable URL is fetched via Firecrawl `/v2/scrape` (`formats: ["markdown"]`), normalized
+with the installed `markitdown` binary (PATH, availability-checked), written to
+`works/<topic-id>/references/<doc-id>.md`, and the normalized text becomes the Doc body in
+`docs.json` — the Doc[] shape is unchanged. Per-URL scrape failures are non-fatal: keep the
+search-snippet body and warn; the ingest still exits 0. The cache is keyed by Doc id
+(`sha256(sourceUri)` 16-hex), so an existing cached file is reused without a new scrape.
+Report craft becomes contract in the same change: content-gen must synthesize findings
+across sources (digest, don't index), and render's tail is a compact References list whose
+cite ids resolve to cached files, with no `## Outline` replay. Fail-loud rules: live mode
+with `markitdown` missing on PATH exits 1 naming it and writes no `docs.json`;
+`fixture: true` never scrapes and needs neither the key nor the binary.
+
+**Why.** Re-running ingest today re-fetches everything and Doc bodies carry Firecrawl search
+boilerplate; a durable per-source cache plus normalized bodies delivers an auditable
+evidence trail, cleaner/smaller generation context, and re-run reuse with no new workflow
+states, `kk` noun, or package dependency.
+
+**Detail:** `docs/design/storm-evidence-cache.md`, `docs/03_ARCHITECTURE.md`
+(Evidence cache and report digestion), feature C5.
 
 ---
 
