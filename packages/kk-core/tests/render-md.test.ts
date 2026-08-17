@@ -57,12 +57,19 @@ describe('renderContentMarkdown', () => {
         expect(out).toBe('# Title\n\npara\n');
     });
 
-    it('emits an Outline block when outline is non-empty after trim', () => {
-        const out = renderContentMarkdown({ body: 'body', format: 'markdown', outline: '  \n  A\n  B  ' });
-        expect(out).toContain('\n\n## Outline\n\nA\n  B');
+    it('drops the Outline replay even when outline is non-empty — digest, not index (C5/ADR-013 D7)', () => {
+        const out = renderContentMarkdown({
+            body: 'body',
+            format: 'markdown',
+            outline: 'A\nB',
+            references: [{ title: 'Alpha', url: 'https://a.example', cite: 'A1' }],
+        });
+        expect(out).not.toContain('## Outline');
+        expect(out).not.toContain('A\nB');
+        expect(out).toBe('# Untitled\n\nbody\n\n## References\n\n- [Alpha](https://a.example) (A1)\n');
     });
 
-    it('omits the Outline block for a blank/whitespace outline', () => {
+    it('emits no Outline for a blank/whitespace outline either', () => {
         const out = renderContentMarkdown({ body: 'body', format: 'markdown', outline: '   ' });
         expect(out).not.toContain('Outline');
     });
@@ -110,13 +117,20 @@ describe('renderContentMarkdownFile', () => {
         const outPath = join(dir, 'content.md');
         await writeFile(
             inPath,
-            JSON.stringify({ body: 'para', title: 'T', references: [{ url: 'https://x.example', cite: 'X' }] }),
+            JSON.stringify({
+                body: 'para',
+                title: 'T',
+                outline: 'Old replay',
+                references: [{ url: 'https://x.example', cite: 'X' }],
+            }),
             'utf-8',
         );
         await renderContentMarkdownFile(inPath, outPath);
         const out = await readFile(outPath, 'utf-8');
         expect(out).toContain('# T');
         expect(out).toContain('- https://x.example (X)');
+        // R2 (0063): content.json keeps `outline` (schema accepts it) but the markdown drops the replay.
+        expect(out).not.toContain('Old replay');
     });
 
     it('throws on invalid content that fails schema validation', async () => {

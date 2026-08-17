@@ -7,23 +7,21 @@ import { type Content, ContentSchema } from './schemas';
  * Render a {@link Content} object to the research-report markdown shape. Pure:
  * does no IO, ignores `metadata` and `format`.
  *
- * Frozen template (task 0058):
+ * Frozen template (task 0058; outline replay dropped by C5/ADR-013 D7):
  *   1. heading = `title` trimmed, else `Untitled`.
  *   2. lead = `# <heading>\n\n`, unless `body` already starts with `# <heading>`
  *      (then `''` — no second H1).
- *   3. outline block = `\n\n## Outline\n\n<outline>` when `outline` is non-empty after trim.
- *   4. references block = `\n\n## References\n\n` + one `- <label>` line per item,
- *      with an optional ` (<cite>)` suffix.
- *   5. Result = `lead + body + outlineBlock + refsBlock` with a single trailing newline.
+ *   3. references block = `\n\n## References\n\n` + one `- <label>` line per item,
+ *      with an optional ` (<cite>)` suffix. `outline` is ignored — it stays in
+ *      content.json and is dropped only from the markdown tail.
+ *   4. Result = `lead + body + refsBlock` with a single trailing newline.
  */
 export function renderContentMarkdown(content: Content): string {
     const heading = content.title?.trim() || 'Untitled';
     const startsWithHeading = content.body.startsWith(`# ${heading}`);
     const lead = startsWithHeading ? '' : `# ${heading}\n\n`;
-    const outlineBlock =
-        content.outline && content.outline.trim().length > 0 ? `\n\n## Outline\n\n${content.outline.trim()}` : '';
     const refsBlock = renderReferences(content.references);
-    return `${lead}${content.body}${outlineBlock}${refsBlock}\n`;
+    return `${lead}${content.body}${refsBlock}\n`;
 }
 
 function renderReferences(references: Content['references']): string {

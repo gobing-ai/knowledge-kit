@@ -242,6 +242,7 @@ export async function articleStage(
             `The validated curation result for the article is: ${JSON.stringify(curation)}`,
             `The validated outline for the article is: ${JSON.stringify(outline)}`,
             'Write the complete article as markdown, one section per outline heading. Every citation must reference one of the allowed document IDs.',
+            'Synthesize: the body must draw findings from across the supplied documents, compare them, and state conclusions. Never list sources one per line or produce an index of references — references are evidence, not the deliverable.',
             'Return only a JSON object matching {"title":string,"body":string,"citations":[string]} where body is the full markdown draft and every citations entry is one of the allowed document IDs.',
         ].join('\n'),
     );

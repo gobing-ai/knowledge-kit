@@ -72,10 +72,8 @@ export function renderContentMarkdown(content: ContentInput): string {
     const heading = content.title?.trim() || 'Untitled';
     const startsWithHeading = content.body.startsWith(`# ${heading}`);
     const lead = startsWithHeading ? '' : `# ${heading}\n\n`;
-    const outlineBlock =
-        content.outline && content.outline.trim().length > 0 ? `\n\n## Outline\n\n${content.outline.trim()}` : '';
     const refsBlock = renderReferences(content.references);
-    return `${lead}${content.body}${outlineBlock}${refsBlock}\n`;
+    return `${lead}${content.body}${refsBlock}\n`;
 }
 
 function renderReferences(references: ContentInput['references']): string {

@@ -343,6 +343,15 @@ describe('owned STORM pipeline (R1)', () => {
         expect(prompts[0]).toContain('perspectives');
         expect(prompts[1]).toContain('outline');
         expect(prompts[2]).toContain('Write the complete article');
+        // R1 (0063): the article-stage prompt mandates synthesis — digest, not index.
+        expect(prompts[2]).toContain('references are evidence, not the deliverable');
+        expect(prompts[2]).toContain(
+            'Return only a JSON object matching {"title":string,"body":string,"citations":[string]}',
+        );
+        // Digest mandate is article-stage only: curation/outline/polish prompts stay clean.
+        expect(prompts[0]).not.toContain('references are evidence');
+        expect(prompts[1]).not.toContain('references are evidence');
+        expect(prompts[3]).not.toContain('references are evidence');
         expect(prompts[3]).toContain('Polish the draft');
         expect(content).toEqual({
             title: 'Synthesis',
