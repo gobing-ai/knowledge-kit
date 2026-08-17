@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.18.0
+version: 1.19.0
 created_at: 2026-05-28
 updated_at: 2026-08-16
 edit_rules: 99 §6.1
@@ -105,6 +105,11 @@ run `bun run build` and repoint `bin` to `dist/index.js` before publishing.
 
 Primary npm `bin` is `kk` → the Bun-target bundle `dist/index.js`. `knowledge-kit` is a
 compatibility alias for the same artifact. Dev still runs `bun run src/index.ts`. See ADR-010 R1/R5.
+
+### Amendment — 2026-08-16 (output ownership superseded by ADR-015)
+
+ADR-015 supersedes ADR-004's `@gobing-ai/utils` output ownership. The binary decision and its
+2026-08-12 amendment remain in force.
 
 ---
 
@@ -523,6 +528,38 @@ states, `kk` noun, or package dependency.
 
 **Detail:** `docs/design/storm-evidence-cache.md`, `docs/03_ARCHITECTURE.md`
 (Evidence cache and report digestion), feature C5.
+
+---
+
+## ADR-014: Centralize ts-libs versions in the Bun workspace catalog
+
+**Status:** Accepted (design) · **Date:** 2026-08-16
+
+**Decision.** The root Bun catalog is the single version source for `@gobing-ai/ts-utils`,
+`@gobing-ai/ts-infra`, `@gobing-ai/ts-runtime`, and `@gobing-ai/ts-db`; a workspace declares a
+`catalog:` dependency only when it directly consumes that package.
+
+**Why.** One catalog constraint keeps the portfolio dependency line coherent without adding dead
+runtime edges.
+
+**Detail:** `docs/design/ts-libs-logging-foundation.md` §1; feature A3.
+
+---
+
+## ADR-015: Separate terminal output from structured diagnostics
+
+**Status:** Accepted (design) · **Date:** 2026-08-16
+
+**Decision.** `@gobing-ai/ts-utils` owns user-facing terminal output and `@gobing-ai/ts-infra`
+owns structured diagnostics; every executable process initializes logging once, direct terminal
+writes are forbidden in production code, and `@gobing-ai/utils` is retired after its consumers
+migrate. This supersedes the output-ownership portion of ADR-004.
+
+**Why.** Reusing the portfolio seams removes a shallow local package while keeping command output
+injectable and diagnostics structured.
+
+**Detail:** `docs/03_ARCHITECTURE.md` (Output and diagnostics foundation),
+`docs/design/ts-libs-logging-foundation.md` §§2–6; feature A3.
 
 ---
 

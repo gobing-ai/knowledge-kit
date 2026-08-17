@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.14.0
+version: 2.15.0
 created_at: 2026-07-22
 updated_at: 2026-08-16
 derived_from: [00_ADR, 01_PRD]
@@ -166,6 +166,45 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 `kk plugin status`. Engines and file contracts above are unchanged. Hidden one-release aliases
 (`invoke` / `fanin` / `fanout` / `plugins *`) keep the old names working but are not listed in
 `kk --help`.
+
+### Output and diagnostics foundation (accepted design — ADR-014/ADR-015; not yet built)
+
+Feature A3 reuses two published ts-libs seams and adds no replacement logging package:
+
+| Candidate | Coupling / locality | Reversibility | Decision |
+| --- | --- | --- | --- |
+| ts-utils output + ts-infra diagnostics | Existing portfolio contracts; migration stays at call sites and manifests | Catalog pin and imports are reversible | **Chosen** |
+| Extend `@gobing-ai/utils` | Smallest immediate diff, but preserves a repository-specific logging fork | Cheap now; continued divergence compounds | Rejected |
+| ts-utils output only | Removes the local package, but leaves operational diagnostics unstructured | Cheap to add logging later | Rejected: feature A3 requires a shared logger |
+
+The seams have separate contracts. User-facing command output, usage errors, and preserved plugin
+messages flow through ts-utils `echo` / `echoError`. `apps/cli/src/output.ts` adapts those functions
+to an injectable `CommandOutput`; product plugins and repository scripts import ts-utils directly
+rather than depending on the CLI app. Operational diagnostics flow through ts-infra `getLogger`.
+No module writes directly through `console.*` or `process.stdout` / `process.stderr`.
+
+LogTape configuration is process-local. The `kk` process and each directly executable plugin or
+script that emits diagnostics call `initializeLogger` exactly once before dispatch; call sites only
+obtain category loggers and never install sinks. Test processes call `setLoggerMuted(true)`. Plugin
+console logging starts at `warn`, keeping structured records on stderr and leaving stdout available
+for command output; plugin result contracts remain file-based through `--out`.
+
+```text
+kk process:      argv → initializeLogger once → command → CommandOutput → echo / echoError
+plugin process:  spawn → initializeLogger once → plugin ┬→ result file (`--out`)
+                                                    ├→ echo / echoError (operator contract)
+                                                    └→ getLogger(category) (diagnostics)
+```
+
+The root catalog constrains all four ts-libs packages, but feature A3 creates dependency edges only
+to ts-utils and ts-infra. `ts-runtime` does not replace the existing `Bun.spawnSync` seam in this
+feature, and `ts-db` has no persistence consumer. Either adoption requires separate evidence and a
+later decision.
+
+`packages/utils` is removed only after source imports and stale manifest dependencies are zero. Its
+logger is replaced by the two seams; its unconsumed `add`, `z`, and `ZodType` exports are deleted,
+not relocated. The `output-boundaries` rule expands to production plugin sources and kk scripts;
+tests and fixtures remain excluded. Full shapes: `docs/design/ts-libs-logging-foundation.md`.
 
 ### Evidence cache and report digestion (ADR-013)
 

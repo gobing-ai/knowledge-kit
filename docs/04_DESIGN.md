@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.16.0
+version: 2.17.0
 created_at: 2026-07-22
 updated_at: 2026-08-16
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -28,6 +28,7 @@ sync: [T3]
 | [emdash-pub.md](design/emdash-pub.md) | EmDash CMS publish channel | shipped (E5) |
 | [multi-root-plugin-discovery.md](design/multi-root-plugin-discovery.md) | Built-in + user plugin discovery merge | shipped (B7, ADR-012) |
 | [storm-evidence-cache.md](design/storm-evidence-cache.md) | STORM per-reference cache, markitdown normalization, digest contract | shipped (C5, ADR-013) |
+| [ts-libs-logging-foundation.md](design/ts-libs-logging-foundation.md) | Catalog, output, diagnostics, and enforcement shapes | accepted design (K, ADR-014/ADR-015; not yet built) |
 
 ## 1. CLI commands
 
