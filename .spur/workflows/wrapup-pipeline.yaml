@@ -72,6 +72,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: scribe
           input: "Run sp:doc-evolve for completed tasks ${vars.tasks}. Repair doc drift in 04_DESIGN, 03_ARCHITECTURE, 00_ADR, docs/design/* following the constitution edit rules. Do not write task or feature corpus files."
           timeoutMs: ${vars.stepTimeoutMs}
 
@@ -86,6 +87,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: scribe
           input: "Extract working learnings from tasks ${vars.tasks}. Output as markdown grouped by date and task WBS. Include: conventions discovered, errors hit and resolved, patterns that worked, gotchas. Output raw markdown (no code fences) — your answer will be captured to a file and appended to .spur/memory/learnings.md."
           answerFile: .spur/run/wrapup-learnings.md
           expectFile: .spur/run/wrapup-learnings.md
@@ -107,13 +109,14 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: scribe
           input: "For each task in ${vars.tasks}, read the task file and output one JSONL line per task with fields: wbs, feature_id, status, verdict (from .spur/run/<wbs>-verdict.json if available), timestamp. Output raw JSONL (no code fences) — your answer will be captured to a file and appended to .spur/memory/wrapup-metrics.jsonl."
           answerFile: .spur/run/wrapup-metrics.jsonl
           expectFile: .spur/run/wrapup-metrics.jsonl
           timeoutMs: ${vars.stepTimeoutMs}
       - kind: shell
         options:
-          command: 'test -s .spur/run/wrapup-metrics.jsonl && mkdir -p .spur/memory && cat .spur/run/wrapup-metrics.jsonl >> .spur/memory/wrapup-metrics.jsonl'
+          command: "test -s .spur/run/wrapup-metrics.jsonl && mkdir -p .spur/memory && cat .spur/run/wrapup-metrics.jsonl >> .spur/memory/wrapup-metrics.jsonl"
 
   - id: feature-transition
     description: >
@@ -123,7 +126,7 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: '${vars.spurBin} feature sync ${vars.feature} --json'
+          command: "${vars.spurBin} feature sync ${vars.feature} --json"
 
   - id: branch-cleanup
     description: >

@@ -372,3 +372,87 @@
 - **Gotcha (quoting):** `--vars` JSON embeds `$TOPIC`/`$INPUT_FILE` unescaped — a topic containing `"`/`\`/`$` yields malformed JSON or stray expansion. Acceptable for agent-executed markdown (LLM assembles the quote); harden with `jq -n --arg` if a programmatic runner ever consumes the command.
 - **Gotcha (config literal):** the config heredoc writes literal `$HOME` into `config.yaml` (`works_dir: "$HOME/.config/kk/works"`) — the future TS config loader must expand `$HOME`; recorded as deferred-loader scope.
 - **Gotcha (arg parsing):** a single hyphenated-token topic (`my-topic`) parses as the workflow *name* and trips the XOR error with non-obvious recovery — recovery is `--in` or an explicit `kk-storm-research` name prefix; the skill states this.
+Extracted from the three C5 task files (designs, solution maps, verify/review sections) and the working-tree diffs (uncommitted on `main`: 18 files +854/−104). All three tasks landed 2026-08-16.
+
+## 2026-08-16 — task 0062 (feature C5: live ingest caches normalized full content per reference)
+
+**Conventions discovered**
+
+- Fail-loud ordering: probe `markitdown` on PATH (`Bun.which` with explicit `PATH` option) **before any network call**; missing → exit 1, stderr names markitdown, no `--out` written. Key check (`FIRECRAWL_API_KEY`) stays inside `searchFirecrawl` as the first gate — it fires earlier when the key is unset, so the two fail-loud paths don't overlap.
+- Per-URL failure is non-fatal by contract: warn `web-search: scrape failed (url=…)` on `console.warn`, keep the search-snippet body, exit 0, still write `docs.json`. Never let one URL's failure reject the whole pass; never write `docs.json` on a fail-loud path.
+- Cache reuse is file-existence only — no TTL, no query-keying. Cache dir = `join(dirname(outPath), 'references')` (sibling of `--out`, D6), filename = `computeId(sourceUri)` (sha256 hex 16). A whitespace-only cache file counts as a miss (`cached.trim().length > 0` guard).
+- Cache-read errors (EACCES/EISDIR) are treated as miss → poisoned cache re-scrapes and warn-falls-back rather than surfacing the fs error. Accepted by design (D5 self-healing, non-fatal), P3.
+- Normalization precedence: `data.html` present → markitdown; else `data.markdown` as-is (already markdown); else unusable → snippet fallback.
+- Scrape pass is sequential per Doc — deliberate, no parallel fan-out (rate-limit friendly, deterministic).
+
+**Errors hit and resolved**
+
+- markitdown's `-x .html` extension hint is **required**: bare stdin passes HTML through unconverted (verified against markitdown 0.1.4). The runner spawns `markitdown -x .html` with HTML on stdin, markdown on stdout; non-zero exit or empty output ⇒ throw (treated as unusable content).
+- `Bun.which` needs an explicit `{ PATH: process.env.PATH }` option (observed on Bun 1.3.14): plain argv[0]/default lookup can resolve against a startup PATH snapshot and miss runtime PATH edits. Same fix applied in both `realMarkitdown` and the `main()` probe.
+- `res.ok` alone is not enough for /v2/scrape — also assert `res.status === 200` and `parsed.success === true` with non-null `data`; malformed or unsuccessful responses go down the per-URL warn path, never the fatal path.
+
+**Patterns that worked**
+
+- `SearchDeps` seam extended with `scrape?: FetchLike` (defaults to `deps.fetch` so tests route both Firecrawl calls separately) and `markitdown?: MarkitdownRunner` — unit tests stay fully hermetic: 158 expects, zero network, no real binary, 44 pass / 100% lines / 99.64% branches on `src/index.ts`. Never monkey-patch global fetch.
+- Stub-markitdown PATH shim + URL-routed `/v2/search` vs `/v2/scrape` fetch mocks in tests; call-list assertion proves cache-hit re-runs issue zero scrape calls.
+- Export the seam (`scrapeAndCacheDocs`) while keeping the Doc[] shape untouched — handoff to 0063 is body-provenance-only.
+
+**Gotchas**
+
+- Task R-numbering (R1–R9) offsets from AC numbering (R1–R11); test labels match neither list. Corpus prose only, coverage correct — don't "fix" it.
+- `tests/{tmp,tmp-stub-bin,tmp-md-stub}` not gitignored; a SIGKILLed run leaves untracked dirs. Add an ignore line if it bites.
+- Stale-cache reuse across queries sharing a URL is the documented ceiling — delete the file to refresh.
+- Real markitdown conversion quality is unverifiable hermetically; the first live STORM run post-merge is the true e2e.
+
+## 2026-08-16 — task 0063 (feature C5: report digests sources with a compact references tail)
+
+**Conventions discovered**
+
+- **Premise correction:** the two render copies are NOT byte-identical files — `plugins/kk/scripts/render-md.ts` carries its own imports/header/runner `main()` because `@gobing-ai/kk-core` is `private: true` and unimportable by end users. What's identical is the render *logic*, kept in sync by the SYNC comment convention. A render-logic change lands in BOTH copies, and the SYNC pointer (script side) stays intact.
+- References tail resolves by construction: `cite` = Doc id = `computeId(sourceUri)` = the `<doc-id>.md` filename 0062 writes. No render-time file-existence lookup — render stays pure/IO-free.
+- `content.outline` stays in `content.json` and schemas; only the markdown tail drops the `## Outline` replay. Schema untouched, field dropped from one projection.
+- Synthesis mandate is article-stage-only: appended to `articleStage`'s `extra` array, never to curation/outline/polish prompts.
+
+**Errors hit and resolved**
+
+- Design step "update both copies' frozen-template comments" satisfied vacuously on the script side — `plugins/kk/scripts/render-md.ts` carries no template enumeration, only the SYNC pointer (intact at :9). kk-core's enumeration was correctly updated/renumbered. P4, no action.
+- Inverting an existing test is the clean way to drop behavior: the "emits an Outline block" case became "asserts no `## Outline` even with non-empty outline" with an exact-output assertion; the blank-outline case stayed valid.
+
+**Patterns that worked**
+
+- Test the drop with a file fixture carrying `outline: 'Old replay'` — one assertion proves schema keeps the field AND markdown drops the replay.
+- Pipeline-order test asserts the mandate string in the article prompt (`prompts[2]`) AND its absence in stages 0/1/3 — scoped enforcement without prompt-luck checks. Presence assertion covers the key clause (`references are evidence, not the deliverable`); absence assertions use the shorter substring `references are evidence` (adequate, weaker).
+- Byte-identical characterization test (fixture with `outline: 'A\nB'`) spawns the real `bun <script> --in --out` and asserts equality with kk-core output — proves both copies dropped the replay together, the only tripwire against copy drift.
+- Prompt-only enforcement of "digest, don't index" is the accepted ceiling (non-goal, satellite D7) — no automated check can catch regression to source indexing.
+
+**Gotchas**
+
+- AC numbering offset (Requirements R1–R4 vs AC scenarios R6/R7) — same known P3 class as 0062; `spur task check --strict-core` WARNs but passes.
+- "Never lists sources one per line" reads ambiguously against the references tail (which renders one `- <label>` per item) — the sentence scopes to the report body; the same paragraph names the tail as the audit trail.
+- Digest quality itself is unverifiable hermetically — first live STORM run post-merge is the e2e check.
+- The `~/.agents/skills/kk-storm-research/SKILL.md` practice update is 0064's scope, not this diff.
+
+## 2026-08-16 — task 0064 (feature C5: document the references cache and digest contract in storm-research SKILL.md)
+
+**Conventions discovered**
+
+- A meta/doc task in a batch lands LAST and documents shipped behavior — verify against the shipped code (`scrapeAndCacheDocs` web-search src/index.ts:246, PATH probe :385, mandate storm.ts:245), not the design-doc prose.
+- Docs tasks still run the affected regression suites (`bun test packages/kk-core plugins/generations/content-gen plugins/ingestions/web-search` → 144 pass / 0 fail) to prove no code path was touched — docs-only doesn't mean no verification.
+- Keep doc diffs to frozen edit points only: four existing tables/sections, no new sections. Single file surface, clean code diff.
+
+**Errors hit and resolved**
+
+- Adding a `references/` layout row contradicted the skill's own invariant ("do not rename or add sidecars", SKILL.md:166) — resolved by carving the ADR-013 exception into the invariant line, so the new row and the invariant agree. Adding a row to a "frozen" table also requires amending the frozen marker in the heading (`(0056, frozen; ADR-013 adds references/)`).
+- Safe to amend the heading: no exact-string cross-references to the old heading exist outside the task file.
+
+**Patterns that worked**
+
+- Prose-to-code traceability in the verify table: every factual claim in the doc diff is anchored to the exact shipped line (fail-loud row's `markitdown is not on PATH` exit-1 wording matches the code's throw message verbatim). Writing docs that quote the real error strings keeps SKILL.md and runtime diagnostics consistent.
+- Practice bullets pair the what with the audit-trail how: references tail + cache files are the audit trail behind each cite id; render drops the `## Outline` replay (ADR-013 D7).
+
+**Gotchas**
+
+- The fail-loud row's "probed before any network call" is accurate for fetch (counter-asserted in 0062 tests) but the `searchFirecrawl` key check fires earlier when `FIRECRAWL_API_KEY` is unset — the row names markitdown mode precisely, so no action.
+- Practice 7's "never lists sources one per line" needs the body-scoping sentence next to it or it misreads against the one-`- <label>`-per-item tail.
+
+Cross-task: C5 ran as a 3-task batch — 0062 ∥ 0063 parallel, 0064 last; no `dependencies[]` edges, ordering enforced by decomposition. Shared identity rule (computeId = sha256 hex 16) is what makes the 0062 cache filename, the 0063 cite id, and the 0064 "resolves by construction" claim all the same string.
