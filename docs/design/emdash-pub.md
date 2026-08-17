@@ -145,9 +145,9 @@ Failure (network, non-2xx, `success: false`, missing `id`):
 
 ---
 
-## 8. 03 / 04 sync
+## 8. 03 / 04 sync (executed at E5 ship, 2026-08-16)
 
-- `04` §0 index row: this satellite, status accepted design.
+- `04` §0 index row: this satellite, status shipped (E5).
 - `03` module list + workspace table: add `emdash-pub` **when the plugin ships**,
   not in this planning change (constitution §6.4 — current architecture only).
 - `01` / `05`: at ship (T4 / shipped-surface row), not now.
