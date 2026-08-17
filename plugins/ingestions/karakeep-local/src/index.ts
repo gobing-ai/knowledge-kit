@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { dirname, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { Doc } from '@gobing-ai/kk-core';
 import { getLogger, initializeLogger } from '@gobing-ai/ts-infra';
+import { createNodeFileSystem, walkDir } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
 const log = getLogger('kk.ingestion.karakeep-local');
@@ -21,21 +21,20 @@ function computeHash(str: string): string {
 }
 
 async function collectFiles(dir: string): Promise<string[]> {
-    const entries = await readdir(dir, { recursive: true });
-    const files: string[] = [];
-    for (const entry of entries) {
-        const fullPath = join(dir, entry);
-        const st = await stat(fullPath);
-        if (st.isFile()) {
-            files.push(fullPath);
-        }
-    }
-    return files.sort();
+    // walkDir is cycle-safe and root-confined: a directory symlink pointing back at
+    // an ancestor is walked at most once, and one escaping `dir` is skipped.
+    return (await walkDir(dir, createNodeFileSystem())).sort();
 }
 
 export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
+    const fs = createNodeFileSystem();
     try {
-        const inStat = await stat(inDir);
+        // The FileSystem seam returns null for a missing path where node's stat throws;
+        // both cases must still surface as "Inaccessible source path" below.
+        const inStat = await fs.stat(inDir);
+        if (inStat === null) {
+            throw new Error(`Source path does not exist: ${inDir}`);
+        }
         if (!inStat.isDirectory()) {
             throw new Error(`Source path is not a directory: ${inDir}`);
         }
@@ -66,12 +65,12 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
 
         if (contentMd) {
             processedFiles.add(contentMd);
-            const mdText = await readFile(contentMd, 'utf-8');
+            const mdText = await fs.readFile(contentMd);
             let metaObj: ParsedMeta = {};
             if (metaJson) {
                 processedFiles.add(metaJson);
                 try {
-                    metaObj = JSON.parse(await readFile(metaJson, 'utf-8')) as ParsedMeta;
+                    metaObj = JSON.parse(await fs.readFile(metaJson)) as ParsedMeta;
                 } catch (err: unknown) {
                     log.warn(`Warning: corrupt/unparsable meta file at ${metaJson}`, { error: err });
                 }
@@ -103,7 +102,7 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
 
         if (f.endsWith('.json')) {
             try {
-                const jsonText = await readFile(f, 'utf-8');
+                const jsonText = await fs.readFile(f);
                 const jsonObj = JSON.parse(jsonText) as ParsedMeta;
                 const { title, sourceUri, mediaType, body, ...extraMeta } = jsonObj;
                 if (typeof body === 'string') {
@@ -122,7 +121,7 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
                 log.warn(`Warning: corrupt/unparsable JSON file at ${f}`, { error: err });
             }
         } else if (f.endsWith('.md')) {
-            const mdText = await readFile(f, 'utf-8');
+            const mdText = await fs.readFile(f);
             docs.push({
                 id,
                 body: mdText,
@@ -148,6 +147,7 @@ export async function main() {
         process.exit(1);
     }
 
+    const fs = createNodeFileSystem();
     try {
         const candidateFiles = await collectFiles(values.in);
         const docs = await processKarakeepFolder(values.in);
@@ -159,10 +159,10 @@ export async function main() {
 
         const outDir = dirname(values.out);
         if (outDir && outDir !== '.') {
-            await mkdir(outDir, { recursive: true });
+            await fs.ensureDir(outDir);
         }
 
-        await writeFile(values.out, JSON.stringify(docs, null, 2), 'utf-8');
+        await fs.writeFile(values.out, JSON.stringify(docs, null, 2));
     } catch (err: unknown) {
         echoError(`Fatal error during karakeep-local ingestion: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);

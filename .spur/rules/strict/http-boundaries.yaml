@@ -1,30 +1,37 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
-# [STRICT — opt-in] HTTP-client boundaries. Absorbed from
-# ts-libs/.spur/rules/typescript/external-api-boundaries.yaml. NOT in
-# recommended-pre-check: Spur has no central api-client seam yet, and the
-# server's Hono/Workers entrypoint legitimately exposes a `fetch` handler.
-# Opt in via: spur rule run --preset strict  (or --rule <id>).
+# HTTP-client boundaries. Absorbed from
+# ts-libs/.spur/rules/typescript/external-api-boundaries.yaml.
+#
+# SCOPE (fixed 2026-08-17): extended to `plugins/*/*/src/**` — every outbound HTTP
+# call in knowledge-kit lives in a publish/ingestion plugin, so the previous
+# apps+packages scope made these rules unreachable. `apps/cli/plugins/**` is the
+# gitignored bundle-plugins.ts artifact and is excluded everywhere.
 include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"
+  - "plugins/*/*/src/**/*.ts"
 exclude:
   - "**/tests/**"
   - "**/*.test.ts"
   - "**/node_modules/**"
   - "**/dist/**"
+  - "apps/cli/plugins/**"
 
 rules:
   - id: no-direct-fetch
-    description: "Prefer a centralized HTTP client over ad-hoc fetch(...). The server's Hono/Workers fetch entrypoint is exempt."
+    description: "Outbound HTTP belongs in a PublishTransport / ingestion deps seam, not scattered through plugin logic. Transport implementations are exempt — they ARE the HTTP boundary."
     severity: warning
     evaluator:
       type: rg
       config:
         pattern: "(^|[^.[:alnum:]_])fetch\\("
     exclude:
-      # Hono/Cloudflare Workers entrypoint — `fetch` is the platform contract.
-      - "apps/server/src/worker.ts"
-      - "apps/server/src/app.ts"
+      # These files implement PublishTransport (@gobing-ai/publish-harness); the
+      # transport class is the sanctioned HTTP boundary, so `fetch` belongs here.
+      - "plugins/publishings/qiita-pub/src/index.ts"
+      - "plugins/publishings/emdash-pub/src/index.ts"
+      # Firecrawl search injects `deps.fetch` — the call is already behind a seam.
+      - "plugins/ingestions/web-search/src/index.ts"
 
   - id: no-globalthis-fetch
     description: "Avoid globalThis.fetch(...); route HTTP through a client seam when one exists."
@@ -36,13 +43,15 @@ rules:
     include:
       - "apps/**/src/**/*.ts"
       - "packages/**/src/**/*.ts"
+      - "plugins/*/*/src/**/*.ts"
       - "apps/**/tests/**/*.ts"
       - "apps/**/tests/**/*.tsx"
       - "packages/**/tests/**/*.ts"
       - "packages/**/tests/**/*.tsx"
+      - "plugins/*/*/tests/**/*.ts"
 
   - id: no-globalthis-fetch-mutation
-    description: "Avoid mutating globalThis.fetch in tests; use the injectable fetch seam (rpc-client.ts setFetchForTesting / resetFetchForTesting)."
+    description: "Avoid mutating globalThis.fetch in tests; inject the fetch seam instead (ingestion `deps.fetch`, publish transports via KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake)."
     severity: error
     evaluator:
       type: rg
@@ -53,6 +62,7 @@ rules:
       - "apps/**/tests/**/*.tsx"
       - "packages/**/tests/**/*.ts"
       - "packages/**/tests/**/*.tsx"
+      - "plugins/*/*/tests/**/*.ts"
   - id: no-xml-http-request
     description: "Do not use XMLHttpRequest in a Bun/Node codebase."
     severity: error
@@ -65,6 +75,7 @@ rules:
     include:
       - "apps/**/src/**/*.ts"
       - "packages/**/src/**/*.ts"
+      - "plugins/*/*/src/**/*.ts"
       - "scripts/**/*.ts"
 
   - id: no-third-party-http-clients
@@ -83,8 +94,10 @@ rules:
           include:
             - "apps/**/*.ts"
             - "packages/**/*.ts"
+            - "plugins/*/*/**/*.ts"
             - "scripts/**/*.ts"
           exclude:
             - "**/tests/**"
             - "**/*.test.ts"
             - "**/dist/**"
+            - "apps/cli/plugins/**"

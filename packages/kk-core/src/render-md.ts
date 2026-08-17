@@ -1,5 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { type Content, ContentSchema } from './schemas';
 
@@ -71,9 +71,10 @@ function renderReferenceLabel(ref: { url?: string; title?: string; cite?: string
  * the caller decides whether to write `--out`.
  */
 export async function renderContentMarkdownFile(inPath: string, outPath: string): Promise<void> {
-    const raw = await readFile(inPath, 'utf-8');
+    const fs = createNodeFileSystem();
+    const raw = await fs.readFile(inPath);
     const content = ContentSchema.parse(JSON.parse(raw));
-    await writeFile(outPath, renderContentMarkdown(content), 'utf-8');
+    await fs.writeFile(outPath, renderContentMarkdown(content));
 }
 
 /** CLI entry: parse `--in`/`--out`, render, report via echoError; returns exit code. */

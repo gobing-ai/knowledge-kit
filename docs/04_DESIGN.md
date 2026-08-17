@@ -119,6 +119,8 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 Merges N `Doc[]` files into one. Sibling of `executor run` so the single-plugin invoker contract
 stays intact (ADR-006). Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.2, §2.
 Canonical path is `kk executor fan-in`; `kk fanin` is a hidden one-release alias (ADR-011).
+A missing `--out` parent directory is created (ADR-016); a write that genuinely fails still exits
+non-zero.
 
 ```text
 kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json>
@@ -142,6 +144,8 @@ shipped** — id dedupe (default) is the only rule; add the flag if a `uri`-dedu
 Dispatches one `Content` to N publish targets **in sequence**, emitting one aggregate `Result`.
 Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.3, §3–§6.
 Canonical path is `kk executor fan-out`; `kk fanout` is a hidden one-release alias (ADR-011).
+A missing `--out` parent directory is created (ADR-016); a write that genuinely fails still exits
+with code 2.
 
 ```text
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …] \

@@ -230,7 +230,11 @@ describe('runFanin', () => {
         await withTempDir(async (root) => {
             const aFile = join(root, 'a.json');
             writeFileSync(aFile, JSON.stringify([{ id: 'd1', body: 'alpha' }]));
-            const badOut = join(root, 'missing-dir', 'merged.json');
+            // A directory already occupies the out path, so the write fails (EISDIR).
+            // A merely-missing parent dir is NOT an error: the ts-runtime FileSystem
+            // seam creates it, matching what every ingestion/publish plugin does.
+            const badOut = join(root, 'merged.json');
+            mkdirSync(badOut);
 
             const code = await runFanin(['--in', aFile, '--out', badOut]);
 

@@ -6,12 +6,18 @@
  * resolve `@gobing-ai/kk-core` (private). The render logic below is a COPY of
  * `packages/kk-core/src/render-md.ts`; keep them byte-identical for the same Content.
  *
+ * NODE-BUILTIN-ONLY — no workspace or `@gobing-ai/*` imports, and therefore raw
+ * `console.error` rather than the ts-utils output seam. This script ships to arbitrary
+ * user projects and is shelled as `bun <this script>`; an `@gobing-ai/*` import resolves
+ * there only because bun auto-installs it from the network, so it fails under
+ * `bun --no-install`, offline, or in an air-gapped environment. Enforced by
+ * `shipped-script-isolation` in `.spur/rules/boundary/`.
+ *
  * SYNC: packages/kk-core/src/render-md.ts (renderContentMarkdown + helpers)
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { echoError } from '@gobing-ai/ts-utils';
 
 interface Ref {
     url?: string;
@@ -126,7 +132,7 @@ async function main(): Promise<number> {
         },
     });
     if (!values.in || !values.out) {
-        echoError('Error: Missing required arguments --in and --out');
+        console.error('Error: Missing required arguments --in and --out');
         return 1;
     }
     try {
@@ -134,7 +140,7 @@ async function main(): Promise<number> {
         await writeFile(values.out, renderContentMarkdown(content), 'utf-8');
         return 0;
     } catch (err: unknown) {
-        echoError(`render-md failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`render-md failed: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 }

@@ -442,7 +442,11 @@ describe('runFanout', () => {
         await withTempDir(async (root) => {
             const contentFile = join(root, 'content.json');
             writeFileSync(contentFile, JSON.stringify(CONTENT));
-            const badOut = join(root, 'missing-dir', 'r.json');
+            // A directory already occupies the out path, so the write fails (EISDIR).
+            // A merely-missing parent dir is NOT an error: the ts-runtime FileSystem
+            // seam creates it, matching what every ingestion/publish plugin does.
+            const badOut = join(root, 'r.json');
+            mkdirSync(badOut);
 
             const code = await runFanout(['--content', contentFile, '--target', 'a', '--out', badOut], {
                 dispatch: makeDispatch().dispatch,

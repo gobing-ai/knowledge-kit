@@ -2,19 +2,40 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # Output boundary rules — terminal writes go through the output seam
 # (apps/cli/src/output.ts → ts-utils echo/echoError), never raw console/stdout.
 # Absorbed from ts-libs/.spur/rules/typescript/no-raw-output.yaml, re-scoped to
-# the app-monorepo layout. Spur's only sanctioned sink is the ts-utils helper,
-# so no local exclusions are needed.
+# the app-monorepo layout.
+#
+# SCOPE = long-running product code that boots a logger. Two script families are
+# deliberately OUT, matching spur-new (whose output-boundaries covers only
+# apps/**/src + packages/**/src, and whose plugins/sp/scripts/*.ts use console.*):
+#
+#   1. `plugins/*/scripts/**` — SHIPPED to arbitrary user projects and shelled as
+#      `bun <script>`. These are node-builtin-only: an `@gobing-ai/*` import resolves
+#      there only via bun's network auto-install and fails under `bun --no-install`
+#      or offline (verified 2026-08-17). Forcing the ts-utils seam here made
+#      `plugins/kk/scripts/render-md.ts` non-self-contained despite its own header
+#      promising the opposite. Isolation is enforced by `shipped-script-isolation`.
+#   2. `scripts/**` — repo-internal release/publish/bundle tooling. Standalone
+#      processes with no logger bootstrap; console.* is the correct sink, exactly as
+#      spur-new's `scripts/spur-dev.ts` does it.
+#
+# Neither family is merely unlisted: both are named in `exclude` so the omission is
+# a decision on the record rather than a scope gap that silently grows.
 include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"
   - "plugins/**/src/**/*.ts"
-  - "plugins/kk/scripts/**/*.ts"
 exclude:
   - "**/tests/**"
   - "**/*.test.ts"
   - "**/fixtures/**"
   - "**/node_modules/**"
   - "**/dist/**"
+  # Gitignored build artifact: bundle-plugins.ts copies plugins/ -> apps/cli/plugins/.
+  - "apps/cli/plugins/**"
+  # Shipped, node-builtin-only (see header §1).
+  - "plugins/*/scripts/**"
+  # Repo-internal tooling, no logger bootstrap (see header §2).
+  - "scripts/**"
 
 rules:
   - id: no-console-output

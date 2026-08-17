@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
 /** One provenance entry per originating source file (spec §2.2). */
@@ -65,15 +65,15 @@ export function mergeDocLists(inputs: Doc[][], sources: string[]): Doc[] {
  * Read one `--in` file as a `Doc[]`.
  * @returns the parsed doc list, or null (with a file-naming error logged) on failure
  */
-function readDocList(path: string): Doc[] | null {
-    if (!existsSync(path)) {
+async function readDocList(fs: FileSystem, path: string): Promise<Doc[] | null> {
+    if (!(await fs.exists(path))) {
         echoError(`Input file does not exist: ${path}`);
         return null;
     }
 
     let content: string;
     try {
-        content = readFileSync(path, 'utf-8');
+        content = await fs.readFile(path);
     } catch (err: unknown) {
         echoError(`Failed to read input file ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return null;
@@ -148,10 +148,11 @@ export async function runFanin(argv: string[]): Promise<number> {
         return EXIT_USAGE;
     }
 
+    const fs = createNodeFileSystem();
     const inputs: Doc[][] = [];
     const sources: string[] = [];
     for (const inPath of opts.inPaths) {
-        const docList = readDocList(inPath);
+        const docList = await readDocList(fs, inPath);
         if (docList === null) {
             return EXIT_INPUT;
         }
@@ -161,7 +162,7 @@ export async function runFanin(argv: string[]): Promise<number> {
 
     const merged = mergeDocLists(inputs, sources);
     try {
-        writeFileSync(resolve(opts.outPath), `${JSON.stringify(merged, null, 2)}\n`);
+        await fs.writeFile(resolve(opts.outPath), `${JSON.stringify(merged, null, 2)}\n`);
     } catch (err: unknown) {
         echoError(
             `Failed to write output file ${resolve(opts.outPath)}: ${err instanceof Error ? err.message : String(err)}`,

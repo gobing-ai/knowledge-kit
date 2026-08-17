@@ -1,21 +1,29 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
-# [STRICT — opt-in] Runtime boundaries. Absorbed from
-# ts-libs/.spur/rules/typescript/runtime-boundaries.yaml. NOT in
-# recommended-pre-check: knowledge-kit does light direct fs/spawn at app edges,
-# so these run as opt-in hygiene with explicit allowlists for sanctioned sites.
+# Runtime boundaries. Absorbed from ts-libs/.spur/rules/typescript/runtime-boundaries.yaml.
+#
+# SCOPE (fixed 2026-08-17): the product plugin tree lives at `plugins/<kind>/<name>/src/**`
+# and MUST be covered — it is the bulk of knowledge-kit's runtime code. The previous
+# `apps/**` + `packages/**` scope missed it entirely while accidentally matching
+# `apps/cli/plugins/**`, the gitignored bundle-plugins.ts build artifact (a byte-copy of
+# `plugins/`). That inverted the rule: it linted generated output and ignored the source.
+# `apps/cli/plugins/**` is excluded everywhere below for that reason.
+#
 # `no-direct-process-env` is intentionally omitted — config-from-env is by design.
 include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"
+  - "plugins/*/*/src/**/*.ts"
 exclude:
   - "**/tests/**"
   - "**/*.test.ts"
   - "**/node_modules/**"
   - "**/dist/**"
+  # Gitignored build artifact: bundle-plugins.ts copies plugins/ -> apps/cli/plugins/.
+  - "apps/cli/plugins/**"
 
 rules:
   - id: no-direct-process-spawn
-    description: "Agent/process execution must go through ts-ai-runner / ts-runtime's ProcessExecutor. Sanctioned direct spawns: `spur agent edit` opening $EDITOR and `knowledge-kit invoke` spawning plugin entries (ADR-006)."
+    description: "Process execution must go through @gobing-ai/ts-runtime ProcessExecutor (or ts-ai-runner for agents). Sanctioned direct spawns are allowlisted below."
     severity: warning
     evaluator:
       type: forbidden-import
@@ -31,18 +39,28 @@ rules:
           include:
             - "apps/**/src/**/*.ts"
             - "packages/**/src/**/*.ts"
+            - "plugins/*/*/src/**/*.ts"
           exclude:
             - "**/tests/**"
             - "**/*.test.ts"
             - "**/dist/**"
-            # `spur agent edit` opens the operator's $EDITOR interactively.
-            - "apps/cli/src/commands/agent.ts"
+            - "apps/cli/plugins/**"
             # `knowledge-kit invoke` spawns plugin entries by design (ADR-006).
             - "apps/cli/src/invoke.ts"
+            # STORM stages shell out to the `spur agent run` boundary — the sanctioned
+            # agent seam per ADR-007 (LLM work is not a plugin kind). Injected via
+            # StormStageRunner so tests never spawn.
+            - "plugins/generations/content-gen/src/storm.ts"
+            # `kind: 'file-cli'` publish transports shell out to a vendor CLI by design;
+            # that IS their transport mechanism (docs/design publish spec).
+            - "plugins/publishings/surfdash-pub/src/index.ts"
+            - "plugins/publishings/zenn-pub/src/index.ts"
+            # HTML-to-text extraction shells out to a local binary before caching.
+            - "plugins/ingestions/web-search/src/index.ts"
 
   - id: no-direct-fs-io
-    description: "Prefer ts-runtime's FileSystem seam for fs IO. Light direct fs at app edges (service stat/access, migration loading) is allowlisted."
-    severity: warning
+    description: "File IO must go through @gobing-ai/ts-runtime's FileSystem seam (createNodeFileSystem). Sync-structural sites are allowlisted below."
+    severity: error
     evaluator:
       type: forbidden-import
       config:
@@ -55,14 +73,24 @@ rules:
           include:
             - "apps/**/src/**/*.ts"
             - "packages/**/src/**/*.ts"
+            - "plugins/*/*/src/**/*.ts"
           exclude:
             - "**/tests/**"
             - "**/*.test.ts"
             - "**/dist/**"
-            # Sanctioned direct-fs sites (no local FileSystem seam re-implemented):
-            # `knowledge-kit invoke` reads/writes contract IO files by design (ADR-006).
+            - "apps/cli/plugins/**"
+            # ── Sync-structural exemptions ──────────────────────────────────
+            # The FileSystem interface returns `T | Promise<T>` unions, so every
+            # consumer must be async. These four sites are synchronous by contract;
+            # adopting the seam would force a breaking API change for no gain.
+            #
+            # `knowledge-kit invoke` reads/writes contract IO files around a
+            # synchronous Bun.spawnSync plugin call (ADR-006).
             - "apps/cli/src/invoke.ts"
-            # Registry discovery is a filesystem scan of plugins/*/plugin.json by design.
+            # discoverPlugins/discoverAllPlugins are a synchronous public API in
+            # kk-core consumed by the CLI; the seam would make plugin discovery async.
             - "packages/kk-core/src/registry.ts"
-            # logger IS the output seam (ADR-004); Bun.write targets stdout/stderr, not fs.
-            - "packages/utils/src/logger.ts"
+            # Module-scope package.json read for the CLI version banner.
+            - "apps/cli/src/config.ts"
+            # Single existsSync entry-point probe inside a sync Commander action.
+            - "apps/cli/src/commands/plugin.ts"

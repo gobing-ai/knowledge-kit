@@ -1,6 +1,6 @@
-import { readFile, rm, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { generateWithStormPipeline } from './storm';
 
@@ -19,10 +19,11 @@ export async function processGeneratorIO(
     outputPath: string,
     generate: ContentGenerator = generateWithStormPipeline,
 ): Promise<void> {
-    await rm(outputPath, { force: true });
-    const docs = DocListSchema.parse(JSON.parse(await readFile(inputPath, 'utf-8')));
+    const fs = createNodeFileSystem();
+    await fs.deleteFile(outputPath);
+    const docs = DocListSchema.parse(JSON.parse(await fs.readFile(inputPath)));
     const content = docs.length === 0 ? EMPTY_CONTENT : ContentSchema.parse(await generate(docs, inputPath));
-    await writeFile(outputPath, JSON.stringify(content, null, 2), 'utf-8');
+    await fs.writeFile(outputPath, JSON.stringify(content, null, 2));
 }
 
 export async function main(): Promise<number> {
@@ -42,7 +43,7 @@ export async function main(): Promise<number> {
         return 0;
     } catch (error: unknown) {
         echoError(`content-gen failed: ${error instanceof Error ? error.message : String(error)}`);
-        await rm(values.out, { force: true });
+        await createNodeFileSystem().deleteFile(values.out);
         return 1;
     }
 }

@@ -1,8 +1,8 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
 /** Qiita API v2 article-create endpoint (audited from wt-publish-to-qiita). */
@@ -192,9 +192,9 @@ export function getPublishTransport(): PublishTransport {
 async function writePublishResult(outputPath: string, result: Result): Promise<void> {
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') {
-        await mkdir(outDir, { recursive: true });
+        await createNodeFileSystem().ensureDir(outDir);
     }
-    await writeFile(outputPath, JSON.stringify(result, null, 2), 'utf-8');
+    await createNodeFileSystem().writeFile(outputPath, JSON.stringify(result, null, 2));
 }
 
 /**
@@ -208,11 +208,11 @@ export async function processPublishIO(
     outputPath: string,
     transport: PublishTransport = getPublishTransport(),
 ): Promise<void> {
-    await rm(outputPath, { force: true });
+    await createNodeFileSystem().deleteFile(outputPath);
 
     let content: Content;
     try {
-        const rawInput = await readFile(inputPath, 'utf-8');
+        const rawInput = await createNodeFileSystem().readFile(inputPath);
         content = ContentSchema.parse(JSON.parse(rawInput));
     } catch (error: unknown) {
         const message = `Invalid Content input: ${error instanceof Error ? error.message : String(error)}`;

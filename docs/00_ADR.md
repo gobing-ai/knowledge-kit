@@ -563,6 +563,96 @@ injectable and diagnostics structured.
 
 ---
 
+## ADR-016: ts-runtime FileSystem is the sanctioned file-IO seam
+
+**Status:** Accepted · **Date:** 2026-08-17
+
+**Decision.** File IO in `apps/**/src`, `packages/**/src`, and `plugins/<kind>/<name>/src` goes
+through `createNodeFileSystem()` from `@gobing-ai/ts-runtime`, not `node:fs`. Four sites are
+exempt because their public API is synchronous by contract: `apps/cli/src/invoke.ts`,
+`packages/kk-core/src/registry.ts`, `apps/cli/src/config.ts`, and
+`apps/cli/src/commands/plugin.ts`. Recursive directory scans use `walkDir` from the same package.
+
+**Why.** `ts-runtime` was in the catalog under ADR-014 with zero import sites — a declared
+dependency the code never used, while `node:fs` was hand-rolled in 10 files. The seam is also
+cycle-safe and root-confined for directory walks, which the previous `readdir({recursive:true})`
+scan was not.
+
+**Cost.** `FileSystem` methods return `T | Promise<T>` unions, so every consumer must be async.
+That is why the four sync-structural sites stay on `node:fs`: adopting the seam there would make
+plugin discovery and CLI config loading async for no behavioral gain. The exemptions carry their
+reason inline in `.spur/rules/strict/runtime-boundaries.yaml`.
+
+**Consequence (user-visible).** `FileSystem.writeFile` creates parent directories, so
+`kk executor fan-in`/`fan-out` now create a missing `--out` directory instead of failing. This
+matches what every ingestion and publish plugin already did. Genuine write failures (an existing
+directory at the out path, permission denied) still exit non-zero as before.
+
+**Enforcement.** `no-direct-fs-io` (severity `error`) in the `strict` category, which joined
+`recommended-pre-check` on the same date — see ADR-017.
+
+**Detail:** `docs/04_DESIGN.md` §fan-in/§fan-out; feature A3.
+
+---
+
+## ADR-017: Constraint rules cover the plugin tree and run in the default gate
+
+**Status:** Accepted · **Date:** 2026-08-17
+
+**Decision.** `recommended-pre-check` extends the `strict` category, and every rule scoped to
+source includes `plugins/*/*/src/**/*.ts` while excluding `apps/cli/plugins/**`.
+
+**Why.** The `strict` rules (`runtime-boundaries`, `http-boundaries`) had been authored and tuned
+for this repo but were never reachable: the preset did not extend `strict`, so `bun run spur-check`
+never ran them. Their `apps/**` + `packages/**` scope also missed the product plugin tree entirely
+while accidentally matching `apps/cli/plugins/**` — the gitignored `bundle-plugins.ts` byte-copy of
+`plugins/`. The gate was linting generated output and ignoring the source it came from. The gate
+went from 38 to 45 rules with no violations after the ADR-016 migration.
+
+**Consequence.** A rule that names a path under `plugins/` must exempt the *source* path; excluding
+only the bundled copy silently exempts nothing, and excluding only the source leaves phantom
+findings against build artifacts.
+
+**Detail:** `.spur/rules/recommended-pre-check.yaml`, `.spur/rules/strict/*.yaml`.
+
+---
+
+## ADR-018: Shipped plugin scripts are node-builtin-only
+
+**Status:** Accepted · **Date:** 2026-08-17
+
+**Decision.** Scripts under `plugins/<name>/scripts/**` import node builtins only — no
+`@gobing-ai/*` package, including the ts-utils output seam, and no relative path escaping the
+plugin directory. They therefore use raw `console.*` and are excluded from `output-boundaries`.
+Enforced by `shipped-script-isolation` (severity `error`).
+
+**Why.** These scripts ship inside the Claude Code plugin and the published npm package, then run
+in the *user's* project as `bun <script>`. That project has no `@gobing-ai/*` in `node_modules`.
+The failure is silent in development because bun auto-installs public packages from the network:
+verified 2026-08-17, `bun --no-install plugins/kk/scripts/render-md.ts` failed with
+`Cannot find module '@gobing-ai/ts-utils'`, while the same command without the flag quietly
+fetched 0.4.38. The seam import therefore turned a "self-contained by design" runner into one
+carrying a hidden network dependency — breaking offline, air-gapped, and locked-down CI.
+
+**Cost.** Logic duplication. `plugins/kk/scripts/render-md.ts` already carries a `SYNC:` note
+against `packages/kk-core/src/render-md.ts` for exactly this reason, and a characterization test
+asserts the two render byte-identical output. That cost is accepted in exchange for a runner with
+no dependency footprint.
+
+**Precedent.** spur-new's `plugins/sp/scripts/*.ts` state the same constraint in-file
+("Ships with the plugin to arbitrary projects, so it stays node-builtin-only — no workspace
+imports") and sit outside its `output-boundaries` scope. This ADR encodes as a rule what that
+repo holds by convention.
+
+**Scope note.** Repo-internal `scripts/**` (release, publish, bundle-plugins) is also outside
+`output-boundaries`, for the different reason that it is standalone tooling with no logger
+bootstrap — mirroring spur-new's `scripts/spur-dev.ts`.
+
+**Detail:** `.spur/rules/boundary/shipped-script-isolation.yaml`,
+`.spur/rules/typescript/output-boundaries.yaml`.
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.

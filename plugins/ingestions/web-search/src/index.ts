@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { getLogger, initializeLogger } from '@gobing-ai/ts-infra';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
 const log = getLogger('kk.ingestion.web-search');
@@ -248,6 +248,7 @@ function extractError(bodyText: string): string {
  * swap. Per-URL failure or unusable content warns and keeps the snippet body (R5/R11) — never
  * fatal. Returns a new Doc[]; input order and non-body fields are untouched. */
 export async function scrapeAndCacheDocs(docs: Doc[], deps: SearchDeps, outPath: string): Promise<Doc[]> {
+    const fs = createNodeFileSystem();
     const cacheDir = join(dirname(outPath), 'references');
     const scrapeFetch = deps.scrape ?? deps.fetch;
     const out: Doc[] = [];
@@ -259,7 +260,7 @@ export async function scrapeAndCacheDocs(docs: Doc[], deps: SearchDeps, outPath:
         }
         const cacheFile = join(cacheDir, `${doc.id}.md`);
         try {
-            const cached = await readFile(cacheFile, 'utf-8');
+            const cached = await fs.readFile(cacheFile);
             if (cached.trim().length > 0) {
                 out.push({ ...doc, body: cached });
                 continue;
@@ -295,8 +296,8 @@ export async function scrapeAndCacheDocs(docs: Doc[], deps: SearchDeps, outPath:
             } else {
                 throw new Error('scrape returned no usable content');
             }
-            await mkdir(cacheDir, { recursive: true });
-            await writeFile(cacheFile, normalized, 'utf-8');
+            await fs.ensureDir(cacheDir);
+            await fs.writeFile(cacheFile, normalized);
             out.push({ ...doc, body: normalized });
         } catch (err: unknown) {
             log.warn(`web-search: scrape failed (url=${uri}): ${err instanceof Error ? err.message : String(err)}`);
@@ -356,6 +357,7 @@ export function parseInput(raw: string): InInput {
 }
 
 export async function main(): Promise<number> {
+    const fs = createNodeFileSystem();
     const { values } = parseArgs({
         options: {
             in: { type: 'string' },
@@ -370,7 +372,7 @@ export async function main(): Promise<number> {
 
     let input: InInput;
     try {
-        input = parseInput(await readFile(values.in, 'utf-8'));
+        input = parseInput(await fs.readFile(values.in));
     } catch (err: unknown) {
         echoError(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
@@ -394,9 +396,9 @@ export async function main(): Promise<number> {
             const cached = await scrapeAndCacheDocs(docs, deps, values.out);
             const outDir = dirname(values.out);
             if (outDir && outDir !== '.') {
-                await mkdir(outDir, { recursive: true });
+                await fs.ensureDir(outDir);
             }
-            await writeFile(values.out, JSON.stringify(DocListSchema.parse(cached), null, 2), 'utf-8');
+            await fs.writeFile(values.out, JSON.stringify(DocListSchema.parse(cached), null, 2));
             return 0;
         } catch (err: unknown) {
             echoError(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -408,9 +410,9 @@ export async function main(): Promise<number> {
         const docs = DocListSchema.parse(buildFixtureDocs(input.topic, input.maxResults));
         const outDir = dirname(values.out);
         if (outDir && outDir !== '.') {
-            await mkdir(outDir, { recursive: true });
+            await fs.ensureDir(outDir);
         }
-        await writeFile(values.out, JSON.stringify(docs, null, 2), 'utf-8');
+        await fs.writeFile(values.out, JSON.stringify(docs, null, 2));
         return 0;
     } catch (err: unknown) {
         echoError(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);

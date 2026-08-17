@@ -1,8 +1,8 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
 /**
@@ -88,14 +88,14 @@ export class PostsurfingFileCliTransport implements PublishTransport {
     public async publish(payload: PublishTransportPayload): Promise<Result> {
         const markdown = mapContentToSurfingMarkdown(payload.content);
         const tempDir = join(process.cwd(), '.tmp-surfdash');
-        await mkdir(tempDir, { recursive: true });
+        await createNodeFileSystem().ensureDir(tempDir);
 
         const titleSlug = slugify(payload.content.title ?? 'post');
         const fileName = `${titleSlug || 'post'}-${Date.now()}.md`;
         const filePath = join(tempDir, fileName);
 
         try {
-            await writeFile(filePath, markdown, 'utf-8');
+            await createNodeFileSystem().writeFile(filePath, markdown);
             const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
 
             const proc = Bun.spawn([postsurfingBin, 'publish', filePath], {
@@ -130,7 +130,12 @@ export class PostsurfingFileCliTransport implements PublishTransport {
                 error: `Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`,
             });
         } finally {
-            await rm(filePath, { force: true }).catch(() => {});
+            // Best-effort temp cleanup: a failure here must not mask the publish result.
+            try {
+                await createNodeFileSystem().deleteFile(filePath);
+            } catch {
+                // ignore
+            }
         }
     }
 }
@@ -154,8 +159,8 @@ export async function processPublishIO(
     outputPath: string,
     transport: PublishTransport = getPublishTransport(),
 ): Promise<void> {
-    await rm(outputPath, { force: true });
-    const rawInput = await readFile(inputPath, 'utf-8');
+    await createNodeFileSystem().deleteFile(outputPath);
+    const rawInput = await createNodeFileSystem().readFile(inputPath);
     const content = ContentSchema.parse(JSON.parse(rawInput));
 
     const result = await transport.publish({ content });
@@ -163,10 +168,10 @@ export async function processPublishIO(
 
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') {
-        await mkdir(outDir, { recursive: true });
+        await createNodeFileSystem().ensureDir(outDir);
     }
 
-    await writeFile(outputPath, JSON.stringify(validatedResult, null, 2), 'utf-8');
+    await createNodeFileSystem().writeFile(outputPath, JSON.stringify(validatedResult, null, 2));
 
     if (!validatedResult.ok) {
         throw new Error(validatedResult.error ?? 'Publish failed');

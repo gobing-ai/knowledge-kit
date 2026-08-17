@@ -1,0 +1,48 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Shipped plugin scripts must be node-builtin-only.
+#
+# `plugins/<name>/scripts/**` ships inside the Claude Code plugin (superskill install)
+# and inside the published npm package, then runs in the USER's project as
+# `bun <script> --in … --out …`. Those projects have no `@gobing-ai/*` in node_modules.
+#
+# Such an import does not fail loudly in dev: bun auto-installs public packages from
+# the network, so the script appears to work. It breaks only where it matters —
+# `bun --no-install`, offline, air-gapped, or locked-down CI. Verified 2026-08-17:
+# `bun --no-install plugins/kk/scripts/render-md.ts` → "Cannot find module
+# '@gobing-ai/ts-utils'"; the same command without the flag silently fetched 0.4.38.
+#
+# Consequence: these scripts use raw `console.*` and are excluded from
+# `output-boundaries` — the ts-utils output seam is itself a forbidden import here.
+# Duplicating logic (see the SYNC note in render-md.ts) is the accepted cost of
+# shipping a runner with no dependency footprint. Mirrors spur-new's
+# `plugins/sp/scripts/*.ts` ("stays node-builtin-only — no workspace imports").
+include:
+  - "plugins/*/scripts/**/*.ts"
+exclude:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  # Gitignored build artifact: bundle-plugins.ts copies plugins/ -> apps/cli/plugins/.
+  - "apps/cli/plugins/**"
+
+rules:
+  - id: shipped-script-isolation
+    description: >
+      Scripts under plugins/*/scripts/ ship to user projects and must import only
+      node builtins. No @gobing-ai/* package (including the ts-utils output seam,
+      hence raw console.* here), and no relative path escaping the plugin directory.
+    severity: error
+    evaluator:
+      type: forbidden-import
+      config:
+        forbidden:
+          - pattern: "from\\s+['\"]@gobing-ai/"
+            matchMode: usage
+          - pattern: "from\\s+['\"]\\.\\./\\.\\./"
+            matchMode: usage
+        scope:
+          include:
+            - "plugins/*/scripts/**/*.ts"
+          exclude:
+            - "**/node_modules/**"
+            - "**/dist/**"
+            - "apps/cli/plugins/**"

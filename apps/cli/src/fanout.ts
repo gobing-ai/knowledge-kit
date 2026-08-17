@@ -1,4 +1,3 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import {
@@ -10,6 +9,7 @@ import {
     type Result,
     ResultSchema,
 } from '@gobing-ai/kk-core';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { spawnPluginEntry } from './invoke';
 
@@ -140,15 +140,15 @@ export function selectRetryTargets(prior: AggregateResult): Target[] {
 }
 
 /** Read one `--content` file as a `Content`. @returns the parsed content, or null (with an error logged) on failure */
-function readContent(path: string): Content | null {
-    if (!existsSync(path)) {
+async function readContent(fs: FileSystem, path: string): Promise<Content | null> {
+    if (!(await fs.exists(path))) {
         echoError(`Content file does not exist: ${path}`);
         return null;
     }
 
     let content: string;
     try {
-        content = readFileSync(path, 'utf-8');
+        content = await fs.readFile(path);
     } catch (err: unknown) {
         echoError(`Failed to read content file ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return null;
@@ -173,15 +173,15 @@ function readContent(path: string): Content | null {
 }
 
 /** Read and validate one prior aggregate result (spec §3.1). @returns the parsed result, or null (with an error logged) on failure */
-function readAggregateResult(path: string): AggregateResult | null {
-    if (!existsSync(path)) {
+async function readAggregateResult(fs: FileSystem, path: string): Promise<AggregateResult | null> {
+    if (!(await fs.exists(path))) {
         echoError(`Result file does not exist: ${path}`);
         return null;
     }
 
     let content: string;
     try {
-        content = readFileSync(path, 'utf-8');
+        content = await fs.readFile(path);
     } catch (err: unknown) {
         echoError(`Failed to read result file ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return null;
@@ -349,8 +349,9 @@ async function pluginDispatch(target: string, contentPath: string, discovery: Di
         throw new Error(`Publish plugin '${target}' not found in the merged plugin registry`);
     }
 
+    const fs = createNodeFileSystem();
     const entryPath = isAbsolute(record.entry) ? record.entry : resolve(record.dir, record.entry);
-    if (!existsSync(entryPath)) {
+    if (!(await fs.exists(entryPath))) {
         throw new Error(`Plugin entry script does not exist: ${entryPath}`);
     }
 
@@ -366,17 +367,17 @@ async function pluginDispatch(target: string, contentPath: string, discovery: Di
             throw new Error(`Plugin '${target}' exited ${proc.exitCode}: ${proc.stderr || proc.stdout || 'no output'}`);
         }
 
-        if (!existsSync(outTmp)) {
+        if (!(await fs.exists(outTmp))) {
             throw new Error(`Plugin '${target}' succeeded but did not write a result file`);
         }
-        const parsed = ResultSchema.safeParse(JSON.parse(readFileSync(outTmp, 'utf-8')));
+        const parsed = ResultSchema.safeParse(JSON.parse(await fs.readFile(outTmp)));
         if (!parsed.success) {
             const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
             throw new Error(`Plugin '${target}' wrote an invalid Result: ${issues}`);
         }
         return parsed.data;
     } finally {
-        rmSync(outTmp, { force: true });
+        await fs.deleteFile(outTmp);
     }
 }
 
@@ -414,7 +415,8 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
         return EXIT_INPUT;
     }
 
-    const content = readContent(opts.contentPath);
+    const fs = createNodeFileSystem();
+    const content = await readContent(fs, opts.contentPath);
     if (content === null) {
         return EXIT_INPUT;
     }
@@ -434,7 +436,7 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     let skipped: TargetOutcome[] = [];
     let targets = opts.targets;
     if (opts.retryFromPath !== undefined) {
-        const parsed = readAggregateResult(opts.retryFromPath);
+        const parsed = await readAggregateResult(fs, opts.retryFromPath);
         if (parsed === null) {
             return EXIT_INPUT;
         }
@@ -463,7 +465,7 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     const result = prior !== undefined ? aggregate([...skipped, ...fresh.targets]) : fresh;
 
     try {
-        writeFileSync(resolve(opts.outPath), `${JSON.stringify(result, null, 2)}\n`);
+        await fs.writeFile(resolve(opts.outPath), `${JSON.stringify(result, null, 2)}\n`);
     } catch (err: unknown) {
         echoError(
             `Failed to write output file ${resolve(opts.outPath)}: ${err instanceof Error ? err.message : String(err)}`,

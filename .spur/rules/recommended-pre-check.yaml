@@ -2,12 +2,20 @@ $schema: "@gobing-ai/spur/schemas/preset.schema.json"
 # Recommended pre-check for knowledge-kit (CLI monorepo).
 # Use with: spur rule run --preset recommended-pre-check
 #
-# Categories: TypeScript quality, structure, DB/config boundaries, CLI surface.
-# UI / happy-dom / plugins/sp rules exist under .spur/rules but are disabled
-# (enabled: false) until those surfaces exist.
+# Categories: TypeScript quality, structure, DB/config boundaries, CLI surface,
+# and runtime/HTTP boundaries (`strict`).
+#
+# `strict` joined the gate on 2026-08-17. It had been authored, tuned for this
+# repo, and then never run — the preset did not extend it, so ts-runtime and
+# HTTP boundary violations were invisible to `bun run spur-check`. This mirrors
+# spur-new, whose recommended-pre-check has extended `strict` since 79186391.
+#
+# UI / happy-dom rules exist under .spur/rules but are disabled (enabled: false)
+# until those surfaces exist, so `ui` stays out of the gate.
 name: recommended-pre-check
 extends:
   - typescript
   - structure
   - boundary
   - surface
+  - strict
