@@ -1,6 +1,6 @@
 # STORM evidence cache + report digestion
 
-Feature **C5** (accepted design — ADR-013, 2026-08-15; not yet built). Durable
+Feature **C5** (ADR-013, 2026-08-15; shipped 2026-08-16). Durable
 per-reference evidence cache owned by the `web-search` ingestion plugin, `markitdown`
 normalization, and a digest-don't-index report contract.
 
@@ -9,7 +9,7 @@ normalization, and a digest-don't-index report contract.
 > state (splits the `Doc[]` contract across two components); generator-side lazy fetch
 > (no durable cache, re-fetches every run, keeps the boilerplate).
 
-Authority: **ADR-013** (Accepted (design)). Amends the frozen 0056 works layout (adds
+Authority: **ADR-013** (Accepted). Amends the frozen 0056 works layout (adds
 `references/`). No new `kk` noun, no new workflow states, no new package dependency —
 `markitdown` is the already-installed external binary.
 

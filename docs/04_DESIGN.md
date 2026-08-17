@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.15.0
+version: 2.16.0
 created_at: 2026-07-22
-updated_at: 2026-08-15
+updated_at: 2026-08-16
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -27,7 +27,7 @@ sync: [T3]
 | [publish-plugin-specification.md](design/publish-plugin-specification.md) | Publish kind + transports | shipped (E2) |
 | [emdash-pub.md](design/emdash-pub.md) | EmDash CMS publish channel | shipped (E5) |
 | [multi-root-plugin-discovery.md](design/multi-root-plugin-discovery.md) | Built-in + user plugin discovery merge | shipped (B7, ADR-012) |
-| [storm-evidence-cache.md](design/storm-evidence-cache.md) | STORM per-reference cache, markitdown normalization, digest contract | accepted design (C5, ADR-013) |
+| [storm-evidence-cache.md](design/storm-evidence-cache.md) | STORM per-reference cache, markitdown normalization, digest contract | shipped (C5, ADR-013) |
 
 ## 1. CLI commands
 
@@ -264,7 +264,7 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |
 | `discoverPlugins(root)`, `discoverAllPlugins(opts)`, `resolvePluginRoots(opts)`, `listByKind`, `getByName` | functions | Per-root scan, merged multi-root discovery, root resolution, and registry filtering (ADR-012) |
 | `PluginRecord`, `PluginOrigin`, `DiscoverAllOptions`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types (`misplaced`, `kind_mismatch`, `shadowed` codes; `origin` on every record) |
-| `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()` | functions | Content → research-report markdown (frozen template) + `--in`/`--out` file/CLI wrapper (task 0058). **C5 (accepted design, ADR-013):** drop the `## Outline` replay; references tail resolves cite ids to cached files — apply to the byte-identical `plugins/kk/scripts/render-md.ts` copy too |
+| `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()` | functions | Content → research-report markdown (frozen template) + `--in`/`--out` file/CLI wrapper (task 0058). **C5 (ADR-013):** drops the `## Outline` replay (applied to the byte-identical `plugins/kk/scripts/render-md.ts` copy too); references tail resolves cite ids to cached files |
 
 ### `@gobing-ai/publish-harness` (`packages/publish-harness`)
 
@@ -307,12 +307,13 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | -------- | ------ | ------- |
 | `buildFixtureDocs(topic, maxResults)` | function | Canned `Doc[]` from fixture entries; `id` = sha256(`sourceUri`) hex prefix — deterministic per ingestion spec §2.3 |
 | `parseInput(raw)` | function | Validates `--in` JSON per the 0054 contract; throws on invalid JSON / missing or blank `topic` / non-positive `maxResults` |
-| `searchFirecrawl(input, deps)` | async function | Live Firecrawl `POST /v2/search` → `Doc[]` (task 0057, feature C4); throws fail-loud diagnostics — missing key / transport error / non-200 / malformed body / hits-but-no-usable-markdown. **C5 (accepted design, ADR-013):** live path adds `/v2/scrape` → `markitdown` → `references/<doc-id>.md` cache → normalized body; per-URL scrape failure warns and keeps the snippet body; existing cache file is reused |
-| `FetchLike`, `SearchDeps` | type & interface | Injectable live-path dependencies (fetch signature, env, clock) — tests never hit the network |
+| `searchFirecrawl(input, deps)` | async function | Live Firecrawl `POST /v2/search` → `Doc[]` (task 0057, feature C4); throws fail-loud diagnostics — missing key / transport error / non-200 / malformed body / hits-but-no-usable-markdown. **C5 (ADR-013):** live path scrapes via `/v2/scrape` → `markitdown` → `references/<doc-id>.md` cache → normalized body; per-URL scrape failure warns and keeps the snippet body; existing cache file is reused |
+| `scrapeAndCacheDocs(docs, deps, outPath)` | async function | Scrape → `markitdown` → `references/<doc-id>.md` cache → normalized body per Doc (C5, ADR-013); cache hit reuses the file without a new scrape; per-URL failure warns and keeps the snippet body |
+| `FetchLike`, `SearchDeps`, `MarkitdownRunner` | type & interface | Injectable live-path dependencies — fetch signature, env, clock, scrape runner, markitdown runner — tests never hit the network or the real binary |
 | `computeId(uri)` | function | sha256(`sourceUri`) 16-hex `Doc` id; exported so workflow local-Doc mapping stays consistent (0059) |
 | `main()` | function | `--in`/`--out` IO per the ingestion spec §2; exit 0 success / 1 failure |
 
-`--in` JSON (API source, ingestion spec §2.2): `{ "topic": string (required), "maxResults": int (default 8), "fixture": boolean }`. `fixture: true` selects the offline stub; absent/false runs the **live Firecrawl client** (task 0057, feature C4): requires `FIRECRAWL_API_KEY` (§3), zero hits writes `[]` exit 0, any failure exits 1 with no `--out` (fail loud). **C5 (accepted design, ADR-013):** live mode additionally requires the `markitdown` binary on PATH (missing → exit 1 naming it); writes `references/` under the `--out` directory; `fixture: true` needs neither.
+`--in` JSON (API source, ingestion spec §2.2): `{ "topic": string (required), "maxResults": int (default 8), "fixture": boolean }`. `fixture: true` selects the offline stub; absent/false runs the **live Firecrawl client** (task 0057, feature C4): requires `FIRECRAWL_API_KEY` (§3), zero hits writes `[]` exit 0, any failure exits 1 with no `--out` (fail loud). **C5 (ADR-013):** live mode additionally requires the `markitdown` binary on PATH (missing → exit 1 naming it); writes `references/` under the `--out` directory; `fixture: true` needs neither.
 
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
 
@@ -341,4 +342,4 @@ File: `.spur/config.yaml`
 | Publish Plugin Specification | `docs/design/publish-plugin-specification.md` | Publish-kind authoring contract: transport abstraction, Content→frontmatter mapping, Result conventions, generic §1 citation |
 | Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk executor fan-in` / `kk executor fan-out` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
 | kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, two-noun tree `executor` + `plugin` (A21 / ADR-011 **shipped** 2026-08-12); A2 bin/help/register tree **shipped** 2026-08-12 |
-| STORM evidence cache | `docs/design/storm-evidence-cache.md` | `references/` cache in the 0056 layout, Firecrawl `/v2/scrape` → `markitdown` → body, digest-don't-index report contract (C5 / ADR-013 **accepted design**) |
+| STORM evidence cache | `docs/design/storm-evidence-cache.md` | `references/` cache in the 0056 layout, Firecrawl `/v2/scrape` → `markitdown` → body, digest-don't-index report contract (C5 / ADR-013 **shipped** 2026-08-16) |

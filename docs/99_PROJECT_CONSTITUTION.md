@@ -354,12 +354,7 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/00_ADR.md`
 
-- [2026-08-13] knowledge-kit: ADR-012 stayed `Accepted (design)` and its satellite spec
-  (`docs/design/multi-root-plugin-discovery.md`) kept "accepted design" headers through the B7
-  shipping commit — status flags survive ship unless flipped in the same change. When a feature
-  ships, flip the ADR status (`Accepted (design)` → `Accepted`) and grep every derived doc and
-  design spec for the "accepted design"/"not yet built" framing in the same change (§6.1 rule 5,
-  §6.4 rule 1).
+- [2026-08-16] knowledge-kit: ADR-012 (B7) then ADR-013 (C5) each stayed `Accepted (design)` with "not yet built" framing through the shipping batch — status flags survive ship unless flipped in the same change (recurred 2026-08-16). When a feature ships, flip the ADR status (`Accepted (design)` → `Accepted`) and grep every derived doc and design spec for the "accepted design"/"not yet built" framing in the same change (§6.1 rule 5, §6.4 rule 1).
 - [2026-08-12] knowledge-kit: Product plugins sat at `plugins/<name>` while `plugins/kk` held
   agent capabilities — one-level discovery (`plugins/*/plugin.json`) could not tell them apart
   and invited mixed layout. Kind collections + skip-`kk` is ADR-009; do not reintroduce a flat

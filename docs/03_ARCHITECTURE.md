@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.13.0
+version: 2.14.0
 created_at: 2026-07-22
-updated_at: 2026-08-15
+updated_at: 2026-08-16
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -167,9 +167,9 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 (`invoke` / `fanin` / `fanout` / `plugins *`) keep the old names working but are not listed in
 `kk --help`.
 
-### Evidence cache and report digestion (accepted design — ADR-013; not yet built)
+### Evidence cache and report digestion (ADR-013)
 
-Feature C5. The live `web-search` ingest path (0057) gains a scrape → normalize → cache
+Feature C5. The live `web-search` ingest path (0057) has a scrape → normalize → cache
 stage between search and `docs.json` write:
 
 ```text

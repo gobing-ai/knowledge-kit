@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.17.0
+version: 1.18.0
 created_at: 2026-05-28
-updated_at: 2026-08-15
+updated_at: 2026-08-16
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -499,8 +499,8 @@ combining it with `--plugins-path` exits `2`. The B3 workflow template injects
 
 ## ADR-013 — Per-reference evidence cache + report digestion in STORM (2026-08-15)
 
-> **Status:** Accepted (design) · **Date:** 2026-08-15 · **Amends:** the frozen 0056 works
-> layout (adds `references/`) · **Feature:** C5 — not yet built.
+> **Status:** Accepted · **Date:** 2026-08-15 · **Amends:** the frozen 0056 works
+> layout (adds `references/`) · **Feature:** C5 (shipped 2026-08-16).
 
 **Decision.** The STORM research workflow gains a durable per-reference evidence cache,
 owned by the `web-search` ingestion plugin. After search returns `Doc[]`, each source with
