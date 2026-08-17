@@ -86,6 +86,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: planner
           input: "Run sp:brainstorm for the idea: ${vars.idea}. The skill owns the approach-generation, design summary, and `needs_design` signal criteria; emit .spur/run/idea-needs-design.json ({\"needs_design\": true|false}) and the design summary per the skill's `Design Approval Gate` and `The needs_design signal` sections. Also emit the idea-evaluation report to .spur/run/idea-eval-report.md per plugins/sp/skills/spur-dev/references/idea-evaluation.md (urgency/necessity 0–5, premises, pros/cons, alternatives, enhanced idea, recommendation). At the END of the report, append a provenance footer block of the exact form: `---\\nrun_id: ${vars.__runId}\\ngenerated_at: <RFC3339 timestamp>\\n---` (omit the footer only if run_id is empty)."
           timeoutMs: ${vars.stepTimeoutMs}
 
@@ -113,6 +114,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: scribe
           input: "Create a feature for the idea: ${vars.idea}. Read .spur/run/idea-eval-report.md if present for the enhanced idea and scores. Use 'spur feature create \"<name>\" --json' to create it. Write the feature id to .spur/run/idea-feature-id.txt. If an existing feature is appropriate, use its id instead."
           expectFile: .spur/run/idea-feature-id.txt
           timeoutMs: ${vars.stepTimeoutMs}
@@ -140,6 +142,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: planner
           input: "Generate acceptance criteria for feature ${vars.featureId}. Read the feature file and author R-numbered BDD Gherkin scenarios per ac-style-guide.md. Output only the complete Acceptance Criteria section body, including the gherkin code fence, with no surrounding commentary and no section heading."
           answerFile: .spur/run/idea-ac-content.md
           expectFile: .spur/run/idea-ac-content.md
@@ -171,6 +174,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: planner
           input: "Run sp:sys-architecture for feature ${vars.featureId}. Read the brainstorm artifact and feature AC. Produce ADR entries, architecture updates, and design satellites (docs/design/<slug>.md) following the constitution edit rules. Do not write task or feature corpus files directly."
           timeoutMs: ${vars.stepTimeoutMs}
 
@@ -198,6 +202,7 @@ states:
       - kind: agent.run
         options:
           agent: ${vars.agent}
+          role: planner
           input: "Run sp:spec-decomposition for feature ${vars.featureId}. Read the brainstorm artifact, feature AC, and design doc. Produce a task-batch JSON array at .spur/run/idea-task-batch.json, validated against the task-batch JSON Schema bundled with the installed @gobing-ai/spur package (schemas/task-batch.schema.json — locate via the resolved `spur` binary path; `spur task batch-create` re-validates at runtime). Schema-permitted fields per entry: `name`, `background`, `requirements`, `feature_id`, `parent_wbs`, `priority`, `tags`, `template` — schema validation rejects anything else. Acceptance Criteria, Design, and Plan sections are filled in by the per-task refine step after batch-create, NOT at decompose time. Validate locally against the schema before emitting."
           timeoutMs: ${vars.stepTimeoutMs}
 
