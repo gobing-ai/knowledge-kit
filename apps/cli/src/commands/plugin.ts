@@ -7,8 +7,9 @@ import {
     type PluginKind,
     type PluginRecord,
 } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 import { type Command, CommanderError } from 'commander';
+import { consoleOutput } from '../output';
 
 /**
  * Diagnostic carried by the unified health report. Plugin-level diagnostics
@@ -80,9 +81,9 @@ function printDiagnostics(report: PluginStatusJson): void {
     for (const p of report.plugins) {
         all.push(...p.diagnostics);
     }
-    logger.error(`Found ${all.length} diagnostic issue(s):\n`);
+    echoError(`Found ${all.length} diagnostic issue(s):\n`);
     for (const d of all) {
-        logger.error(`  [${d.code}] ${d.path}: ${d.reason}\n`);
+        echoError(`  [${d.code}] ${d.path}: ${d.reason}\n`);
     }
 }
 
@@ -96,7 +97,7 @@ function printDiagnostics(report: PluginStatusJson): void {
  */
 function statusAction(options: StatusOptions): void {
     if (options.pluginsRoot !== undefined && (options.pluginsPath?.length ?? 0) > 0) {
-        logger.error('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)\n');
+        echoError('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)\n');
         throw new CommanderError(
             2,
             'kk.plugin.root-path-conflict',
@@ -108,14 +109,14 @@ function statusAction(options: StatusOptions): void {
     let records = report.plugins;
     if (options.kind) {
         if (!isPluginKind(options.kind)) {
-            logger.error(`Invalid plugin kind: ${options.kind}\n`);
+            echoError(`Invalid plugin kind: ${options.kind}\n`);
             throw new CommanderError(1, 'kk.plugin.invalid-kind', `invalid plugin kind: ${options.kind}`);
         }
         records = report.plugins.filter((p) => p.kind === options.kind);
     }
 
     if (options.json) {
-        logger.out(`${JSON.stringify({ ...report, plugins: records }, null, 2)}\n`);
+        consoleOutput.write(`${JSON.stringify({ ...report, plugins: records }, null, 2)}\n`);
         if (!report.healthy) {
             throw new CommanderError(1, 'kk.plugin.unhealthy', 'plugin diagnostics found');
         }
@@ -123,7 +124,7 @@ function statusAction(options: StatusOptions): void {
     }
 
     if (records.length === 0) {
-        logger.out('No plugins found.\n');
+        consoleOutput.write('No plugins found.\n');
         if (!report.healthy) {
             printDiagnostics(report);
             throw new CommanderError(1, 'kk.plugin.unhealthy', 'plugin diagnostics found');
@@ -137,12 +138,12 @@ function statusAction(options: StatusOptions): void {
         const group = records.filter((p) => p.kind === k);
         if (group.length === 0) continue;
 
-        logger.out(`\n--- ${k.toUpperCase()} PLUGINS ---\n`);
+        consoleOutput.write(`\n--- ${k.toUpperCase()} PLUGINS ---\n`);
         for (const p of group) {
             const ver = p.version ? ` (v${p.version})` : '';
             const desc = p.description ? ` - ${p.description}` : '';
             const health = p.healthy ? 'healthy' : 'unhealthy';
-            logger.out(`  • ${p.name}${ver}: ${p.entry}${desc} [${health}]\n`);
+            consoleOutput.write(`  • ${p.name}${ver}: ${p.entry}${desc} [${health}]\n`);
         }
     }
 

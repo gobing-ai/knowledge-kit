@@ -28,7 +28,7 @@ sync: [T3]
 | [emdash-pub.md](design/emdash-pub.md) | EmDash CMS publish channel | shipped (E5) |
 | [multi-root-plugin-discovery.md](design/multi-root-plugin-discovery.md) | Built-in + user plugin discovery merge | shipped (B7, ADR-012) |
 | [storm-evidence-cache.md](design/storm-evidence-cache.md) | STORM per-reference cache, markitdown normalization, digest contract | shipped (C5, ADR-013) |
-| [ts-libs-logging-foundation.md](design/ts-libs-logging-foundation.md) | Catalog, output, diagnostics, and enforcement shapes | accepted design (K, ADR-014/ADR-015; not yet built) |
+| [ts-libs-logging-foundation.md](design/ts-libs-logging-foundation.md) | Catalog, output, diagnostics, and enforcement shapes | shipped (A3, ADR-014/ADR-015) |
 
 ## 1. CLI commands
 
@@ -241,14 +241,6 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `FIRECRAWL_API_KEY` | yes (web-search live) | Bearer token for the live Firecrawl client (task 0057; selected when `fixture` is absent/false) — unset → exit 1, no `--out` (fail loud) |
 
 ## 4. Public package surface
-
-### `@gobing-ai/utils` (`packages/utils`)
-
-| Export | Kind | Notes |
-| -------- | ------ | ------- |
-| `add(a, b)` | function | Pure integer sum |
-| `logger` | object | `info`, `error`, `out` — stdout/stderr writers |
-| `z`, `ZodType` | re-export | Single zod instance for workspaces (Zod 4) |
 
 ### `@gobing-ai/kk-core` (`packages/kk-core`)
 

@@ -1,6 +1,6 @@
-import { logger } from '@gobing-ai/utils';
 import { CommanderError } from 'commander';
 import { createProgram } from './cli';
+import { consoleOutput } from './output';
 
 /** Optional overrides for main()'s output writers (test capture / embedding). */
 export interface MainOptions {
@@ -26,11 +26,11 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
     const program = createProgram();
     program.exitOverride();
     program.configureOutput({
-        // Default writers route through the project output seam (@gobing-ai/utils
-        // logger → Bun.write), never process.stdout/stderr directly (surface rule
+        // Default writers route through the ts-utils output seam (consoleOutput →
+        // echo/echoError), never process.stdout/stderr directly (surface rule
         // no-raw-stdout-stderr). Callers may override for test capture.
-        writeOut: options.stdout ?? ((text: string) => logger.out(text)),
-        writeErr: options.stderr ?? ((text: string) => logger.error(text)),
+        writeOut: options.stdout ?? ((text: string) => consoleOutput.write(text)),
+        writeErr: options.stderr ?? ((text: string) => consoleOutput.error(text)),
     });
     // Subcommands copied _exitCallback/_outputConfiguration at creation, before the
     // calls above; re-inherit so `kk help <cmd>` and subcommand help honor both

@@ -10,7 +10,7 @@ import {
     type Result,
     ResultSchema,
 } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 import { spawnPluginEntry } from './invoke';
 
 /** A publish target: the name of a publish-kind plugin (spec §1.3). */
@@ -142,7 +142,7 @@ export function selectRetryTargets(prior: AggregateResult): Target[] {
 /** Read one `--content` file as a `Content`. @returns the parsed content, or null (with an error logged) on failure */
 function readContent(path: string): Content | null {
     if (!existsSync(path)) {
-        logger.error(`Content file does not exist: ${path}`);
+        echoError(`Content file does not exist: ${path}`);
         return null;
     }
 
@@ -150,7 +150,7 @@ function readContent(path: string): Content | null {
     try {
         content = readFileSync(path, 'utf-8');
     } catch (err: unknown) {
-        logger.error(`Failed to read content file ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Failed to read content file ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return null;
     }
 
@@ -158,14 +158,14 @@ function readContent(path: string): Content | null {
     try {
         json = JSON.parse(content);
     } catch (err: unknown) {
-        logger.error(`Content file ${path} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Content file ${path} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
         return null;
     }
 
     const result = ContentSchema.safeParse(json);
     if (!result.success) {
         const issues = result.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-        logger.error(`Content file ${path} violates the Content schema: ${issues}`);
+        echoError(`Content file ${path} violates the Content schema: ${issues}`);
         return null;
     }
 
@@ -175,7 +175,7 @@ function readContent(path: string): Content | null {
 /** Read and validate one prior aggregate result (spec §3.1). @returns the parsed result, or null (with an error logged) on failure */
 function readAggregateResult(path: string): AggregateResult | null {
     if (!existsSync(path)) {
-        logger.error(`Result file does not exist: ${path}`);
+        echoError(`Result file does not exist: ${path}`);
         return null;
     }
 
@@ -183,7 +183,7 @@ function readAggregateResult(path: string): AggregateResult | null {
     try {
         content = readFileSync(path, 'utf-8');
     } catch (err: unknown) {
-        logger.error(`Failed to read result file ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Failed to read result file ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return null;
     }
 
@@ -191,24 +191,24 @@ function readAggregateResult(path: string): AggregateResult | null {
     try {
         json = JSON.parse(content);
     } catch (err: unknown) {
-        logger.error(`Result file ${path} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Result file ${path} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
         return null;
     }
 
     if (typeof json !== 'object' || json === null) {
-        logger.error(`Result file ${path} is not an aggregate result object`);
+        echoError(`Result file ${path} is not an aggregate result object`);
         return null;
     }
     const obj = json as Record<string, unknown>;
     const summary = obj.summary;
     if (typeof obj.ok !== 'boolean' || typeof summary !== 'object' || summary === null || !Array.isArray(obj.targets)) {
-        logger.error(`Result file ${path} violates the aggregate result schema (ok/summary/targets)`);
+        echoError(`Result file ${path} violates the aggregate result schema (ok/summary/targets)`);
         return null;
     }
     const sum = summary as Record<string, unknown>;
     for (const key of ['total', 'succeeded', 'failed', 'skipped']) {
         if (typeof sum[key] !== 'number') {
-            logger.error(`Result file ${path} violates the aggregate result schema (summary.${key})`);
+            echoError(`Result file ${path} violates the aggregate result schema (summary.${key})`);
             return null;
         }
     }
@@ -216,7 +216,7 @@ function readAggregateResult(path: string): AggregateResult | null {
     const targets: TargetOutcome[] = [];
     for (const entry of obj.targets) {
         if (typeof entry !== 'object' || entry === null) {
-            logger.error(`Result file ${path} violates the aggregate result schema (target entry)`);
+            echoError(`Result file ${path} violates the aggregate result schema (target entry)`);
             return null;
         }
         const t = entry as Record<string, unknown>;
@@ -225,7 +225,7 @@ function readAggregateResult(path: string): AggregateResult | null {
             typeof t.ok !== 'boolean' ||
             (t.status !== 'published' && t.status !== 'failed' && t.status !== 'skipped')
         ) {
-            logger.error(`Result file ${path} violates the aggregate result schema (target ${String(t.target)})`);
+            echoError(`Result file ${path} violates the aggregate result schema (target ${String(t.target)})`);
             return null;
         }
         targets.push({
@@ -390,9 +390,9 @@ function validateTargets(targets: Target[], discovery: DiscoveryResult): boolean
         }
     }
     if (missing.length > 0) {
-        logger.error(`Unknown publish target(s): ${missing.join(', ')}`);
+        echoError(`Unknown publish target(s): ${missing.join(', ')}`);
         for (const diag of discovery.diagnostics) {
-            logger.error(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);
+            echoError(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);
         }
         return false;
     }
@@ -410,7 +410,7 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     try {
         opts = parseArgs(argv);
     } catch (err: unknown) {
-        logger.error(`fanout: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`fanout: ${err instanceof Error ? err.message : String(err)}`);
         return EXIT_INPUT;
     }
 
@@ -420,7 +420,7 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     }
 
     if (opts.pluginsRoot !== undefined && (opts.pluginsPath?.length ?? 0) > 0) {
-        logger.error('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)');
+        echoError('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)');
         return EXIT_INPUT;
     }
     // One discovery per run: `--plugins-root` stays an exclusive single-root
@@ -465,7 +465,7 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     try {
         writeFileSync(resolve(opts.outPath), `${JSON.stringify(result, null, 2)}\n`);
     } catch (err: unknown) {
-        logger.error(
+        echoError(
             `Failed to write output file ${resolve(opts.outPath)}: ${err instanceof Error ? err.message : String(err)}`,
         );
         return EXIT_INPUT;

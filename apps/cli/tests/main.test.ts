@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { logger } from '@gobing-ai/utils';
 import { main } from '../src/main';
+import { captureOutput } from './capture';
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf-8')) as {
     version: string;
@@ -87,45 +87,31 @@ describe('kk main exit seam', () => {
 
     it('falls back to the real stdout/stderr writers when no overrides are passed', async () => {
         // Exercises the default writer lambdas in main() (no options object) and
-        // proves they route through the logger seam, not raw process stdio.
-        const originalOut = logger.out;
-        const originalError = logger.error;
-        let outText = '';
-        let errText = '';
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
-        logger.error = (msg: string) => {
-            errText += msg;
-        };
+        // proves they route through the ts-utils output seam, not raw process stdio.
+        const cap = captureOutput();
         try {
             expect(await main(['node', 'test', '--version'])).toBe(0);
-            expect(outText).toContain(pkg.version);
+            expect(cap.read()).toContain(pkg.version);
             // Error path → default writeErr lambda.
             expect(await main(['node', 'test', 'not-a-command'])).toBe(1);
-            expect(errText).toContain('not-a-command');
+            expect(cap.readErr()).toContain('not-a-command');
         } finally {
-            logger.out = originalOut;
-            logger.error = originalError;
+            cap.restore();
         }
     });
 
     it('R4 — global --verbose is accepted and does not change the result writer', async () => {
         const fixturesDir = join(import.meta.dir, '../../../plugins');
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
+        const cap = captureOutput();
         try {
             const { code } = await run(['--verbose', 'plugin', 'status', '--json', '--plugins-root', fixturesDir]);
             expect(code).toBe(0);
             // The entire stdout parses as JSON — no verbose diagnostics mixed into the stream.
-            const parsed: unknown = JSON.parse(outText);
+            const parsed: unknown = JSON.parse(cap.read());
             expect(typeof (parsed as { healthy: boolean }).healthy).toBe('boolean');
             expect(Array.isArray((parsed as { plugins: unknown[] }).plugins)).toBe(true);
         } finally {
-            logger.out = originalOut;
+            cap.restore();
         }
     });
 

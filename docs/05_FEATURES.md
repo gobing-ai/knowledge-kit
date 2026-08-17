@@ -39,12 +39,12 @@ sync: [T4]
 ## Feature tree
 
 | ID | Feature | Status | Phase | Notes |
-|----|---------|--------|-------|-------|
+| ---- | --------- | -------- | ------- | ------- |
 | **A** | Project foundation | ✅ done | 0 | Monorepo substrate + tooling; close-out task `0013` verified (gates PASS) |
 | A1 | Feature tree restructure | ✅ done | 0 | tree+docs applied; tasks `0006`–`0009` **done**; map `docs/plans/feature-tree-restructure-map.md` |
 | A2 | kk product CLI surface | ✅ done | 2 | tasks `0049`–`0051` done; operator binary `kk` (package `@gobing-ai/knowledge-kit` unchanged); register-per-command tree; `bin.kk` + `knowledge-kit` alias + `prepack`; ADR-010; spec `docs/design/kk-cli-surface.md` |
 | A21 | Two-layer CLI nouns (executor + plugin) | ✅ done | 2 | task `0052` done; `kk executor run\|fan-in\|fan-out` + `kk plugin status`; hidden aliases; `add` retired; ADR-011; dogfood `docs/dogfood/2026-08-12-A21-two-layer-cli-dogfood.md` |
-| A3 | ts-libs logging foundation | ⏳ backlog | 2 | accepted design ADR-014/ADR-015; shared catalog + ts-utils output + ts-infra diagnostics; `@gobing-ai/utils` retirement; satellite `docs/design/ts-libs-logging-foundation.md` |
+| A3 | ts-libs logging foundation | ✅ done | 2 | tasks `0065`–`0067` done+verified; shared catalog (`@gobing-ai/ts-*` `^0.4.35`) + ts-utils output seam (`apps/cli/src/output.ts`) + ts-infra diagnostics; `@gobing-ai/utils` retired; output-boundaries rule RED→GREEN; satellite `docs/design/ts-libs-logging-foundation.md` |
 | **B** | Plugin platform | ✅ done | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B7 done (B7 = multi-root discovery, task `0053`); task `0028` verified; kk-judge moved under **F** as F1 |
 | B1 | Plugin manifest + registry/discovery | ✅ done | 1 | task `0004`: `plugin.json` + `discoverPlugins` / `listByKind` |
 | B2 | Typed lifecycle contracts | ✅ done | 1 | task `0003`: Doc/Content/Result + `kindContract` in `@gobing-ai/kk-core` |
@@ -78,13 +78,12 @@ sync: [T4]
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
 | **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |
 
-
 ## Open research gates
 
 Both Phase-1 research gates are **resolved**.
 
 | Gate | Task | Blocks | Outcome |
-|------|------|---------|---------|
+| ------ | ------ | --------- | --------- |
 | ✅ D1 — study `vendors/storm` | `0001` (done) | D2 | stand-in = `wt:technical-content-creation`; real STORM → **D4** |
 | ✅ E1 — wt-publish audit | `0002` (done) | E2/E3 | Surfdash = no-auth file/CLI; two-transport contract; multi-channel → **E4** |
 

@@ -2,24 +2,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { logger } from '@gobing-ai/utils';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { main, renderContentMarkdown, renderContentMarkdownFile } from '../src/index';
 
-// Capture logger.error: main()'s error paths assert the message via the output seam
-// instead of leaking it to the test runner's stderr (web-search tests stub console.error
-// for the same reason).
+// Capture echoError: main()'s error paths assert the message via the output seam
+// instead of leaking it to the test runner's stderr.
 async function captureLoggerErrors(fn: () => Promise<void>): Promise<string[]> {
-    const lines: string[] = [];
-    const original = logger.error;
-    logger.error = (...args: unknown[]) => {
-        lines.push(args.join(' '));
-    };
+    const err = createBufferTarget();
+    const restore = setDefaultOutputTargets({ stderr: err });
     try {
         await fn();
     } finally {
-        logger.error = original;
+        restore();
     }
-    return lines;
+    return err.text().trim().split('\n').filter(Boolean);
 }
 
 // R3 characterization: the shipped no-checkout runner (plugins/kk/scripts/render-md.ts)

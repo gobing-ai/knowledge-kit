@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ContentSchema, type Doc } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
+import { captureOutput } from '../../../../apps/cli/tests/capture';
 import { main, processGeneratorIO } from '../src/index';
 
 const FIXTURES_DIR = join(import.meta.dir, 'fixtures');
@@ -156,7 +157,7 @@ describe('content-gen plugin adapter', () => {
             { exitCode: 0, stdout: JSON.stringify(CURATION), stderr: '' },
             { exitCode: 1, stdout: '', stderr: 'outline agent crashed' },
         ]);
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const cap = captureOutput();
 
         try {
             const code = await runInvoke({
@@ -166,10 +167,10 @@ describe('content-gen plugin adapter', () => {
                 pluginsRoot: join(import.meta.dir, '../..'),
             });
             expect(code).toBe(1);
-            expect(errorSpy.mock.calls.flat().join(' ')).toContain('Outline stage failed: outline agent crashed');
+            expect(cap.readErr()).toContain('Outline stage failed: outline agent crashed');
             expect(await Bun.file(OUT_FILE).exists()).toBe(false);
         } finally {
-            errorSpy.mockRestore();
+            cap.restore();
         }
     });
 
@@ -181,7 +182,7 @@ describe('content-gen plugin adapter', () => {
             { exitCode: 0, stdout: JSON.stringify(OUTLINE), stderr: '' },
             { exitCode: 0, stdout: JSON.stringify({ body: '' }), stderr: '' },
         ]);
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const cap = captureOutput();
 
         try {
             const code = await runInvoke({
@@ -191,10 +192,10 @@ describe('content-gen plugin adapter', () => {
                 pluginsRoot: join(import.meta.dir, '../..'),
             });
             expect(code).toBe(1);
-            expect(errorSpy.mock.calls.flat().join(' ')).toContain('Article stage failed: malformed output');
+            expect(cap.readErr()).toContain('Article stage failed: malformed output');
             expect(await Bun.file(OUT_FILE).exists()).toBe(false);
         } finally {
-            errorSpy.mockRestore();
+            cap.restore();
         }
     });
 
@@ -252,12 +253,13 @@ describe('content-gen plugin adapter', () => {
 
     test('main reports missing arguments without terminating the process', async () => {
         process.argv = ['bun', 'index.ts'];
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('Missing required arguments');
         } finally {
-            errorSpy.mockRestore();
+            restore();
         }
     });
 
@@ -284,14 +286,15 @@ describe('content-gen plugin adapter', () => {
             { exitCode: 1, stdout: '', stderr: 'polish agent crashed' },
         ]);
         process.argv = ['bun', 'index.ts', '--in', IN_FILE, '--out', OUT_FILE];
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
 
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy.mock.calls.flat().join(' ')).toContain('Polish stage failed: polish agent crashed');
+            expect(errTarget.text()).toContain('Polish stage failed: polish agent crashed');
             expect(await Bun.file(OUT_FILE).exists()).toBe(false);
         } finally {
-            errorSpy.mockRestore();
+            restore();
         }
     });
 });

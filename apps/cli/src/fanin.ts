@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 
 /** One provenance entry per originating source file (spec §2.2). */
 export interface SourceEntry {
@@ -67,7 +67,7 @@ export function mergeDocLists(inputs: Doc[][], sources: string[]): Doc[] {
  */
 function readDocList(path: string): Doc[] | null {
     if (!existsSync(path)) {
-        logger.error(`Input file does not exist: ${path}`);
+        echoError(`Input file does not exist: ${path}`);
         return null;
     }
 
@@ -75,7 +75,7 @@ function readDocList(path: string): Doc[] | null {
     try {
         content = readFileSync(path, 'utf-8');
     } catch (err: unknown) {
-        logger.error(`Failed to read input file ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Failed to read input file ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return null;
     }
 
@@ -83,14 +83,14 @@ function readDocList(path: string): Doc[] | null {
     try {
         json = JSON.parse(content);
     } catch (err: unknown) {
-        logger.error(`Input file ${path} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Input file ${path} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
         return null;
     }
 
     const result = DocListSchema.safeParse(json);
     if (!result.success) {
         const issues = result.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-        logger.error(`Input file ${path} violates the Doc list schema: ${issues}`);
+        echoError(`Input file ${path} violates the Doc list schema: ${issues}`);
         return null;
     }
 
@@ -144,7 +144,7 @@ export async function runFanin(argv: string[]): Promise<number> {
     try {
         opts = parseArgs(argv);
     } catch (err: unknown) {
-        logger.error(`fanin: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`fanin: ${err instanceof Error ? err.message : String(err)}`);
         return EXIT_USAGE;
     }
 
@@ -163,7 +163,7 @@ export async function runFanin(argv: string[]): Promise<number> {
     try {
         writeFileSync(resolve(opts.outPath), `${JSON.stringify(merged, null, 2)}\n`);
     } catch (err: unknown) {
-        logger.error(
+        echoError(
             `Failed to write output file ${resolve(opts.outPath)}: ${err instanceof Error ? err.message : String(err)}`,
         );
         return EXIT_INPUT;

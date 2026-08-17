@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectionForKind } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
 import { main } from '../src/main';
+import { captureOutput, silenceOutput } from './capture';
 
 const FIXTURES_DIR = join(import.meta.dir, '../../../plugins');
 
@@ -28,14 +28,10 @@ async function run(args: string[]): Promise<RunResult> {
     return { code, out, err };
 }
 
-/** Capture logger.out (command action stdout) into a string. */
+/** Capture ts-utils echo output (command action stdout) into a string. */
 function captureOut(): { read: () => string; restore: () => void } {
-    let text = '';
-    const originalOut = logger.out;
-    logger.out = (msg: string) => {
-        text += msg;
-    };
-    return { read: () => text, restore: () => (logger.out = originalOut) };
+    const cap = captureOutput();
+    return { read: () => cap.read(), restore: cap.restore };
 }
 
 describe('plugin status subcommand', () => {
@@ -72,17 +68,13 @@ describe('plugin status subcommand', () => {
     });
 
     it('plugin status exits 1 on invalid --kind argument', async () => {
-        const originalError = logger.error;
-        let errText = '';
-        logger.error = (msg: string) => {
-            errText += msg;
-        };
+        const cap = captureOutput();
         try {
             const { code } = await run(['plugin', 'status', '--kind', 'invalid-kind']);
             expect(code).toBe(1);
-            expect(errText).toContain('Invalid plugin kind');
+            expect(cap.readErr()).toContain('Invalid plugin kind');
         } finally {
-            logger.error = originalError;
+            cap.restore();
         }
     });
 
@@ -151,20 +143,13 @@ describe('plugin status subcommand', () => {
             'utf-8',
         );
 
-        const originalError = logger.error;
-        let errText = '';
-        logger.error = (msg: string) => {
-            errText += msg;
-        };
-        const originalOut = logger.out;
-        logger.out = () => {};
+        const cap = captureOutput();
         try {
             const { code } = await run(['plugin', 'status', '--plugins-root', tmpDir]);
             expect(code).toBe(1);
-            expect(errText).toContain('missing_entry');
+            expect(cap.readErr()).toContain('missing_entry');
         } finally {
-            logger.error = originalError;
-            logger.out = originalOut;
+            cap.restore();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -204,13 +189,12 @@ describe('executor fan-in subcommand', () => {
         await mkdir(tmpDir, { recursive: true });
         const missing = join(tmpDir, 'nope.json');
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const { code } = await run(['executor', 'fan-in', '--in', missing, '--out', join(tmpDir, 'merged.json')]);
             expect(code).toBe(1);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -223,8 +207,7 @@ describe('executor fan-out subcommand', () => {
         const contentFile = join(tmpDir, 'content.json');
         await writeFile(contentFile, JSON.stringify({ title: 'Demo', body: 'hello world' }), 'utf-8');
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const { code } = await run([
                 'executor',
@@ -238,7 +221,7 @@ describe('executor fan-out subcommand', () => {
             ]);
             expect(code).toBe(2);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -294,8 +277,7 @@ describe('executor fan-out subcommand', () => {
 
 describe('hidden one-release aliases', () => {
     it('kk invoke reaches the executor run engine (missing plugin exits 1)', async () => {
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const { code } = await run([
                 'invoke',
@@ -309,7 +291,7 @@ describe('hidden one-release aliases', () => {
             ]);
             expect(code).toBe(1);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
         }
     });
 
@@ -317,8 +299,7 @@ describe('hidden one-release aliases', () => {
         const tmpDir = join(import.meta.dir, 'tmp-alias-fanin');
         await mkdir(tmpDir, { recursive: true });
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const faninCode = await run(['fanin', '--in', join(tmpDir, 'nope.json'), '--out', join(tmpDir, 'm.json')]);
             expect(faninCode.code).toBe(1);
@@ -336,7 +317,7 @@ describe('hidden one-release aliases', () => {
             ]);
             expect(fanoutCode.code).toBe(2);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

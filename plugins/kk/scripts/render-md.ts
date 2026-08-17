@@ -11,6 +11,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
+import { echoError } from '@gobing-ai/ts-utils';
 
 interface Ref {
     url?: string;
@@ -125,7 +126,7 @@ async function main(): Promise<number> {
         },
     });
     if (!values.in || !values.out) {
-        console.error('Error: Missing required arguments --in and --out');
+        echoError('Error: Missing required arguments --in and --out');
         return 1;
     }
     try {
@@ -133,7 +134,7 @@ async function main(): Promise<number> {
         await writeFile(values.out, renderContentMarkdown(content), 'utf-8');
         return 0;
     } catch (err: unknown) {
-        console.error(`render-md failed: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`render-md failed: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 }

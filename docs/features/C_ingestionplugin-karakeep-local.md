@@ -2,11 +2,11 @@
 schema_version: 1
 id: "C"
 name: Ingestion
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:11.170Z"
-updated_at: "2026-08-12T04:17:58.588Z"
+updated_at: "2026-08-17T21:18:03.775Z"
 ---
 
 # C: IngestionPlugin: Karakeep-local
@@ -136,3 +136,5 @@ Feature: Ingestion
 - 2026-08-12T01:17:16.559Z active → verifying (system)
 - 2026-08-12T04:08:52.975Z verifying → done (system)
 - 2026-08-12T04:17:58.588Z done → active (system)
+- 2026-08-17T21:18:03.650Z active → verifying (system)
+- 2026-08-17T21:18:03.775Z verifying → done (system)

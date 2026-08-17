@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { discoverAllPlugins, getByName, kindContract } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 
 /** Options for running a plugin invocation. */
 export interface InvokeOptions {
@@ -73,10 +73,10 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
 
     const record = getByName(discovery, opts.plugin);
     if (!record) {
-        logger.error(`Plugin '${opts.plugin}' not found in the merged plugin registry`);
+        echoError(`Plugin '${opts.plugin}' not found in the merged plugin registry`);
         if (discovery.diagnostics.length > 0) {
             for (const diag of discovery.diagnostics) {
-                logger.error(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);
+                echoError(`  [diagnostic] ${diag.code} at ${diag.path}: ${diag.reason}`);
             }
         }
         return 1;
@@ -88,14 +88,14 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
 
     if (contract.input !== null) {
         if (!existsSync(absInPath)) {
-            logger.error(`Input file does not exist: ${absInPath}`);
+            echoError(`Input file does not exist: ${absInPath}`);
             return 1;
         }
         let inContent: string;
         try {
             inContent = readFileSync(absInPath, 'utf-8');
         } catch (err: unknown) {
-            logger.error(`Failed to read input file ${absInPath}: ${err instanceof Error ? err.message : String(err)}`);
+            echoError(`Failed to read input file ${absInPath}: ${err instanceof Error ? err.message : String(err)}`);
             return 1;
         }
 
@@ -103,9 +103,7 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         try {
             json = JSON.parse(inContent);
         } catch (err: unknown) {
-            logger.error(
-                `Input file ${absInPath} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            echoError(`Input file ${absInPath} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
             return 1;
         }
 
@@ -114,19 +112,19 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
             const issues = parseResult.error.issues
                 .map((i) => `${i.path.join('.') || 'root'}: ${i.message}`)
                 .join('; ');
-            logger.error(`Input schema violation for kind '${record.kind}': ${issues}`);
+            echoError(`Input schema violation for kind '${record.kind}': ${issues}`);
             return 1;
         }
     } else {
         if (!existsSync(absInPath)) {
-            logger.error(`Source path does not exist: ${absInPath}`);
+            echoError(`Source path does not exist: ${absInPath}`);
             return 1;
         }
     }
 
     const entryPath = isAbsolute(record.entry) ? record.entry : resolve(record.dir, record.entry);
     if (!existsSync(entryPath)) {
-        logger.error(`Plugin entry script does not exist: ${entryPath}`);
+        echoError(`Plugin entry script does not exist: ${entryPath}`);
         return 1;
     }
 
@@ -139,13 +137,13 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
 
     if (proc.exitCode !== 0) {
         const errMsg = proc.stderr || proc.stdout || `Plugin entry exited with code ${proc.exitCode}`;
-        logger.error(`Plugin entry '${record.name}' failed (exit code ${proc.exitCode}): ${errMsg}`);
+        echoError(`Plugin entry '${record.name}' failed (exit code ${proc.exitCode}): ${errMsg}`);
         const exitCode = proc.exitCode !== 0 ? proc.exitCode : 1;
         return exitCode;
     }
 
     if (!existsSync(absOutPath)) {
-        logger.error(`Plugin entry succeeded but did not write output file: ${absOutPath}`);
+        echoError(`Plugin entry succeeded but did not write output file: ${absOutPath}`);
         return 1;
     }
 
@@ -153,7 +151,7 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     try {
         outContent = readFileSync(absOutPath, 'utf-8');
     } catch (err: unknown) {
-        logger.error(`Failed to read output file ${absOutPath}: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Failed to read output file ${absOutPath}: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 
@@ -161,14 +159,14 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     try {
         outJson = JSON.parse(outContent);
     } catch (err: unknown) {
-        logger.error(`Output file ${absOutPath} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`Output file ${absOutPath} is invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 
     const outResult = contract.output.safeParse(outJson);
     if (!outResult.success) {
         const issues = outResult.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-        logger.error(`Output schema violation for kind '${record.kind}': ${issues}`);
+        echoError(`Output schema violation for kind '${record.kind}': ${issues}`);
         return 1;
     }
 

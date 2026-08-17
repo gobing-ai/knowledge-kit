@@ -11,7 +11,7 @@ Does **not** restate skill runbooks or the full `spur` / `superskill` verb catal
 
 **knowledge-kit** — a spur-orchestrated **ingest → create → publish** platform, built as a
 Bun + TypeScript + Biome CLI monorepo. Product binary: `kk` (package `@gobing-ai/knowledge-kit`, `apps/cli`).
-Shared libraries: `@gobing-ai/*` (e.g. `@gobing-ai/utils`, `@gobing-ai/kk-core`). Spur project
+Shared libraries: `@gobing-ai/*` (e.g. `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`). Spur project
 name: `knowledge-kit`.
 
 > **The name is historical.** knowledge-kit is not only a knowledge-management tool: content
@@ -26,7 +26,7 @@ ADR-012 — shipped, feature B7). Agent
 skills, slash commands, subagents, hooks, and rules live only in `plugins/kk`. Three kinds:
 
 | Kind | Contract |
-|------|----------|
+| ------ | ---------- |
 | `ingestion` | `source → Doc[]` (optional in a pipeline) |
 | `generator` | `Doc[] \| Brief → Content` |
 | `publish` | `Content → Result` |
@@ -56,7 +56,6 @@ Prefer these entry surfaces over ad-hoc process unless the operator overrides fo
 apps/
   cli/            # @gobing-ai/knowledge-kit — Commander binary (executor, plugin)
 packages/
-  utils/          # @gobing-ai/utils — helpers, zod re-export, logger
   kk-core/        # @gobing-ai/kk-core — Doc/Brief/Content/Result contracts + kindContract
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports
 tooling/

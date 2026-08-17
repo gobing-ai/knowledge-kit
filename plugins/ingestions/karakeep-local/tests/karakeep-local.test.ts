@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { main, processKarakeepFolder } from '../src/index';
 
@@ -61,14 +62,11 @@ describe('karakeep-local failure semantics', () => {
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, 'broken.json'), '{ not valid json', 'utf-8');
         await writeFile(join(dir, 'good.json'), JSON.stringify({ body: 'ok', title: 'Good' }), 'utf-8');
-        // Negative path: plugin warns on the corrupt file intentionally; silence so --dots stays clean.
-        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
         try {
             const docs = await processKarakeepFolder(dir);
             expect(docs.length).toBe(1);
             expect(docs[0]?.title).toBe('Good');
         } finally {
-            errorSpy.mockRestore();
             await rm(dir, { recursive: true, force: true });
         }
     });
@@ -104,15 +102,12 @@ describe('karakeep-local failure semantics', () => {
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, 'content.md'), '# Body', 'utf-8');
         await writeFile(join(dir, 'meta.json'), '{ broken', 'utf-8');
-        // Negative path: plugin warns on the corrupt meta intentionally; silence so --dots stays clean.
-        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
         try {
             const docs = await processKarakeepFolder(join(import.meta.dir, 'tmp-corrupt-meta'));
             expect(docs.length).toBe(1);
             expect(docs[0]?.title).toBe('item1');
             expect(docs[0]?.mediaType).toBe('text/markdown');
         } finally {
-            errorSpy.mockRestore();
             await rm(join(import.meta.dir, 'tmp-corrupt-meta'), { recursive: true, force: true });
         }
     });
@@ -132,15 +127,16 @@ describe('karakeep-local failure semantics', () => {
 
     test('main exits 1 on missing args', async () => {
         process.argv = ['bun', 'index.ts'];
-        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         const exitSpy = spyOn(process, 'exit').mockImplementation(((code?: number) => {
             throw new Error(`exit:${code}`);
         }) as never);
         try {
             await expect(main()).rejects.toThrow('exit:1');
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('Missing required arguments');
         } finally {
-            errorSpy.mockRestore();
+            restore();
             exitSpy.mockRestore();
         }
     });
@@ -148,14 +144,16 @@ describe('karakeep-local failure semantics', () => {
     test('main exits 1 on unreadable source', async () => {
         const out = join(import.meta.dir, 'tmp-main-out2.json');
         process.argv = ['bun', 'index.ts', '--in', join(import.meta.dir, 'no-such-dir'), '--out', out];
-        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         const exitSpy = spyOn(process, 'exit').mockImplementation(((code?: number) => {
             throw new Error(`exit:${code}`);
         }) as never);
         try {
             await expect(main()).rejects.toThrow('exit:1');
+            expect(errTarget.text()).toContain('Fatal error during karakeep-local ingestion');
         } finally {
-            errorSpy.mockRestore();
+            restore();
             exitSpy.mockRestore();
             await rm(out, { force: true });
         }
@@ -164,11 +162,13 @@ describe('karakeep-local failure semantics', () => {
     test('processKarakeepFolder throws if inDir is a file not a directory', async () => {
         const filePath = join(import.meta.dir, 'tmp-not-a-dir.txt');
         await writeFile(filePath, 'hello', 'utf-8');
-        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             await expect(processKarakeepFolder(filePath)).rejects.toThrow('Inaccessible source path');
+            expect(errTarget.text()).toContain('Inaccessible source path');
         } finally {
-            errorSpy.mockRestore();
+            restore();
             await rm(filePath, { force: true });
         }
     });
@@ -180,17 +180,17 @@ describe('karakeep-local failure semantics', () => {
         await writeFile(join(dir, 'bad1.json'), JSON.stringify({ title: 'No body' }), 'utf-8');
         process.argv = ['bun', 'index.ts', '--in', dir, '--out', out];
 
-        const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         const exitSpy = spyOn(process, 'exit').mockImplementation(((code?: number) => {
             throw new Error(`exit:${code}`);
         }) as never);
 
         try {
             await expect(main()).rejects.toThrow('exit:1');
-            expect(errorSpy).toHaveBeenCalled();
-            expect(errorSpy.mock.calls.some((call) => call[0].includes('zero ingestible documents'))).toBe(true);
+            expect(errTarget.text()).toContain('zero ingestible documents');
         } finally {
-            errorSpy.mockRestore();
+            restore();
             exitSpy.mockRestore();
             await rm(dir, { recursive: true, force: true });
             await rm(out, { force: true });

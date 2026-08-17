@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 
 /**
  * Options for mapping Content into Surfing Markdown with frontmatter.
@@ -182,7 +182,7 @@ export async function main(): Promise<number> {
     });
 
     if (!values.in || !values.out) {
-        logger.error('Missing required arguments: --in and --out');
+        echoError('Missing required arguments: --in and --out');
         return 1;
     }
 
@@ -190,7 +190,7 @@ export async function main(): Promise<number> {
         await processPublishIO(values.in, values.out);
         return 0;
     } catch (error: unknown) {
-        logger.error(`surfdash-pub failed: ${error instanceof Error ? error.message : String(error)}`);
+        echoError(`surfdash-pub failed: ${error instanceof Error ? error.message : String(error)}`);
         return 1;
     }
 }

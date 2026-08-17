@@ -1,7 +1,7 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 import { generateWithStormPipeline } from './storm';
 
 type ContentGenerator = (docs: Doc[], inputPath: string) => Promise<Content>;
@@ -33,7 +33,7 @@ export async function main(): Promise<number> {
         },
     });
     if (!values.in || !values.out) {
-        logger.error('Missing required arguments: --in and --out');
+        echoError('Missing required arguments: --in and --out');
         return 1;
     }
 
@@ -41,7 +41,7 @@ export async function main(): Promise<number> {
         await processGeneratorIO(values.in, values.out);
         return 0;
     } catch (error: unknown) {
-        logger.error(`content-gen failed: ${error instanceof Error ? error.message : String(error)}`);
+        echoError(`content-gen failed: ${error instanceof Error ? error.message : String(error)}`);
         await rm(values.out, { force: true });
         return 1;
     }

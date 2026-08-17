@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E1"
 name: "wt-publish audit"
-status: backlog
+status: verifying
 priority: P2
 tags: []
 created_at: "2026-07-23T17:54:22.988Z"
-updated_at: "2026-07-23T17:57:38.690Z"
+updated_at: "2026-08-17T21:18:03.049Z"
 ---
 
 # E1: wt-publish audit
@@ -38,3 +38,5 @@ Feature: wt-publish audit
 ## Notes
 
 ## History
+- 2026-08-17T21:18:02.929Z backlog → active (system)
+- 2026-08-17T21:18:03.049Z active → verifying (system)

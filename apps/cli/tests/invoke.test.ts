@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
 import { runInvoke } from '../src/invoke';
+import { silenceOutput } from './capture';
 
 function pluginDirOf(root: string, kind: PluginKind, name: string): string {
     return join(root, collectionForKind(kind), name);
@@ -20,16 +20,15 @@ async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
 }
 
 describe('runInvoke', () => {
-    // Negative-path tests call logger.error intentionally; silence stderr so --dots stays clean.
-    let origError: typeof logger.error;
+    // Negative-path tests emit via echoError intentionally; silence stderr so --dots stays clean.
+    let restoreSilence: () => void;
 
     beforeEach(() => {
-        origError = logger.error;
-        logger.error = () => {};
+        restoreSilence = silenceOutput();
     });
 
     afterEach(() => {
-        logger.error = origError;
+        restoreSilence();
     });
 
     it('R1 — runs discovered plugin entry and verifies written output', async () => {

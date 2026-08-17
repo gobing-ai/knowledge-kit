@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
-import { logger } from '@gobing-ai/utils';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     EmDashApiTransport,
@@ -720,12 +720,13 @@ describe('emdash-pub plugin', () => {
     test('main CLI entry handles argument parsing and fake-transport success', async () => {
         const origArgv = process.argv;
         process.argv = ['bun', 'index.ts'];
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('Missing required arguments');
         } finally {
-            errorSpy.mockRestore();
+            restore();
         }
 
         const tmpDir = join(process.cwd(), '.tmp-test-emdash-main');
@@ -760,7 +761,8 @@ describe('emdash-pub plugin', () => {
         const origUrl = process.env.EMDASH_URL;
         delete process.env.EMDASH_URL;
         delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
 
         const tmpDir = join(process.cwd(), '.tmp-test-emdash-main-fail');
         await mkdir(tmpDir, { recursive: true });
@@ -777,12 +779,12 @@ describe('emdash-pub plugin', () => {
         process.argv = ['bun', 'index.ts', '--in', inPath, '--out', outPath];
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('emdash-pub failed');
 
             const resultJson = JSON.parse(await readFile(outPath, 'utf-8'));
             expect(ResultSchema.parse(resultJson).ok).toBe(false);
         } finally {
-            errorSpy.mockRestore();
+            restore();
             process.argv = origArgv;
             if (origUrl !== undefined) process.env.EMDASH_URL = origUrl;
             else delete process.env.EMDASH_URL;
@@ -793,12 +795,13 @@ describe('emdash-pub plugin', () => {
     test('main returns 1 and logs when parseArgs rejects an unknown option', async () => {
         const origArgv = process.argv;
         process.argv = ['bun', 'index.ts', '--bogus'];
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('Invalid arguments');
         } finally {
-            errorSpy.mockRestore();
+            restore();
             process.argv = origArgv;
         }
     });

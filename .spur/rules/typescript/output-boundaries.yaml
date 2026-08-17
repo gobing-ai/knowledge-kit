@@ -7,7 +7,12 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"
+  - "plugins/**/src/**/*.ts"
+  - "plugins/kk/scripts/**/*.ts"
 exclude:
+  - "**/tests/**"
+  - "**/*.test.ts"
+  - "**/fixtures/**"
   - "**/node_modules/**"
   - "**/dist/**"
 

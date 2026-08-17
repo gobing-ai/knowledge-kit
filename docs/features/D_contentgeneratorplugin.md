@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D"
 name: Content generation
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:12.592Z"
-updated_at: "2026-08-12T04:17:58.732Z"
+updated_at: "2026-08-17T21:18:03.447Z"
 ---
 
 # D: ContentGeneratorPlugin
@@ -103,3 +103,5 @@ Feature: Content generation
 - 2026-08-12T01:20:28.088Z active → verifying (system)
 - 2026-08-12T04:08:53.265Z verifying → done (system)
 - 2026-08-12T04:17:58.732Z done → active (system)
+- 2026-08-17T21:18:03.323Z active → verifying (system)
+- 2026-08-17T21:18:03.447Z verifying → done (system)

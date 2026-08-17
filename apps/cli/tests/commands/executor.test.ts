@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectionForKind } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
 import { Command } from 'commander';
 import { registerExecutorCommand } from '../../src/commands/executor';
 import { main } from '../../src/main';
+import { captureOutput, silenceOutput } from '../capture';
 
 describe('registerExecutorCommand', () => {
     it('registers the executor group with run, fan-in, fan-out and hidden invoke/fanin/fanout aliases', () => {
@@ -73,24 +73,19 @@ describe('registerExecutorCommand', () => {
     });
 
     it('kk help executor names the hyphenated verbs fan-in and fan-out', async () => {
-        let outText = '';
-        const originalOut = logger.out;
-        logger.out = (msg: string) => {
-            outText += msg;
-        };
+        const cap = captureOutput();
         try {
             const code = await main(['node', 'test', 'help', 'executor']);
             expect(code).toBe(0);
-            expect(outText).toContain('fan-in');
-            expect(outText).toContain('fan-out');
+            expect(cap.read()).toContain('fan-in');
+            expect(cap.read()).toContain('fan-out');
         } finally {
-            logger.out = originalOut;
+            cap.restore();
         }
     });
 
     it('main returns 1 when the plugin is missing (no process.exit in the module)', async () => {
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const code = await main([
                 'node',
@@ -107,13 +102,12 @@ describe('registerExecutorCommand', () => {
             ]);
             expect(code).toBe(1);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
         }
     });
 
     it('R11 — --plugins-root and --plugins-path together are a usage error (exit 2)', async () => {
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const code = await main([
                 'node',
@@ -132,7 +126,7 @@ describe('registerExecutorCommand', () => {
             ]);
             expect(code).toBe(2);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
         }
     });
 
@@ -154,8 +148,7 @@ describe('registerExecutorCommand', () => {
         const outFile = join(tmpDir, 'result.json');
         await writeFile(contentFile, JSON.stringify({ body: 'Article content' }), 'utf-8');
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const code = await main([
                 'node',
@@ -173,7 +166,7 @@ describe('registerExecutorCommand', () => {
             // The entry's own exit code (3) surfaces through the CLI, not collapsed to 1.
             expect(code).toBe(3);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -182,8 +175,7 @@ describe('registerExecutorCommand', () => {
         const tmpDir = join(import.meta.dir, 'tmp-cmd-fanin-missing');
         await mkdir(tmpDir, { recursive: true });
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const code = await main([
                 'node',
@@ -197,7 +189,7 @@ describe('registerExecutorCommand', () => {
             ]);
             expect(code).toBe(1);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -223,8 +215,7 @@ describe('registerExecutorCommand', () => {
         const contentFile = join(tmpDir, 'content.json');
         await writeFile(contentFile, JSON.stringify({ title: 'Demo', body: 'hello world' }), 'utf-8');
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const code = await main([
                 'node',
@@ -240,7 +231,7 @@ describe('registerExecutorCommand', () => {
             ]);
             expect(code).toBe(2);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -318,8 +309,7 @@ describe('registerExecutorCommand', () => {
     });
 
     it('hidden top-level aliases invoke/fanin/fanout reach the same engines', async () => {
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
 
         const tmpDir = join(import.meta.dir, 'tmp-cmd-alias');
         await mkdir(tmpDir, { recursive: true });
@@ -368,7 +358,7 @@ describe('registerExecutorCommand', () => {
             ]);
             expect(fanoutCode).toBe(2);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -377,8 +367,7 @@ describe('registerExecutorCommand', () => {
         const tmpDir = join(import.meta.dir, 'tmp-cmd-group-alias');
         await mkdir(tmpDir, { recursive: true });
 
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restoreSilence = silenceOutput();
         try {
             const code = await main([
                 'node',
@@ -392,7 +381,7 @@ describe('registerExecutorCommand', () => {
             ]);
             expect(code).toBe(1);
         } finally {
-            logger.error = originalError;
+            restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

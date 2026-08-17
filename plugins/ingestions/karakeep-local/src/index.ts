@@ -3,6 +3,10 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { Doc } from '@gobing-ai/kk-core';
+import { getLogger, initializeLogger } from '@gobing-ai/ts-infra';
+import { echoError } from '@gobing-ai/ts-utils';
+
+const log = getLogger('kk.ingestion.karakeep-local');
 
 interface ParsedMeta {
     title?: string;
@@ -37,7 +41,7 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
         }
     } catch (err: unknown) {
         const msg = `Inaccessible source path: ${inDir}`;
-        console.error(`Error: ${msg}`, err);
+        echoError(`Error: ${msg}`);
         throw new Error(msg, { cause: err });
     }
 
@@ -69,7 +73,7 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
                 try {
                     metaObj = JSON.parse(await readFile(metaJson, 'utf-8')) as ParsedMeta;
                 } catch (err: unknown) {
-                    console.error(`Warning: corrupt/unparsable meta file at ${metaJson}`, err);
+                    log.warn(`Warning: corrupt/unparsable meta file at ${metaJson}`, { error: err });
                 }
             }
 
@@ -112,10 +116,10 @@ export async function processKarakeepFolder(inDir: string): Promise<Doc[]> {
                         metadata: Object.keys(extraMeta).length > 0 ? extraMeta : undefined,
                     });
                 } else {
-                    console.error(`Warning: JSON entry missing string body at ${f}`);
+                    log.warn(`Warning: JSON entry missing string body at ${f}`);
                 }
             } catch (err: unknown) {
-                console.error(`Warning: corrupt/unparsable JSON file at ${f}`, err);
+                log.warn(`Warning: corrupt/unparsable JSON file at ${f}`, { error: err });
             }
         } else if (f.endsWith('.md')) {
             const mdText = await readFile(f, 'utf-8');
@@ -140,7 +144,7 @@ export async function main() {
     });
 
     if (!values.in || !values.out) {
-        console.error('Error: Missing required arguments --in or --out');
+        echoError('Error: Missing required arguments --in or --out');
         process.exit(1);
     }
 
@@ -149,7 +153,7 @@ export async function main() {
         const docs = await processKarakeepFolder(values.in);
 
         if (docs.length === 0 && candidateFiles.length > 0) {
-            console.error(`Fatal: source yielded zero ingestible documents at ${values.in}`);
+            echoError(`Fatal: source yielded zero ingestible documents at ${values.in}`);
             process.exit(1);
         }
 
@@ -160,11 +164,12 @@ export async function main() {
 
         await writeFile(values.out, JSON.stringify(docs, null, 2), 'utf-8');
     } catch (err: unknown) {
-        console.error('Fatal error during karakeep-local ingestion:', err);
+        echoError(`Fatal error during karakeep-local ingestion: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
     }
 }
 
 if (import.meta.main) {
+    await initializeLogger({ console: process.env.NODE_ENV !== 'test', json: true, level: 'warn' });
     main();
 }

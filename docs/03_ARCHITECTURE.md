@@ -21,12 +21,11 @@ sync: [T1]
 apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
 packages/
-  utils/            # @gobing-ai/utils — pure helpers, zod re-export, logger
   kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2)
 plugins/
   ingestions/
-    karakeep-local/   # ingestion plugin — rclone-synced folder → Doc[] (not a workspace)
+    karakeep-local/   # @gobing-ai/karakeep-local — ingestion plugin: rclone-synced folder → Doc[]
     web-search/       # @gobing-ai/web-search — ingestion plugin: topic → Doc[] (live Firecrawl client + offline fixture stub; C4)
   generations/
     content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
@@ -46,7 +45,7 @@ Workspaces reference each other only via `@gobing-ai/*` (`workspace:*`). Per-roo
 discovery scans kind collections (`plugins/ingestions|generations|publishings/*/plugin.json`,
 ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root merge**
 (ADR-012 — see Multi-root discovery below). Only product-plugin dirs with a `package.json` are
-`@gobing-ai/*` workspaces (`web-search` is; `karakeep-local` and `kk` are not).
+`@gobing-ai/*` workspaces (`web-search` and `karakeep-local` are; `kk` is not).
 
 ## Runtime model
 
@@ -56,7 +55,9 @@ ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root m
   `main(argv) → number` (ADR-010 R3). `createProgram()` stays side-effect-free.
 - **Command tree:** `apps/cli/src/commands/<noun>.ts` exports `registerXCommand`; `createProgram()`
   only wires name (`kk`), version, global `--verbose`, and those register calls (ADR-010 R2).
-- **Output:** product messages go through `@gobing-ai/utils` `logger` (`out` / `info` / `error`).
+- **Output:** product messages go through the ts-utils seam (`echo` / `echoError`, adapted by
+  `apps/cli/src/output.ts`); structured diagnostics use ts-infra (`initializeLogger` once per
+  diagnostic-emitting process, `getLogger` at call sites) (ADR-015).
   `--verbose` gates extra `info`; it must not interleave into `--json` payloads.
 
 ## Data flow (command path)
@@ -201,9 +202,9 @@ to ts-utils and ts-infra. `ts-runtime` does not replace the existing `Bun.spawnS
 feature, and `ts-db` has no persistence consumer. Either adoption requires separate evidence and a
 later decision.
 
-`packages/utils` is removed only after source imports and stale manifest dependencies are zero. Its
-logger is replaced by the two seams; its unconsumed `add`, `z`, and `ZodType` exports are deleted,
-not relocated. The `output-boundaries` rule expands to production plugin sources and kk scripts;
+`packages/utils` was removed in A3 (0067) once source imports and stale manifest dependencies hit
+zero. Its logger was replaced by the two seams; its unconsumed `add`, `z`, and `ZodType` exports
+were deleted, not relocated. The `output-boundaries` rule expands to production plugin sources and kk scripts;
 tests and fixtures remain excluded. Full shapes: `docs/design/ts-libs-logging-foundation.md`.
 
 ### Evidence cache and report digestion (ADR-013)
@@ -245,15 +246,15 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 
 | Module | Package name | Responsibility | May depend on |
 | -------- | -------------- | ---------------- | --------------- |
-| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/utils`, `@gobing-ai/kk-core`, `commander` |
-| `packages/utils` | `@gobing-ai/utils` | Pure helpers, zod re-export, logger | `zod`, Bun stdout APIs |
+| `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
-| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core`, `@gobing-ai/utils` |
-| `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core` |
-| `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
-| `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
-| `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
-| `plugins/publishings/emdash-pub` | `@gobing-ai/emdash-pub` | Publish channel: EmDash CMS REST token transport, Portable Text mapping (E5) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/utils` |
+| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core` |
+| `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
+| `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
+| `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/emdash-pub` | `@gobing-ai/emdash-pub` | Publish channel: EmDash CMS REST token transport, Portable Text mapping (E5) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**

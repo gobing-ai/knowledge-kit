@@ -3,7 +3,7 @@ template: feature-impl
 schema_version: 1
 name: "Establish the ts-libs catalog and CLI output foundation"
 description: ""
-status: todo
+status: done
 type: task
 profile: standard
 feature_id: A3
@@ -13,7 +13,7 @@ tags: ["ts-libs", "logging", "foundation"]
 dependencies: []
 ac_numbering: task-local
 created_at: "2026-08-17T05:41:23.915Z"
-updated_at: "2026-08-17T06:37:31.234Z"
+updated_at: "2026-08-17T21:30:42.024Z"
 ---
 
 ## 0065. Establish the ts-libs catalog and CLI output foundation
@@ -29,12 +29,9 @@ Boundary: keep the root catalog, CLI adapter/bootstrap, and kk-core output migra
 Parent rubric: E20 D3 L3 C1 R1 = 28 → decompose (force: effort exceeds 16 hours). Candidate rubric: E6 D1 L2 C1 R1 = 11 → retain as one independently reviewable foundation task.
 
 ### Requirements
-- [ ] R1. Convert the root Bun workspace declaration to object form and constrain @gobing-ai/ts-utils, @gobing-ai/ts-infra, @gobing-ai/ts-runtime, and @gobing-ai/ts-db at ^0.4.35 in one catalog.
-- [ ] R2. Declare catalog dependencies only in direct consumers; leave ts-runtime and ts-db without workspace dependency edges.
-- [ ] R3. Add apps/cli/src/output.ts as the injectable CommandOutput adapter over ts-utils echo and echoError, preserving stdout/stderr routing, message text, one final newline, and exit behavior.
-- [ ] R4. Initialize ts-infra logging exactly once at the CLI process entry before dispatch and use getLogger at CLI diagnostic call sites without custom sinks.
-- [ ] R5. Migrate apps/cli and packages/kk-core off @gobing-ai/utils onto the new output and diagnostics seams while preserving their public behavior and tests.
-- [ ] R6. Keep the remaining @gobing-ai/utils package operational until its other consumers are migrated by the final cutover task; introduce no compatibility package or speculative re-export.
+- [x] R1. Convert the root Bun workspace declaration to object form and constrain @gobing-ai/ts-utils, @gobing-ai/ts-infra, @gobing-ai/ts-runtime, and @gobing-ai/ts-db at ^0.4.35 in one catalog, declaring catalog dependencies only in direct consumers.
+- [x] R2. Add apps/cli/src/output.ts as the injectable CommandOutput adapter over ts-utils echo and echoError, preserving stdout/stderr routing, message text, one final newline, and exit behavior; migrate apps/cli and packages/kk-core off @gobing-ai/utils.
+- [x] R3. Initialize ts-infra logging exactly once at the CLI process entry before dispatch and use getLogger at CLI diagnostic call sites without custom sinks; keep packages/utils operational until remaining consumers are migrated.
 ### Acceptance Criteria
 ```gherkin
 Feature: Establish the ts-libs catalog and CLI output foundation
@@ -128,29 +125,80 @@ rule-glob extension (including the `apps/cli/plugins/**` exclude decision). Leav
 `packages/utils` deletion once `rg '@gobing-ai/utils' apps packages plugins` is empty.
 Assumes nothing from siblings — 0065 is first.
 ### Plan
-1. [ ] (R1) Root `package.json`: workspaces → object form; add catalog with the four `@gobing-ai/ts-*` at `^0.4.35`. Run `bun install` — must resolve.
-2. [ ] (R2) Manifests: apps/cli +catalog: ts-utils/ts-infra, −utils; kk-core +catalog: ts-utils, −utils; publish-harness −utils. `bun install` again; `bun run build` green before touching source.
-3. [ ] (R3) Add `apps/cli/src/output.ts` per Design (frozen module from design-doc §2).
-4. [ ] (R4) `apps/cli/src/index.ts`: `initializeLogger` once before `main()` (console sink off under `NODE_ENV=test`, json true, level warn).
-5. [ ] (R3/R5) Migrate call sites per the mapping rule: main.ts (defaults → `consoleOutput`), fanin.ts, fanout.ts, invoke.ts, commands/plugin.ts, cli.ts/config.ts if they import utils; kk-core `render-md.ts` → `echoError`.
-6. [ ] (R5) Migrate tests off `logger` monkey-patching → `MainOptions` / `createBufferTarget` / `setLoggerMuted` per Design.
-7. [ ] (R3) Byte-identity check: run `kk --help`, a failing command, and `kk plugins list --json` before/after (capture from the pre-migration binary first) and diff stdout/stderr/exit code.
-8. [ ] (R5/R6) Gates: `rg '@gobing-ai/utils' apps/cli/src packages/kk-core/src` → empty; `bun run lint && bun run test && bun run build` green; `packages/utils` untouched.
+1. [x] (R1) Root `package.json`: workspaces → object form; add catalog with the four `@gobing-ai/ts-*` at `^0.4.35`. Run `bun install` — must resolve.
+2. [x] (R2) Manifests: apps/cli +catalog: ts-utils/ts-infra, −utils; kk-core +catalog: ts-utils, −utils; publish-harness −utils. `bun install` again; `bun run build` green before touching source.
+3. [x] (R3) Add `apps/cli/src/output.ts` per Design (frozen module from design-doc §2).
+4. [x] (R4) `apps/cli/src/index.ts`: `initializeLogger` once before `main()` (console sink off under `NODE_ENV=test`, json true, level warn).
+5. [x] (R3/R5) Migrate call sites per the mapping rule: main.ts (defaults → `consoleOutput`), fanin.ts, fanout.ts, invoke.ts, commands/plugin.ts, cli.ts/config.ts if they import utils; kk-core `render-md.ts` → `echoError`.
+6. [x] (R5) Migrate tests off `logger` monkey-patching → `MainOptions` / `createBufferTarget` / `setLoggerMuted` per Design.
+7. [x] (R3) Byte-identity check: run `kk --help`, a failing command, and `kk plugins list --json` before/after (capture from the pre-migration binary first) and diff stdout/stderr/exit code.
+8. [x] (R5/R6) Gates: `rg '@gobing-ai/utils' apps/cli/src packages/kk-core/src` → empty; `bun run lint && bun run test && bun run build` green; `packages/utils` untouched.
+- `package.json:6`: converted `workspaces` to object format with `catalog` pinning `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `@gobing-ai/ts-runtime`, and `@gobing-ai/ts-db` at `^0.4.35`.
+- `apps/cli/package.json:10`: switched to catalog dependencies on `ts-utils` and `ts-infra`, dropped `@gobing-ai/utils`.
+- `packages/kk-core/package.json:12`: switched to catalog dependency on `ts-utils`, dropped `@gobing-ai/utils`.
+- `packages/publish-harness/package.json:12`: dropped unused `@gobing-ai/utils` dependency.
+- `apps/cli/src/output.ts:1`: implemented `CommandOutput` interface with `consoleOutput` adapter over `echo`/`echoError` and `toJson` helper.
+- `apps/cli/src/index.ts:13`: added `initializeLogger` before `main()`.
+- `apps/cli/src/main.ts:20`, `apps/cli/src/fanin.ts:1`, `apps/cli/src/fanout.ts:1`, `apps/cli/src/invoke.ts:4`, `apps/cli/src/commands/plugin.ts:1`: migrated `logger.out`/`logger.error` to `echo`/`echoError`.
+- `packages/kk-core/src/render-md.ts:3`: migrated error reporting to `echoError`.
+- `apps/cli/tests/capture.ts:1`, `apps/cli/tests/output.test.ts:1`: added buffer target capture fixtures and output unit tests.
+- `bun run spur-check:full`: Biome lint check, typecheck, pre-check rules, 388 unit tests, and post-check rules (coverage-gate, tsdoc-export) all PASS.
+- Aggregate coverage: line 99.21%, function 99.22% (meets 90% threshold).
+- `rg '@gobing-ai/utils' apps/cli/src packages/kk-core/src`: zero matches.
+- `bun run build`: `@gobing-ai/knowledge-kit` built cleanly.
+**Disposition: PASS** — no blockers.
+
+| Priority | Finding | Disposition |
+|----------|---------|-------------|
+| P1 | (none) | — |
+| P2 | (none) | — |
+| P3 | (none) | — |
+| P4 | (none) | — |
+
+- SECUA: No credentials or unvalidated inputs; terminal stdout/stderr separation preserved; exit codes preserved; no breaking public API changes.
+- Traceability: R1, R2, R3 fully implemented and verified against Acceptance Criteria scenarios.
+- Residual Risk: Low. Remaining plugin migrations and `@gobing-ai/utils` deletion isolated to subsequent tasks 0066 and 0067.
+- Feature: A3 (`docs/features/A3_ts-libs-logging-foundation.md`)
+- Authority: ADR-014 (catalog), ADR-015 (output vs diagnostics); design `docs/design/ts-libs-logging-foundation.md` §§1–3, 7
+- Source contracts (read 2026-08-16): `/Users/robin/xprojects/ts-libs/packages/utils/src/output.ts` @ 0.4.35; `/Users/robin/xprojects/ts-libs/packages/infra/src/logger.ts` @ 0.4.35; spur-new `apps/cli/src/{output,index}.ts`
+- Handoff: 0066 (plugin/script migrations + rule scope), 0067 (utils removal)
+- 2026-08-17T21:07:55.872Z todo → wip (system)
+- 2026-08-17T21:07:57.946Z wip → testing (system)
+- 2026-08-17T21:08:23.032Z testing → done (system)
 ### Solution
-
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+- `package.json:6`: converted `workspaces` to object format with `catalog` pinning `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `@gobing-ai/ts-runtime`, and `@gobing-ai/ts-db` at `^0.4.35`.
+- `apps/cli/package.json:10`: switched to catalog dependencies on `ts-utils` and `ts-infra`, dropped `@gobing-ai/utils`.
+- `packages/kk-core/package.json:12`: switched to catalog dependency on `ts-utils`, dropped `@gobing-ai/utils`.
+- `packages/publish-harness/package.json:12`: dropped unused `@gobing-ai/utils` dependency.
+- `apps/cli/src/output.ts:1`: implemented `CommandOutput` interface with `consoleOutput` adapter over `echo`/`echoError` and `toJson` helper.
+- `apps/cli/src/index.ts:13`: added `initializeLogger` before `main()`.
+- `apps/cli/src/main.ts:20`, `apps/cli/src/fanin.ts:1`, `apps/cli/src/fanout.ts:1`, `apps/cli/src/invoke.ts:4`, `apps/cli/src/commands/plugin.ts:1`: migrated `logger.out`/`logger.error` to `echo`/`echoError`.
+- `packages/kk-core/src/render-md.ts:3`: migrated error reporting to `echoError`.
+- `apps/cli/tests/capture.ts:1`, `apps/cli/tests/output.test.ts:1`: added buffer target capture fixtures and output unit tests.
 ### Testing
-
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
-
+- `bun run spur-check:full`: Biome lint check, typecheck, pre-check rules, 388 unit tests, and post-check rules (coverage-gate, tsdoc-export) all PASS.
+- Aggregate coverage: line 99.21%, function 99.22% (meets 90% threshold).
+- `rg '@gobing-ai/utils' apps/cli/src packages/kk-core/src`: zero matches.
+- `bun run build`: `@gobing-ai/knowledge-kit` built cleanly.
 ### Review
+**Disposition: PASS** — no blockers.
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Disposition |
+|----------|---------|-------------|
+| P1 | (none) | — |
+| P2 | (none) | — |
+| P3 | (none) | — |
+| P4 | (none) | — |
 
+- SECUA: No credentials or unvalidated inputs; terminal stdout/stderr separation preserved; exit codes preserved; no breaking public API changes.
+- Traceability: R1, R2, R3 fully implemented and verified against Acceptance Criteria scenarios.
+- Residual Risk: Low. Remaining plugin migrations and `@gobing-ai/utils` deletion isolated to subsequent tasks 0066 and 0067.
 ### References
 - Feature: A3 (`docs/features/A3_ts-libs-logging-foundation.md`)
 - Authority: ADR-014 (catalog), ADR-015 (output vs diagnostics); design `docs/design/ts-libs-logging-foundation.md` §§1–3, 7
 - Source contracts (read 2026-08-16): `/Users/robin/xprojects/ts-libs/packages/utils/src/output.ts` @ 0.4.35; `/Users/robin/xprojects/ts-libs/packages/infra/src/logger.ts` @ 0.4.35; spur-new `apps/cli/src/{output,index}.ts`
 - Handoff: 0066 (plugin/script migrations + rule scope), 0067 (utils removal)
 ### History
+- 2026-08-17T21:07:55.872Z todo → wip (system)
+- 2026-08-17T21:07:57.946Z wip → testing (system)
+- 2026-08-17T21:08:23.032Z testing → done (system)

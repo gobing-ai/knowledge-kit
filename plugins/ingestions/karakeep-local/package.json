@@ -1,0 +1,16 @@
+{
+    "name": "@gobing-ai/karakeep-local",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-infra": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:"
+    },
+    "devDependencies": {
+        "@types/bun": "1.3.14"
+    }
+}

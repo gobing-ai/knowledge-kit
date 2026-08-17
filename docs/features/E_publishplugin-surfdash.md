@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E"
 name: Multi-channel publish
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-07-23T17:53:14.192Z"
-updated_at: "2026-08-12T04:17:58.912Z"
+updated_at: "2026-08-17T21:18:04.045Z"
 ---
 
 # E: PublishPlugin: Surfdash
@@ -107,3 +107,5 @@ Feature: Publish
 - 2026-08-12T01:20:28.463Z active → verifying (system)
 - 2026-08-12T04:08:53.545Z verifying → done (system)
 - 2026-08-12T04:17:58.912Z done → active (system)
+- 2026-08-17T21:18:03.921Z active → verifying (system)
+- 2026-08-17T21:18:04.045Z verifying → done (system)

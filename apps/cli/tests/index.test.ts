@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { logger } from '@gobing-ai/utils';
 import { main } from '../src/main';
+import { silenceOutput } from './capture';
 
 describe('cli', () => {
     it('createProgram returns a commander instance with executor and plugin groups', async () => {
@@ -15,19 +15,17 @@ describe('cli', () => {
     });
 
     it('add command is gone: kk add exits non-zero (R7 CLI)', async () => {
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restore = silenceOutput();
         try {
             const code = await main(['node', 'test', 'add', '1', '2']);
             expect(code).not.toBe(0);
         } finally {
-            logger.error = originalError;
+            restore();
         }
     });
 
     it('executor run exits non-zero when plugin is missing (R4 CLI fail-loud)', async () => {
-        const originalError = logger.error;
-        logger.error = () => {};
+        const restore = silenceOutput();
 
         try {
             const code = await main([
@@ -45,7 +43,7 @@ describe('cli', () => {
             ]);
             expect(code).toBe(1);
         } finally {
-            logger.error = originalError;
+            restore();
         }
     });
 });

@@ -3,6 +3,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
+import { getLogger, initializeLogger } from '@gobing-ai/ts-infra';
+import { echoError } from '@gobing-ai/ts-utils';
+
+const log = getLogger('kk.ingestion.web-search');
 
 /** Validated `--in` input per the 0054 contract (`topic` required; `maxResults`/`fixture` optional). */
 interface InInput {
@@ -194,7 +198,7 @@ export async function searchFirecrawl(input: InInput, deps: SearchDeps): Promise
         if (!url || body.length === 0) {
             // Row 7 — partial item failure: skip + stderr warn, continue.
             skipped += 1;
-            console.warn(`web-search: skipping result without usable markdown (url=${url ?? 'missing'})`);
+            log.warn(`web-search: skipping result without usable markdown (url=${url ?? 'missing'})`);
             continue;
         }
         docs.push({
@@ -295,7 +299,7 @@ export async function scrapeAndCacheDocs(docs: Doc[], deps: SearchDeps, outPath:
             await writeFile(cacheFile, normalized, 'utf-8');
             out.push({ ...doc, body: normalized });
         } catch (err: unknown) {
-            console.warn(`web-search: scrape failed (url=${uri}): ${err instanceof Error ? err.message : String(err)}`);
+            log.warn(`web-search: scrape failed (url=${uri}): ${err instanceof Error ? err.message : String(err)}`);
             out.push(doc);
         }
     }
@@ -360,7 +364,7 @@ export async function main(): Promise<number> {
     });
 
     if (!values.in || !values.out) {
-        console.error('Error: Missing required arguments --in and --out');
+        echoError('Error: Missing required arguments --in and --out');
         return 1;
     }
 
@@ -368,7 +372,7 @@ export async function main(): Promise<number> {
     try {
         input = parseInput(await readFile(values.in, 'utf-8'));
     } catch (err: unknown) {
-        console.error(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 
@@ -395,7 +399,7 @@ export async function main(): Promise<number> {
             await writeFile(values.out, JSON.stringify(DocListSchema.parse(cached), null, 2), 'utf-8');
             return 0;
         } catch (err: unknown) {
-            console.error(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
+            echoError(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
             return 1;
         }
     }
@@ -409,11 +413,12 @@ export async function main(): Promise<number> {
         await writeFile(values.out, JSON.stringify(docs, null, 2), 'utf-8');
         return 0;
     } catch (err: unknown) {
-        console.error(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 }
 
 if (import.meta.main) {
+    await initializeLogger({ console: process.env.NODE_ENV !== 'test', json: true, level: 'warn' });
     process.exit(await main());
 }

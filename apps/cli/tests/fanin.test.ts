@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
 import { mergeDocLists, runFanin } from '../src/fanin';
+import { captureOutput } from './capture';
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-fanin-test-'));
@@ -100,21 +100,19 @@ describe('mergeDocLists', () => {
 });
 
 describe('runFanin', () => {
-    // Negative-path tests call logger.error intentionally; silence stderr so --dots stays clean.
-    let origError: typeof logger.error;
-    let errLog: string[];
+    // Negative-path tests emit via echoError intentionally; capture ts-utils stderr
+    // (instead of monkey-patching a logger) and keep the dots reporter clean.
+    let cap: ReturnType<typeof captureOutput>;
 
     beforeEach(() => {
-        errLog = [];
-        origError = logger.error;
-        logger.error = (msg: string) => {
-            errLog.push(msg);
-        };
+        cap = captureOutput();
     });
 
     afterEach(() => {
-        logger.error = origError;
+        cap.restore();
     });
+
+    const errLog = (): string => cap.readErr();
 
     it('R1 — writes one deduplicated output file with provenance for both sources', async () => {
         await withTempDir(async (root) => {
@@ -160,7 +158,7 @@ describe('runFanin', () => {
             const code = await runFanin(['--in', missing, '--out', join(root, 'merged.json')]);
 
             expect(code).toBe(1);
-            expect(errLog.join('\n')).toContain(missing);
+            expect(errLog()).toContain(missing);
         });
     });
 
@@ -171,8 +169,8 @@ describe('runFanin', () => {
             const code = await runFanin(['--in', badFile, '--out', join(root, 'merged.json')]);
 
             expect(code).toBe(1);
-            expect(errLog.join('\n')).toContain(badFile);
-            expect(errLog.join('\n')).toContain('invalid JSON');
+            expect(errLog()).toContain(badFile);
+            expect(errLog()).toContain('invalid JSON');
         });
     });
 
@@ -183,7 +181,7 @@ describe('runFanin', () => {
             const code = await runFanin(['--in', badFile, '--out', join(root, 'merged.json')]);
 
             expect(code).toBe(1);
-            expect(errLog.join('\n')).toContain(badFile);
+            expect(errLog()).toContain(badFile);
         });
     });
 
@@ -204,13 +202,13 @@ describe('runFanin', () => {
     it('fails with exit code 2 when --in or --out is missing its value', async () => {
         await withTempDir(async (root) => {
             expect(await runFanin(['--in'])).toBe(2);
-            expect(errLog.join('\n')).toContain('--in requires a file path');
+            expect(errLog()).toContain('--in requires a file path');
 
-            errLog = [];
+            cap = captureOutput();
             const aFile = join(root, 'a.json');
             writeFileSync(aFile, JSON.stringify([{ id: 'd1', body: 'alpha' }]));
             expect(await runFanin(['--in', aFile, '--out'])).toBe(2);
-            expect(errLog.join('\n')).toContain('--out requires a file path');
+            expect(errLog()).toContain('--out requires a file path');
         });
     });
 
@@ -223,8 +221,8 @@ describe('runFanin', () => {
             const code = await runFanin(['--in', dirInput, '--out', join(root, 'merged.json')]);
 
             expect(code).toBe(1);
-            expect(errLog.join('\n')).toContain(dirInput);
-            expect(errLog.join('\n')).toContain('Failed to read input file');
+            expect(errLog()).toContain(dirInput);
+            expect(errLog()).toContain('Failed to read input file');
         });
     });
 
@@ -237,7 +235,7 @@ describe('runFanin', () => {
             const code = await runFanin(['--in', aFile, '--out', badOut]);
 
             expect(code).toBe(1);
-            expect(errLog.join('\n')).toContain('Failed to write output file');
+            expect(errLog()).toContain('Failed to write output file');
         });
     });
 });

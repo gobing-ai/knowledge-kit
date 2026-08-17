@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { logger } from '@gobing-ai/utils';
+import { echoError } from '@gobing-ai/ts-utils';
 import { type Content, ContentSchema } from './schemas';
 
 /**
@@ -76,7 +76,7 @@ export async function renderContentMarkdownFile(inPath: string, outPath: string)
     await writeFile(outPath, renderContentMarkdown(content), 'utf-8');
 }
 
-/** CLI entry: parse `--in`/`--out`, render, report via logger; returns exit code. */
+/** CLI entry: parse `--in`/`--out`, render, report via echoError; returns exit code. */
 export async function main(): Promise<number> {
     const { values } = parseArgs({
         options: {
@@ -85,14 +85,14 @@ export async function main(): Promise<number> {
         },
     });
     if (!values.in || !values.out) {
-        logger.error('Error: Missing required arguments --in and --out');
+        echoError('Error: Missing required arguments --in and --out');
         return 1;
     }
     try {
         await renderContentMarkdownFile(values.in, values.out);
         return 0;
     } catch (err: unknown) {
-        logger.error(`render-md failed: ${err instanceof Error ? err.message : String(err)}`);
+        echoError(`render-md failed: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
     }
 }

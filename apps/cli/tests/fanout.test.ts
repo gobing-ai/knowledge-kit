@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Content, collectionForKind, type PluginKind, type Result } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
 import {
     type AggregateResult,
     fanout,
@@ -12,6 +11,7 @@ import {
     type Target,
     type TargetOutcome,
 } from '../src/fanout';
+import { captureOutput } from './capture';
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-fanout-test-'));
@@ -188,20 +188,16 @@ describe('selectRetryTargets', () => {
 });
 
 describe('runFanout', () => {
-    // Negative-path tests call logger.error intentionally; silence stderr so --dots stays clean.
-    let origError: typeof logger.error;
-    let errLog: string[];
+    // Negative-path tests emit via echoError intentionally; capture stderr (instead of
+    // monkey-patching a logger) and keep the dots reporter clean.
+    let cap: ReturnType<typeof captureOutput>;
 
     beforeEach(() => {
-        errLog = [];
-        origError = logger.error;
-        logger.error = (msg: string) => {
-            errLog.push(msg);
-        };
+        cap = captureOutput();
     });
 
     afterEach(() => {
-        logger.error = origError;
+        cap.restore();
     });
 
     it('R1 — writes an aggregate result with per-target entries and exits non-zero on partial failure', async () => {
@@ -388,21 +384,21 @@ describe('runFanout', () => {
     it('fails with exit code 2 when a flag is missing its value', async () => {
         await withTempDir(async (root) => {
             expect(await runFanout(['--content'])).toBe(2);
-            expect(errLog.join('\n')).toContain('--content requires a file path');
+            expect(cap.readErr()).toContain('--content requires a file path');
 
-            errLog = [];
+            cap.err.clear();
             const contentFile = join(root, 'content.json');
             writeFileSync(contentFile, JSON.stringify(CONTENT));
             expect(await runFanout(['--content', contentFile, '--target'])).toBe(2);
-            expect(errLog.join('\n')).toContain('--target requires a plugin name');
+            expect(cap.readErr()).toContain('--target requires a plugin name');
 
-            errLog = [];
+            cap.err.clear();
             expect(await runFanout(['--content', contentFile, '--out'])).toBe(2);
-            expect(errLog.join('\n')).toContain('--out requires a file path');
+            expect(cap.readErr()).toContain('--out requires a file path');
 
-            errLog = [];
+            cap.err.clear();
             expect(await runFanout(['--content', contentFile, '--retry-from'])).toBe(2);
-            expect(errLog.join('\n')).toContain('--retry-from requires a file path');
+            expect(cap.readErr()).toContain('--retry-from requires a file path');
         });
     });
 
@@ -411,17 +407,17 @@ describe('runFanout', () => {
             const outFile = join(root, 'r.json');
             const missing = join(root, 'nope.json');
             expect(await runFanout(['--content', missing, '--target', 'a', '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain(missing);
+            expect(cap.readErr()).toContain(missing);
 
             const badJson = join(root, 'bad.json');
             writeFileSync(badJson, '{ nope');
             expect(await runFanout(['--content', badJson, '--target', 'a', '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('invalid JSON');
+            expect(cap.readErr()).toContain('invalid JSON');
 
             const offSchema = join(root, 'off.json');
             writeFileSync(offSchema, JSON.stringify({ title: 'no body' }));
             expect(await runFanout(['--content', offSchema, '--target', 'a', '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('Content schema');
+            expect(cap.readErr()).toContain('Content schema');
         });
     });
 
@@ -433,12 +429,12 @@ describe('runFanout', () => {
 
             const missing = join(root, 'no-prior.json');
             expect(await runFanout(['--content', contentFile, '--retry-from', missing, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain(missing);
+            expect(cap.readErr()).toContain(missing);
 
             const badPrior = join(root, 'bad-prior.json');
             writeFileSync(badPrior, JSON.stringify({ ok: false }));
             expect(await runFanout(['--content', contentFile, '--retry-from', badPrior, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('aggregate result schema');
+            expect(cap.readErr()).toContain('aggregate result schema');
         });
     });
 
@@ -453,7 +449,7 @@ describe('runFanout', () => {
             });
 
             expect(code).toBe(2);
-            expect(errLog.join('\n')).toContain('Failed to write output file');
+            expect(cap.readErr()).toContain('Failed to write output file');
         });
     });
 
@@ -562,7 +558,7 @@ describe('runFanout', () => {
             );
 
             expect(code).toBe(2);
-            expect(errLog.join('\n')).toContain('Unknown publish target(s): fake-pub');
+            expect(cap.readErr()).toContain('Unknown publish target(s): fake-pub');
             expect(existsSync(join(root, 'r.json'))).toBe(false);
         });
     });
@@ -579,9 +575,9 @@ describe('runFanout', () => {
                     { dispatch: makeDispatch().dispatch },
                 ),
             ).toBe(2);
-            expect(errLog.join('\n')).toContain('--content may be specified only once');
+            expect(cap.readErr()).toContain('--content may be specified only once');
 
-            errLog = [];
+            cap.err.clear();
             const priorFile = join(root, 'prior.json');
             writeFileSync(priorFile, JSON.stringify(priorResult()));
             expect(
@@ -590,7 +586,7 @@ describe('runFanout', () => {
                     { dispatch: makeDispatch().dispatch },
                 ),
             ).toBe(2);
-            expect(errLog.join('\n')).toContain('--retry-from may be specified only once');
+            expect(cap.readErr()).toContain('--retry-from may be specified only once');
         });
     });
 
@@ -603,13 +599,13 @@ describe('runFanout', () => {
             const badJson = join(root, 'bad-prior.json');
             writeFileSync(badJson, '{ nope');
             expect(await runFanout(['--content', contentFile, '--retry-from', badJson, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('invalid JSON');
+            expect(cap.readErr()).toContain('invalid JSON');
 
-            errLog = [];
+            cap.err.clear();
             const nullPrior = join(root, 'null-prior.json');
             writeFileSync(nullPrior, 'null');
             expect(await runFanout(['--content', contentFile, '--retry-from', nullPrior, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('not an aggregate result object');
+            expect(cap.readErr()).toContain('not an aggregate result object');
         });
     });
 
@@ -618,13 +614,13 @@ describe('runFanout', () => {
             const outFile = join(root, 'r.json');
             // A directory passes existsSync but readFileSync throws EISDIR.
             expect(await runFanout(['--content', root, '--target', 'a', '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('Failed to read content file');
+            expect(cap.readErr()).toContain('Failed to read content file');
 
-            errLog = [];
+            cap.err.clear();
             const contentFile = join(root, 'content.json');
             writeFileSync(contentFile, JSON.stringify(CONTENT));
             expect(await runFanout(['--content', contentFile, '--retry-from', root, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('Failed to read result file');
+            expect(cap.readErr()).toContain('Failed to read result file');
         });
     });
 
@@ -644,9 +640,9 @@ describe('runFanout', () => {
                 }),
             );
             expect(await runFanout(['--content', contentFile, '--retry-from', badSummary, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('summary.total');
+            expect(cap.readErr()).toContain('summary.total');
 
-            errLog = [];
+            cap.err.clear();
             const badEntry = join(root, 'bad-entry.json');
             writeFileSync(
                 badEntry,
@@ -657,7 +653,7 @@ describe('runFanout', () => {
                 }),
             );
             expect(await runFanout(['--content', contentFile, '--retry-from', badEntry, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('target entry');
+            expect(cap.readErr()).toContain('target entry');
         });
     });
 
@@ -677,7 +673,7 @@ describe('runFanout', () => {
             );
 
             expect(await runFanout(['--content', contentFile, '--retry-from', priorFile, '--out', outFile])).toBe(2);
-            expect(errLog.join('\n')).toContain('violates the aggregate result schema (target a)');
+            expect(cap.readErr()).toContain('violates the aggregate result schema (target a)');
         });
     });
 
@@ -825,7 +821,7 @@ describe('runFanout', () => {
             );
 
             expect(code).toBe(2);
-            expect(errLog.join('\n')).toContain('mutually exclusive');
+            expect(cap.readErr()).toContain('mutually exclusive');
         });
     });
 
@@ -835,14 +831,14 @@ describe('runFanout', () => {
             writeFileSync(contentFile, JSON.stringify(CONTENT));
 
             // --plugins-root without a value.
-            errLog = [];
+            cap.err.clear();
             expect(await runFanout(['--content', contentFile, '--target', 'a', '--out', 'x', '--plugins-root'])).toBe(
                 2,
             );
-            expect(errLog.join('\n')).toContain('--plugins-root requires a directory path');
+            expect(cap.readErr()).toContain('--plugins-root requires a directory path');
 
             // --plugins-root specified twice.
-            errLog = [];
+            cap.err.clear();
             expect(
                 await runFanout([
                     '--content',
@@ -857,14 +853,14 @@ describe('runFanout', () => {
                     '/tmp',
                 ]),
             ).toBe(2);
-            expect(errLog.join('\n')).toContain('--plugins-root may be specified only once');
+            expect(cap.readErr()).toContain('--plugins-root may be specified only once');
 
             // --plugins-path without a value.
-            errLog = [];
+            cap.err.clear();
             expect(await runFanout(['--content', contentFile, '--target', 'a', '--out', 'x', '--plugins-path'])).toBe(
                 2,
             );
-            expect(errLog.join('\n')).toContain('--plugins-path requires a directory path');
+            expect(cap.readErr()).toContain('--plugins-path requires a directory path');
         });
     });
 

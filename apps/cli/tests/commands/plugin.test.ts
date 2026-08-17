@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectionForKind } from '@gobing-ai/kk-core';
-import { logger } from '@gobing-ai/utils';
 import { Command } from 'commander';
 import { registerPluginCommand } from '../../src/commands/plugin';
 import { main } from '../../src/main';
+import { captureOutput } from '../capture';
 
 const FIXTURES_DIR = join(import.meta.dir, '../../../../plugins');
 
@@ -21,24 +21,14 @@ interface PluginStatusJson {
     diagnostics: Array<{ code: string; path: string; reason: string }>;
 }
 
-/** Run main with captured logger.out / logger.error into strings. */
+/** Run main with ts-utils echo/echoError captured into strings. */
 async function runCaptured(args: string[]): Promise<{ code: number; out: string; err: string }> {
-    let out = '';
-    let err = '';
-    const originalOut = logger.out;
-    const originalError = logger.error;
-    logger.out = (msg: string) => {
-        out += msg;
-    };
-    logger.error = (msg: string) => {
-        err += msg;
-    };
+    const cap = captureOutput();
     try {
         const code = await main(['node', 'test', ...args]);
-        return { code, out, err };
+        return { code, out: cap.read(), err: cap.readErr() };
     } finally {
-        logger.out = originalOut;
-        logger.error = originalError;
+        cap.restore();
     }
 }
 

@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
-import { logger } from '@gobing-ai/utils';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     getPublishTransport,
@@ -428,12 +428,13 @@ describe('qiita-pub plugin', () => {
     test('main CLI entry handles argument parsing and failure paths', async () => {
         const origArgv = process.argv;
         process.argv = ['bun', 'index.ts'];
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('Missing required arguments');
         } finally {
-            errorSpy.mockRestore();
+            restore();
         }
 
         const tmpDir = join(process.cwd(), '.tmp-test-qiita-main');
@@ -466,12 +467,13 @@ describe('qiita-pub plugin', () => {
     test('main returns 1 on invalid arguments instead of throwing', async () => {
         const origArgv = process.argv;
         process.argv = ['bun', 'index.ts', '--bogus'];
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('Invalid arguments');
         } finally {
-            errorSpy.mockRestore();
+            restore();
             process.argv = origArgv;
         }
     });
@@ -481,7 +483,8 @@ describe('qiita-pub plugin', () => {
         const origToken = process.env.QIITA_TOKEN;
         delete process.env.QIITA_TOKEN;
         delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
-        const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
 
         const tmpDir = join(process.cwd(), '.tmp-test-qiita-main-fail');
         await mkdir(tmpDir, { recursive: true });
@@ -498,12 +501,12 @@ describe('qiita-pub plugin', () => {
         process.argv = ['bun', 'index.ts', '--in', inPath, '--out', outPath];
         try {
             expect(await main()).toBe(1);
-            expect(errorSpy).toHaveBeenCalled();
+            expect(errTarget.text()).toContain('qiita-pub failed');
 
             const resultJson = JSON.parse(await readFile(outPath, 'utf-8'));
             expect(ResultSchema.parse(resultJson).ok).toBe(false);
         } finally {
-            errorSpy.mockRestore();
+            restore();
             process.argv = origArgv;
             if (origToken !== undefined) process.env.QIITA_TOKEN = origToken;
             else delete process.env.QIITA_TOKEN;
