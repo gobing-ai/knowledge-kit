@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
 
@@ -49,12 +49,48 @@ export function computeId(uri: string): string {
 /** Fetch signature the live path accepts, so tests can inject a fake (CI never hits the network). */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** Live-path dependencies — fetch, env, and clock are all injectable for tests. */
+/** markitdown normalizer — HTML in, markdown out (ADR-013 D3). Throws on non-zero exit or
+ * empty output; callers treat a throw as unusable content (per-URL fallback, D5). */
+export type MarkitdownRunner = (html: string) => Promise<string>;
+
+/** Live-path dependencies — fetch, env, clock, scrape, and markitdown are all injectable for tests. */
 export interface SearchDeps {
     fetch: FetchLike;
     env: Record<string, string | undefined>;
     now: () => Date;
+    /** Scrape transport; defaults to `deps.fetch` so tests can route both Firecrawl calls separately. */
+    scrape?: FetchLike;
+    /** markitdown runner; when absent in live mode, `main` probes PATH and fails loud (R6). */
+    markitdown?: MarkitdownRunner;
 }
+
+/** Real markitdown runner: `markitdown -x .html`, HTML on stdin, markdown on stdout. The
+ * `-x .html` extension hint is required — bare stdin passes HTML through unconverted.
+ * Spawns the absolute path resolved via Bun.which (with an explicit PATH option — plain
+ * argv[0] lookup can resolve against a startup PATH snapshot, missing runtime edits). */
+export const realMarkitdown: MarkitdownRunner = async (html: string): Promise<string> => {
+    const bin = Bun.which('markitdown', { PATH: process.env.PATH });
+    if (!bin) {
+        throw new Error('markitdown is not on PATH');
+    }
+    const proc = Bun.spawn([bin, '-x', '.html'], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' });
+    proc.stdin.write(html);
+    await proc.stdin.end();
+    const [stdout, stderrText, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+    ]);
+    if (exitCode !== 0) {
+        const detail = stderrText.trim();
+        throw new Error(`markitdown exited ${exitCode}${detail ? `: ${detail}` : ''}`);
+    }
+    const markdown = stdout.trim();
+    if (markdown.length === 0) {
+        throw new Error('markitdown produced empty output');
+    }
+    return markdown;
+};
 
 /** One Firecrawl `data.web[]` item — the subset of fields 0054 Block 3/4 consume. */
 interface FirecrawlWebItem {
@@ -68,6 +104,12 @@ interface FirecrawlSearchResponse {
     success?: unknown;
     error?: unknown;
     data?: { web?: FirecrawlWebItem[] | null } | null;
+}
+
+/** One Firecrawl `/v2/scrape` body — the subset the cache pass consumes. */
+interface FirecrawlScrapeResponse {
+    success?: unknown;
+    data?: { html?: unknown; markdown?: unknown } | null;
 }
 
 /**
@@ -195,6 +237,71 @@ function extractError(bodyText: string): string {
     return '';
 }
 
+/** Scrape + normalize + cache pass over the search results (ADR-013 D1–D6). Sequential
+ * per Doc — deliberate, no parallel fan-out (rate-limit friendly, deterministic). Cache hit
+ * (`references/<doc-id>.md` exists) reuses the file with no new /v2/scrape call (R3/R4);
+ * otherwise scrape → normalize (html via markitdown, markdown as-is) → write cache → body
+ * swap. Per-URL failure or unusable content warns and keeps the snippet body (R5/R11) — never
+ * fatal. Returns a new Doc[]; input order and non-body fields are untouched. */
+export async function scrapeAndCacheDocs(docs: Doc[], deps: SearchDeps, outPath: string): Promise<Doc[]> {
+    const cacheDir = join(dirname(outPath), 'references');
+    const scrapeFetch = deps.scrape ?? deps.fetch;
+    const out: Doc[] = [];
+    for (const doc of docs) {
+        const uri = doc.sourceUri;
+        if (!uri) {
+            out.push(doc);
+            continue;
+        }
+        const cacheFile = join(cacheDir, `${doc.id}.md`);
+        try {
+            const cached = await readFile(cacheFile, 'utf-8');
+            if (cached.trim().length > 0) {
+                out.push({ ...doc, body: cached });
+                continue;
+            }
+        } catch {
+            // Cache miss — fall through to the live scrape.
+        }
+        try {
+            const key = deps.env.FIRECRAWL_API_KEY;
+            if (!key) throw new Error('FIRECRAWL_API_KEY is unset');
+            const res = await scrapeFetch('https://api.firecrawl.dev/v2/scrape', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${key}`,
+                },
+                body: JSON.stringify({ url: uri, formats: ['html', 'markdown'] }),
+            });
+            if (!res.ok || res.status !== 200) {
+                throw new Error(`Firecrawl HTTP ${res.status}`);
+            }
+            const parsed = JSON.parse(await res.text()) as FirecrawlScrapeResponse;
+            if (parsed.success !== true || parsed.data === null || parsed.data === undefined) {
+                throw new Error('Firecrawl malformed scrape response');
+            }
+            const html = typeof parsed.data.html === 'string' ? parsed.data.html : undefined;
+            const markdown = typeof parsed.data.markdown === 'string' ? parsed.data.markdown : undefined;
+            let normalized: string;
+            if (html && html.trim().length > 0) {
+                normalized = await (deps.markitdown ?? realMarkitdown)(html);
+            } else if (markdown && markdown.trim().length > 0) {
+                normalized = markdown.trim();
+            } else {
+                throw new Error('scrape returned no usable content');
+            }
+            await mkdir(cacheDir, { recursive: true });
+            await writeFile(cacheFile, normalized, 'utf-8');
+            out.push({ ...doc, body: normalized });
+        } catch (err: unknown) {
+            console.warn(`web-search: scrape failed (url=${uri}): ${err instanceof Error ? err.message : String(err)}`);
+            out.push(doc);
+        }
+    }
+    return out;
+}
+
 /**
  * Build the fixture `Doc[]` for a topic (0054 Block 4 mapping). Always emits
  * canned docs — the v1 plugin has no live Firecrawl path.
@@ -268,16 +375,24 @@ export async function main(): Promise<number> {
     if (!input.fixture) {
         // 0054 Block 1/Block 8: `fixture` absent/false = LIVE Firecrawl path.
         try {
-            const docs = await searchFirecrawl(input, {
+            const deps: SearchDeps = {
                 fetch: globalThis.fetch,
                 env: process.env,
                 now: () => new Date(),
-            });
+            };
+            // Bun.which with an explicit PATH — without the option it can ignore runtime
+            // process.env.PATH changes (observed on Bun 1.3.14).
+            if (!deps.markitdown && !Bun.which('markitdown', { PATH: deps.env.PATH })) {
+                // R6 — live mode requires the normalizer; fail before any network call.
+                throw new Error('markitdown is not on PATH');
+            }
+            const docs = await searchFirecrawl(input, deps);
+            const cached = await scrapeAndCacheDocs(docs, deps, values.out);
             const outDir = dirname(values.out);
             if (outDir && outDir !== '.') {
                 await mkdir(outDir, { recursive: true });
             }
-            await writeFile(values.out, JSON.stringify(DocListSchema.parse(docs), null, 2), 'utf-8');
+            await writeFile(values.out, JSON.stringify(DocListSchema.parse(cached), null, 2), 'utf-8');
             return 0;
         } catch (err: unknown) {
             console.error(`web-search failed: ${err instanceof Error ? err.message : String(err)}`);

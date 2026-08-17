@@ -1,9 +1,18 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DocListSchema } from '@gobing-ai/kk-core';
+import { type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
-import { buildFixtureDocs, computeId, main, parseInput, searchFirecrawl } from '../src/index';
+import {
+    buildFixtureDocs,
+    computeId,
+    type FetchLike,
+    main,
+    parseInput,
+    realMarkitdown,
+    scrapeAndCacheDocs,
+    searchFirecrawl,
+} from '../src/index';
 
 const NOW = new Date('2026-08-14T12:00:00.000Z');
 
@@ -21,6 +30,23 @@ const TMP_DIR = join(import.meta.dir, 'tmp');
 const IN_FILE = join(TMP_DIR, 'in.json');
 const OUT_FILE = join(TMP_DIR, 'docs.json');
 
+// ADR-013 R6 — live mode probes `markitdown` on PATH before any network call. A stub
+// binary (stdin → stdout passthrough) keeps the suite hermetic: no real markitdown, and
+// deterministic probe results on machines without the tool installed.
+const STUB_BIN_DIR = join(import.meta.dir, 'tmp-stub-bin');
+const ORIGINAL_PATH = process.env.PATH;
+
+beforeAll(async () => {
+    await mkdir(STUB_BIN_DIR, { recursive: true });
+    await writeFile(join(STUB_BIN_DIR, 'markitdown'), '#!/bin/sh\nexec cat\n', { mode: 0o755 });
+    process.env.PATH = `${STUB_BIN_DIR}:${ORIGINAL_PATH ?? ''}`;
+});
+
+afterAll(async () => {
+    process.env.PATH = ORIGINAL_PATH;
+    await rm(STUB_BIN_DIR, { recursive: true, force: true });
+});
+
 async function writeInput(topic: string, extra: Record<string, unknown> = {}): Promise<void> {
     await mkdir(TMP_DIR, { recursive: true });
     await writeFile(IN_FILE, JSON.stringify({ topic, ...extra }), 'utf-8');
@@ -28,10 +54,12 @@ async function writeInput(topic: string, extra: Record<string, unknown> = {}): P
 
 const ORIGINAL_ARGV = process.argv;
 const ORIGINAL_CONSOLE_ERROR = console.error;
+const ORIGINAL_CONSOLE_WARN = console.warn;
 
 afterEach(async () => {
     process.argv = ORIGINAL_ARGV;
     console.error = ORIGINAL_CONSOLE_ERROR;
+    console.warn = ORIGINAL_CONSOLE_WARN;
     await rm(TMP_DIR, { recursive: true, force: true });
 });
 
@@ -117,6 +145,9 @@ describe('web-search fixture plugin', () => {
     });
 
     test('live happy path via main() writes schema-valid Doc[] to --out (fixture absent)', async () => {
+        // Scrape pass warns per URL (mock returns search-shaped data for /v2/scrape) — capture, don't leak.
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
         const originalFetch = globalThis.fetch;
         globalThis.fetch = mockFetch(async () =>
             jsonResponse(200, {
@@ -293,6 +324,10 @@ describe('web-search fixture plugin', () => {
     test('partial skip: one good + one empty markdown returns the good Doc and warns', async () => {
         const warns: string[] = [];
         console.warn = (msg?: unknown) => warns.push(String(msg));
+        // Pre-seed the cache for the surviving doc (R4) so the scrape pass is a pure
+        // cache hit — the assertion below counts exactly the original skip warning.
+        await mkdir(join(TMP_DIR, 'references'), { recursive: true });
+        await writeFile(join(TMP_DIR, 'references', `${computeId('https://a.example/a')}.md`), '# A cached', 'utf-8');
         const originalFetch = globalThis.fetch;
         globalThis.fetch = mockFetch(async () =>
             jsonResponse(200, {
@@ -328,6 +363,9 @@ describe('web-search fixture plugin', () => {
     test('all empty markdown (hits but no usable bodies) exits 1 with no --out', async () => {
         const errors: string[] = [];
         console.error = (msg?: unknown) => errors.push(String(msg));
+        // Per-hit skip warnings fire before the aggregate error — capture, don't leak.
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
         const originalFetch = globalThis.fetch;
         globalThis.fetch = mockFetch(async () =>
             jsonResponse(200, {
@@ -386,6 +424,30 @@ describe('web-search fixture plugin', () => {
         expect(computeId(uri)).toMatch(/^[0-9a-f]{16}$/);
         expect(computeId(uri)).toBe(computeId(uri));
         expect(computeId(uri)).not.toBe(computeId(`${uri}/other`));
+    });
+
+    test('fixture mode creates no references/ cache dir (R8/R9)', async () => {
+        await writeInput('STORM topic research', { fixture: true });
+        const originalFetch = globalThis.fetch;
+        let fetchCalls = 0;
+        globalThis.fetch = mockFetch(async () => {
+            fetchCalls += 1;
+            throw new Error('fixture mode must not fetch');
+        });
+        try {
+            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+            expect(await main()).toBe(0);
+            expect(fetchCalls).toBe(0);
+            let entries: string[] = [];
+            try {
+                entries = await Array.fromAsync(new Bun.Glob('*.md').scan({ cwd: join(TMP_DIR, 'references') }));
+            } catch {
+                // references/ absent — expected when the fixture path never scrapes.
+            }
+            expect(entries).toEqual([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
     });
 
     test('missing topic exits 1 and writes no --out', async () => {
@@ -514,5 +576,328 @@ describe('web-search live error-body branches (extractError + empty-body + succe
         // Row 5 — success key absent entirely, not false.
         const err = await runLive(() => jsonResponse(200, { data: { web: [] } }));
         expect(err).toBe('web-search failed: Firecrawl malformed response: success missing');
+    });
+});
+
+describe('web-search evidence cache (ADR-013 R1–R11)', () => {
+    const searchBody = (urls: string[]): unknown => ({
+        success: true,
+        data: { web: urls.map((url, i) => ({ url, title: `T${i}`, markdown: `# snippet ${i}`, position: i + 1 })) },
+    });
+
+    const withKeyEnv = async (fn: () => Promise<unknown>): Promise<void> => {
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        try {
+            await fn();
+        } finally {
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
+        }
+    };
+
+    test('R1/R2: live main() scrapes, caches references/<doc-id>.md, swaps bodies; docs.json schema-valid', async () => {
+        const scrapeCalls: string[] = [];
+        const originalFetch = globalThis.fetch;
+        // /v2/search → 2 docs; /v2/scrape → html for both (stub markitdown = cat passthrough).
+        globalThis.fetch = mockFetch(async (input: string, init?: RequestInit) => {
+            if (input.includes('/v2/scrape')) {
+                const url = (JSON.parse(String(init?.body)) as { url: string }).url;
+                scrapeCalls.push(url);
+                return jsonResponse(200, { success: true, data: { html: `<h1>full ${url}</h1>` } });
+            }
+            return jsonResponse(200, searchBody(['https://a.example/a', 'https://b.example/b']));
+        });
+        try {
+            await writeInput('STORM topic research', {});
+            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+            await withKeyEnv(async () => {
+                expect(await main()).toBe(0);
+            });
+            expect(scrapeCalls).toHaveLength(2);
+            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+            expect(docs).toHaveLength(2);
+            for (const doc of docs) {
+                if (!doc.sourceUri) throw new Error('expected sourceUri');
+                const cache = await readFile(join(TMP_DIR, 'references', `${computeId(doc.sourceUri)}.md`), 'utf-8');
+                expect(cache).toBe(doc.body);
+                expect(doc.body).toBe(`<h1>full ${doc.sourceUri}</h1>`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('R4: pre-seeded references cache skips the /v2/scrape call for that doc', async () => {
+        const cachedA = '# A cached full content';
+        await mkdir(join(TMP_DIR, 'references'), { recursive: true });
+        await writeFile(join(TMP_DIR, 'references', `${computeId('https://a.example/a')}.md`), cachedA, 'utf-8');
+        const scrapeCalls: string[] = [];
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = mockFetch(async (input: string, init?: RequestInit) => {
+            if (input.includes('/v2/scrape')) {
+                const url = (JSON.parse(String(init?.body)) as { url: string }).url;
+                scrapeCalls.push(url);
+                return jsonResponse(200, { success: true, data: { markdown: '# b full' } });
+            }
+            return jsonResponse(200, searchBody(['https://a.example/a', 'https://b.example/b']));
+        });
+        try {
+            await writeInput('STORM topic research', {});
+            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+            await withKeyEnv(async () => {
+                expect(await main()).toBe(0);
+            });
+            expect(scrapeCalls).toEqual(['https://b.example/b']);
+            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+            expect(docs[0]?.body).toBe(cachedA);
+            expect(docs[1]?.body).toBe('# b full');
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('R3: one failed /v2/scrape warns, keeps the snippet body, exits 0, writes docs.json', async () => {
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = mockFetch(async (input: string, init?: RequestInit) => {
+            if (input.includes('/v2/scrape')) {
+                const url = (JSON.parse(String(init?.body)) as { url: string }).url;
+                if (url === 'https://b.example/b') return jsonResponse(500, { success: false, error: 'boom' });
+                return jsonResponse(200, { success: true, data: { markdown: '# a full' } });
+            }
+            return jsonResponse(200, searchBody(['https://a.example/a', 'https://b.example/b']));
+        });
+        try {
+            await writeInput('STORM topic research', {});
+            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+            await withKeyEnv(async () => {
+                expect(await main()).toBe(0);
+            });
+            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+            expect(docs[0]?.body).toBe('# a full');
+            expect(docs[1]?.body).toBe('# snippet 1');
+            expect(warns).toHaveLength(1);
+            expect(warns[0]).toContain('https://b.example/b');
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('R6: live main() without markitdown on PATH exits 1 naming markitdown, no docs.json, no network', async () => {
+        const errors: string[] = [];
+        console.error = (msg?: unknown) => errors.push(String(msg));
+        const originalFetch = globalThis.fetch;
+        let fetchCalls = 0;
+        globalThis.fetch = mockFetch(async () => {
+            fetchCalls += 1;
+            return jsonResponse(200, { success: true, data: { web: [] } });
+        });
+        const savedPath = process.env.PATH;
+        process.env.PATH = '/nonexistent-path-for-kk-test';
+        try {
+            await writeInput('STORM topic research', {});
+            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+            await withKeyEnv(async () => {
+                expect(await main()).toBe(1);
+            });
+            expect(fetchCalls).toBe(0); // fail loud happens before any network call
+            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+            expect(errors).toEqual(['web-search failed: markitdown is not on PATH']);
+        } finally {
+            process.env.PATH = savedPath;
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('R11 (unit): scrape returning unusable content falls back to the snippet body and warns', async () => {
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
+        const deps = {
+            fetch: (async () => {
+                throw new Error('search not used in this seam test');
+            }) as unknown as typeof fetch,
+            env: { FIRECRAWL_API_KEY: 'k' },
+            now: () => NOW,
+            scrape: (async () =>
+                jsonResponse(200, { success: true, data: { html: '  ', markdown: ' ' } })) as FetchLike,
+            markitdown: (async (html: string) => `# md ${html}`) as (html: string) => Promise<string>,
+        };
+        const doc = {
+            id: computeId('https://x.example/x'),
+            body: '# snippet',
+            title: 'X',
+            sourceUri: 'https://x.example/x',
+            mediaType: 'text/markdown',
+            metadata: {},
+        };
+        const out = await scrapeAndCacheDocs([doc], deps, OUT_FILE);
+        expect(out).toHaveLength(1);
+        expect(out[0]?.body).toBe('# snippet');
+        expect(warns).toHaveLength(1);
+        expect(warns[0]).toContain('https://x.example/x');
+    });
+
+    test('R3 (unit): scrape transport throw keeps the snippet body without rejecting the pass', async () => {
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
+        const deps = {
+            fetch: (async () => {
+                throw new Error('unused');
+            }) as unknown as typeof fetch,
+            env: { FIRECRAWL_API_KEY: 'k' },
+            now: () => NOW,
+            scrape: (async () => {
+                throw new Error('ECONNRESET');
+            }) as FetchLike,
+            markitdown: (async (html: string) => `# md ${html}`) as (html: string) => Promise<string>,
+        };
+        const doc = { id: computeId('https://y.example/y'), body: '# snippet y', sourceUri: 'https://y.example/y' };
+        const out = await scrapeAndCacheDocs([doc], deps, OUT_FILE);
+        expect(out[0]?.body).toBe('# snippet y');
+        expect(warns[0]).toContain('ECONNRESET');
+    });
+
+    test('R9 (unit): html → markitdown invoked; markdown-only → used as-is without markitdown', async () => {
+        const mdCalls: string[] = [];
+        const deps = {
+            fetch: (async () => {
+                throw new Error('unused');
+            }) as unknown as typeof fetch,
+            env: { FIRECRAWL_API_KEY: 'k' },
+            now: () => NOW,
+            scrape: (async (_input: string, init?: RequestInit) => {
+                const url = (JSON.parse(String(init?.body)) as { url: string }).url;
+                if (url === 'https://a.example/a') {
+                    return jsonResponse(200, { success: true, data: { html: '<p>raw</p>' } });
+                }
+                return jsonResponse(200, { success: true, data: { markdown: '# already md' } });
+            }) as FetchLike,
+            markitdown: (async (html: string) => {
+                mdCalls.push(html);
+                return '# normalized from html';
+            }) as (html: string) => Promise<string>,
+        };
+        const docs = [
+            { id: computeId('https://a.example/a'), body: 's', sourceUri: 'https://a.example/a' },
+            { id: computeId('https://b.example/b'), body: 's', sourceUri: 'https://b.example/b' },
+        ];
+        const out = await scrapeAndCacheDocs(docs, deps, OUT_FILE);
+        expect(mdCalls).toEqual(['<p>raw</p>']);
+        expect(out[0]?.body).toBe('# normalized from html');
+        expect(out[1]?.body).toBe('# already md');
+        const cacheA = await readFile(join(TMP_DIR, 'references', `${computeId('https://a.example/a')}.md`), 'utf-8');
+        expect(cacheA).toBe('# normalized from html');
+    });
+
+    test('R8 (unit): a whitespace-only cache file is a miss — scrapes and overwrites', async () => {
+        await mkdir(join(TMP_DIR, 'references'), { recursive: true });
+        const cacheFile = join(TMP_DIR, 'references', `${computeId('https://a.example/a')}.md`);
+        await writeFile(cacheFile, '   \n  ', 'utf-8');
+        const deps = {
+            fetch: (async () => {
+                throw new Error('unused');
+            }) as unknown as typeof fetch,
+            env: { FIRECRAWL_API_KEY: 'k' },
+            now: () => NOW,
+            scrape: (async () => jsonResponse(200, { success: true, data: { markdown: '# fresh full' } })) as FetchLike,
+        };
+        const doc = { id: computeId('https://a.example/a'), body: '# snippet', sourceUri: 'https://a.example/a' };
+        const out = await scrapeAndCacheDocs([doc], deps, OUT_FILE);
+        expect(out[0]?.body).toBe('# fresh full');
+        expect(await readFile(cacheFile, 'utf-8')).toBe('# fresh full');
+    });
+
+    test('R5 (unit): a Doc without sourceUri passes through untouched, no scrape call', async () => {
+        const deps = {
+            fetch: (async () => {
+                throw new Error('unused');
+            }) as unknown as typeof fetch,
+            env: { FIRECRAWL_API_KEY: 'k' },
+            now: () => NOW,
+            scrape: (async () => {
+                throw new Error('scrape must not be called without a sourceUri');
+            }) as FetchLike,
+        };
+        const doc = { id: 'no-uri-doc', body: '# local doc' };
+        const out = await scrapeAndCacheDocs([doc as Doc], deps, OUT_FILE);
+        expect(out).toEqual([doc]);
+    });
+
+    test('R11 (unit): scrape pass without FIRECRAWL_API_KEY warns and keeps the snippet (non-fatal)', async () => {
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
+        const deps = {
+            fetch: (async () => {
+                throw new Error('unused');
+            }) as unknown as typeof fetch,
+            env: {},
+            now: () => NOW,
+        };
+        const doc = { id: computeId('https://z.example/z'), body: '# snippet z', sourceUri: 'https://z.example/z' };
+        const out = await scrapeAndCacheDocs([doc], deps, OUT_FILE);
+        expect(out[0]?.body).toBe('# snippet z');
+        expect(warns[0]).toContain('FIRECRAWL_API_KEY is unset');
+    });
+
+    test('R11 (unit): malformed scrape 200 (success:false) warns and keeps the snippet (non-fatal)', async () => {
+        const warns: string[] = [];
+        console.warn = (msg?: unknown) => warns.push(String(msg));
+        const deps = {
+            fetch: (async () => {
+                throw new Error('unused');
+            }) as unknown as typeof fetch,
+            env: { FIRECRAWL_API_KEY: 'k' },
+            now: () => NOW,
+            scrape: (async () => jsonResponse(200, { success: false })) as FetchLike,
+        };
+        const doc = { id: computeId('https://w.example/w'), body: '# snippet w', sourceUri: 'https://w.example/w' };
+        const out = await scrapeAndCacheDocs([doc], deps, OUT_FILE);
+        expect(out[0]?.body).toBe('# snippet w');
+        expect(warns[0]).toContain('Firecrawl malformed scrape response');
+    });
+});
+
+describe('web-search realMarkitdown runner (ADR-013 D3)', () => {
+    /** Write a one-shot stub markitdown into a fresh dir, prepend it to PATH; returns cleanup. */
+    const withStub = async (script: string): Promise<() => Promise<void>> => {
+        const dir = join(import.meta.dir, 'tmp-md-stub');
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, 'markitdown'), script, { mode: 0o755 });
+        const saved = process.env.PATH;
+        process.env.PATH = `${dir}:${saved ?? ''}`;
+        return async () => {
+            process.env.PATH = saved;
+            await rm(dir, { recursive: true, force: true });
+        };
+    };
+
+    test('throws "markitdown is not on PATH" when Bun.which fails', async () => {
+        const saved = process.env.PATH;
+        process.env.PATH = '/nonexistent-path-for-kk-test';
+        try {
+            await expect(realMarkitdown('<p>x</p>')).rejects.toThrow('markitdown is not on PATH');
+        } finally {
+            process.env.PATH = saved;
+        }
+    });
+
+    test('non-zero exit surfaces the exit code and trimmed stderr', async () => {
+        const cleanup = await withStub('#!/bin/sh\ncat >/dev/null; echo "boom" >&2; exit 3\n');
+        try {
+            await expect(realMarkitdown('<p>x</p>')).rejects.toThrow('markitdown exited 3: boom');
+        } finally {
+            await cleanup();
+        }
+    });
+
+    test('empty stdout (exit 0) is rejected as unusable output', async () => {
+        const cleanup = await withStub('#!/bin/sh\ncat >/dev/null\n');
+        try {
+            await expect(realMarkitdown('<p>x</p>')).rejects.toThrow('markitdown produced empty output');
+        } finally {
+            await cleanup();
+        }
     });
 });
