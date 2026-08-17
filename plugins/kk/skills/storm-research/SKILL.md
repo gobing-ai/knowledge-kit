@@ -93,7 +93,7 @@ skill is also callable directly as `Skill(skill="storm-research", args="<topic|-
   works dir (re-running a topic is legal — no `--force` needed).
 - If `raw` derives empty (no H1 and an empty basename, e.g. a file named `.md`) → fail loud.
 
-## Works layout (0056, frozen)
+## Works layout (0056, frozen; ADR-013 adds `references/`)
 
 Per-topic workspace at `$works_dir/<topic-id>/`:
 
@@ -105,6 +105,7 @@ Per-topic workspace at `$works_dir/<topic-id>/`:
 | `docs.json` | ingest | `web-search` output `Doc[]` |
 | `content.json` | generate | STORM `Content` (machine contract) |
 | `content.md` | render | markdown sidecar report |
+| `references/<doc-id>.md` | ingest (live path only) | normalized full content per source (`/v2/scrape` → markitdown); file name = Doc id; audit trail and the citation-resolution target for the report tail (ADR-013) |
 
 Contrast: `topic`'s authoring workspace is `./<kebab-case(topic)>` with `brief.md` /
 `2-outline/` / `3-draft/` and explicitly excludes research. C4 works live under `$works_dir`,
@@ -133,6 +134,7 @@ outside any repo.
 | Workflow YAML cannot be resolved from any install source | exit 1, stderr lists the roots searched | reinstall the package / set `KK_WORKFLOWS_SOURCE` |
 | `KK_CONFIG` set but unreadable, or config unparseable / invalid types | exit 1, stderr names the key + expected vs actual type | fix the file, or delete it (recreated with defaults next run) |
 | Missing config at `KK_CONFIG` | **not a failure** — create-on-first-run with compiled defaults; an existing file is never overwritten | — |
+| `markitdown` missing from `PATH` (live mode) | ingest exit 1, stderr `web-search failed: markitdown is not on PATH`; probed before any network call, so no `docs.json` write | install markitdown / put it on `PATH`, re-run ingest |
 
 Every failure names the exact path and the exact next command. Never silently skip, never
 auto-replace, never hash topic-id in the YAML.
@@ -154,6 +156,10 @@ auto-replace, never hash topic-id in the YAML.
 6. **Prefer primary sources in the markdown input file.** When a source file is supplied via
    `--in`, favor the primary material in it (first-party specs, owned notes, authoritative
    extracts) as the spine of the report; web results fill gaps, not the reverse.
+7. **Digest, don't index.** References are evidence, not the deliverable: the report synthesizes
+   findings across the supplied documents, compares them, and states conclusions — it never
+   lists sources one per line. The render drops the `## Outline` replay (ADR-013 D7); the
+   references tail plus `references/<doc-id>.md` files are the audit trail behind each cite id.
 
 ## Invariants
 
@@ -164,3 +170,4 @@ auto-replace, never hash topic-id in the YAML.
   `kk` CLI verb.
 - `FIRECRAWL_API_KEY` stays env-only.
 - Works layout file names are frozen (0056) — do not rename or add sidecars in this skill.
+  ADR-013 exception: the ingest live path writes `references/<doc-id>.md` per cached source.
