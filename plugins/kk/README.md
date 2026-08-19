@@ -18,5 +18,5 @@ Install: `superskill install kk`.
 
 Capability files **omit a leading `kk-`**. `superskill install` prefixes the plugin name, so
 `skills/judge` installs as `kk:judge` (not `kk:kk-judge`). Same for `topic`, `storm-research`,
-`/workflow-run`, and the `judge-*` subagents. Product workflow YAML (`kk-storm-research.yaml`)
+`itc-generating`, `/workflow-run`, and the `judge-*` subagents. Product workflow YAML (`kk-storm-research.yaml`)
 keeps its existing name — that is a workflow stem, not an installable agent capability.

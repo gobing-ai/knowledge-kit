@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.14.0
+version: 2.16.0
 created_at: 2026-07-22
-updated_at: 2026-08-16
+updated_at: 2026-08-19
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -70,9 +70,10 @@ sync: [T4]
 | E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/publishings/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
 | E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/publishings/zenn-pub`, `plugins/publishings/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
 | E5 | EmDash CMS publisher | ✅ done | 2 | task `0061` done; `plugins/publishings/emdash-pub` REST PAT transport + markdown→Portable Text mapper; satellite `docs/design/emdash-pub.md`; verify PASS + Shippable PASS (12/12 scenarios MET) |
-| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules); F1 = judge; F2 = topic-core authoring |
+| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules); F1 = judge; F2 = topic-core authoring; F3 = ITC generating |
 | F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
 | F2 | Topic-core authoring skill | ⏳ ready | 3 | task `0048`: one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
+| F3 | ITC generating skill | ✅ done | 3 | task `0068` done; fat `itc-generating` skill + four distilled references; orchestrates `topic` / `storm-research` / optional `judge`; no slash, no CLI; satellite `docs/design/itc-generating.md`; verify PASS |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |

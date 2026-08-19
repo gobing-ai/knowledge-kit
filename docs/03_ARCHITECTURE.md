@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.15.0
+version: 2.16.0
 created_at: 2026-07-22
-updated_at: 2026-08-16
+updated_at: 2026-08-19
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -106,9 +106,13 @@ supersedes the 2026-08-02 fourth-kind amendment):
 > `shell`/`jq` check on the verdict payload. Topic-core authoring ships the same way — the
 > `topic` fat skill (create/init/outline/draft; feature F2) is an agent capability under
 > `plugins/kk`, never a `generator` plugin instance (ADR-006 amdt 2026-08-12). See
-> `plugins/kk/skills/topic/SKILL.md`. Capability names omit a leading `kk-` so
-> `superskill install kk` yields `kk:judge` / `kk:topic` / `/kk:workflow-run`
-> (ADR-009 amdt 2026-08-14).
+> `plugins/kk/skills/topic/SKILL.md`. IT-writing craft ships the same way — the
+> `itc-generating` fat skill (feature F3) distills the four works-dir studies and
+> orchestrates `topic` / `storm-research` / optional `judge`; it is not a generator
+> plugin and adds no slash command or `kk` noun (ADR-011). See
+> `docs/design/itc-generating.md`. Capability names omit a leading `kk-` so
+> `superskill install kk` yields `kk:judge` / `kk:topic` / `kk:itc-generating` /
+> `/kk:workflow-run` (ADR-009 amdt 2026-08-14).
 
 ### Generator input dispatch
 
