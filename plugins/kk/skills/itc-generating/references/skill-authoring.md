@@ -57,6 +57,6 @@ method+orchestration layer instead of re-vendoring craft or reimplementing sibli
 `itc-generating` is one-level-deep by construction: SKILL.md points at the four `references/*.md`
 files below it and loads them on demand (generic-craft always; playbook only when `--playbook` is
 not `generic`). It reuses `topic`'s artifact contract rather than inventing a parallel workspace
-(D5), delegates research/judging to `storm-research`/`judge` rather than reimplementing them (D6),
+(D5), delegates research/judging to `storm-research`/`content-judge` rather than reimplementing them (D6),
 and stays under the body budget because the four STORM reports live in the works dirs as
 provenance — never vendored here (D4).

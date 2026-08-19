@@ -1,4 +1,4 @@
-# Workflow integration — judge in a spur workflow
+# Workflow integration — content-judge in a spur workflow
 
 Spur's workflow engine executes one node at a time (`type: parallel` is an inert schema field —
 see `docs/03_ARCHITECTURE.md`). The judge step is therefore a single `agent.run` node followed
@@ -7,16 +7,18 @@ by a `shell` node that guards the transition to `publish`.
 ## Step shape
 
 ```yaml
-- name: judge
-  type: agent.run
-  run: |
-    Evaluate the generated content against the {{rubric}} rubric.
-    Content: {{content_path}}
-    Write the verdict to {{verdict_path}}.
-  skill: judge
+- kind: agent.run
+  options:
+    role: reviewer
+    input: |
+      Evaluate the generated content against the {{rubric}} rubric.
+      Content: {{content_path}}
+      Write the verdict to {{verdict_path}}.
+      Load plugins/kk/skills/content-judge/SKILL.md.
+    expectFile: "{{verdict_path}}"
 ```
 
-- `agent.run` spawns an agent that loads the `judge` skill, performs the evaluation, and writes
+- `agent.run` spawns an agent that loads the `content-judge` skill, performs the evaluation, and writes
   the verdict JSON to `{{verdict_path}}` (typically `.spur/run/verdict-judge.json`).
 - The verdict file is the only durable artifact. The agent's prose output is not the contract.
 
@@ -60,7 +62,7 @@ esac
 
 For a bounded regenerate-retry loop, wire the workflow so that a `NEEDS_REVISION` verdict routes
 back to the `generate` step with the verdict's `feedback` as additional input. Cap retries (the
-example workflow uses 2). This is workflow-level orchestration — `judge` itself is stateless
+example workflow uses 2). This is workflow-level orchestration — `content-judge` itself is stateless
 and re-runnable.
 
 ```
@@ -73,5 +75,5 @@ generate ──▶ judge ──PASS──▶ publish
 
 ## Workflow YAML location
 
-The runnable example lives at `.spur/workflows/judge-gated-publish-example.yaml`. It demonstrates
+The runnable example lives at `plugins/kk/workflows/judge-gated-publish-example.yaml`. It demonstrates
 `generate → judge → guard → publish` with a 2-retry NEEDS_REVISION loop.

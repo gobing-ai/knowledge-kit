@@ -22,8 +22,7 @@ stub `content-gen`.
 
 | Piece | Path |
 | --- | --- |
-| Repo SSOT | `.spur/workflows/kk-storm-research.yaml` |
-| Install source (npm `plugins/`) | `plugins/kk/workflows/kk-storm-research.yaml` (byte-identical) |
+| Repo SSOT | `plugins/kk/workflows/kk-storm-research.yaml` |
 | Ingest plugin | `plugins/ingestions/web-search/` |
 | Render runner | `plugins/kk/scripts/render-md.ts` |
 | Skill / command | `plugins/kk/skills/storm-research/` · `plugins/kk/commands/workflow-run.md` |
@@ -84,13 +83,13 @@ citations against `docs.json` ids. Do not merge this into `topic` (authoring onl
 ### Validate
 
 ```bash
-spur workflow validate .spur/workflows/kk-storm-research.yaml --json
+spur workflow validate plugins/kk/workflows/kk-storm-research.yaml --json
 ```
 
 ### Dry-run — no network, no LLM, no writes
 
 ```bash
-spur workflow run .spur/workflows/kk-storm-research.yaml --dry-run --run-id dry-1 \
+spur workflow run plugins/kk/workflows/kk-storm-research.yaml --dry-run --run-id dry-1 \
   --vars '{"topic":"<your research topic>","fixture":"true"}'
 ```
 
@@ -104,7 +103,7 @@ to `action-ok` (that guard denies when no actions execute).
 a checkout you pass it yourself:
 
 ```bash
-spur workflow run .spur/workflows/kk-storm-research.yaml \
+spur workflow run plugins/kk/workflows/kk-storm-research.yaml \
   --vars '{"topic":"<your research topic>","maxResults":"8","work_dir":"./work/demo-topic"}'
 ```
 
@@ -120,7 +119,7 @@ File mode copies the file to `input.md`, writes `local-doc.json` (one Doc object
 wraps it before prepend), and derives the query from the first ATX H1, else the basename.
 
 ```bash
-spur workflow run .spur/workflows/kk-storm-research.yaml \
+spur workflow run plugins/kk/workflows/kk-storm-research.yaml \
   --vars '{"input_file":"./note.md","fixture":"true","work_dir":"./work/demo-topic"}'
 ```
 
@@ -241,8 +240,7 @@ flowchart TD
 
 | File | Role |
 | --- | --- |
-| `.spur/workflows/kk-storm-research.yaml` | orchestration SSOT |
-| `plugins/kk/workflows/kk-storm-research.yaml` | install source (keep byte-identical) |
+| `plugins/kk/workflows/kk-storm-research.yaml` | orchestration SSOT |
 | `plugins/ingestions/web-search/src/index.ts` | fixture + live Firecrawl (`searchFirecrawl`) |
 | `plugins/kk/scripts/render-md.ts` | shipped `--in` / `--out` runner (no `@gobing-ai/kk-core` import) |
 | `packages/kk-core/src/render-md.ts` | `renderContentMarkdown` (in-repo SSOT; keep in sync) |
@@ -257,15 +255,13 @@ flowchart TD
 - **Success edges `always`.** Dry-run would never reach `done` on `action-ok`. Real-run
   failures still stop at the state (`onError: fail`) before transitions run.
 - **Quote `"$schema"`** or YAML parsing mangles it.
-- **Edit both YAML copies** or `cmp` / the 0059 R2 test fails.
 
 ## Testing & verification
 
 ```bash
-spur workflow validate .spur/workflows/kk-storm-research.yaml --json
-spur workflow run .spur/workflows/kk-storm-research.yaml --dry-run --run-id dry-1 \
+spur workflow validate plugins/kk/workflows/kk-storm-research.yaml --json
+spur workflow run plugins/kk/workflows/kk-storm-research.yaml --dry-run --run-id dry-1 \
   --vars '{"topic":"STORM topic research","fixture":"true"}' --json
-cmp .spur/workflows/kk-storm-research.yaml plugins/kk/workflows/kk-storm-research.yaml
 bun test apps/cli/tests/storm-research-workflow.test.ts \
   plugins/ingestions/web-search/tests/web-search.test.ts \
   packages/kk-core/tests/render-md.test.ts \

@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-08-03T01:02:09.752Z"
-updated_at: "2026-08-12T16:22:44.098Z"
+updated_at: "2026-08-19T22:01:58.176Z"
 ---
 
 # F1: LLM-as-judge agent skills
@@ -46,7 +46,7 @@ Feature: LLM-as-judge agent skills and workflow integration
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-
+- 2026-08-19: persona subagents `judge-tech` / `judge-tone` / `judge-compliance` deleted. Fat skill renamed `plugins/kk/skills/judge` → `plugins/kk/skills/content-judge` (install id `kk:content-judge`). Rubric is an `agent.run` prompt field. Historical AC below still describes the 2026-08-12 wrappers; ADR-007 amdt 2026-08-19 records the retirement.
 ## History
 - 2026-08-08T00:20:03.925Z backlog → active (system)
 - 2026-08-08T00:20:04.088Z active → verifying (system)

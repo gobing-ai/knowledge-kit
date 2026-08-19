@@ -1,17 +1,17 @@
 ---
-name: judge
-description: This skill should be used when an LLM evaluation gate is needed in a knowledge-kit pipeline — "judge this content", "evaluate against rubric", "quality gate before publish", "check technical accuracy", "review brand tone", "compliance check", or when a spur workflow step of type `agent.run` targets the judge skill to emit a PASS/FAIL/NEEDS_REVISION verdict. Centralizes evaluation rubrics, prompt templates, and structured verdict emission for generated Content.
+name: content-judge
+description: This skill should be used when an LLM evaluation gate is needed in a knowledge-kit pipeline — "judge this content", "evaluate against rubric", "quality gate before publish", "check technical accuracy", "review brand tone", "compliance check", or when a spur workflow step of type `agent.run` targets the content-judge skill to emit a PASS/FAIL/NEEDS_REVISION verdict. Centralizes evaluation rubrics, prompt templates, and structured verdict emission for generated Content.
 version: 0.1.0
 ---
 
-# judge — LLM-as-judge evaluation skill
+# content-judge — LLM-as-judge evaluation skill
 
 ## Purpose
 
 Evaluate generated `Content` against a rubric and emit a structured **verdict** that a spur
 workflow gate can consume. This is the fat skill — the single source of truth for evaluation
-logic, prompt templates, and verdict formatting. Thin wrappers (tech-accuracy, brand-tone,
-compliance) delegate here with a pre-selected rubric.
+logic, prompt templates, and verdict formatting. The `agent.run` prompt (or `--judge` flag on
+`itc-generating`) selects the rubric; there are no persona subagents.
 
 LLM-as-judge is **not** a knowledge-kit plugin kind (ADR-007 amdt 2026-08-07). It runs as an
 `agent.run` step in a spur workflow; the verdict is a skill output, not a plugin-kind contract.
@@ -20,7 +20,7 @@ LLM-as-judge is **not** a knowledge-kit plugin kind (ADR-007 amdt 2026-08-07). I
 
 - A spur workflow needs a quality gate between `generate` and `publish`.
 - A user asks to "judge", "evaluate", "quality-check", or "gate" generated content.
-- A thin wrapper (tech-accuracy / brand-tone / compliance) delegates evaluation.
+- A workflow or skill names a rubric (`tech-accuracy` / `brand-tone` / `compliance` / `general`).
 
 ## Verdict output contract
 
@@ -61,8 +61,8 @@ Every evaluation writes a JSON verdict file. The default path is
 
 1. **Read the Content** from the path given in the evaluation request (the `content.json` written
    by the preceding `kk executor run <generator>` step).
-2. **Select the rubric** — either named in the request (`tech-accuracy`, `brand-tone`,
-   `compliance`, `general`) or loaded by a thin wrapper. Default: `general`.
+2. **Select the rubric** — named in the request (`tech-accuracy`, `brand-tone`,
+   `compliance`, `general`). Default: `general`.
 3. **Evaluate each criterion** in the rubric. For each, produce a `pass` / `fail` / `warn` status
    backed by a specific, quotable evidence reference (quote, section, claim).
 4. **Score** — weighted aggregate per the rubric's scoring rules. `score` is 0.0–1.0.
@@ -107,7 +107,7 @@ Content to evaluate: {{content_path}}
 Rubric: {{rubric}}              # general | tech-accuracy | brand-tone | compliance
 Output verdict to: {{verdict_path}}
 
-Load the rubric definition from plugins/kk/skills/judge/references/rubrics.md (section: {{rubric}}).
+Load the rubric definition from plugins/kk/skills/content-judge/references/rubrics.md (section: {{rubric}}).
 Evaluate the content against every criterion in that rubric.
 For each criterion, quote the specific passage and assign pass | fail | warn.
 Decide the verdict: any must-pass fail → FAIL; else score < threshold → NEEDS_REVISION; else PASS.
@@ -119,13 +119,12 @@ Print the verdict path to stdout as the last line.
 
 See `references/workflow-integration.md` for the `agent.run` step shape and the shell/`jq` guard
 that reads the verdict. The example workflow is at
-`.spur/workflows/judge-gated-publish-example.yaml`.
+`plugins/kk/workflows/judge-gated-publish-example.yaml`.
 
-## Thin wrappers
+## Rubric selection
 
-The wrappers in `plugins/kk/agents/` (tech-accuracy, brand-tone, compliance) are thin: they fix
-the `rubric` field and forward to this skill. They do not duplicate evaluation logic. To create a
-new persona, add a wrapper that sets the rubric and reuses this skill's procedure verbatim.
+The `agent.run` prompt (or the calling skill) sets `{{rubric}}`. To add a persona, add a rubric
+section in `references/rubrics.md` and name it from the prompt — do not add a subagent wrapper.
 
 ## Additional resources
 

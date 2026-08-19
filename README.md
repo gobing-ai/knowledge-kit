@@ -99,7 +99,7 @@ kinds:
 | `publish` | `Content → Result` | `surfdash-pub`, `zenn-pub`, `qiita-pub` |
 
 **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
-(ADR-007). The judge lives in the `kk` plugin collection: `plugins/kk/skills/judge`.
+(ADR-007). The judge lives in the `kk` plugin collection: `plugins/kk/skills/content-judge`.
 
 Core contracts (`Doc`, `Brief`, `Content`, `Result`) and the `kindContract` per kind live in
 `@gobing-ai/kk-core`. A **pipeline** is a `spur workflow` whose states shell out to `kk`

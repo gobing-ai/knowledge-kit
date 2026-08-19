@@ -3,7 +3,7 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.16.0
+version: 2.19.0
 created_at: 2026-07-22
 updated_at: 2026-08-19
 derived_from: [01_PRD, 02_ROADMAP]
@@ -29,7 +29,7 @@ sync: [T4]
 > **2026-08-07 (0037):** LLM-as-judge repositioned from fourth plugin kind to **agent skills + `agent.run`**
 > (ADR-007 amdt 2026-08-07, superseding the 2026-08-02 amendment). **B7** renamed "LLM-as-judge
 > agent skills"; plugin taxonomy reverts to three kinds (`ingestion`, `generator`, `publish`).
-> Fat skill `judge` + thin wrappers deliver verdict gating with zero engine work. Map:
+> Fat skill `content-judge` (renamed from `judge` 2026-08-19) delivers verdict gating with zero engine work. Map:
 > `docs/plans/feature-tree-restructure-map-j.md`.
 
 ## Status legend
@@ -56,7 +56,7 @@ sync: [T4]
 | **C** | Ingestion | ⏳ active | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007); closed via carrier `0039`, then **reopened for plugin intake** |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
 | C2 | Karakeep-local | ✅ done | 1 | tasks `0014`/`0015` done; feature transitioned done (check clean); hardening follow-up → task `0029` (edge on parent C) |
-| C3 | STORM topic-research workflow | ✅ done | 3 | wayfinder map; tasks `0054`/`0055` done; `.spur/workflows/kk-storm-research.yaml` + fixture `plugins/ingestions/web-search`; live Firecrawl not in this map; dogfood `docs/dogfood/2026-08-14-C3-storm-research-workflow-dogfood.md` |
+| C3 | STORM topic-research workflow | ✅ done | 3 | wayfinder map; tasks `0054`/`0055` done; YAML now at `plugins/kk/workflows/kk-storm-research.yaml` (F4 SSOT move) + fixture `plugins/ingestions/web-search`; live Firecrawl not in this map; dogfood `docs/dogfood/2026-08-14-C3-storm-research-workflow-dogfood.md` |
 | C4 | Daily-usable STORM research | ✅ done | 3 | wayfinder map; tasks `0056`–`0060` done; live Firecrawl + md in/out + `~/.config/kk/works/<topic-id>/` + `storm-research` skill + `/workflow-run`; dogfood `docs/dogfood/2026-08-14-C4-daily-usable-storm-research-dogfood.md`; verifyall Shippable PASS |
 | C5 | STORM research workflow evidence hardening | ✅ done | 3 | tasks `0062`–`0064` done; ADR-013; per-reference evidence cache `references/<doc-id>.md` (Firecrawl scrape + markitdown, fail-loud) + digest-not-index report mandate + outline-replay removal in both render copies; design `docs/design/storm-evidence-cache.md`; verifyall Shippable PASS |
 | **D** | Content generation | ⏳ active | 1 | kind parent; re-cut: `Doc[] \| Brief`, creation co-equal with ingestion (ADR-007 R3); AC rolled up from D3+D2 (DD-09); closed via carrier `0040`, then **reopened for plugin intake** |
@@ -65,15 +65,16 @@ sync: [T4]
 | D3 | Generator plugin design | ✅ done | 1 | tasks `0016`/`0017` done; cites C1 generic contract §1 |
 | D4 | Own STORM generator | ✅ done | 3 | tasks `0046` + `0047` done; owned STORM pipeline shipped behind the generator contract |
 | **E** | Multi-channel publish | ⏳ active | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4**; closed via carrier `0041`, then **reopened for plugin intake** |
-| E1 | wt-publish audit | ⏳ backlog | 1 | task `0002` done (transports mapped; Surfdash simplest); feature close-out (verifyall) pending |
+| E1 | wt-publish audit | ✅ done | 1 | task `0002` done (transports mapped; Surfdash simplest); wrapall 2026-08-19 — `spur feature sync E1` verifying→done |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
 | E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/publishings/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
 | E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/publishings/zenn-pub`, `plugins/publishings/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
 | E5 | EmDash CMS publisher | ✅ done | 2 | task `0061` done; `plugins/publishings/emdash-pub` REST PAT transport + markdown→Portable Text mapper; satellite `docs/design/emdash-pub.md`; verify PASS + Shippable PASS (12/12 scenarios MET) |
-| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules); F1 = judge; F2 = topic-core authoring; F3 = ITC generating |
-| F1 | LLM-as-judge agent skills | ⏳ verifying | 2 | home for 0034/0037: fat skill `judge` + thin wrappers (tech-accuracy, brand-tone, compliance); `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 supersedes the 2026-08-02 fourth-kind amendment |
-| F2 | Topic-core authoring skill | ⏳ ready | 3 | task `0048`: one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
-| F3 | ITC generating skill | ✅ done | 3 | task `0068` done; fat `itc-generating` skill + four distilled references; orchestrates `topic` / `storm-research` / optional `judge`; no slash, no CLI; satellite `docs/design/itc-generating.md`; verify PASS |
+| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for `plugins/kk` capabilities (skills, commands, subagents, hooks, rules, product YAML); F1–F4 children done; parent stays open for intake |
+| F1 | LLM-as-judge agent skills | ✅ done | 2 | home for 0034/0037: fat skill `content-judge` (was `judge`); persona subagents retired 2026-08-19 — rubric is an `agent.run` field; `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 / 2026-08-19 |
+| F2 | Topic-core authoring skill | ✅ done | 3 | task `0048` done; one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
+| F3 | ITC generating skill | ✅ done | 3 | task `0068` done; fat `itc-generating` skill + four distilled references; orchestrates `topic` / `storm-research` / optional `content-judge`; no slash, no CLI; satellite `docs/design/itc-generating.md`; verify PASS |
+| F4 | IT-content workflow and product YAML home | ✅ done | 3 | task `0069` done; `plugins/kk/workflows/` is the only kk YAML SSOT; `kk-itc.yaml` uses existing `hitl.select`/`confirm`/`input`; no new hitl kind; `itc-generating` writer default |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |

@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.19.0
+version: 1.20.0
 created_at: 2026-05-28
-updated_at: 2026-08-16
+updated_at: 2026-08-19
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -291,6 +291,23 @@ The 2026-08-02 amendment is superseded in full:
   and validated by the workflow's `shell`/`jq` guard on the verdict payload. The "validated by a
   `VerdictSchema` utility" phrasing is withdrawn; nothing else in this amendment changes.
 
+### Amendment — 2026-08-19 (fat skill renamed `content-judge`; persona subagents retired)
+
+> **Status:** Accepted · **Amends:** the 2026-08-07 skill-centric amendment on this ADR.
+
+- **Fat skill path and install id.** Evaluation rubrics, prompt templates, and verdict emission
+  live at `plugins/kk/skills/content-judge` (install id `kk:content-judge`). The former directory
+  `plugins/kk/skills/judge` and install id `kk:judge` are retired. The verdict contract
+  (`PASS` / `FAIL` / `NEEDS_REVISION`) is unchanged.
+- **No persona subagents.** `judge-tech` / `judge-tone` / `judge-compliance` wrappers under
+  `plugins/kk/agents/` are deleted. Rubric selection is a field on the `agent.run` prompt
+  (`tech-accuracy` | `brand-tone` | `compliance` | `general`), or the `--judge` flag on
+  `itc-generating`. Do not re-add a thin wrapper unless a new skill owns a distinct run
+  procedure.
+- **Historical note.** Ticket 0037 and F1's shipped AC still describe the wrappers as of
+  2026-08-12. This amendment records the 2026-08-19 retirement; those corpus files stay
+  append-only.
+
 ---
 
 ## ADR-008 — Publish transports: one shared `PublishTransport` contract, `file-cli` first (2026-08-12)
@@ -364,6 +381,20 @@ single-root override and still obeys this layout.
 yields `kk:kk-judge`). Current names: `judge`, `topic`, `storm-research`, `/workflow-run`,
 `judge-tech` / `judge-tone` / `judge-compliance`. Product workflow YAML stems (`kk-storm-research`)
 are not installable agent capabilities and keep their existing names.
+
+### Amendment — 2026-08-19 (capability roster after `content-judge` rename)
+
+Current installable names: `content-judge`, `topic`, `storm-research`, `itc-generating`,
+`/workflow-run`. Persona subagents `judge-tech` / `judge-tone` / `judge-compliance` were
+retired the same day (ADR-007 amdt 2026-08-19). The 2026-08-14 prefix rule is unchanged.
+
+### Amendment — 2026-08-19 (product workflow YAML home)
+
+Product workflow YAML files live only under `plugins/kk/workflows/` (`kk-storm-research.yaml`,
+`kk-ingest-generate-publish.yaml`, `judge-gated-publish-example.yaml`, `kk-itc.yaml`).
+`.spur/workflows/` holds only Spur project lifecycle and developer pipeline workflows.
+The workflow install copy rule resolves from two roots in order: `$KK_WORKFLOWS_SOURCE`
+then `plugins/kk/workflows/`.
 
 ---
 

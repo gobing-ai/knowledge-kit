@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.16.0
+version: 2.17.0
 created_at: 2026-07-22
 updated_at: 2026-08-19
 derived_from: [00_ADR, 01_PRD]
@@ -100,19 +100,19 @@ supersedes the 2026-08-02 fourth-kind amendment):
 | `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
 | `publish` | `Content → Result` | Fan-out dispatches N of these |
 
-> **Agent capabilities are not plugin kinds.** Quality gating ships as the `judge` agent skill +
-> `agent.run` (ADR-007 amdt 2026-08-07): the fat skill emits a `Verdict` (`PASS` / `FAIL` /
-> `NEEDS_REVISION` + reasoning) consumed by an `agent.run` step whose transition is guarded by a
-> `shell`/`jq` check on the verdict payload. Topic-core authoring ships the same way — the
-> `topic` fat skill (create/init/outline/draft; feature F2) is an agent capability under
-> `plugins/kk`, never a `generator` plugin instance (ADR-006 amdt 2026-08-12). See
-> `plugins/kk/skills/topic/SKILL.md`. IT-writing craft ships the same way — the
-> `itc-generating` fat skill (feature F3) distills the four works-dir studies and
-> orchestrates `topic` / `storm-research` / optional `judge`; it is not a generator
+> **Agent capabilities are not plugin kinds.** Quality gating ships as the `content-judge`
+> agent skill + `agent.run` (ADR-007 amdt 2026-08-07, rename 2026-08-19): the fat skill emits
+> a `Verdict` (`PASS` / `FAIL` / `NEEDS_REVISION` + reasoning) consumed by an `agent.run` step
+> whose transition is guarded by a `shell`/`jq` check on the verdict payload. Topic-core
+> authoring ships the same way — the `topic` fat skill (create/init/outline/draft; feature F2)
+> is an agent capability under `plugins/kk`, never a `generator` plugin instance (ADR-006
+> amdt 2026-08-12). See `plugins/kk/skills/topic/SKILL.md`. IT-writing craft ships the same
+> way — the `itc-generating` fat skill (feature F3) distills the four works-dir studies and
+> orchestrates `topic` / `storm-research` / optional `content-judge`; it is not a generator
 > plugin and adds no slash command or `kk` noun (ADR-011). See
 > `docs/design/itc-generating.md`. Capability names omit a leading `kk-` so
-> `superskill install kk` yields `kk:judge` / `kk:topic` / `kk:itc-generating` /
-> `/kk:workflow-run` (ADR-009 amdt 2026-08-14).
+> `superskill install kk` yields `kk:content-judge` / `kk:topic` / `kk:itc-generating` /
+> `/kk:workflow-run` (ADR-009 amdt 2026-08-14 / 2026-08-19).
 
 ### Generator input dispatch
 

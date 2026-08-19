@@ -456,3 +456,41 @@ Extracted from the three C5 task files (designs, solution maps, verify/review se
 - Practice 7's "never lists sources one per line" needs the body-scoping sentence next to it or it misreads against the one-`- <label>`-per-item tail.
 
 Cross-task: C5 ran as a 3-task batch — 0062 ∥ 0063 parallel, 0064 last; no `dependencies[]` edges, ordering enforced by decomposition. Shared identity rule (computeId = sha256 hex 16) is what makes the 0062 cache filename, the 0063 cite id, and the 0064 "resolves by construction" claim all the same string.
+## 2026-08-19 — wrapall E1 (task 0002)
+
+**Decisions**
+
+- E1 (wt-publish audit) is wrap-complete: task `0002` done; feature hops `verifying → done` via `spur feature sync` (wrapup-pipeline feature-transition).
+- Wrap body was inlined. `wrapup-pipeline.yaml` `doc-sync` is `agent.run` against `agent.default` (omp). Project learning 2026-08-02 E3: that step hangs in this env. Do not re-try omp for wrap.
+
+**Patterns that worked**
+
+- Audit output became the E2/E3 contract: two transports (File/CLI vs Playwright), Surfdash = no-auth file/CLI, fail-loud (drop `publish.sh` always-exit-0).
+- Feature-AC placeholder (`Scenario: Basic acceptance`) never enriched; `0002` carries the real scenarios. `spur feature sync` still hops to done (L4 warning, not error).
+
+**Gotchas**
+
+- `docs/05_FEATURES.md` still said E1 `backlog` while the corpus was `verifying` and sync proposed `done`. T4 wrap must refresh 05 in the same change as `feature sync`.
+- Task `0002` has no `.spur/run/0002-verdict.json` (pre-verdict-artifact era). Metrics row records `verdict: none`.
+
+
+- `spur feature sync --dry-run` can report L4 passed while live verifying→done elevates uncovered/unverified scenarios to ERR. Fix: align feature AC titles to the covering task, then backfill a PASS verdict with MET rows for pre-verdict-era tasks.
+
+## 2026-08-19 — housekeeping (content-judge + hitl + F4)
+
+**Decisions**
+
+- Persona subagents `judge-tech` / `judge-tone` / `judge-compliance` deleted. Fat skill renamed `plugins/kk/skills/judge` → `plugins/kk/skills/content-judge` (install id `kk:content-judge`). Rubric is an `agent.run` prompt field. ADR-007 / ADR-009 dated amendments 2026-08-19.
+- Spur already has `hitl.confirm`, `hitl.input`, `hitl.select`. That covers topic-core gates (outline a|b|c, draft approve, revision text). No new `hitl.*` kind. `topic` stays the writer; HITL ownership moves to `kk-itc.yaml` (task 0069 / F4).
+- `plugins/kk/workflows/` becomes the only kk product YAML SSOT. `.spur/workflows/` is Spur-lifecycle only. Not a one-file delete: 0056 three-root copy rule + tests + `/workflow-run` must move together (0069).
+
+**Patterns that worked**
+
+- Simple deletes/renames + live-path updates in the same turn; one `feature-impl` task for the contract-level remainder.
+- `hitl.select` options are a static YAML `string[]` — good enough for `a|b|c`. Copy-the-winner is `shell`, not a new HITL kind.
+
+**Gotchas**
+
+- Do not delete `.spur/workflows/kk-storm-research.yaml` without retargeting `apps/cli/tests/storm-research-workflow.test.ts` (`ssotPath`) and the three-root assertion in `workflow-run-command.test.ts`.
+- F1 historical AC still names the wrappers; do not rewrite a done feature's AC. Record the retirement in Notes + ADR amendment.
+

@@ -1,0 +1,285 @@
+---
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-itc
+kind: state-machine
+description: >-
+  IT content authoring pipeline using topic/itc-generating, Spur HITL gates, and optional judging
+initialState: prepare
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+
+vars:
+  topic: ""
+  input_file: ""
+  work_dir: ""
+  writer: "itc-generating"
+  playbook: "generic"
+  research: "false"
+  judge: "false"
+  outline: ""
+  force: "false"
+  rubric: "tech-accuracy"
+  verdictFile: ".spur/run/${vars.__runId}-itc-verdict.json"
+  agent: ""
+  __runId: "itc"
+  __hitlAnswer: ""
+  __hitlInput: ""
+
+states:
+  - id: prepare
+    description: "mkdir work_dir, 2-outline, 3-draft; validate XOR topic/input_file; write brief.md"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set -e;
+            if [ -z "${vars.work_dir}" ]; then
+              echo "missing work_dir" >&2; exit 1;
+            fi;
+            mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline" "${vars.work_dir}/3-draft";
+            if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
+              echo "XOR violation: both topic and input_file set" >&2; exit 1;
+            fi;
+            if [ -z "${vars.topic}" ] && [ -z "${vars.input_file}" ]; then
+              echo "XOR violation: neither topic nor input_file set" >&2; exit 1;
+            fi;
+            if [ -f "${vars.work_dir}/brief.md" ] && [ "${vars.force}" != "true" ]; then
+              echo "initialization target already exists at ${vars.work_dir}/brief.md; pass force=true to replace" >&2; exit 1;
+            fi;
+            if [ -n "${vars.topic}" ]; then
+              printf '%s\n' "${vars.topic}" > "${vars.work_dir}/brief.md";
+            else
+              if [ ! -f "${vars.input_file}" ]; then
+                echo "input file not found: ${vars.input_file}" >&2; exit 1;
+              fi;
+              cp "${vars.input_file}" "${vars.work_dir}/brief.md";
+            fi;
+
+  - id: research
+    description: "Conduct preliminary topic research via storm-research (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Load plugins/kk/skills/storm-research/SKILL.md.
+            Run storm-research on the topic or input file specified in the brief at ${vars.work_dir}/brief.md.
+
+  - id: outline-write
+    description: "Generate outline options a, b (and optional c) via writer skill (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Load plugins/kk/skills/${vars.writer}/SKILL.md.
+            Generate outline options (outline-option-a.md, outline-option-b.md, and optionally outline-option-c.md) in ${vars.work_dir}/2-outline/ from the brief at ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            Do not wait for operator selection; write the option files.
+          expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
+      - kind: shell
+        options:
+          command: >-
+            test -f "${vars.work_dir}/2-outline/outline-option-b.md" || { echo "missing required outline-option-b.md" >&2; exit 1; }
+
+  - id: outline-select
+    description: "Operator selects preferred outline option"
+    pause: true
+    onEnter:
+      - kind: hitl.select
+        options:
+          prompt: "Select an approved outline option from ${vars.work_dir}/2-outline/ (outline-option-a.md, outline-option-b.md, or outline-option-c.md):"
+          options:
+            - a
+            - b
+            - c
+          var: __hitlAnswer
+
+  - id: outline-commit
+    description: "Copy selected outline to outline-approved.md"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            sel="${vars.outline}";
+            if [ -z "$sel" ]; then sel="${vars.__hitlAnswer}"; fi;
+            if [ -z "$sel" ]; then sel="a"; fi;
+            src="${vars.work_dir}/2-outline/outline-option-$sel.md";
+            if [ ! -f "$src" ]; then
+              echo "selected outline file not found: $src" >&2; exit 1;
+            fi;
+            cp "$src" "${vars.work_dir}/2-outline/outline-approved.md";
+
+  - id: draft-write
+    description: "Author full technical draft from approved outline (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Load plugins/kk/skills/${vars.writer}/SKILL.md.
+            Author the technical draft at ${vars.work_dir}/3-draft/draft-article.md based on approved outline ${vars.work_dir}/2-outline/outline-approved.md and brief ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            Revision feedback: ${vars.__hitlInput}
+          expectFile: ${vars.work_dir}/3-draft/draft-article.md
+
+  - id: draft-review
+    description: "Operator reviews and approves or requests revision on draft-article.md"
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Review draft at ${vars.work_dir}/3-draft/draft-article.md. Approve?"
+          var: __hitlAnswer
+
+  - id: draft-revise
+    description: "Collect revision feedback from operator (bounded by 3 rounds)"
+    pause: true
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            mkdir -p .spur/run;
+            run_id="${vars.__runId}";
+            if [ -z "$run_id" ]; then run_id="itc"; fi;
+            count_file=".spur/run/$run_id-itc-revise-count";
+            curr=$(cat "$count_file" 2>/dev/null || echo 0);
+            echo $((curr + 1)) > "$count_file";
+      - kind: hitl.input
+        options:
+          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-draft/draft-article.md:"
+          var: __hitlInput
+
+  - id: judge
+    description: "Evaluate technical draft with content-judge (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: reviewer
+          agent: ${vars.agent}
+          input: |
+            Load plugins/kk/skills/content-judge/SKILL.md and its references/rubrics.md.
+            Evaluate the draft at ${vars.work_dir}/3-draft/draft-article.md against the ${vars.rubric} rubric.
+            Write the verdict JSON to ${vars.verdictFile} per the contract in SKILL.md.
+            Print the verdict path as the last line of stdout.
+          expectFile: ${vars.verdictFile}
+
+  - id: done
+    description: "Terminal — IT content draft generated and approved successfully"
+  - id: failed
+    description: "Terminal — IT content workflow failed or rejected"
+
+transitions:
+  - from: prepare
+    to: research
+    description: "Research enabled -> proceed to storm-research"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.research}" = "true"'
+
+  - from: prepare
+    to: outline-write
+    description: "Research disabled -> proceed directly to outline generation"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.research}" != "true"'
+
+  - from: research
+    to: outline-write
+    description: "Research completed -> proceed to outline generation"
+    guard:
+      kind: always
+
+  - from: outline-write
+    to: outline-select
+    description: "Outline not pre-selected -> pause for operator selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.outline}"'
+
+  - from: outline-write
+    to: outline-commit
+    description: "Outline pre-selected -> skip interactive selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.outline}"'
+
+  - from: outline-select
+    to: outline-commit
+    description: "Outline selected -> commit approved outline"
+    guard:
+      kind: always
+
+  - from: outline-commit
+    to: draft-write
+    description: "Approved outline committed -> write draft"
+    guard:
+      kind: always
+
+  - from: draft-write
+    to: draft-review
+    description: "Draft written -> pause for operator review"
+    guard:
+      kind: always
+
+  - from: draft-review
+    to: judge
+    description: "Draft approved and judge enabled -> evaluate quality"
+    guard:
+      kind: shell
+      options:
+        command: '{ test -z "${vars.__hitlAnswer}" || test "${vars.__hitlAnswer}" = "yes"; } && test "${vars.judge}" = "true"'
+
+  - from: draft-review
+    to: done
+    description: "Draft approved and judge disabled -> complete workflow"
+    guard:
+      kind: shell
+      options:
+        command: '{ test -z "${vars.__hitlAnswer}" || test "${vars.__hitlAnswer}" = "yes"; } && test "${vars.judge}" != "true"'
+
+  - from: draft-review
+    to: draft-revise
+    description: "Draft rejected with revision budget remaining -> collect feedback"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="itc"; fi; test "$(cat .spur/run/$run_id-itc-revise-count 2>/dev/null || echo 0)" -lt 3; }'
+
+  - from: draft-review
+    to: failed
+    description: "Draft rejected with revision budget exhausted -> fail"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="itc"; fi; test "$(cat .spur/run/$run_id-itc-revise-count 2>/dev/null || echo 0)" -ge 3; }'
+
+  - from: draft-revise
+    to: draft-write
+    description: "Feedback collected -> rewrite draft"
+    guard:
+      kind: always
+
+  - from: judge
+    to: done
+    description: "Judge verdict is PASS (or empty in dry-run) -> complete workflow"
+    guard:
+      kind: shell
+      options:
+        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
+
+  - from: judge
+    to: failed
+    description: "Judge verdict is not PASS -> fail"
+    guard:
+      kind: shell
+      options:
+        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -n "$v" -a "$v" != PASS'

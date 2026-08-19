@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Task 0059 (C4) — STORM daily topic-research workflow prototype.
+ * Task 0059 (C4) / Task 0069 (F4) — STORM daily topic-research workflow.
  * Encodes the workflow ACs that are static invariants of the delivered config:
  * R1 state machine shape (prepare → ingest → generate → render → done|failed, no
- * publish/judge), R2 byte-identical install source, R3 switchable fixture default,
+ * publish/judge), R2 SSOT location under plugins/kk/workflows, R3 switchable fixture default,
  * and the anti-pattern guards the task froze (always success edges, quoted $schema).
  * Functional dry-run behavior is verified separately via `spur workflow validate`
  * and `--dry-run` (verify stage).
  */
-describe('kk-storm-research workflow (0059)', () => {
-    const ssotPath = join(import.meta.dir, '../../../.spur/workflows/kk-storm-research.yaml');
-    const installPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-storm-research.yaml');
+describe('kk-storm-research workflow (0059/0069)', () => {
+    const ssotPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-storm-research.yaml');
+    const spurCopyPath = join(import.meta.dir, '../../../.spur/workflows/kk-storm-research.yaml');
     const helpPath = join(import.meta.dir, '../../../docs/help/storm-topic-research-workflow.md');
 
     const ssot = readFileSync(ssotPath, 'utf-8');
-    const install = readFileSync(installPath, 'utf-8');
     const help = readFileSync(helpPath, 'utf-8');
 
     const stateIds = [...ssot.matchAll(/^\s+- id: (\w+)/gm)].map((m) => m[1]);
 
-    it('R2 — install-source YAML is byte-identical to the repo SSOT', () => {
-        expect(install).toBe(ssot);
+    it('R1 — repo SSOT lives under plugins/kk/workflows/ and .spur copy is absent', () => {
+        expect(existsSync(ssotPath)).toBe(true);
+        expect(existsSync(spurCopyPath)).toBe(false);
     });
 
     it('generate — local-doc merge is array-safe jq (C4 dogfood P1-1 regression)', () => {

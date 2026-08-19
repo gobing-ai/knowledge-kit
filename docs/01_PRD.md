@@ -3,7 +3,7 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.7.0
+version: 3.8.0
 created_at: 2026-07-22
 updated_at: 2026-08-19
 derived_from: [00_ADR]
@@ -31,7 +31,7 @@ The platform is a **type + discovery layer**: TypeScript data contracts discover
 
 A **pipeline** is a `spur workflow` that runs `ingest → generate → publish` (or standalone
 `create → publish`) as a **sequence of states**. An optional LLM-as-judge gate (an `agent.run`
-step backed by the `judge` skill) may evaluate generated `Content` before publish; the gate
+step backed by the `content-judge` skill) may evaluate generated `Content` before publish; the gate
 reads a verdict file, not a plugin-kind contract. The workflow engine executes one state at a
 time; where a stage needs many inputs or many outputs, `kk executor fan-in` /
 `kk executor fan-out` collapse that into a single sequential step. The registry discovers
@@ -87,7 +87,7 @@ A user can answer "can I run this to write an article about X with nothing inges
 
 - Creation-from-brief (topic → published article without prior ingest) executes end-to-end via a `spur workflow`.
 - The installable `topic` skill turns a topic or supplied brief into an approved outline and draft without pulling image, adaptation, or publishing work into the first delivery.
-- The installable `itc-generating` skill applies the distilled IT-writing method and orchestrates `topic` / `storm-research` / optional `judge` without a slash command or `kk` CLI verb.
+- The installable `itc-generating` skill applies the distilled IT-writing method and orchestrates `topic` / `storm-research` / optional `content-judge` without a slash command or `kk` CLI verb.
 - Multi-channel fan-out publish runs sequentially via `kk`, returning aggregate `Result` status with fail-loud exit on partial failure.
 - The `Generator` contract accepts either input shape — ingested `Doc[]`, a standalone `Brief`, or
   both — while `Ingestion` (`source → Doc[]`) and `Publish` (`Content → Result`) keep their own

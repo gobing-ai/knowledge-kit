@@ -9,7 +9,7 @@ import { join } from 'node:path';
  * product plugins as workflow extension modules.
  */
 describe('B3 workflow template (kk-ingest-generate-publish.yaml)', () => {
-    const templatePath = join(import.meta.dir, '../../../.spur/workflows/kk-ingest-generate-publish.yaml');
+    const templatePath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-ingest-generate-publish.yaml');
     const yaml = readFileSync(templatePath, 'utf-8');
 
     it('R12 — every step shells kk executor run and injects roots via --plugins-path', () => {

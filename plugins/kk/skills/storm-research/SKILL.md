@@ -35,7 +35,7 @@ Use when:
 Do **not** use for:
 
 - Authoring an article from a topic with no research need — that is `topic`.
-- Quality gating / judging generated content — that is `judge`.
+- Quality gating / judging generated content — that is `content-judge`.
 - Publishing, platform adaptation, or illustration — out of C4 scope.
 - Anything requiring a raw `kk executor run` chain when the workflow already composes it.
 
@@ -131,7 +131,7 @@ outside any repo.
 | `--in` file unreadable (missing / I/O) | exit 1, stderr names the path | fix the path / permissions |
 | Derived query / topic-id empty (no H1 and empty basename) | exit 1, stderr shows the derived value | add an H1 or give the file a real name |
 | Dest `$workflows_dir/<name>.yaml` exists with different bytes | warning, **no overwrite**; run proceeds with the user's copy | re-run with `--force` to replace from the install source |
-| Workflow YAML cannot be resolved from any install source | exit 1, stderr lists the roots searched | reinstall the package / set `KK_WORKFLOWS_SOURCE` |
+| Workflow YAML cannot be resolved from any install source | exit 1, stderr lists the roots searched (`KK_WORKFLOWS_SOURCE`, `plugins/kk/workflows`) | reinstall the package / set `KK_WORKFLOWS_SOURCE` |
 | `KK_CONFIG` set but unreadable, or config unparseable / invalid types | exit 1, stderr names the key + expected vs actual type | fix the file, or delete it (recreated with defaults next run) |
 | Missing config at `KK_CONFIG` | **not a failure** — create-on-first-run with compiled defaults; an existing file is never overwritten | — |
 | `markitdown` missing from `PATH` (live mode) | ingest exit 1, stderr `web-search failed: markitdown is not on PATH`; probed before any network call, so no `docs.json` write | install markitdown / put it on `PATH`, re-run ingest |

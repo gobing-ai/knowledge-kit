@@ -341,3 +341,37 @@ File: `.spur/config.yaml`
 | Fan-In / Fan-Out Specification | `docs/design/fan-in-and-fan-out-specification.md` | `kk executor fan-in` / `kk executor fan-out` CLI surface, merge + dedupe semantics, aggregate partial-success `Result`, exit codes, `--retry-from` (task 0033) |
 | kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, two-noun tree `executor` + `plugin` (A21 / ADR-011 **shipped** 2026-08-12); A2 bin/help/register tree **shipped** 2026-08-12 |
 | STORM evidence cache | `docs/design/storm-evidence-cache.md` | `references/` cache in the 0056 layout, Firecrawl `/v2/scrape` → `markitdown` → body, digest-don't-index report contract (C5 / ADR-013 **shipped** 2026-08-16) |
+| ITC generating skill | `docs/design/itc-generating.md` | Fat agent skill `itc-generating` + four distilled references, generic craft & platform playbooks (F3 **shipped** 2026-08-19) |
+
+## 7. Workflow install copy-rule and `/workflow-run` surface
+
+Product workflows live under `plugins/kk/workflows/` (ADR-009 amendment). `/workflow-run` installs
+the workflow YAML into `~/.config/kk/workflows/$NAME.yaml` on first run.
+
+### 7.1 Two-root copy rule
+
+| Root priority | Path | Notes |
+| ------------- | ---- | ----- |
+| 1 | `$KK_WORKFLOWS_SOURCE/$NAME.yaml` | User/environment override root |
+| 2 | `plugins/kk/workflows/$NAME.yaml` | Package/repo product workflow root |
+
+**Resolution semantics:**
+- `dest` missing → copy from the first hit.
+- `dest` exists + `--force` → overwrite from source.
+- `dest` exists + identical bytes → no-op.
+- `dest` exists + different bytes → warn and leave (proceed with user copy).
+- Source missing from both roots → exit 1 with stderr: `no source workflow for $NAME (searched KK_WORKFLOWS_SOURCE, plugins/kk/workflows)`.
+
+### 7.2 `/workflow-run` command surface
+
+```text
+/workflow-run [name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat]
+             [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic]
+             [--fixture] [--force]
+```
+
+| Profile | Target workflow | Workspace layout | Report artifacts |
+| ------- | --------------- | ---------------- | ---------------- |
+| `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
+| `kk-itc` | `kk-itc.yaml` | `./<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft/draft-article.md` |
+

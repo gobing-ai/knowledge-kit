@@ -32,7 +32,7 @@ skills, slash commands, subagents, hooks, and rules live only in `plugins/kk`. T
 | `publish` | `Content → Result` |
 
 > **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
-> (ADR-007 amdt 2026-08-07). See `plugins/kk/skills/judge/SKILL.md`.
+> (ADR-007 amdt 2026-08-07). See `plugins/kk/skills/content-judge/SKILL.md`.
 
 A **pipeline** is a `spur workflow` whose states shell out to `kk` subcommands. **`kk` owns steps;
 `spur workflow` owns orchestration** — never the reverse. The workflow engine executes one node at

@@ -149,6 +149,7 @@ dist
 /.spur/run/
 /.spur/memory/sessions/*-checkpoint.md
 /.spur/memory/wrapup-metrics.jsonl
+/docs/memo.md
 
 /docs/dogfood/*.md
 # Accidental spur runtime under docs/ (corpus root mis-set); never commit

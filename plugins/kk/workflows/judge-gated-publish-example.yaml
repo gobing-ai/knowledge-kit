@@ -30,18 +30,19 @@ states:
     description: "Evaluate generated content via the judge skill (agent.run)"
     onEnter:
       # `agent.run` is registered by the kk workflow host: it spawns an agent that loads the
-      # judge skill, evaluates the content against ${vars.rubric}, and writes the verdict
+      # content-judge skill, evaluates the content against ${vars.rubric}, and writes the verdict
       # JSON to ${vars.verdictFile}. Under `spur workflow run` (dry-run), this action is
       # skipped — the seeded verdict above keeps the gate evaluable. See
-      # plugins/kk/skills/judge/SKILL.md and references/workflow-integration.md.
+      # plugins/kk/skills/content-judge/SKILL.md and references/workflow-integration.md.
       - kind: agent.run
         options:
-          skill: judge
-          prompt: |
+          role: reviewer
+          input: |
             Evaluate the content at ${vars.contentFile} against the ${vars.rubric} rubric.
-            Load plugins/kk/skills/judge/SKILL.md and its references/rubrics.md.
+            Load plugins/kk/skills/content-judge/SKILL.md and its references/rubrics.md.
             Write the verdict JSON to ${vars.verdictFile} per the contract in SKILL.md.
             Print the verdict path as the last line of stdout.
+          expectFile: ${vars.verdictFile}
   - id: publish
     description: "Publish content after clearing judge gate (kk fanout)"
     onEnter:

@@ -12,7 +12,7 @@ import { join } from 'node:path';
  *    workflow-run.md §4 is extracted and executed, and its output must equal a Node reference
  *    of the frozen 0056 algorithm. A drift in the frozen shell (silent workspace-path change)
  *    fails here, not in a duplicated copy.
- *  - Frozen run procedure: XOR guard, create-on-first-run config heredoc, 0056 three-root copy
+ *  - Frozen run procedure: XOR guard, create-on-first-run config heredoc, two-root copy
  *    rule, and the `spur workflow run --vars` 0059 var set.
  * Functional behavior (actual workflow run) is verified separately via `spur workflow` (verify stage).
  */
@@ -89,17 +89,31 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('never overwrite an existing');
     });
 
-    it('R2 — workflow YAML install follows the 0056 three-root copy rule with --force', () => {
-        for (const root of ['KK_WORKFLOWS_SOURCE', 'plugins/kk/workflows', '.spur/workflows']) {
-            expect(cmd).toContain(root);
-        }
+    it('R2 — workflow YAML install follows the two-root copy rule with --force', () => {
+        expect(cmd).toContain('KK_WORKFLOWS_SOURCE');
+        expect(cmd).toContain('plugins/kk/workflows');
+        expect(cmd).not.toContain('.spur/workflows');
         expect(cmd).toContain('--force');
         expect(cmd).toContain('cmp -s');
+        expect(cmd).toContain('searched KK_WORKFLOWS_SOURCE, plugins/kk/workflows');
     });
 
-    it('R2 — run shells spur workflow run with the 0059 var set, all strings', () => {
+    it('R2 — run shells spur workflow run with the 0059 var set for storm-research, all strings', () => {
         expect(cmd).toContain('spur workflow run "$dest" --vars');
         for (const v of ['topic', 'input_file', 'maxResults', 'fixture', 'work_dir', 'plugins_path', 'render_script']) {
+            expect(cmd).toContain(`\\"${v}\\"`);
+        }
+    });
+
+    it('R4 — command defines the kk-itc profile with flags, kebab work_dir, and itc vars', () => {
+        expect(cmd).toContain('kk-itc');
+        expect(cmd).toContain('--playbook');
+        expect(cmd).toContain('--research');
+        expect(cmd).toContain('--judge');
+        expect(cmd).toContain('--outline');
+        expect(cmd).toContain('--writer');
+        expect(cmd).toContain('fixture is storm-only');
+        for (const v of ['writer', 'playbook', 'research', 'judge', 'outline', 'force', 'rubric', 'verdictFile']) {
             expect(cmd).toContain(`\\"${v}\\"`);
         }
     });
