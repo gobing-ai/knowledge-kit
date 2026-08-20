@@ -135,6 +135,10 @@ export interface VoiceboxClient {
 | `VOICEBOX_MAX_CHUNK_CHARS` | no | `800` | Default chunk size if script omits it |
 | `VOICEBOX_CROSSFADE_MS` | no | `50` | Default crossfade if script omits it |
 
+The plugin reads **only** `process.env` (D9). Operator defaults may live under
+`plugins.generations.voice-gen.env` in `$KK_CONFIG` (default `~/.config/kk/config.yaml`);
+`kk executor run` / fan-out inject those keys at spawn. A real environment variable always wins.
+
 No secrets on local loopback. If a future remote Voicebox needs a token, add an env var then;
 never `plugin.json`.
 

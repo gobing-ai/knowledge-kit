@@ -362,6 +362,8 @@ async function pluginDispatch(target: string, contentPath: string, discovery: Di
             cwd: record.dir,
             inPath: resolve(contentPath),
             outPath: outTmp,
+            pluginKind: record.kind,
+            pluginName: record.name,
         });
         if (proc.exitCode !== 0) {
             throw new Error(`Plugin '${target}' exited ${proc.exitCode}: ${proc.stderr || proc.stdout || 'no output'}`);

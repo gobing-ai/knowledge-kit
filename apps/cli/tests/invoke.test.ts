@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
-import { runInvoke } from '../src/invoke';
+import { pluginEnvFromConfig, runInvoke } from '../src/invoke';
 import { silenceOutput } from './capture';
 
 function pluginDirOf(root: string, kind: PluginKind, name: string): string {
@@ -389,6 +389,117 @@ describe('runInvoke', () => {
                 pluginsRoot: root,
             });
             expect(res).toBe(1);
+        });
+    });
+
+    it('pluginEnvFromConfig reads plugins.<collection>.<name>.env and skips empty placeholders', async () => {
+        await withTempDir(async (root) => {
+            const configPath = join(root, 'config.yaml');
+            writeFileSync(
+                configPath,
+                [
+                    'plugins:',
+                    '  generations:',
+                    '    voice-gen:',
+                    '      env:',
+                    '        VOICEBOX_URL: "http://127.0.0.1:17493"',
+                    '        VOICEBOX_DEFAULT_PROFILE: "Robin"',
+                    '        VOICEBOX_TIMEOUT_MS: 600000',
+                    '        VOICEBOX_SKIP: ""',
+                    '  publishings:',
+                    '    qiita-pub:',
+                    '      env:',
+                    '        QIITA_TOKEN: "tok"',
+                    '',
+                ].join('\n'),
+            );
+
+            expect(pluginEnvFromConfig('generator', 'voice-gen', configPath)).toEqual({
+                VOICEBOX_URL: 'http://127.0.0.1:17493',
+                VOICEBOX_DEFAULT_PROFILE: 'Robin',
+                VOICEBOX_TIMEOUT_MS: '600000',
+            });
+            expect(pluginEnvFromConfig('publish', 'qiita-pub', configPath)).toEqual({ QIITA_TOKEN: 'tok' });
+            expect(pluginEnvFromConfig('generator', 'missing', configPath)).toEqual({});
+            expect(pluginEnvFromConfig('generator', 'voice-gen', join(root, 'no-such.yaml'))).toEqual({});
+        });
+    });
+
+    it('injects KK_CONFIG plugin env at spawn; process env wins', async () => {
+        await withTempDir(async (root) => {
+            const configPath = join(root, 'config.yaml');
+            writeFileSync(
+                configPath,
+                [
+                    'plugins:',
+                    '  generations:',
+                    '    env-gen:',
+                    '      env:',
+                    '        VOICEBOX_DEFAULT_PROFILE: "from-config"',
+                    '        VOICEBOX_TIMEOUT_MS: "600000"',
+                    '',
+                ].join('\n'),
+            );
+
+            const pluginDir = pluginDirOf(root, 'generator', 'env-gen');
+            mkdirSync(pluginDir, { recursive: true });
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'env-gen', kind: 'generator', entry: 'run.ts' }),
+            );
+            writeFileSync(
+                join(pluginDir, 'run.ts'),
+                `
+                import { readFileSync, writeFileSync } from 'node:fs';
+                const args = process.argv.slice(2);
+                const inPath = args[args.indexOf('--in') + 1];
+                const outPath = args[args.indexOf('--out') + 1];
+                JSON.parse(readFileSync(inPath, 'utf-8'));
+                writeFileSync(outPath, JSON.stringify({
+                    body: [process.env.VOICEBOX_DEFAULT_PROFILE, process.env.VOICEBOX_TIMEOUT_MS].join(' '),
+                    format: 'markdown',
+                }));
+                `,
+            );
+
+            const inFile = join(root, 'docs.json');
+            const outFile = join(root, 'content.json');
+            writeFileSync(inFile, JSON.stringify([{ id: 'd1', body: 'hi' }]));
+
+            const savedConfig = process.env.KK_CONFIG;
+            const savedProfile = process.env.VOICEBOX_DEFAULT_PROFILE;
+            const savedTimeout = process.env.VOICEBOX_TIMEOUT_MS;
+            process.env.KK_CONFIG = configPath;
+            delete process.env.VOICEBOX_DEFAULT_PROFILE;
+            delete process.env.VOICEBOX_TIMEOUT_MS;
+
+            try {
+                let res = await runInvoke({
+                    plugin: 'env-gen',
+                    inPath: inFile,
+                    outPath: outFile,
+                    pluginsRoot: root,
+                });
+                expect(res).toBe(0);
+                expect(JSON.parse(await Bun.file(outFile).text()).body).toBe('from-config 600000');
+
+                process.env.VOICEBOX_DEFAULT_PROFILE = 'from-env';
+                res = await runInvoke({
+                    plugin: 'env-gen',
+                    inPath: inFile,
+                    outPath: outFile,
+                    pluginsRoot: root,
+                });
+                expect(res).toBe(0);
+                expect(JSON.parse(await Bun.file(outFile).text()).body).toBe('from-env 600000');
+            } finally {
+                if (savedConfig === undefined) delete process.env.KK_CONFIG;
+                else process.env.KK_CONFIG = savedConfig;
+                if (savedProfile === undefined) delete process.env.VOICEBOX_DEFAULT_PROFILE;
+                else process.env.VOICEBOX_DEFAULT_PROFILE = savedProfile;
+                if (savedTimeout === undefined) delete process.env.VOICEBOX_TIMEOUT_MS;
+                else process.env.VOICEBOX_TIMEOUT_MS = savedTimeout;
+            }
         });
     });
 
