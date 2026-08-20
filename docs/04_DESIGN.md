@@ -348,6 +348,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `createProgram()` | function | Side-effect-free Commander factory |
 | `runInvoke(opts)` | function | Invoke execution & contract validation engine |
 | `bin: kk` (alias `knowledge-kit`) | binary | `dist/index.js` — Bun-target bundle staged by `prepack` (ADR-010) |
+| published `dependencies` | manifest | `scripts/publish.ts` rewrites `catalog:` to the root catalog range and strips private `workspace:*` (kk-core) so `bun add -g @gobing-ai/knowledge-kit` can resolve; repo manifests keep `catalog:` (ADR-014) |
 
 ## 5. Spur project config (harness)
 
