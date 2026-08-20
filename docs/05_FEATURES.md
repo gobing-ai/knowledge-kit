@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.19.0
+version: 2.20.0
 created_at: 2026-07-22
-updated_at: 2026-08-19
+updated_at: 2026-08-20
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -64,6 +64,7 @@ sync: [T4]
 | D2 | Wire existing generator skill to contract | ✅ done | 1 | tasks `0022`/`0023`; D3 spec done (`0017`) — gate satisfied |
 | D3 | Generator plugin design | ✅ done | 1 | tasks `0016`/`0017` done; cites C1 generic contract §1 |
 | D4 | Own STORM generator | ✅ done | 3 | tasks `0046` + `0047` done; owned STORM pipeline shipped behind the generator contract |
+| D5 | Voice generator (Voicebox) | ✅ done | 3 | task `0070` done; `plugins/generations/voice-gen` REST `/generate` + VoiceScript multi-speaker concat + `format: "audio"`; satellite `docs/design/voice-gen.md`; verify PASS |
 | **E** | Multi-channel publish | ⏳ active | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4**; closed via carrier `0041`, then **reopened for plugin intake** |
 | E1 | wt-publish audit | ✅ done | 1 | task `0002` done (transports mapped; Surfdash simplest); wrapall 2026-08-19 — `spur feature sync E1` verifying→done |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |

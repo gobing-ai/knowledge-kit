@@ -25,7 +25,7 @@ together by **spur workflows** — `kk` owns each step, `spur` owns the orchestr
 | Pipeline orchestration | ✅ | `spur workflow` shells out to `kk` subcommands; proven end-to-end (fixture → content → `ok:true`) |
 | Fan-in / fan-out | ✅ | Sequential `kk executor fan-in` (dedupe merge) and `kk executor fan-out` (multi-target publish with retry) steps |
 | Ingestion | ✅ | `karakeep-local` plugin (`source → Doc[]`) |
-| Generation | ✅ | Owned STORM pipeline behind the generator contract (`content-gen`) |
+| Generation | ✅ | Owned STORM pipeline (`content-gen`) and Voicebox TTS (`voice-gen`, `format: "audio"`) |
 | Publishing | ✅ | `surfdash-pub`, `zenn-pub`, `qiita-pub` on a shared transport harness; more channels on the roadmap |
 | Quality gating | 🚧 | `judge` LLM-as-judge skills (tech-accuracy, brand-tone, compliance) wired via `agent.run` |
 | Authoring skills | 🚧 | `topic` topic-core skill (`create`, `init`, `outline`, `draft`) |
@@ -95,7 +95,7 @@ kinds:
 | Kind | Contract | Example |
 | --- | --- | --- |
 | `ingestion` | `source → Doc[]` | `karakeep-local` |
-| `generator` | `Doc[] \| Brief → Content` | `content-gen` (owned STORM pipeline) |
+| `generator` | `Doc[] \| Brief → Content` | `content-gen` (owned STORM pipeline); `voice-gen` (Voicebox TTS, `format: "audio"`) |
 | `publish` | `Content → Result` | `surfdash-pub`, `zenn-pub`, `qiita-pub` |
 
 **LLM-as-judge is not a plugin kind.** Quality gating is delivered as agent skills + `agent.run`
@@ -117,7 +117,7 @@ subcommands — `kk` owns steps; `spur workflow` owns orchestration, never the r
 | `packages/publish-harness/` | `@gobing-ai/publish-harness` — publish transport abstraction + fake transports for tests |
 | `plugins/kk/` | The `kk` plugin collection — skills, commands, subagents, hooks, rules (distributed in the npm tarball) |
 | `plugins/ingestions/` | Ingestion-kind plugins (e.g. `karakeep-local`) |
-| `plugins/generations/` | Generator-kind plugins (e.g. `content-gen`) |
+| `plugins/generations/` | Generator-kind plugins (e.g. `content-gen`, `voice-gen`) |
 | `plugins/publishings/` | Publish-kind plugins (e.g. `surfdash-pub`, `zenn-pub`, `qiita-pub`) |
 | `scripts/` | Release tooling — `release.ts` (`bump-ver`/`drop-tags`), `publish.ts` (npm Trusted Publishing), `bundle-plugins.ts` (tarball staging) |
 | `docs/` | Numbered docs: `00_ADR` (decisions), `01_PRD` (scope), `02_ROADMAP`, `03_ARCHITECTURE`, `04_DESIGN` (surface), `05_FEATURES` (status), `99_PROJECT_CONSTITUTION` (process) |

@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.19.0
+version: 2.22.0
 created_at: 2026-07-22
-updated_at: 2026-08-19
+updated_at: 2026-08-20
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -30,6 +30,7 @@ sync: [T3]
 | [storm-evidence-cache.md](design/storm-evidence-cache.md) | STORM per-reference cache, markitdown normalization, digest contract | shipped (C5, ADR-013) |
 | [ts-libs-logging-foundation.md](design/ts-libs-logging-foundation.md) | Catalog, output, diagnostics, and enforcement shapes | shipped (A3, ADR-014/ADR-015) |
 | [itc-generating.md](design/itc-generating.md) | ITC generating skill — method + orchestration, no CLI | shipped (F3) |
+| [voice-gen.md](design/voice-gen.md) | Voice generator plugin over local Voicebox REST | shipped (D5) |
 
 ## 1. CLI commands
 
@@ -229,9 +230,16 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 
 ## 2. Configuration keys
 
+Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness config stays under
+`.spur/config.yaml`.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| *(none yet)* | — | — | No product config file; Spur config lives under `.spur/config.yaml` (harness only) |
+| `works_dir` | string | `$HOME/.config/kk/works` | C4 topic workspace root (`KK_WORKS_DIR` wins) |
+| `workflows_dir` | string | `$HOME/.config/kk/workflows` | Installed workflow YAML dest (`KK_WORKFLOWS_DIR` wins) |
+| `defaults.maxResults` | int | `8` | STORM ingest cap |
+| `defaults.fixture` | bool | `false` | STORM live vs fixture |
+| `plugins.<collection>.<name>.env` | map of scalars | — | Injected into that plugin's process env at `spawnPluginEntry`. Real env vars win (`flag > env > config > compiled default`). Collection names: `ingestions` / `generations` / `publishings`. Missing file or missing key → no extra env. Empty-string values are skipped. |
 
 ## 3. Environment variables
 
@@ -243,7 +251,14 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 | `QIITA_TOKEN` | yes (qiita-pub) | Qiita API v2 token; sent as `Authorization: Bearer <token>` on `POST /api/v2/items` |
 | `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` | no | `fake` selects `FakeFileCliTransport` instead of the real transport — the offline harness switch, identical across `surfdash-pub` / `zenn-pub` / `qiita-pub` |
 | `KK_PLUGIN_PATH` | no | Colon-separated extra plugin roots to union with the default discovery roots (ADR-012); overridden by `--plugins-root` |
+| `KK_CONFIG` | no | Path to the operator YAML (`works_dir`, workflow defaults, `plugins.<collection>.<name>.env`). Default: `~/.config/kk/config.yaml` |
 | `FIRECRAWL_API_KEY` | yes (web-search live) | Bearer token for the live Firecrawl client (task 0057; selected when `fixture` is absent/false) — unset → exit 1, no `--out` (fail loud) |
+| `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`) |
+| `VOICEBOX_DEFAULT_PROFILE` | no (voice-gen) | Default profile name/ID when segment/doc omits profile |
+| `VOICEBOX_TIMEOUT_MS` | no (voice-gen) | Poll timeout per generation in ms (default: `600000`) |
+| `VOICEBOX_POLL_MS` | no (voice-gen) | Poll interval in ms (default: `1000`) |
+| `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
+| `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
 
 ## 4. Public package surface
 
@@ -313,6 +328,18 @@ root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 
 `--in` JSON (API source, ingestion spec §2.2): `{ "topic": string (required), "maxResults": int (default 8), "fixture": boolean }`. `fixture: true` selects the offline stub; absent/false runs the **live Firecrawl client** (task 0057, feature C4): requires `FIRECRAWL_API_KEY` (§3), zero hits writes `[]` exit 0, any failure exits 1 with no `--out` (fail loud). **C5 (ADR-013):** live mode additionally requires the `markitdown` binary on PATH (missing → exit 1 naming it); writes `references/` under the `--out` directory; `fixture: true` needs neither.
 
+### `@gobing-ai/voice-gen` (`plugins/generations/voice-gen`, kind `generator`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `processGeneratorIO(in, out, client?)` | function | Read Doc[], generate Voicebox audio Content, write out JSON + sibling WAV (D5) |
+| `parseDocToVoiceScript(doc, envDefaultProfile?)` | function | Parse plain text or VoiceScript structure from Doc |
+| `mergeVoiceScripts(scripts, docs, envDefaultProfile?)` | function | Merge multiple scripts into combined VoiceScript |
+| `validateVoiceScript(script)` | function | Validate VoiceScript text/instruct caps, engine/language enums, and structure |
+| `concatWavs(wavs, gapsMs?)` | function | Concat RIFF WAV buffers with optional gap silence |
+| `createVoiceboxClient(opts?)` | function | Client factory for local Voicebox REST API |
+| `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
+
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
 
 | Export | Kind | Notes |
@@ -342,6 +369,7 @@ File: `.spur/config.yaml`
 | kk product CLI surface | `docs/design/kk-cli-surface.md` | Operator binary `kk`, two-noun tree `executor` + `plugin` (A21 / ADR-011 **shipped** 2026-08-12); A2 bin/help/register tree **shipped** 2026-08-12 |
 | STORM evidence cache | `docs/design/storm-evidence-cache.md` | `references/` cache in the 0056 layout, Firecrawl `/v2/scrape` → `markitdown` → body, digest-don't-index report contract (C5 / ADR-013 **shipped** 2026-08-16) |
 | ITC generating skill | `docs/design/itc-generating.md` | Fat agent skill `itc-generating` + four distilled references, generic craft & platform playbooks (F3 **shipped** 2026-08-19) |
+| Voice generator | `docs/design/voice-gen.md` | Voice generator plugin over local Voicebox REST API (D5 **shipped** 2026-08-19) |
 
 ## 7. Workflow install copy-rule and `/workflow-run` surface
 

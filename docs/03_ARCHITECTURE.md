@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.17.0
+version: 2.18.0
 created_at: 2026-07-22
-updated_at: 2026-08-19
+updated_at: 2026-08-20
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -29,6 +29,7 @@ plugins/
     web-search/       # @gobing-ai/web-search — ingestion plugin: topic → Doc[] (live Firecrawl client + offline fixture stub; C4)
   generations/
     content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
+    voice-gen/        # @gobing-ai/voice-gen — generator plugin: Voicebox TTS audio output (D5)
   publishings/
     surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
     zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)

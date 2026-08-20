@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.8.0
+version: 3.9.0
 created_at: 2026-07-22
-updated_at: 2026-08-19
+updated_at: 2026-08-20
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -66,7 +66,7 @@ Technical content creation and published output are fragmented: turning ideas or
 | Project foundation | **A** | Phase 0/2 | Monorepo substrate; **A1** feature-tree restructure; **A2** `kk` product CLI surface (help/version/verbose, command tree, npm `bin.kk`) |
 | Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance · Phase 2: **B6** sequential `kk executor fan-in`/`fan-out` · **A21** two-noun CLI (`executor` + `plugin`) · **B7** multi-root plugin auto-discovery (built-ins + user roots; ADR-012) |
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
-| Content generation | **D** | Phase 1/2 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) |
+| Content generation | **D** | Phase 1/2/3 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) · **D4** owned STORM (`content-gen`) · **D5** Voicebox TTS generator (`voice-gen`, `format: "audio"`) |
 | Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |
 | Agent capabilities | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) |
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
