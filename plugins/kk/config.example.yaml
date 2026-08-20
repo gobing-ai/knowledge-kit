@@ -1,0 +1,34 @@
+works_dir: "~/.config/kk/works"
+workflows_dir: "~/.config/kk/workflows"
+defaults:
+  maxResults: 8
+  fixture: false
+
+# Plugin credentials — paste values between the quotes.
+# Path: plugins/<collection>/<name>/env — each entry is injected into that plugin's
+# process environment at exec time. A real environment variable always wins
+# over a value here (flag > env > config > compiled default).
+plugins:
+  ingestions:
+    web-search:
+      env:
+        FIRECRAWL_API_KEY: ""   # firecrawl.dev — required for live research
+  generations:
+    voice-gen:
+      env:
+        VOICEBOX_URL: "http://127.0.0.1:17493"     # local Voicebox REST origin
+        VOICEBOX_DEFAULT_PROFILE: "Robin"          # GET /profiles name or id — required for plain-text Docs
+        VOICEBOX_TIMEOUT_MS: "600000"              # per-generation poll budget (ms)
+        VOICEBOX_POLL_MS: "1000"                   # GET /history/{id} interval
+        VOICEBOX_MAX_CHUNK_CHARS: "800"            # Voicebox auto-chunk size (100–5000)
+        VOICEBOX_CROSSFADE_MS: "50"                # Voicebox chunk crossfade (0–500)
+  publishings:
+    qiita-pub:
+      env:
+        QIITA_TOKEN: ""         # Qiita API v2 token (read_qiita/write_qiita) — required
+    zenn-pub:
+      env:
+        ZENN_REPO: ""           # GitHub repo for Zenn CLI deploy — used by zenn-pub
+    surfdash-pub:
+      env:
+        POSTSURFING_BIN: ""    # optional — delete if unused; defaults to `postsurfing` on PATH
