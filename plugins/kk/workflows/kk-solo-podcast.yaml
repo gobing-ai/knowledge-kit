@@ -23,8 +23,8 @@ vars:
   cjk_chars_per_min: "220"
   voice_profile: ""
   language: "en"
-  plugins_path: "./plugins"
-  validate_script: "plugins/kk/lib/validate-voicescript.ts"
+  plugins_path: ""
+  validate_script: ""
   agent: ""
   __runId: "solo"
   __hitlAnswer: ""
@@ -133,13 +133,20 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Load docs/design/voice-gen.md §3 and docs/design/kk-solo-podcast.md §6-§7.
             Read the approved outline at ${vars.work_dir}/2-outline/outline-approved.md and briefing at ${vars.work_dir}/1-briefing/briefing.md.
             Target duration is ${vars.target_duration_min} minutes.
-            Spoken budget: if language (${vars.language}) is zh, ja, or ko, target characters = ${vars.target_duration_min} * ${vars.cjk_chars_per_min}; otherwise target words = ${vars.target_duration_min} * ${vars.words_per_min}.
+            Spoken budget: if language (${vars.language}) is zh, ja, or ko, target characters = ${vars.target_duration_min} * ${vars.cjk_chars_per_min}; otherwise target words = ${vars.target_duration_min} * ${vars.words_per_min}. Land inside ±20%, spoken prose, one speaker.
             Author the complete solo-podcast VoiceScript YAML at ${vars.work_dir}/3-script/voicescript.yaml.
-            Emit ONLY valid YAML (no markdown code fence blocks). Include top-level fields (title, language: "${vars.language}", default_profile: "${vars.voice_profile}") and segments array with natural spoken phrasing, appropriate gap_ms between segments, and per-segment text <= 50000 chars.
-            Revision feedback: ${vars.__hitlInput}
+            Emit ONLY valid YAML (no markdown fences, no repo/docs paths). Contract:
+            title: string
+            language: "${vars.language}"
+            default_profile: "${vars.voice_profile}"
+            default_engine: qwen|qwen_custom_voice|luxtts|chatterbox|chatterbox_turbo|tada|kokoro  # optional
+            segments:
+              - text: "spoken sentence"   # required, 1..50000 characters
+                gap_ms: 400               # optional, >= 0, silence before next clip
+                instruct: "warm"          # optional, <= 500 characters
+            Do not invent fields. Revision feedback: ${vars.__hitlInput}
           expectFile: ${vars.work_dir}/3-script/voicescript.yaml
 
   - id: script-validate
@@ -148,7 +155,17 @@ states:
       - kind: shell
         options:
           command: >-
-            bun "${vars.validate_script}" --in "${vars.work_dir}/3-script/voicescript.yaml"
+            set -e;
+            vs="${vars.validate_script}";
+            if [ -z "$vs" ]; then
+              if [ -n "$KK_WORKFLOWS_DIR" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts";
+              else vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi;
+            fi;
+            if [ ! -f "$vs" ]; then
+              echo "validate_script not found: $vs (install with /workflow-run kk-solo-podcast into $HOME/.config/kk/workflows)" >&2;
+              exit 1;
+            fi;
+            bun "$vs" --in "${vars.work_dir}/3-script/voicescript.yaml"
 
   - id: script-review
     description: "Operator reviews and approves VoiceScript before live TTS generation"
@@ -210,7 +227,10 @@ states:
       - kind: shell
         options:
           command: >-
-            kk executor run voice-gen --in "${vars.work_dir}/4-audio/docs.json" --out "${vars.work_dir}/4-audio/content.json" --plugins-path "${vars.plugins_path}"
+            set -e;
+            extra="";
+            if [ -n "${vars.plugins_path}" ]; then extra="--plugins-path ${vars.plugins_path}"; fi;
+            kk executor run voice-gen --in "${vars.work_dir}/4-audio/docs.json" --out "${vars.work_dir}/4-audio/content.json" $extra
 
   - id: duration-check
     description: "Validate generated audio duration against target budget"

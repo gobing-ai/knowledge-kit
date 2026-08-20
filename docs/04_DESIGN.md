@@ -375,8 +375,12 @@ File: `.spur/config.yaml`
 
 ## 7. Workflow install copy-rule and `/workflow-run` surface
 
-Product workflows live under `plugins/kk/workflows/` (ADR-009 amendment). `/workflow-run` installs
-the workflow YAML into `~/.config/kk/workflows/$NAME.yaml` on first run.
+Product workflows are authored under `plugins/kk/workflows/` (ADR-009 amendment — **design-time
+SSOT**, packed in the npm tarball's `plugins/`). `/workflow-run` installs the YAML into
+`~/.config/kk/workflows/$NAME.yaml` (**runtime dest**; `KK_WORKFLOWS_DIR` wins). Operators and
+workflow shells always run that dest — never the package path, and never `docs/design/` (docs are
+not in the tarball). Sidecars the machine executes (e.g. `validate-voicescript.ts` for
+`kk-solo-podcast`) are copied beside the dest YAML.
 
 ### 7.1 Two-root copy rule
 
@@ -397,6 +401,7 @@ the workflow YAML into `~/.config/kk/workflows/$NAME.yaml` on first run.
 ```text
 /workflow-run [name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat]
              [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic]
+             [--duration <min>] [--language <code>] [--script-approved]
              [--fixture] [--force]
 ```
 
@@ -404,4 +409,5 @@ the workflow YAML into `~/.config/kk/workflows/$NAME.yaml` on first run.
 | ------- | --------------- | ---------------- | ---------------- |
 | `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
 | `kk-itc` | `kk-itc.yaml` | `./<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft/draft-article.md` |
+| `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` | `$works_dir/<kebab>` | `$work_dir/3-script/voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
 

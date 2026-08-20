@@ -8,11 +8,14 @@ import { join } from 'node:path';
  * R1/R3 state machine shape (prepare, understand, outline-write, outline-select, outline-commit,
  * script-write, script-validate, script-review, script-revise, wrap-docs, generate, duration-check,
  * done, failed), Spur HITL actions (select, confirm, input), agent.run with input+role (no skill/prompt),
- * expectFile usage, no action-ok success guards, and no /workflow-run profile additions.
+ * expectFile usage, no action-ok success guards, runtime dest $HOME/.config/kk/workflows,
+ * and no docs/design or checkout-only paths in the YAML.
  */
 describe('kk-solo-podcast workflow (0071)', () => {
     const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-solo-podcast.yaml');
+    const helpPath = join(import.meta.dir, '../../../docs/help/solo-podcast-workflow.md');
     const yaml = readFileSync(workflowPath, 'utf-8');
+    const help = readFileSync(helpPath, 'utf-8');
 
     const stateIds = [...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1]);
 
@@ -86,6 +89,20 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain('duration-check failed: metadata.duration missing or not a number');
         expect(yaml).toContain('duration-check failed: duration');
         expect(yaml).toContain(['test ! -f "', '{vars.work_dir}/4-audio/content.json"'].join('$'));
+        expect(help).toContain('content.wav');
+        expect(help).toContain('WAV');
+    });
+
+    it('runtime paths use ~/.config/kk/workflows and omit checkout-only trees', () => {
+        expect(yaml).not.toContain('docs/design');
+        expect(yaml).not.toContain('plugins/kk/lib');
+        expect(yaml).not.toContain('plugins/kk/workflows');
+        expect(yaml).not.toContain('plugins/kk/scripts');
+        expect(yaml).not.toContain('plugins/kk/skills');
+        expect(yaml).toContain('KK_WORKFLOWS_DIR');
+        expect(yaml).toContain('$HOME/.config/kk/workflows');
+        expect(yaml).toContain('validate-voicescript.ts');
+        expect(yaml).toContain('/workflow-run kk-solo-podcast');
     });
 
     it('R5 — script_approved skips script-review the same way outline skips outline-select', () => {
@@ -94,14 +111,20 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain(['test -n "', '{vars.outline}"'].join('$'));
     });
 
-    it('R8 — /workflow-run profile list and skills directory remain unchanged', () => {
-        const workflowRunDoc = readFileSync(
-            join(import.meta.dir, '../../../plugins/kk/commands/workflow-run.md'),
-            'utf-8',
-        );
-        expect(workflowRunDoc).toContain('kk-storm-research');
-        expect(workflowRunDoc).toContain('kk-itc');
-        expect(workflowRunDoc).not.toContain('kk-solo-podcast');
+    it('help doc documents XOR input, WAV, VoiceScript, HITL skips, and runtime workflows_dir', () => {
+        const normalized = help.replace(/\s+/g, ' ');
+        expect(existsSync(helpPath)).toBe(true);
+        expect(normalized).toContain('Solo-Podcast Workflow');
+        expect(normalized).toContain('sentence XOR a markdown file');
+        expect(normalized).toContain('WAV');
+        expect(normalized).toContain('VoiceScript');
+        expect(normalized).toContain('script_approved');
+        expect(normalized).toContain('hitl.select');
+        expect(normalized).toContain('$HOME/.config/kk/workflows');
+        expect(normalized).toContain('kk-solo-podcast');
+    });
+
+    it('R8 — no fat solo-podcast skill; /workflow-run may install this YAML', () => {
         expect(existsSync(join(import.meta.dir, '../../../plugins/kk/skills/solo-podcast'))).toBe(false);
     });
 });

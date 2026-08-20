@@ -4,7 +4,7 @@ name: "Ship kk-solo-podcast workflow and VoiceScript validator"
 status: done
 template: feature-impl
 created_at: 2026-08-20T05:48:49.463Z
-updated_at: "2026-08-20T06:46:26.946Z"
+updated_at: "2026-08-20T18:31:55.326Z"
 feature_id: F5
 priority: P2
 ---
@@ -14,21 +14,18 @@ priority: P2
 ### Background
 Implements F5: given text plus a target duration becomes a Voicebox WAV by authoring a validated kk VoiceScript and invoking shipped D5 `voice-gen` via existing Spur `hitl.select` / `hitl.confirm` / `hitl.input` plus `agent.run`.
 
-Implements feature scenarios: R1 — Product YAML lives at plugins/kk/workflows/kk-solo-podcast.yaml; R2 — Prepare XOR topic or input_file into a works layout; R3 — Outline HITL is hitl.select unless outline is pre-set; R4 — Approved outline becomes a validated VoiceScript; R5 — Script HITL gates live TTS; R6 — Generate invokes voice-gen and writes sibling WAV; R7 — Target length is a script budget and a duration post-check; R8 — No new skill, HITL kind, kk noun, or workflow-run profile; R9 — Missing or unsafe inputs fail loud; R10 — Existing brief.md is not overwritten without force.
+**Runtime vs design-time.** SSOT lives at `plugins/kk/workflows/` in the package/repo. Operators run `$HOME/.config/kk/workflows/kk-solo-podcast.yaml` after `/workflow-run` copies the YAML and `validate-voicescript.ts` there. `agent.run` inlines the VoiceScript contract — it does not load `docs/design/*` (not in the npm tarball).
 
-**Shipped (this task).** `plugins/kk/workflows/kk-solo-podcast.yaml` and `plugins/kk/lib/validate-voicescript.ts` exist. `/workflow-run` profiles remain `kk-storm-research` and `kk-itc` only. No `plugins/kk/skills/solo-podcast/`. D5 `voice-gen` was not modified. `--dry-run` reaches `done` when `outline=a` and `script_approved=true` (engine still pauses on `pause: true` otherwise).
-
-Locked by idea-eval Approach 1 and satellite `docs/design/kk-solo-podcast.md`. Rubric: kept whole by cohesion (F4/0069 grain). No `dependencies[]`.
+No `plugins/kk/skills/solo-podcast/`. D5 `voice-gen` was not modified. `--dry-run` reaches `done` when `outline=a` and `script_approved=true`.
 ### Requirements
-- [x] R1. Ship `plugins/kk/workflows/kk-solo-podcast.yaml` with `name: kk-solo-podcast`, `kind: state-machine`, quoted `"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"`, `initialState: prepare`, `terminalStates: [done, failed]`, `failureStates: [failed]`, and frozen state ids `prepare`, `understand`, `outline-write`, `outline-select`, `outline-commit`, `script-write`, `script-validate`, `script-review`, `script-revise`, `wrap-docs`, `generate`, `duration-check`, `done`, `failed`. Success edges are `guard.kind: always` except the named shell guards in Design. No `kind: action-ok`. No `solo-podcast.yaml` under `.spur/workflows/` or `plugins/kk/workflows/`.
-- [x] R2. `prepare` `mkdir -p`s `${work_dir}` plus `1-briefing`, `2-outline`, `3-script`, `4-audio`; XOR `topic` / `input_file` using the kk-itc strings `XOR violation: both topic and input_file set` and `XOR violation: neither topic nor input_file set`; writes `brief.md` from topic `printf` or `cp` of `input_file`; refuses an existing `brief.md` unless `force` is the string `true` (`initialization target already exists at ${vars.work_dir}/brief.md; pass force=true to replace`); fails `missing work_dir`, `input file not found: …`, and `missing voice_profile (set vars.voice_profile or VOICEBOX_DEFAULT_PROFILE)` when those inputs are empty.
-- [x] R3. Three `agent.run` steps (`role: scribe`, `input:` only, no `skill:` / `prompt:`): understand → `1-briefing/briefing.md`; outline-write → `outline-option-a.md` with shell requiring `-b.md` (c optional); script-write → `3-script/voicescript.yaml` (load the two design satellites, duration budget, `Revision feedback: ${vars.__hitlInput}`). Outline pause is `hitl.select` `a|b|c` unless `vars.outline` is set; commit copies `outline-option-$sel.md` to `outline-approved.md` (`sel` = `outline` else `__hitlAnswer` else `a`). Script pause is `hitl.confirm` before generate; reject uses `hitl.input` and `.spur/run/${__runId}-solo-revise-count` (default `__runId=solo`) with cap 3 then `failed`. Empty `__hitlAnswer` counts as approve on the confirm edge. `script_approved=true` skips `script-review` entirely (CI / `--dry-run`).
-- [x] R4. `script-validate` runs `bun "${vars.validate_script}" --in "${vars.work_dir}/3-script/voicescript.yaml"` (default helper `plugins/kk/lib/validate-voicescript.ts` calling shipped `validateVoiceScript`; exit 1 names parse/validator/`--in` failures). `wrap-docs` writes a one-element `Doc[]` to `4-audio/docs.json` (`id` = sha256(`sourceUri`) hex 16, `body` = YAML file, `mediaType` = `application/yaml`). `generate` is exactly `kk executor run voice-gen --in "${vars.work_dir}/4-audio/docs.json" --out "${vars.work_dir}/4-audio/content.json" --plugins-path "${vars.plugins_path}"` with no duration/length flag. `duration-check` fail-loud only when `content.json` exists and `metadata.duration` is missing/non-numeric or outside `[0.5, 2] × target_duration_min * 60`; missing file (dry-run) still reaches `done`.
-- [x] R5. `apps/cli/tests/kk-solo-podcast-workflow.test.ts` and `apps/cli/tests/validate-voicescript.test.ts` (valid YAML exit 0; empty `segments`; text length `> 50000`; unknown `default_engine`; missing `--in`). `spur workflow validate` plus `--dry-run` with `outline=a`, `script_approved=true`, and a `voice_profile` reach `done`. `/workflow-run` still lists only `kk-storm-research` and `kk-itc`. No `plugins/kk/skills/solo-podcast/`. No writes under `plugins/generations/voice-gen/`. No live Voicebox in CI.
+- [x] R1. Ship design-time `plugins/kk/workflows/kk-solo-podcast.yaml` (`name: kk-solo-podcast`, `kind: state-machine`, quoted `$schema`, frozen state ids). No `kind: action-ok`. No `solo-podcast.yaml` under `.spur/workflows/`.
+- [x] R2. `prepare` XOR `topic`/`input_file`, mkdir layout, overwrite/`voice_profile` fail-loud (kk-itc strings).
+- [x] R3. Three `agent.run` scribe steps with **inlined** VoiceScript contract (no `docs/design/` paths). Outline `hitl.select`; script `hitl.confirm` + cap-3 `hitl.input`. `script_approved=true` skips script-review.
+- [x] R4. `script-validate` runs `bun $KK_WORKFLOWS_DIR/validate-voicescript.ts` (default `$HOME/.config/kk/workflows/validate-voicescript.ts`, builtins-only sidecar). `wrap-docs` writes `Doc[]`. `generate` is `kk executor run voice-gen` with optional `--plugins-path` only when `plugins_path` is non-empty. Duration-check 0.5×–2×; missing `content.json` succeeds (dry-run).
+- [x] R5. Tests for YAML + helper. `/workflow-run kk-solo-podcast` copies YAML+sidecar into `$HOME/.config/kk/workflows` and runs `$dest`. No fat skill. No live Voicebox in CI.
 
-Non-goals (do not implement): MP3/ffmpeg; duration field on `voice-gen`; fat skill; `/workflow-run` profile `kk-solo-podcast`; new `hitl.*` kind; new `kk` noun; multi-host interview; publish; reopen D5; `03` or ADR edits; enumerating YAML files in `plugins/kk/README.md`.
+Non-goals: MP3; duration flag on `voice-gen`; fat skill; new `hitl.*` kind; new `kk` noun; multi-host; publish; reopen D5.
 ### Acceptance Criteria
-
 ```gherkin
 Feature: Solo-podcast workflow (voice-gen dogfood)
 
@@ -88,13 +85,22 @@ Feature: Solo-podcast workflow (voice-gen dogfood)
     And a value below 0.5 times or above 2 times the target seconds fails the run
 
   @core
-  Scenario: R8 — No new skill, HITL kind, kk noun, or workflow-run profile
+  Scenario: R8 — No new skill, HITL kind, or kk noun
     Given the F5 delivery
     When the repository is inspected
     Then agent.run steps use input and role only
     And only hitl.select, hitl.confirm, and hitl.input appear
-    And /workflow-run still lists only kk-storm-research and kk-itc as profiles
+    And no new kk first-layer noun is added
     And no plugins/kk/skills/solo-podcast directory exists
+
+  @core
+  Scenario: R11 — Runtime dest is ~/.config/kk/workflows
+    Given /workflow-run kk-solo-podcast
+    When it installs the machine
+    Then dest is $HOME/.config/kk/workflows/kk-solo-podcast.yaml
+    And validate-voicescript.ts is copied beside it
+    And spur workflow run uses that dest
+    And agent.run does not load docs/design paths
 
   @edge
   Scenario: R9 — Missing or unsafe inputs fail loud
@@ -110,64 +116,57 @@ Feature: Solo-podcast workflow (voice-gen dogfood)
     Then the run fails naming the path
     And the existing file is unchanged
 ```
-
 ### Q&A
-- **Q: Helper under `scripts/` like `render-md.ts`?** A: No. Isolation rule forbids `../../` and `@gobing-ai/` there. Path is `plugins/kk/lib/validate-voicescript.ts`.
+- **Q: Helper under `scripts/` like `render-md.ts`?** A: No. Isolation forbids `@gobing-ai/*` and `../../generations` after copy to the runtime dest. Design-time path is `plugins/kk/workflows/validate-voicescript.ts`; runtime dest is `$KK_WORKFLOWS_DIR/validate-voicescript.ts` (default `$HOME/.config/kk/workflows`).
 - **Q: Add `--validate` to `voice-gen`?** A: No. D5 contract stays `Doc[] --in` → `Content --out`.
-- **Q: `/workflow-run kk-solo-podcast` in this task?** A: No. Invoke with `spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml`.
+- **Q: `/workflow-run kk-solo-podcast` in this task?** A: Yes. Copies YAML + sidecar into `$HOME/.config/kk/workflows` and runs `$dest`. Design-time SSOT stays `plugins/kk/workflows/`. Operators never `spur workflow run` the package path. `agent.run` inlines the VoiceScript contract (no `docs/design/`; docs are not in the npm tarball).
 - **Q: Fat `solo-podcast` skill?** A: No.
 - **Q: How does `--dry-run` reach `done`?** A: Pass `outline=a` (skip outline-select) and `script_approved=true` (skip script-review). Engine still pauses on `pause: true` without those skips. `duration-check` treats missing `content.json` as success.
 - **Q: Outline option c required?** A: No. a and b required.
-- **Q: New ADR / 03 / README file list?** A: No. Extends ADR-009 + D5 + F4. Live inventory is `04` §0.
+- **Q: New ADR / 03 / README file list?** A: No. Extends ADR-009 + D5 + F4. Live inventory is `04` §0. `04` §7 lists the `/workflow-run` profile. `plugins/kk/README.md` notes design-time vs runtime dest.
 - **Q: MP3?** A: No. D5 sibling WAV only.
-- **Q: Task R-items vs feature scenarios?** A: Task-local R1–R5. Feature AC stays ten scenario titles. Mapping: R1 → feature R1; R2 → R2+R9+R10; R3 → R3+R5; R4 → R4+R6+R7; R5 → R8 tests/invariants + dry-run.
-- **Q: Anything deferred?** A: `/workflow-run` profile, fat skill, MP3, multi-host, live CI Voicebox — F5 Out. No open implement decision.
+- **Q: Task R-items vs feature scenarios?** A: Task-local R1–R5. Feature AC is R1–R11. Mapping: R1 → feature R1; R2 → R2+R9+R10; R3 → R3+R5; R4 → R4+R6+R7; R5 → R8 tests/invariants + R11 runtime dest + dry-run.
+- **Q: Anything deferred?** A: Fat skill, MP3, multi-host, live CI Voicebox — F5 Out. No open implement decision.
 ### Design
-**WHAT.** One product state-machine YAML + one checkout-only VoiceScript validator + two bun:test files. Last mile is `kk executor run voice-gen`. No new API in `apps/cli`. No new skill.
+**WHAT.** Design-time YAML + builtins-only checker under `plugins/kk/workflows/`. Runtime dest `$HOME/.config/kk/workflows/` (copy via `/workflow-run`). Last mile `kk executor run voice-gen` (ADR-012). VoiceScript contract inlined in `agent.run`.
 
-**WHY.** D5 shipped `Doc[] → audio Content` and left the podcast workflow out. F4 already proved `plugins/kk/workflows/` + `hitl.*` + `agent.run` `input:`. Target duration cannot be a plugin flag (`docs/design/voice-gen.md` §7). Helper cannot live under `plugins/kk/scripts/` (`.spur/rules/boundary/shipped-script-isolation.yaml`).
+**WHY.** `docs/design/` and checkout `plugins/kk/lib/` are not on the operator runtime path. The npm tarball ships `plugins/`. `/workflow-run` copies YAML+sidecar into `KK_WORKFLOWS_DIR`.
 
-**WHERE (primary files).**
+**WHERE.**
 
 | Path | Role |
 | --- | --- |
-| `plugins/kk/workflows/kk-solo-podcast.yaml` | state machine |
-| `plugins/kk/lib/validate-voicescript.ts` | bun `--in` helper |
-| `apps/cli/tests/kk-solo-podcast-workflow.test.ts` | static YAML invariants |
-| `apps/cli/tests/validate-voicescript.test.ts` | helper tests |
-| `docs/design/kk-solo-podcast.md` | satellite **shipped (F5)** |
-| `docs/04_DESIGN.md` §0 / §6 | index **shipped (F5)**; no `/workflow-run` profile under §7 |
+| `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT |
+| `plugins/kk/workflows/validate-voicescript.ts` | design-time checker (no `@gobing-ai/*`) |
+| `$HOME/.config/kk/workflows/` | runtime dest for both files |
+| `plugins/generations/voice-gen/` | tarball generator |
 
-Leave unchanged: `plugins/generations/voice-gen/**`, `plugins/kk/commands/workflow-run.md`, `plugins/kk/skills/**`, `packages/kk-core`, `apps/cli/src/**`, `docs/00_ADR.md`, `docs/03_ARCHITECTURE.md`.
-
-**Frozen vars (all strings).** `script_approved` default `""`; `"true"` skips `script-review`. Other defaults: `target_duration_min=8`, `words_per_min=150`, `cjk_chars_per_min=220`, `language=en`, `plugins_path=./plugins`, `validate_script=plugins/kk/lib/validate-voicescript.ts`, `__runId=solo`.
-
-**Frozen extra transitions.** `outline-write` → commit when `outline` set. `script-validate` → `wrap-docs` when `script_approved=true`. `script-review` approve when `__hitlAnswer` empty or `yes`. `duration-check` → `done` when `content.json` missing or in `[0.5, 2]×` band.
-
-**Helper.** `bun plugins/kk/lib/validate-voicescript.ts --in <path>` imports `validateVoiceScript` from `../../generations/voice-gen/src/voicescript`.
-
-**Anti-patterns.** Helper not under `scripts/`. No `action-ok`. No duration flag on `voice-gen`. No `/workflow-run` profile. No `solo-podcast` skill. No D5 edits. No MP3. No new ADR.
+**Anti-patterns.** `agent.run` loading `docs/design/*`. Helper importing `../../generations`. Hardcoded `./plugins` as required `--plugins-path`. `spur workflow run` of the design-time path as the operator dest.
 ### Plan
-1. Helper at `plugins/kk/lib/validate-voicescript.ts` + `apps/cli/tests/validate-voicescript.test.ts`.
-2. YAML `plugins/kk/workflows/kk-solo-podcast.yaml` from frozen ids/vars/transitions (`script_approved` skip included).
-3. Static tests `apps/cli/tests/kk-solo-podcast-workflow.test.ts`.
-4. `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml`. Dry-run with `outline=a` and `script_approved=true` reaches `done`.
-5. Same commit T3/T9: satellite + `04` §0/§6 **shipped (F5)**. No §7 runner profile. No `03` / ADR body rewrite.
-6. Optional local Voicebox dogfood — not CI.
+1. Helper at `plugins/kk/workflows/validate-voicescript.ts` (builtins-only, SYNC with voice-gen) + `apps/cli/tests/validate-voicescript.test.ts` including a copy-into-temp-workflows_dir case.
+2. YAML `plugins/kk/workflows/kk-solo-podcast.yaml` from frozen ids/vars/transitions (`script_approved` skip included). `agent.run` inlines the VoiceScript contract. `script-validate` resolves `${KK_WORKFLOWS_DIR:-$HOME/.config/kk/workflows}/validate-voicescript.ts`.
+3. Static tests `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (no `docs/design`, no `plugins/kk/workflows` as a runtime path).
+4. `/workflow-run kk-solo-podcast` copies YAML+sidecar into `$HOME/.config/kk/workflows` and runs `$dest`. Tests: `apps/cli/tests/workflow-run-command.test.ts`.
+5. `spur workflow validate` of the design-time SSOT. Dry-run of the runtime dest with `outline=a` and `script_approved=true` reaches `done`.
+6. Same commit T3/T9: satellite + `04` §0/§6 **shipped (F5)** + `04` §7 runner profile.
+7. Optional local Voicebox dogfood — not CI.
 
-Verification: `bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts apps/cli/tests/validate-voicescript.test.ts` plus step 4.
+Verification: `bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts apps/cli/tests/validate-voicescript.test.ts apps/cli/tests/workflow-run-command.test.ts` plus step 5.
 ### Solution
 | Change | Evidence |
 | --- | --- |
 | Product YAML `name: kk-solo-podcast` | `plugins/kk/workflows/kk-solo-podcast.yaml:3` |
 | `script_approved` var | `plugins/kk/workflows/kk-solo-podcast.yaml:20` |
-| `script_approved=true` skip to wrap-docs | `plugins/kk/workflows/kk-solo-podcast.yaml:272` |
+| Runtime helper fallback `$KK_WORKFLOWS_DIR` | `plugins/kk/workflows/kk-solo-podcast.yaml:161` |
+| Missing-helper recovery names `/workflow-run` dest | `plugins/kk/workflows/kk-solo-podcast.yaml:165` |
+| `script_approved=true` skip to wrap-docs | `plugins/kk/workflows/kk-solo-podcast.yaml:296` |
 | `hitl.select` outline pause | `plugins/kk/workflows/kk-solo-podcast.yaml:104` |
-| `kk executor run voice-gen` | `plugins/kk/workflows/kk-solo-podcast.yaml:213` |
-| duration-check missing-file success | `plugins/kk/workflows/kk-solo-podcast.yaml:332` |
-| `validateVoiceScript` helper | `plugins/kk/lib/validate-voicescript.ts:4` |
+| `kk executor run voice-gen` | `plugins/kk/workflows/kk-solo-podcast.yaml:233` |
+| duration-check missing-file success | `plugins/kk/workflows/kk-solo-podcast.yaml:352` |
+| builtins-only helper (runtime dest comment) | `plugins/kk/workflows/validate-voicescript.ts:6` |
+| `/workflow-run kk-solo-podcast` sidecar copy | `plugins/kk/commands/workflow-run.md:104` |
 | Workflow static tests | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:14` |
-| Helper tests | `apps/cli/tests/validate-voicescript.test.ts:13` |
+| Helper tests | `apps/cli/tests/validate-voicescript.test.ts:14` |
 ### Testing
 **Pipeline verify results**
 
@@ -176,69 +175,67 @@ Verification: `bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts apps/cli
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:3` |
-| R2 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:44` |
+| R2 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:46` |
 | R3 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:104` |
-| R4 | MET | `plugins/kk/lib/validate-voicescript.ts:4` |
-| R5 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:20` |
+| R4 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:161` |
+| R5 | MET | `apps/cli/tests/workflow-run-command.test.ts:127` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — Product YAML lives at plugins/kk/workflows/kk-solo-podcast.yaml | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:14-19` |
-| R2 — Prepare XOR topic or input_file into a works layout | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:75` |
-| R3 — Outline HITL is hitl.select unless outline is pre-set | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:44` |
-| R4 — Approved outline becomes a validated VoiceScript | MET | test | `apps/cli/tests/validate-voicescript.test.ts:13` |
-| R5 — Script HITL gates live TTS | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:44` |
-| R6 — Generate invokes voice-gen and writes sibling WAV | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:82` |
-| R7 — Target length is a script budget and a duration post-check | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:82` |
-| R8 — No new skill, HITL kind, kk noun, or workflow-run profile | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:97` |
-| R9 — Missing or unsafe inputs fail loud | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:75` |
-| R10 — Existing brief.md is not overwritten without force | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:75` |
+| R1 — Product YAML lives at plugins/kk/workflows/kk-solo-podcast.yaml | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:41` |
+| R2 — Prepare XOR topic or input_file into a works layout | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:79` |
+| R3 — Outline HITL is hitl.select unless outline is pre-set | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:48` |
+| R4 — Approved outline becomes a validated VoiceScript | MET | test | `apps/cli/tests/validate-voicescript.test.ts:14` |
+| R5 — Script HITL gates live TTS | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:49` |
+| R6 — Generate invokes voice-gen and writes sibling WAV | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:93` |
+| R7 — Target length is a script budget and a duration post-check | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:89` |
+| R8 — No new skill, HITL kind, or kk noun | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:127` |
+| R9 — Missing or unsafe inputs fail loud | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:80` |
+| R10 — Existing brief.md is not overwritten without force | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:81` |
+| R11 — Runtime dest is ~/.config/kk/workflows | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:103` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 **SECUA Code Review**
 
 1. **Security**:
-   - Zero unsanitized input execution; input path existence and file format validation in place.
-   - Isolation boundaries respected; helper is checkout-only without external dependencies.
+   - XOR prepare, overwrite guard, and VoiceScript checker fail loud before `kk executor run voice-gen`.
+   - Helper is builtins-only (`node:fs` / `node:util`); no `@gobing-ai/*` import after copy into `$HOME/.config/kk/workflows`.
 
 2. **Error Handling**:
-   - Explicit fail-loud error messages matching frozen specs (`missing work_dir`, `XOR violation: ...`, `missing voice_profile ...`, `initialization target already exists ...`, `duration-check failed: ...`).
-   - Validate-voicescript helper exits 1 with actionable errors on stderr for invalid JSON/YAML or schema violations.
+   - Named recoveries: `missing work_dir`, XOR violations, `missing voice_profile`, existing `brief.md`, missing helper (`/workflow-run kk-solo-podcast` into `$HOME/.config/kk/workflows`), duration-check band.
 
 3. **Correctness & Contract Adherence**:
-   - Full compliance with task requirements R1–R5 and feature acceptance criteria R1–R10.
-   - Product workflow adheres to ADR-009, ADR-011, and D5/F4 conventions.
+   - Design-time SSOT is `plugins/kk/workflows/`; runtime dest is `$KK_WORKFLOWS_DIR` / `$HOME/.config/kk/workflows`.
+   - `agent.run` inlines the VoiceScript contract — no `docs/design/` loads (docs are not in the npm tarball).
+   - `/workflow-run kk-solo-podcast` copies YAML + `validate-voicescript.ts` and runs `$dest`.
 
 4. **Maintainability & Simplicity**:
-   - Zero unnecessary skills, CLI nouns, or workflow-run profiles introduced.
-   - Clean, modular workflow definition and standalone validator helper.
+   - No fat `solo-podcast` skill, no new `hitl.*` kind, no new `kk` noun (ADR-011).
+   - Sidecar copy is name-gated so other profiles do not install the checker.
 
 **Priority Findings**
 
-| Priority | Finding | Action | Status |
-| -------- | ------- | ------ | ------ |
-| P1 | None | None | Resolved |
-| P2 | None | None | Resolved |
-| P3 | None | None | Resolved |
-| P4 | None | None | Resolved |
+| Priority | Finding | File:Line | Disposition |
+| -------- | ------- | --------- | ----------- |
+| P4 | Runtime dest vs design-time SSOT is now explicit in YAML, `/workflow-run`, help, and tests. | `plugins/kk/workflows/kk-solo-podcast.yaml:161` | Accepted |
 
 **Traceability Matrix (P1–P4)**
 
 | Req | Description | Implementation File | Test File & Case | Verdict |
 | --- | ----------- | ------------------- | ---------------- | ------- |
-| R1 | State Machine Product YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (R1) | **PASS** |
-| R2 | Prepare XOR & Works Layout | `plugins/kk/workflows/kk-solo-podcast.yaml` | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (R2) | **PASS** |
-| R3 | Spur HITL Actions & Scribe Steps | `plugins/kk/workflows/kk-solo-podcast.yaml` | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (R3) | **PASS** |
-| R4 | VoiceScript Validator & Plugin Invoke | `plugins/kk/lib/validate-voicescript.ts` | `apps/cli/tests/validate-voicescript.test.ts` (all) | **PASS** |
-| R5 | Static Invariant Tests & Quality Gate | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` | `bun run spur-check` (423 tests pass) | **PASS** |
-
+| R1 | State machine product YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (R1) | **PASS** |
+| R2 | Prepare XOR and works layout | `plugins/kk/workflows/kk-solo-podcast.yaml` | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (R2) | **PASS** |
+| R3 | HITL + inlined VoiceScript `agent.run` | `plugins/kk/workflows/kk-solo-podcast.yaml` | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` (R3) | **PASS** |
+| R4 | Runtime helper + voice-gen invoke | `plugins/kk/workflows/validate-voicescript.ts` | `apps/cli/tests/validate-voicescript.test.ts` | **PASS** |
+| R5 | Tests + `/workflow-run` dest copy | `plugins/kk/commands/workflow-run.md` | `apps/cli/tests/workflow-run-command.test.ts` | **PASS** |
 ### References
 - Feature: [F5_solo-podcast-workflow-voice-gen-dogfood.md](../features/F5_solo-podcast-workflow-voice-gen-dogfood.md)
-- Satellite: [kk-solo-podcast.md](../design/kk-solo-podcast.md)
-- Voice generator: [voice-gen.md](../design/voice-gen.md) · plugin `plugins/generations/voice-gen/` (D5, read-only)
+- Satellite: [kk-solo-podcast.md](../design/kk-solo-podcast.md) (maintainer-only; not a runtime input)
+- Help: [solo-podcast-workflow.md](../help/solo-podcast-workflow.md)
+- Voice generator: [voice-gen.md](../design/voice-gen.md) · plugin `plugins/generations/voice-gen/` (D5, in the npm tarball)
 - Clone grain: [kk-itc.yaml](../../plugins/kk/workflows/kk-itc.yaml) · [kk-itc-workflow.test.ts](../../apps/cli/tests/kk-itc-workflow.test.ts) (F4 / 0069)
 - Isolation: [.spur/rules/boundary/shipped-script-isolation.yaml](../../.spur/rules/boundary/shipped-script-isolation.yaml)
-- Runner (do not extend): [workflow-run.md](../../plugins/kk/commands/workflow-run.md)
+- Runner: [workflow-run.md](../../plugins/kk/commands/workflow-run.md) (`kk-solo-podcast` profile copies YAML + sidecar into `$HOME/.config/kk/workflows`)
 - ADR-009 product YAML home; ADR-011 no new `kk` noun — `docs/00_ADR.md`
 - Doc contract: `packages/kk-core/src/schemas.ts` (`DocSchema`)
 - Idea eval: `.spur/run/idea-eval-report.md` · brainstorm `docs/plans/2026-08-19-solo-podcast-brainstorm.md`

@@ -5,11 +5,12 @@ Feature **F5** (shipped). Product state-machine at
 duration into Voicebox WAV by authoring a kk VoiceScript and invoking shipped
 D5 `voice-gen`.
 
-> Chosen approach: F4-shaped YAML + `agent.run` + `validateVoiceScript` helper +
-> `kk executor run voice-gen`. Rejected: fat `solo-podcast` skill (no method to
-> distill yet); `/workflow-run` profile (dogfood the plugin, not the runner);
-> plain-text Doc shortcut (does not exercise VoiceScript); duration flag on
-> `voice-gen` (D5 §7 records duration only).
+> Chosen approach: F4-shaped YAML + `agent.run` + builtins-only `validateVoiceScript`
+> helper + `kk executor run voice-gen`. `/workflow-run kk-solo-podcast` copies
+> design-time `plugins/kk/workflows/` into `$HOME/.config/kk/workflows` and runs that
+> dest. Rejected: fat `solo-podcast` skill (no method to distill yet); plain-text Doc
+> shortcut (does not exercise VoiceScript); duration flag on `voice-gen` (D5 §7 records
+> duration only); `agent.run` loading `docs/design/*` (not in the npm tarball).
 
 Authority: **ADR-009** (product YAML home, `kk-*.yaml` stem), **ADR-011** (no new
 `kk` noun), **F4** HITL grain, **D5** VoiceScript + WAV. No new ADR — extends
@@ -27,8 +28,8 @@ those conventions; two-way door (delete the YAML).
 | D4 | `hitl.select` a\|b\|c for outlines; `hitl.confirm` + bounded `hitl.input` for the script | Outline-only `hitl.confirm`; new `hitl.*` kind | House pattern (kk-itc). TTS is slow/expensive — gate the script before generate. |
 | D5 | Audio is the sibling **WAV** D5 already writes | MP3 / ffmpeg | Voicebox `GET /audio/{id}` is WAV; concat is PCM WAV. Transcode is a later publish concern. |
 | D6 | Target length = script budget + post-check | Duration field on `voice-gen` | D5 §7: output duration is recorded, not requested. |
-| D7 | Helper at `plugins/kk/lib/validate-voicescript.ts` | `plugins/kk/scripts/` | `shipped-script-isolation` forbids `@gobing-ai/*` and `../../` under `plugins/*/scripts/`. `lib/` is checkout-only, v1 has no `/workflow-run` copy. |
-| D8 | No `/workflow-run` profile in F5 | Third runner profile | C3 YAML then C4 runner. Dogfood target is `voice-gen`. |
+| D7 | Self-contained helper `plugins/kk/workflows/validate-voicescript.ts`, copied to `$HOME/.config/kk/workflows/` | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime dest cannot import `../../generations`. Checker is builtins-only; `/workflow-run` copies YAML + sidecar. |
+| D8 | `/workflow-run kk-solo-podcast` installs into `$HOME/.config/kk/workflows` and runs `$dest` | Checkout-only `spur workflow run plugins/kk/workflows/…` | Design-time SSOT is the package tree; runtime dest is `~/.config/kk/workflows`. |
 | D9 | Require outline-option-a.md and -b.md; c optional | Always three; only one outline | Matches kk-itc. |
 | D10 | Duration fail-loud outside 0.5×–2× of target seconds | ±20% fail; warn-only | Coarse band absorbs WPM vs Voicebox rate. Auto-regenerate is out (GPU cost). |
 | D11 | No ADR | ADR for “podcast as a workflow” | Extends F4 + D5. Reversible. |
@@ -38,10 +39,10 @@ those conventions; two-way door (delete the YAML).
 ## 2. Module layout
 
 ```
-plugins/kk/workflows/kk-solo-podcast.yaml   # product state machine
-plugins/kk/lib/validate-voicescript.ts      # bun --in <yaml|json> → validateVoiceScript
+plugins/kk/workflows/kk-solo-podcast.yaml      # design-time SSOT (copied to ~/.config/kk/workflows)
+plugins/kk/workflows/validate-voicescript.ts   # design-time checker (copied beside the YAML)
 apps/cli/tests/kk-solo-podcast-workflow.test.ts
-docs/design/kk-solo-podcast.md              # this satellite
+docs/design/kk-solo-podcast.md                 # maintainer satellite — not loaded at runtime
 ```
 
 No new Bun workspace. No change to `apps/cli` command tree. No change to
@@ -113,8 +114,8 @@ All strings (workflow engine contract).
 | `cjk_chars_per_min` | `"220"` | CJK spoken budget |
 | `voice_profile` | `""` | Voicebox profile name/id; empty → `VOICEBOX_DEFAULT_PROFILE` |
 | `language` | `"en"` | VoiceScript `language` (Voicebox enum) |
-| `plugins_path` | `"./plugins"` | `--plugins-path` for `kk executor run` |
-| `validate_script` | `plugins/kk/lib/validate-voicescript.ts` | Checkout-relative bun helper |
+| `plugins_path` | `""` | empty → ADR-012 default discovery; checkout may set `./plugins` |
+| `validate_script` | `""` | empty → `$KK_WORKFLOWS_DIR/validate-voicescript.ts` (default `$HOME/.config/kk/workflows`) |
 | `agent` | `""` | `agent.run` executor |
 | `__runId` | injected | Revise-count file key |
 | `__hitlAnswer` / `__hitlInput` | engine | HITL |
@@ -183,12 +184,18 @@ required. Multi-host interview is out.
 `script-validate`:
 
 ```
-bun "${vars.validate_script}" --in "${vars.work_dir}/3-script/voicescript.yaml"
+vs="${vars.validate_script}"
+if [ -z "$vs" ]; then
+  if [ -n "$KK_WORKFLOWS_DIR" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts"
+  else vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi
+fi
+bun "$vs" --in "${vars.work_dir}/3-script/voicescript.yaml"
 ```
 
-Helper reads the file, YAML-or-JSON parses, calls `validateVoiceScript` from
-`plugins/generations/voice-gen/src/voicescript.ts` (relative import, not
-`plugins/kk/scripts/`). Exit 1 prints the validator’s message; no generate.
+Helper is **builtins-only** (no `@gobing-ai/*`, no relative import into `voice-gen` —
+those paths do not exist next to the runtime copy). A SYNC comment points maintainers
+at `plugins/generations/voice-gen/src/voicescript.ts`. Exit 1 prints the validator’s
+message; no generate.
 
 `wrap-docs` writes `DocListSchema` JSON (`id` + `body` required):
 
@@ -208,9 +215,11 @@ Helper reads the file, YAML-or-JSON parses, calls `validateVoiceScript` from
 ```
 kk executor run voice-gen \
   --in  "${vars.work_dir}/4-audio/docs.json" \
-  --out "${vars.work_dir}/4-audio/content.json" \
-  --plugins-path "${vars.plugins_path}"
+  --out "${vars.work_dir}/4-audio/content.json"
 ```
+
+`--plugins-path` only when `plugins_path` is non-empty (checkout). Default is ADR-012
+discovery from the installed package (`plugins/` in the npm tarball).
 
 ---
 
@@ -224,18 +233,19 @@ voicescript.yaml.
   claims, tone, duration fit, what to cut).
 - **outline-write** — two structural options (e.g. narrative vs explainer);
   optional c. Spoken-podcast outlines, not article outlines. Load briefing.
-- **script-write** — load `docs/design/voice-gen.md` §3 plus this satellite §6–§7;
-  emit only YAML (no fence); honor `__hitlInput` on revise.
+- **script-write** — VoiceScript contract **inlined in `input:`** (never `docs/design/*`;
+  that tree is not in the npm tarball). Emit only YAML; honor `__hitlInput` on revise.
 
 ---
 
 ## 9. Helper signature
 
 ```ts
-// plugins/kk/lib/validate-voicescript.ts
+// Runtime: $HOME/.config/kk/workflows/validate-voicescript.ts
+// Design-time SSOT: plugins/kk/workflows/validate-voicescript.ts
 // bun <this> --in <yaml-or-json>
 // exit 0 — validateVoiceScript passed
-// exit 1 — named error on stderr (raw console.error; this file is not under scripts/)
+// exit 1 — named error on stderr
 ```
 
 `--in` required. Missing/unreadable file → exit 1 naming the path. Does not wrap
@@ -249,7 +259,7 @@ Voicebox.
 
 | Layer | What |
 | --- | --- |
-| Static | `apps/cli/tests/kk-solo-podcast-workflow.test.ts` clones kk-itc grain: frozen state ids, HITL kinds, `agent.run` input+role, quoted `$schema`, no `action-ok`, XOR + force recoveries, no `/workflow-run` profile string added, no `plugins/kk/skills/solo-podcast` |
+| Static | `apps/cli/tests/kk-solo-podcast-workflow.test.ts`: frozen ids, HITL kinds, no `docs/design` in YAML, runtime `$HOME/.config/kk/workflows`, no `plugins/kk/skills/solo-podcast` |
 | Helper | valid VoiceScript exits 0; empty segments / 50k+ text / unknown engine exit 1 |
 | Engine | `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml` |
 | Dry-run | `spur workflow run … --dry-run` reaches `done` |
@@ -262,13 +272,12 @@ Voicebox.
 Invoker (operator or a later runner profile) computes `work_dir` and passes vars:
 
 ```bash
-spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --vars '{
+spur workflow run "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" --vars '{
   "topic": "Why HNSW search degrades at 1B rows",
-  "work_dir": "./scratch/solo-hNSW",
+  "work_dir": "$HOME/.config/kk/works/solo-hnsw",
   "target_duration_min": "8",
   "voice_profile": "Robin",
-  "language": "en",
-  "plugins_path": "./plugins"
+  "language": "en"
 }'
 ```
 
@@ -280,7 +289,8 @@ File mode: `input_file` set, `topic` empty.
 
 - `kk` owns generate; the workflow owns orchestration.
 - Existing HITL kinds only. Existing `voice-gen` contract only.
-- No fat skill. No `/workflow-run` profile. No MP3. No publish.
+- No fat skill. No MP3. No publish. `/workflow-run kk-solo-podcast` copies YAML+helper into `$HOME/.config/kk/workflows` and runs that dest.
+- `agent.run` never loads `docs/design/*` (not in the npm tarball).
 - No `@gobing-ai/kk-core` schema change. No `apps/cli` noun change.
 - Live Voicebox is dogfood; CI is static + dry-run.
 - `vendors/voicebox` is not imported.

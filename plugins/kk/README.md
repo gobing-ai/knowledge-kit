@@ -10,7 +10,7 @@ It is a Claude Code / Superskill plugin, **not** a kk-core product plugin.
 | `agents/` | Thin subagent wrappers (currently empty — see below) |
 | `hooks/` | Hook definitions |
 | `rules/` | Agent rules |
-| `workflows/` | Product workflow YAML SSOT (ADR-009 amendment) |
+| `workflows/` | Design-time product YAML SSOT (ADR-009). Runtime dest is `$HOME/.config/kk/workflows` via `/workflow-run` |
 
 `agents/` is reserved for thin wrappers of fat skills. It is empty: `judge-tech` /
 `judge-tone` / `judge-compliance` were retired (2026-08-19). Rubric selection lives on

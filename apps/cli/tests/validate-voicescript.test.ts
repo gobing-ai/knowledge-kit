@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +11,42 @@ function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 describe('validate-voicescript CLI helper', () => {
-    const helperPath = join(import.meta.dir, '../../../plugins/kk/lib/validate-voicescript.ts');
+    const helperPath = join(import.meta.dir, '../../../plugins/kk/workflows/validate-voicescript.ts');
+    const helperSource = readFileSync(helperPath, 'utf-8');
+
+    it('is builtins-only so a copy under ~/.config/kk/workflows can run', () => {
+        expect(helperSource).not.toMatch(/from ['"]@gobing-ai/);
+        expect(helperSource).not.toMatch(/from ['"]\.\.\//);
+        expect(helperSource).not.toContain('docs/design');
+        expect(helperSource).toContain('~/.config/kk/workflows');
+        expect(helperSource).toMatch(/^import \{ readFileSync \} from 'node:fs';$/m);
+        expect(helperSource).toMatch(/^import \{ parseArgs \} from 'node:util';$/m);
+    });
+
+    it('exits 0 after copy into a runtime workflows_dir', async () => {
+        await withTempDir(async (dir) => {
+            const destHelper = join(dir, 'validate-voicescript.ts');
+            copyFileSync(helperPath, destHelper);
+            const filePath = join(dir, 'voicescript.yaml');
+            writeFileSync(
+                filePath,
+                [
+                    'title: "Episode 1"',
+                    'language: "en"',
+                    'default_profile: "Robin"',
+                    'segments:',
+                    '  - text: "Hello and welcome to the episode."',
+                ].join('\n'),
+            );
+
+            const proc = Bun.spawnSync([process.execPath, destHelper, '--in', filePath], {
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+
+            expect(proc.exitCode).toBe(0);
+        });
+    });
 
     it('exits 0 for valid VoiceScript YAML', async () => {
         await withTempDir(async (dir) => {

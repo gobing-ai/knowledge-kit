@@ -4,14 +4,17 @@ description: >-
   Run STORM daily research or IT content authoring end to end. Installs the workflow
   YAML on first run (two-root copy rule), creates the config with defaults if missing,
   computes the workspace, and shells spur workflow run against the installed workflow.
-argument-hint: "[name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat] [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic] [--fixture] [--force]"
+argument-hint: "[name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat] [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic] [--duration <min>] [--language <code>] [--script-approved] [--fixture] [--force]"
 ---
 
-Thin runner around the **storm-research** and **itc-generating** / **topic** capabilities. Read
-`plugins/kk/skills/storm-research/SKILL.md` or `plugins/kk/skills/itc-generating/SKILL.md` for craft.
-This command owns the run procedure: config create, YAML install (two-root copy rule), workspace
-computation, and the `spur workflow run`. No new `kk` CLI noun (ADR-011) — everything here is shell
-+ the workflow.
+Thin runner around the **storm-research**, **itc-generating** / **topic**, and **kk-solo-podcast**
+capabilities. Read `plugins/kk/skills/storm-research/SKILL.md` or
+`plugins/kk/skills/itc-generating/SKILL.md` for craft; solo-podcast craft is inlined in the
+workflow `agent.run` prompt (no fat skill). This command owns the run procedure: config create,
+YAML install (two-root copy rule) into `$HOME/.config/kk/workflows`, workspace computation, and
+the `spur workflow run` of that **runtime** dest. Design-time SSOT remains
+`plugins/kk/workflows/` in the package/repo. No new `kk` CLI noun (ADR-011) — everything here
+is shell + the workflow.
 
 **Args:** `$ARGUMENTS`
 
@@ -21,19 +24,24 @@ Parse per the frozen rule:
 
 - First token is the workflow **name** when it matches `^[a-z0-9][a-z0-9-]*$` and is not `--in`;
   otherwise `name=kk-storm-research` and that token is the topic. Supported profile names:
-  `kk-storm-research` (default), `kk-itc`. Any other name after successful copy → exit 1 listing
-  `kk-storm-research`, `kk-itc`.
+  `kk-storm-research` (default), `kk-itc`, `kk-solo-podcast`. Any other name after successful copy → exit 1 listing
+  `kk-storm-research`, `kk-itc`, `kk-solo-podcast`.
 - `--in <file>` → file mode. `--force` → overwrite an existing dest YAML / existing `brief.md`.
 - Profile `kk-storm-research`: `--fixture` → force `fixture: "true"`.
 - Profile `kk-itc`: `--dir <path>` (default `./<kebab>`), `--playbook generic|english|wechat` (default `generic`),
   `--research` (`true`|`false`, default `false`), `--judge` (`true`|`false`, default `false`),
   `--outline <a|b|c>` (default empty), `--writer itc-generating|topic` (default `itc-generating`).
-  `--fixture` passed with `kk-itc` → exit 1 (`fixture is storm-only`).
+  `--fixture` passed with `kk-itc` or `kk-solo-podcast` → exit 1 (`fixture is storm-only`).
+- Profile `kk-solo-podcast`: `--dir <path>` (default `$works_dir/<kebab>`), `--outline <a|b|c>`
+  (default empty), `--duration <min>` (default `8`), `--language <code>` (default `en`),
+  `--script-approved` (sets `script_approved=true`; default off). `--fixture` is storm-only.
 - **XOR:** exactly one of `<topic>` / `--in <file>`. Both set or both empty → exit 1, stderr
   states the XOR rule, no writes.
 
 Resolve these before step 2: `NAME`, `TOPIC`, `INPUT_FILE` (empty in sentence mode), `FIXTURE`
-(`true`|`false`), `FORCE` (`true`|`false`), `DIR`, `PLAYBOOK`, `RESEARCH`, `JUDGE`, `OUTLINE`, `WRITER`.
+(`true`|`false`), `FORCE` (`true`|`false`), `DIR`, `PLAYBOOK`, `RESEARCH`, `JUDGE`, `OUTLINE`,
+`WRITER`, `DURATION` (`8`), `LANGUAGE` (`en`), `SCRIPT_APPROVED` (`true`|`false`),
+`VOICE_PROFILE` (from `VOICEBOX_DEFAULT_PROFILE`, default empty).
 
 ## 2. Resolve the config
 
@@ -91,6 +99,20 @@ if [ ! -f "$dest" ] || [ "$FORCE" = true ]; then
 elif ! cmp -s "$src" "$dest"; then
   echo "warning: $dest differs from install source; leaving user copy (pass --force to replace)" >&2
 fi
+# Runtime dest is $workflows_dir (default ~/.config/kk/workflows). Copy YAML sidecars
+# that the machine shells (kk-solo-podcast: validate-voicescript.ts).
+if [ "$NAME" = "kk-solo-podcast" ] && [ -n "$src" ]; then
+  side="validate-voicescript.ts"
+  sdir=$(dirname "$src")
+  ddir=$(dirname "$dest")
+  if [ -f "$sdir/$side" ]; then
+    if [ ! -f "$ddir/$side" ] || [ "$FORCE" = true ]; then
+      cp "$sdir/$side" "$ddir/$side"
+    elif ! cmp -s "$sdir/$side" "$ddir/$side"; then
+      echo "warning: $ddir/$side differs from install source; leaving user copy (pass --force to replace)" >&2
+    fi
+  fi
+fi
 ```
 
 ## 4. Compute workspace
@@ -122,6 +144,12 @@ mkdir -p "$work_dir"
 `kebab` = lower-case, `[^a-z0-9]+` → `-`, trimmed dashes (no length cap, no sha256 hash).
 `work_dir="${DIR:-./$kebab}"`. Empty derived `kebab` → exit 1.
 
+### Profile `kk-solo-podcast`
+
+`raw` = `TOPIC` or file-mode first ATX H1 else basename without extension.
+`kebab` = lower-case, `[^a-z0-9]+` → `-`, trimmed dashes (no length cap, no sha256 hash).
+`work_dir="${DIR:-$works_dir/$kebab}"`. Empty derived `kebab` → exit 1.
+
 ## 5. Run the workflow
 
 All values are strings.
@@ -147,6 +175,19 @@ spur workflow run "$dest" --vars \
   "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"writer\":\"$WRITER\",\"playbook\":\"$PLAYBOOK\",\"research\":\"$RESEARCH\",\"judge\":\"$JUDGE\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"verdictFile\":\".spur/run/\${vars.__runId}-itc-verdict.json\",\"agent\":\"$AGENT\"}"
 ```
 
+### Profile `kk-solo-podcast`
+
+Bind vars: `topic`, `input_file`, `work_dir`, `outline`, `script_approved`, `force`,
+`target_duration_min`, `language`, `voice_profile` (from `VOICEBOX_DEFAULT_PROFILE` or empty),
+`validate_script` (`$workflows_dir/validate-voicescript.ts`), `plugins_path` (empty → ADR-012
+default discovery), `agent`. **Always** `spur workflow run "$dest"` — `$dest` is
+`$workflows_dir/kk-solo-podcast.yaml`, never the design-time `plugins/kk/workflows/` path.
+
+```bash
+spur workflow run "$dest" --vars \
+  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"outline\":\"$OUTLINE\",\"script_approved\":\"$SCRIPT_APPROVED\",\"force\":\"$FORCE\",\"target_duration_min\":\"$DURATION\",\"language\":\"$LANGUAGE\",\"voice_profile\":\"$VOICE_PROFILE\",\"validate_script\":\"$workflows_dir/validate-voicescript.ts\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
+```
+
 ## 6. Report
 
 - **`kk-storm-research`**: print resolved `work_dir`, then `$work_dir/content.md` (report sidecar)
@@ -154,6 +195,8 @@ spur workflow run "$dest" --vars \
   ids before presenting.
 - **`kk-itc`**: print resolved `work_dir`, then `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`,
   and `$work_dir/3-draft/draft-article.md`. If `judge=true`, also print the verdict path.
+- **`kk-solo-podcast`**: print resolved `work_dir`, then `$work_dir/3-script/voicescript.yaml`,
+  `$work_dir/4-audio/content.json`, and `$work_dir/4-audio/content.wav`.
 
 If the run ended `failed`, show the failing state (`spur workflow trace <run-id> --json`) and the
 fail-loud recovery line.

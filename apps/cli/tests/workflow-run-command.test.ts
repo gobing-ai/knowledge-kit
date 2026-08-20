@@ -123,4 +123,17 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('No new `kk` CLI noun');
         expect(cmd).toContain('kk-storm-research');
     });
+
+    it('kk-solo-podcast profile copies YAML+sidecar into workflows_dir and runs $dest', () => {
+        expect(cmd).toContain('kk-solo-podcast');
+        expect(cmd).toContain('validate-voicescript.ts');
+        expect(cmd).toContain('target_duration_min');
+        expect(cmd).toContain('script_approved');
+        expect(cmd).toContain('$HOME/.config/kk/workflows');
+        expect(cmd).toContain('never the design-time');
+        expect(cmd).toContain('cp "$sdir/$side" "$ddir/$side"');
+        expect(cmd).toContain('validate_script');
+        expect(cmd).toContain('$workflows_dir/validate-voicescript.ts');
+        expect(cmd).toContain('spur workflow run "$dest"');
+    });
 });
