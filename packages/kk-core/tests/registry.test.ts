@@ -199,6 +199,7 @@ describe('discoverPlugins', () => {
             'karakeep-local',
             'qiita-pub',
             'surfdash-pub',
+            'voice-gen',
             'web-search',
             'zenn-pub',
         ]);
@@ -506,6 +507,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'karakeep-local',
                 'qiita-pub',
                 'surfdash-pub',
+                'voice-gen',
                 'web-search',
                 'zenn-pub',
             ]);
