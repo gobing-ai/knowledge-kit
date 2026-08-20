@@ -1,3 +1,36 @@
+## [0.0.8] - 2026-08-20
+
+### Added
+
+- add kk-solo-podcast runner profile and standalone validator (7fd42b5)
+- ship kk-solo-podcast workflow and VoiceScript validator (F5/0071) (9d39028)
+- inject plugin config env from KK_CONFIG at spawn (1dc796d)
+- implement Voicebox-backed podcast generator plugin (D5/0070) (0258f51)
+- relocate product workflow SSOT and author kk-itc workflow (F4/0069) (e2f2c23)
+- add itc-generating fat skill with distilled IT-writing references (F3/0068) (2495b4f)
+- adopt ts-runtime file system seam and enforce plugin boundaries (a874d92)
+- adopt shared logging and output foundation across workspaces (a4a2f09)
+- digest-not-index report contract (C5/0063) (562b760)
+- cache normalized full content per reference (C5/0062) (49b4956)
+- ship EmDash CMS publish plugin (E5) (ee5675c)
+
+### Fixed
+
+- harden idea-pipeline decompose schema path and feature-check guard (d762349)
+- normalize footnote-style citation ids (81e8082)
+
+### Other
+
+- document D5 voice-gen feature and sync authority docs (551d02f)
+- register voice-gen plugin in lockfile, rules, and discovery tests (ab23385)
+- plan ts-libs logging foundation (ADR-014/015, tasks 0065-0067) (1b54c84)
+- add Layer-1 roles to idea-pipeline agent.run steps (2175a50)
+- wrapup pipeline scribe roles + C5 learnings (e6a77cb)
+- flip E5 ship status flags (f1463b8)
+- flip C5 ship status across authority docs (62d204c)
+- document evidence cache and digest contract in skill (C5/0064) (285929c)
+- plan C5 evidence cache + report digest (ADR-013) (7983bd9)
+
 ## [0.0.7] - 2026-08-14
 
 ### Added
