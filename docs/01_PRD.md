@@ -68,7 +68,7 @@ Technical content creation and published output are fragmented: turning ideas or
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
 | Content generation | **D** | Phase 1/2/3 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) · **D4** owned STORM (`content-gen`) · **D5** Voicebox TTS generator (`voice-gen`, `format: "audio"`) |
 | Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |
-| Agent capabilities | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) |
+| Agent capabilities | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) · **F4 IT-content workflow** (`kk-itc`) · **F5 Solo-podcast workflow** (`kk-solo-podcast`, task `0071`) |
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
 
 A user can answer "can I run this to write an article about X with nothing ingested?" directly from this PRD: **Yes**, by passing a `Brief` to a `ContentGeneratorPlugin` and piping `Content` to a `PublishPlugin`.

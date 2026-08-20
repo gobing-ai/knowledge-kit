@@ -31,6 +31,7 @@ sync: [T3]
 | [ts-libs-logging-foundation.md](design/ts-libs-logging-foundation.md) | Catalog, output, diagnostics, and enforcement shapes | shipped (A3, ADR-014/ADR-015) |
 | [itc-generating.md](design/itc-generating.md) | ITC generating skill — method + orchestration, no CLI | shipped (F3) |
 | [voice-gen.md](design/voice-gen.md) | Voice generator plugin over local Voicebox REST | shipped (D5) |
+| [kk-solo-podcast.md](design/kk-solo-podcast.md) | Solo-podcast product workflow over voice-gen | shipped (F5) |
 
 ## 1. CLI commands
 
@@ -370,6 +371,7 @@ File: `.spur/config.yaml`
 | STORM evidence cache | `docs/design/storm-evidence-cache.md` | `references/` cache in the 0056 layout, Firecrawl `/v2/scrape` → `markitdown` → body, digest-don't-index report contract (C5 / ADR-013 **shipped** 2026-08-16) |
 | ITC generating skill | `docs/design/itc-generating.md` | Fat agent skill `itc-generating` + four distilled references, generic craft & platform playbooks (F3 **shipped** 2026-08-19) |
 | Voice generator | `docs/design/voice-gen.md` | Voice generator plugin over local Voicebox REST API (D5 **shipped** 2026-08-19) |
+| Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 
 ## 7. Workflow install copy-rule and `/workflow-run` surface
 

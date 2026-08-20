@@ -1,0 +1,354 @@
+---
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-solo-podcast
+kind: state-machine
+description: >-
+  Solo podcast authoring pipeline using VoiceScript authoring, Spur HITL gates, and voice-gen audio generation
+initialState: prepare
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+
+vars:
+  topic: ""
+  input_file: ""
+  work_dir: ""
+  force: "false"
+  outline: ""
+  script_approved: ""
+  target_duration_min: "8"
+  words_per_min: "150"
+  cjk_chars_per_min: "220"
+  voice_profile: ""
+  language: "en"
+  plugins_path: "./plugins"
+  validate_script: "plugins/kk/lib/validate-voicescript.ts"
+  agent: ""
+  __runId: "solo"
+  __hitlAnswer: ""
+  __hitlInput: ""
+
+states:
+  - id: prepare
+    description: "mkdir work_dir and stage subdirectories; validate XOR topic/input_file and voice_profile; write brief.md"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set -e;
+            if [ -z "${vars.work_dir}" ]; then
+              echo "missing work_dir" >&2; exit 1;
+            fi;
+            mkdir -p "${vars.work_dir}" "${vars.work_dir}/1-briefing" "${vars.work_dir}/2-outline" "${vars.work_dir}/3-script" "${vars.work_dir}/4-audio";
+            if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
+              echo "XOR violation: both topic and input_file set" >&2; exit 1;
+            fi;
+            if [ -z "${vars.topic}" ] && [ -z "${vars.input_file}" ]; then
+              echo "XOR violation: neither topic nor input_file set" >&2; exit 1;
+            fi;
+            if [ -z "${vars.voice_profile}" ] && [ -z "$VOICEBOX_DEFAULT_PROFILE" ]; then
+              echo "missing voice_profile (set vars.voice_profile or VOICEBOX_DEFAULT_PROFILE)" >&2; exit 1;
+            fi;
+            if [ -f "${vars.work_dir}/brief.md" ] && [ "${vars.force}" != "true" ]; then
+              echo "initialization target already exists at ${vars.work_dir}/brief.md; pass force=true to replace" >&2; exit 1;
+            fi;
+            if [ -n "${vars.topic}" ]; then
+              printf '%s\n' "${vars.topic}" > "${vars.work_dir}/brief.md";
+            else
+              if [ ! -f "${vars.input_file}" ]; then
+                echo "input file not found: ${vars.input_file}" >&2; exit 1;
+              fi;
+              cp "${vars.input_file}" "${vars.work_dir}/brief.md";
+            fi;
+
+  - id: understand
+    description: "Analyze brief and generate podcast briefing (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Read the source brief at ${vars.work_dir}/brief.md.
+            Write a concise podcast briefing at ${vars.work_dir}/1-briefing/briefing.md.
+            Identify core thesis, key listener takeaways, audience profile, target spoken duration (${vars.target_duration_min} minutes), tone, and what material from the brief to emphasize or cut.
+          expectFile: ${vars.work_dir}/1-briefing/briefing.md
+
+  - id: outline-write
+    description: "Generate spoken podcast outline options (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Read the briefing at ${vars.work_dir}/1-briefing/briefing.md and brief at ${vars.work_dir}/brief.md.
+            Generate spoken podcast outline options in ${vars.work_dir}/2-outline/:
+            - outline-option-a.md (e.g. narrative / storytelling arc)
+            - outline-option-b.md (e.g. analytical / explainer breakdown)
+            - optional outline-option-c.md
+            Target total episode spoken duration is ${vars.target_duration_min} minutes.
+            Do not wait for operator selection; write the option files.
+          expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
+      - kind: shell
+        options:
+          command: >-
+            test -f "${vars.work_dir}/2-outline/outline-option-b.md" || { echo "missing required outline-option-b.md" >&2; exit 1; }
+
+  - id: outline-select
+    description: "Operator selects preferred outline option"
+    pause: true
+    onEnter:
+      - kind: hitl.select
+        options:
+          prompt: "Select an approved outline option from ${vars.work_dir}/2-outline/ (outline-option-a.md, outline-option-b.md, or outline-option-c.md):"
+          options:
+            - a
+            - b
+            - c
+          var: __hitlAnswer
+
+  - id: outline-commit
+    description: "Copy selected outline to outline-approved.md"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            sel="${vars.outline}";
+            if [ -z "$sel" ]; then sel="${vars.__hitlAnswer}"; fi;
+            if [ -z "$sel" ]; then sel="a"; fi;
+            src="${vars.work_dir}/2-outline/outline-option-$sel.md";
+            if [ ! -f "$src" ]; then
+              echo "selected outline file not found: $src" >&2; exit 1;
+            fi;
+            cp "$src" "${vars.work_dir}/2-outline/outline-approved.md";
+
+  - id: script-write
+    description: "Author complete VoiceScript YAML from approved outline (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Load docs/design/voice-gen.md §3 and docs/design/kk-solo-podcast.md §6-§7.
+            Read the approved outline at ${vars.work_dir}/2-outline/outline-approved.md and briefing at ${vars.work_dir}/1-briefing/briefing.md.
+            Target duration is ${vars.target_duration_min} minutes.
+            Spoken budget: if language (${vars.language}) is zh, ja, or ko, target characters = ${vars.target_duration_min} * ${vars.cjk_chars_per_min}; otherwise target words = ${vars.target_duration_min} * ${vars.words_per_min}.
+            Author the complete solo-podcast VoiceScript YAML at ${vars.work_dir}/3-script/voicescript.yaml.
+            Emit ONLY valid YAML (no markdown code fence blocks). Include top-level fields (title, language: "${vars.language}", default_profile: "${vars.voice_profile}") and segments array with natural spoken phrasing, appropriate gap_ms between segments, and per-segment text <= 50000 chars.
+            Revision feedback: ${vars.__hitlInput}
+          expectFile: ${vars.work_dir}/3-script/voicescript.yaml
+
+  - id: script-validate
+    description: "Validate authored VoiceScript YAML structure and constraints"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun "${vars.validate_script}" --in "${vars.work_dir}/3-script/voicescript.yaml"
+
+  - id: script-review
+    description: "Operator reviews and approves VoiceScript before live TTS generation"
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Review VoiceScript at ${vars.work_dir}/3-script/voicescript.yaml. Approve for voice generation?"
+          var: __hitlAnswer
+
+  - id: script-revise
+    description: "Collect revision feedback from operator (bounded by 3 rounds)"
+    pause: true
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            mkdir -p .spur/run;
+            run_id="${vars.__runId}";
+            if [ -z "$run_id" ]; then run_id="solo"; fi;
+            count_file=".spur/run/$run_id-solo-revise-count";
+            curr=$(cat "$count_file" 2>/dev/null || echo 0);
+            echo $((curr + 1)) > "$count_file";
+      - kind: hitl.input
+        options:
+          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-script/voicescript.yaml:"
+          var: __hitlInput
+
+  - id: wrap-docs
+    description: "Wrap VoiceScript into Doc[] JSON for voice-gen generator plugin"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { createHash } from "node:crypto";
+            import { resolve } from "node:path";
+            const scriptPath = resolve(process.argv[1]);
+            const outPath = resolve(process.argv[2]);
+            const voiceProfile = process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "";
+            const body = readFileSync(scriptPath, "utf-8");
+            const sourceUri = "file://" + scriptPath;
+            const id = createHash("sha256").update(sourceUri).digest("hex").slice(0, 16);
+            const doc = {
+              id,
+              title: "Podcast VoiceScript",
+              sourceUri,
+              body,
+              mediaType: "application/yaml",
+              metadata: voiceProfile ? { voiceProfile } : {},
+            };
+            writeFileSync(outPath, JSON.stringify([doc], null, 2));
+            ' "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
+
+  - id: generate
+    description: "Invoke voice-gen generator plugin to generate audio"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk executor run voice-gen --in "${vars.work_dir}/4-audio/docs.json" --out "${vars.work_dir}/4-audio/content.json" --plugins-path "${vars.plugins_path}"
+
+  - id: duration-check
+    description: "Validate generated audio duration against target budget"
+
+  - id: done
+    description: "Terminal — Solo podcast VoiceScript and audio generated successfully"
+  - id: failed
+    description: "Terminal — Solo podcast workflow failed or rejected"
+
+transitions:
+  - from: prepare
+    to: understand
+    description: "Prepare completed -> begin briefing analysis"
+    guard:
+      kind: always
+
+  - from: understand
+    to: outline-write
+    description: "Briefing completed -> generate outline options"
+    guard:
+      kind: always
+
+  - from: outline-write
+    to: outline-select
+    description: "Outline not pre-selected -> pause for operator selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.outline}"'
+
+  - from: outline-write
+    to: outline-commit
+    description: "Outline pre-selected -> skip interactive selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.outline}"'
+
+  - from: outline-select
+    to: outline-commit
+    description: "Outline selected -> commit approved outline"
+    guard:
+      kind: always
+
+  - from: outline-commit
+    to: script-write
+    description: "Approved outline committed -> write VoiceScript"
+    guard:
+      kind: always
+
+  - from: script-write
+    to: script-validate
+    description: "VoiceScript written -> validate structure and caps"
+    guard:
+      kind: always
+
+  - from: script-validate
+    to: wrap-docs
+    description: "script_approved pre-set -> skip script review (CI/dry-run)"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.script_approved}" = "true"'
+  - from: script-validate
+    to: script-review
+    description: "VoiceScript validation passed -> pause for operator review"
+    guard:
+      kind: always
+
+  - from: script-review
+    to: wrap-docs
+    description: "VoiceScript approved -> wrap into Doc[] for generation"
+    guard:
+      kind: shell
+      options:
+        command: '{ test -z "${vars.__hitlAnswer}" || test "${vars.__hitlAnswer}" = "yes"; }'
+
+  - from: script-review
+    to: script-revise
+    description: "VoiceScript rejected with revision budget remaining -> collect feedback"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="solo"; fi; test "$(cat .spur/run/$run_id-solo-revise-count 2>/dev/null || echo 0)" -lt 3; }'
+
+  - from: script-review
+    to: failed
+    description: "VoiceScript rejected with revision budget exhausted -> fail"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="solo"; fi; test "$(cat .spur/run/$run_id-solo-revise-count 2>/dev/null || echo 0)" -ge 3; }'
+
+  - from: script-revise
+    to: script-write
+    description: "Feedback collected -> rewrite VoiceScript"
+    guard:
+      kind: always
+
+  - from: wrap-docs
+    to: generate
+    description: "Doc[] wrapped -> invoke voice-gen"
+    guard:
+      kind: always
+
+  - from: generate
+    to: duration-check
+    description: "Voice generation finished -> verify duration"
+    guard:
+      kind: always
+
+  - from: duration-check
+    to: done
+    description: "Audio duration within [0.5x, 2.0x] band or missing content.json in dry-run -> complete"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test ! -f "${vars.work_dir}/4-audio/content.json" || {
+            dur=$(jq -r '.metadata.duration // empty' "${vars.work_dir}/4-audio/content.json" 2>/dev/null);
+            test -n "$dur" && target_s=$((${vars.target_duration_min} * 60)) && min_s=$(awk -v t="$target_s" 'BEGIN {print t * 0.5}') && max_s=$(awk -v t="$target_s" 'BEGIN {print t * 2.0}') && awk -v d="$dur" -v min="$min_s" -v max="$max_s" 'BEGIN { if (d >= min && d <= max) exit 0; else exit 1 }';
+          }
+
+  - from: duration-check
+    to: failed
+    description: "Audio duration missing or outside [0.5x, 2.0x] target range -> fail"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test -f "${vars.work_dir}/4-audio/content.json" && {
+            dur=$(jq -r '.metadata.duration // empty' "${vars.work_dir}/4-audio/content.json" 2>/dev/null);
+            if [ -z "$dur" ]; then
+              echo "duration-check failed: metadata.duration missing or not a number" >&2;
+              exit 0;
+            fi;
+            target_s=$((${vars.target_duration_min} * 60));
+            min_s=$(awk -v t="$target_s" 'BEGIN {print t * 0.5}');
+            max_s=$(awk -v t="$target_s" 'BEGIN {print t * 2.0}');
+            awk -v d="$dur" -v min="$min_s" -v max="$max_s" -v ts="$target_s" 'BEGIN { if (d < min || d > max) { printf "duration-check failed: duration %ss outside 0.5x–2x of %ss\n", d, ts > "/dev/stderr"; exit 0 } else exit 1 }';
+          }
