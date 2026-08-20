@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContentSchema, type Doc, discoverPlugins } from '@gobing-ai/kk-core';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     concatWavs,
@@ -873,11 +874,14 @@ segments:
 
     it('main CLI — parses args and handles missing flags and errors', async () => {
         const oldArgv = process.argv;
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
         try {
             // Missing args
             process.argv = ['bun', 'voice-gen'];
             const code1 = await main();
             expect(code1).toBe(1);
+            expect(errTarget.text()).toContain('Missing required arguments');
 
             // Valid invocation on empty doclist
             writeFileSync(inputPath, JSON.stringify([]));
@@ -890,7 +894,9 @@ segments:
             writeFileSync(inputPath, 'not-json');
             const code3 = await main();
             expect(code3).toBe(1);
+            expect(errTarget.text()).toContain('Invalid DocList input');
         } finally {
+            restore();
             process.argv = oldArgv;
         }
     });
