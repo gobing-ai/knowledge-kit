@@ -15,29 +15,29 @@ Root `package.json` changes `workspaces` from an array to Bun's object form and 
       "packages/*",
       "plugins/ingestions/*",
       "plugins/generations/*",
-      "plugins/publishings/*"
+      "plugins/publishings/*",
     ],
     "catalog": {
-      "@gobing-ai/ts-db": "^0.4.35",
-      "@gobing-ai/ts-infra": "^0.4.35",
-      "@gobing-ai/ts-runtime": "^0.4.35",
-      "@gobing-ai/ts-utils": "^0.4.35"
-    }
-  }
+      "@gobing-ai/ts-db": "^0.4.39",
+      "@gobing-ai/ts-infra": "^0.4.39",
+      "@gobing-ai/ts-runtime": "^0.4.39",
+      "@gobing-ai/ts-utils": "^0.4.39",
+    },
+  },
 }
 ```
 
 Consumers use `"catalog:"`; no workspace hardcodes a ts-libs version.
 
-| Consumer | Dependency | Reason |
-| --- | --- | --- |
-| root dev dependencies | `ts-utils` | `plugins/kk/scripts/render-md.ts` executes from the root package |
-| `apps/cli` | `ts-utils`, `ts-infra` | command output adapter + process logging bootstrap |
-| `packages/kk-core` | `ts-utils` | `render-md` executable output |
-| plugin workspace | `ts-utils` | only when its executable emits operator-facing output |
-| plugin workspace | `ts-infra` | only when its executable emits structured diagnostics |
-| `karakeep-local` | dependencies above via a new `package.json` | it becomes a normal workspace consumer |
-| any workspace | `ts-runtime`, `ts-db` | **none in feature A3** |
+| Consumer              | Dependency                                  | Reason                                                           |
+| --------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| root dev dependencies | `ts-utils`                                  | `plugins/kk/scripts/render-md.ts` executes from the root package |
+| `apps/cli`            | `ts-utils`, `ts-infra`                      | command output adapter + process logging bootstrap               |
+| `packages/kk-core`    | `ts-utils`                                  | `render-md` executable output                                    |
+| plugin workspace      | `ts-utils`                                  | only when its executable emits operator-facing output            |
+| plugin workspace      | `ts-infra`                                  | only when its executable emits structured diagnostics            |
+| `karakeep-local`      | dependencies above via a new `package.json` | it becomes a normal workspace consumer                           |
+| any workspace         | `ts-runtime`, `ts-db`                       | **none in feature A3**                                           |
 
 Removing `@gobing-ai/utils` also removes manifest-only dependencies that have no source import;
 they are not replaced.
@@ -47,28 +47,28 @@ they are not replaced.
 `apps/cli/src/output.ts` is the CLI-local injectable adapter:
 
 ```ts
-import { echo, echoError } from '@gobing-ai/ts-utils';
+import { echo, echoError } from "@gobing-ai/ts-utils";
 
 export interface CommandOutput {
-    write(message: string): void;
-    error(message: string): void;
+  write(message: string): void;
+  error(message: string): void;
 }
 
 function withoutFinalLineEnding(message: string): string {
-    return message.replace(/\r?\n$/, '');
+  return message.replace(/\r?\n$/, "");
 }
 
 export const consoleOutput: CommandOutput = {
-    write(message): void {
-        echo(withoutFinalLineEnding(message));
-    },
-    error(message): void {
-        echoError(withoutFinalLineEnding(message));
-    },
+  write(message): void {
+    echo(withoutFinalLineEnding(message));
+  },
+  error(message): void {
+    echoError(withoutFinalLineEnding(message));
+  },
 };
 
 export function toJson(value: unknown): string {
-    return JSON.stringify(value, null, 2);
+  return JSON.stringify(value, null, 2);
 }
 ```
 
@@ -85,40 +85,40 @@ Every executable process that emits structured diagnostics initializes LogTape o
 `getLogger`:
 
 ```ts
-import { getLogger, initializeLogger } from '@gobing-ai/ts-infra';
+import { getLogger, initializeLogger } from "@gobing-ai/ts-infra";
 
 await initializeLogger({
-    console: process.env.NODE_ENV !== 'test',
-    json: true,
-    level: 'warn',
+  console: process.env.NODE_ENV !== "test",
+  json: true,
+  level: "warn",
 });
 
-const log = getLogger('kk.<kind>.<plugin>');
+const log = getLogger("kk.<kind>.<plugin>");
 ```
 
 Category names are stable and plugin-scoped:
 
-| Process | Category |
-| --- | --- |
-| `kk` CLI | `kk.cli` |
+| Process          | Category                     |
+| ---------------- | ---------------------------- |
+| `kk` CLI         | `kk.cli`                     |
 | ingestion plugin | `kk.ingestion.<plugin-name>` |
 | generator plugin | `kk.generator.<plugin-name>` |
-| publish plugin | `kk.publish.<plugin-name>` |
-| root script | `kk.script.<script-name>` |
+| publish plugin   | `kk.publish.<plugin-name>`   |
+| root script      | `kk.script.<script-name>`    |
 
 Call sites use `getLogger`; they do not call `initializeLogger` or provide a custom sink. Tests call
 `setLoggerMuted(true)` in setup and exercise behavior through public output/logging interfaces.
 
 ## 4. Migration ownership
 
-| Current owner | Target |
-| --- | --- |
-| Commander output and `apps/cli` user-facing errors | injected `CommandOutput` |
-| `packages/kk-core/src/render-md.ts` user-facing errors | ts-utils `echoError` |
-| product-plugin usage/fatal messages | ts-utils `echoError` |
-| recoverable operational warnings with context | ts-infra plugin logger |
-| `plugins/kk/scripts/render-md.ts` usage/fatal messages | ts-utils `echoError` |
-| tests that monkey-patch `@gobing-ai/utils` | injected `CommandOutput`, ts-utils buffer targets, or `setLoggerMuted` |
+| Current owner                                          | Target                                                                 |
+| ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Commander output and `apps/cli` user-facing errors     | injected `CommandOutput`                                               |
+| `packages/kk-core/src/render-md.ts` user-facing errors | ts-utils `echoError`                                                   |
+| product-plugin usage/fatal messages                    | ts-utils `echoError`                                                   |
+| recoverable operational warnings with context          | ts-infra plugin logger                                                 |
+| `plugins/kk/scripts/render-md.ts` usage/fatal messages | ts-utils `echoError`                                                   |
+| tests that monkey-patch `@gobing-ai/utils`             | injected `CommandOutput`, ts-utils buffer targets, or `setLoggerMuted` |
 
 `packages/utils` is deleted only after `rg '@gobing-ai/utils' apps packages plugins` returns no
 source or manifest references. Its `add`, `z`, and `ZodType` exports have no production consumers
@@ -159,11 +159,11 @@ pre-migration baseline → migrate → confirm GREEN with zero findings.
 
 ## 7. Verified source contracts (2026-08-16)
 
-| Contract | Primary source |
-| --- | --- |
-| `echo`, `echoError`, injectable targets | `/Users/robin/xprojects/ts-libs/packages/utils/src/output.ts` at package version `0.4.35` |
+| Contract                                          | Primary source                                                                            |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `echo`, `echoError`, injectable targets           | `/Users/robin/xprojects/ts-libs/packages/utils/src/output.ts` at package version `0.4.35` |
 | `initializeLogger`, `getLogger`, `setLoggerMuted` | `/Users/robin/xprojects/ts-libs/packages/infra/src/logger.ts` at package version `0.4.35` |
-| Bun catalog shape and `CommandOutput` adapter | `/Users/robin/xprojects/spur-new/package.json`, `apps/cli/src/output.ts` |
+| Bun catalog shape and `CommandOutput` adapter     | `/Users/robin/xprojects/spur-new/package.json`, `apps/cli/src/output.ts`                  |
 
 Confidence: **HIGH** — signatures and versions were read from local primary source; no behavior is
 inferred from package memory.

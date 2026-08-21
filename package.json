@@ -12,10 +12,10 @@
             "plugins/publishings/*"
         ],
         "catalog": {
-            "@gobing-ai/ts-db": "^0.4.35",
-            "@gobing-ai/ts-infra": "^0.4.35",
-            "@gobing-ai/ts-runtime": "^0.4.35",
-            "@gobing-ai/ts-utils": "^0.4.35"
+            "@gobing-ai/ts-db": "^0.4.39",
+            "@gobing-ai/ts-infra": "^0.4.39",
+            "@gobing-ai/ts-runtime": "^0.4.39",
+            "@gobing-ai/ts-utils": "^0.4.39"
         }
     },
     "scripts": {

@@ -18,18 +18,18 @@ describe('preparePublishedManifest', () => {
         };
         const result = preparePublishedManifest(manifest, {
             catalog: {
-                '@gobing-ai/ts-infra': '^0.4.35',
-                '@gobing-ai/ts-runtime': '^0.4.35',
-                '@gobing-ai/ts-utils': '^0.4.35',
+                '@gobing-ai/ts-infra': '^0.4.39',
+                '@gobing-ai/ts-runtime': '^0.4.39',
+                '@gobing-ai/ts-utils': '^0.4.39',
             },
             privateWorkspaceNames: new Set(),
         });
         expect(result.rewrittenCatalog).toBe(3);
         expect(result.strippedWorkspace).toBe(0);
         expect(manifest.dependencies).toEqual({
-            '@gobing-ai/ts-infra': '^0.4.35',
-            '@gobing-ai/ts-runtime': '^0.4.35',
-            '@gobing-ai/ts-utils': '^0.4.35',
+            '@gobing-ai/ts-infra': '^0.4.39',
+            '@gobing-ai/ts-runtime': '^0.4.39',
+            '@gobing-ai/ts-utils': '^0.4.39',
             commander: '15.0.0',
         });
         expect(JSON.stringify(manifest)).not.toContain('catalog:');
