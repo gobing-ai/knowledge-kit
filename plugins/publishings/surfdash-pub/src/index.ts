@@ -87,7 +87,7 @@ export class PostsurfingFileCliTransport implements PublishTransport {
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
         const markdown = mapContentToSurfingMarkdown(payload.content);
-        const tempDir = join(process.cwd(), '.tmp-surfdash');
+        const tempDir = join(process.cwd(), '.spur', 'run', '.tmp-surfdash');
         await createNodeFileSystem().ensureDir(tempDir);
 
         const titleSlug = slugify(payload.content.title ?? 'post');
