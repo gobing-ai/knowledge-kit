@@ -119,3 +119,22 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         segments,
     });
 }
+
+export function formatVoiceScriptToYaml(script: VoiceScript): string {
+    const lines: string[] = [
+        `title: ${JSON.stringify(script.title)}`,
+        `language: ${JSON.stringify(script.language)}`,
+        `default_profile: ${JSON.stringify(script.default_profile || 'Robin')}`,
+        'segments:',
+    ];
+    for (const segment of script.segments) {
+        lines.push(`  - text: ${JSON.stringify(segment.text)}`);
+        if (segment.gap_ms !== undefined) {
+            lines.push(`    gap_ms: ${segment.gap_ms}`);
+        }
+        if (segment.instruct) {
+            lines.push(`    instruct: ${JSON.stringify(segment.instruct)}`);
+        }
+    }
+    return `${lines.join('\n')}\n`;
+}

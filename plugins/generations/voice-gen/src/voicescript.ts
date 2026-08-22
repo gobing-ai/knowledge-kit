@@ -107,7 +107,11 @@ export function parseDocToVoiceScript(doc: Doc, envDefaultProfile?: string): Voi
         try {
             parsed = JSON.parse(trimmed);
         } catch {
-            throw new Error('Invalid VoiceScript JSON structure: failed to parse JSON object');
+            try {
+                parsed = Bun.YAML.parse(trimmed);
+            } catch {
+                throw new Error('Invalid VoiceScript JSON structure: failed to parse JSON object');
+            }
         }
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
             throw new Error('Invalid VoiceScript JSON structure: root must be a JSON object');

@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import { buildNewsVoiceScript, type ScriptBuilderOptions } from './script-builder';
+import { buildNewsVoiceScript, formatVoiceScriptToYaml, type ScriptBuilderOptions } from './script-builder';
 
 export * from './script-builder';
 
@@ -28,7 +28,7 @@ export async function processGeneratorIO(
     }
 
     const script = buildNewsVoiceScript(docs, options);
-    const yamlBody = Bun.YAML.stringify(script);
+    const yamlBody = formatVoiceScriptToYaml(script);
 
     const content: Content = {
         title: script.title,
