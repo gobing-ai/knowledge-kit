@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.22.0
+version: 2.24.0
 created_at: 2026-07-22
-updated_at: 2026-08-20
+updated_at: 2026-08-21
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -32,6 +32,9 @@ sync: [T3]
 | [itc-generating.md](design/itc-generating.md) | ITC generating skill — method + orchestration, no CLI | shipped (F3) |
 | [voice-gen.md](design/voice-gen.md) | Voice generator plugin over local Voicebox REST | shipped (D5) |
 | [kk-solo-podcast.md](design/kk-solo-podcast.md) | Solo-podcast product workflow over voice-gen | shipped (F5) |
+| [aihot-ingest.md](design/aihot-ingest.md) | Ingestion plugin for aihot.virxact.com AI news | shipped (F6) |
+| [dailynews-gen.md](design/dailynews-gen.md) | Generator plugin for daily news VoiceScript Content | shipped (F6) |
+| [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
 
 ## 1. CLI commands
 
@@ -255,7 +258,9 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `KK_CONFIG` | no | Path to the operator YAML (`works_dir`, workflow defaults, `plugins.<collection>.<name>.env`). Default: `~/.config/kk/config.yaml` |
 | `FIRECRAWL_API_KEY` | yes (web-search live) | Bearer token for the live Firecrawl client (task 0057; selected when `fixture` is absent/false) — unset → exit 1, no `--out` (fail loud) |
 | `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`) |
-| `VOICEBOX_DEFAULT_PROFILE` | no (voice-gen) | Default profile name/ID when segment/doc omits profile |
+| `DAILYNEWS_LANGUAGE` | no (dailynews-gen) | Broadcast language passed through `kk executor run`; `zh` (default) or `en` |
+| `DAILYNEWS_TITLE` | no (dailynews-gen) | Optional broadcast title passed through `kk executor run` |
+| `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen) | Default profile name/ID when the news workflow or segment/doc omits profile |
 | `VOICEBOX_TIMEOUT_MS` | no (voice-gen) | Poll timeout per generation in ms (default: `600000`) |
 | `VOICEBOX_POLL_MS` | no (voice-gen) | Poll interval in ms (default: `1000`) |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
@@ -330,6 +335,27 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 `--in` JSON (API source, ingestion spec §2.2): `{ "topic": string (required), "maxResults": int (default 8), "fixture": boolean }`. `fixture: true` selects the offline stub; absent/false runs the **live Firecrawl client** (task 0057, feature C4): requires `FIRECRAWL_API_KEY` (§3), zero hits writes `[]` exit 0, any failure exits 1 with no `--out` (fail loud). **C5 (ADR-013):** live mode additionally requires the `markitdown` binary on PATH (missing → exit 1 naming it); writes `references/` under the `--out` directory; `fixture: true` needs neither.
 
+### `@gobing-ai/aihot-ingest` (`plugins/ingestions/aihot-ingest`, kind `ingestion`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `AihotItemSchema`, `AihotSnapshotResponseSchema`, `AihotChangesResponseSchema` | Zod schemas | Official default-field API shapes; changes are `upsert(item) \| remove(id)` records |
+| `processIngestionIO(options, depsOverride?)` | function | Fetch selected snapshot/changes, retain `upsert` items, and atomically write `Doc[]` plus optional cursor state |
+| `AihotClient`, `createAihotClient(deps?)` | class & function | Client with injectable `fetch` and optional warning sink; invalid individual records warn and skip |
+| `mapAihotItemToDoc(item)` | function | Maps an article to `Doc`, retaining source links and Aihot attribution in metadata |
+| `main(depsOverride?)` | function | Executor surface `--in <config.json> --out <docs.json>`; direct entry also accepts `--limit`/`--cursor`/`--state-file`; exit 0 success / 1 failure |
+
+`--in` config: `{ "limit"?: integer (1–100, default 10), "cursor"?: non-empty string, "stateFile"?: non-empty path }`.
+
+### `@gobing-ai/dailynews-gen` (`plugins/generations/dailynews-gen`, kind `generator`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `VoiceScriptSchema` | Zod schema | `{ title, language: "zh" \| "en", default_profile?, segments: [{ text, gap_ms?, instruct? }] }` |
+| `processGeneratorIO(in, out, options?)` | function | Transform news `Doc[]` into validated VoiceScript YAML carried by markdown `Content` |
+| `buildNewsVoiceScript(docs, options?)` | function | Construct VoiceScript with intro, story segments with `gap_ms`, and outro |
+| `main()` | function | Executor `--in`/`--out`; options come from `DAILYNEWS_LANGUAGE`, `DAILYNEWS_TITLE`, `VOICEBOX_DEFAULT_PROFILE`; direct flags override env; exit 0 success / 1 failure |
+
 ### `@gobing-ai/voice-gen` (`plugins/generations/voice-gen`, kind `generator`)
 
 | Export | Kind | Notes |
@@ -376,6 +402,9 @@ File: `.spur/config.yaml`
 | ITC generating skill | `docs/design/itc-generating.md` | Fat agent skill `itc-generating` + four distilled references, generic craft & platform playbooks (F3 **shipped** 2026-08-19) |
 | Voice generator | `docs/design/voice-gen.md` | Voice generator plugin over local Voicebox REST API (D5 **shipped** 2026-08-19) |
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
+| Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
+| Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine orchestrating aihot-ingest -> dailynews-gen -> voice-gen (F6 **shipped** 2026-08-21) |
 
 ## 7. Workflow install copy-rule and `/workflow-run` surface
 
@@ -414,4 +443,3 @@ not in the tarball). Sidecars the machine executes (e.g. `validate-voicescript.t
 | `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
 | `kk-itc` | `kk-itc.yaml` | `./<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft/draft-article.md` |
 | `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` | `$works_dir/<kebab>` | `$work_dir/3-script/voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
-

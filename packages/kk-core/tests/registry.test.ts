@@ -194,7 +194,9 @@ describe('discoverPlugins', () => {
         const res = discoverPlugins(join(import.meta.dir, '../../../plugins'));
         expect(res.diagnostics).toHaveLength(0);
         expect(res.plugins.map((p) => p.name).sort()).toEqual([
+            'aihot-ingest',
             'content-gen',
+            'dailynews-gen',
             'emdash-pub',
             'karakeep-local',
             'qiita-pub',
@@ -502,7 +504,9 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             });
             expect(res.diagnostics).toHaveLength(0);
             expect(res.plugins.map((p) => p.name).sort()).toEqual([
+                'aihot-ingest',
                 'content-gen',
+                'dailynews-gen',
                 'emdash-pub',
                 'karakeep-local',
                 'qiita-pub',

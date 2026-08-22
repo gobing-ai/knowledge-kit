@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.18.0
+version: 2.19.0
 created_at: 2026-07-22
-updated_at: 2026-08-20
+updated_at: 2026-08-21
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -25,10 +25,12 @@ packages/
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2)
 plugins/
   ingestions/
+    aihot-ingest/     # @gobing-ai/aihot-ingest — curated Aihot news → Doc[] (F6)
     karakeep-local/   # @gobing-ai/karakeep-local — ingestion plugin: rclone-synced folder → Doc[]
     web-search/       # @gobing-ai/web-search — ingestion plugin: topic → Doc[] (live Firecrawl client + offline fixture stub; C4)
   generations/
     content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
+    dailynews-gen/    # @gobing-ai/dailynews-gen — Doc[] → markdown Content carrying VoiceScript YAML (F6)
     voice-gen/        # @gobing-ai/voice-gen — generator plugin: Voicebox TTS audio output (D5)
   publishings/
     surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
@@ -45,8 +47,8 @@ tooling/
 Workspaces reference each other only via `@gobing-ai/*` (`workspace:*`). Per-root registry
 discovery scans kind collections (`plugins/ingestions|generations|publishings/*/plugin.json`,
 ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root merge**
-(ADR-012 — see Multi-root discovery below). Only product-plugin dirs with a `package.json` are
-`@gobing-ai/*` workspaces (`web-search` and `karakeep-local` are; `kk` is not).
+(ADR-012 — see Multi-root discovery below). Product-plugin dirs with a `package.json` are
+`@gobing-ai/*` workspaces; `plugins/kk` is not.
 
 ## Runtime model
 
@@ -254,8 +256,12 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core` |
+| `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
 | `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
+| `plugins/generations/content-gen` | `@gobing-ai/content-gen` | Owned STORM pipeline → markdown `Content` (D4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/generations/dailynews-gen` | `@gobing-ai/dailynews-gen` | News `Doc[]` → validated VoiceScript YAML in markdown `Content` (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
+| `plugins/generations/voice-gen` | `@gobing-ai/voice-gen` | VoiceScript/plain-text `Doc[]` → Voicebox WAV/optional MP3 audio `Content` (D5) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |

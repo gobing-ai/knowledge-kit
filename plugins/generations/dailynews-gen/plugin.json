@@ -1,0 +1,7 @@
+{
+    "name": "dailynews-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Generates structured spoken broadcast VoiceScript YAML Content from AI news Doc[]"
+}

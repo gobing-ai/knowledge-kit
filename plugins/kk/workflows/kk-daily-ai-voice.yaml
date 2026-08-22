@@ -1,0 +1,144 @@
+---
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-daily-ai-voice
+kind: state-machine
+description: >-
+  Daily AI news broadcast pipeline orchestrating aihot-ingest, dailynews-gen, and voice-gen
+initialState: prepare
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+
+vars:
+  work_dir: ""
+  limit: "10"
+  language: "zh"
+  voice_profile: "Robin"
+  title: ""
+  cursor: ""
+  state_file: ""
+  skip_review: "false"
+  transcode_mp3: "false"
+  plugins_path: ""
+  __hitlAnswer: ""
+
+states:
+  - id: prepare
+    description: "Create workspace subdirectories and validate parameters"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            test -n "${vars.work_dir}" || { echo "missing required variable: work_dir" >&2 && exit 1; };
+            mkdir -p "${vars.work_dir}" "${vars.work_dir}/1-ingest" "${vars.work_dir}/2-script" "${vars.work_dir}/3-audio";
+            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ limit: Number(process.argv[2]), cursor: process.argv[3] || undefined, stateFile: process.argv[4] || undefined }, null, 2))' "${vars.work_dir}/1-ingest/source.json" "${vars.limit}" "${vars.cursor}" "${vars.state_file}"
+
+  - id: fetch
+    description: "Ingest latest curated AI news from aihot.virxact.com"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor run aihot-ingest --in "${vars.work_dir}/1-ingest/source.json" --out "${vars.work_dir}/1-ingest/docs.json" "$@"
+
+  - id: script
+    description: "Compile news Doc[] into structured broadcast VoiceScript YAML Content"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/1-ingest/docs.json" --out "${vars.work_dir}/2-script/content.json" "$@" &&
+            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-script/content.json" "${vars.work_dir}/2-script/voicescript.yaml"
+
+  - id: review
+    description: "Operator reviews the generated news script before speech synthesis"
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Review daily AI news VoiceScript at ${vars.work_dir}/2-script/voicescript.yaml. Proceed to voice generation?"
+          var: __hitlAnswer
+
+  - id: wrap-docs
+    description: "Wrap VoiceScript into Doc[] input for voice-gen"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "Robin" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/voicescript.yaml" "${vars.work_dir}/3-audio/docs.json" "${vars.voice_profile}"
+
+  - id: generate
+    description: "Invoke voice-gen generator plugin to generate audio"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run voice-gen --in "${vars.work_dir}/3-audio/docs.json" --out "${vars.work_dir}/3-audio/content.json" "$@"
+
+  - id: done
+    description: "Terminal — Daily AI news voice broadcast generated successfully"
+  - id: failed
+    description: "Terminal — Pipeline failed"
+
+transitions:
+  - from: prepare
+    to: fetch
+    description: "Workspace prepared -> fetch news items"
+    guard:
+      kind: always
+
+  - from: fetch
+    to: script
+    description: "News ingested -> build broadcast script"
+    guard:
+      kind: always
+
+  - from: script
+    to: wrap-docs
+    description: "skip_review enabled -> bypass HITL review"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.skip_review}" = "true"'
+
+  - from: script
+    to: review
+    description: "skip_review disabled -> pause for operator review"
+    guard:
+      kind: always
+
+  - from: review
+    to: wrap-docs
+    description: "VoiceScript approved -> wrap for audio generation"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "yes"'
+
+  - from: review
+    to: failed
+    description: "VoiceScript rejected -> abort"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "no"'
+
+  - from: wrap-docs
+    to: generate
+    description: "Doc[] wrapped -> synthesize audio"
+    guard:
+      kind: always
+
+  - from: generate
+    to: done
+    description: "Audio generated successfully -> complete"
+    guard:
+      kind: always

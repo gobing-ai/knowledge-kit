@@ -1,0 +1,7 @@
+{
+    "name": "aihot-ingest",
+    "kind": "ingestion",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Ingests curated AI news items from aihot.virxact.com into Doc[]"
+}
