@@ -23,9 +23,9 @@ function jsonResponse(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), { status });
 }
 
-/** Wrap a fake fetch body as `typeof fetch` so it can be assigned to `globalThis.fetch`. */
-function mockFetch(impl: (input: string, init?: RequestInit) => Promise<Response>): typeof fetch {
-    return impl as unknown as typeof fetch;
+/** Wrap a fake fetch body as `FetchLike`. */
+function mockFetch(impl: (input: string, init?: RequestInit) => Promise<Response>): FetchLike {
+    return impl;
 }
 
 const TMP_DIR = join(import.meta.dir, 'tmp');
@@ -172,8 +172,7 @@ describe('web-search fixture plugin', () => {
 
     test('live happy path via main() writes schema-valid Doc[] to --out (fixture absent)', async () => {
         // Scrape pass warns per URL (mock returns search-shaped data for /v2/scrape) — capture, don't leak.
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () =>
+        const fakeFetch = mockFetch(async () =>
             jsonResponse(200, {
                 success: true,
                 data: {
@@ -184,166 +183,132 @@ describe('web-search fixture plugin', () => {
                 },
             }),
         );
+        await writeInput('STORM topic research', {}); // fixture absent → live path
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
         try {
-            await writeInput('STORM topic research', {}); // fixture absent → live path
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            try {
-                const res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(0);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
-            expect(docs).toHaveLength(2);
-            for (const doc of docs) {
-                expect(doc.id).toMatch(/^[0-9a-f]{16}$/);
-                expect(doc.mediaType).toBe('text/markdown');
-                expect(typeof doc.metadata?.rank).toBe('number');
-            }
+            const res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(0);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
+        }
+        const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+        expect(docs).toHaveLength(2);
+        for (const doc of docs) {
+            expect(doc.id).toMatch(/^[0-9a-f]{16}$/);
+            expect(doc.mediaType).toBe('text/markdown');
+            expect(typeof doc.metadata?.rank).toBe('number');
         }
     });
 
     test('R2: live run without FIRECRAWL_API_KEY exits 1 with exact stderr and no --out', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => jsonResponse(200, { success: true, data: { web: [] } }));
+        const fakeFetch = mockFetch(async () => jsonResponse(200, { success: true, data: { web: [] } }));
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        delete process.env.FIRECRAWL_API_KEY;
+        let res: { code: number; lines: string[] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            delete process.env.FIRECRAWL_API_KEY;
-            let res: { code: number; lines: string[] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines).toEqual(['web-search failed: FIRECRAWL_API_KEY is unset']);
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines).toEqual(['web-search failed: FIRECRAWL_API_KEY is unset']);
     });
 
     test('live HTTP 401 exits 1 with status + error and no --out', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => jsonResponse(401, { success: false, error: 'Unauthorized' }));
+        const fakeFetch = mockFetch(async () => jsonResponse(401, { success: false, error: 'Unauthorized' }));
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        let res: { code: number; lines: string[] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            let res: { code: number; lines: string[] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines).toHaveLength(1);
-            expect(res.lines[0]).toBe('web-search failed: Firecrawl HTTP 401: Unauthorized');
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines).toHaveLength(1);
+        expect(res.lines[0]).toBe('web-search failed: Firecrawl HTTP 401: Unauthorized');
     });
 
     test('live transport error (fetch throws) exits 1 with network message and no --out', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => {
+        const fakeFetch = mockFetch(async () => {
             throw new Error('ECONNREFUSED');
         });
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        let res: { code: number; lines: string[] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            let res: { code: number; lines: string[] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines[0]).toBe('web-search failed: Firecrawl network error: ECONNREFUSED');
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines[0]).toBe('web-search failed: Firecrawl network error: ECONNREFUSED');
     });
 
     test('live 200 with success:false exits 1 with status + error and no --out', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => jsonResponse(200, { success: false, error: 'Something went wrong' }));
+        const fakeFetch = mockFetch(async () => jsonResponse(200, { success: false, error: 'Something went wrong' }));
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        let res: { code: number; lines: string[] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            let res: { code: number; lines: string[] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines[0]).toBe('web-search failed: Firecrawl HTTP 200: Something went wrong');
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines[0]).toBe('web-search failed: Firecrawl HTTP 200: Something went wrong');
     });
 
     test('live HTTP 429 exits 1 with status + error (no silent retry)', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => jsonResponse(429, { success: false, error: 'Rate limit exceeded' }));
+        const fakeFetch = mockFetch(async () => jsonResponse(429, { success: false, error: 'Rate limit exceeded' }));
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        let res: { code: number; lines: string[] } = { code: 0, lines: [] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            let res: { code: number; lines: string[] } = { code: 0, lines: [] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines[0]).toBe('web-search failed: Firecrawl HTTP 429: Rate limit exceeded');
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines[0]).toBe('web-search failed: Firecrawl HTTP 429: Rate limit exceeded');
     });
 
     test('zero web hits writes [] and exits 0', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => jsonResponse(200, { success: true, data: { web: [] } }));
+        const fakeFetch = mockFetch(async () => jsonResponse(200, { success: true, data: { web: [] } }));
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            try {
-                expect(await main()).toBe(0);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            expect(JSON.parse(await readFile(OUT_FILE, 'utf-8'))).toEqual([]);
+            expect(await main({ fetch: fakeFetch })).toBe(0);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        expect(JSON.parse(await readFile(OUT_FILE, 'utf-8'))).toEqual([]);
     });
 
     test('partial skip: one good + one empty markdown returns the good Doc and warns', async () => {
@@ -351,8 +316,7 @@ describe('web-search fixture plugin', () => {
         // cache hit — the assertion below counts exactly the original skip warning.
         await mkdir(join(TMP_DIR, 'references'), { recursive: true });
         await writeFile(join(TMP_DIR, 'references', `${computeId('https://a.example/a')}.md`), '# A cached', 'utf-8');
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () =>
+        const fakeFetch = mockFetch(async () =>
             jsonResponse(200, {
                 success: true,
                 data: {
@@ -363,32 +327,27 @@ describe('web-search fixture plugin', () => {
                 },
             }),
         );
-        try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            const { result: exitCode, warns } = await captureLogWarns(async () => {
-                try {
-                    return await main();
-                } finally {
-                    if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                    else process.env.FIRECRAWL_API_KEY = saved;
-                }
-            });
-            expect(exitCode).toBe(0);
-            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
-            expect(docs).toHaveLength(1);
-            expect(docs[0]?.sourceUri).toBe('https://a.example/a');
-            expect(warns.length).toBe(1);
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        const { result: exitCode, warns } = await captureLogWarns(async () => {
+            try {
+                return await main({ fetch: fakeFetch });
+            } finally {
+                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+                else process.env.FIRECRAWL_API_KEY = saved;
+            }
+        });
+        expect(exitCode).toBe(0);
+        const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+        expect(docs).toHaveLength(1);
+        expect(docs[0]?.sourceUri).toBe('https://a.example/a');
+        expect(warns.length).toBe(1);
     });
 
     test('all empty markdown (hits but no usable bodies) exits 1 with no --out', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () =>
+        const fakeFetch = mockFetch(async () =>
             jsonResponse(200, {
                 success: true,
                 data: {
@@ -399,47 +358,38 @@ describe('web-search fixture plugin', () => {
                 },
             }),
         );
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        let res: { code: number; lines: string[] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            let res: { code: number; lines: string[] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines[0]).toBe('web-search failed: Firecrawl returned hits but no usable markdown bodies');
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines[0]).toBe('web-search failed: Firecrawl returned hits but no usable markdown bodies');
     });
 
     test('malformed 200 (success:true with data missing) exits 1 with no --out', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => jsonResponse(200, { success: true }));
+        const fakeFetch = mockFetch(async () => jsonResponse(200, { success: true }));
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const saved = process.env.FIRECRAWL_API_KEY;
+        process.env.FIRECRAWL_API_KEY = 'test-key';
+        let res: { code: number; lines: string[] };
         try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const saved = process.env.FIRECRAWL_API_KEY;
-            process.env.FIRECRAWL_API_KEY = 'test-key';
-            let res: { code: number; lines: string[] };
-            try {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            } finally {
-                if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
-                else process.env.FIRECRAWL_API_KEY = saved;
-            }
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines[0]).toBe('web-search failed: Firecrawl malformed response: data missing');
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
         } finally {
-            globalThis.fetch = originalFetch;
+            if (saved === undefined) delete process.env.FIRECRAWL_API_KEY;
+            else process.env.FIRECRAWL_API_KEY = saved;
         }
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines[0]).toBe('web-search failed: Firecrawl malformed response: data missing');
     });
 
     test('R3: computeId is stable and exported as a 16-char hex string', () => {
@@ -451,26 +401,21 @@ describe('web-search fixture plugin', () => {
 
     test('fixture mode creates no references/ cache dir (R8/R9)', async () => {
         await writeInput('STORM topic research', { fixture: true });
-        const originalFetch = globalThis.fetch;
         let fetchCalls = 0;
-        globalThis.fetch = mockFetch(async () => {
+        const fakeFetch = mockFetch(async () => {
             fetchCalls += 1;
             throw new Error('fixture mode must not fetch');
         });
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        expect(await main({ fetch: fakeFetch })).toBe(0);
+        expect(fetchCalls).toBe(0);
+        let entries: string[] = [];
         try {
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            expect(await main()).toBe(0);
-            expect(fetchCalls).toBe(0);
-            let entries: string[] = [];
-            try {
-                entries = await Array.fromAsync(new Bun.Glob('*.md').scan({ cwd: join(TMP_DIR, 'references') }));
-            } catch {
-                // references/ absent — expected when the fixture path never scrapes.
-            }
-            expect(entries).toEqual([]);
-        } finally {
-            globalThis.fetch = originalFetch;
+            entries = await Array.fromAsync(new Bun.Glob('*.md').scan({ cwd: join(TMP_DIR, 'references') }));
+        } catch {
+            // references/ absent — expected when the fixture path never scrapes.
         }
+        expect(entries).toEqual([]);
     });
 
     test('missing topic exits 1 and writes no --out', async () => {
@@ -540,22 +485,17 @@ describe('web-search live error-body branches (extractError + empty-body + succe
         }
     };
     const runLive = async (fetchImpl: () => Response | Promise<Response>): Promise<string> => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async () => fetchImpl());
-        try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            let res: { code: number; lines: string[] } = { code: 0, lines: [] };
-            await withKey(async () => {
-                res = await captureEchoErrors(() => main());
-                expect(res.code).toBe(1);
-            });
-            await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
-            expect(res.lines).toHaveLength(1);
-            return res.lines[0] as string;
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
+        const fakeFetch = mockFetch(async () => fetchImpl());
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        let res: { code: number; lines: string[] } = { code: 0, lines: [] };
+        await withKey(async () => {
+            res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
+            expect(res.code).toBe(1);
+        });
+        await expect(readFile(OUT_FILE, 'utf-8')).rejects.toThrow();
+        expect(res.lines).toHaveLength(1);
+        return res.lines[0] as string;
     };
 
     test('HTTP error with a non-JSON body falls back to an empty error message', async () => {
@@ -618,9 +558,8 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
 
     test('R1/R2: live main() scrapes, caches references/<doc-id>.md, swaps bodies; docs.json schema-valid', async () => {
         const scrapeCalls: string[] = [];
-        const originalFetch = globalThis.fetch;
         // /v2/search → 2 docs; /v2/scrape → html for both (stub markitdown = cat passthrough).
-        globalThis.fetch = mockFetch(async (input: string, init?: RequestInit) => {
+        const fakeFetch = mockFetch(async (input: string, init?: RequestInit) => {
             if (input.includes('/v2/scrape')) {
                 const url = (JSON.parse(String(init?.body)) as { url: string }).url;
                 scrapeCalls.push(url);
@@ -628,23 +567,19 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
             }
             return jsonResponse(200, searchBody(['https://a.example/a', 'https://b.example/b']));
         });
-        try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            await withKeyEnv(async () => {
-                expect(await main()).toBe(0);
-            });
-            expect(scrapeCalls).toHaveLength(2);
-            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
-            expect(docs).toHaveLength(2);
-            for (const doc of docs) {
-                if (!doc.sourceUri) throw new Error('expected sourceUri');
-                const cache = await readFile(join(TMP_DIR, 'references', `${computeId(doc.sourceUri)}.md`), 'utf-8');
-                expect(cache).toBe(doc.body);
-                expect(doc.body).toBe(`<h1>full ${doc.sourceUri}</h1>`);
-            }
-        } finally {
-            globalThis.fetch = originalFetch;
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        await withKeyEnv(async () => {
+            expect(await main({ fetch: fakeFetch })).toBe(0);
+        });
+        expect(scrapeCalls).toHaveLength(2);
+        const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+        expect(docs).toHaveLength(2);
+        for (const doc of docs) {
+            if (!doc.sourceUri) throw new Error('expected sourceUri');
+            const cache = await readFile(join(TMP_DIR, 'references', `${computeId(doc.sourceUri)}.md`), 'utf-8');
+            expect(cache).toBe(doc.body);
+            expect(doc.body).toBe(`<h1>full ${doc.sourceUri}</h1>`);
         }
     });
 
@@ -653,8 +588,7 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
         await mkdir(join(TMP_DIR, 'references'), { recursive: true });
         await writeFile(join(TMP_DIR, 'references', `${computeId('https://a.example/a')}.md`), cachedA, 'utf-8');
         const scrapeCalls: string[] = [];
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async (input: string, init?: RequestInit) => {
+        const fakeFetch = mockFetch(async (input: string, init?: RequestInit) => {
             if (input.includes('/v2/scrape')) {
                 const url = (JSON.parse(String(init?.body)) as { url: string }).url;
                 scrapeCalls.push(url);
@@ -662,24 +596,19 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
             }
             return jsonResponse(200, searchBody(['https://a.example/a', 'https://b.example/b']));
         });
-        try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            await withKeyEnv(async () => {
-                expect(await main()).toBe(0);
-            });
-            expect(scrapeCalls).toEqual(['https://b.example/b']);
-            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
-            expect(docs[0]?.body).toBe(cachedA);
-            expect(docs[1]?.body).toBe('# b full');
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        await withKeyEnv(async () => {
+            expect(await main({ fetch: fakeFetch })).toBe(0);
+        });
+        expect(scrapeCalls).toEqual(['https://b.example/b']);
+        const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+        expect(docs[0]?.body).toBe(cachedA);
+        expect(docs[1]?.body).toBe('# b full');
     });
 
     test('R3: one failed /v2/scrape warns, keeps the snippet body, exits 0, writes docs.json', async () => {
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = mockFetch(async (input: string, init?: RequestInit) => {
+        const fakeFetch = mockFetch(async (input: string, init?: RequestInit) => {
             if (input.includes('/v2/scrape')) {
                 const url = (JSON.parse(String(init?.body)) as { url: string }).url;
                 if (url === 'https://b.example/b') return jsonResponse(500, { success: false, error: 'boom' });
@@ -687,28 +616,23 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
             }
             return jsonResponse(200, searchBody(['https://a.example/a', 'https://b.example/b']));
         });
-        try {
-            await writeInput('STORM topic research', {});
-            process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
-            const { warns } = await captureLogWarns(async () => {
-                await withKeyEnv(async () => {
-                    expect(await main()).toBe(0);
-                });
+        await writeInput('STORM topic research', {});
+        process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
+        const { warns } = await captureLogWarns(async () => {
+            await withKeyEnv(async () => {
+                expect(await main({ fetch: fakeFetch })).toBe(0);
             });
-            const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
-            expect(docs[0]?.body).toBe('# a full');
-            expect(docs[1]?.body).toBe('# snippet 1');
-            expect(warns).toHaveLength(1);
-            expect(warns[0]).toContain('https://b.example/b');
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
+        });
+        const docs = DocListSchema.parse(JSON.parse(await readFile(OUT_FILE, 'utf-8')));
+        expect(docs[0]?.body).toBe('# a full');
+        expect(docs[1]?.body).toBe('# snippet 1');
+        expect(warns).toHaveLength(1);
+        expect(warns[0]).toContain('https://b.example/b');
     });
 
     test('R6: live main() without markitdown on PATH exits 1 naming markitdown, no docs.json, no network', async () => {
-        const originalFetch = globalThis.fetch;
         let fetchCalls = 0;
-        globalThis.fetch = mockFetch(async () => {
+        const fakeFetch = mockFetch(async () => {
             fetchCalls += 1;
             return jsonResponse(200, { success: true, data: { web: [] } });
         });
@@ -719,7 +643,7 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
             process.argv = ['bun', 'test', '--in', IN_FILE, '--out', OUT_FILE];
             let res: { code: number; lines: string[] } = { code: 0, lines: [] };
             await withKeyEnv(async () => {
-                res = await captureEchoErrors(() => main());
+                res = await captureEchoErrors(() => main({ fetch: fakeFetch }));
                 expect(res.code).toBe(1);
             });
             expect(fetchCalls).toBe(0); // fail loud happens before any network call
@@ -727,7 +651,6 @@ describe('web-search evidence cache (ADR-013 R1–R11)', () => {
             expect(res.lines).toEqual(['web-search failed: markitdown is not on PATH']);
         } finally {
             process.env.PATH = savedPath;
-            globalThis.fetch = originalFetch;
         }
     });
 

@@ -13,9 +13,9 @@ rules:
       A plugin.json at plugins/<name>/ (except plugins/kk/plugin.json) is ADR-009 drift.
     severity: error
     evaluator:
-      type: rg
+      type: path
       config:
-        pattern: "."
+        must: absent
     include:
       - "plugins/*/plugin.json"
     exclude:
@@ -57,9 +57,9 @@ rules:
       (ADR-009). Do not author them under product plugin collections.
     severity: error
     evaluator:
-      type: rg
+      type: path
       config:
-        pattern: "."
+        must: absent
     include:
       - "plugins/ingestions/**/SKILL.md"
       - "plugins/generations/**/SKILL.md"

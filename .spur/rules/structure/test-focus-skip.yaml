@@ -13,6 +13,8 @@ include:
   - "apps/**/tests/**/*.test.tsx"
   - "packages/**/tests/**/*.test.ts"
   - "packages/**/tests/**/*.test.tsx"
+  - "plugins/*/*/tests/**/*.test.ts"
+  - "plugins/*/*/tests/**/*.test.tsx"
 exclude:
   - "**/node_modules/**"
 rules:

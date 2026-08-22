@@ -356,7 +356,7 @@ export function parseInput(raw: string): InInput {
     return { topic: input.topic, maxResults, fixture: input.fixture === true };
 }
 
-export async function main(): Promise<number> {
+export async function main(depsOverride?: Partial<SearchDeps>): Promise<number> {
     const fs = createNodeFileSystem();
     const { values } = parseArgs({
         options: {
@@ -385,6 +385,7 @@ export async function main(): Promise<number> {
                 fetch: globalThis.fetch,
                 env: process.env,
                 now: () => new Date(),
+                ...depsOverride,
             };
             // Bun.which with an explicit PATH — without the option it can ignore runtime
             // process.env.PATH changes (observed on Bun 1.3.14).

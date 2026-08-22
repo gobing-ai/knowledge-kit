@@ -10,9 +10,13 @@ include:
   - "apps/**/src/**/*.ts"
   - "packages/**/src/**/*.ts"
   - "plugins/*/*/src/**/*.ts"
+  - "apps/**/tests/**/*.ts"
+  - "apps/**/tests/**/*.tsx"
+  - "packages/**/tests/**/*.ts"
+  - "packages/**/tests/**/*.tsx"
+  - "plugins/*/*/tests/**/*.ts"
+  - "scripts/**/*.ts"
 exclude:
-  - "**/tests/**"
-  - "**/*.test.ts"
   - "**/node_modules/**"
   - "**/dist/**"
   - "apps/cli/plugins/**"
@@ -25,13 +29,17 @@ rules:
       type: rg
       config:
         pattern: "(^|[^.[:alnum:]_])fetch\\("
+    include:
+      - "apps/**/src/**/*.ts"
+      - "packages/**/src/**/*.ts"
+      - "plugins/*/*/src/**/*.ts"
     exclude:
+      - "**/tests/**"
+      - "**/*.test.ts"
       # These files implement PublishTransport (@gobing-ai/publish-harness); the
       # transport class is the sanctioned HTTP boundary, so `fetch` belongs here.
       - "plugins/publishings/qiita-pub/src/index.ts"
       - "plugins/publishings/emdash-pub/src/index.ts"
-      # Firecrawl search injects `deps.fetch` — the call is already behind a seam.
-      - "plugins/ingestions/web-search/src/index.ts"
 
   - id: no-globalthis-fetch
     description: "Avoid globalThis.fetch(...); route HTTP through a client seam when one exists."

@@ -32,23 +32,11 @@ include:
   - "apps/**/tests/**/*.test.tsx"
   - "packages/**/tests/**/*.test.ts"
   - "packages/**/tests/**/*.test.tsx"
+  - "plugins/*/*/tests/**/*.test.ts"
+  - "plugins/*/*/tests/**/*.test.tsx"
 exclude:
   - "**/node_modules/**"
   - "**/dist/**"
-  # Shared full-surface mock helpers are the CORRECT pattern — they ensure every
-  # test file registers the same compatible surface, neutralizing "last mock wins."
-  - "apps/web/tests/test-helpers/rpc-client-mock.ts"
-  # These files use beforeEach restoreMock() atop the shared baseline — the mock.module
-  # call is in a runtime function, not at module scope, and always registers the full surface.
-  - "apps/web/tests/modules/task-kanban/board.test.tsx"
-  - "apps/web/tests/modules/task-kanban/components.test.tsx"
-  - "apps/web/tests/modules/task-kanban/new-task-panel.test.tsx"
-  - "apps/web/tests/modules/features/components.test.tsx"
-  - "apps/web/tests/modules/task-kanban/task-detail.test.tsx"
-  - "apps/web/tests/modules/task-kanban/index.test.tsx"
-  # index.test.tsx no longer mocks useTasks/useTaskParams/TaskDetail; useTasks.test.ts
-  # uses custom listFn (isolated store), not mock.module for first-party modules.
-  - "apps/web/tests/modules/task-kanban/useTasks.test.ts"
 rules:
   - id: no-leaky-mock-module
     description: >
