@@ -9,6 +9,8 @@ import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } 
 import {
     mergeVoiceScripts,
     parseDocToVoiceScript,
+    resolveEffectsChain,
+    resolveInstruct,
     VOICEBOX_CHUNK_CHARS_DEFAULT,
     VOICEBOX_CHUNK_CHARS_MAX,
     VOICEBOX_CHUNK_CHARS_MIN,
@@ -82,21 +84,30 @@ export async function processGeneratorIO(
         // 4. Generate each segment
         const segmentWavs: Uint8Array[] = [];
         const segmentGaps: number[] = [];
-        const segmentMetadata: Array<{ generationId: string; profile: string; duration: number }> = [];
+        const segmentMetadata: Array<{
+            generationId: string;
+            profile: string;
+            speaker?: string;
+            emotion?: string;
+            duration: number;
+        }> = [];
         let totalDuration = 0;
 
         for (const segment of combinedScript.segments) {
             const speakerConfig = segment.speaker ? combinedScript.speakers?.[segment.speaker] : undefined;
             const profileTarget =
+                segment.profile_id ??
                 segment.profile ??
+                speakerConfig?.profile_id ??
                 speakerConfig?.profile ??
+                combinedScript.default_profile_id ??
                 combinedScript.default_profile ??
                 envDefaultProfile ??
                 (typeof docs[0]?.metadata?.voiceProfile === 'string' ? docs[0].metadata.voiceProfile : undefined);
 
             if (!profileTarget) {
                 throw new Error(
-                    'No voice profile specified for segment (set profile, speaker profile, default_profile, or VOICEBOX_DEFAULT_PROFILE)',
+                    'No voice profile specified for segment (set profile, profile_id, speaker profile, default_profile, default_profile_id, or VOICEBOX_DEFAULT_PROFILE)',
                 );
             }
 
@@ -104,7 +115,21 @@ export async function processGeneratorIO(
 
             const engine = segment.engine ?? speakerConfig?.engine ?? combinedScript.default_engine;
             const language = segment.language ?? speakerConfig?.language ?? combinedScript.language ?? 'en';
-            const instruct = segment.instruct ?? speakerConfig?.instruct;
+            const rawInstruct = segment.instruct ?? speakerConfig?.instruct;
+            const rawEmotion = segment.emotion ?? speakerConfig?.emotion ?? combinedScript.default_emotion;
+            const instruct = resolveInstruct(rawInstruct, rawEmotion);
+
+            const personality = segment.personality ?? speakerConfig?.personality ?? false;
+            const seed = segment.seed ?? null;
+
+            const effects_chain =
+                segment.effects_chain ??
+                resolveEffectsChain(undefined, segment.effect_preset) ??
+                speakerConfig?.effects_chain ??
+                resolveEffectsChain(undefined, speakerConfig?.effect_preset) ??
+                combinedScript.default_effects_chain ??
+                resolveEffectsChain(undefined, combinedScript.default_effect_preset) ??
+                null;
 
             const envChunk = process.env.VOICEBOX_MAX_CHUNK_CHARS
                 ? parseInt(process.env.VOICEBOX_MAX_CHUNK_CHARS, 10)
@@ -137,8 +162,10 @@ export async function processGeneratorIO(
                 instruct,
                 max_chunk_chars,
                 crossfade_ms,
-                personality: false,
+                personality,
                 normalize: true,
+                seed,
+                effects_chain,
             };
 
             const { id } = await client.generate(generateBody);
@@ -160,6 +187,8 @@ export async function processGeneratorIO(
             segmentMetadata.push({
                 generationId: id,
                 profile: resolvedProfile.name,
+                speaker: segment.speaker,
+                emotion: rawEmotion,
                 duration: segDuration,
             });
         }

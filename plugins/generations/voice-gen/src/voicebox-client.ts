@@ -1,3 +1,9 @@
+export interface EffectConfig {
+    type: string;
+    enabled?: boolean;
+    params?: Record<string, number>;
+}
+
 export interface VoiceboxGenerateBody {
     profile_id: string;
     text: string;
@@ -6,8 +12,10 @@ export interface VoiceboxGenerateBody {
     instruct?: string;
     max_chunk_chars: number;
     crossfade_ms: number;
-    personality: false;
-    normalize: true;
+    personality?: boolean;
+    normalize?: boolean;
+    seed?: number | null;
+    effects_chain?: EffectConfig[] | null;
 }
 
 export interface VoiceboxProfile {

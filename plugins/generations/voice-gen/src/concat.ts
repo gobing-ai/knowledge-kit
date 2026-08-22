@@ -157,13 +157,15 @@ export function concatWavs(wavBuffers: Uint8Array[], gapsMs: number[] = []): Uin
         if (!wav) {
             continue;
         }
-        const gap = gapsMs[i] ?? 0;
-        if (gap > 0) {
-            const numGapBytes = Math.floor(first.sampleRate * (gap / 1000)) * first.blockAlign;
-            if (numGapBytes > 0) {
-                const silence = new Uint8Array(numGapBytes);
-                pieces.push(silence);
-                totalDataLength += numGapBytes;
+        if (i > 0) {
+            const gap = gapsMs[0] === 0 ? (gapsMs[i] ?? 0) : (gapsMs[i - 1] ?? 0);
+            if (gap > 0) {
+                const numGapBytes = Math.floor(first.sampleRate * (gap / 1000)) * first.blockAlign;
+                if (numGapBytes > 0) {
+                    const silence = new Uint8Array(numGapBytes);
+                    pieces.push(silence);
+                    totalDataLength += numGapBytes;
+                }
             }
         }
         pieces.push(wav.dataBytes);

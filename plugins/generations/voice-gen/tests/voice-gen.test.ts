@@ -14,6 +14,8 @@ import {
     parseDocToVoiceScript,
     parseWav,
     processGeneratorIO,
+    resolveEffectsChain,
+    resolveInstruct,
     transcodeWavToMp3,
     type VoiceboxClient,
     type VoiceboxGenerateBody,
@@ -875,6 +877,93 @@ segments:
                 segments: [{ text: 'hi' }],
             }),
         ).toThrow(/language must be a Voicebox language code/);
+    });
+
+    it('VoiceScript — effect presets, instruct resolver, and multi-speaker discussion generation', async () => {
+        // 1. resolveEffectsChain
+        expect(resolveEffectsChain([{ type: 'gain', params: { gain_db: 3 } }])).toEqual([
+            { type: 'gain', params: { gain_db: 3 } },
+        ]);
+        expect(resolveEffectsChain(undefined, 'Radio')?.length).toBeGreaterThan(0);
+        expect(resolveEffectsChain(undefined, 'Robotic')?.length).toBeGreaterThan(0);
+        expect(resolveEffectsChain(undefined, 'Echo Chamber')?.length).toBeGreaterThan(0);
+        expect(resolveEffectsChain(undefined, 'Deep Voice')?.length).toBeGreaterThan(0);
+        expect(resolveEffectsChain(undefined, 'Unknown')).toBeUndefined();
+
+        // 2. resolveInstruct
+        expect(resolveInstruct('Speak slowly', 'cheerful')).toBe('Speak slowly. Emotion: cheerful');
+        expect(resolveInstruct('Speak in a cheerful voice', 'cheerful')).toBe('Speak in a cheerful voice');
+        expect(resolveInstruct(undefined, 'excited')).toBe('Speak in a excited tone.');
+        expect(resolveInstruct('Speak clearly', undefined)).toBe('Speak clearly');
+        expect(resolveInstruct(undefined, undefined)).toBeUndefined();
+
+        // 3. Multi-speaker discussion scenario with profile_id bindings, emotion, effects
+        const multiSpeakerDoc: Doc = {
+            id: 'doc-discussion',
+            sourceUri: 'https://example.com/podcast',
+            title: 'AI Roundtable Discussion',
+            body: `
+title: "AI Roundtable"
+language: "zh"
+default_profile_id: "prof-1"
+speakers:
+  host:
+    profile_id: "prof-1"
+    name: "Robin"
+    role: "Host"
+    emotion: "professional, welcoming"
+    effect_preset: "Radio"
+  guest:
+    profile: "Narrator"
+    name: "Alex"
+    role: "Guest Expert"
+    emotion: "thoughtful"
+segments:
+  - speaker: "host"
+    text: "大家好，欢迎来到本期AI圆桌派。[laugh] 今天我们邀请到了Alex老师。"
+    gap_ms: 500
+  - speaker: "guest"
+    text: "大家好，很高兴来到这里。[chuckle] 今天我们聊聊大模型的最新突破。"
+    gap_ms: 600
+  - speaker: "host"
+    text: "那我们直接进入正题。"
+    emotion: "confident"
+    personality: true
+    seed: 42
+    gap_ms: 300
+`,
+        };
+
+        writeFileSync(inputPath, JSON.stringify([multiSpeakerDoc]));
+        const generatedBodies: VoiceboxGenerateBody[] = [];
+        const mockClient = createMockClient({
+            generate: async (body) => {
+                generatedBodies.push(body);
+                return { id: `gen-${generatedBodies.length}` };
+            },
+        });
+
+        await processGeneratorIO(inputPath, outputPath, mockClient);
+        const content = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        expect(content.format).toBe('audio');
+        expect(content.metadata?.generator).toBe('kk:voice-gen');
+        expect(generatedBodies.length).toBe(3);
+
+        // Segment 1 (host) has Radio effect preset applied and instruct from emotion
+        expect(generatedBodies[0]?.profile_id).toBe('prof-1');
+        expect(generatedBodies[0]?.text).toContain('大家好，欢迎来到本期AI圆桌派');
+        expect(generatedBodies[0]?.effects_chain).toBeDefined();
+        expect(generatedBodies[0]?.instruct).toContain('professional, welcoming');
+
+        // Segment 2 (guest) has Narrator resolved to prof-2 and thoughtful emotion
+        expect(generatedBodies[1]?.profile_id).toBe('prof-2');
+        expect(generatedBodies[1]?.text).toContain('很高兴来到这里');
+        expect(generatedBodies[1]?.instruct).toContain('thoughtful');
+
+        // Segment 3 (host override) has seed 42 and personality true
+        expect(generatedBodies[2]?.seed).toBe(42);
+        expect(generatedBodies[2]?.personality).toBe(true);
+        expect(generatedBodies[2]?.instruct).toContain('confident');
     });
 
     it('main CLI — parses args and handles missing flags and errors', async () => {
