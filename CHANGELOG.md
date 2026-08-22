@@ -1,3 +1,21 @@
+## [0.0.9] - 2026-08-22
+
+### Added
+
+- ship daily AI news voice workflow and plugins (661b101)
+- add optional MP3 transcoding via ffmpeg (998fbfd)
+- integrate manifest rewriting into publish helper (dab3273)
+- rewrite catalog and workspace deps for publishing (4d7ec8f)
+
+### Fixed
+
+- resolve evaluator errors and eliminate global fetch mutation (b75d38e)
+
+### Other
+
+- document published dependencies manifest rewriting (27a075b)
+- upgrade ts-libs to 0.4.39 (a4db2f9)
+
 ## [0.0.8] - 2026-08-20
 
 ### Added
