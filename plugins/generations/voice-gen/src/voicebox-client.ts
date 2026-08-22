@@ -44,6 +44,7 @@ export interface VoiceboxClient {
         pollMs?: number,
     ): Promise<{ status: 'completed' | 'failed'; duration?: number; error?: string }>;
     downloadAudio(id: string): Promise<Uint8Array>;
+    transcribe(audio: Uint8Array, language?: string): Promise<{ text: string; duration?: number }>;
 }
 
 export interface VoiceboxClientOptions {
@@ -225,6 +226,35 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
             } catch (err: unknown) {
                 const reason = err instanceof Error ? err.message : String(err);
                 throw new Error(`Voicebox /audio/${id} failed to read audio stream at ${url}: ${reason}`);
+            }
+        },
+
+        async transcribe(audio: Uint8Array, language = 'zh'): Promise<{ text: string; duration?: number }> {
+            const formData = new FormData();
+            const blob = new Blob([audio], { type: 'audio/wav' });
+            formData.append('file', blob, 'audio.wav');
+            formData.append('language', language);
+
+            let res: Response;
+            try {
+                res = await customFetch(`${url}/transcribe`, {
+                    method: 'POST',
+                    body: formData,
+                });
+            } catch (err: unknown) {
+                const reason = err instanceof Error ? err.message : String(err);
+                throw new Error(`Voicebox /transcribe request failed at ${url}: ${reason}`);
+            }
+
+            if (!res.ok) {
+                throw new Error(`Voicebox /transcribe failed at ${url}: HTTP ${res.status} ${res.statusText}`);
+            }
+
+            try {
+                return (await res.json()) as { text: string; duration?: number };
+            } catch (err: unknown) {
+                const reason = err instanceof Error ? err.message : String(err);
+                throw new Error(`Voicebox /transcribe returned invalid JSON at ${url}: ${reason}`);
             }
         },
     };

@@ -5,6 +5,7 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { concatWavs } from './concat';
 import { isMp3Requested, type Mp3Transcoder, transcodeWavToMp3 } from './mp3';
+import { auditVoiceSegments } from './qc';
 import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } from './voicebox-client';
 import {
     mergeVoiceScripts,
@@ -22,6 +23,7 @@ import {
 
 export * from './concat';
 export * from './mp3';
+export * from './qc';
 export * from './voicebox-client';
 export * from './voicescript';
 
@@ -204,6 +206,14 @@ export async function processGeneratorIO(
             duration: totalDuration,
             segments: segmentMetadata,
         };
+
+        // 6. Quality Control Audit
+        const qc = await auditVoiceSegments(combinedScript, segmentWavs, segmentMetadata, client);
+        metadata.qc = qc;
+
+        if (process.env.VOICE_GEN_FAIL_ON_QC === 'true' && !qc.passed) {
+            throw new Error(`Voice Quality Control failed (${qc.overallScore}/100):\n${qc.criticalIssues.join('\n')}`);
+        }
 
         if (wantMp3) {
             const transcode = transcodeMp3 ?? transcodeWavToMp3;

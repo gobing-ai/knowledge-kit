@@ -718,6 +718,27 @@ segments:
             },
         });
         await expect(netErrAudio.downloadAudio('id1')).rejects.toThrow(/Audio stream error/);
+
+        // Transcribe success
+        const transcribeClient = createVoiceboxClient({
+            url: 'http://custom-voicebox:17493',
+            fetch: async (url) => {
+                if (String(url).endsWith('/transcribe')) {
+                    return new Response(JSON.stringify({ text: 'transcribed text', duration: 3.2 }), { status: 200 });
+                }
+                return new Response('Not found', { status: 404 });
+            },
+        });
+        const transResult = await transcribeClient.transcribe(new Uint8Array(50), 'zh');
+        expect(transResult.text).toBe('transcribed text');
+        expect(transResult.duration).toBe(3.2);
+
+        // Transcribe error
+        const transErrClient = createVoiceboxClient({
+            url: 'http://custom-voicebox:17493',
+            fetch: async () => new Response('Internal error', { status: 500 }),
+        });
+        await expect(transErrClient.transcribe(new Uint8Array(50))).rejects.toThrow(/HTTP 500/);
     });
 
     it('Concat — concatWavs edge cases and validation', () => {

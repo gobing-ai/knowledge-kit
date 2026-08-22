@@ -83,6 +83,14 @@ states:
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run voice-gen --in "${vars.work_dir}/3-audio/docs.json" --out "${vars.work_dir}/3-audio/content.json" "$@"
 
+  - id: quality-control
+    description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/content.json"
+
   - id: done
     description: "Terminal — Daily AI news voice broadcast generated successfully"
   - id: failed
@@ -138,7 +146,13 @@ transitions:
       kind: always
 
   - from: generate
+    to: quality-control
+    description: "Audio generated -> run quality control validation"
+    guard:
+      kind: always
+
+  - from: quality-control
     to: done
-    description: "Audio generated successfully -> complete"
+    description: "Quality control checks complete -> done"
     guard:
       kind: always

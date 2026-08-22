@@ -16,7 +16,17 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
     const stateIds = [...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1]);
 
     it('R1 & R5 — walks state machine states with done/failed terminals', () => {
-        expect(stateIds).toEqual(['prepare', 'fetch', 'script', 'review', 'wrap-docs', 'generate', 'done', 'failed']);
+        expect(stateIds).toEqual([
+            'prepare',
+            'fetch',
+            'script',
+            'review',
+            'wrap-docs',
+            'generate',
+            'quality-control',
+            'done',
+            'failed',
+        ]);
         expect(yaml).toContain('name: kk-daily-ai-voice');
         expect(yaml).toContain('kind: state-machine');
         expect(yaml).toContain('"$schema":');
