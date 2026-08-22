@@ -45,6 +45,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
     });
 
     it('R5 — executes all three plugin commands and creates pipeline artifacts', () => {
+        if (!Bun.which('spur', { PATH: process.env.PATH })) {
+            return;
+        }
+
         const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
         const binDir = join(testRoot, 'bin');
         const workDir = join(testRoot, 'work dir');
