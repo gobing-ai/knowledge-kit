@@ -8,11 +8,13 @@ import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     concatWavs,
     createVoiceboxClient,
+    isMp3Requested,
     main,
     mergeVoiceScripts,
     parseDocToVoiceScript,
     parseWav,
     processGeneratorIO,
+    transcodeWavToMp3,
     type VoiceboxClient,
     type VoiceboxGenerateBody,
     type VoiceboxProfile,
@@ -63,6 +65,7 @@ describe('voice-gen generator plugin (0070)', () => {
     let inputPath: string;
     let outputPath: string;
     let audioPath: string;
+    let mp3Path: string;
 
     beforeEach(() => {
         testDir = join(tmpdir(), `kk-voice-gen-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -70,6 +73,8 @@ describe('voice-gen generator plugin (0070)', () => {
         inputPath = join(testDir, 'input.json');
         outputPath = join(testDir, 'output.json');
         audioPath = join(testDir, 'output.wav');
+        mp3Path = join(testDir, 'output.mp3');
+        delete process.env.VOICE_GEN_MP3;
     });
 
     afterEach(() => {
@@ -899,6 +904,106 @@ segments:
             restore();
             process.argv = oldArgv;
         }
+    });
+
+    it('optional MP3 — VOICE_GEN_MP3 writes sibling mp3 and metadata.mp3Path after WAV', async () => {
+        const doc: Doc = {
+            id: 'doc-1',
+            sourceUri: 'https://example.com/test',
+            title: 'Test Article',
+            body: 'Speak this.',
+            metadata: { voiceProfile: 'Robin' },
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+        process.env.VOICE_GEN_MP3 = 'true';
+
+        let transcodedFrom: string | undefined;
+        await processGeneratorIO(inputPath, outputPath, createMockClient(), async (wav, mp3) => {
+            transcodedFrom = wav;
+            writeFileSync(mp3, 'ID3fake');
+        });
+
+        expect(transcodedFrom).toBe(audioPath);
+        expect(existsSync(audioPath)).toBe(true);
+        expect(existsSync(mp3Path)).toBe(true);
+
+        const content = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        expect(content.metadata.audioPath).toBe(audioPath);
+        expect(content.metadata.mp3Path).toBe(mp3Path);
+    });
+
+    it('optional MP3 — default is WAV-only (no ffmpeg, no mp3Path)', async () => {
+        const doc: Doc = {
+            id: 'doc-1',
+            sourceUri: 'https://example.com/test',
+            title: 'Test Article',
+            body: 'Speak this.',
+            metadata: { voiceProfile: 'Robin' },
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+
+        let transcodeCalled = false;
+        await processGeneratorIO(inputPath, outputPath, createMockClient(), async () => {
+            transcodeCalled = true;
+        });
+
+        expect(transcodeCalled).toBe(false);
+        expect(existsSync(mp3Path)).toBe(false);
+        const content = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        expect(content.metadata.mp3Path).toBeUndefined();
+        expect(content.metadata.audioPath).toBe(audioPath);
+    });
+
+    it('optional MP3 — ffmpeg failure deletes --out, wav, and mp3', async () => {
+        const doc: Doc = {
+            id: 'doc-1',
+            sourceUri: 'https://example.com/test',
+            title: 'Test Article',
+            body: 'Speak this.',
+            metadata: { voiceProfile: 'Robin' },
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+        process.env.VOICE_GEN_MP3 = '1';
+
+        await expect(
+            processGeneratorIO(inputPath, outputPath, createMockClient(), async () => {
+                throw new Error('ffmpeg mp3 transcode failed (exit 1): lame encoder missing');
+            }),
+        ).rejects.toThrow(/ffmpeg mp3 transcode failed/);
+
+        expect(existsSync(outputPath)).toBe(false);
+        expect(existsSync(audioPath)).toBe(false);
+        expect(existsSync(mp3Path)).toBe(false);
+    });
+
+    it('isMp3Requested reads VOICE_GEN_MP3 truthy values only', () => {
+        expect(isMp3Requested({})).toBe(false);
+        expect(isMp3Requested({ VOICE_GEN_MP3: '' })).toBe(false);
+        expect(isMp3Requested({ VOICE_GEN_MP3: 'false' })).toBe(false);
+        expect(isMp3Requested({ VOICE_GEN_MP3: 'true' })).toBe(true);
+        expect(isMp3Requested({ VOICE_GEN_MP3: 'YES' })).toBe(true);
+        expect(isMp3Requested({ VOICE_GEN_MP3: '1' })).toBe(true);
+        expect(isMp3Requested({ VOICE_GEN_MP3: 'on' })).toBe(true);
+    });
+
+    it('transcodeWavToMp3 fails loud when the WAV input is missing', async () => {
+        await expect(transcodeWavToMp3(join(testDir, 'missing.wav'), mp3Path)).rejects.toThrow(/WAV input not found/);
+        expect(existsSync(mp3Path)).toBe(false);
+    });
+
+    it('transcodeWavToMp3 fails loud when ffmpeg is not on PATH', async () => {
+        writeFileSync(audioPath, createTestWav());
+        await expect(transcodeWavToMp3(audioPath, mp3Path, 'kk-missing-ffmpeg-binary')).rejects.toThrow(
+            /ffmpeg is required for MP3 output/,
+        );
+        expect(existsSync(mp3Path)).toBe(false);
+    });
+
+    it('transcodeWavToMp3 fails loud when the encoder exits non-zero or writes no file', async () => {
+        writeFileSync(audioPath, createTestWav());
+        await expect(transcodeWavToMp3(audioPath, mp3Path, 'false')).rejects.toThrow(/ffmpeg mp3 transcode failed/);
+        await expect(transcodeWavToMp3(audioPath, mp3Path, 'true')).rejects.toThrow(/produced no file/);
+        expect(existsSync(mp3Path)).toBe(false);
     });
 
     it('R12 — Documentation & quality gate pointers exist', async () => {

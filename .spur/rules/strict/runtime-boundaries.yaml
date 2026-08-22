@@ -57,6 +57,8 @@ rules:
             - "plugins/publishings/zenn-pub/src/index.ts"
             # HTML-to-text extraction shells out to a local binary before caching.
             - "plugins/ingestions/web-search/src/index.ts"
+            # Optional WAV to MP3 transcode shells out to local ffmpeg binary.
+            - "plugins/generations/voice-gen/src/mp3.ts"
 
   - id: no-direct-fs-io
     description: "File IO must go through @gobing-ai/ts-runtime's FileSystem seam (createNodeFileSystem). Sync-structural sites are allowlisted below."

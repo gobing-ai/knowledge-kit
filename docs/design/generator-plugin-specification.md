@@ -54,7 +54,7 @@ changes**:
 - **`title`**: Extracted article title, or the primary input doc's title; defaults to
   `"Generated Knowledge Kit Synthesis"` when neither exists.
 - **`format`**: Defaults to `"markdown"` (the `ContentSchema` default); wrappers SHOULD NOT emit
-  any other value in Phase 1 (amended by feature **D5** for TTS audio generation: `voice-gen` emits `format: "audio"` with canonical VoiceScript YAML in `body` and absolute WAV path in `metadata.audioPath`; see `docs/design/voice-gen.md`).
+  any other value in Phase 1 (amended by feature **D5** for TTS audio generation: `voice-gen` emits `format: "audio"` with canonical VoiceScript YAML in `body` and absolute WAV path in `metadata.audioPath`; optional sibling MP3 at `metadata.mp3Path` when `VOICE_GEN_MP3` is set — see `docs/design/voice-gen.md`).
 - **`outline`**: Formatted markdown outline string, taken from the stage-2 outline (or the engine's
   own outline output).
 - **`references`**: Array of `{ url, title, cite }` constructed from `Doc.sourceUri` → `url`,

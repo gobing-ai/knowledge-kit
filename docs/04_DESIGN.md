@@ -260,6 +260,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `VOICEBOX_POLL_MS` | no (voice-gen) | Poll interval in ms (default: `1000`) |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
 | `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
+| `VOICE_GEN_MP3` | no (voice-gen) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
 
 ## 4. Public package surface
 
@@ -333,7 +334,9 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `processGeneratorIO(in, out, client?)` | function | Read Doc[], generate Voicebox audio Content, write out JSON + sibling WAV (D5) |
+| `processGeneratorIO(in, out, client?, transcodeMp3?)` | function | Read Doc[], generate Voicebox audio Content, write out JSON + sibling WAV; optional ffmpeg MP3 when `VOICE_GEN_MP3` is set (D5/D13) |
+| `isMp3Requested(env?)` | function | Parse `VOICE_GEN_MP3` truthy values |
+| `transcodeWavToMp3(wav, mp3)` | function | ffmpeg WAV → MP3 (`libmp3lame` `-qscale:a 2`) |
 | `parseDocToVoiceScript(doc, envDefaultProfile?)` | function | Parse plain text or VoiceScript structure from Doc |
 | `mergeVoiceScripts(scripts, docs, envDefaultProfile?)` | function | Merge multiple scripts into combined VoiceScript |
 | `validateVoiceScript(script)` | function | Validate VoiceScript text/instruct caps, engine/language enums, and structure |

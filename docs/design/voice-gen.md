@@ -29,6 +29,7 @@ Voicebox caps and request shapes: `vendors/voicebox/backend/models.py` (verified
 | D10 | Fake HTTP Voicebox in unit tests | Live GPU in CI; skip tests | Same grain as publish-harness fakes |
 | D11 | No ADR | ADR for “audio as generator output” | Extends D3; two-way door (delete the plugin). `format: "audio"` convention lives here; generator spec gets a one-line pointer at ship (T3) |
 | D12 | `vendors/voicebox` is reference only | Workspace dependency on Voicebox Python; fork | External runtime, like Firecrawl |
+| D13 | Optional sibling MP3 via ffmpeg after WAV (`VOICE_GEN_MP3`) | Replace WAV; ffmpeg inside concat; extra npm encoder | Voicebox returns WAV. Keep the D5 sibling. Opt-in transcode with PATH `ffmpeg` + libmp3lame. Fail-loud if ffmpeg is missing or the transcode fails. |
 
 ---
 
@@ -42,6 +43,7 @@ plugins/generations/voice-gen/
   src/voicescript.ts          # parse + validate VoiceScript
   src/voicebox-client.ts      # health, profiles, generate, poll history, download audio
   src/concat.ts               # WAV PCM concat + gap_ms silence
+  src/mp3.ts                  # optional ffmpeg WAV → MP3 (VOICE_GEN_MP3)
   tests/voice-gen.test.ts
 ```
 
@@ -134,6 +136,7 @@ export interface VoiceboxClient {
 | `VOICEBOX_POLL_MS` | no | `1000` | `GET /history/{id}` interval |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no | `800` | Default chunk size if script omits it |
 | `VOICEBOX_CROSSFADE_MS` | no | `50` | Default crossfade if script omits it |
+| `VOICE_GEN_MP3` | no | unset (off) | `true`/`1`/`yes`/`on` → ffmpeg transcodes the sibling WAV to `<outStem>.mp3` and sets `metadata.mp3Path`. WAV is always written. Missing ffmpeg or transcode failure → exit 1, no `--out` |
 
 The plugin reads **only** `process.env` (D9). Operator defaults may live under
 `plugins.generations.voice-gen.env` in `$KK_CONFIG` (default `~/.config/kk/config.yaml`);
@@ -175,12 +178,15 @@ Do **not** call `POST /speak` or `/mcp`.
 | Canonical YAML of the executed VoiceScript (resolved profile ids recorded in metadata, not required in body) | `body` |
 | `"audio"` | `format` |
 | Workspace WAV written beside `--out` (`<outStem>.wav`) | `metadata.audioPath` (absolute) |
+| Sibling MP3 when `VOICE_GEN_MP3` is truthy (`<outStem>.mp3`) | `metadata.mp3Path` (absolute); omitted when MP3 is off |
 | Sum of segment durations plus gaps | `metadata.duration` (seconds, number) |
 | Per-segment `{ generationId, profile, duration, audioBytes? }` | `metadata.segments` |
 | `{ generator: "kk:voice-gen" }` | `metadata.generator` |
 
 `--out` is the Content JSON. The WAV is a sibling file so publish/workflow steps can copy it
 without parsing JSON first. If `--out` is `/tmp/episode.json`, audio is `/tmp/episode.wav`.
+With `VOICE_GEN_MP3=true`, ffmpeg then writes `/tmp/episode.mp3` (`metadata.mp3Path`); the WAV
+stays. Transcode uses `ffmpeg -i <wav> -codec:a libmp3lame -qscale:a 2 <mp3>` (`-y`).
 
 Empty `Doc[]`: D3 notice Content, `format: "markdown"`, no Voicebox call, exit 0.
 

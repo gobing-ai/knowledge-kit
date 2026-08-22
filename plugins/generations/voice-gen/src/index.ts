@@ -4,6 +4,7 @@ import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { concatWavs } from './concat';
+import { isMp3Requested, type Mp3Transcoder, transcodeWavToMp3 } from './mp3';
 import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } from './voicebox-client';
 import {
     mergeVoiceScripts,
@@ -18,6 +19,7 @@ import {
 } from './voicescript';
 
 export * from './concat';
+export * from './mp3';
 export * from './voicebox-client';
 export * from './voicescript';
 
@@ -35,15 +37,19 @@ export async function processGeneratorIO(
     inputPath: string,
     outputPath: string,
     clientOverride?: VoiceboxClient,
+    transcodeMp3?: Mp3Transcoder,
 ): Promise<void> {
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     const outStem = basename(outputPath, extname(outputPath));
     const audioPath = resolve(join(outDir, `${outStem}.wav`));
+    const mp3Path = resolve(join(outDir, `${outStem}.mp3`));
+    const wantMp3 = isMp3Requested();
 
-    // Delete existing output and sibling WAV at start
+    // Delete existing output and sibling audio at start
     await fs.deleteFile(outputPath);
     await fs.deleteFile(audioPath);
+    await fs.deleteFile(mp3Path);
 
     let docs: Doc[];
     try {
@@ -163,18 +169,26 @@ export async function processGeneratorIO(
         await fs.ensureDir(outDir);
         await Bun.write(audioPath, concatenatedWav);
 
+        const metadata: Record<string, unknown> = {
+            generator: 'kk:voice-gen',
+            audioPath,
+            duration: totalDuration,
+            segments: segmentMetadata,
+        };
+
+        if (wantMp3) {
+            const transcode = transcodeMp3 ?? transcodeWavToMp3;
+            await transcode(audioPath, mp3Path);
+            metadata.mp3Path = mp3Path;
+        }
+
         // 6. Build Content
         const content: Content = {
             title: combinedScript.title || docs[0]?.title || 'Generated voice',
             body: Bun.YAML.stringify(combinedScript),
             format: 'audio',
             references: [],
-            metadata: {
-                generator: 'kk:voice-gen',
-                audioPath,
-                duration: totalDuration,
-                segments: segmentMetadata,
-            },
+            metadata,
         };
 
         const validatedContent = ContentSchema.parse(content);
@@ -182,6 +196,7 @@ export async function processGeneratorIO(
     } catch (err: unknown) {
         await fs.deleteFile(outputPath);
         await fs.deleteFile(audioPath);
+        await fs.deleteFile(mp3Path);
         throw err;
     }
 }
