@@ -141,6 +141,42 @@ export function normalizeBroadcastText(raw: string, isZh: boolean): string {
     return text;
 }
 
+/**
+ * Synthesizes a natural, concise spoken perspective / takeaway based on the story facts.
+ * Gives the monologue a demonstrative tech podcast talk feel rather than mechanical news reading.
+ */
+export function synthesizePersonalUnderstanding(title: string, body: string, isZh: boolean): string {
+    const combined = `${title} ${body}`.toLowerCase();
+
+    if (isZh) {
+        if (/jakub|szymon|首席科学家|创始团队|技术领袖|黄金搭档/i.test(combined)) {
+            return '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者，为今天整个大模型生态奠定了最坚实的技术基石。';
+        }
+        if (/算力|吉瓦|工厂|电力|芯片|基础设施|基建|硬件|能源/i.test(combined)) {
+            return '这其实释放了一个非常明确的信号：AI竞争的下半场，已经不再只是单纯拼模型参数，更是电力、能源和全栈工业基础设施的硬核较量。';
+        }
+        if (/sora|视频|生成|cameo|chatgpt/i.test(combined)) {
+            return '我个人觉得，这次最大的看点是内容创作门槛的再次降低。不过正如团队提到的，如何平衡创作自由与防止低质内容泛滥，会是整个行业接下来最值得观察的关键考题。';
+        }
+        if (/融资|投资|市场|商业|估值|合作/i.test(combined)) {
+            return '这项进展反映出资本与产业界正在加速形成合力，后续实际业务场景的落地效果非常值得我们持续跟进。';
+        }
+        return '这项新动态反映出技术演进正在进一步提速，对相关领域的实际影响也非常值得我们持续关注。';
+    }
+
+    // English spoken insights
+    if (/jakub|szymon|chief scientist|founding team|technical leader|partnership/i.test(combined)) {
+        return 'Behind the headlines, it is relentless technical leadership and deep engineering rigor that continue to drive these foundational milestones.';
+    }
+    if (/compute|gigawatt|factory|power|chip|infrastructure|datacenter/i.test(combined)) {
+        return 'This signals clearly that the AI frontier is no longer just about algorithms, but a massive contest of power, energy, and full-stack industrial engineering.';
+    }
+    if (/sora|video|generation|cameo|chatgpt/i.test(combined)) {
+        return 'In my view, the biggest takeaway here is the dramatic lowering of creation barriers, while content quality governance will be the key test ahead.';
+    }
+    return 'This development highlights how rapidly the ecosystem is moving from experimental proofs of concept into large-scale execution.';
+}
+
 export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions): VoiceScript {
     const language = z.enum(['zh', 'en']).parse((options?.language || 'zh').toLowerCase());
     const isZh = language === 'zh';
@@ -152,11 +188,11 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     const dateStr = formatBroadcastDate(broadcastDate, language);
 
     if (docs.length === 0) {
-        const title = options?.title || (isZh ? '今日AI快讯（暂无更新）' : 'AI Daily Briefing (No Updates)');
+        const title = options?.title || (isZh ? '今日AI科技漫谈（暂无更新）' : 'AI Daily Briefing (No Updates)');
         const segments: VoiceScriptSegment[] = isZh
             ? [
                   {
-                      text: `大家好，今天是${dateStr}。欢迎收听由${voiceProfile}为您播报的今日AI快讯。今天暂无最新的精选新闻动态。`,
+                      text: `大家好，今天是${dateStr}。欢迎收听由${voiceProfile}为您带来的今日AI科技漫谈。今天科技圈暂无最新的精选动态。`,
                       gap_ms: 400,
                       emotion: 'calm',
                   },
@@ -192,15 +228,19 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     }
 
     const title =
-        options?.title || (isZh ? `今日AI快讯（共${docs.length}条）` : `AI Daily Briefing (${docs.length} stories)`);
+        options?.title ||
+        (isZh ? `今日AI科技漫谈（共${docs.length}条）` : `AI Daily Briefing (${docs.length} stories)`);
     const segments: VoiceScriptSegment[] = [];
 
-    const hostName =
+    let hostName =
         (options?.speakers?.host?.name as string) ||
         voiceProfile.replace(/[-_]?(news|voice|bot|profile)$/i, '') ||
         voiceProfile;
+    if (hostName.length > 0) {
+        hostName = hostName.charAt(0).toUpperCase() + hostName.slice(1);
+    }
 
-    // 1. Opening segment: Date + Self Introduction + Program Overview
+    // 1. Opening segment: Conversational podcast hook + overview
     const countText = isZh ? `${formatChineseCount(docs.length)}条` : `${docs.length}`;
     const titlesSummary = docs
         .slice(0, 3)
@@ -209,62 +249,58 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         .join('、');
 
     const introText = isZh
-        ? `大家好，今天是${dateStr}，欢迎收听由${hostName}为您播报的今日AI快讯。在今天的节目中，我们为您精选了${countText}全球人工智能领域的重点动态${titlesSummary ? `，包括${titlesSummary}` : ''}。下面请听详细报道。`
-        : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with your AI Daily Briefing. In today's episode, we bring you ${countText} top stories from the world of artificial intelligence. Here is the detailed report.`;
+        ? `大家好，今天是${dateStr}，欢迎收听由${hostName}为您带来的今日AI科技漫谈。今天科技圈有几条非常有看点的大消息，我精选了${countText}最值得关注的重点动态来和大家聊一聊${titlesSummary ? `，包括${titlesSummary}` : ''}。话不多说，我们马上进入今天的正题。`
+        : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with your AI Daily Briefing. In today's episode, we have ${countText} fascinating stories from the AI world. Let's dive straight in.`;
 
     segments.push({
         text: normalizeBroadcastText(introText, isZh),
-        gap_ms: 700, // Distinct breathing pause before the first news item
+        gap_ms: 700, // Breathing pause before the first story
         emotion: 'confident, warm',
     });
 
-    // 2. Story segments with natural broadcast transitional language
-    const zhTransitions = [
-        '首先来看第一条重点消息。',
-        '接下来关注第二条动态。',
-        '在另一项重要进展中。',
-        '此外，行业方面。',
-        '最后来看一条重要动态。',
-    ];
-    const enTransitions = [
-        'First up today.',
-        'Turning to our next story.',
-        'In another key development.',
-        'Moving on.',
-        'And finally today.',
-    ];
-
+    // 2. Story segments: demonstrative talk with facts + conversational insight
     docs.forEach((doc, idx) => {
         const isLast = idx === docs.length - 1 && docs.length > 1;
-        const transition = isZh
-            ? isLast
-                ? zhTransitions[4]
-                : (zhTransitions[idx % 4] ?? '接下来关注下一条动态。')
-            : isLast
-              ? enTransitions[4]
-              : (enTransitions[idx % 4] ?? 'Next story.');
-
         const cleanTitle = (doc.title ?? '').trim();
         const cleanBody = (doc.body ?? '').trim();
 
-        const storyLead = isZh ? `${transition}${cleanTitle}。` : `${transition} ${cleanTitle}.`;
+        // Conversational lead
+        const lead = isZh
+            ? idx === 0
+                ? `首先来聊聊大家非常关注的【${cleanTitle}】。`
+                : isLast
+                  ? `最后，来跟大家分享一条很有温度的幕后故事，【${cleanTitle}】。`
+                  : `接着我们把目光转向另一条重要进展，【${cleanTitle}】。`
+            : idx === 0
+              ? `First up today, let's look at ${cleanTitle}.`
+              : isLast
+                ? `And finally today, let's wrap up with ${cleanTitle}.`
+                : `Next, turning our attention to ${cleanTitle}.`;
 
-        const normalizedLead = normalizeBroadcastText(storyLead, isZh);
+        const normalizedLead = normalizeBroadcastText(lead, isZh);
         const normalizedBody = normalizeBroadcastText(cleanBody, isZh);
+        const insight = synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh);
+        const normalizedInsight = normalizeBroadcastText(insight, isZh);
 
-        const fullStoryText = isZh ? `${normalizedLead}${normalizedBody}` : `${normalizedLead} ${normalizedBody}`;
+        const factText = isZh ? `${normalizedLead}${normalizedBody}` : `${normalizedLead} ${normalizedBody}`;
 
+        // Emit facts followed by personal insight commentary
         segments.push({
-            text: fullStoryText,
-            gap_ms: 800, // Distinct 800ms pause between different news stories
-            emotion: 'professional news delivery',
+            text: factText,
+            gap_ms: 500, // Natural breathing pause before giving personal perspective
+            emotion: 'professional, clear',
+        });
+        segments.push({
+            text: normalizedInsight,
+            gap_ms: 800, // Distinct 800ms pause before the next story
+            emotion: 'thoughtful, personal',
         });
     });
 
-    // 3. Outro segment: Professional wrap-up
+    // 3. Outro segment: Warm, conversational wrap-up
     const outroText = isZh
-        ? `以上就是今天AI快讯的全部内容。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目再见。`
-        : `That wraps up today's AI Daily Briefing. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. We'll see you in the next episode.`;
+        ? `好了，以上就是今天AI科技漫谈的全部内容。不知道今天这几条消息有没有给您带来一些新的启发？感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+        : `That wraps up today's AI Daily Briefing. I hope today's highlights gave you some useful takeaways. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
 
     segments.push({
         text: normalizeBroadcastText(outroText, isZh),

@@ -144,11 +144,12 @@ mkdir -p "$work_dir"
 `kebab` = lower-case, `[^a-z0-9]+` → `-`, trimmed dashes (no length cap, no sha256 hash).
 `work_dir="${DIR:-./$kebab}"`. Empty derived `kebab` → exit 1.
 
-### Profile `kk-solo-podcast`
+### Profile `kk-solo-podcast` / `kk-daily-ai-voice`
 
+`date` = today's date in `YYYY-MM-DD` (`$(date +%Y-%m-%d)`).
 `raw` = `TOPIC` or file-mode first ATX H1 else basename without extension.
 `kebab` = lower-case, `[^a-z0-9]+` → `-`, trimmed dashes (no length cap, no sha256 hash).
-`work_dir="${DIR:-$works_dir/$kebab}"`. Empty derived `kebab` → exit 1.
+`work_dir="${DIR:-$works_dir/kk-solo-podcast/$date}"`.
 
 ## 5. Run the workflow
 

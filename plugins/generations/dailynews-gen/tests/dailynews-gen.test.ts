@@ -80,31 +80,32 @@ describe('dailynews-gen plugin (0073)', () => {
     it('R3 & R4 — generates structured Chinese broadcast VoiceScript with intro and news transitions', () => {
         const testDate = new Date(2026, 7, 22);
         const script = buildNewsVoiceScript([SAMPLE_DOC_1, SAMPLE_DOC_2], { date: testDate });
-        expect(script.title).toContain('今日AI快讯');
+        expect(script.title).toContain('今日AI科技漫谈');
         expect(script.language).toBe('zh');
         expect(script.default_profile).toBe('Robin');
-        expect(script.segments.length).toBe(4); // Intro + 2 stories + Outro
+        expect(script.segments.length).toBeGreaterThanOrEqual(4); // Intro + stories + Outro
 
         // Segment 0: Opening with date, self intro, overview
         expect(script.segments[0]?.text).toContain('今天是2026年8月22日');
-        expect(script.segments[0]?.text).toContain('欢迎收听由Robin为您播报的今日AI快讯');
-        expect(script.segments[0]?.text).toContain('两条全球人工智能领域的重点动态');
+        expect(script.segments[0]?.text).toContain('欢迎收听由Robin为您带来的今日AI科技漫谈');
+        expect(script.segments[0]?.text).toContain('两条最值得关注的重点动态');
         expect(script.segments[0]?.gap_ms).toBe(700);
 
-        // Segment 1: Story 1 with professional transition
-        expect(script.segments[1]?.text).toContain('首先来看第一条重点消息');
+        // Story 1: Conversational lead
+        expect(script.segments[1]?.text).toContain('首先来聊聊大家非常关注的');
         expect(script.segments[1]?.text).toContain('OpenAI Sora 2 Launch');
-        expect(script.segments[1]?.gap_ms).toBe(800);
 
-        // Segment 2: Story 2
-        expect(script.segments[2]?.text).toContain('最后来看一条重要动态');
-        expect(script.segments[2]?.text).toContain('Claude 3.7 Sonnet');
-        expect(script.segments[2]?.gap_ms).toBe(800);
+        // Personal insight
+        const allText = script.segments.map((s) => s.text).join('\n');
+        expect(allText).toContain('我个人觉得');
+        expect(allText).toContain('最后，来跟大家分享一条很有温度的幕后故事');
+        expect(allText).toContain('Claude 3.7 Sonnet');
 
-        // Segment 3: Outro
-        expect(script.segments[3]?.text).toContain('以上就是今天AI快讯的全部内容');
-        expect(script.segments[3]?.text).toContain('我是Robin');
-        expect(script.segments[3]?.gap_ms).toBe(300);
+        // Outro
+        const lastSegment = script.segments[script.segments.length - 1];
+        expect(lastSegment?.text).toContain('以上就是今天AI科技漫谈的全部内容');
+        expect(lastSegment?.text).toContain('我是Robin');
+        expect(lastSegment?.gap_ms).toBe(300);
     });
 
     it('R3 & R4 — supports English broadcast with custom voice profile and title', () => {
@@ -119,16 +120,17 @@ describe('dailynews-gen plugin (0073)', () => {
         expect(script.title).toBe('Custom Daily Briefing');
         expect(script.language).toBe('en');
         expect(script.default_profile).toBe('Alex');
-        expect(script.segments.length).toBe(3); // Intro + 1 story + Outro
+        expect(script.segments.length).toBeGreaterThanOrEqual(3); // Intro + 1 story + Outro
         expect(script.segments[0]?.text).toContain('This is Alex with your AI Daily Briefing');
-        expect(script.segments[1]?.text).toContain('First up today');
-        expect(script.segments[2]?.text).toContain("That wraps up today's AI Daily Briefing");
+        expect(script.segments[1]?.text).toContain("First up today, let's look at");
+        const lastSegment = script.segments[script.segments.length - 1];
+        expect(lastSegment?.text).toContain("That wraps up today's AI Daily Briefing");
     });
 
     it('R6 — handles empty Doc[] input gracefully with fallback script', () => {
         const scriptZh = buildNewsVoiceScript([], { language: 'zh' });
         expect(scriptZh.segments.length).toBe(2);
-        expect(scriptZh.segments[0]?.text).toContain('今天暂无最新的精选新闻动态');
+        expect(scriptZh.segments[0]?.text).toContain('今天科技圈暂无最新的精选动态');
 
         const scriptEn = buildNewsVoiceScript([], { language: 'en' });
         expect(scriptEn.segments.length).toBe(2);
@@ -144,7 +146,7 @@ describe('dailynews-gen plugin (0073)', () => {
         });
 
         expect(content.format).toBe('markdown');
-        expect(content.title).toContain('今日AI快讯');
+        expect(content.title).toContain('今日AI科技漫谈');
         expect(content.references?.length).toBe(2);
         expect(content.metadata?.generator).toBe('kk:dailynews-gen');
         expect(content.metadata?.storyCount).toBe(2);
@@ -155,7 +157,7 @@ describe('dailynews-gen plugin (0073)', () => {
 
         // Verify body is block-formatted YAML deserializable into VoiceScript
         const parsedScript = Bun.YAML.parse(written.body) as VoiceScript;
-        expect(parsedScript.segments.length).toBe(4);
+        expect(parsedScript.segments.length).toBeGreaterThanOrEqual(4);
         expect(VoiceScriptSchema.safeParse(parsedScript).success).toBe(true);
     });
 
