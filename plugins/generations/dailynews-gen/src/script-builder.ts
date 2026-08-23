@@ -195,6 +195,11 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         options?.title || (isZh ? `今日AI快讯（共${docs.length}条）` : `AI Daily Briefing (${docs.length} stories)`);
     const segments: VoiceScriptSegment[] = [];
 
+    const hostName =
+        (options?.speakers?.host?.name as string) ||
+        voiceProfile.replace(/[-_]?(news|voice|bot|profile)$/i, '') ||
+        voiceProfile;
+
     // 1. Opening segment: Date + Self Introduction + Program Overview
     const countText = isZh ? `${formatChineseCount(docs.length)}条` : `${docs.length}`;
     const titlesSummary = docs
@@ -204,8 +209,8 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         .join('、');
 
     const introText = isZh
-        ? `大家好，今天是${dateStr}，欢迎收听由${voiceProfile}为您播报的今日AI快讯。在今天的节目中，我们为您精选了${countText}全球人工智能领域的重点动态${titlesSummary ? `，包括${titlesSummary}` : ''}。下面请听详细报道。`
-        : `Hello and welcome. Today is ${dateStr}. This is ${voiceProfile} with your AI Daily Briefing. In today's episode, we bring you ${countText} top stories from the world of artificial intelligence. Here is the detailed report.`;
+        ? `大家好，今天是${dateStr}，欢迎收听由${hostName}为您播报的今日AI快讯。在今天的节目中，我们为您精选了${countText}全球人工智能领域的重点动态${titlesSummary ? `，包括${titlesSummary}` : ''}。下面请听详细报道。`
+        : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with your AI Daily Briefing. In today's episode, we bring you ${countText} top stories from the world of artificial intelligence. Here is the detailed report.`;
 
     segments.push({
         text: normalizeBroadcastText(introText, isZh),
@@ -258,8 +263,8 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
 
     // 3. Outro segment: Professional wrap-up
     const outroText = isZh
-        ? `以上就是今天AI快讯的全部内容。感谢您的收听，我是${voiceProfile}，祝您拥有充实高效的一天，我们下期节目再见。`
-        : `That wraps up today's AI Daily Briefing. Thank you for listening. This is ${voiceProfile}, wishing you a productive and wonderful day. We'll see you in the next episode.`;
+        ? `以上就是今天AI快讯的全部内容。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目再见。`
+        : `That wraps up today's AI Daily Briefing. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. We'll see you in the next episode.`;
 
     segments.push({
         text: normalizeBroadcastText(outroText, isZh),
