@@ -21,9 +21,9 @@ those conventions; two-way door (delete the YAML).
 ## 1. Decisions
 
 | ID | Choice | Rejected | Why |
-|----|--------|----------|-----|
+| ---- | -------- | ---------- | ----- |
 | D1 | Filename `kk-solo-podcast.yaml` under `plugins/kk/workflows/` | `solo-podcast.yaml`; `.spur/workflows/` copy | F4 / ADR-009 stem. YAML is not an installable skill, so the `kk-` prefix is correct. |
-| D3 | `agent.run` (scribe) invoking the **kk:audio-authoring skill** (`operation briefing|outline|script`, mode `solo`) | Fat `solo-podcast` skill authored inline prompts; prompt-free states | Skill (0077) owns the authoring craft; the workflow owns orchestration. Keeping prompts minimal avoids duplicating the skill's contract. |
+| D3 | `agent.run` (scribe) invoking the **kk:audio-authoring skill** (`operation briefing | outline | script`, mode`solo`) | Fat `solo-podcast` skill authored inline prompts; prompt-free states | Skill (0077) owns the authoring craft; the workflow owns orchestration. Keeping prompts minimal avoids duplicating the skill's contract. |
 | D4 | `hitl.select` a\|b\|c for outlines; `hitl.confirm` + bounded `hitl.input` for the script | Outline-only `hitl.confirm`; new `hitl.*` kind | House pattern (kk-itc). TTS is slow/expensive — gate the script before generate. |
 | D5 | Audio is the sibling **WAV** D5 already writes | MP3 / ffmpeg | Voicebox `GET /audio/{id}` is WAV; concat is PCM WAV. Transcode is a later publish concern. |
 | D6 | Target length = script budget + post-check | Duration field on `voice-gen` | D5 §7: output duration is recorded, not requested. |
@@ -183,6 +183,7 @@ revision brief), else `failed`. Missing `content.json` (dry-run) passes.
 ---
 
 ## 7. VoiceScript + Doc wrapping
+
 Script-write emits YAML matching D5 §3 (`segments` required; `default_profile`
 from `voice_profile` / env; optional `title`, `language`, `gap_ms`, `instruct`).
 Solo v1: one speaker via `default_profile`; a `wrap_script` resolution chain mirrors

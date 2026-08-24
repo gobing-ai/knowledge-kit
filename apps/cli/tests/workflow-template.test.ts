@@ -12,17 +12,13 @@ describe('B3 workflow template (kk-ingest-generate-publish.yaml)', () => {
     const templatePath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-ingest-generate-publish.yaml');
     const yaml = readFileSync(templatePath, 'utf-8');
 
-    it('R12 — every step shells kk executor run and injects roots via --plugins-path', () => {
-        const commands = yaml
-            .split('\n')
-            .map((line) => line.trim())
-            .filter((line) => line.startsWith('command: kk executor run'))
-            .map((line) => line.slice('command:'.length).trim());
-        expect(commands.length).toBeGreaterThanOrEqual(3);
-        for (const command of commands) {
-            expect(command.startsWith('kk executor run')).toBe(true);
-            expect(command).toMatch(/--plugins-path \$\{vars\.plugins_path\}/);
-        }
+    it('R12 — every step shells kk executor run with conditional --plugins-path', () => {
+        const executorCalls = [...yaml.matchAll(/kk executor run/g)];
+        expect(executorCalls.length).toBeGreaterThanOrEqual(3);
+        // --plugins-path is conditional (empty plugins_path -> ADR-012 default discovery)
+        const conditionals = [...yaml.matchAll(/--plugins-path "\$\{vars\.plugins_path\}"/g)];
+        expect(conditionals.length).toBeGreaterThanOrEqual(3);
+        expect(yaml).toContain('plugins_path: ""');
     });
 
     it('R12 — uses --plugins-path, never --plugins-root or extensions blocks', () => {

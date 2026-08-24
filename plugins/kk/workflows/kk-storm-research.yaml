@@ -32,15 +32,15 @@ terminalStates:
   - done
   - failed
 vars:
-  topic: "" # sentence-mode query; ignored when input_file set (XOR)
-  input_file: "" # file-mode markdown path when non-empty (XOR)
-  maxResults: "8" # written into topic.json as int (0054 maxResults)
-  fixture: "false" # "true" selects the stub; CI/dry-run must pass "true"
-  work_dir: "./work" # RESOLVED topic dir ($works_root/<topic-id>)
-  plugins_path: "./plugins" # --plugins-path for kk executor run
+  topic: ""  # sentence-mode query; ignored when input_file set (XOR)
+  input_file: ""  # file-mode markdown path when non-empty (XOR)
+  maxResults: "8"  # written into topic.json as int (0054 maxResults)
+  fixture: "false"  # "true" selects the stub; CI/dry-run must pass "true"
+  work_dir: "./work"  # RESOLVED topic dir ($works_root/<topic-id>)
+  plugins_path: ""  # empty -> ADR-012 default discovery (package-shipped built-ins); set for checkout dev
   ingestion_plugin: "web-search"
   generator_plugin: "content-gen"
-  render_script: "plugins/kk/scripts/render-md.ts" # 0058 shipped runner
+  render_script: ""  # empty -> fallback chain: kk package root -> checkout plugins/kk/scripts/render-md.ts
 
 states:
   - id: prepare
@@ -103,9 +103,11 @@ states:
       - kind: shell
         options:
           command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             kk executor run "${vars.ingestion_plugin}" --in
             "${vars.work_dir}/topic.json" --out "${vars.work_dir}/docs.json"
-            --plugins-path "${vars.plugins_path}"
+            "$@"
 
   - id: generate
     description: >-
@@ -123,9 +125,11 @@ states:
       - kind: shell
         options:
           command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             kk executor run "${vars.generator_plugin}" --in
             "${vars.work_dir}/docs.json" --out "${vars.work_dir}/content.json"
-            --plugins-path "${vars.plugins_path}"
+            "$@"
 
   - id: render
     description: >-
@@ -135,7 +139,24 @@ states:
       - kind: shell
         options:
           command: >-
-            bun "${vars.render_script}" --in "${vars.work_dir}/content.json"
+            set -e;
+            rs="${vars.render_script}";
+            if [ ! -f "$rs" ]; then
+              kbin="$(command -v kk 2>/dev/null || true)";
+              while [ -L "$kbin" ]; do
+                link="$(readlink "$kbin")";
+                case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac;
+              done;
+              pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
+              rs="";
+              if [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/scripts/render-md.ts" ]; then rs="$pkg/plugins/kk/scripts/render-md.ts";
+              elif [ -f "plugins/kk/scripts/render-md.ts" ]; then rs="plugins/kk/scripts/render-md.ts"; fi;
+            fi;
+            if [ -z "$rs" ]; then
+              echo "render_script not found (searched: var, kk package root via \`command -v kk\`, ./plugins/kk/scripts)" >&2;
+              exit 1;
+            fi;
+            bun "$rs" --in "${vars.work_dir}/content.json"
             --out "${vars.work_dir}/content.md"
 
   - id: done

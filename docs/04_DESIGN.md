@@ -238,7 +238,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 `.spur/config.yaml`.
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
+| ----- | ------ | --------- | ------------- |
 | `works_dir` | string | `$HOME/.config/kk/works` | C4 topic workspace root (`KK_WORKS_DIR` wins) |
 | `workflows_dir` | string | `$HOME/.config/kk/workflows` | Installed workflow YAML dest (`KK_WORKFLOWS_DIR` wins) |
 | `defaults.maxResults` | int | `8` | STORM ingest cap |
@@ -423,6 +423,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 | 4 | `plugins/kk/workflows/$NAME.yaml` | Repo checkout (development) |
 
 **Semantics:**
+
 - First hit wins; the resolved YAML is run **in place** — never copied on the happy path.
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.

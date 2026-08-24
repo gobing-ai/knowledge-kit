@@ -185,11 +185,12 @@ spur workflow run "$dest" --vars \
 ### Profile `kk-itc`
 
 Bind vars: `topic`, `input_file`, `work_dir`, `writer`, `playbook`, `research`, `judge`, `outline`,
-`force`, `rubric` (`tech-accuracy`), `verdictFile` (`.spur/run/${vars.__runId}-itc-verdict.json`), `agent`.
+`force`, `rubric` (`tech-accuracy`), `agent`. The judge verdict lands at `$work_dir/.itc-verdict.json`
+(fixed path inside the workflow).
 
 ```bash
 spur workflow run "$dest" --vars \
-  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"writer\":\"$WRITER\",\"playbook\":\"$PLAYBOOK\",\"research\":\"$RESEARCH\",\"judge\":\"$JUDGE\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"verdictFile\":\".spur/run/\${vars.__runId}-itc-verdict.json\",\"agent\":\"$AGENT\"}"
+  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"writer\":\"$WRITER\",\"playbook\":\"$PLAYBOOK\",\"research\":\"$RESEARCH\",\"judge\":\"$JUDGE\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"agent\":\"$AGENT\"}"
 ```
 
 ### Profile `kk-solo-podcast`

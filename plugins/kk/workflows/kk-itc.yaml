@@ -22,9 +22,8 @@ vars:
   outline: ""
   force: "false"
   rubric: "tech-accuracy"
-  verdictFile: ".spur/run/${vars.__runId}-itc-verdict.json"
+  verdictFile: "" # empty -> ${vars.work_dir}/.itc-verdict.json (set by prepare)
   agent: ""
-  __runId: "itc"
   __hitlAnswer: ""
   __hitlInput: ""
 
@@ -40,6 +39,7 @@ states:
               echo "missing work_dir" >&2; exit 1;
             fi;
             mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline" "${vars.work_dir}/3-draft";
+            echo 0 > "${vars.work_dir}/.revise-count";
             if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
               echo "XOR violation: both topic and input_file set" >&2; exit 1;
             fi;
@@ -66,7 +66,7 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Load plugins/kk/skills/storm-research/SKILL.md.
+            Invoke the kk:storm-research skill.
             Run storm-research on the topic or input file specified in the brief at ${vars.work_dir}/brief.md.
 
   - id: outline-write
@@ -77,7 +77,7 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Load plugins/kk/skills/${vars.writer}/SKILL.md.
+            Invoke the kk:${vars.writer} skill.
             Generate outline options (outline-option-a.md, outline-option-b.md, and optionally outline-option-c.md) in ${vars.work_dir}/2-outline/ from the brief at ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
             Do not wait for operator selection; write the option files.
           expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
@@ -122,7 +122,7 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Load plugins/kk/skills/${vars.writer}/SKILL.md.
+            Invoke the kk:${vars.writer} skill.
             Author the technical draft at ${vars.work_dir}/3-draft/draft-article.md based on approved outline ${vars.work_dir}/2-outline/outline-approved.md and brief ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
             Revision feedback: ${vars.__hitlInput}
           expectFile: ${vars.work_dir}/3-draft/draft-article.md
@@ -143,12 +143,8 @@ states:
       - kind: shell
         options:
           command: >-
-            mkdir -p .spur/run;
-            run_id="${vars.__runId}";
-            if [ -z "$run_id" ]; then run_id="itc"; fi;
-            count_file=".spur/run/$run_id-itc-revise-count";
-            curr=$(cat "$count_file" 2>/dev/null || echo 0);
-            echo $((curr + 1)) > "$count_file";
+            n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.revise-count";
       - kind: hitl.input
         options:
           prompt: "Provide specific revision feedback for ${vars.work_dir}/3-draft/draft-article.md:"
@@ -162,11 +158,11 @@ states:
           role: reviewer
           agent: ${vars.agent}
           input: |
-            Load plugins/kk/skills/content-judge/SKILL.md and its references/rubrics.md.
+            Invoke the kk:content-judge skill.
             Evaluate the draft at ${vars.work_dir}/3-draft/draft-article.md against the ${vars.rubric} rubric.
-            Write the verdict JSON to ${vars.verdictFile} per the contract in SKILL.md.
+            Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json per the skill's verdict contract.
             Print the verdict path as the last line of stdout.
-          expectFile: ${vars.verdictFile}
+          expectFile: ${vars.work_dir}/.itc-verdict.json
 
   - id: done
     description: "Terminal — IT content draft generated and approved successfully"
@@ -252,7 +248,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="itc"; fi; test "$(cat .spur/run/$run_id-itc-revise-count 2>/dev/null || echo 0)" -lt 3; }'
+        command: 'test "${vars.__hitlAnswer}" = "no" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3'
 
   - from: draft-review
     to: failed
@@ -260,7 +256,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="itc"; fi; test "$(cat .spur/run/$run_id-itc-revise-count 2>/dev/null || echo 0)" -ge 3; }'
+        command: 'test "${vars.__hitlAnswer}" = "no" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -ge 3'
 
   - from: draft-revise
     to: draft-write
@@ -274,7 +270,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
+        command: 'v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
 
   - from: judge
     to: failed
@@ -282,4 +278,4 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -n "$v" -a "$v" != PASS'
+        command: 'v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -n "$v" -a "$v" != PASS'

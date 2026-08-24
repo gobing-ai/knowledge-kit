@@ -1,0 +1,6 @@
+# gitleaks config for knowledge-kit.
+# vendors/ holds third-party reference trees (gitignored, never shipped) whose
+# demo files contain placeholder keys — exclude from scanning.
+[allowlist]
+description = "Exclude vendored third-party reference trees"
+paths = ['''^vendors/''']

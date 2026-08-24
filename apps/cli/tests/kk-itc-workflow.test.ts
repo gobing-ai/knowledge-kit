@@ -57,7 +57,7 @@ describe('kk-itc workflow (0069)', () => {
         }
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/2-outline/outline-option-a.md'].join('$'));
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-draft/draft-article.md'].join('$'));
-        expect(yaml).toContain(['expectFile: ', '{vars.verdictFile}'].join('$'));
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/.itc-verdict.json'].join('$'));
     });
 
     it('R3 — success edges avoid action-ok (dry-run walkable) and $schema is quoted', () => {

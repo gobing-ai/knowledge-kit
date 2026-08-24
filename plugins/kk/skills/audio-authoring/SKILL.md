@@ -42,7 +42,7 @@ beyond the extension-point notes below.
 ```
 
 | Token | Meaning | Default |
-|---|---|---|
+| --- | --- | --- |
 | `operation` | `create` (default) \| `briefing` \| `outline` \| `script` | `create` |
 | `--mode <name>` | authoring mode | `solo` (only implemented mode; others fail loud) |
 | `--dir <work_dir>` | workspace directory | required — an empty dir fails loud |
@@ -63,7 +63,7 @@ paths — the contract is the same whether the operation runs inside `create` or
 directly.
 
 | Artifact | Path | Written by |
-|---|---|---|
+| --- | --- | --- |
 | Brief (input) | `brief.md` | supplied before invocation — topic phrase or Markdown brief |
 | Briefing | `1-briefing/briefing.md` | `briefing` — thesis, takeaways, audience, duration, tone |
 | Outline options | `2-outline/outline-option-a.md`, `outline-option-b.md`, `outline-option-c.md` | `outline` — always two or three (a and b required; c optional) |
@@ -165,7 +165,7 @@ invent fields (no `default_profile`, no required `title`).
 Field summary (the template carries the same information as inline comments):
 
 | Field | Where | Constraint |
-|---|---|---|
+| --- | --- | --- |
 | `language` | root | 23-language enum (see template) |
 | `default_engine` | root | engine enum (7 engines, see template) |
 | `speakers` | root | multi-speaker modes only; each entry requires `profile`; omit in solo |

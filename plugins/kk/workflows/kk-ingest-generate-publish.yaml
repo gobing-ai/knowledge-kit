@@ -14,7 +14,7 @@ vars:
   publish_plugin: "surfdash-pub"
   source: "./source"
   work_dir: "./work"
-  plugins_path: "./plugins"
+  plugins_path: ""  # empty -> ADR-012 default discovery (package-shipped built-ins); set for checkout dev
 
 states:
   - id: ingest
@@ -22,21 +22,30 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: kk executor run ${vars.ingestion_plugin} --in ${vars.source} --out ${vars.work_dir}/docs.json --plugins-path ${vars.plugins_path}
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor run ${vars.ingestion_plugin} --in ${vars.source} --out ${vars.work_dir}/docs.json "$@"
 
   - id: generate
     description: Run content generator plugin to produce markdown content (content.json)
     onEnter:
       - kind: shell
         options:
-          command: kk executor run ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json --plugins-path ${vars.plugins_path}
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor run ${vars.generator_plugin} --in ${vars.work_dir}/docs.json --out ${vars.work_dir}/content.json "$@"
 
   - id: publish
     description: Run publish plugin to deploy content and receive result (result.json)
     onEnter:
       - kind: shell
         options:
-          command: kk executor run ${vars.publish_plugin} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/result.json --plugins-path ${vars.plugins_path}
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor run ${vars.publish_plugin} --in ${vars.work_dir}/content.json --out ${vars.work_dir}/result.json "$@"
 
   - id: done
     description: Terminal — all three plugin steps succeeded

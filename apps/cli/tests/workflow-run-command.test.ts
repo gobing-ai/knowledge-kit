@@ -116,7 +116,7 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('--outline');
         expect(cmd).toContain('--writer');
         expect(cmd).toContain('fixture is storm-only');
-        for (const v of ['writer', 'playbook', 'research', 'judge', 'outline', 'force', 'rubric', 'verdictFile']) {
+        for (const v of ['writer', 'playbook', 'research', 'judge', 'outline', 'force', 'rubric']) {
             expect(cmd).toContain(`\\"${v}\\"`);
         }
     });
