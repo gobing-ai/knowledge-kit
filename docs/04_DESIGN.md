@@ -412,8 +412,8 @@ Product workflows are authored under `plugins/kk/workflows/` (ADR-009 amendment 
 SSOT**, packed in the npm tarball's `plugins/`). `/workflow-run` installs the YAML into
 `~/.config/kk/workflows/$NAME.yaml` (**runtime dest**; `KK_WORKFLOWS_DIR` wins). Operators and
 workflow shells always run that dest — never the package path, and never `docs/design/` (docs are
-not in the tarball). Sidecars the machine executes (e.g. `validate-voicescript.ts` for
-`kk-solo-podcast`) are copied beside the dest YAML.
+not in the tarball). Sidecars the machine executes (`validate-voicescript.ts` and
+`wrap-voicescript-doc.ts` for `kk-solo-podcast`) are copied beside the dest YAML.
 
 ### 7.1 Two-root copy rule
 
@@ -442,4 +442,4 @@ not in the tarball). Sidecars the machine executes (e.g. `validate-voicescript.t
 | ------- | --------------- | ---------------- | ---------------- |
 | `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
 | `kk-itc` | `kk-itc.yaml` | `./<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft/draft-article.md` |
-| `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` | `$works_dir/<kebab>` | `$work_dir/3-script/voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
+| `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` + `wrap-voicescript-doc.ts` | `$works_dir/<kebab>` | `$work_dir/3-script/voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |

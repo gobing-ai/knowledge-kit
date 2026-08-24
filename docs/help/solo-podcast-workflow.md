@@ -37,6 +37,7 @@ length is a **word/char budget** at script-write plus a post-generate check on
 | --- | --- | --- |
 | Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | `$HOME/.config/kk/workflows/kk-solo-podcast.yaml` |
 | Validator | `plugins/kk/workflows/validate-voicescript.ts` | `$HOME/.config/kk/workflows/validate-voicescript.ts` |
+| Wrapper | `plugins/kk/workflows/wrap-voicescript-doc.ts` | `$HOME/.config/kk/workflows/wrap-voicescript-doc.ts` |
 | Generator | `plugins/generations/voice-gen/` (npm pack) | `kk executor run voice-gen` (ADR-012 discovery) |
 
 ## Prerequisites
@@ -59,7 +60,8 @@ length is a **word/char budget** at script-write plus a post-generate check on
 ## Daily run — `/workflow-run kk-solo-podcast`
 
 Preferred operator surface. First run creates `~/.config/kk/config.yaml` if missing, **copies**
-`kk-solo-podcast.yaml` **and** `validate-voicescript.ts` into `$HOME/.config/kk/workflows/`,
+`kk-solo-podcast.yaml` **and its sidecars** (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`) into
+`$HOME/.config/kk/workflows/`,
 computes `work_dir` under `$works_dir/<kebab>`, and shells `spur workflow run "$dest"` where
 `$dest` is that runtime YAML.
 
@@ -110,7 +112,7 @@ spur workflow run "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" --dry-run --
 `plugins_path` empty → ADR-012 default discovery (no checkout `./plugins`).
 
 Expect `status: done` (9 transitions). Missing `4-audio/content.json` makes `duration-check`
-succeed. Do not switch success edges to `action-ok`.
+succeed (dry-run passes). Do not switch success edges to `action-ok`.
 
 ### Real run — sentence
 
@@ -145,10 +147,10 @@ Monitor: `spur workflow trace <run-id> --json`.
 | `script-write` | `agent.run`; inlined VoiceScript contract | `3-script/voicescript.yaml` |
 | `script-validate` | `bun $HOME/.config/kk/workflows/validate-voicescript.ts --in …` | — |
 | `script-review` | `hitl.confirm` (skip when `script_approved=true`) | — |
-| `script-revise` | `hitl.input`; cap 3 | `.spur/run/${__runId}-solo-revise-count` |
-| `wrap-docs` | one-element `Doc[]` | `4-audio/docs.json` |
+| `script-revise` | `hitl.input`; cap 3 | `${work_dir}/.revise-count` |
+| `wrap-docs` | `bun …/wrap-voicescript-doc.ts` | `4-audio/docs.json` |
 | `generate` | `kk executor run voice-gen` | `4-audio/content.json` + `content.wav` |
-| `duration-check` | `metadata.duration` vs target | fail-loud outside 0.5×–2× |
+| `duration-check` | band check `onEnter`; miss → feedback + retry | `.duration-ok` on pass; `.duration-feedback` + `.revise-count++` on miss |
 
 ## Duration policy
 
@@ -159,8 +161,10 @@ Voicebox records duration; it does not accept a length flag.
 | `zh` / `ja` / `ko` | `cjk_chars_per_min` (default `"220"`) | `target_chars = target_duration_min * cjk_chars_per_min` |
 | else | `words_per_min` (default `"150"`) | `target_words = target_duration_min * words_per_min` |
 
-Post-generate fail-loud if `metadata.duration` is missing/non-numeric or outside
-`[0.5, 2] × target_duration_min * 60`. No auto-regenerate.
+Post-generate: `duration-check` reads `metadata.duration`; missing/non-numeric or outside
+`[0.5, 2] × target_duration_min * 60` → writes `work_dir/.duration-feedback`, increments the
+shared `work_dir/.revise-count` (cap 3), and routes back to `script-write`; budget exhausted →
+`failed`.
 
 ## Env
 
@@ -192,6 +196,7 @@ Post-generate fail-loud if `metadata.duration` is missing/non-numeric or outside
 | `plugins_path` | `""` | empty → ADR-012 defaults; checkout may set `./plugins` |
 | `validate_script` | `""` | empty → `$KK_WORKFLOWS_DIR/validate-voicescript.ts` |
 | `agent` | `""` | `agent.run` |
+| `wrap_script` | `""` | empty → `$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts` |
 
 ## Using `voice-gen` / the checker directly
 
@@ -237,6 +242,7 @@ flowchart TD
 | --- | --- |
 | `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT (copied to runtime dest) |
 | `plugins/kk/workflows/validate-voicescript.ts` | design-time checker (copied beside the YAML) |
+| `plugins/kk/workflows/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (copied beside the YAML) |
 | `plugins/generations/voice-gen/` | D5 generator in the npm tarball |
 | `docs/design/kk-solo-podcast.md` | maintainer satellite (not loaded at runtime) |
 

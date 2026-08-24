@@ -78,6 +78,7 @@ sync: [T4]
 | F4 | IT-content workflow and product YAML home | ✅ done | 3 | task `0069` done; `plugins/kk/workflows/` is the only kk YAML SSOT; `kk-itc.yaml` uses existing `hitl.select`/`confirm`/`input`; no new hitl kind; `itc-generating` writer default |
 | F5 | Solo-podcast workflow (voice-gen dogfood) | ✅ done | 3 | task `0071` done; `plugins/kk/workflows/kk-solo-podcast.yaml` + `validate-voicescript` helper; Spur HITL select/confirm/input; satellite `docs/design/kk-solo-podcast.md`; verify PASS |
 | F6 | Daily AI news workflow and plugins | ✅ done | 3 | tasks `0072`–`0074`; `aihot-ingest` → `dailynews-gen` → `voice-gen`; offline executor-dispatch integration; satellites `docs/design/{aihot-ingest,dailynews-gen,kk-daily-ai-voice}.md`; verifyall PASS |
+| F7 | Audio-authoring skill extraction (wayfinder map) | 🔨 wip | 3 | 0077 done (`kk:audio-authoring` skill, solo mode, commit `434a01a`); 0078 rewriting `kk-solo-podcast` onto the skill |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |

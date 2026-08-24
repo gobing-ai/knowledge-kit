@@ -4,12 +4,14 @@ import { join } from 'node:path';
 
 /**
  * Task 0071 (F5) — kk-solo-podcast workflow static invariants.
+ * Task 0078 (F7) — agent.run steps now invoke kk:audio-authoring; revise counter moved to
+ * ${vars.work_dir}/.revise-count; wrap-docs shells wrap-voicescript-doc.ts sidecar;
+ * duration-check gates via .duration-ok with a script-write retry edge.
  * Encodes the state-machine ACs that are static invariants of the delivered config:
  * R1/R3 state machine shape (prepare, understand, outline-write, outline-select, outline-commit,
  * script-write, script-validate, script-review, script-revise, wrap-docs, generate, duration-check,
  * done, failed), Spur HITL actions (select, confirm, input), agent.run with input+role (no skill/prompt),
  * expectFile usage, no action-ok success guards, runtime dest $HOME/.config/kk/workflows,
- * and no docs/design or checkout-only paths in the YAML.
  */
 describe('kk-solo-podcast workflow (0071)', () => {
     const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-solo-podcast.yaml');
@@ -54,7 +56,7 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain('- c');
     });
 
-    it('R3/R8 — agent.run steps use input and role (no fictional skill: or prompt: options)', () => {
+    it('R3/R8 — agent.run steps use input+role and invoke the kk:audio-authoring skill', () => {
         const agentRunBlocks = [...yaml.matchAll(/- kind: agent\.run\n([\s\S]*?)(?=\n\s*- kind:|\n\s*- id:|$)/g)].map(
             (m) => m[1],
         );
@@ -64,7 +66,11 @@ describe('kk-solo-podcast workflow (0071)', () => {
             expect(block).not.toMatch(/^\s+prompt:/m);
             expect(block).toContain('role:');
             expect(block).toContain('input:');
+            expect(block).toContain('kk:audio-authoring');
         }
+        expect(yaml).toContain('operation `briefing`');
+        expect(yaml).toContain('operation `outline`');
+        expect(yaml).toContain('operation `script`');
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/1-briefing/briefing.md'].join('$'));
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/2-outline/outline-option-a.md'].join('$'));
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-script/voicescript.yaml'].join('$'));
@@ -82,15 +88,34 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain('missing voice_profile (set vars.voice_profile or VOICEBOX_DEFAULT_PROFILE)');
     });
 
-    it('R6/R7 — generate invokes voice-gen without duration flag and duration-check validates output', () => {
+    it('R6/R7 — generate line carries no duration flag; duration-check gates via .duration-ok', () => {
+        const generateLine = yaml.split('\n').find((l) => l.includes('kk executor run voice-gen'));
+        expect(generateLine).toBeDefined();
+        expect(generateLine).not.toContain('--duration');
+        expect(generateLine).not.toContain('--target-duration');
         expect(yaml).toContain('kk executor run voice-gen --in');
-        expect(yaml).not.toContain('--duration');
-        expect(yaml).not.toContain('--target-duration');
-        expect(yaml).toContain('duration-check failed: metadata.duration missing or not a number');
-        expect(yaml).toContain('duration-check failed: duration');
-        expect(yaml).toContain(['test ! -f "', '{vars.work_dir}/4-audio/content.json"'].join('$'));
+        expect(yaml).toContain('Regenerate: audio metadata.duration missing or not a number');
+        expect(yaml).toContain('Regenerate: last audio duration');
+        expect(yaml).toContain('.duration-ok');
         expect(help).toContain('content.wav');
         expect(help).toContain('WAV');
+    });
+
+    it('R2/R3/R5 — revise counter in work_dir, wrap helper sidecar, duration retry edge declared', () => {
+        expect(yaml).toContain('.revise-count');
+        expect(yaml).not.toContain('__runId');
+        expect(yaml).not.toContain('.spur/run');
+        const wrapPath = join(import.meta.dir, '../../../plugins/kk/workflows/wrap-voicescript-doc.ts');
+        expect(existsSync(wrapPath)).toBe(true);
+        const wrap = readFileSync(wrapPath, 'utf-8');
+        expect(wrap).toContain('node:crypto');
+        expect(wrap).toContain('Podcast VoiceScript');
+        expect(wrap).not.toMatch(/from\s+['"]@gobing-ai\//);
+        expect(yaml).toContain('wrap-voicescript-doc.ts');
+        expect(yaml).toContain('wrap_script not found');
+        expect(yaml).toContain(['test -f "', '{vars.work_dir}/4-audio/.duration-ok"'].join('$'));
+        expect(yaml).toContain('to: script-write');
+        expect(yaml).toContain('.duration-feedback');
     });
 
     it('runtime paths use ~/.config/kk/workflows and omit checkout-only trees', () => {

@@ -26,7 +26,7 @@ vars:
   plugins_path: ""
   validate_script: ""
   agent: ""
-  __runId: "solo"
+  wrap_script: ""
   __hitlAnswer: ""
   __hitlInput: ""
 
@@ -62,6 +62,7 @@ states:
               fi;
               cp "${vars.input_file}" "${vars.work_dir}/brief.md";
             fi;
+            echo 0 > "${vars.work_dir}/.revise-count";
 
   - id: understand
     description: "Analyze brief and generate podcast briefing (agent.run)"
@@ -71,9 +72,11 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
+            Invoke the kk:audio-authoring skill: operation `briefing`, mode `solo`.
             Read the source brief at ${vars.work_dir}/brief.md.
             Write a concise podcast briefing at ${vars.work_dir}/1-briefing/briefing.md.
             Identify core thesis, key listener takeaways, audience profile, target spoken duration (${vars.target_duration_min} minutes), tone, and what material from the brief to emphasize or cut.
+            Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min}
           expectFile: ${vars.work_dir}/1-briefing/briefing.md
 
   - id: outline-write
@@ -84,6 +87,7 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
+            Invoke the kk:audio-authoring skill: operation `outline`, mode `solo`.
             Read the briefing at ${vars.work_dir}/1-briefing/briefing.md and brief at ${vars.work_dir}/brief.md.
             Generate spoken podcast outline options in ${vars.work_dir}/2-outline/:
             - outline-option-a.md (e.g. narrative / storytelling arc)
@@ -91,6 +95,7 @@ states:
             - optional outline-option-c.md
             Target total episode spoken duration is ${vars.target_duration_min} minutes.
             Do not wait for operator selection; write the option files.
+            Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min}
           expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
       - kind: shell
         options:
@@ -133,6 +138,7 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
+            Invoke the kk:audio-authoring skill: operation `script`, mode `solo`.
             Read the approved outline at ${vars.work_dir}/2-outline/outline-approved.md and briefing at ${vars.work_dir}/1-briefing/briefing.md.
             Target duration is ${vars.target_duration_min} minutes.
             Spoken budget: if language (${vars.language}) is zh, ja, or ko, target characters = ${vars.target_duration_min} * ${vars.cjk_chars_per_min}; otherwise target words = ${vars.target_duration_min} * ${vars.words_per_min}. Land inside ±20%, spoken prose, one speaker.
@@ -147,6 +153,8 @@ states:
                 gap_ms: 400               # optional, >= 0, silence before next clip
                 instruct: "warm"          # optional, <= 500 characters
             Do not invent fields. Revision feedback: ${vars.__hitlInput}
+            Duration retries: if ${vars.work_dir}/.duration-feedback exists, invoke with `--force` (authorized rewrite) and treat its contents as the revision feedback.
+            Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min} --language ${vars.language} --profile ${vars.voice_profile} --revise "${vars.__hitlInput}"
           expectFile: ${vars.work_dir}/3-script/voicescript.yaml
 
   - id: script-validate
@@ -183,12 +191,9 @@ states:
       - kind: shell
         options:
           command: >-
-            mkdir -p .spur/run;
-            run_id="${vars.__runId}";
-            if [ -z "$run_id" ]; then run_id="solo"; fi;
-            count_file=".spur/run/$run_id-solo-revise-count";
-            curr=$(cat "$count_file" 2>/dev/null || echo 0);
-            echo $((curr + 1)) > "$count_file";
+            rm -f "${vars.work_dir}/.duration-feedback";
+            n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.revise-count";
       - kind: hitl.input
         options:
           prompt: "Provide specific revision feedback for ${vars.work_dir}/3-script/voicescript.yaml:"
@@ -200,26 +205,17 @@ states:
       - kind: shell
         options:
           command: >-
-            bun -e '
-            import { readFileSync, writeFileSync } from "node:fs";
-            import { createHash } from "node:crypto";
-            import { resolve } from "node:path";
-            const scriptPath = resolve(process.argv[1]);
-            const outPath = resolve(process.argv[2]);
-            const voiceProfile = process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "";
-            const body = readFileSync(scriptPath, "utf-8");
-            const sourceUri = "file://" + scriptPath;
-            const id = createHash("sha256").update(sourceUri).digest("hex").slice(0, 16);
-            const doc = {
-              id,
-              title: "Podcast VoiceScript",
-              sourceUri,
-              body,
-              mediaType: "application/yaml",
-              metadata: voiceProfile ? { voiceProfile } : {},
-            };
-            writeFileSync(outPath, JSON.stringify([doc], null, 2));
-            ' "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
+            set -e;
+            ws="${vars.wrap_script}";
+            if [ -z "$ws" ]; then
+              if [ -n "$KK_WORKFLOWS_DIR" ]; then ws="$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts";
+              else ws="$HOME/.config/kk/workflows/wrap-voicescript-doc.ts"; fi;
+            fi;
+            if [ ! -f "$ws" ]; then
+              echo "wrap_script not found: $ws (install with /workflow-run kk-solo-podcast into $HOME/.config/kk/workflows)" >&2;
+              exit 1;
+            fi;
+            bun "$ws" "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice-gen generator plugin to generate audio"
@@ -233,7 +229,32 @@ states:
             kk executor run voice-gen --in "${vars.work_dir}/4-audio/docs.json" --out "${vars.work_dir}/4-audio/content.json" $extra
 
   - id: duration-check
-    description: "Validate generated audio duration against target budget"
+    description: "Validate generated audio duration against target budget; miss writes .duration-feedback for the retry edge"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            rm -f "${vars.work_dir}/4-audio/.duration-ok";
+            if [ ! -f "${vars.work_dir}/4-audio/content.json" ]; then
+              exit 0;
+            fi;
+            dur=$(jq -r '.metadata.duration // empty' "${vars.work_dir}/4-audio/content.json" 2>/dev/null);
+            if [ -z "$dur" ]; then
+              printf 'Regenerate: audio metadata.duration missing or not a number.\n' > "${vars.work_dir}/.duration-feedback";
+              n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
+              echo $((n+1)) > "${vars.work_dir}/.revise-count";
+              exit 0;
+            fi;
+            target_s=$((${vars.target_duration_min} * 60));
+            min_s=$(awk -v t="$target_s" 'BEGIN {print t * 0.5}');
+            max_s=$(awk -v t="$target_s" 'BEGIN {print t * 2.0}');
+            if awk -v d="$dur" -v min="$min_s" -v max="$max_s" 'BEGIN { exit !(d >= min && d <= max) }'; then
+              touch "${vars.work_dir}/4-audio/.duration-ok";
+            else
+              printf 'Regenerate: last audio duration %ss outside 0.5x–2x of %ss; adjust segment lengths toward the target.\n' "$dur" "$target_s" > "${vars.work_dir}/.duration-feedback";
+              n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
+              echo $((n+1)) > "${vars.work_dir}/.revise-count";
+            fi
 
   - id: done
     description: "Terminal — Solo podcast VoiceScript and audio generated successfully"
@@ -314,7 +335,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="solo"; fi; test "$(cat .spur/run/$run_id-solo-revise-count 2>/dev/null || echo 0)" -lt 3; }'
+        command: 'test "${vars.__hitlAnswer}" = "no" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3'
 
   - from: script-review
     to: failed
@@ -322,7 +343,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.__hitlAnswer}" = "no" && { run_id="${vars.__runId}"; if [ -z "$run_id" ]; then run_id="solo"; fi; test "$(cat .spur/run/$run_id-solo-revise-count 2>/dev/null || echo 0)" -ge 3; }'
+        command: 'test "${vars.__hitlAnswer}" = "no" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -ge 3'
 
   - from: script-revise
     to: script-write
@@ -348,27 +369,20 @@ transitions:
     guard:
       kind: shell
       options:
-        command: >-
-          test ! -f "${vars.work_dir}/4-audio/content.json" || {
-            dur=$(jq -r '.metadata.duration // empty' "${vars.work_dir}/4-audio/content.json" 2>/dev/null);
-            test -n "$dur" && target_s=$((${vars.target_duration_min} * 60)) && min_s=$(awk -v t="$target_s" 'BEGIN {print t * 0.5}') && max_s=$(awk -v t="$target_s" 'BEGIN {print t * 2.0}') && awk -v d="$dur" -v min="$min_s" -v max="$max_s" 'BEGIN { if (d >= min && d <= max) exit 0; else exit 1 }';
-          }
+          command: 'test ! -f "${vars.work_dir}/4-audio/content.json" || test -f "${vars.work_dir}/4-audio/.duration-ok"'
 
   - from: duration-check
-    to: failed
-    description: "Audio duration missing or outside [0.5x, 2.0x] target range -> fail"
+    to: script-write
+    description: "Audio duration outside band with revision budget remaining -> regenerate script from feedback"
     guard:
       kind: shell
       options:
-        command: >-
-          test -f "${vars.work_dir}/4-audio/content.json" && {
-            dur=$(jq -r '.metadata.duration // empty' "${vars.work_dir}/4-audio/content.json" 2>/dev/null);
-            if [ -z "$dur" ]; then
-              echo "duration-check failed: metadata.duration missing or not a number" >&2;
-              exit 0;
-            fi;
-            target_s=$((${vars.target_duration_min} * 60));
-            min_s=$(awk -v t="$target_s" 'BEGIN {print t * 0.5}');
-            max_s=$(awk -v t="$target_s" 'BEGIN {print t * 2.0}');
-            awk -v d="$dur" -v min="$min_s" -v max="$max_s" -v ts="$target_s" 'BEGIN { if (d < min || d > max) { printf "duration-check failed: duration %ss outside 0.5x–2x of %ss\n", d, ts > "/dev/stderr"; exit 0 } else exit 1 }';
-          }
+          command: 'test -f "${vars.work_dir}/4-audio/content.json" && test ! -f "${vars.work_dir}/4-audio/.duration-ok" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3'
+
+  - from: duration-check
+    to: failed
+    description: "Audio duration outside band with revision budget exhausted -> fail"
+    guard:
+      kind: shell
+      options:
+          command: 'test -f "${vars.work_dir}/4-audio/content.json" && test ! -f "${vars.work_dir}/4-audio/.duration-ok" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -ge 3'

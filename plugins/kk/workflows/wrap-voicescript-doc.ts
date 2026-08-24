@@ -1,0 +1,40 @@
+#!/usr/bin/env bun
+/**
+ * Runtime VoiceScript→Doc[] wrapper for kk-solo-podcast.
+ *
+ * Copied with the workflow YAML into $KK_WORKFLOWS_DIR (default
+ * ~/.config/kk/workflows). Node/Bun builtins only — no @gobing-ai/* and no
+ * relative imports (those paths do not exist next to the runtime copy).
+ *
+ * SYNC: plugins/kk/workflows/kk-solo-podcast.yaml (wrap-docs state shells this
+ * script with scriptPath, outPath, voiceProfile argv). The wrap shape must stay
+ * a single-Doc array with sha256(file://scriptPath)[0:16] id — voice-gen and
+ * tests depend on it.
+ */
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const [scriptPathArg, outPathArg, voiceProfileArg] = process.argv.slice(2);
+
+if (!scriptPathArg || !outPathArg) {
+    console.error('usage: wrap-voicescript-doc.ts <scriptPath> <outPath> [voiceProfile]');
+    process.exit(1);
+}
+
+const scriptPath = resolve(scriptPathArg);
+const outPath = resolve(outPathArg);
+const voiceProfile = voiceProfileArg || process.env.VOICEBOX_DEFAULT_PROFILE || '';
+const body = readFileSync(scriptPath, 'utf-8');
+const sourceUri = `file://${scriptPath}`;
+const id = createHash('sha256').update(sourceUri).digest('hex').slice(0, 16);
+const doc = {
+    id,
+    title: 'Podcast VoiceScript',
+    sourceUri,
+    body,
+    mediaType: 'application/yaml',
+    metadata: voiceProfile ? { voiceProfile } : {},
+};
+
+writeFileSync(outPath, JSON.stringify([doc], null, 2));

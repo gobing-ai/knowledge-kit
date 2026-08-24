@@ -134,6 +134,8 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('cp "$sdir/$side" "$ddir/$side"');
         expect(cmd).toContain('validate_script');
         expect(cmd).toContain('$workflows_dir/validate-voicescript.ts');
+        expect(cmd).toContain('wrap-voicescript-doc.ts');
+        expect(cmd).toContain('\\"wrap_script\\"');
         expect(cmd).toContain('spur workflow run "$dest"');
     });
 });

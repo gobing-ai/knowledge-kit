@@ -100,18 +100,19 @@ elif ! cmp -s "$src" "$dest"; then
   echo "warning: $dest differs from install source; leaving user copy (pass --force to replace)" >&2
 fi
 # Runtime dest is $workflows_dir (default ~/.config/kk/workflows). Copy YAML sidecars
-# that the machine shells (kk-solo-podcast: validate-voicescript.ts).
+# that the machine shells (kk-solo-podcast: validate-voicescript.ts, wrap-voicescript-doc.ts).
 if [ "$NAME" = "kk-solo-podcast" ] && [ -n "$src" ]; then
-  side="validate-voicescript.ts"
-  sdir=$(dirname "$src")
-  ddir=$(dirname "$dest")
-  if [ -f "$sdir/$side" ]; then
-    if [ ! -f "$ddir/$side" ] || [ "$FORCE" = true ]; then
-      cp "$sdir/$side" "$ddir/$side"
-    elif ! cmp -s "$sdir/$side" "$ddir/$side"; then
-      echo "warning: $ddir/$side differs from install source; leaving user copy (pass --force to replace)" >&2
+  for side in validate-voicescript.ts wrap-voicescript-doc.ts; do
+    sdir=$(dirname "$src")
+    ddir=$(dirname "$dest")
+    if [ -f "$sdir/$side" ]; then
+      if [ ! -f "$ddir/$side" ] || [ "$FORCE" = true ]; then
+        cp "$sdir/$side" "$ddir/$side"
+      elif ! cmp -s "$sdir/$side" "$ddir/$side"; then
+        echo "warning: $ddir/$side differs from install source; leaving user copy (pass --force to replace)" >&2
+      fi
     fi
-  fi
+  done
 fi
 ```
 
@@ -180,13 +181,14 @@ spur workflow run "$dest" --vars \
 
 Bind vars: `topic`, `input_file`, `work_dir`, `outline`, `script_approved`, `force`,
 `target_duration_min`, `language`, `voice_profile` (from `VOICEBOX_DEFAULT_PROFILE` or empty),
-`validate_script` (`$workflows_dir/validate-voicescript.ts`), `plugins_path` (empty → ADR-012
+`validate_script` (`$workflows_dir/validate-voicescript.ts`),
+`wrap_script` (`$workflows_dir/wrap-voicescript-doc.ts`), `plugins_path` (empty → ADR-012
 default discovery), `agent`. **Always** `spur workflow run "$dest"` — `$dest` is
 `$workflows_dir/kk-solo-podcast.yaml`, never the design-time `plugins/kk/workflows/` path.
 
 ```bash
 spur workflow run "$dest" --vars \
-  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"outline\":\"$OUTLINE\",\"script_approved\":\"$SCRIPT_APPROVED\",\"force\":\"$FORCE\",\"target_duration_min\":\"$DURATION\",\"language\":\"$LANGUAGE\",\"voice_profile\":\"$VOICE_PROFILE\",\"validate_script\":\"$workflows_dir/validate-voicescript.ts\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
+  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"outline\":\"$OUTLINE\",\"script_approved\":\"$SCRIPT_APPROVED\",\"force\":\"$FORCE\",\"target_duration_min\":\"$DURATION\",\"language\":\"$LANGUAGE\",\"voice_profile\":\"$VOICE_PROFILE\",\"validate_script\":\"$workflows_dir/validate-voicescript.ts\",\"wrap_script\":\"$workflows_dir/wrap-voicescript-doc.ts\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
 ```
 
 ## 6. Report
