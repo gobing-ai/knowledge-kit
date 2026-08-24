@@ -54,10 +54,12 @@ describe('kk-storm-research workflow (0059/0069)', () => {
         // Template literal with escaped placeholders so the string contains literal ${vars.*}.
         // Whitespace-normalize: the YAML folds long commands across physical lines.
         const flat = ssot.replace(/\s+/g, ' ');
-        expect(flat).toContain('rs="${vars.render_script}"');
+        expect(flat).toContain(`rs="\${vars.render_script}"`);
         expect(flat).toContain('command -v kk');
         expect(flat).toContain('$pkg/plugins/kk/scripts/render-md.ts');
-        expect(flat).toContain('bun "$rs" --in "${vars.work_dir}/content.json" --out "${vars.work_dir}/content.md"');
+        expect(flat).toContain(
+            `bun "$rs" --in "\${vars.work_dir}/content.json" --out "\${vars.work_dir}/content.md"`,
+        );
     });
 
     it('R3 — fixture defaults to "false" and is never hardcoded true in the YAML', () => {

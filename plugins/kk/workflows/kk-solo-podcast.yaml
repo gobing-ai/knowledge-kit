@@ -3,7 +3,8 @@
 name: kk-solo-podcast
 kind: state-machine
 description: >-
-  Solo podcast authoring pipeline using VoiceScript authoring, Spur HITL gates, and voice-gen audio generation
+  Solo podcast authoring pipeline over the kk:audio-authoring skill, Spur HITL gates,
+  and voice-gen audio generation
 initialState: prepare
 terminalStates:
   - done
