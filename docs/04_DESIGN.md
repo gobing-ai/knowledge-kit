@@ -406,28 +406,28 @@ File: `.spur/config.yaml`
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
 | Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine orchestrating aihot-ingest -> dailynews-gen -> voice-gen (F6 **shipped** 2026-08-21) |
 
-## 7. Workflow install copy-rule and `/workflow-run` surface
+## 7. Workflow resolution (run-anywhere) and `/workflow-run` surface
 
 Product workflows are authored under `plugins/kk/workflows/` (ADR-009 amendment — **design-time
-SSOT**, packed in the npm tarball's `plugins/`). `/workflow-run` installs the YAML into
-`~/.config/kk/workflows/$NAME.yaml` (**runtime dest**; `KK_WORKFLOWS_DIR` wins). Operators and
-workflow shells always run that dest — never the package path, and never `docs/design/` (docs are
-not in the tarball). Sidecars the machine executes (`validate-voicescript.ts` and
-`wrap-voicescript-doc.ts` for `kk-solo-podcast`) are copied beside the dest YAML.
+SSOT**, packed in the npm tarball's `plugins/`). `/workflow-run` **runs the YAML in place** from
+any cwd — no copy on the happy path. The `kk` package root is resolved from the binary itself
+(`command -v kk` + symlink walk), so it works under bun/npm/nvm/homebrew prefixes.
 
-### 7.1 Two-root copy rule
+### 7.1 Resolution order
 
-| Root priority | Path | Notes |
-| ------------- | ---- | ----- |
-| 1 | `$KK_WORKFLOWS_SOURCE/$NAME.yaml` | User/environment override root |
-| 2 | `plugins/kk/workflows/$NAME.yaml` | Package/repo product workflow root |
+| Priority | Path | Notes |
+| -------- | ---- | ----- |
+| 1 | `$workflows_dir/$NAME.yaml` (default `~/.config/kk/workflows/`) | User override — wins when present; nothing is copied |
+| 2 | `$KK_WORKFLOWS_SOURCE/$NAME.yaml` | Environment override root |
+| 3 | `$pkg/plugins/kk/workflows/$NAME.yaml` | Installed package copy (versioned with the CLI) |
+| 4 | `plugins/kk/workflows/$NAME.yaml` | Repo checkout (development) |
 
-**Resolution semantics:**
-- `dest` missing → copy from the first hit.
-- `dest` exists + `--force` → overwrite from source.
-- `dest` exists + identical bytes → no-op.
-- `dest` exists + different bytes → warn and leave (proceed with user copy).
-- Source missing from both roots → exit 1 with stderr: `no source workflow for $NAME (searched KK_WORKFLOWS_SOURCE, plugins/kk/workflows)`.
+**Semantics:**
+- First hit wins; the resolved YAML is run **in place** — never copied on the happy path.
+- `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
+- To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
+- Source missing from all roots → exit 1, stderr lists every searched root.
+- Sidecars the machine executes (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`) are **not** copied — each workflow's own fallback chain resolves them: explicit var → `$KK_WORKFLOWS_DIR` → `$pkg/plugins/kk/workflows/` (package root via `command -v kk`) → `$HOME/.config/kk/workflows`.
 
 ### 7.2 `/workflow-run` command surface
 

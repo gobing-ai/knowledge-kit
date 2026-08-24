@@ -36,7 +36,7 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             set -e;
             if [ -z "${vars.work_dir}" ]; then
               echo "missing work_dir" >&2; exit 1;
@@ -99,7 +99,7 @@ states:
           expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
       - kind: shell
         options:
-          command: >-
+        command: >-
             test -f "${vars.work_dir}/2-outline/outline-option-b.md" || { echo "missing required outline-option-b.md" >&2; exit 1; }
 
   - id: outline-select
@@ -120,7 +120,7 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             sel="${vars.outline}";
             if [ -z "$sel" ]; then sel="${vars.__hitlAnswer}"; fi;
             if [ -z "$sel" ]; then sel="a"; fi;
@@ -162,15 +162,23 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             set -e;
             vs="${vars.validate_script}";
-            if [ -z "$vs" ]; then
-              if [ -n "$KK_WORKFLOWS_DIR" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts";
-              else vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi;
-            fi;
             if [ ! -f "$vs" ]; then
-              echo "validate_script not found: $vs (install with /workflow-run kk-solo-podcast into $HOME/.config/kk/workflows)" >&2;
+              kbin="$(command -v kk 2>/dev/null || true)";
+              while [ -L "$kbin" ]; do
+                link="$(readlink "$kbin")";
+                case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac;
+              done;
+              pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
+              vs="";
+              if [ -n "$KK_WORKFLOWS_DIR" ] && [ -f "$KK_WORKFLOWS_DIR/validate-voicescript.ts" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts";
+              elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/workflows/validate-voicescript.ts" ]; then vs="$pkg/plugins/kk/workflows/validate-voicescript.ts";
+              elif [ -f "$HOME/.config/kk/workflows/validate-voicescript.ts" ]; then vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi;
+            fi;
+            if [ -z "$vs" ]; then
+              echo "validate_script not found (searched: \$KK_WORKFLOWS_DIR, kk package root via \`command -v kk\`, \$HOME/.config/kk/workflows) — install the kk package or place an override with /workflow-run kk-solo-podcast --force" >&2;
               exit 1;
             fi;
             bun "$vs" --in "${vars.work_dir}/3-script/voicescript.yaml"
@@ -190,7 +198,7 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             rm -f "${vars.work_dir}/.duration-feedback";
             n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
             echo $((n + 1)) > "${vars.work_dir}/.revise-count";
@@ -204,15 +212,23 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             set -e;
             ws="${vars.wrap_script}";
-            if [ -z "$ws" ]; then
-              if [ -n "$KK_WORKFLOWS_DIR" ]; then ws="$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts";
-              else ws="$HOME/.config/kk/workflows/wrap-voicescript-doc.ts"; fi;
-            fi;
             if [ ! -f "$ws" ]; then
-              echo "wrap_script not found: $ws (install with /workflow-run kk-solo-podcast into $HOME/.config/kk/workflows)" >&2;
+              kbin="$(command -v kk 2>/dev/null || true)";
+              while [ -L "$kbin" ]; do
+                link="$(readlink "$kbin")";
+                case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac;
+              done;
+              pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
+              ws="";
+              if [ -n "$KK_WORKFLOWS_DIR" ] && [ -f "$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts" ]; then ws="$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts";
+              elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/workflows/wrap-voicescript-doc.ts" ]; then ws="$pkg/plugins/kk/workflows/wrap-voicescript-doc.ts";
+              elif [ -f "$HOME/.config/kk/workflows/wrap-voicescript-doc.ts" ]; then ws="$HOME/.config/kk/workflows/wrap-voicescript-doc.ts"; fi;
+            fi;
+            if [ -z "$ws" ]; then
+              echo "wrap_script not found (searched: \$KK_WORKFLOWS_DIR, kk package root via \`command -v kk\`, \$HOME/.config/kk/workflows) — install the kk package or place an override with /workflow-run kk-solo-podcast --force" >&2;
               exit 1;
             fi;
             bun "$ws" "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
@@ -222,7 +238,7 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             set -e;
             extra="";
             if [ -n "${vars.plugins_path}" ]; then extra="--plugins-path ${vars.plugins_path}"; fi;
@@ -233,7 +249,7 @@ states:
     onEnter:
       - kind: shell
         options:
-          command: >-
+        command: >-
             rm -f "${vars.work_dir}/4-audio/.duration-ok";
             if [ ! -f "${vars.work_dir}/4-audio/content.json" ]; then
               exit 0;
@@ -369,7 +385,7 @@ transitions:
     guard:
       kind: shell
       options:
-          command: 'test ! -f "${vars.work_dir}/4-audio/content.json" || test -f "${vars.work_dir}/4-audio/.duration-ok"'
+        command: 'test ! -f "${vars.work_dir}/4-audio/content.json" || test -f "${vars.work_dir}/4-audio/.duration-ok"'
 
   - from: duration-check
     to: script-write
@@ -377,7 +393,7 @@ transitions:
     guard:
       kind: shell
       options:
-          command: 'test -f "${vars.work_dir}/4-audio/content.json" && test ! -f "${vars.work_dir}/4-audio/.duration-ok" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3'
+        command: 'test -f "${vars.work_dir}/4-audio/content.json" && test ! -f "${vars.work_dir}/4-audio/.duration-ok" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3'
 
   - from: duration-check
     to: failed
@@ -385,4 +401,4 @@ transitions:
     guard:
       kind: shell
       options:
-          command: 'test -f "${vars.work_dir}/4-audio/content.json" && test ! -f "${vars.work_dir}/4-audio/.duration-ok" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -ge 3'
+        command: 'test -f "${vars.work_dir}/4-audio/content.json" && test ! -f "${vars.work_dir}/4-audio/.duration-ok" && test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -ge 3'

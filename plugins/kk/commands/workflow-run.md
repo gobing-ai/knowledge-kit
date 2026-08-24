@@ -1,18 +1,21 @@
 ---
 name: workflow-run
 description: >-
-  Run STORM daily research or IT content authoring end to end. Installs the workflow
-  YAML on first run (two-root copy rule), creates the config with defaults if missing,
-  computes the workspace, and shells spur workflow run against the installed workflow.
+  Run STORM daily research, IT content authoring, or solo-podcast end to end.
+  Resolves the workflow YAML from the user override, KK_WORKFLOWS_SOURCE, the
+  installed kk package root, or a repo checkout — runs in place from any cwd;
+  creates the config with defaults if missing; computes the workspace; shells
+  spur workflow run against the resolved YAML.
 argument-hint: "[name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat] [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic] [--duration <min>] [--language <code>] [--script-approved] [--fixture] [--force]"
 ---
 
 Thin runner around the **storm-research**, **itc-generating** / **topic**, and **kk-solo-podcast**
 capabilities. Read `plugins/kk/skills/storm-research/SKILL.md` or
-`plugins/kk/skills/itc-generating/SKILL.md` for craft; solo-podcast craft is inlined in the
-workflow `agent.run` prompt (no fat skill). This command owns the run procedure: config create,
-YAML install (two-root copy rule) into `$HOME/.config/kk/workflows`, workspace computation, and
-the `spur workflow run` of that **runtime** dest. Design-time SSOT remains
+`plugins/kk/skills/itc-generating/SKILL.md` for craft; solo-podcast craft lives in the
+`audio-authoring` skill. This command owns the run procedure: config create,
+workflow YAML resolution (user override → `$KK_WORKFLOWS_SOURCE` → **installed package
+root** → repo checkout, runs in place from any cwd), workspace computation, and the
+`spur workflow run` of the resolved YAML. Design-time SSOT remains
 `plugins/kk/workflows/` in the package/repo. No new `kk` CLI noun (ADR-011) — everything here
 is shell + the workflow.
 
@@ -75,46 +78,57 @@ EOF
 `--fixture` sets `fixture=true` regardless of the file. `FIRECRAWL_API_KEY` is **never** read
 from config — env-only.
 
-## 3. Install the workflow YAML
+## 3. Resolve the workflow YAML (run anywhere)
 
-`dest="$workflows_dir/$NAME.yaml"`. Copy from the **first hit** of, in order:
-
-1. `$KK_WORKFLOWS_SOURCE/$NAME.yaml`
-2. `plugins/kk/workflows/$NAME.yaml`
-
-- `dest` missing → copy from the first hit. Source missing from both roots → exit 1, stderr
-  lists the roots searched: `no source workflow for $NAME (searched KK_WORKFLOWS_SOURCE, plugins/kk/workflows)`.
-- `dest` exists + `--force` → overwrite from source.
-- `dest` exists + identical bytes → no-op.
-- `dest` exists + different bytes → **warn and leave** (run proceeds with the user's copy).
+The workflow YAML runs **in place** — no copy on the happy path. Resolve the `kk`
+package root from the binary itself (works under bun/npm/nvm/homebrew prefixes):
 
 ```bash
-src=""
-for d in "$KK_WORKFLOWS_SOURCE" "plugins/kk/workflows"; do
-  [ -n "$d" ] && [ -f "$d/$NAME.yaml" ] && { src="$d/$NAME.yaml"; break; }
+kbin="$(command -v kk 2>/dev/null || true)"
+while [ -L "$kbin" ]; do
+  link="$(readlink "$kbin")"
+  case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac
 done
-[ -z "$src" ] && { echo "no source workflow for $NAME (searched KK_WORKFLOWS_SOURCE, plugins/kk/workflows)" >&2; exit 1; }
-if [ ! -f "$dest" ] || [ "$FORCE" = true ]; then
-  install -d "$(dirname "$dest")" && cp "$src" "$dest"
-elif ! cmp -s "$src" "$dest"; then
-  echo "warning: $dest differs from install source; leaving user copy (pass --force to replace)" >&2
-fi
-# Runtime dest is $workflows_dir (default ~/.config/kk/workflows). Copy YAML sidecars
-# that the machine shells (kk-solo-podcast: validate-voicescript.ts, wrap-voicescript-doc.ts).
-if [ "$NAME" = "kk-solo-podcast" ] && [ -n "$src" ]; then
-  for side in validate-voicescript.ts wrap-voicescript-doc.ts; do
-    sdir=$(dirname "$src")
-    ddir=$(dirname "$dest")
-    if [ -f "$sdir/$side" ]; then
-      if [ ! -f "$ddir/$side" ] || [ "$FORCE" = true ]; then
-        cp "$sdir/$side" "$ddir/$side"
-      elif ! cmp -s "$sdir/$side" "$ddir/$side"; then
-        echo "warning: $ddir/$side differs from install source; leaving user copy (pass --force to replace)" >&2
-      fi
-    fi
+pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)"
+```
+
+Resolution order — first hit wins:
+
+1. **User override** `$workflows_dir/$NAME.yaml` (default `~/.config/kk/workflows/`) —
+   when it exists it always wins, and nothing is copied.
+2. `$KK_WORKFLOWS_SOURCE/$NAME.yaml`
+3. `$pkg/plugins/kk/workflows/$NAME.yaml` — the installed package copy
+4. `plugins/kk/workflows/$NAME.yaml` — repo checkout (development)
+
+```bash
+dest=""
+if [ -f "$workflows_dir/$NAME.yaml" ]; then
+  dest="$workflows_dir/$NAME.yaml"
+else
+  for d in "$KK_WORKFLOWS_SOURCE" ${pkg:+"$pkg/plugins/kk/workflows"} "plugins/kk/workflows"; do
+    [ -n "$d" ] && [ -f "$d/$NAME.yaml" ] && { dest="$d/$NAME.yaml"; break; }
   done
+  [ -z "$dest" ] && { echo "no source workflow for $NAME (searched $workflows_dir, KK_WORKFLOWS_SOURCE, kk package root, plugins/kk/workflows)" >&2; exit 1; }
+fi
+# --force: refresh the user override from the best available source, then run the override.
+if [ "$FORCE" = true ]; then
+  src=""
+  for d in "$KK_WORKFLOWS_SOURCE" ${pkg:+"$pkg/plugins/kk/workflows"} "plugins/kk/workflows"; do
+    [ -n "$d" ] && [ -f "$d/$NAME.yaml" ] && { src="$d/$NAME.yaml"; break; }
+  done
+  [ -z "$src" ] && { echo "no source workflow for $NAME to force-install (searched KK_WORKFLOWS_SOURCE, kk package root, plugins/kk/workflows)" >&2; exit 1; }
+  install -d "$workflows_dir" && cp "$src" "$workflows_dir/$NAME.yaml"
+  dest="$workflows_dir/$NAME.yaml"
 fi
 ```
+
+- To customize a workflow, copy it to `$workflows_dir/$NAME.yaml` yourself (or use
+  `--force` to place a fresh copy there) — that override wins on every later run.
+- No auto-copy, no drift warnings: the package copy is versioned with the CLI and
+  never goes stale; overrides are explicit.
+- Sidecars (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`) are **not copied** —
+  the workflow's own fallback chain resolves them via `$KK_WORKFLOWS_DIR`, the package
+  root, then `$HOME/.config/kk/workflows`.
 
 ## 4. Compute workspace
 
@@ -159,8 +173,9 @@ All values are strings.
 ### Profile `kk-storm-research`
 
 Bind vars: `maxResults` and `fixture` from step 2; `plugins_path` defaults to `./plugins`
-in a checkout, else installed package `plugins/` or `KK_PLUGIN_PATH`; `render_script` is
-`plugins/kk/scripts/render-md.ts`.
+in a checkout, else `$pkg/plugins` (package root from step 3) or `KK_PLUGIN_PATH`;
+`render_script` is `plugins/kk/scripts/render-md.ts` in a checkout, else
+`$pkg/plugins/kk/scripts/render-md.ts`.
 
 ```bash
 spur workflow run "$dest" --vars \
@@ -181,14 +196,17 @@ spur workflow run "$dest" --vars \
 
 Bind vars: `topic`, `input_file`, `work_dir`, `outline`, `script_approved`, `force`,
 `target_duration_min`, `language`, `voice_profile` (from `VOICEBOX_DEFAULT_PROFILE` or empty),
-`validate_script` (`$workflows_dir/validate-voicescript.ts`),
-`wrap_script` (`$workflows_dir/wrap-voicescript-doc.ts`), `plugins_path` (empty → ADR-012
-default discovery), `agent`. **Always** `spur workflow run "$dest"` — `$dest` is
-`$workflows_dir/kk-solo-podcast.yaml`, never the design-time `plugins/kk/workflows/` path.
+`validate_script` (`$workflows_dir/validate-voicescript.ts` when that override exists, else
+empty), `wrap_script` (`$workflows_dir/wrap-voicescript-doc.ts` when that override exists,
+else empty) — empty binds let the workflow's fallback chain resolve via the package root.
+`plugins_path` (empty → ADR-012 default discovery), `agent`. `$dest` is the user override
+when present, else the package/checkout YAML resolved in step 3 — never a hardcoded path.
 
 ```bash
+vs_arg=""; [ -f "$workflows_dir/validate-voicescript.ts" ] && vs_arg="$workflows_dir/validate-voicescript.ts"
+ws_arg=""; [ -f "$workflows_dir/wrap-voicescript-doc.ts" ] && ws_arg="$workflows_dir/wrap-voicescript-doc.ts"
 spur workflow run "$dest" --vars \
-  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"outline\":\"$OUTLINE\",\"script_approved\":\"$SCRIPT_APPROVED\",\"force\":\"$FORCE\",\"target_duration_min\":\"$DURATION\",\"language\":\"$LANGUAGE\",\"voice_profile\":\"$VOICE_PROFILE\",\"validate_script\":\"$workflows_dir/validate-voicescript.ts\",\"wrap_script\":\"$workflows_dir/wrap-voicescript-doc.ts\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
+  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"outline\":\"$OUTLINE\",\"script_approved\":\"$SCRIPT_APPROVED\",\"force\":\"$FORCE\",\"target_duration_min\":\"$DURATION\",\"language\":\"$LANGUAGE\",\"voice_profile\":\"$VOICE_PROFILE\",\"validate_script\":\"$vs_arg\",\"wrap_script\":\"$ws_arg\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
 ```
 
 ## 6. Report

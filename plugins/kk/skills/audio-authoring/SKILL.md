@@ -154,30 +154,28 @@ from any existing approved artifact:
 
 ## VoiceScript contract
 
-Distilled from `plugins/generations/voice-gen/src/voicescript.ts`; enforced
-executable check: `plugins/kk/workflows/validate-voicescript.ts`. No other fields
-are valid authoring targets — do not invent fields.
+The authoring template lives at **`templates/voicescript.solo.yaml`** (relative to
+this skill file) — read it first when authoring `3-script/voicescript.yaml`; it is a
+valid-YAML skeleton with per-field constraint comments. The executable authority is
+`plugins/kk/workflows/validate-voicescript.ts` (canonical source
+`plugins/generations/voice-gen/src/voicescript.ts`); the template is its
+authoring-time distillation. No other fields are valid authoring targets — do not
+invent fields (no `default_profile`, no required `title`).
 
-```yaml
-default_engine?: qwen | qwen_custom_voice | luxtts | chatterbox | chatterbox_turbo | tada | kokoro
-language?: zh | en | ja | ko | de | fr | ru | pt | es | it | he | ar | da | el | fi | hi | ms | nl | no | pl | sv | sw | tr
-speakers?:            # map of speaker name -> definition (solo mode: omit entirely)
-  <name>:
-    profile: string   # required when the speaker is defined
-    engine?: enum
-    language?: enum
-    instruct?: string # <= 500 characters
-segments:             # required, non-empty
-  - speaker?: string  # must name a key of the speakers map
-    profile?: string  # solo mode: omit
-    text: string      # required, 1..50000 characters
-    instruct?: string # <= 500 characters
-    engine?: enum
-    language?: enum
-    gap_ms?: number   # >= 0
-    max_chunk_chars?: number  # 100..5000
-    crossfade_ms?: number     # 0..500
-```
+Field summary (the template carries the same information as inline comments):
+
+| Field | Where | Constraint |
+|---|---|---|
+| `language` | root | 23-language enum (see template) |
+| `default_engine` | root | engine enum (7 engines, see template) |
+| `speakers` | root | multi-speaker modes only; each entry requires `profile`; omit in solo |
+| `segments` | root | required, non-empty |
+| `text` | segment | required, 1..50000 chars |
+| `instruct` | speaker/segment | <= 500 chars |
+| `gap_ms` | segment | >= 0 |
+| `max_chunk_chars` | segment | 100..5000 |
+| `crossfade_ms` | segment | 0..500 |
+| `speaker` | segment | must name a key of the `speakers` map |
 
 ## Spoken-budget rule
 

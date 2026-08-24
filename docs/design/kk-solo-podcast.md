@@ -27,8 +27,8 @@ those conventions; two-way door (delete the YAML).
 | D4 | `hitl.select` a\|b\|c for outlines; `hitl.confirm` + bounded `hitl.input` for the script | Outline-only `hitl.confirm`; new `hitl.*` kind | House pattern (kk-itc). TTS is slow/expensive — gate the script before generate. |
 | D5 | Audio is the sibling **WAV** D5 already writes | MP3 / ffmpeg | Voicebox `GET /audio/{id}` is WAV; concat is PCM WAV. Transcode is a later publish concern. |
 | D6 | Target length = script budget + post-check | Duration field on `voice-gen` | D5 §7: output duration is recorded, not requested. |
-| D7 | Self-contained helper `plugins/kk/workflows/validate-voicescript.ts`, copied to `$HOME/.config/kk/workflows/` | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime dest cannot import `../../generations`. Checker is builtins-only; `/workflow-run` copies YAML + sidecar. |
-| D8 | `/workflow-run kk-solo-podcast` installs into `$HOME/.config/kk/workflows` and runs `$dest` | Checkout-only `spur workflow run plugins/kk/workflows/…` | Design-time SSOT is the package tree; runtime dest is `~/.config/kk/workflows`. |
+| D7 | Self-contained helpers `plugins/kk/workflows/validate-voicescript.ts` + `wrap-voicescript-doc.ts`, resolved via fallback chain (var → `KK_WORKFLOWS_DIR` → kk package root → `~/.config/kk/workflows`) | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime cannot import `../../generations`. Helpers are builtins-only; the package ships them in `plugins/`, so the package root covers any cwd. |
+| D8 | `/workflow-run kk-solo-podcast` resolves the YAML **in place** (override → `KK_WORKFLOWS_SOURCE` → package root → checkout); no copy on the happy path | Checkout-only `spur workflow run plugins/kk/workflows/…`; auto-copy into `~/.config/kk/workflows` | Package root via `command -v kk` works under any prefix, so any cwd runs. `~/.config/kk/workflows` is now an explicit user override, not a required install dest. |
 | D9 | Require outline-option-a.md and -b.md; c optional | Always three; only one outline | Matches kk-itc. |
 | D10 | Duration miss → retry script-write (shared `.revise-count`, cap 3) → `failed` | Fail-loud immediately; warn-only | Coarse band absorbs WPM vs Voicebox rate; one bounded regeneration is cheaper than operator re-runs. Auto-regenerate beyond budget is out (GPU cost). |
 | D11 | No ADR | ADR for “podcast as a workflow” | Extends F4 + D5. Reversible. |
@@ -192,26 +192,22 @@ Solo v1: one speaker via `default_profile`; a `wrap_script` resolution chain mir
 
 ```
 vs="${vars.validate_script}"
-if [ -z "$vs" ]; then
-  if [ -n "$KK_WORKFLOWS_DIR" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts"
-  else vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi
+if [ ! -f "$vs" ]; then
+  # fallback chain: $KK_WORKFLOWS_DIR → kk package root (command -v kk + symlink walk) → ~/.config/kk/workflows
 fi
 bun "$vs" --in "${vars.work_dir}/3-script/voicescript.yaml"
 ```
 
 Helper is **builtins-only** (no `@gobing-ai/*`, no relative import into `voice-gen` —
-those paths do not exist next to the runtime copy). A SYNC comment points maintainers
+those paths do not exist outside the repo). A SYNC comment points maintainers
 at `plugins/generations/voice-gen/src/voicescript.ts`. Exit 1 prints the validator's
 message; no generate.
 
-`wrap-docs` resolves `wrap_script` the same way, then runs it:
+`wrap-docs` resolves `wrap_script` via the same fallback chain, then runs it:
 
 ```
 ws="${vars.wrap_script}"
-if [ -z "$ws" ]; then
-  if [ -n "$KK_WORKFLOWS_DIR" ]; then ws="$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts"
-  else ws="$HOME/.config/kk/workflows/wrap-voicescript-doc.ts"; fi
-fi
+# same fallback chain: $KK_WORKFLOWS_DIR → kk package root → ~/.config/kk/workflows
 bun "$ws" "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
 ```
 

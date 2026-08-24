@@ -118,12 +118,18 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain('.duration-feedback');
     });
 
-    it('runtime paths use ~/.config/kk/workflows and omit checkout-only trees', () => {
+    it('runtime paths resolve via package root; no bare checkout-relative trees', () => {
         expect(yaml).not.toContain('docs/design');
         expect(yaml).not.toContain('plugins/kk/lib');
-        expect(yaml).not.toContain('plugins/kk/workflows');
         expect(yaml).not.toContain('plugins/kk/scripts');
         expect(yaml).not.toContain('plugins/kk/skills');
+        // plugins/kk/workflows is allowed ONLY under the $pkg package-root prefix —
+        // never as a bare cwd-relative path (breaks outside a checkout).
+        const bareRefs = [...yaml.matchAll(/plugins\/kk\/workflows/g)].filter(
+            (m) => !yaml.slice(0, m.index).endsWith('$pkg/'),
+        );
+        expect(bareRefs).toEqual([]);
+        expect(yaml).toContain('command -v kk');
         expect(yaml).toContain('KK_WORKFLOWS_DIR');
         expect(yaml).toContain('$HOME/.config/kk/workflows');
         expect(yaml).toContain('validate-voicescript.ts');

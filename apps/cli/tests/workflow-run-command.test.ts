@@ -89,13 +89,16 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('never overwrite an existing');
     });
 
-    it('R2 — workflow YAML install follows the two-root copy rule with --force', () => {
+    it('R2 — workflow YAML resolves user-override first, then package root, run in place', () => {
         expect(cmd).toContain('KK_WORKFLOWS_SOURCE');
         expect(cmd).toContain('plugins/kk/workflows');
+        expect(cmd).toContain('$pkg/plugins/kk/workflows/$NAME.yaml');
+        expect(cmd).toContain('command -v kk');
         expect(cmd).not.toContain('.spur/workflows');
         expect(cmd).toContain('--force');
-        expect(cmd).toContain('cmp -s');
-        expect(cmd).toContain('searched KK_WORKFLOWS_SOURCE, plugins/kk/workflows');
+        expect(cmd).toContain('in place');
+        expect(cmd).not.toContain('cp "$src" "$dest"');
+        expect(cmd).toContain('no source workflow for $NAME');
     });
 
     it('R2 — run shells spur workflow run with the 0059 var set for storm-research, all strings', () => {
@@ -124,16 +127,14 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('kk-storm-research');
     });
 
-    it('kk-solo-podcast profile copies YAML+sidecar into workflows_dir and runs $dest', () => {
+    it('kk-solo-podcast profile resolves sidecars via package-root fallback, no copy', () => {
         expect(cmd).toContain('kk-solo-podcast');
         expect(cmd).toContain('validate-voicescript.ts');
         expect(cmd).toContain('target_duration_min');
         expect(cmd).toContain('script_approved');
         expect(cmd).toContain('$HOME/.config/kk/workflows');
-        expect(cmd).toContain('never the design-time');
-        expect(cmd).toContain('cp "$sdir/$side" "$ddir/$side"');
+        expect(cmd).not.toContain('cp "$sdir/$side" "$ddir/$side"');
         expect(cmd).toContain('validate_script');
-        expect(cmd).toContain('$workflows_dir/validate-voicescript.ts');
         expect(cmd).toContain('wrap-voicescript-doc.ts');
         expect(cmd).toContain('\\"wrap_script\\"');
         expect(cmd).toContain('spur workflow run "$dest"');

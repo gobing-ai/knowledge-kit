@@ -1,0 +1,25 @@
+# Solo-podcast VoiceScript starter template.
+# Fill the placeholders; delete comments before authoring is considered final.
+# Executable contract: validate-voicescript.ts (canonical: voice-gen/src/voicescript.ts).
+# No other fields are valid — do not invent fields (no `default_profile`, no `title`).
+
+language: en            # zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr
+# default_engine: qwen  # optional; qwen|qwen_custom_voice|luxtts|chatterbox|chatterbox_turbo|tada|kokoro
+
+# Multi-speaker modes only (dialogue/interview) — omit entirely in solo mode:
+# speakers:
+#   <name>:
+#     profile: <voice-profile>   # required per speaker
+#     engine: qwen               # optional
+#     language: en               # optional
+#     instruct: warm             # optional, <= 500 chars
+
+segments:               # required, non-empty
+  - text: "Replace with the spoken sentence."   # required, 1..50000 characters
+    gap_ms: 400                                 # optional, >= 0 — silence before next clip
+    # instruct: "warm"                          # optional, <= 500 characters
+    # engine: qwen                              # optional, per-segment override
+    # language: en                              # optional, per-segment override
+    # max_chunk_chars: 800                      # optional, 100..5000
+    # crossfade_ms: 50                          # optional, 0..500
+    # speaker: <name>                           # multi-speaker only; must key the speakers map

@@ -10,13 +10,16 @@ Two homes (do not mix them up):
 
 | Role | Path |
 | --- | --- |
-| **Design-time SSOT** | package/repo `plugins/kk/workflows/` (source of the copy) |
-| **Runtime dest** | `$KK_WORKFLOWS_DIR` (default `$HOME/.config/kk/workflows`) |
+| **Design-time SSOT** | package/repo `plugins/kk/workflows/` (ships in the npm tarball) |
+| **User override** | `$KK_WORKFLOWS_DIR` (default `$HOME/.config/kk/workflows`) |
 
-**Always run the copy under `$HOME/.config/kk/workflows`.** The YAML, the VoiceScript checker
-(`validate-voicescript.ts`), and `spur workflow run` refer to that directory. Checkout
-`docs/design/` is **not** on the runtime path and is not in the npm tarball — the `agent.run`
-prompt carries the VoiceScript contract inline.
+**Run in place from any cwd.** `/workflow-run` resolves the YAML in order — user override,
+`KK_WORKFLOWS_SOURCE`, the installed kk package root (via `command -v kk` + symlink walk),
+repo checkout — and runs it in place; nothing is copied on the happy path. A file under
+`$HOME/.config/kk/workflows` is an **override** you place explicitly (or via `--force`). The
+VoiceScript checker (`validate-voicescript.ts`) and wrapper (`wrap-voicescript-doc.ts`)
+resolve the same way: var → `KK_WORKFLOWS_DIR` → package root → `$HOME/.config/kk/workflows`.
+Checkout `docs/design/` is **not** on the runtime path and is not in the npm tarball.
 
 ```mermaid
 flowchart LR
@@ -33,11 +36,11 @@ Audio format is **WAV** (D5 sibling of `--out`). Voicebox does **not** take a ta
 length is a **word/char budget** at script-write plus a post-generate check on
 `metadata.duration`.
 
-| Piece | Design-time (tarball / repo) | Runtime |
+| Piece | Design-time (tarball / repo) | Runtime resolution order |
 | --- | --- | --- |
-| Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | `$HOME/.config/kk/workflows/kk-solo-podcast.yaml` |
-| Validator | `plugins/kk/workflows/validate-voicescript.ts` | `$HOME/.config/kk/workflows/validate-voicescript.ts` |
-| Wrapper | `plugins/kk/workflows/wrap-voicescript-doc.ts` | `$HOME/.config/kk/workflows/wrap-voicescript-doc.ts` |
+| Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | override → `KK_WORKFLOWS_SOURCE` → package root → checkout |
+| Validator | `plugins/kk/workflows/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
+| Wrapper | `plugins/kk/workflows/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
 | Generator | `plugins/generations/voice-gen/` (npm pack) | `kk executor run voice-gen` (ADR-012 discovery) |
 
 ## Prerequisites
@@ -59,11 +62,12 @@ length is a **word/char budget** at script-write plus a post-generate check on
 
 ## Daily run — `/workflow-run kk-solo-podcast`
 
-Preferred operator surface. First run creates `~/.config/kk/config.yaml` if missing, **copies**
-`kk-solo-podcast.yaml` **and its sidecars** (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`) into
-`$HOME/.config/kk/workflows/`,
+Preferred operator surface. First run creates `~/.config/kk/config.yaml` if missing,
+resolves `kk-solo-podcast.yaml` **in place** (user override → `KK_WORKFLOWS_SOURCE` → installed
+package root → repo checkout; sidecars resolve via the same package-root chain — no copy),
 computes `work_dir` under `$works_dir/<kebab>`, and shells `spur workflow run "$dest"` where
-`$dest` is that runtime YAML.
+`$dest` is the resolved YAML. `--force` instead places a fresh copy into
+`$HOME/.config/kk/workflows/` as a user override and runs that.
 
 ```text
 /workflow-run kk-solo-podcast <topic|--in file> [--dir <path>] [--outline a|b|c]

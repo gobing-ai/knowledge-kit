@@ -1,0 +1,10 @@
+# knowledge-kit YAML lint policy for editor/IDE tooling (pi-lens, yamllint).
+# The project gate is Biome (lineWidth 120) + typecheck; yamllint is not part of
+# `bun run lint`. This config exists so opportunistic yamllint runs match actual
+# repo conventions: workflow YAMLs embed long folded shell one-liners by design
+# (`command: >-` blocks), and most workflow files omit the `---` document start.
+extends: default
+
+rules:
+  line-length: disable
+  document-start: disable
