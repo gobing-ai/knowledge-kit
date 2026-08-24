@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: ["wayfinder-map"]
 created_at: "2026-08-23T22:20:04.851Z"
-updated_at: "2026-08-24T02:58:16.369Z"
+updated_at: "2026-08-24T05:46:03.041Z"
 ---
 
 # F7: Audio-authoring skill extraction (wayfinder map)
@@ -33,28 +33,29 @@ Wayfinder map — prose no-AC disclaimer. BDD AC intentionally absent (tagged `w
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-Wayfinder map. Destination lives in **## Goal** (spur canonical sections). This map is a shipped refactor, not a spec-only effort — close only on verifyall Shippable: PASS.
+Wayfinder map — **destination met**: skill extracted (0077), workflow rewritten (0078), e2e verified (0079), all re-audited PASS. Shippable: PASS.
 
 **Context every session should consult:**
-- `plugins/kk/workflows/kk-solo-podcast.yaml` — the pipeline under refinement.
-- `plugins/kk/workflows/validate-voicescript.ts` — runtime VoiceScript validator (synced copy of `plugins/generations/voice-gen/src/voicescript.ts`, which already supports multi-speaker `speakers`).
-- `plugins/kk/skills/topic/SKILL.md` — the multi-operation fat-skill precedent the new skill follows.
-- `plugins/generations/voice-gen/` — TTS generator plugin (out of scope for changes).
+- `plugins/kk/skills/audio-authoring/SKILL.md` — the extracted fat skill (`create | briefing | outline | script`, mode `solo`).
+- `plugins/kk/workflows/kk-solo-podcast.yaml` — the refined pipeline on the skill.
+- `plugins/kk/workflows/validate-voicescript.ts` + `wrap-voicescript-doc.ts` — runtime sidecars (installed beside the YAML).
+- `plugins/generations/voice-gen/src/voicescript.ts` — canonical VoiceScript contract (supports multi-speaker `speakers`).
 
 
-- **VoiceScript contract ownership** — 0075 recommends option (b): validator stays the sole executable check; the skill embeds the complete contract distilled from `voice-gen/src/voicescript.ts` (fixing the current prompt drift). *Awaiting operator sign-off before 0077 implements against it.*
+- None remaining.
 
 
 - Destination = **shipped refactor** (code lands, verifyall Shippable: PASS), not spec-only.
-- The extracted skill is **generic + mode-based**; solo mode ships first, future modes are extension points.
-- Whole-pipeline improvement audit is in scope; proposals surface for operator selection.
-- [0075 Design the audio-authoring skill contract](../../docs/tasks/0075_design-the-audio-authoring-skill-contract-and-mode-model.md) — new skill `audio-authoring` at `plugins/kk/skills/audio-authoring/`; ops `create | briefing | outline | script` mapping 1:1 onto the workflow's agent.run nodes; mode axis default `solo`, extension points `dialogue`/`interview`/`narration`; revision feedback passes as `--revise`.
-- [0076 Audit kk-solo-podcast pipeline](../../docs/tasks/0076_audit-kk-solo-podcast-pipeline-for-improvements-beyond-skill.md) — 8 proposals, ranked: P1 ship = revise-count scoping, wrap-docs helper extraction, duration-check consolidation + revise-loop routing; P2 = prompt/validator drift (covered by 0077); P3 defer = band tightening, briefing sanity, option-c guard, kk preflight.
+- The extracted skill is **generic + mode-based**; solo mode shipped, future modes are extension points.
+- **VoiceScript contract ownership = option (b)** — validator stays the sole executable check; the skill embeds the complete contract distilled from `voice-gen/src/voicescript.ts`. Settled by implementation (0077) and e2e evidence (0079).
+- **0076 proposal selection** — P1 items 1–3 shipped in 0078 (revise-count scoping, wrap-docs helper, duration-check consolidation + retry edge); P3 defers remain deferred (band tightening, briefing sanity, option-c guard, kk preflight).
+- [0075 Design the audio-authoring skill contract](../../docs/tasks/0075_design-the-audio-authoring-skill-contract-and-mode-model.md) — skill `audio-authoring`; ops `create | briefing | outline | script` 1:1 onto the agent.run nodes; modes axis default `solo`.
+- [0076 Audit kk-solo-podcast pipeline](../../docs/tasks/0076_audit-kk-solo-podcast-pipeline-for-improvements-beyond-skill.md) — 8 proposals ranked; P1 shipped, P3 deferred.
+- [0077/0078/0079](.) — implemented, verified PASS, independently re-audited PASS.
 
 ### Not yet specified
 
-- **0076 proposal selection** — which P1/P3 proposals the operator ships; selected P1s graduate into implement tickets.
-- **Multi-speaker mode design** (`dialogue`/`interview`/`narration`) — contract supports it (`speakers`), authoring prompts unwritten. Future effort, not this map's implement tickets.
+- **Multi-speaker mode design** (`dialogue`/`interview`/`narration`) — contract supports it (`speakers`), authoring prompts unwritten. Future effort, fresh map.
 
 ### Out of scope
 

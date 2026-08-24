@@ -4,7 +4,7 @@ name: "Rewrite kk-solo-podcast workflow to invoke kk:audio-authoring"
 status: done
 template: feature-impl
 created_at: 2026-08-23T23:37:50.753Z
-updated_at: "2026-08-24T04:36:25.866Z"
+updated_at: "2026-08-24T05:44:28.898Z"
 feature_id: F7
 dependencies: ["0077"]
 ---
@@ -174,19 +174,19 @@ input: |
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:75` (op `briefing`), `:90` (op `outline`), `:141` (op `script`); `role: scribe` at :72/:87/:138, `expectFile` preserved at :80/:99/:158; HITL kinds intact at :109/:182/:197 |
-| R2 | MET | `.revise-count` under work_dir only: reset in prepare `kk-solo-podcast.yaml:65`, incremented at :195-196/:244-245/:255-256, budget guards :338/:346; `__runId` absent (rg: zero matches) |
-| R3 | MET | `plugins/kk/workflows/wrap-voicescript-doc.ts:1` — builtins-only sidecar with SYNC header; fallback chain `kk-solo-podcast.yaml:209-215` (var → `$KK_WORKFLOWS_DIR` → `$HOME/.config/kk/workflows`, fail-loud) |
+| R2 | MET | `.revise-count` under work_dir only: reset in prepare `plugins/kk/workflows/kk-solo-podcast.yaml:65`, incremented at :195-196/:244-245/:255-256, budget guards :338/:346; `__runId` absent (rg: zero matches) |
+| R3 | MET | `plugins/kk/workflows/wrap-voicescript-doc.ts:1` — builtins-only sidecar with SYNC header; fallback chain `plugins/kk/workflows/kk-solo-podcast.yaml:209-215` (var → `$KK_WORKFLOWS_DIR` → `$HOME/.config/kk/workflows`, fail-loud) |
 | R4 | MET | `plugins/kk/commands/workflow-run.md:105` — sidecar loop ships both `validate-voicescript.ts` and `wrap-voicescript-doc.ts`; `wrap_script` bound in the --vars JSON at :191 |
-| R5 | MET | `duration-check` onEnter band check `kk-solo-podcast.yaml:231-254` writing `.duration-ok` on pass / `.duration-feedback` on miss; guards reduced to marker tests :372/:380/:388; retry edge `duration-check → script-write` at :374-388, budget-bounded, dry-run missing-content.json pass preserved |
-| R6 | MET | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:59-116` asserts skill invocation per agent.run block, `.duration-ok`, `.revise-count`, wrap sidecar; `workflow-run-command.test.ts:137` asserts sidecar copy |
+| R5 | MET | `duration-check` onEnter band check `plugins/kk/workflows/kk-solo-podcast.yaml:231-254` writing `.duration-ok` on pass / `.duration-feedback` on miss; guards reduced to marker tests :372/:380/:388; retry edge `duration-check → script-write` at :374-388, budget-bounded, dry-run missing-content.json pass preserved |
+| R6 | MET | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:59-116` asserts skill invocation per agent.run block, `.duration-ok`, `.revise-count`, wrap sidecar; `apps/cli/tests/workflow-run-command.test.ts:137` asserts sidecar copy |
 | R7 | MET | `docs/04_DESIGN.md:416,:445` (sidecar row), `docs/help/solo-podcast-workflow.md:40,:150-166,:199,:245`, `docs/design/kk-solo-podcast.md` (rewritten, 70-line diff in c4ab400), `docs/05_FEATURES.md:81` F7 row |
 | R8 | MET | command: `bun run lint` → 13 workspaces exit 0; `bun run test` → 470 pass / 0 fail / 38 files (fresh this run) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: Agent steps invoke the skill | MET | test | `kk-solo-podcast-workflow.test.ts:59-89` — every agent.run block contains `kk:audio-authoring`, role+expectFile invariants held |
-| Scenario: P1 fixes landed | MET | test | `kk-solo-podcast-workflow.test.ts:91-116` — `.revise-count`, wrap sidecar, `.duration-ok` marker guard asserted |
-| Scenario: Install and tests stay green | MET | command | `bun run test` 470/470 green; `workflow-run-command.test.ts:137` sidecar copy asserted |
+| Scenario: Agent steps invoke the skill | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:59-89` — every agent.run block contains `kk:audio-authoring`, role+expectFile invariants held |
+| Scenario: P1 fixes landed | MET | test | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:91-116` — `.revise-count`, wrap sidecar, `.duration-ok` marker guard asserted |
+| Scenario: Install and tests stay green | MET | command | `bun run test` 470/470 green; `apps/cli/tests/workflow-run-command.test.ts:137` sidecar copy asserted |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 **SECU findings** (pipeline verify step — verdict: PASS)
