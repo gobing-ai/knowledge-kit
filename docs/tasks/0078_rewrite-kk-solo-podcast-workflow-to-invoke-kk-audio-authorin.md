@@ -4,7 +4,7 @@ name: "Rewrite kk-solo-podcast workflow to invoke kk:audio-authoring"
 status: done
 template: feature-impl
 created_at: 2026-08-23T23:37:50.753Z
-updated_at: "2026-08-24T02:01:48.646Z"
+updated_at: "2026-08-24T04:36:25.866Z"
 feature_id: F7
 dependencies: ["0077"]
 ---
@@ -167,18 +167,36 @@ input: |
 - `docs/04_DESIGN.md:415` — R7: §7 sidecar sentence + §7.2 kk-solo-podcast profile row now name `wrap-voicescript-doc.ts`.
 - `docs/05_FEATURES.md:81` — R7: F7 row added (status updated at close).
 ### Testing
-- **Lint:** `bun run lint` — PASS. Biome 2.5.5 check across 130 files (0 findings), typecheck exit 0 across all 13 workspaces.
-- **Unit tests:** `bun run test` — 470 pass / 0 fail / 1779 expect across 38 files. Scoped: `kk-solo-podcast-workflow.test.ts` (11) + `workflow-run-command.test.ts` (9) → 20 pass / 0 fail / 150 expect.
-- **Coverage:** aggregate 98.13% line / 99.42% function (target 90% / 90%) — PASS with wide margin. `wrap-voicescript-doc.ts` is content-asserted (readFileSync), not imported, so outside instrumented coverage (accepted in the task plan).
-- **Workflow validation:** `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml` → `ok:true valid:true` exit 0. ADR-069 composition advisories (25-line duration-check onEnter, prompt char counts) are non-blocking warnings; no baseline disposition file has ever been tracked.
-- **Dry-run walkability:** `spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --dry-run --vars '{"topic":"duration budget smoke","work_dir":"<mktemp>","outline":"a","script_approved":"true","target_duration_min":"1","voice_profile":"x","force":"true"}'` → `status: done` (all three duration-check guards evaluated without content.json; missing-content dry-run pass path per R5).
-- **0077 baseline:** prior 469-test suite all passes within the 470 total; `validate-voicescript.test.ts` (9) and audio-authoring skill artifacts unaffected.
+**Pipeline verify results**
 
-Verification (independent, subagent Verify0078): verdict **PASS** — all 8 requirements MET with file:line evidence (see `.spur/run/0078-verify-answer.txt` / `.spur/run/0078-verdict.json`).
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:75` (op `briefing`), `:90` (op `outline`), `:141` (op `script`); `role: scribe` at :72/:87/:138, `expectFile` preserved at :80/:99/:158; HITL kinds intact at :109/:182/:197 |
+| R2 | MET | `.revise-count` under work_dir only: reset in prepare `kk-solo-podcast.yaml:65`, incremented at :195-196/:244-245/:255-256, budget guards :338/:346; `__runId` absent (rg: zero matches) |
+| R3 | MET | `plugins/kk/workflows/wrap-voicescript-doc.ts:1` — builtins-only sidecar with SYNC header; fallback chain `kk-solo-podcast.yaml:209-215` (var → `$KK_WORKFLOWS_DIR` → `$HOME/.config/kk/workflows`, fail-loud) |
+| R4 | MET | `plugins/kk/commands/workflow-run.md:105` — sidecar loop ships both `validate-voicescript.ts` and `wrap-voicescript-doc.ts`; `wrap_script` bound in the --vars JSON at :191 |
+| R5 | MET | `duration-check` onEnter band check `kk-solo-podcast.yaml:231-254` writing `.duration-ok` on pass / `.duration-feedback` on miss; guards reduced to marker tests :372/:380/:388; retry edge `duration-check → script-write` at :374-388, budget-bounded, dry-run missing-content.json pass preserved |
+| R6 | MET | `apps/cli/tests/kk-solo-podcast-workflow.test.ts:59-116` asserts skill invocation per agent.run block, `.duration-ok`, `.revise-count`, wrap sidecar; `workflow-run-command.test.ts:137` asserts sidecar copy |
+| R7 | MET | `docs/04_DESIGN.md:416,:445` (sidecar row), `docs/help/solo-podcast-workflow.md:40,:150-166,:199,:245`, `docs/design/kk-solo-podcast.md` (rewritten, 70-line diff in c4ab400), `docs/05_FEATURES.md:81` F7 row |
+| R8 | MET | command: `bun run lint` → 13 workspaces exit 0; `bun run test` → 470 pass / 0 fail / 38 files (fresh this run) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Agent steps invoke the skill | MET | test | `kk-solo-podcast-workflow.test.ts:59-89` — every agent.run block contains `kk:audio-authoring`, role+expectFile invariants held |
+| Scenario: P1 fixes landed | MET | test | `kk-solo-podcast-workflow.test.ts:91-116` — `.revise-count`, wrap sidecar, `.duration-ok` marker guard asserted |
+| Scenario: Install and tests stay green | MET | command | `bun run test` 470/470 green; `workflow-run-command.test.ts:137` sidecar copy asserted |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
+**SECU findings** (pipeline verify step — verdict: PASS)
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
-
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | design-conformance | — | 5/5 design claims DONE; 1 CHANGED — duration retry feedback passes via `.duration-feedback` file (`kk-solo-podcast.yaml:156`) instead of `__hitlInput`; documented in the task's Solution, goal-equivalent (feedback persists across states; prompt references it explicitly) |
+| P4 | scope-creep | — | diff confined to the 9 files named in Design (commit c4ab400 stat) |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
