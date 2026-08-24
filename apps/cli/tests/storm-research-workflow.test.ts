@@ -57,9 +57,7 @@ describe('kk-storm-research workflow (0059/0069)', () => {
         expect(flat).toContain(`rs="\${vars.render_script}"`);
         expect(flat).toContain('command -v kk');
         expect(flat).toContain('$pkg/plugins/kk/scripts/render-md.ts');
-        expect(flat).toContain(
-            `bun "$rs" --in "\${vars.work_dir}/content.json" --out "\${vars.work_dir}/content.md"`,
-        );
+        expect(flat).toContain(`bun "$rs" --in "\${vars.work_dir}/content.json" --out "\${vars.work_dir}/content.md"`);
     });
 
     it('R3 — fixture defaults to "false" and is never hardcoded true in the YAML', () => {
