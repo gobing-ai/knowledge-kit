@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Implement kk:audio-authoring skill (solo mode, four operations)"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-08-23T23:37:50.578Z
-updated_at: "2026-08-24T00:19:02.259Z"
+updated_at: "2026-08-24T00:50:06.510Z"
 feature_id: F7
 ---
 
@@ -15,16 +15,14 @@ feature_id: F7
 <!-- Why this task exists: the problem, motivation, and context. Self-contained — readable without the parent. -->
 
 ### Requirements
-- [ ] R1. Create `plugins/kk/skills/audio-authoring/SKILL.md` following the `plugins/kk/skills/topic/SKILL.md` fat-skill pattern: YAML frontmatter (`name: audio-authoring`, trigger-phrase `description`), then Purpose / When to use / Invocation contract / Artifact contract / Operations / Modes sections.
-- [ ] R2. Invocation contract freezes as: `[operation] [--mode solo] --dir <work_dir> [--duration <min>] [--language <code>] [--profile <voice>] [--outline a|b|c] [--revise <feedback>] [--force]` — operations `create` (default) | `briefing` | `outline` | `script`; unknown operation fails loud listing the four valid ones; flags order-independent (topic convention).
-- [ ] R3. Artifact contract identical whether an op runs standalone or inside `create`, all relative to `--dir`: `brief.md` (input), `1-briefing/briefing.md` (briefing), `2-outline/outline-option-a.md` + `-b.md` required / `-c.md` optional + `outline-approved.md` after `--outline` selection (outline), `3-script/voicescript.yaml` (script).
-- [ ] R4. The `script` operation embeds the **complete** VoiceScript contract distilled from `plugins/generations/voice-gen/src/voicescript.ts` (via `plugins/kk/workflows/validate-voicescript.ts`): `default_engine?`, `language?`, `speakers?` (name → `{profile, engine?, language?, instruct?}`), `segments[]` (`speaker?`, `profile?`, `text` 1..50000, `instruct?` ≤500, `engine?`, `language?`, `gap_ms?` ≥0, `max_chunk_chars?` 100..5000, `crossfade_ms?` 0..500), engine enum `qwen|qwen_custom_voice|luxtts|chatterbox|chatterbox_turbo|tada|kokoro`, 23-language enum. **No invented fields** — fixes the current prompt drift (`default_profile`, unvalidated `title`).
-- [ ] R5. Spoken-budget rule lives in the skill: zh/ja/ko → `duration * 220` chars, else `duration * 150` words, land within ±20%; parameters from `--duration`/`--language`.
-- [ ] R6. Modes section: `solo` is the only implemented mode; `dialogue` / `interview` / `narration` documented as named extension points (contract already supports them via `speakers`), each with a one-line behavioral note (speaker count, VoiceScript shape, pacing). No multi-speaker authoring guidance beyond that.
-- [ ] R7. `--revise <feedback>` on `script` consumes operator revision feedback (mirrors `topic --revise`); `create` chains briefing → outline → script with explicit operator gates.
-- [ ] R8. `bun run lint` and `bun run test` stay green; no production TypeScript added.
-
-**Non-goals:** editing `kk-solo-podcast.yaml` (0078); implementing non-solo modes; changing `voice-gen`; creating a product plugin (`plugin.json`) — this is an agent skill only.
+- [x] R1. Create `plugins/kk/skills/audio-authoring/SKILL.md` following the `plugins/kk/skills/topic/SKILL.md` fat-skill pattern: YAML frontmatter (`name: audio-authoring`, trigger-phrase `description`), then Purpose / When to use / Invocation contract / Artifact contract / Operations / Modes sections.
+- [x] R2. Invocation contract freezes as: `[operation] [--mode solo] --dir <work_dir> [--duration <min>] [--language <code>] [--profile <voice>] [--outline a|b|c] [--revise <feedback>] [--force]` — operations `create` (default) | `briefing` | `outline` | `script`; unknown operation fails loud listing the four valid ones; flags order-independent (topic convention).
+- [x] R3. Artifact contract identical whether an op runs standalone or inside `create`, all relative to `--dir`: `brief.md` (input), `1-briefing/briefing.md` (briefing), `2-outline/outline-option-a.md` + `-b.md` required / `-c.md` optional + `outline-approved.md` after `--outline` selection (outline), `3-script/voicescript.yaml` (script).
+- [x] R4. The `script` operation embeds the **complete** VoiceScript contract distilled from `plugins/generations/voice-gen/src/voicescript.ts` (via `plugins/kk/workflows/validate-voicescript.ts`): `default_engine?`, `language?`, `speakers?` (name → `{profile, engine?, language?, instruct?}`), `segments[]` (`speaker?`, `profile?`, `text` 1..50000, `instruct?` ≤500, `engine?`, `language?`, `gap_ms?` ≥0, `max_chunk_chars?` 100..5000, `crossfade_ms?` 0..500), engine enum `qwen|qwen_custom_voice|luxtts|chatterbox|chatterbox_turbo|tada|kokoro`, 23-language enum. **No invented fields** — fixes the current prompt drift (`default_profile`, unvalidated `title`).
+- [x] R5. Spoken-budget rule lives in the skill: zh/ja/ko → `duration * 220` chars, else `duration * 150` words, land within ±20%; parameters from `--duration`/`--language`.
+- [x] R6. Modes section: `solo` is the only implemented mode; `dialogue` / `interview` / `narration` documented as named extension points (contract already supports them via `speakers`), each with a one-line behavioral note (speaker count, VoiceScript shape, pacing). No multi-speaker authoring guidance beyond that.
+- [x] R7. `--revise <feedback>` on `script` consumes operator revision feedback (mirrors `topic --revise`); `create` chains briefing → outline → script with explicit operator gates.
+- [x] R8. `bun run lint` and `bun run test` stay green; no production TypeScript added.
 ### Acceptance Criteria
 ```gherkin
 Feature: kk:audio-authoring skill (solo mode)
@@ -82,19 +80,48 @@ References: `docs/tasks/0075_design-the-audio-authoring-skill-contract-and-mode-
 4. Run `bun run lint` and `bun run test` — both green, no new failures. (R8)
 5. Verify: `spur task check 0077 --json` pass; Solution change-map records the one created file.
 ### Solution
+One file created: the audio-authoring fat skill (188 lines), embedding the R4 VoiceScript contract distilled from voicescript.ts.
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
-
+| Change (`file:line`) |
+|----------------------|
+| plugins/kk/skills/audio-authoring/SKILL.md:1 |
 ### Testing
+**Pipeline verify results**
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- Verdict: PASS (from verdict artifact)
 
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/skills/audio-authoring/SKILL.md` exists with YAML frontmatter `name: audio-authoring` + trigger-phrase `description` (SKILL.md:1-9); section order matches the frozen design: Purpose (:13), When to use incl. explicit NOT list for `dailynews-gen`/`voice-gen` (:22-34), Invocation contract (:36), Artifact contract (:59), Modes (:77), Operations create/briefing/outline/script (:92-153), VoiceScript contract (:155), Spoken-budget rule (:183). Fat-skill pattern mirrors `plugins/kk/skills/topic/SKILL.md` (frontmatter → Purpose → When to use → Invocation contract table → Artifact contract table → per-operation subsections; verified side-by-side this pass). |
+| R2 | MET | Invocation string frozen verbatim at SKILL.md:41: `[operation] [--mode solo] --dir <work_dir> [--duration <min>] [--language <code>] [--profile <voice>] [--outline a |
+| R3 | MET | Artifact contract table SKILL.md:61-75: `brief.md` (input, :67), `1-briefing/briefing.md` (:68), `2-outline/outline-option-a.md`/`-b.md` required with `-c.md` optional (:69), `2-outline/outline-approved.md` after explicit `--outline` selection (:70), `3-script/voicescript.yaml` (:71) — all paths relative to `--dir`, contract identical standalone or inside `create` (:61-63 "the contract is the same whether the operation runs inside `create` or directly"). Verbatim copy on selection at :130-131. |
+| R4 | MET | Embedded contract SKILL.md:161-180 checked field-for-field against `plugins/generations/voice-gen/src/voicescript.ts` by script this pass: `default_engine?`, `language?`, `speakers?` (name → profile required + engine?/language?/instruct? ≤500), `segments[]` with `speaker?` (must key speakers map, :171), `profile?`, `text` 1..50000 (:173), `instruct?` ≤500, `engine?`, `language?`, `gap_ms?` ≥0, `max_chunk_chars?` 100..5000, `crossfade_ms?` 0..500 — matches voicescript.ts:146-177 interfaces and validateVoiceScript bounds (:373-502, constants :4-11). Engine enum 7/7 exact (`qwen\|qwen_custom_voice\|luxtts\|chatterbox\|chatterbox_turbo\|tada\|kokoro` = VOICEBOX_ENGINES voicescript.ts:13-21); language enum 23/23 exact (= VOICEBOX_LANGUAGES :23-47). Zero missing fields, zero extras ("no invented fields" guard at :158-159); `default_profile` and `title` NOT asserted anywhere in the contract (drift fixed). Provenance cited at :156-158 (distilled from voicescript.ts, enforced by `plugins/kk/workflows/validate-voicescript.ts`). |
+| R5 | MET | Spoken-budget rule SKILL.md:183-187: zh/ja/ko → `duration × 220` characters, every other language → `duration × 150` words, land within ±20%, parameters from `--duration`/`--language`; applied both at outlining (each option) and scripting (total across segments). |
+| R6 | MET | Modes section SKILL.md:77-90: `solo` = "default; only implemented mode" (:79); `dialogue` (:82-83), `interview` (:84-85), `narration` (:86-87) each documented as "(extension point)" with a one-line behavioral note (speaker count via speakers map, host+guest shape, continuous-narration pacing). Unimplemented mode fails loud naming the mode (:89-90); "No multi-speaker authoring guidance beyond these notes" (:90). |
+| R7 | MET | `--revise <feedback>` consumed by the script review gate (SKILL.md:53, :138-149): bounded at 3 revision rounds, each round rewrites from the approved outline plus feedback, hard stop after 3. `create` chains briefing → outline → script with explicit operator gates: outline selection gate "wait for explicit operator selection — do not proceed without it" (:128-130), script review gate approve-or-revision (:145-149), resume-without-overwrite (:101-108). Mirrors `topic --revise` convention. |
+| R8 | MET | Re-run this pass (deliverable is markdown; no production TypeScript added — the only new file is SKILL.md, dir listing confirms no other files): `bun run lint` → biome "Checked 129 files... No fixes applied", typecheck exit 0 across 13 workspaces; `bun run test` → 469 pass / 0 fail, 1758 expect() calls, 38 files, 7.15s. Both green. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Skill exists with the frozen invocation contract | MET | command | grep over SKILL.md this pass: 4 operation subsections (`### create |
+| VoiceScript contract is complete and drift-free | MET | command | Node field-for-field comparison script run this pass: extracted contract fields {default_engine, language, speakers, name, profile, engine, instruct, segments, speaker, text, gap_ms, max_chunk_chars, crossfade_ms} → missing vs canonical = none, extra = none, every field present in voicescript.ts interfaces; speakers (:164-169), crossfade_ms (:179), max_chunk_chars (:178), gap_ms (:177), instruct (:169,174), engine + language enums (:162-163) all present; regex-asserted `default_profile` and `title` NOT in the contract block. |
+| Solo mode is the only implemented mode | MET | command | grep over Modes section this pass: `**solo** (default; only implemented mode)` :79; `**dialogue** (extension point)` :82; `**interview** (extension point)` :84; `**narration** (extension point)` :86; unimplemented mode fails loud :89-90; `--mode` default cell reads "solo (only implemented mode; others fail loud)" :47. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
+**SECU findings** (pipeline verify step — verdict: PASS)
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
-
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | spur task check 0077 | — | "0077 (wip): PASS" (run this pass). |
+| P4 | bun run lint | — | biome checked 129 files, no fixes; typecheck exit 0 across 13 workspaces (4.13s). |
+| P4 | bun run test | — | 469 pass, 0 fail, 1758 expect() calls, 38 files (7.15s). |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+- 2026-08-24T00:39:56.937Z todo → wip (system)
+- 2026-08-24T00:49:48.067Z wip → testing (system)
+- 2026-08-24T00:50:06.510Z testing → done (system)
