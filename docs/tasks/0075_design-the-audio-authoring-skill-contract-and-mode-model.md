@@ -4,7 +4,7 @@ name: "Design the audio-authoring skill contract and mode model"
 status: done
 template: brainstorm
 created_at: 2026-08-23T22:22:43.268Z
-updated_at: "2026-08-23T22:41:29.784Z"
+updated_at: "2026-08-23T23:47:13.025Z"
 feature_id: F7
 ---
 
@@ -77,162 +77,92 @@ References: map `docs/features/F7_audio-authoring-skill-extraction-wayfinder-map
 7. Write the five required headings into ## Solution via `spur task update 0075 --section Solution --from-file`.
 8. Verify: `spur task check 0075 --json` → pass; every proposal heading present.
 ### Solution
-#### 1. Skill Name + Home
+## Resolution — audio-authoring skill design proposal (2026-08-23)
 
-- **Skill Name:** `audio-authoring`
-- **Home Directory:** `plugins/kk/skills/audio-authoring/`
-- **Installed Agent Identifier:** `kk:audio-authoring` (via `superskill install cc` / `plugins/kk`)
-- **Precedent & Namespace Alignment:** Aligns with existing `plugins/kk/skills/` capabilities (`topic`, `itc-generating`, `storm-research`, `content-judge`).
 
----
+**`audio-authoring`** at `plugins/kk/skills/audio-authoring/` (installs as `kk:audio-authoring` via superskill, matching the existing `plugins/kk/skills/` collection). One fat skill, following the `topic` precedent (multi-operation, one artifact contract, operator gates, safe resume) — not the `itc-generating` precedent (single-op orchestrator), because the workflow needs to invoke individual steps from separate `agent.run` nodes.
 
-#### 2. Mode / Operation Taxonomy
 
-**Operation Granularity:**
-Following the multi-operation precedent established by `topic` (`plugins/kk/skills/topic/SKILL.md`) rather than the single-operation wrapper pattern in `itc-generating`:
-- The three authoring stages in the podcast pipeline (`understand`, `outline-write`, `script-write`) map cleanly to discrete skill operations, alongside a composite `create` operation.
-- **Operations:**
-  1. `create` (default): Composite sequence `understand` → `outline` (selection gate) → `script` (review/revise gate). Resumes safely from existing approved stage artifacts.
-  2. `understand`: Ingests `brief.md` (or inline topic) and analyzes spoken framing, audience, duration budget, and core takeaways into `1-briefing/briefing.md`.
-  3. `outline`: Consumes `1-briefing/briefing.md` and `brief.md` to produce multi-option spoken outlines (`2-outline/outline-option-{a,b,c}.md`) with distinct narrative/analytical arcs, then commits the approved choice to `2-outline/outline-approved.md`.
-  4. `script`: Authors VoiceScript YAML conforming to `plugins/kk/workflows/validate-voicescript.ts` at `3-script/voicescript.yaml` based on `outline-approved.md`, spoken pace rules, duration budgets, and operator revision feedback.
+Two orthogonal axes:
 
-**Mode Model:**
-- Spoken audio generation differs structurally by format (single-voice monologue, multi-host conversational podcast, structured interview, audiobook narration).
-- `--mode <solo | interview | dialog | narration>`:
-  - **`solo` (Shipped in v1):** Single speaker monologue / solo podcast with timing calculation based on single voice rate and one default profile.
-  - **`dialog` / `multi-speaker` (Extension Point):** Multi-speaker turn-taking with speaker attribution, explicit cross-talk silence (`gap_ms`), and speaker profile mapping.
-  - **`interview` (Extension Point):** Host/Guest structure with question-answer pacing and distinct persona instruct overrides.
-  - **`narration` (Extension Point):** Long-form chaptered narration with pacing tags and segment chunking.
-- **Workflow Interoperability (R2 comparison):**
-  - Workflows requiring LLM-driven spoken script generation (`plugins/kk/workflows/kk-solo-podcast.yaml`) invoke `audio-authoring`.
-  - Workflows with deterministic script generators (such as `plugins/kk/workflows/kk-daily-ai-voice.yaml`, which uses `dailynews-gen` to transform raw news items into VoiceScript) bypass the skill and feed their generated VoiceScript straight into the shared runtime synthesis tail (`wrap-docs` → `voice-gen` → `quality-control`).
-  - Modes are therefore opt-in and decoupled from deterministic generation plugins.
+- **Operations** (map 1:1 onto the existing workflow nodes): `create | briefing | outline | script`
+  - `briefing` ← `understand` node (brief.md → `1-briefing/briefing.md`)
+  - `outline` ← `outline-write` node (→ `2-outline/outline-option-{a,b,c}.md`, `outline-approved.md`)
+  - `script` ← `script-write` node (→ `3-script/voicescript.yaml`, `--revise` feedback)
+  - `create` — end-to-end default that chains the three with operator gates (mirrors `topic create`)
+- **Modes** (scenario profile, default `solo`): only `solo` ships in v1. Future modes named as extension points: `dialogue` (multi-speaker discussion), `interview`, `narration`. A mode changes per-operation behavior (speaker count, VoiceScript shape, pacing budget), never the artifact layout.
 
----
+Rationale for 1:1 mapping: the workflow's HITL gates sit *between* these steps (outline-select, script-review), so each step must stay individually invocable from an `agent.run` node; collapsing them would force the workflow to call `create` and lose the gates.
 
-#### 3. Per-Operation Input/Output Contract
+**Key enabler found during research:** the executable VoiceScript contract (`plugins/generations/voice-gen/src/voicescript.ts`, runtime copy `plugins/kk/workflows/validate-voicescript.ts`) **already supports multi-speaker** — `speakers: Record<string, {profile, engine?, language?, instruct?}>` + per-segment `speaker` refs. So `dialogue` mode is an authoring-prompt concern, not a contract blocker. The solo workflow's inline prompt has **drifted** from the contract: it invents `default_profile` (not a validated field) and omits `speakers` entirely.
 
-All paths resolve relative to the workspace directory (`--dir <work_dir>`):
 
-| Operation | Inputs (Read) | Outputs (Written) | Parameters / Context |
-| :--- | :--- | :--- | :--- |
-| **`understand`** | `${work_dir}/brief.md` | `${work_dir}/1-briefing/briefing.md` | `--target-duration-min` (default: 8), `--mode` (default: `solo`), `--language` (default: `en`) |
-| **`outline`** | `${work_dir}/1-briefing/briefing.md`<br/>`${work_dir}/brief.md` | `${work_dir}/2-outline/outline-option-a.md`<br/>`${work_dir}/2-outline/outline-option-b.md`<br/>*(optional `c.md`)*<br/>`${work_dir}/2-outline/outline-approved.md` | `--target-duration-min`, `--outline <a\|b\|c>` (selection bypass), `--mode` |
-| **`script`** | `${work_dir}/2-outline/outline-approved.md`<br/>`${work_dir}/1-briefing/briefing.md` | `${work_dir}/3-script/voicescript.yaml` | `--target-duration-min`, `--voice-profile`, `--language`, `--words-per-min` (default: 150), `--cjk-chars-per-min` (default: 220), `--revise "<feedback>"`, `--mode` |
-| **`create`** | `${work_dir}/brief.md` (or positional topic) | All of the above (`1-briefing/`, `2-outline/`, `3-script/`) | All parameters above; sequential execution with gates and artifact-resume |
+All paths relative to `--dir <work_dir>`; identical whether invoked standalone or from a workflow node (the `topic` R2 contract pattern).
 
-**Spoken Pacing and Budget Formula:**
-- Non-CJK languages (`en`, `es`, `fr`, `de`, etc.): `target_words = target_duration_min * words_per_min` (±20% tolerance).
-- CJK languages (`zh`, `ja`, `ko`): `target_chars = target_duration_min * cjk_chars_per_min` (±20% tolerance).
+| Operation | Reads | Writes | Key params |
+| --- | --- | --- | --- |
+| `briefing` | `brief.md` | `1-briefing/briefing.md` | `--duration <min>`, `--mode solo` |
+| `outline` | `brief.md`, `1-briefing/briefing.md` | `2-outline/outline-option-a.md`, `-b.md` (required), `-c.md` (optional); `outline-approved.md` after `--select a\|b\|c` | `--duration <min>` |
+| `script` | `2-outline/outline-approved.md`, `1-briefing/briefing.md` | `3-script/voicescript.yaml` | `--duration <min>`, `--language <code>`, `--profile <voice>` (or per-speaker map in future modes), `--revise <feedback>` |
 
-**Executable Constraints Verification:**
-The emitted `voicescript.yaml` must strictly satisfy `plugins/kk/workflows/validate-voicescript.ts`:
-- Root object containing `title` (string), `language` (supported Voicebox language enum), `default_profile` (string), optional `default_engine` (one of `qwen`, `qwen_custom_voice`, `luxtts`, `chatterbox`, `chatterbox_turbo`, `tada`, `kokoro`).
-- `segments` array: Non-empty list of segment objects with `text` (1..50,000 chars), optional `instruct` (<= 500 chars), optional `gap_ms` (>= 0 integer), optional `speaker`/`profile`/`engine`/`language`.
-- Zero markdown code block fences (` ```yaml `) in file output; raw YAML syntax only.
+Spoken-budget rule (zh/ja/ko → chars/min, else words/min) moves into the skill as shared logic, parameterized by `--duration`/`--language` — currently inlined in the `script-write` prompt.
 
----
 
-#### 4. VoiceScript Contract Ownership
+- **(a) Versioned shared schema artifact** (e.g. JSON Schema in `kk-core`, consumed by skill + validator): single source, but adds a sync/build step and a third copy of the contract for marginal gain — the contract changes rarely and has one producer (voice-gen).
+- **(b) Validator as sole executable check; skill embeds the full contract distilled from the canonical source** (`voice-gen/src/voicescript.ts`, with the existing SYNC-copy discipline): no new machinery, drift caught by `validate-voicescript.ts` at `script-validate` time.
 
-Map F7 Open Question Analysis:
+**Recommendation: (b), with one correction — the skill embeds the *complete* current contract (including `speakers`, `crossfade_ms`, `max_chunk_chars`), fixing the drift the inline prompt introduced (`default_profile`, unvalidated `title`, missing `speakers`).** If a third consumer ever appears, revisit (a) with an ADR. This answers map F7's open question — operator sign-off requested.
 
-| Dimension | Option A: Versioned Shared Schema Package | Option B: Embedded Skill Contract + Executable Validator (Recommended) |
-| :--- | :--- | :--- |
-| **Mechanism** | Centralized TypeScript schema & JSON Schema definition in `@gobing-ai/kk-core` (or `@gobing-ai/domain`), imported by `voice-gen`, `validate-voicescript.ts`, and skill documentation. | Contract defined directly in `plugins/kk/skills/audio-authoring/SKILL.md` (prompt/spec) and enforced at runtime by `plugins/kk/workflows/validate-voicescript.ts`. |
-| **Pros** | Single source of truth across compiler, CLI plugins, and workflow validators; strict typing across packages. | Zero cross-package build coupling; runtime workflow copy in `~/.config/kk/workflows/` remains self-contained (no `@gobing-ai/*` dependencies); fast iteration during skill extraction. |
-| **Cons** | Requires build pipeline changes and dependency updates across monorepo packages; workflow standalone scripts in `$KK_WORKFLOWS_DIR` cannot easily resolve monorepo packages. | Contract changes require manual sync between `SKILL.md` prompt guidance and `validate-voicescript.ts`. |
 
-**Recommendation: Option B for F7 / Phase 1, with migration path to Option A**
-1. **Rationale:** `plugins/kk/workflows/validate-voicescript.ts` is explicitly designed as a standalone zero-dependency script copied into `~/.config/kk/workflows/validate-voicescript.ts` alongside workflow YAMLs (see header in `plugins/kk/workflows/validate-voicescript.ts:6-8`). Coupling it to a compiled `@gobing-ai/*` package breaks runtime portability for standalone workflow installations.
-2. **Contract Synchronization:** Maintain strict validation via `bun plugins/kk/workflows/validate-voicescript.ts --in ...` and keep test coverage in `apps/cli/tests/validate-voicescript.test.ts`.
-3. **Future Evolution:** When multi-mode authoring (dialog/interview) graduates and schema tooling stabilizes, extract shared type definitions into `@gobing-ai/kk-core` for build-time consumers while generating the standalone validator bundle.
+Each `agent.run` node shrinks to a skill invocation; orchestration, HITL, validation, and TTS stay in the workflow (`kk` owns steps, `spur workflow` owns orchestration — unchanged):
 
----
-
-#### 5. Workflow-Rewrite Shape
-
-When `plugins/kk/workflows/kk-solo-podcast.yaml` is refactored to consume the `audio-authoring` skill, its inline prompts shrink into standard `agent.run` skill invocations:
-
-**Stage 1: `understand`**
 ```yaml
-  - id: understand
-    description: "Analyze brief and generate podcast briefing via audio-authoring skill (agent.run)"
-    onEnter:
-      - kind: agent.run
-        options:
-          role: scribe
-          agent: ${vars.agent}
-          input: >-
-            Skill(skill="audio-authoring", args="understand --dir ${vars.work_dir} --target-duration-min ${vars.target_duration_min} --language ${vars.language} --mode solo")
-          expectFile: ${vars.work_dir}/1-briefing/briefing.md
+- kind: agent.run
+  options:
+    role: scribe
+    agent: ${vars.agent}
+    input: |
+      Invoke the kk:audio-authoring skill: operation `script`, mode `solo`.
+      --dir ${vars.work_dir} --duration ${vars.target_duration_min}
+      --language ${vars.language} --profile ${vars.voice_profile}
+      --revise "${vars.__hitlInput}"
+    expectFile: ${vars.work_dir}/3-script/voicescript.yaml
 ```
 
-**Stage 2: `outline-write`**
-```yaml
-  - id: outline-write
-    description: "Generate spoken podcast outline options via audio-authoring skill (agent.run)"
-    onEnter:
-      - kind: agent.run
-        options:
-          role: scribe
-          agent: ${vars.agent}
-          input: >-
-            Skill(skill="audio-authoring", args="outline --dir ${vars.work_dir} --target-duration-min ${vars.target_duration_min} --mode solo")
-          expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
-      - kind: shell
-        options:
-          command: >-
-            test -f "${vars.work_dir}/2-outline/outline-option-b.md" || { echo "missing required outline-option-b.md" >&2; exit 1; }
-```
+Revision feedback passes as the skill's `--revise` argument (mirrors `topic --revise`); the bounded 3-round loop and HITL prompts stay in the workflow YAML unchanged. `understand`/`outline-write` rewrite identically (`briefing` / `outline` operations). Everything after `script-write` (validate, wrap-docs, generate, duration-check) is untouched.
 
-**Stage 3: `script-write` (Handling Revisions)**
-```yaml
-  - id: script-write
-    description: "Author complete VoiceScript YAML from approved outline via audio-authoring skill (agent.run)"
-    onEnter:
-      - kind: agent.run
-        options:
-          role: scribe
-          agent: ${vars.agent}
-          input: >-
-            Skill(skill="audio-authoring", args="script --dir ${vars.work_dir} --target-duration-min ${vars.target_duration_min} --voice-profile \"${vars.voice_profile}\" --language ${vars.language} --words-per-min ${vars.words_per_min} --cjk-chars-per-min ${vars.cjk_chars_per_min} --mode solo $(if [ -n \"${vars.__hitlInput}\" ]; then echo --revise \"${vars.__hitlInput}\"; fi)")
-          expectFile: ${vars.work_dir}/3-script/voicescript.yaml
-```
 
-**Benefits of Rewrite Shape:**
-1. Eliminates ~40 lines of inline prompt text and fragile contract prose from `kk-solo-podcast.yaml`.
-2. Preserves workflow orchestration boundaries: The workflow maintains ownership of directory setup, HITL outline selection (`outline-select`), HITL script review (`script-review`), revision counters (`script-revise`), validation (`script-validate`), and audio generation (`generate`).
-3. Revision feedback passes cleanly via `--revise "<feedback>"`.
+R1–R5 verified against:
+- `plugins/kk/workflows/kk-solo-podcast.yaml:66` (`understand`), `:79` (`outline-write`), `:128` (`script-write`) — all 3 agent.run nodes read in full
+- `plugins/kk/workflows/kk-daily-ai-voice.yaml:56` — deterministic `dailynews-gen` script step; no agent authoring to extract, shared tail only
+- `plugins/kk/skills/topic/SKILL.md:12` — 4-op fat-skill model (`create | init | outline | draft`)
+- `plugins/kk/skills/itc-generating/SKILL.md:18` — single-op orchestrator, rejected as the model
+- `plugins/kk/workflows/validate-voicescript.ts:85` — `speakers?: Record<string, VoiceSpeaker>` already in the contract; `:138` per-speaker profile requirement; canonical source `plugins/generations/voice-gen/src/voicescript.ts` confirmed present
+- Drift: solo prompt invents `default_profile` (`plugins/kk/workflows/kk-solo-podcast.yaml:143`), absent from the validator schema
 ### Testing
-#### Verification Evidence
+**Pipeline verify results**
 
-| ID | Requirement / Scenario | Status | Evidence |
-| :--- | :--- | :--- | :--- |
-| **R1** | Extract node consumption & emission | **PASS** | Extracted `understand`, `outline-write`, `script-write` I/O and separated reusable contract from scenario-specific content in Solution §2 & §3. |
-| **R2** | Compare with sibling workflow | **PASS** | Evaluated deterministic script step in `kk-daily-ai-voice.yaml` vs shared audio synthesis tail; derived opt-in mode model in Solution §2. |
-| **R3** | Compare with skill precedents | **PASS** | Evaluated `itc-generating` (fat orchestrator) vs `topic` (multi-op); selected topic-style discrete operations in Solution §2. |
-| **R4** | Pin executable output contract | **PASS** | Verified constraints against `plugins/kk/workflows/validate-voicescript.ts` and `plugins/generations/voice-gen/plugin.json` in Solution §3. |
-| **R5** | Record design proposal | **PASS** | Solution contains all 5 required headings, VoiceScript contract ownership trade-off analysis and recommendation in Solution §1–§5. |
-| **AC1** | Design proposal recorded | **PASS** | Gherkin scenario satisfied: names skill home, mode taxonomy, per-operation I/O contracts, ownership recommendation, and workflow-rewrite shape. |
+- Verdict: PASS (from verdict artifact)
 
-**Coverage:** N/A (design and research specification; zero new executable lines authored).
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `docs/tasks/0075_design-the-audio-authoring-skill-contract-and-mode-model.md` Solution §2/§3 — per-node consumption/emission extracted for `understand`/`outline-write`/`script-write` (`plugins/kk/workflows/kk-solo-podcast.yaml:66`,`:79`,`:128`), reusable contract separated from scenario content |
+| R2 | MET | Solution §2 enabler note + Evidence — `plugins/kk/workflows/kk-daily-ai-voice.yaml:56` deterministic dailynews-gen step; implication recorded (modes opt-in, shared tail only) |
+| R3 | MET | Solution §1 — itc-generating identified as single-op orchestrator (`plugins/kk/skills/itc-generating/SKILL.md:18`), rejected as model; topic multi-op precedent chosen; taxonomy is new design |
+| R4 | MET | Solution §3/§4 — contract pinned against `plugins/kk/workflows/validate-voicescript.ts:85` (`speakers`) and `plugins/generations/voice-gen/src/voicescript.ts` canonical source |
+| R5 | MET | Solution §1–§5 — name+home, per-op I/O contracts, ownership options + recommendation (b), workflow-rewrite invocation shape with YAML sketch |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Design proposal recorded | MET | command | `rg -cF 'audio-authoring' docs/tasks/0075_*.md` → 10; `rg -cF 'create |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
-#### SECUA Review Findings
-
-- **Security (PASS):** The proposal maintains strict filesystem isolation under `--dir ${vars.work_dir}`. No dynamic `eval` or shell interpolation in prompts. VoiceScript emission prohibits raw code fences to avoid downstream parser escaping vulnerabilities.
-- **Efficiency (PASS):** Multi-operation granularity allows workflow nodes to execute standalone steps (`understand`, `outline`, `script`) while reusing cached disk artifacts (`1-briefing/`, `2-outline/`), avoiding redundant LLM generation cycles.
-- **Correctness (PASS):** Output contract conforms 100% to `plugins/kk/workflows/validate-voicescript.ts` constraints (`default_engine`, `language`, `segments[].text` 1..50k, `instruct` ≤ 500, `gap_ms` ≥ 0). Spoken pace calculation accurately distinguishes CJK characters (220/min) from Western words (150/min).
-- **Usability (PASS):** Mode taxonomy (`solo`, `interview`, `dialog`, `narration`) gives clear extension points while keeping solo mode ergonomic and single-speaker focused. Preserves operator HITL gates and bounded revision feedback.
-- **Architecture (PASS):** Cleanly honors ADR-007 / ADR-009 / ADR-012 boundaries: `audio-authoring` is an agent skill in `plugins/kk/skills/`, `voice-gen` is a runtime generator plugin in `plugins/generations/`, and `kk-solo-podcast.yaml` is a Spur state machine orchestrator.
-
-#### Traceability Matrix
-- **R1 (Node Extraction & Reusable Contract):** Satisfied in Solution §2 & §3.
-- **R2 (Sibling Workflow Comparison & Mode Model):** Satisfied in Solution §2.
-- **R3 (Precedent Analysis - itc vs topic):** Satisfied in Solution §2.
-- **R4 (Executable Constraints Validation):** Satisfied in Solution §3.
-- **R5 (Design Proposal with 5 Headings & Ownership Options):** Satisfied in Solution §1–§5.
+| Priority | Finding | Severity | Disposition |
+| --- | --- | --- | --- |
+| P1 | None | — | — |
+| P2 | VoiceScript contract ownership settled as recommendation (b), not operator-signed | low | map F7 Open question pending operator sign-off before 0077 |
+| P3 | Section writer strips inner `### N.` headings inside Solution | info | cosmetic; content intact |
+| P4 | None | — | — |
 ### References
 
 <!-- Links to docs, examples, related tasks/features, or external references. -->
@@ -241,3 +171,6 @@ When `plugins/kk/workflows/kk-solo-podcast.yaml` is refactored to consume the `a
 - 2026-08-23T22:40:01.031Z todo → wip (system)
 - 2026-08-23T22:41:29.546Z wip → testing (system)
 - 2026-08-23T22:41:29.784Z testing → done (system)
+- 2026-08-23T23:33:20.067Z done → wip (system)
+- 2026-08-23T23:47:12.703Z wip → testing (system)
+- 2026-08-23T23:47:13.025Z testing → done (system)

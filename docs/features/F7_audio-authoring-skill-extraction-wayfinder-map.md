@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F7"
 name: "Audio-authoring skill extraction (wayfinder map)"
-status: done
+status: active
 priority: P2
 tags: ["wayfinder-map"]
 created_at: "2026-08-23T22:20:04.851Z"
-updated_at: "2026-08-23T22:42:18.025Z"
+updated_at: "2026-08-23T23:42:30.302Z"
 ---
 
 # F7: Audio-authoring skill extraction (wayfinder map)
@@ -30,40 +30,39 @@ Wayfinder map — prose no-AC disclaimer. BDD AC intentionally absent (tagged `w
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-Wayfinder map. Destination lives in **## Goal** (spur canonical sections). This map is a shipped refactor, not a spec-only effort — after investigation tickets close, graduate implement work into tasks and close only on verifyall Shippable: PASS.
+Wayfinder map. Destination lives in **## Goal** (spur canonical sections). This map is a shipped refactor, not a spec-only effort — close only on verifyall Shippable: PASS.
 
 **Context every session should consult:**
-- `plugins/kk/workflows/kk-solo-podcast.yaml` — the pipeline under refinement. Three `agent.run` nodes: `understand` (briefing), `outline-write` (outline options), `script-write` (VoiceScript YAML). The VoiceScript contract is embedded inline in the `script-write` prompt.
-- `plugins/kk/workflows/kk-daily-ai-voice.yaml` — sibling voice workflow; check for shared patterns.
-- `plugins/kk/workflows/validate-voicescript.ts` — the VoiceScript validator the workflow shells out to.
-- `plugins/generations/voice-gen/` — the TTS generator plugin consuming the wrapped Doc[].
-- `plugins/kk/skills/` — existing skill home (`topic`, `itc-generating`, `storm-research`, `content-judge`); `itc-generating` is the precedent for a multi-operation authoring skill.
+- `plugins/kk/workflows/kk-solo-podcast.yaml` — the pipeline under refinement.
+- `plugins/kk/workflows/validate-voicescript.ts` — runtime VoiceScript validator (synced copy of `plugins/generations/voice-gen/src/voicescript.ts`, which already supports multi-speaker `speakers`).
+- `plugins/kk/skills/topic/SKILL.md` — the multi-operation fat-skill precedent the new skill follows.
+- `plugins/generations/voice-gen/` — TTS generator plugin (out of scope for changes).
 
 
-- **VoiceScript contract ownership.** Should the VoiceScript schema become a versioned shared artifact (e.g. a schema/contract file referenced by both the new skill and `validate-voicescript.ts`), or stay embedded in the skill prompt with the validator as the only executable check? *Why operator-only:* it sets a cross-cutting contract boundary (ADR-level). *Blocks:* final shape of the design ticket's proposal — the ticket should bring a recommendation with options.
+- **VoiceScript contract ownership** — 0075 recommends option (b): validator stays the sole executable check; the skill embeds the complete contract distilled from `voice-gen/src/voicescript.ts` (fixing the current prompt drift). *Awaiting operator sign-off before 0077 implements against it.*
 
 
 - Destination = **shipped refactor** (code lands, verifyall Shippable: PASS), not spec-only.
-- The extracted skill is **generic + mode-based** (working name: audio-authoring); solo mode ships first, contract designed so future modes (multi-speaker, interview, narration) plug in without breaking solo.
-- Scope includes a **whole-pipeline improvement audit** beyond skill extraction; proposals surface to the operator for selection.
+- The extracted skill is **generic + mode-based**; solo mode ships first, future modes are extension points.
+- Whole-pipeline improvement audit is in scope; proposals surface for operator selection.
+- [0075 Design the audio-authoring skill contract](../../docs/tasks/0075_design-the-audio-authoring-skill-contract-and-mode-model.md) — new skill `audio-authoring` at `plugins/kk/skills/audio-authoring/`; ops `create | briefing | outline | script` mapping 1:1 onto the workflow's agent.run nodes; mode axis default `solo`, extension points `dialogue`/`interview`/`narration`; revision feedback passes as `--revise`.
+- [0076 Audit kk-solo-podcast pipeline](../../docs/tasks/0076_audit-kk-solo-podcast-pipeline-for-improvements-beyond-skill.md) — 8 proposals, ranked: P1 ship = revise-count scoping, wrap-docs helper extraction, duration-check consolidation + revise-loop routing; P2 = prompt/validator drift (covered by 0077); P3 defer = band tightening, briefing sanity, option-c guard, kk preflight.
 
 ### Not yet specified
 
-- Skill name and home (candidate: `plugins/kk/skills/audio-authoring/`); capability naming convention (`kk:` prefix on install).
-- Mode taxonomy beyond solo — which modes to declare as extension points in contract v1 vs leave unnamed.
-- Operation granularity: do `understand` / `outline-write` / `script-write` map 1:1 to skill operations, or collapse into fewer modes?
-- Whether `kk-daily-ai-voice.yaml` migrates to the same skill in this effort.
-- How HITL gates + revision feedback (bounded 3-round revise loop) interact once prompts live in the skill — workflow stays orchestrator, but feedback-passing shape is open.
-- Implement tickets (build the skill solo mode; rewrite `kk-solo-podcast.yaml` to consume it; end-to-end verification run) — graduate after the design ticket closes.
+- **0076 proposal selection** — which P1/P3 proposals the operator ships; selected P1s graduate into implement tickets.
+- **Multi-speaker mode design** (`dialogue`/`interview`/`narration`) — contract supports it (`speakers`), authoring prompts unwritten. Future effort, not this map's implement tickets.
 
 ### Out of scope
 
-- Changes to the `voice-gen` generator plugin itself (TTS engines, multi-speaker audio rendering).
+- Changes to the `voice-gen` generator plugin itself (TTS engines, audio rendering).
 - Podcast publishing / distribution channels.
 - Reworking non-audio workflows (`kk-itc`, `kk-storm-research`, publish pipelines).
+- Migrating `kk-daily-ai-voice.yaml` to the skill — its script step is deterministic (`dailynews-gen`, no agent.run nodes); nothing to extract (0075 evidence, 2026-08-23).
 ## History
 
 - 2026-08-23T22:27:00.764Z moved K → F7 (system)
 - 2026-08-23T22:42:17.696Z backlog → active (system)
 - 2026-08-23T22:42:17.874Z active → verifying (system)
 - 2026-08-23T22:42:18.025Z verifying → done (system)
+- 2026-08-23T23:37:11.060Z done → active (system)
