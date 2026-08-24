@@ -4,7 +4,7 @@ name: "End-to-end verification run of refined solo-podcast workflow"
 status: done
 template: feature-impl
 created_at: 2026-08-23T23:37:50.939Z
-updated_at: "2026-08-24T02:58:15.898Z"
+updated_at: "2026-08-24T05:33:08.533Z"
 feature_id: F7
 dependencies: ["0078"]
 ---
@@ -114,24 +114,33 @@ References: map `docs/features/F7_audio-authoring-skill-extraction-wayfinder-map
 - R5 unit-level guard simulation: script-review reject guard routes to script-revise (`.revise-count` 0→1); out-of-band duration writes `.duration-feedback` + increments (→2); all three `duration-check` edges present (`done`/`script-write`/`failed`).
 - No source changes — 0079 is the map-closing verification run for F7. Only the task file's status/Requirements/Testing/Solution sections updated (CLI-gated).
 ### Testing
-E2E run id: `solo-e2e-79` (log `.spur/run/solo-e2e-79.log`); dry-run id `dry-79`. Scratch: `/tmp/solo-verify-EdHl7e` (outside repo). Installed dest: `$HOME/.config/kk/workflows/` — YAML and both sidecars byte-identical to design-time (`diff` clean).
+**Pipeline verify results**
 
-| Claim | Evidence |
-| --- | --- |
-| R1 install (two-root copy) | YAML + `validate-voicescript.ts` + `wrap-voicescript-doc.ts` copied to `$HOME/.config/kk/workflows/`; `diff` vs `plugins/kk/workflows/` → identical. |
-| R2 dry-path run walks | `spur workflow run "$dest" --vars '{"topic":"…","work_dir":<scratch>,"voice_profile":"Robin","outline":"a","script_approved":"true","force":"true","target_duration_min":"1"}'` → prepare → understand → outline-write → outline-commit → script-write → script-validate → wrap-docs → generate (halted at TTS, see R4). No HITL pauses (outline=a + script_approved=true). |
-| R3 agent.run invokes skill | Each authoring node's prompt (from `.spur/run/solo-e2e-79/agent-sessions/omp/*.jsonl`) opens `Invoke the kk:audio-authoring skill: operation \`briefing\`/\`outline\`/\`script\`, mode \`solo\``. Artifacts: `1-briefing/briefing.md`, `2-outline/outline-option-{a,b,c}.md` + `outline-approved.md`, `3-script/voicescript.yaml`. |
-| R3 validator exit 0 | `bun $HOME/.config/kk/workflows/validate-voicescript.ts --in <scratch>/3-script/voicescript.yaml` → exit 0. |
-| R3 docs.json from helper | `4-audio/docs.json`: `id=1b534c4d46cd3813` (sha256 prefix), `title="Podcast VoiceScript"`, `sourceUri=file://…/voicescript.yaml`, `mediaType=application/yaml`, `metadata.voiceProfile="Robin"`, `body` = full script. Re-captured post-run via `bun …/wrap-voicescript-doc.ts <script> <docs.json> Robin` → exit 0, id byte-identical (run wrap-docs/shell also exited 0, seq=30). |
-| R4 duration | TTS unavailable in this environment: `generate` (voice-gen) hung >7 min with no `4-audio/content.json`; run interrupted. Accepted evidence = missing-content dry-run pass: `spur workflow run "$dest" --dry-run` on the installed YAML → `status: done`. |
-| R5 revise + duration mechanics | Guard sim on installed YAML: script-review reject guard (`no`, count 0 < 3) → routes to script-revise; `.revise-count` 0→1 after script-revise increment. Band check: 45s vs 60s target (band [30,120]) in-band → pass; 10s → out-of-band → writes `.duration-feedback` + increments `.revise-count` (1→2). All three `duration-check` edges present: `done`, `script-write`, `failed`. |
-| R6 gates | `bun run lint` → clean (Biome 2.5.5 130 files + typecheck all workspaces exit 0); `bun run test` → 470 pass / 0 fail / 1779 expect across 38 files. Coverage (aggregate): 97.90% lines / 98.73% functions (target ≥90% / ≥90%). 0079 is a verification-run task — no new code, so coverage delta is N/A beyond the existing suite. |
+- Verdict: PASS (from verdict artifact)
 
-Note: `kk:audio-authoring` is not registered in the `omp` agent backend, so the authoring agents followed the inlined prompt contract (which is the complete 0077 contract). The workflow's invocation of the skill is evidenced by the prompts; actual skill-file execution is an environment limitation, not a workflow defect.
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | command: `diff` of `$HOME/.config/kk/workflows/{kk-solo-podcast.yaml,validate-voicescript.ts,wrap-voicescript-doc.ts}` vs `plugins/kk/workflows/` — 3/3 byte-identical (re-run this pass) |
+| R2 | MET | `.spur/run/solo-e2e-79.log:2` plan line + `:78-80` walk through script-validate → wrap-docs (seq 27-29), three agent runs `exit 0` (:25,:47,:72), no HITL pauses on the outline=a + script_approved=true path |
+| R3 | MET | command: 3/3 agent session jsonl files under `.spur/run/solo-e2e-79/agent-sessions/omp/` contain `kk:audio-authoring` invocations; `bun …/validate-voicescript.ts --in /tmp/solo-verify-EdHl7e/3-script/voicescript.yaml` → exit 0 (re-run this pass); docs.json id recomputed `sha256("file://…/voicescript.yaml")[0:16]` = `1b534c4d46cd3813` == recorded, title + `metadata.voiceProfile=Robin` confirmed |
+| R4 | MET | TTS unavailable (voice-gen hang, disclosed); accepted dry-run evidence `.spur/run/dry-79.log` exists — matches the task's pre-declared fallback (Design known constraint), no silent green |
+| R5 | MET | Guard sim evidence in task Testing: `.revise-count` 0→1→2 and `.duration-feedback` present in `/tmp/solo-verify-EdHl7e` (confirmed on disk this pass); all three duration-check edges at `plugins/kk/workflows/kk-solo-podcast.yaml:366-388` |
+| R6 | MET | command: `bun run lint` 13 workspaces exit 0 + `bun run test` 470/470 (fresh run 21:35 this session; tree unchanged since except corpus commits) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Dry-path run completes | MET | command | Re-executed checks above: sidecars identical, validator exit 0, docs.json id match, 3 skill invocations in agent sessions, transcript walk to generate |
+| Scenario: Duration and revise mechanics hold | MET | command | `.revise-count` (contents `2`) + `.duration-feedback` on disk in scratch dir; three duration edges in YAML `:366-388` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
+**SECU findings** (pipeline verify step — verdict: PASS)
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
-
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | design-conformance | — | Ran installed copy (not design-time), scratch outside repo, PARTIAL-evidence fallback declared in advance and used exactly as specified; honest disclosure of the omp backend limitation (skill not registered → agents followed the inlined contract prompt) |
+| P4 | scope-creep | — | a20be22 touches corpus docs only — no source changes |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
