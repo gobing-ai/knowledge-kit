@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F7"
 name: "Audio-authoring skill extraction (wayfinder map)"
-status: active
+status: done
 priority: P2
 tags: ["wayfinder-map"]
 created_at: "2026-08-23T22:20:04.851Z"
-updated_at: "2026-08-23T23:42:30.302Z"
+updated_at: "2026-08-24T02:58:16.369Z"
 ---
 
 # F7: Audio-authoring skill extraction (wayfinder map)
@@ -27,6 +27,9 @@ Wayfinder map — prose no-AC disclaimer. BDD AC intentionally absent (tagged `w
 | --- | ---- | ------ |
 | 0075 | Design the audio-authoring skill contract and mode model | done |
 | 0076 | Audit kk-solo-podcast pipeline for improvements beyond skill extraction | done |
+| 0077 | Implement kk:audio-authoring skill (solo mode, four operations) | done |
+| 0078 | Rewrite kk-solo-podcast workflow to invoke kk:audio-authoring | done |
+| 0079 | End-to-end verification run of refined solo-podcast workflow | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -66,3 +69,5 @@ Wayfinder map. Destination lives in **## Goal** (spur canonical sections). This 
 - 2026-08-23T22:42:17.874Z active → verifying (system)
 - 2026-08-23T22:42:18.025Z verifying → done (system)
 - 2026-08-23T23:37:11.060Z done → active (system)
+- 2026-08-24T02:58:16.223Z active → verifying (system)
+- 2026-08-24T02:58:16.369Z verifying → done (system)
