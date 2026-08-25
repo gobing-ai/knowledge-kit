@@ -25,7 +25,7 @@ states:
           # Seed the verdict so the judge gate guards can be evaluated in --dry-run
           # (dry-run skips actions but still evaluates shell guards). A real run's
           # judge step overwrites this file before the gate is read.
-          command: "echo '{\"verdict\":\"PASS\",\"score\":0.0}' > ${vars.verdictFile} && echo 'generating content...'"
+          command: 'echo ''{"verdict":"PASS","score":0.0}'' > ${vars.verdictFile} && echo ''generating content...'''
   - id: judge
     description: "Evaluate generated content via the judge skill (agent.run)"
     onEnter:

@@ -14,7 +14,7 @@ vars:
   publish_plugin: "surfdash-pub"
   source: "./source"
   work_dir: "./work"
-  plugins_path: ""  # empty -> ADR-012 default discovery (package-shipped built-ins); set for checkout dev
+  plugins_path: "" # empty -> ADR-012 default discovery (package-shipped built-ins); set for checkout dev
 
 states:
   - id: ingest

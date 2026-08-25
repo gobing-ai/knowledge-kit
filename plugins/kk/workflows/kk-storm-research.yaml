@@ -32,15 +32,15 @@ terminalStates:
   - done
   - failed
 vars:
-  topic: ""  # sentence-mode query; ignored when input_file set (XOR)
-  input_file: ""  # file-mode markdown path when non-empty (XOR)
-  maxResults: "8"  # written into topic.json as int (0054 maxResults)
-  fixture: "false"  # "true" selects the stub; CI/dry-run must pass "true"
-  work_dir: "./work"  # RESOLVED topic dir ($works_root/<topic-id>)
-  plugins_path: ""  # empty -> ADR-012 default discovery (package-shipped built-ins); set for checkout dev
+  topic: "" # sentence-mode query; ignored when input_file set (XOR)
+  input_file: "" # file-mode markdown path when non-empty (XOR)
+  maxResults: "8" # written into topic.json as int (0054 maxResults)
+  fixture: "false" # "true" selects the stub; CI/dry-run must pass "true"
+  work_dir: "./work" # RESOLVED topic dir ($works_root/<topic-id>)
+  plugins_path: "" # empty -> ADR-012 default discovery (package-shipped built-ins); set for checkout dev
   ingestion_plugin: "web-search"
   generator_plugin: "content-gen"
-  render_script: ""  # empty -> fallback chain: kk package root -> checkout plugins/kk/scripts/render-md.ts
+  render_script: "" # empty -> fallback chain: kk package root -> checkout plugins/kk/scripts/render-md.ts
 
 states:
   - id: prepare
