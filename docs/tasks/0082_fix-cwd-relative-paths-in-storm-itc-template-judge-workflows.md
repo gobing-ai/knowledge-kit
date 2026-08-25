@@ -4,7 +4,7 @@ name: "Fix cwd-relative paths in storm/itc/template/judge workflows for run-anyw
 status: done
 template: feature-impl
 created_at: 2026-08-24T16:56:20.888Z
-updated_at: "2026-08-24T17:20:11.571Z"
+updated_at: "2026-08-25T23:29:21.601Z"
 feature_id: F8
 ---
 
@@ -75,8 +75,8 @@ Feature: Run-anywhere paths across all kk workflows
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: No repo-relative skill or script loads remain | MET | command | `rg 'Load plugins/kk/skills' plugins/kk/workflows/*.yaml` → 0 matches outside comments; skill invocations are `kk:`-named |
-| Scenario: Executor calls use conditional plugins_path | MET | command | `rg 'plugins_path: ""'` present in storm+template; every `--plugins-path` sits behind `if [ -n "${vars.plugins_path}" ]` |
+| No repo-relative skill or script loads remain in workflow prompts | MET | command | `rg 'Load plugins/kk/skills' plugins/kk/workflows/*.yaml` → 0 matches outside comments; skill invocations are `kk:`-named |
+| Executor calls use conditional plugins_path | MET | command | `rg 'plugins_path: ""'` present in storm+template; every `--plugins-path` sits behind `if [ -n "${vars.plugins_path}" ]` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 | Priority | Finding | Severity | Disposition |

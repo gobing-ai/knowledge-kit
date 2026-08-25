@@ -4,7 +4,7 @@ name: "Extract VoiceScript template from audio-authoring SKILL.md into templates
 status: done
 template: feature-impl
 created_at: 2026-08-24T06:31:42.818Z
-updated_at: "2026-08-24T07:05:23.404Z"
+updated_at: "2026-08-25T23:29:21.339Z"
 feature_id: F8
 ---
 
@@ -63,8 +63,8 @@ Feature: VoiceScript template extraction
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Template is a separate file under templates/ | MET | command | `test -f plugins/kk/skills/audio-authoring/templates/voicescript.solo.yaml` + `yamllint` clean |
-| SKILL.md references the template instead of embedding | MET | command | `rg -c 'templates/voicescript.solo.yaml' plugins/kk/skills/audio-authoring/SKILL.md` → ≥1; old `default_engine?:` schema block absent |
+| Template is a separate file | MET | command | `test -f plugins/kk/skills/audio-authoring/templates/voicescript.solo.yaml` + `yamllint` clean |
+| SKILL.md references the template | MET | command | `rg -c 'templates/voicescript.solo.yaml' plugins/kk/skills/audio-authoring/SKILL.md` → ≥1; old `default_engine?:` schema block absent |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 | Priority | Finding | Severity | Disposition |

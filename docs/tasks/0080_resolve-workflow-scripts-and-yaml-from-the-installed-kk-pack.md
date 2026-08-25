@@ -4,7 +4,7 @@ name: "Resolve workflow scripts and YAML from the installed kk package root"
 status: done
 template: feature-impl
 created_at: 2026-08-24T06:31:42.639Z
-updated_at: "2026-08-24T07:05:23.086Z"
+updated_at: "2026-08-25T23:29:21.060Z"
 feature_id: F8
 ---
 
@@ -71,8 +71,8 @@ Feature: Run-anywhere workflow and script resolution
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Sidecars resolve from package root outside a checkout | MET | test | `kk-solo-podcast-workflow.test.ts` — runtime-paths invariant updated: bare `plugins/kk/workflows` refs forbidden except under `$pkg/`; `command -v kk` asserted in YAML |
-| workflow-run resolves in place, no happy-path copy | MET | test | `workflow-run-command.test.ts` — asserts `$pkg/plugins/kk/workflows/$NAME.yaml`, `command -v kk`, `in place`, absence of `cp "$src" "$dest"` |
+| Sidecars resolve from the installed package root | MET | test | `kk-solo-podcast-workflow.test.ts` — runtime-paths invariant updated: bare `plugins/kk/workflows` refs forbidden except under `$pkg/`; `command -v kk` asserted in YAML |
+| Workflow YAML runs in place from any cwd | MET | test | `workflow-run-command.test.ts` — asserts `$pkg/plugins/kk/workflows/$NAME.yaml`, `command -v kk`, `in place`, absence of `cp "$src" "$dest"` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 | Priority | Finding | Severity | Disposition |
