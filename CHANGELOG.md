@@ -1,3 +1,31 @@
+## [0.0.10] - 2026-08-25
+
+### Added
+
+- add audio-authoring fat skill (solo mode, four operations) (434a01a)
+- rewrite kk-solo-podcast onto kk:audio-authoring (c4ab400)
+- close F7 map — e2e verify refined solo-podcast workflow (a20be22)
+- land F7 audio-authoring wayfinder map with completed tasks 0075-0076 (65ced87)
+- run workflows and sidecars from the kk package root — run-anywhere (F8/0080-0081) (7a81b07)
+- support emotions, paralinguistic tags, post-processing effects, and multi-speaker discussions (voice-gen) (0b8a7eb)
+- add automated audio quality control gate and repetition detection (voice-gen) (9a11f46)
+- derive clean spoken host name from profile string (dailynews-gen) (c1f83b3)
+- add demonstrative solo podcast talk style with personal understanding and date-partitioned workspace (dailynews-gen) (d10a699)
+
+### Fixed
+
+- run-anywhere paths across all kk workflows (F8/0082) (e951921)
+- format block YAML in dailynews-gen and add flow-style fallback in voice-gen (f86611d)
+
+### Other
+
+- close F8 feature as done with executable BDD acceptance scenarios (c7246f4)
+- re-audit 0078/0079 verify PASS (--force, independent second pass) (75e35fc, 83474cd)
+- refine audio-authoring extraction map and batch-create implement tickets 0077-0079 (e81f381)
+- upgrade .spur/config.yaml to schema 1.2 (9a677a0)
+- apply biome formatting and warning fixes across kk workflows (2d5a60c, 8094228, f34e16e)
+- update task status after verification (c39b748)
+
 ## [0.0.9] - 2026-08-22
 
 ### Added
