@@ -1,6 +1,6 @@
 {
     "name": "@gobing-ai/knowledge-kit",
-    "version": "0.0.9",
+    "version": "0.0.10",
     "description": "An ingest → create → publish content pipeline CLI (Bun).",
     "repository": {
         "type": "git",
