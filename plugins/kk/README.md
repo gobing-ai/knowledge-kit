@@ -4,7 +4,7 @@ This directory is the **only** home for knowledge-kit agent capabilities (ADR-00
 It is a Claude Code / Superskill plugin, **not** a kk-core product plugin.
 
 | Path | Holds |
-|------|--------|
+| ------ | -------- |
 | `skills/` | Fat skills (`SKILL.md`) |
 | `commands/` | Thin slash-command wrappers |
 | `agents/` | Thin subagent wrappers (currently empty — see below) |
@@ -24,5 +24,5 @@ Install: `superskill install kk`.
 
 Capability files **omit a leading `kk-`**. `superskill install` prefixes the plugin name, so
 `skills/content-judge` installs as `kk:content-judge` (not `kk:kk-content-judge`). Same for `topic`,
-`storm-research`, `itc-generating`, and `/workflow-run`. Product workflow YAML (`kk-storm-research.yaml`)
+`storm-research`, `itc-generating`, `explain-things` (via `/tell-me`), and `/workflow-run`. Product workflow YAML (`kk-storm-research.yaml`)
 keeps its existing name — that is a workflow stem, not an installable agent capability.

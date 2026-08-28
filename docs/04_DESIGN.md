@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.24.0
+version: 2.25.0
 created_at: 2026-07-22
-updated_at: 2026-08-21
+updated_at: 2026-08-27
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -444,3 +444,18 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 | `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
 | `kk-itc` | `kk-itc.yaml` | `./<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft/draft-article.md` |
 | `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` + `wrap-voicescript-doc.ts` | `$works_dir/<kebab>` | `$work_dir/3-script/voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
+
+### 7.3 `/tell-me` command + `explain-things` skill surface
+
+| Capability | Source path | Installed ID |
+| ---------- | ----------- | ------------ |
+| Fat skill | `plugins/kk/skills/explain-things/SKILL.md` (+ one-level `references/views.md`) | `kk:explain-things` |
+| Thin slash wrapper | `plugins/kk/commands/tell-me.md` | `/tell-me` (`kk-tell-me`) |
+
+Signature: `/tell-me [topic] [--eli5]`. The command carries routing metadata only (`allowed-tools:
+["Skill"]`) and its sole operative line is `Skill(skill="kk:explain-things", args="$ARGUMENTS")`;
+empty arguments forward unchanged so the skill owns conversation-topic fallback (else it stops with
+a recovery instruction before creating any artifact). View selection — pseudocode / call tree /
+component tree / file tree / Mermaid / diff / copyable block, with one focused HTML artifact as
+last resort — lives in the skill body + `references/views.md`. No alias commands, no subagent, no
+first-layer `kk` noun (F9; ADR-009 / ADR-011).

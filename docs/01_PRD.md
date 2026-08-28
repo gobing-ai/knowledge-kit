@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.10.0
+version: 3.11.0
 created_at: 2026-07-22
-updated_at: 2026-08-21
+updated_at: 2026-08-27
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -24,7 +24,7 @@ sync: [T6]
 The platform is a **type + discovery layer**: TypeScript data contracts discovered by a registry, with `spur workflow` composing them. Sequential fan-in (N→1) and fan-out (1→N) steps are owned by `kk` and run on the workflow engine.
 
 | Kind | Contract (essence) | Phase-1 / Initial instance |
-|------|--------------------|----------------------------|
+| ------ | -------------------- | ---------------------------- |
 | `IngestionPlugin` | `ingest(source) → Doc[]` | **Karakeep-local** — read an rclone-synced folder |
 | `ContentGeneratorPlugin` | `generate(Doc[] \| Brief) → Content` | **Generator (reuse-first)** — accepts ingested `Doc[]` or standalone `Brief` (topic → article) |
 | `PublishPlugin` | `publish(Content) → Result` | **Multi-channel publish** — Surfdash (tested rewrite) + `wt` target harvest |
@@ -62,13 +62,13 @@ Technical content creation and published output are fragmented: turning ideas or
 ## In scope
 
 | Area | Feature | Phase | Notes |
-|------|---------|-------|-------|
+| ------ | --------- | ------- | ------- |
 | Project foundation | **A** | Phase 0/2 | Monorepo substrate; **A1** feature-tree restructure; **A2** `kk` product CLI surface (help/version/verbose, command tree, npm `bin.kk`) |
 | Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance · Phase 2: **B6** sequential `kk executor fan-in`/`fan-out` · **A21** two-noun CLI (`executor` + `plugin`) · **B7** multi-root plugin auto-discovery (built-ins + user roots; ADR-012) |
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
 | Content generation | **D** | Phase 1/2/3 | D1 research · D2 wire stand-in · D3 design · **Brief input contract** (`Doc[] \| Brief`) · **D4** owned STORM (`content-gen`) · **D5** Voicebox TTS generator (`voice-gen`, `format: "audio"`) |
 | Multi-channel publish | **E** | Phase 1/2 | E1 audit · E2 design/harness · E3 Surfdash · **Multi-channel suite harvest** (Surfing, X, Juejin, Qiita, Medium, Substack, Zenn, InfoQ, XHS) |
-| Agent capabilities and product workflows | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) · **F4 IT-content workflow** (`kk-itc`) · **F5 Solo-podcast workflow** (`kk-solo-podcast`) · **F6 Daily AI news voice workflow** (`aihot-ingest` → `dailynews-gen` → `voice-gen`) |
+| Agent capabilities and product workflows | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) · **F4 IT-content workflow** (`kk-itc`) · **F5 Solo-podcast workflow** (`kk-solo-podcast`) · **F6 Daily AI news voice workflow** (`aihot-ingest` → `dailynews-gen` → `voice-gen`) · **F9 Explain-things** (`explain-things` smallest-view skill + thin `/tell-me`) |
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
 
 A user can answer "can I run this to write an article about X with nothing ingested?" directly from this PRD: **Yes**, by passing a `Brief` to a `ContentGeneratorPlugin` and piping `Content` to a `PublishPlugin`.
@@ -76,7 +76,7 @@ A user can answer "can I run this to write an article about X with nothing inges
 ## Out of scope / deferred
 
 | Area | Feature | Status | Reason |
-|------|---------|--------|--------|
+| ------ | --------- | -------- | -------- |
 | Engine-level parallel execution | — | Deferred | `kk` sequential fan-out meets requirement without engine complexity (ADR-007 R4) |
 | Package rename | — | Rejected | Package `@gobing-ai/knowledge-kit` is historical (ADR-007 R2). Operator binary `kk` is in scope (A2 / ADR-010). |
 | LLM wiki | **I** | Undecided | Parked as map fog; requires go/no-go spike first |

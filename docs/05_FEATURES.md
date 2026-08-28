@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.21.0
+version: 2.22.0
 created_at: 2026-07-22
-updated_at: 2026-08-21
+updated_at: 2026-08-27
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -71,7 +71,7 @@ sync: [T4]
 | E3 | Surfdash publisher (tested) | ✅ done | 1 | tasks `0024`/`0025` done; `plugins/publishings/surfdash-pub` + hardened failure modes; verifyall re-audit PASS + shippable; commit `d8b19d0` |
 | E4 | Multi-channel suite harvest | ✅ done | 2 | Zenn + Qiita first tranche shipped (`plugins/publishings/zenn-pub`, `plugins/publishings/qiita-pub`; tasks `0044`/`0045`); remaining channels (Surfing/X/Juejin/Medium/Substack/InfoQ/XHS) are follow-on intake under **E** |
 | E5 | EmDash CMS publisher | ✅ done | 2 | task `0061` done; `plugins/publishings/emdash-pub` REST PAT transport + markdown→Portable Text mapper; satellite `docs/design/emdash-pub.md`; verify PASS + Shippable PASS (12/12 scenarios MET) |
-| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for agent capabilities and product workflows; F1–F6 children done; parent stays open for intake |
+| **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for agent capabilities and product workflows; F1–F9 children done; parent stays open for intake |
 | F1 | LLM-as-judge agent skills | ✅ done | 2 | home for 0034/0037: fat skill `content-judge` (was `judge`); persona subagents retired 2026-08-19 — rubric is an `agent.run` field; `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 / 2026-08-19 |
 | F2 | Topic-core authoring skill | ✅ done | 3 | task `0048` done; one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
 | F3 | ITC generating skill | ✅ done | 3 | task `0068` done; fat `itc-generating` skill + four distilled references; orchestrates `topic` / `storm-research` / optional `content-judge`; no slash, no CLI; satellite `docs/design/itc-generating.md`; verify PASS |
@@ -80,6 +80,7 @@ sync: [T4]
 | F6 | Daily AI news workflow and plugins | ✅ done | 3 | tasks `0072`–`0074`; `aihot-ingest` → `dailynews-gen` → `voice-gen`; offline executor-dispatch integration; satellites `docs/design/{aihot-ingest,dailynews-gen,kk-daily-ai-voice}.md`; verifyall PASS |
 | F8 | Run-anywhere workflow and script resolution | ✅ done | 3 | 0080 package-root resolution (command -v kk walk) for YAML + sidecars, in-place run; 0081 VoiceScript template extracted to templates/; 0082 cwd-relative path fixes across storm/itc/template/judge workflows (`7a81b07` + follow-up) |
 | F7 | Audio-authoring skill extraction (wayfinder map) | ✅ done | 3 | 0077 `kk:audio-authoring` skill (solo mode, `434a01a`); 0078 rewrote `kk-solo-podcast` onto the skill (`c4ab400`); 0079 e2e verified dry-path + revise/duration mechanics; feature closed done 2026-08-24 |
+| F9 | Explain-things skill and tell-me command | ✅ done | 3 | task `0083` done; fat `explain-things` skill + one-level `references/views.md`, thin `/tell-me`; smallest-view default, ELI5 opt-in, HTML last-resort; no aliases/subagent/CLI noun; verify PASS + Shippable PASS |
 | **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
