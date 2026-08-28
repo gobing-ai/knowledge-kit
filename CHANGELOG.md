@@ -1,4 +1,4 @@
-## [0.0.10] - 2026-08-25
+## [0.0.10] - 2026-08-27
 
 ### Added
 
@@ -11,6 +11,8 @@
 - add automated audio quality control gate and repetition detection (voice-gen) (9a11f46)
 - derive clean spoken host name from profile string (dailynews-gen) (c1f83b3)
 - add demonstrative solo podcast talk style with personal understanding and date-partitioned workspace (dailynews-gen) (d10a699)
+- add explain-things skill and tell-me command (F9) (d114a1e)
+- add taste-unslop natural-voice editing skill (4ac420d)
 
 ### Fixed
 
@@ -25,6 +27,7 @@
 - upgrade .spur/config.yaml to schema 1.2 (9a677a0)
 - apply biome formatting and warning fixes across kk workflows (2d5a60c, 8094228, f34e16e)
 - update task status after verification (c39b748)
+- record F9/0083 session learnings (d168b09)
 
 ## [0.0.9] - 2026-08-22
 
