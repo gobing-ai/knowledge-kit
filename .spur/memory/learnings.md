@@ -494,3 +494,21 @@ Cross-task: C5 ran as a 3-task batch — 0062 ∥ 0063 parallel, 0064 last; no `
 - Do not delete `.spur/workflows/kk-storm-research.yaml` without retargeting `apps/cli/tests/storm-research-workflow.test.ts` (`ssotPath`) and the three-root assertion in `workflow-run-command.test.ts`.
 - F1 historical AC still names the wrappers; do not rewrite a done feature's AC. Record the retirement in Notes + ADR amendment.
 
+## 2026-08-27 — Task 0083 (feature F9: explain-things + /tell-me)
+
+**Decisions**
+
+- One fat skill `plugins/kk/skills/explain-things` plus one thin slash `plugins/kk/commands/tell-me.md`. ELI5 is an on-request register, not the default; HTML is last-resort. Vendor `eli5`/`show-me` stay provenance.
+- No extra `/eli5`/`/show-me` aliases, no subagent, no first-layer `kk` noun (ADR-011). Directory discovery ships the capability (ADR-009).
+
+**Patterns that worked**
+
+- Distill a view catalog into one-level `references/views.md`; keep SKILL.md lean (procedure + default table + pointer).
+- Thin command: frontmatter + `Skill(skill="kk:explain-things", args="$ARGUMENTS")` only. Empty args forward unchanged so the skill owns conversation fallback.
+
+**Gotchas**
+
+- `spur task check` L4.anchor-subject-mismatch fires when one Testing cell cites several `path:line` anchors whose contents do not share the same subject tokens. One primary range (or command evidence without mixed file:line) per row.
+- A `done` task with unchecked `- [ ]` Requirements boxes is `L3.unchecked-checklist`. Flip to `[x]` in the verify `--fix` pass before wrap.
+- Unrelated in-progress skills in the same tree (`taste-unslop`) must stay unstaged; mixing them into the F9 commit would smuggle a second capability.
+
