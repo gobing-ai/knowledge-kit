@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Build podcast-pub publish plugin with offline tests"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-02T19:04:38.667Z
-updated_at: "2026-09-02T21:58:50.877Z"
+updated_at: "2026-09-02T22:17:02.422Z"
 feature_id: E6
 priority: P1
 tags: ["plugin", "publish", "microfeed"]
@@ -18,11 +18,11 @@ Feature E6 R3+R4+R5+R6+R7. New publish plugin `plugins/publishings/podcast-pub/`
 
 ### Requirements
 
-- [ ] R1. (feature R3) Publishing Content that carries episode metadata + an audio reference uploads the audio via microfeed's prepare-upload flow and creates the feed item via `/api/v1/`, ending in a `Result` with `ok: true`, `target: "podcast-pub"`, and the published item URL.
-- [ ] R2. (feature R4) Management operations `list` / `get` / `update` / `delete` / `validate` on feed items work via the corresponding `/api/v1/` endpoints and report as `Result` JSON.
-- [ ] R3. (feature R5) The test suite verifies publish + management behavior entirely offline against `@gobing-ai/publish-harness` fakes — no network to a real microfeed instance.
-- [ ] R4. (feature R6) Any API auth/transport failure yields `Result { ok: false, error }`, a stderr log, and exit code 1.
-- [ ] R5. (feature R7) Content missing required episode metadata or the audio reference is rejected before any network call: `Result { ok: false }` with a validation error, exit 1.
+- [x] R1. (feature R3) Publishing Content that carries episode metadata + an audio reference uploads the audio via microfeed's prepare-upload flow and creates the feed item via `/api/v1/`, ending in a `Result` with `ok: true`, `target: "podcast-pub"`, and the published item URL.
+- [x] R2. (feature R4) Management operations `list` / `get` / `update` / `delete` / `validate` on feed items work via the corresponding `/api/v1/` endpoints and report as `Result` JSON.
+- [x] R3. (feature R5) The test suite verifies publish + management behavior entirely offline against `@gobing-ai/publish-harness` fakes — no network to a real microfeed instance.
+- [x] R4. (feature R6) Any API auth/transport failure yields `Result { ok: false, error }`, a stderr log, and exit code 1.
+- [x] R5. (feature R7) Content missing required episode metadata or the audio reference is rejected before any network call: `Result { ok: false }` with a validation error, exit 1.
 
 **Non-goals (explicit out-of-scope):** WAV→MP3 or any transcode; kk-core schema changes; browser transport; webhook handling; cover-art upload (`image` category) beyond what the episode needs; live-instance testing (that is 0086).
 
@@ -123,11 +123,37 @@ WHERE: new dir `plugins/publishings/podcast-pub/` only; config surface `~/.confi
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+| ------------- | -------- | ---------- |
+| R1 | MET | src/index.ts:89-146 two-phase publish (draft→presign item_id→PUT→attach+publish); index.ts:99 Idempotency-Key per attempt; index.ts:155-162 Result ok/target/url; handlers.ts:805 item_id pin |
+| R2 | MET | src/index.ts:183-262 list/get/update/delete/validate routing; microfeed-client.ts:107-148 /api/v1/ endpoints; handlers.ts:740 items[0] feed shape |
+| R3 | MET | tests/podcast-pub.test.ts 24/24 offline (mocked fetch + FakeFileCliTransport); explicit fetch-not-called asserts; plugin coverage 94-100% |
+| R4 | MET | microfeed-client.ts:66-86 every 4xx/5xx/non-JSON/transport fault throws; index.ts:264 fail() Result; index.ts:339-343 stderr + exit 1 |
+| R5 | MET | map.ts:60-85 title/audio-ref/duration validation pre-network; index.ts:91-95; zero-fetch asserts on rejection paths |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+| --------------------- | -------- | --------------- | ---------- |
+| R3 | MET | test | tests/podcast-pub.test.ts publish two-phase (audioFile) + hosted (audioUrl) happy paths assert Result ok:true, target podcast-pub, url |
+| R4 | MET | test | tests/podcast-pub.test.ts list/get/update/delete/validate operation tests assert endpoint calls + Result JSON |
+| R5 | MET | test | tests/podcast-pub.test.ts full suite runs with mocked fetch + FakeFileCliTransport; zero network to real instance |
+| R6 | MET | test | tests/podcast-pub.test.ts 401/400/500/network-error paths assert ok:false Result, stderr, exit 1 |
+| R7 | MET | test | tests/podcast-pub.test.ts validation-rejection tests assert ok:false + exit 1 with zero fetch calls |
+
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
+<!-- spur:record-review -->
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 
@@ -140,3 +166,7 @@ WHERE: new dir `plugins/publishings/podcast-pub/` only; config surface `~/.confi
 - Depends on: nothing (offline). Depended on by: 0086 (live smoke).
 
 ### History
+
+- 2026-09-02T22:00:13.471Z todo → wip (system)
+- 2026-09-02T22:10:50.765Z wip → testing (system)
+- 2026-09-02T22:17:02.422Z testing → done (system)
