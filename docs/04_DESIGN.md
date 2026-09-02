@@ -35,6 +35,7 @@ sync: [T3]
 | [aihot-ingest.md](design/aihot-ingest.md) | Ingestion plugin for aihot.virxact.com AI news | shipped (F6) |
 | [dailynews-gen.md](design/dailynews-gen.md) | Generator plugin for daily news VoiceScript Content | shipped (F6) |
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
+| [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | planned (E6) |
 
 ## 1. CLI commands
 
