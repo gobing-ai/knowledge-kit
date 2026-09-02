@@ -4,7 +4,7 @@ name: "Build podcast-pub publish plugin with offline tests"
 status: todo
 template: feature-impl
 created_at: 2026-09-02T19:04:38.667Z
-updated_at: "2026-09-02T21:03:55.357Z"
+updated_at: "2026-09-02T21:58:50.877Z"
 feature_id: E6
 priority: P1
 tags: ["plugin", "publish", "microfeed"]
@@ -112,7 +112,14 @@ WHERE: new dir `plugins/publishings/podcast-pub/` only; config surface `~/.confi
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Commit:** `c6c5e8b feat(publishings): add podcast-pub publish plugin for microfeed (task 0085)`
+
+- `plugins/publishings/podcast-pub/plugin.json:1`, `package.json:1`, `tsconfig.json:1` — scaffold mirroring qiita-pub (kind `publish`, `@gobing-ai/podcast-pub`, same dep set, no new third-party deps).
+- `src/map.ts:51` `mapContentToEpisode` — D6 mapping: title ← `content.title` else first `#` heading; `content_html` ← body verbatim; `status` ← `metadata.status` default `published`; audio ← `metadata.audioUrl` (hosted) or `metadata.audioFile` (local); `src/map.ts:35` `resolveAudioMimeType` — `metadata.mimeType` else extension table (`.wav`→`audio/wav`); `durationSeconds` passthrough. Plugin-level validation only (title, exactly one audio ref, finite nonneg duration) — throws before any network (R5).
+- `src/microfeed-client.ts:37` `MicrofeedClient` — D1 Bearer REST client pinned to `vendors/microfeed/src/server/api/handlers.ts` + `ApiSchemas.ts`: `createItem` (`src/microfeed-client.ts:91`, optional `Idempotency-Key`), get/update/delete, `GET /api/v1/feed`, `items/validate`, `prepareUpload` (`src/microfeed-client.ts:150`, presigned_urls), `uploadBytes` (`src/microfeed-client.ts:169`, raw-bytes PUT); `resolveTimeoutMs` (`src/microfeed-client.ts:29`, default 300000, 1s floor); every 4xx/5xx/non-JSON/transport fault → thrown diagnostic (R4).
+- `src/index.ts:163` `PodcastPubTransport` (file-cli) — operation routing on `options.operation` (publish|list|get|update|delete|validate; D5); `src/index.ts:89` `publishEpisode` — D2 two-phase publish (draft `unpublished` → presign with `item_id` → PUT bytes → `PUT /items/{id}` with audio attachment + target status), `crypto.randomUUID()` Idempotency-Key per attempt (D3); `audioUrl` variant = single create with inline attachment; `src/index.ts:68` `audioAttachment` builds the RSS-enclosure shape; Result url = returned item url, falling back to `{base}/items/{id}`. CLI: `src/index.ts:288` `processPublishIO` (`--in` Content JSON with optional top-level `options` object → `--out` Result JSON), `src/index.ts:319` `main` exit 0 ok / exit 1 fail-loud with stderr (spec §2.5).
+- `packages/kk-core/tests/registry.test.ts:201`, `:512` — added `podcast-pub` to the two shipped-plugin fixture lists (same convention zenn-pub/surfdash-pub follow).
+- Verification: 24 offline tests in `tests/podcast-pub.test.ts:1` (mocked fetch + publish-harness `FakeFileCliTransport`, zero network) covering two-phase + hosted publish, all five management ops, 401/400/500/network-error paths, no-network validation rejections, CLI exit codes, runInvoke discovery; coverage ~94–100% per src file. `bun run lint` (biome + typecheck) and `bun run test` green repo-wide (494 pass / 0 fail).
 
 ### Testing
 
