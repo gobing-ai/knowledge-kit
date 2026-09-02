@@ -40,6 +40,9 @@ rules:
       # transport class is the sanctioned HTTP boundary, so `fetch` belongs here.
       - "plugins/publishings/qiita-pub/src/index.ts"
       - "plugins/publishings/emdash-pub/src/index.ts"
+      # podcast-pub's MicrofeedClient is its transport's HTTP boundary: the
+      # PublishTransport in index.ts composes it (docs/design/podcast-pub.md D1).
+      - "plugins/publishings/podcast-pub/src/microfeed-client.ts"
 
   - id: no-globalthis-fetch
     description: "Avoid globalThis.fetch(...); route HTTP through a client seam when one exists."
