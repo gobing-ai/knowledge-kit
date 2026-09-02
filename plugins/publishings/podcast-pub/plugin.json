@@ -1,0 +1,7 @@
+{
+    "name": "podcast-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for a self-hosted microfeed instance: podcast episodes via the Bearer-authenticated /api/v1/ REST API plus item management operations"
+}
