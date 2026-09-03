@@ -32,7 +32,7 @@
     ├── [done] **E3**: Surfdash publisher tested ([E3_surfdash-publisher-tested.md](./E3_surfdash-publisher-tested.md))
     ├── [done] **E4**: Multi-channel suite harvest ([E4_multi-channel-suite-harvest.md](./E4_multi-channel-suite-harvest.md))
     ├── [done] **E5**: EmDash CMS publisher ([E5_emdash-cms-publisher.md](./E5_emdash-cms-publisher.md))
-    └── [active] **E6**: microfeed podcast publisher ([E6_microfeed-podcast-publisher.md](./E6_microfeed-podcast-publisher.md))
+    └── [done] **E6**: microfeed podcast publisher ([E6_microfeed-podcast-publisher.md](./E6_microfeed-podcast-publisher.md))
 [backlog] **F**: kk plugin collection ([F_kk-plugin-collection.md](./F_kk-plugin-collection.md))
     ├── [done] **F1**: LLM-as-judge agent skills ([F1_llm-as-judge-agent-skills.md](./F1_llm-as-judge-agent-skills.md))
     ├── [done] **F2**: Topic-core authoring skill ([F2_wt-generator-harvest.md](./F2_wt-generator-harvest.md))
@@ -47,4 +47,5 @@
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
 [backlog] **I**: LLM wiki ([I_llm-wiki.md](./I_llm-wiki.md))
 [done] **J**: Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) ([J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md](./J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md))
+[active] **K**: Daily AI news end-to-end pipeline (wayfinder map) ([K_daily-ai-news-end-to-end-pipeline-wayfinder-map.md](./K_daily-ai-news-end-to-end-pipeline-wayfinder-map.md))
 <!-- END AUTO-GENERATED -->
