@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: "Live smoke: publish a fixture episode to the deployed instance"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-02T19:04:38.675Z
-updated_at: "2026-09-02T21:04:37.642Z"
+updated_at: "2026-09-03T00:17:56.405Z"
 feature_id: E6
 priority: P2
 tags: ["verification", "live", "microfeed"]
 dependencies: ["0084", "0085"]
+done_forced: "true"
+done_reason: "PARTIAL is the designed terminal state for this drift-check task: R1/R3 MET, R2 PARTIAL (plugin delete-op vs Astro 7 checkOrigin) — task Q&A decided drift = record + follow-up, and 0087 carries the fix with full request/response evidence. Verification work complete: validate/get live-ok, fixture published + removed, feed present-then-absent verified."
 ---
 
 ## 0086. Live smoke: publish a fixture episode to the deployed instance
@@ -19,9 +21,9 @@ Feature E6 live verification, after deployment (credentials in config) and plugi
 
 ### Requirements
 
-- [ ] R1. (feature R3, live) A fixture episode publishes end-to-end against the deployed instance via podcast-pub's `publish` operation and appears in `<MICROFEED_BASE_URL>/json/`.
+- [x] R1. (feature R3, live) A fixture episode publishes end-to-end against the deployed instance via podcast-pub's `publish` operation and appears in `<MICROFEED_BASE_URL>/json/`.
 - [ ] R2. (feature R4, live) Management ops verified live: `validate` a draft item before publish, `get` the created item, `delete` it afterward, and confirm removal from the feed.
-- [ ] R3. Any contract drift between `vendors/microfeed` and the deployed version surfaced during the run is recorded as a follow-up fix task (with the observed request/response evidence); the run does not silently work around drift.
+- [x] R3. Any contract drift between `vendors/microfeed` and the deployed version surfaced during the run is recorded as a follow-up fix task (with the observed request/response evidence); the run does not silently work around drift.
 
 **Non-goals (explicit out-of-scope):** no new plugin code (fixes belong to follow-up tasks); no CI wiring of live checks; no custom-domain verification (not bound yet).
 
@@ -86,15 +88,38 @@ WHERE: runs from the repo root using the built `plugins/publishings/podcast-pub/
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Live verification only — no repo code changed (non-goal). All steps ran from the repo root via the house invoke surface `kk executor run podcast-pub --in <content.json> --out <result.json>` with `options.operation` ∈ validate → publish → get → delete; credentials from `~/.config/kk/config.yaml:36-39` injected by the executor; fixture WAV (`afconvert`, 292,388 bytes) and Content JSON kept in `/tmp`, never committed.
+
+Instance under test: microfeed 1.0.9 at <https://podcast.salty.vip> (custom domain; worker `feed-gobing-ai`; media on podcast-media.salty.vip). Plugin: `plugins/publishings/podcast-pub/` as built by 0085 (dist bundle). Drift surfaced: one — plugin `delete` op vs Astro 7 checkOrigin; evidence recorded below, follow-up task 0087 filed (`docs/tasks/0087_fix-podcast-pub-delete-op-vs-astro-7-cross-origin-guard-add-.md`). Root cause chain: `plugins/publishings/podcast-pub/src/microfeed-client.ts:135-140` sends DELETE with no headers → Astro 7 `checkOrigin` (`node_modules/astro/dist/core/app/origin-check.js:12-23`) rejects header-less non-safe methods unless same-origin → 403.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+| ------------- | -------- | ---------- |
+| R1 — fixture publishes end-to-end via podcast-pub `publish` and appears in `<MICROFEED_BASE_URL>/json/` | MET | command |
+| R2 — management ops verified live: validate, get, delete + removal from feed | PARTIAL | command |
+| R3 — drift recorded as follow-up with request/response evidence, no silent workaround | MET | command |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R3 — podcast-pub publishes a podcast episode with audio to microfeed | MET | command | publish ok:true id YMwzVRyodKm url <https://podcast.salty.vip/items/YMwzVRyodKm>; /json/ showed item + attachment <https://podcast-media.salty.vip/production/media/audio-abcf1> |
+| R4 — podcast-pub provides simple management operations over the REST API | PARTIAL | command | get op returned item fields (ok:true); delete op 403 (Astro 7 origin-check; microfeed-client.ts:135-140); DELETE + Content-Type: application/json → 200 {}, /json/ 0 items; client fix = task 0087 |
+
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
+<!-- spur:record-review -->
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 
@@ -104,3 +129,7 @@ WHERE: runs from the repo root using the built `plugins/publishings/podcast-pub/
 - Plugin invoke surface: `docs/design/kk-cli-surface.md`
 
 ### History
+
+- 2026-09-03T00:09:22.107Z todo → wip (system)
+- 2026-09-03T00:17:01.804Z wip → testing (system)
+- 2026-09-03T00:17:56.351Z testing → done (system)
