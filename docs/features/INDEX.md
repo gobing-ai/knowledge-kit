@@ -40,6 +40,7 @@
     ├── [done] **F4**: IT-content workflow and product YAML home ([F4_it-content-workflow-and-product-yaml-home.md](./F4_it-content-workflow-and-product-yaml-home.md))
     ├── [done] **F5**: Solo-podcast workflow (voice-gen dogfood) ([F5_solo-podcast-workflow-voice-gen-dogfood.md](./F5_solo-podcast-workflow-voice-gen-dogfood.md))
     ├── [done] **F6**: Daily AI news workflow and plugins ([F6_daily-ai-news-workflow-and-plugins.md](./F6_daily-ai-news-workflow-and-plugins.md))
+        └── [active] **F61**: Daily AI news end-to-end pipeline (wayfinder map) ([F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md](./F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md))
     ├── [done] **F7**: Audio-authoring skill extraction (wayfinder map) ([F7_audio-authoring-skill-extraction-wayfinder-map.md](./F7_audio-authoring-skill-extraction-wayfinder-map.md))
     ├── [done] **F8**: Run-anywhere workflow and script resolution ([F8_run-anywhere-workflow-and-script-resolution.md](./F8_run-anywhere-workflow-and-script-resolution.md))
     └── [done] **F9**: Explain-things skill and tell-me command ([F9_explain-things-skill-and-tell-me-command.md](./F9_explain-things-skill-and-tell-me-command.md))
@@ -47,5 +48,4 @@
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
 [backlog] **I**: LLM wiki ([I_llm-wiki.md](./I_llm-wiki.md))
 [done] **J**: Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) ([J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md](./J_reposition-knowledge-kit-as-an-ingest-create-publish-platform-wayfinder-map.md))
-[active] **K**: Daily AI news end-to-end pipeline (wayfinder map) ([K_daily-ai-news-end-to-end-pipeline-wayfinder-map.md](./K_daily-ai-news-end-to-end-pipeline-wayfinder-map.md))
 <!-- END AUTO-GENERATED -->

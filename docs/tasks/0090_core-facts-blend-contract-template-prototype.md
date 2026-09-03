@@ -4,8 +4,8 @@ name: "Core-facts blend contract + template prototype"
 status: todo
 template: feature-impl
 created_at: 2026-09-03T04:21:27.498Z
-updated_at: "2026-09-03T04:24:45.034Z"
-feature_id: K
+updated_at: "2026-09-03T04:32:19.576Z"
+feature_id: F61
 dependencies: ["0088", "0089"]
 ---
 

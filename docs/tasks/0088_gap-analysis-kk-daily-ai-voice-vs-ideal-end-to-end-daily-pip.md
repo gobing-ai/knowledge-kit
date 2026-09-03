@@ -4,19 +4,19 @@ name: "Gap analysis: kk-daily-ai-voice vs ideal end-to-end daily pipeline"
 status: todo
 template: feature-impl
 created_at: 2026-09-03T04:21:27.164Z
-updated_at: "2026-09-03T04:24:44.659Z"
-feature_id: K
+updated_at: "2026-09-03T04:33:22.061Z"
+feature_id: F61
 ---
 
 ## 0088. Gap analysis: kk-daily-ai-voice vs ideal end-to-end daily pipeline
 
 ### Background
 
-**Type:** `wayfinder:research` — resolve with evidence reading, no production code. Map: feature K.
+**Type:** `wayfinder:research` — resolve with evidence reading, no production code. Map: feature F61.
 
-**Sharp question:** what exactly must change in `plugins/kk/workflows/kk-daily-ai-voice.yaml` (states, vars, guards) and in the plugin set to reach the operator's ideal 3-stage daily flow — collect (1.1 last30days, 1.2 Horizon) → blend facts (2.1) → article (2.2) + script (2.3) + cover (2.4) + voice (2.5) → publish (3.1 podcast w/ show notes, 3.2 surfdash + article platforms)?
+**Sharp question:** what exactly must change in `plugins/kk/workflows/kk-daily-ai-voice.yaml` (states, vars, guards) and in the plugin set to reach the operator's ideal 3-stage daily flow — collect (1.1 last30days, 1.2 Horizon) → blend facts (2.1) → article (2.2) + script (2.3) + cover (2.4) + voice (2.5) → publish (3.1 podcast w/ show notes, 3.2 surfdash (sole article platform for v1))?
 
-**Evidence:** the workflow YAML; plugin manifests under `plugins/{ingestions,generations,publishings}/`; `docs/design/kk-daily-ai-voice.md`; `docs/design/fan-in-and-fan-out-specification.md`; feature K Notes (existing-pieces recon).
+**Evidence:** the workflow YAML; plugin manifests under `plugins/{ingestions,generations,publishings}/`; `docs/design/kk-daily-ai-voice.md`; `docs/design/fan-in-and-fan-out-specification.md`; feature F61 Notes (existing-pieces recon).
 
 **Deliverable:** gap list + extension plan in `## Solution` — per ideal step a disposition (exists / extend / missing) and a recommended home for each missing capability.
 

@@ -4,8 +4,8 @@ name: "Wrap last30days + Horizon as Doc[] ingestion sources"
 status: todo
 template: feature-impl
 created_at: 2026-09-03T04:21:27.333Z
-updated_at: "2026-09-03T04:24:44.859Z"
-feature_id: K
+updated_at: "2026-09-03T04:32:19.576Z"
+feature_id: F61
 ---
 
 ## 0089. Wrap last30days + Horizon as Doc[] ingestion sources
