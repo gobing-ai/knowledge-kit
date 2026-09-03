@@ -63,7 +63,7 @@ export class MicrofeedClient {
             });
         } catch (error: unknown) {
             const reason = error instanceof Error ? error.message : String(error);
-            throw new Error(`microfeed transport error (POST/GET ${path}): ${reason}`);
+            throw new Error(`microfeed transport error (${init.method ?? 'GET'} ${path}): ${reason}`);
         }
 
         if (!response.ok) {
@@ -131,10 +131,15 @@ export class MicrofeedClient {
         })) as MicrofeedItem;
     }
 
-    /** `DELETE /api/v1/items/{itemId}` → `{}` (404s surface as thrown diagnostics). */
+    /**
+     * `DELETE /api/v1/items/{itemId}` → `{}` (404s surface as thrown diagnostics).
+     * Sends a JSON Content-Type: Astro 7 checkOrigin 403s non-safe methods without
+     * one when no Origin header is present (task 0087).
+     */
     public async deleteItem(itemId: string): Promise<void> {
         await this.request(`/api/v1/items/${encodeURIComponent(itemId)}`, {
             method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
         });
     }
 

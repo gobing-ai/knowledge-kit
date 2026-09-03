@@ -378,7 +378,7 @@ describe('podcast-pub management operations (R2/R3)', () => {
         });
     });
 
-    test('delete DELETEs the item and reports success', async () => {
+    test('delete DELETEs the item with a JSON Content-Type (Astro 7 checkOrigin) and reports success', async () => {
         await withEnv({ ...VALID_ENV }, async () => {
             const api = installFakeApi([
                 {
@@ -394,6 +394,7 @@ describe('podcast-pub management operations (R2/R3)', () => {
                 expect(result.ok).toBe(true);
                 expect(result.message).toContain('Deleted');
                 expect(api.requests[0]?.method).toBe('DELETE');
+                expect(api.requests[0]?.headers.get('Content-Type')).toBe('application/json');
             } finally {
                 api.restore();
             }
