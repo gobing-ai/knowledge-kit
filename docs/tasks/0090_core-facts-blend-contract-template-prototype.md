@@ -4,7 +4,7 @@ name: "Core-facts blend contract + template prototype"
 status: done
 template: feature-impl
 created_at: 2026-09-03T04:21:27.498Z
-updated_at: "2026-09-03T06:03:14.245Z"
+updated_at: "2026-09-03T06:57:51.666Z"
 feature_id: F61
 dependencies: ["0088", "0089"]
 ---
@@ -28,9 +28,8 @@ dependencies: ["0088", "0089"]
 Non-goals: no production plugin or kk-core schema change; no article/script/cover template design (downstream); no scheduling.
 
 ### Acceptance Criteria
-
-- [ ] Template + rough blend exist, run, and are committed or attached as task artifacts.
-- [ ] Contract recorded in `## Solution` with the fan-in mechanism decision.
+- [x] Template + rough blend exist, run, and are committed or attached as task artifacts.
+- [x] Contract recorded in `## Solution` with the fan-in mechanism decision.
 
 ### Q&A
 
@@ -59,18 +58,16 @@ Non-goals: no production plugin or kk-core schema change; no article/script/cove
 **Handoff:** implement tasks graduated from this ticket consume the template + mechanism decision verbatim from Solution.
 
 ### Plan
-
-- [ ] 1. Claim after 0088 + 0089 are done; read their Solutions first. (deps)
-- [ ] 2. Draft the facts template (sections, dedup rule, attribution). (R1)
-- [ ] 3. Pick the blend mechanism per the fan-in/fan-out spec + 0088's recommendation. (R2)
-- [ ] 4. Build the rough blend in `.spur/run/f61-blend/`; run it on ≥2 source inputs. (R2)
-- [ ] 5. Walk the four downstream consumers against the facts file; note anything unrenderable. (R3)
-- [ ] 6. Write `## Solution` (template + mechanism decision); graduate cleared fog on map F61. (R1–R3)
+- [x] 1. Claim after 0088 + 0089 are done; read their Solutions first. (deps)
+- [x] 2. Draft the facts template (sections, dedup rule, attribution). (R1)
+- [x] 3. Pick the blend mechanism per the fan-in/fan-out spec + 0088's recommendation. (R2)
+- [x] 4. Build the rough blend in `.spur/run/f61-blend/`; run it on ≥2 source inputs. (R2)
+- [x] 5. Walk the four downstream consumers against the facts file; note anything unrenderable. (R3)
+- [x] 6. Write `## Solution` (template + mechanism decision); graduate cleared fog on map F61. (R1–R3)
 
 Verification intent: `spur task check 0090` clean; prototype runs and its output demonstrates R2; R3 walk notes are in Solution.
 
 ### Solution
-
 **Type:** `wayfinder:prototype` — rough/cheap prototype of the F61 blend-facts **contract + template**. No production plugin, no `kk-core` schema change, no LLM-call wiring.
 
 **Deliverable 1 — facts template (committed, non-corpus).** `docs/design/core-facts-template.md`. Defines frontmatter (`date`, `sources` roster, `dedup_rule`, `doc_count`), a `## Headlines` section with per-item source attribution (`Source`/`URI`/`ID`, `Date`/`Score`, body), and the dedup rule. Placeholder syntax follows the repo `{{...}}` double-brace convention. Template block:
@@ -100,7 +97,7 @@ doc_count: {{doc_count}}
 
 **Deliverable 2 — blend-mechanism decision (R2).** Per `docs/design/fan-in-and-fan-out-specification.md` (§1.1, shipped under B6/0042) and 0088's blend-home recommendation (merge = kk subcommand, render = generator):
 
-- **Merge (N `Doc[]` → 1 `Doc[]`): `kk executor fan-in`** — a kk subcommand, never a workflow-engine state. Repeatable `--in`, dedupe by `Doc.id`, first-seen wins, later identical `id` merges provenance into `metadata.sources` (`apps/cli/src/fanin.ts:29-46`; CLI `apps/cli/src/commands/executor.ts:86-89`).
+- **Merge (N `Doc[]` → 1 `Doc[]`): `kk executor fan-in`** — a kk subcommand, never a workflow-engine state. Repeatable `--in`, dedupe by `Doc.id`, first-seen wins, later identical `id` merges provenance into `metadata.sources` (`apps/cli/src/fanin.ts:43-47`; CLI `apps/cli/src/commands/executor.ts:127`).
 - **Render (merged `Doc[]` → `2-facts/core-facts.md`): a `generator`** (kind `generation`) mapping the merged `Doc[]` into a single dated core-facts markdown `Content` (`body` = facts markdown). Prototype renders mechanically — **no LLM** (LLM blending is a later implement decision). Contract + template = the committed doc above.
 - The `blend-facts` workflow state wraps only these two kk steps.
 
@@ -123,7 +120,7 @@ Output: `merged 3 input(s) -> 6 docs (id dedupe, first-seen wins)`; `rendered fa
 
 **Design note.** The four consumers read the merged `Doc[]`, never the markdown `2-facts/core-facts.md`. A consumer that parsed the markdown facts file directly (vs the `Doc[]`) would couple to the render, not the contract; the markdown render is the audit/human-facing form.
 
-**Residual risk / notes.** (1) Source-namespace dedupe ceiling: `aihot:` / `last30days:` / `horizon:` ids are disjoint, so the same real-world story reported by two sources is **not** deduped by the `id` rule — cross-source same-story dedupe needs a later content-based or normalized-URI rule. (2) Cover (2.4) is the only consumer that cannot render today. (3) No production plugin code; no `kk-core` schema change; no article/script/cover template design; no scheduling; no workflow YAML edit. Prototype is gitignored scratch and is not committed; only the template doc is committed.
+**Residual risk / notes.** (1) Source-namespace dedupe ceiling: `aihot:` / `last30days:` / `horizon:` ids are disjoint, so the same real-world story reported by two sources is **not** deduped by the `id` rule — cross-source same-story dedupe needs a later content-based or normalized-URI rule. (2) Cover (2.4) is the only consumer that cannot render today. (3) No production plugin code; no `kk-core` schema change; no article/script/cover template design; no scheduling; no workflow YAML edit. Prototype is gitignored scratch and is not committed; only the template doc is committed. (4) `{{item_score}}` renders `metadata.score ?? metadata.relevance_score`, empty when the source carries neither (aihot) — per-source score normalization is implement-task scope. (5) Headline blocks are blank-line separated in the render. (6) Prototype scratch `.spur/run/f61-blend/` was rebuilt 2026-09-03 (verifyall fix pass) after scratch loss; output re-verified: 3 inputs -> 6 docs, cross-input dedupe fired on `shared:meta-llama-release-1` with provenance from docs.json + horizon.json.
 
 ### Testing
 **Pipeline verify results**
@@ -132,14 +129,14 @@ Output: `merged 3 input(s) -> 6 docs (id dedupe, first-seen wins)`; `rendered fa
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `docs/design/core-facts-template.md` committed (`git ls-files` → returned path). Frontmatter (`date`/`sources` roster/`dedup_rule`/`doc_count`), `## Headlines` with per-item Source/URI/ID/Date/Score attribution, dedup rule `dedup_rule: id`, `{{...}}` placeholder convention. |
-| R2 | MET | Blend mechanism = `kk executor fan-in` (merge) + generator (render), per `docs/design/fan-in-and-fan-out-specification.md` §1.1 and 0088 blend-home, recorded in `## Solution` (Deliverable 2). Blend really ran on 3 inputs (≥2 required): `node blend.mjs --in docs.json --in last30days.json --in horizon.json` → `1-ingest/blended.json` (6 docs) + `2-facts/core-facts.md` (6 headlines, `doc_count: 6`, date 2026-09-03). Cross-input id dedupe fired on `shared:meta-llama-release-1` — emitted once with `metadata.sources` = [`1-ingest/docs.json`, `1-ingest/horizon.json`] (provenance merge). |
-| R3 | MET | Verification walk completed per the task's "note anything unrenderable" contract (Design). Article (`content-gen`) and script (`dailynews-gen`) render from the facts `Doc[]` (`1-ingest/blended.json`); voice (`voice-gen`) transitively renderable (consumes the step-2.3 VoiceScript Doc); cover (`cover-gen`) is UNRENDERABLE today — no `cover-gen` generator exists (`plugins/generations/` = content-gen, dailynews-gen, voice-gen) and no cover style/branding template (F61 map fog) — recorded as the intended surfaced gap. R3's deliverable (verify + note) is complete; the cover gap is a downstream/map-fog finding, not a defect in this task's deliverable. |
+| R1 | MET | `docs/design/core-facts-template.md` — committed template (frontmatter date/sources/dedup_rule/doc_count at `docs/design/core-facts-template.md:42-48`, `## Headlines` per-item Source/URI/ID/Date/Score attribution at `docs/design/core-facts-template.md:55-61`, dedup rule §2 at `docs/design/core-facts-template.md:22-31`); re-read this run |
+| R2 | MET | Mechanism = `kk executor fan-in` merge + generator render per `docs/design/fan-in-and-fan-out-specification.md:50` and 0088 blend-home; demonstrated on 3 inputs (≥2) this run: `cd .spur/run/f61-blend && node blend.mjs --in 1-ingest/docs.json --in 1-ingest/last30days.json --in 1-ingest/horizon.json --out 1-ingest/blended.json --render 2-facts/core-facts.md --date 2026-09-03` → `merged 3 input(s) -> 6 docs (id dedupe, first-seen wins)` + `rendered facts -> 2-facts/core-facts.md (6 headlines, date 2026-09-03)`; cross-input dedupe fired: `shared:meta-llama-release-1` emitted once, first-seen body kept, `metadata.sources` = [docs.json, horizon.json]; semantics match `apps/cli/src/fanin.ts:43-47` (re-read this run) |
+| R3 | MET | Consumer walk in `docs/tasks/0090_core-facts-blend-contract-template-prototype.md` Solution (Deliverable 3): article `content-gen` renderable (generator input DocListSchema, `packages/kk-core/src/kinds.ts:60` re-read); script `dailynews-gen` renderable (uses `title`/`body`/`sourceUri`, `plugins/generations/dailynews-gen/src/index.ts:38-51` re-read); voice `voice-gen` transitively renderable via wrapped VoiceScript Doc (`docs/design/kk-daily-ai-voice.md:36` re-read); cover 2.4 noted UNRENDERABLE (no `cover-gen` exists — F61 map fog) per the task's "note anything unrenderable" contract |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Template + rough blend exist, run, and are committed or attached as task artifacts. | MET | command | `git ls-files docs/design/core-facts-template.md` → committed (path returned). `ls -la .spur/run/f61-blend/1-ingest/blended.json .spur/run/f61-blend/2-facts/core-facts.md` → both present (3970B / 2297B, ran 2026-09-02 22:53). `node -e "..."` on blended.json → 6 docs; core-facts.md → 6 headlines, `doc_count: 6`. Scratch is gitignored but attached as task artifact; template contract committed. |
-| Contract recorded in `## Solution` with the fan-in mechanism decision. | MET | command | `grep -n "kk executor fan-in\|Merge (N \`Doc[]\`" docs/tasks/0090_core-facts-blend-contract-template-prototype.md` → `## Solution` Deliverable 2 (lines 101-104) records the mechanism decision: merge = `kk executor fan-in` (id dedupe, first-seen wins, provenance → `metadata.sources`), render = generator (mechanical, no LLM). |
+| Template + rough blend exist, run, and are committed or attached as task artifacts. | MET | command | `git ls-files docs/design/core-facts-template.md` → path returned (committed); blend rebuilt and re-run this turn: `node blend.mjs ...` → exit 0, `merged 3 input(s) -> 6 docs`; artifacts present: blend.mjs (3400B), blended.json (3477B), core-facts.md (1912B) via `ls -la` |
+| Contract recorded in `## Solution` with the fan-in mechanism decision. | MET | command | `grep -c 'Merge (N \`Doc[]\`' docs/tasks/0090_core-facts-blend-contract-template-prototype.md` → 1 (run this turn): Solution Deliverable 2 records merge = `kk executor fan-in` (id dedupe, first-seen wins, provenance → metadata.sources), render = generator (mechanical, no LLM) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 

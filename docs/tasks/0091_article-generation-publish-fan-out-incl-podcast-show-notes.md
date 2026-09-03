@@ -4,7 +4,7 @@ name: "Article generation + publish fan-out incl. podcast show notes"
 status: done
 template: feature-impl
 created_at: 2026-09-03T04:21:27.667Z
-updated_at: "2026-09-03T05:49:04.091Z"
+updated_at: "2026-09-03T07:02:03.305Z"
 feature_id: F61
 dependencies: ["0088"]
 ---
@@ -56,29 +56,27 @@ dependencies: ["0088"]
 **Handoff:** implement tasks graduated after this ticket consume the three answers verbatim.
 
 ### Plan
-
-- [ ] 1. Claim after 0088 is done; read its Solution dispositions first. (dep)
-- [ ] 2. Read content-gen surface; decide extend-vs-new with rationale. (R1)
-- [ ] 3. Read podcast-pub transport + microfeed item ops; verify show-notes/description support; name the gap if missing. (R2)
-- [ ] 4. Read surfdash-pub + publish spec; recommend the fan-out shape for the two v1 targets. (R3)
-- [ ] 5. Write `## Solution` per the deliverable contract. (R1–R3)
+- [x] 1. Claim after 0088 is done; read its Solution dispositions first. (dep)
+- [x] 2. Read content-gen surface; decide extend-vs-new with rationale. (R1)
+- [x] 3. Read podcast-pub transport + microfeed item ops; verify show-notes/description support; name the gap if missing. (R2)
+- [x] 4. Read surfdash-pub + publish spec; recommend the fan-out shape for the two v1 targets. (R3)
+- [x] 5. Write `## Solution` per the deliverable contract. (R1–R3)
 
 Verification intent: `spur task check 0091` clean; reviewer confirms all three contracted subsections exist with file-level evidence.
 
 ### Solution
-
 #### Article generator home
 
 **Decision: extend the existing `content-gen` generator. Do NOT create a new `article-gen` plugin.**
 
 Evidence (extends 0088, does not re-own it):
 
-- 0088 disposition row **2.2 article = `extend`**: "`content-gen` generator plugin exists … but `kk-daily-ai-voice.yaml` never invokes it" (`docs/tasks/0088_gap-analysis-…-pip.md` disposition table). 0088's article home recommendation is `content-gen`, wired as a new `article` state. Task 0091 inherits that; no conflict.
-- `content-gen` owns the generator-plugin contract end-to-end: manifest `kind: generator`, `entry ./src/index.ts` (`plugins/generations/content-gen/plugin.json:2`), description = "owned STORM pipeline (curation, outline, article, polish) … `Doc[]` → `Content`". `processGeneratorIO` (`plugins/generations/content-gen/src/index.ts:29`) parses `DocListSchema`, runs `generateWithStormPipeline`, writes validated `ContentSchema` to `--out`.
+- 0088 disposition row **2.2 article = `extend`**: "`content-gen` generator plugin exists … but `kk-daily-ai-voice.yaml` never invokes it" (`docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md` disposition table). 0088's article home recommendation is `content-gen`, wired as a new `article` state. Task 0091 inherits that; no conflict.
+- `content-gen` owns the generator-plugin contract end-to-end: manifest `kind: generator`, `entry ./src/index.ts` (`plugins/generations/content-gen/plugin.json:2`), description = "owned STORM pipeline (curation, outline, article, polish) … `Doc[]` → `Content`". `processGeneratorIO` (`plugins/generations/content-gen/src/index.ts:17`) parses `DocListSchema`, runs `generateWithStormPipeline`, writes validated `ContentSchema` to `--out`.
 - The STORM pipeline already produces the grounded article: `generateWithStormPipeline` (`plugins/generations/content-gen/src/storm.ts`) runs curation → outline → article → polish through an injected `spur agent run` stage runner, with allowed-doc-id enforcement (`assertKnownEvidence`), citation-preservation check (polish), and maps to `Content` with `body` (markdown), `format: 'markdown'`, `outline`, `references` (from doc `sourceUri`), and provenance `metadata = { generator: 'kk:storm', stageCount: 4, docIds }`.
 - A new `article-gen` would duplicate the grounding, citation validation, and provenance machinery for zero gain.
 
-**Template approach (named, not authored).** `content-gen` is agent-driven synthesis (STORM), not a string-template renderer — there is currently no template parameter (`processGeneratorIO` takes only `--in`/`--out`, `plugins/generations/content-gen/src/index.ts:33-38`). The map's standing preference "article + script are template-based so generation is fine-tunable" (`docs/features/F61_….md` Notes → Standing preferences) is satisfied as an **additive, loadable template input to `content-gen`** — a template handle passed on the invoke payload (e.g. `metadata.template` or a `--template` flag read by the article/polish stage) that shapes the article skeleton (heading order + section framing + frontmatter) into which the STORM-authored sections are rendered. Template authoring stays downstream (task anti-pattern; payload/surface belongs under `docs/04_DESIGN.md` T3 when implemented). Precedent exists in the pipeline: `script`/`voice` flow reads template-driven inputs, and the same fine-tunable intent applies here — but the home is `content-gen`, never a second generator.
+**Template approach (named, not authored).** `content-gen` is agent-driven synthesis (STORM), not a string-template renderer — there is currently no template parameter (`processGeneratorIO` takes only `--in`/`--out`, `plugins/generations/content-gen/src/index.ts:30-35`). The map's standing preference "article + script are template-based so generation is fine-tunable" (`docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md` Notes → Standing preferences) is satisfied as an **additive, loadable template input to `content-gen`** — a template handle passed on the invoke payload (resolve toward a `--template` flag read by the article/polish stage: content-gen's input model is `--in`/`--out` only, so a `metadata.template` payload channel does not exist today) that shapes the article skeleton (heading order + section framing + frontmatter) into which the STORM-authored sections are rendered. Template authoring stays downstream (task anti-pattern; payload/surface belongs under `docs/04_DESIGN.md` T3 when implemented). Precedent exists in the pipeline: `script`/`voice` flow reads template-driven inputs, and the same fine-tunable intent applies here — but the home is `content-gen`, never a second generator.
 
 **Consequence for the publish half:** the consumer of this answer treats the article as `content-gen`'s `Content` (`format: markdown`, `body`) and feeds it to the fan-out described below.
 
@@ -89,14 +87,14 @@ Evidence (extends 0088, does not re-own it):
 Evidence:
 
 - `plugins/publishings/podcast-pub/src/map.ts` — `mapContentToEpisode` returns `contentHtml: content.body`; the `EpisodeMapping` interface comment names it "Episode show notes: `content.body` verbatim (microfeed sanitizes server-side)". So the article body → microfeed item body field `content_html` is already mapped.
-- `plugins/publishings/podcast-pub/src/index.ts:106,121,137` pass `content_html: episode.contentHtml` on every `createItem`/`updateItem` call (both the hosted-audio single-call path and the two-phase upload path).
+- `plugins/publishings/podcast-pub/src/index.ts:105,124,144` pass `content_html: episode.contentHtml` on every `createItem`/`updateItem` call (both the hosted-audio single-call path and the two-phase upload path).
 - Target platform supports show notes: microfeed `apiItemInputSchema` = `{ title, content_html, status, attachments }` (`docs/design/podcast-pub.md` §3 Create item `POST /api/v1/items`; decision D6 "`body` (markdown) → `content_html`"). In microfeed, `content_html` is the item body/description → the RSS enclosure description / episode show notes, with `attachments[0]` (`category: 'audio'`) the enclosure (RSS / JSON Feed).
 
 **Gap (named) — wiring/config, four seams, none a capability gap:**
 
-1. No workflow state invokes `podcast-pub`. The workflow currently ends `quality-control → done` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:86-94`, transition `:154-155`); there is no publish state.
-2. The article `Content` alone carries no audio reference. `mapContentToEpisode` throws "audio reference is required" unless `metadata.audioUrl` or `metadata.audioFile` is present (`plugins/publishings/podcast-pub/src/map.ts:60-66`); `content-gen` emits `format: 'markdown'` `Content` with no audio metadata.
-3. Field-name seam in the audio handoff: the audio producer `voice-gen` emits `metadata.audioPath` / `metadata.mp3Path` (`plugins/generations/voice-gen/src/index.ts:203-223`), while `podcast-pub` reads `metadata.audioFile` / `metadata.audioUrl` (`plugins/publishings/podcast-pub/src/map.ts:55-58`). The publish wiring must map voice-gen's local `mp3Path` → podcast-pub's `audioFile` (plus `metadata.durationSeconds`).
+1. No workflow state invokes `podcast-pub`. The workflow currently ends `quality-control → done` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:154-155`); there is no publish state.
+2. The article `Content` alone carries no audio reference. `mapContentToEpisode` throws "audio reference is required" unless `metadata.audioUrl` or `metadata.audioFile` is present (`plugins/publishings/podcast-pub/src/map.ts:63-70`); `content-gen` emits `format: 'markdown'` `Content` with no audio metadata.
+3. Field-name seam in the audio handoff: the audio producer `voice-gen` emits `metadata.audioPath` / `metadata.mp3Path` (`plugins/generations/voice-gen/src/index.ts:203-223`), while `podcast-pub` reads `metadata.audioFile` / `metadata.audioUrl` (`plugins/publishings/podcast-pub/src/map.ts:63-64`). The publish wiring must map voice-gen's local `mp3Path` → podcast-pub's `audioFile` (plus `metadata.durationSeconds`).
 4. microfeed config must be present: `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` (`docs/design/podcast-pub.md` §5 D4); optional `MICROFEED_TIMEOUT_MS`/`KNOWLEDGE_KIT_PUBLISH_TRANSPORT`.
 
 **Residual-risk caveat (verify step, not a blocker).** `podcast-pub` passes `content.body` (markdown) verbatim as `content_html`; the field is named `_html` and the plugin comment says "microfeed sanitizes server-side." Whether microfeed renders markdown → HTML (or expects HTML) is not independently verified within the frozen read set (`vendors/microfeed` source is absent). If microfeed expects HTML, the publish wiring may need a markdown→HTML transform before feed — flag as a deploy-time smoke check, not a capability gap.
@@ -136,13 +134,13 @@ Partial success → exit `1` → fail-loud signals an incomplete pipeline state 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `## Solution → Article generator home` (task doc:70) decides extend `content-gen`, no new `article-gen`; template approach named (additive loadable template input, not authored). Fresh reads: `plugins/generations/content-gen/plugin.json:3-4` `"kind":"generator"` + `"entry":"./src/index.ts"`; `generateWithStormPipeline` (`storm.ts:319`) runs curation→outline→article→polish and maps to `Content` `format:'markdown'`/`outline`/`references`/`metadata {generator:'kk:storm',stageCount:4,docIds}` (`storm.ts:257-273`); no `--template` today — `processGeneratorIO` (`content-gen/src/index.ts:17`) and `main` (`index.ts:38-44`) take only `--in`/`--out`. |
-| R2 | MET | `## Solution → Podcast show-notes capability` (task doc:85) states capability WIRED, gap is wiring/config not capability. Fresh reads: `mapContentToEpisode` returns `contentHtml: content.body` (`podcast-pub/src/map.ts:86`), `EpisodeMapping` comment names it "Episode show notes" (`map.ts:7`); `content_html: episode.contentHtml` passed on every create/update (`podcast-pub/src/index.ts:105,124,144`); audio-reference throw at `map.ts:70` (needs `metadata.audioUrl`/`audioFile`); four wiring gaps named (no publish state, no audio ref on article `Content`, field-name seam voice-gen `audioPath`/`mp3Path` vs podcast-pub `audioFile`/`audioUrl`, `MICROFEED_*` config). |
-| R3 | MET | `## Solution → Fan-out shape (v1: podcast-pub + surfdash-pub)` (task doc:104) recommends ONE `kk executor fan-out` subcommand (single workflow `publish` state), NOT N sequential per-target states. Fresh reads: `executor.ts:135-158` `.command('fan-out')` with repeatable `--target` + `--retry-from`; spec §§1.1/3.1/4/5 confirm repeatable `--target`, `AggregateResult` (published/failed/skipped), exit codes 0/1/1, `--retry-from` resumes only failed/un-attempted. Note on how more `*-pub` slot in (add repeatable `--target`, no state/engine change). |
+| R1 | MET | `docs/tasks/0091_article-generation-publish-fan-out-incl-podcast-show-notes.md:68-82` — Article generator home: extend `content-gen`, no new `article-gen`; template approach named (additive `--template` flag; metadata-channel variant rejected as nonexistent input surface). Re-read this run: `plugins/generations/content-gen/plugin.json:3-4` (kind generator, entry ./src/index.ts), `plugins/generations/content-gen/src/index.ts:17` (`processGeneratorIO`), `plugins/generations/content-gen/src/storm.ts:319` (`generateWithStormPipeline`), `plugins/generations/content-gen/src/storm.ts:336` (`generator: 'kk:storm'` provenance) |
+| R2 | MET | `docs/tasks/0091_article-generation-publish-fan-out-incl-podcast-show-notes.md:83-100` — show-notes capability WIRED, gap is wiring/config (4 seams named). Re-read this run: `plugins/publishings/podcast-pub/src/map.ts:86` (`contentHtml: content.body`), `plugins/publishings/podcast-pub/src/map.ts:7` (show-notes comment), `plugins/publishings/podcast-pub/src/index.ts:105,124,144` (`content_html` on every create/update), `plugins/publishings/podcast-pub/src/map.ts:63-70` (audio-reference guard), `plugins/generations/voice-gen/src/index.ts:205` + `plugins/generations/voice-gen/src/index.ts:221` (audioPath/mp3Path emission — field-name seam confirmed real), `docs/design/podcast-pub.md` (content_html ×2) |
+| R3 | MET | `docs/tasks/0091_article-generation-publish-fan-out-incl-podcast-show-notes.md:102-118` — ONE `kk executor fan-out` publish state with repeatable `--target`, sequential states rejected with rationale, extra `*-pub` slot-in note. Re-read this run: `apps/cli/src/commands/executor.ts:135` (`.command('fan-out')`, repeatable `--target`, `--retry-from`), `docs/design/fan-in-and-fan-out-specification.md:51` (fan-out CLI), spec §3.1 AggregateResult / §4 exit codes / §5 retry-from |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1–R3 answered with file-level evidence in `## Solution`. | MET | command | `grep -n "^#### " docs/tasks/0091_article-generation-publish-fan-out-incl-podcast-show-notes.md` → three contracted subsections present: line 70 `Article generator home`, line 85 `Podcast show-notes capability`, line 104 `Fan-out shape (v1: podcast-pub + surfdash-pub)`; `grep -n "^- \[ \] R[123]" <task>` → R1:24, R2:25, R3:26 all answered; `spur task check 0091` → `PASS`; `git status --porcelain` → only `docs/tasks/0091_…md` modified + `docs/design/article-publish-fanout-brief.md` untracked (no production code). |
+| R1–R3 answered with file-level evidence in `## Solution`. | MET | command | `grep -n '^#### ' docs/tasks/0091_article-generation-publish-fan-out-incl-podcast-show-notes.md` (run this turn) → three contracted subsections present: `:68` Article generator home, `:83` Podcast show-notes capability, `:102` Fan-out shape (v1: podcast-pub + surfdash-pub); each carries repo-relative file:line evidence re-verified above |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 

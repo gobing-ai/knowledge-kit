@@ -4,7 +4,7 @@ name: "Gap analysis: kk-daily-ai-voice vs ideal end-to-end daily pipeline"
 status: done
 template: feature-impl
 created_at: 2026-09-03T04:21:27.164Z
-updated_at: "2026-09-03T05:27:11.320Z"
+updated_at: "2026-09-03T06:39:06.217Z"
 feature_id: F61
 ---
 
@@ -29,10 +29,9 @@ feature_id: F61
 Non-goals: no code or YAML changes; no plugin scaffolds; no scheduling design (map fog); no second workflow file (decided on map F61).
 
 ### Acceptance Criteria
-
-- [ ] All 9 ideal steps carry a disposition with file-level evidence.
-- [ ] Every `missing` capability has a recommended home per R3.
-- [ ] Answer recorded in `## Solution`; no production code written.
+- [x] All 9 ideal steps carry a disposition with file-level evidence.
+- [x] Every `missing` capability has a recommended home per R3.
+- [x] Answer recorded in `## Solution`; no production code written.
 
 ### Q&A
 
@@ -59,32 +58,29 @@ Non-goals: no code or YAML changes; no plugin scaffolds; no scheduling design (m
 **Handoff:** 0090 consumes the blend-home recommendation; 0091 consumes the article-generator and publish dispositions. State both explicitly at the end of Solution.
 
 ### Plan
-
-- [ ] 1. Read the frozen read set (Design §WHERE) — workflow YAML + design doc first. (R1)
-- [ ] 2. Build the 9-row disposition table with file-level evidence per row. (R1)
-- [ ] 3. Walk all 11 plugin manifests; fill the capability map, marking gaps `missing`. (R2)
-- [ ] 4. Assign each gap a home per the fan-in/fan-out spec; draft the extension-plan sketch. (R3)
-- [ ] 5. Write `## Solution` with the three contracted subsections + handoff lines. (R1–R3)
+- [x] 1. Read the frozen read set (Design §WHERE) — workflow YAML + design doc first. (R1)
+- [x] 2. Build the 9-row disposition table with file-level evidence per row. (R1)
+- [x] 3. Walk all 11 plugin manifests; fill the capability map, marking gaps `missing`. (R2)
+- [x] 4. Assign each gap a home per the fan-in/fan-out spec; draft the extension-plan sketch. (R3)
+- [x] 5. Write `## Solution` with the three contracted subsections + handoff lines. (R1–R3)
 
 Verification intent: `spur task check 0088` clean; reviewer confirms each R has matching evidence in Solution and both handoff lines exist.
 
 ### Solution
-
-**Disposition semantics** (applied to every row): `exists` = a workflow state now invokes the backing capability (plugin/subcommand); `extend` = the backing capability exists (plugin or shipped `kk` subcommand) but no workflow state invokes it, or the wired shape must change; `missing` = no backing capability exists yet, so a new capability plus a workflow state are needed.
 
 #### Disposition table
 
 | # | Ideal step | Disposition | Evidence (file:line) |
 | --- | --- | --- | --- |
 | 1.1 | last30days ingest | **missing** | No last30days ingestion plugin. `plugins/ingestions/` holds only `aihot-ingest`, `karakeep-local`, `web-search` (`plugins/ingestions/*/plugin.json`). Workflow `fetch` runs only `kk executor run aihot-ingest` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:46`). Source is a skill, not a plugin: `~/.agents/skills/last30days` (`docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:57`). |
-| 1.2 | Horizon crawl | **missing** | No Horizon ingestion plugin in the same set; source is an external CLI `(cd ~/tools/Horizon && uv run horizon)` (`F61…map.md:57`), not wrapped as a plugin. |
-| 2.1 | blend facts | **missing** (stage) — merge subcommand exists | No blend workflow state and no core-facts contract/template in `kk-daily-ai-voice.yaml`. The merge tool ships: `kk executor fan-in` (`docs/design/fan-in-and-fan-out-specification.md:52-55`, shipped under B6/task 0042). The workflow never calls fan-in; the only fanout reference in workflows is `judge-gated-publish-example.yaml:46`. |
+| 1.2 | Horizon crawl | **missing** | No Horizon ingestion plugin in the same set; source is an external CLI `(cd ~/tools/Horizon && uv run horizon)` (`docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:57`), not wrapped as a plugin. |
+| 2.1 | blend facts | **missing** (stage) — merge subcommand exists | No blend workflow state and no core-facts contract/template in `kk-daily-ai-voice.yaml`. The merge tool ships: `kk executor fan-in` (`docs/design/fan-in-and-fan-out-specification.md:50`, shipped under B6/task 0042). The workflow never calls fan-in; the only fanout reference in workflows is `plugins/kk/workflows/judge-gated-publish-example.yaml:46`. |
 | 2.2 | article | **extend** | `content-gen` generator plugin exists (`plugins/generations/content-gen/plugin.json:2`, STORM pipeline → `Doc[]` → `Content`), but `kk-daily-ai-voice.yaml` never invokes it. |
-| 2.3 | script | **exists** | `dailynews-gen` is wired: `kk executor run dailynews-gen` (`kk-daily-ai-voice.yaml:56`); plugin `plugins/generations/dailynews-gen/plugin.json:2`. |
-| 2.4 | cover | **missing** | No `cover-gen` in `plugins/generations/` (only `content-gen`, `dailynews-gen`, `voice-gen`). Cover path is open in the map: `wt-image-cover` skill vs `cover-gen` plugin (`F61…map.md:64`). |
-| 2.5 | voice | **exists** | `voice-gen` is wired: `kk executor run voice-gen` (`kk-daily-ai-voice.yaml:84`); plugin `plugins/generations/voice-gen/plugin.json:2`. |
-| 3.1 | podcast publish w/ show notes | **extend** | `podcast-pub` publish plugin exists (`plugins/publishings/podcast-pub/plugin.json:2`), but the workflow terminates at `quality-control → done` (`kk-daily-ai-voice.yaml:86-94`) with no publish state. Show-notes content shape (article as episode notes) is not yet satisfied by `podcast-pub` (`F61…map.md:49`). |
-| 3.2 | surfdash publish | **extend** | `surfdash-pub` publish plugin exists (`plugins/publishings/surfdash-pub/plugin.json:2`) but is not wired into the workflow; surfdash is the sole article platform for v1 (`F61…map.md:49`). |
+| 2.3 | script | **exists** | `dailynews-gen` is wired: `kk executor run dailynews-gen` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:56`); plugin `plugins/generations/dailynews-gen/plugin.json:2`. |
+| 2.4 | cover | **missing** | No `cover-gen` in `plugins/generations/` (only `content-gen`, `dailynews-gen`, `voice-gen`). Cover path is open in the map: `wt-image-cover` skill vs `cover-gen` plugin (`docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:64`). |
+| 2.5 | voice | **exists** | `voice-gen` is wired: `kk executor run voice-gen` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:84`); plugin `plugins/generations/voice-gen/plugin.json:2`. |
+| 3.1 | podcast publish w/ show notes | **extend** | `podcast-pub` publish plugin exists (`plugins/publishings/podcast-pub/plugin.json:2`), but the workflow terminates at `quality-control → done` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:154-155`) with no publish state. No publish state invokes `podcast-pub`; when wired by 0091, `podcast-pub` maps the article `Content.body` verbatim to episode show notes (`plugins/publishings/podcast-pub/src/map.ts:7`; show-notes decision `docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:48`). |
+| 3.2 | surfdash publish | **extend** | `surfdash-pub` publish plugin exists (`plugins/publishings/surfdash-pub/plugin.json:2`) but is not wired into the workflow; surfdash is the sole article platform for v1 (`docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:49`). |
 
 #### Gaps + recommended homes
 
@@ -93,7 +89,7 @@ Every gap carries a home consistent with `docs/design/fan-in-and-fan-out-specifi
 - **1.1 last30days ingest** — **ingestion plugin** (new `last30days-ingest`, kind `ingestion`) + a new workflow state `kk executor run last30days-ingest`. Reason: wrap the skill output as `Doc[]`, registered through multi-root discovery (ADR-012), keeping executor-run uniform. Task 0089 wraps it. _(missing-capability home.)_
 - **1.2 Horizon crawl** — **ingestion plugin** (new `horizon-ingest`, kind `ingestion`) + a new workflow state `kk executor run horizon-ingest`. Task 0089 wraps it. _(missing-capability home.)_
 - **2.1 blend facts** — **`kk executor fan-in` (kk subcommand)** for the N-source `Doc[]` merge, invoked from a new workflow state `blend-facts`; the merged `Doc[]` → single core-facts markdown `Content` render is a **generator** whose contract + template 0090 prototypes. This is the **blend-home recommendation 0090 consumes**: merge = `fan-in` subcommand, facts render = generator (contract/template in 0090). Not an engine state — the workflow state only wraps the subcommand. _(missing-stage home; the subcommand itself already exists per the spec.)_
-- **2.4 cover image** — **generation plugin** (new `cover-gen`, kind `generation`) + a workflow state `kk executor run cover-gen`. Alternative is the `wt-image-cover` skill, but a skill is not a plugin the executor invokes, so a `cover-gen` generator keeps the pipeline plugin-uniform. Style/branding template is genuinely unspecified (`F61…map.md:64` — map fog, out of scope here). _(missing-capability home.)_
+- **2.4 cover image** — **generation plugin** (new `cover-gen`, kind `generation`) + a workflow state `kk executor run cover-gen`. Alternative is the `wt-image-cover` skill, but a skill is not a plugin the executor invokes, so a `cover-gen` generator keeps the pipeline plugin-uniform. Style/branding template is genuinely unspecified (`docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:64` — map fog, out of scope here). _(missing-capability home.)_
 
 Also homes for the two **extend** gaps (they need wiring, not new capability):
 
@@ -143,15 +139,15 @@ Proposed **transition sketch**: `prepare → ingest-last30days → ingest-horizo
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `docs/tasks/0088_gap-analysis-...daily-pip.md:75-88` — Disposition table inventories all 9 ideal steps (1.1–3.2) with per-step disposition (missing/extend/exists), backed by `plugins/kk/workflows/kk-daily-ai-voice.yaml:46,56,84,154-155` (aihot-ingest/dailynews-gen/voice-gen wired; no publish state; ends quality-control→done) |
-| R2 | MET | `docs/tasks/0088_gap-analysis-...daily-pip.md:75-88` — Disposition table maps each capability to a named plugin or `missing` (ingestions `plugins/ingestions/{aihot-ingest,karakeep-local,web-search}`; generations `plugins/generations/{content-gen,dailynews-gen,voice-gen}`; publishings `plugins/publishings/{podcast-pub,surfdash-pub}`) |
-| R3 | MET | `docs/tasks/0088_gap-analysis-...daily-pip.md:89-102` — "Gaps + recommended homes" assigns every missing cap a home (1.1/1.2 → ingestion plugin; 2.1 → `kk executor fan-in`; 2.4 → `cover-gen` generator), consistent with `docs/design/fan-in-and-fan-out-specification.md:50` (fan-in/out are kk subcommands, not engine states) |
+| R1 | MET | `docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md:72-84` — Disposition table inventories all 9 ideal steps (1.1–3.2) with per-step disposition (missing/extend/exists); anchors re-read this run: `plugins/kk/workflows/kk-daily-ai-voice.yaml:46` (aihot-ingest), `plugins/kk/workflows/kk-daily-ai-voice.yaml:56` (dailynews-gen), `plugins/kk/workflows/kk-daily-ai-voice.yaml:84` (voice-gen), `plugins/kk/workflows/kk-daily-ai-voice.yaml:154-155` (quality-control → done) |
+| R2 | MET | `docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md:76-84` — every capability mapped to a named plugin or `missing`; manifests re-verified: `plugins/generations/content-gen/plugin.json:2`, `plugins/generations/dailynews-gen/plugin.json:2`, `plugins/generations/voice-gen/plugin.json:2`, `plugins/publishings/podcast-pub/plugin.json:2`, `plugins/publishings/surfdash-pub/plugin.json:2`; `plugins/ingestions/` holds exactly aihot-ingest, karakeep-local, web-search |
+| R3 | MET | `docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md:88-97` — every missing capability has a home (1.1/1.2 → ingestion plugins; 2.1 → `kk executor fan-in` + facts-render generator; 2.4 → `cover-gen` generator), consistent with `docs/design/fan-in-and-fan-out-specification.md:50` and shipped CLI `apps/cli/src/commands/executor.ts:127` (fan-in, repeatable `--in`), `apps/cli/src/commands/executor.ts:135` (fan-out, repeatable `--target`) — all re-read this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| All 9 ideal steps carry a disposition with file-level evidence. | MET | command | `sed -n '/Disposition table/,/Gaps + recommended homes/p' docs/tasks/0088_gap-analysis-...daily-pip.md |
-| Every `missing` capability has a recommended home per R3. | MET | command | `sed -n '/Gaps + recommended homes/,/Extension plan sketch/p' docs/tasks/0088_gap-analysis-...daily-pip.md |
-| Answer recorded in `## Solution`; no production code written. | MET | command | `git status --porcelain` → only `docs/tasks/0088_gap-analysis-...daily-pip.md` (M) and `docs/design/kk-daily-ai-voice-gap-analysis.md` (??); no source/production file touched |
+| All 9 ideal steps carry a disposition with file-level evidence. | MET | command | `grep -cE '^\| [123]\.[0-9] ' docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md` → 9 (run this turn); each row carries repo-relative file:line evidence |
+| Every `missing` capability has a recommended home per R3. | MET | command | `grep -c 'missing-capability home\|missing-stage home' docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md` → 4 (1.1, 1.2, 2.1, 2.4), each with a plugin/subcommand home (run this turn) |
+| Answer recorded in `## Solution`; no production code written. | MET | command | `git diff --name-only d7a4d2dd~1..d7a4d2dd` → docs/ + .spur/memory only, 0 source files (run this turn); Solution spans `docs/tasks/0088_gap-analysis-kk-daily-ai-voice-vs-ideal-end-to-end-daily-pip.md:69-134` with all three contracted subsections (Disposition table :72, Gaps + recommended homes :86, Extension plan sketch :100) plus Handoff :131-133 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 

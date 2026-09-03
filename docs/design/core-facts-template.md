@@ -12,7 +12,7 @@ blend-home recommendation (merge = kk subcommand, render = generator):
 
 - **Merge (N `Doc[]` → 1 `Doc[]`): `kk executor fan-in`** — a kk subcommand, never a workflow-engine state.
   It takes repeatable `--in <Doc[]>` files and writes one deduplicated `Doc[]` to `--out`
-  (`docs/design/fan-in-and-fan-out-specification.md:50-55`; implemented in `apps/cli/src/fanin.ts`).
+  (`docs/design/fan-in-and-fan-out-specification.md:50`; implemented in `apps/cli/src/fanin.ts`).
 - **Render (merged `Doc[]` → `2-facts/core-facts.md`): a `generator`** (kind `generation`) that maps the
   merged `Doc[]` into a single dated core-facts markdown `Content` (`body` = the facts markdown). 0090
   prototypes this render with a mechanical script — **no LLM** in the prototype (LLM blending is a later
@@ -22,7 +22,7 @@ blend-home recommendation (merge = kk subcommand, render = generator):
 ## 2. Dedup rule
 
 `kk executor fan-in` dedupes by `Doc.id`, **first-seen wins**; a later identical `id` contributes only its
-provenance, merged into `metadata.sources` (`apps/cli/src/fanin.ts:29-46`). The core-facts template carries
+provenance, merged into `metadata.sources` (`apps/cli/src/fanin.ts:43-47`). The core-facts template carries
 that rule in frontmatter (`dedup_rule: id`).
 
 **Known ceiling (honest):** the three source namespaces are disjoint — `aihot:`, `last30days:`,
