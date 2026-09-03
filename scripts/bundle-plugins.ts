@@ -31,7 +31,7 @@ const MARKETPLACE_TARGET = join(REPO_ROOT, 'apps/cli/.claude-plugin');
  *  - `evals/` (monorepo-only);
  *  - OS junk (`.DS_Store`).
  */
-export const EXCLUDE = /(^|\/)(\.DS_Store|tests|evals)($|\/)|\.test\.ts$/;
+export const EXCLUDE = /(^|\/)(\.DS_Store|\.spur|tests|evals)($|\/)|\.test\.ts$/;
 
 /**
  * Copy the repo-root `plugins/` and `.claude-plugin/` trees into `apps/cli/`,

@@ -21,6 +21,7 @@ const FIXTURES_DIR = join(import.meta.dir, 'storm-fixtures');
 const MOCK_SPUR = join(FIXTURES_DIR, 'spur');
 const INPUT_PATH = join(FIXTURES_DIR, 'docs.json');
 const ORIGINAL_SPUR_BIN = process.env.KNOWLEDGE_KIT_SPUR_BIN;
+const ORIGINAL_PROJECT_ROOT = process.env.KNOWLEDGE_KIT_PROJECT_ROOT;
 
 const DOCS: Doc[] = [
     { id: 'doc-1', title: 'Architecture Overview', body: 'Content for architecture overview.' },
@@ -98,6 +99,8 @@ function scriptedRunner(stages: AgentRunEnvelope[]): { runner: StormStageRunner;
 afterEach(async () => {
     if (ORIGINAL_SPUR_BIN === undefined) delete process.env.KNOWLEDGE_KIT_SPUR_BIN;
     else process.env.KNOWLEDGE_KIT_SPUR_BIN = ORIGINAL_SPUR_BIN;
+    if (ORIGINAL_PROJECT_ROOT === undefined) delete process.env.KNOWLEDGE_KIT_PROJECT_ROOT;
+    else process.env.KNOWLEDGE_KIT_PROJECT_ROOT = ORIGINAL_PROJECT_ROOT;
     await rm(FIXTURES_DIR, { recursive: true, force: true });
 });
 
@@ -432,6 +435,25 @@ describe('spur stage runner (R1)', () => {
         expect(argv).toContain('--json');
         expect(argv).toContain('--mode');
         expect(argv).toContain('text');
+    });
+
+    test('anchors --cwd to KNOWLEDGE_KIT_PROJECT_ROOT when set, else the process cwd', async () => {
+        await mkdir(FIXTURES_DIR, { recursive: true });
+        await writeFile(
+            MOCK_SPUR,
+            "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ exitCode: 0, stdout: JSON.stringify(process.argv), stderr: '' }));\n",
+            'utf-8',
+        );
+        await chmod(MOCK_SPUR, 0o755);
+        process.env.KNOWLEDGE_KIT_SPUR_BIN = MOCK_SPUR;
+
+        process.env.KNOWLEDGE_KIT_PROJECT_ROOT = '/sentinel/project-root';
+        const pinned = JSON.parse((await spurStageRunner.runStage('p')).stdout) as string[];
+        expect(pinned[pinned.indexOf('--cwd') + 1]).toBe('/sentinel/project-root');
+
+        delete process.env.KNOWLEDGE_KIT_PROJECT_ROOT;
+        const fallback = JSON.parse((await spurStageRunner.runStage('p')).stdout) as string[];
+        expect(fallback[fallback.indexOf('--cwd') + 1]).toBe(process.cwd());
     });
 
     test('returns the CLI-level failure when the spur binary exits non-zero without an envelope', async () => {

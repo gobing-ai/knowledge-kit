@@ -36,7 +36,10 @@ export const spurStageRunner: StormStageRunner = {
                 'text',
                 '--json',
                 '--cwd',
-                process.cwd(),
+                // Anchor the agent's cwd to the project root (set by the executor, whose own
+                // cwd is the invocation root). process.cwd() here is the plugin package dir —
+                // using it makes spur auto-init a stray `.spur/` and drops agent files there.
+                process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
             ],
             { stdout: 'pipe', stderr: 'pipe' },
         );

@@ -125,7 +125,14 @@ export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpaw
 
     const proc = Bun.spawnSync(cmd, {
         cwd: opts.cwd,
-        env: { ...fromConfig, ...process.env },
+        // Plugins run with cwd = their package dir; hand them the kk invocation root so
+        // anything they spawn (e.g. content-gen's `spur agent run` stages) anchors there
+        // instead of self-initializing a stray .spur/ inside the plugin dir.
+        env: {
+            ...fromConfig,
+            ...process.env,
+            KNOWLEDGE_KIT_PROJECT_ROOT: process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
+        },
         stdout: 'pipe',
         stderr: 'pipe',
     });
