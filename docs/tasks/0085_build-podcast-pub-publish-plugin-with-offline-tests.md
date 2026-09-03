@@ -4,7 +4,7 @@ name: "Build podcast-pub publish plugin with offline tests"
 status: done
 template: feature-impl
 created_at: 2026-09-02T19:04:38.667Z
-updated_at: "2026-09-02T22:17:02.422Z"
+updated_at: "2026-09-03T01:42:43.348Z"
 feature_id: E6
 priority: P1
 tags: ["plugin", "publish", "microfeed"]
@@ -122,39 +122,36 @@ WHERE: new dir `plugins/publishings/podcast-pub/` only; config surface `~/.confi
 - Verification: 24 offline tests in `tests/podcast-pub.test.ts:1` (mocked fetch + publish-harness `FakeFileCliTransport`, zero network) covering two-phase + hosted publish, all five management ops, 401/400/500/network-error paths, no-network validation rejections, CLI exit codes, runInvoke discovery; coverage ~94–100% per src file. `bun run lint` (biome + typecheck) and `bun run test` green repo-wide (494 pass / 0 fail).
 
 ### Testing
-
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | src/index.ts:89-146 two-phase publish (draft→presign item_id→PUT→attach+publish); index.ts:99 Idempotency-Key per attempt; index.ts:155-162 Result ok/target/url; handlers.ts:805 item_id pin |
-| R2 | MET | src/index.ts:183-262 list/get/update/delete/validate routing; microfeed-client.ts:107-148 /api/v1/ endpoints; handlers.ts:740 items[0] feed shape |
-| R3 | MET | tests/podcast-pub.test.ts 24/24 offline (mocked fetch + FakeFileCliTransport); explicit fetch-not-called asserts; plugin coverage 94-100% |
-| R4 | MET | microfeed-client.ts:66-86 every 4xx/5xx/non-JSON/transport fault throws; index.ts:264 fail() Result; index.ts:339-343 stderr + exit 1 |
-| R5 | MET | map.ts:60-85 title/audio-ref/duration validation pre-network; index.ts:91-95; zero-fetch asserts on rejection paths |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/podcast-pub/src/index.ts:89-156` two-phase publish (draft unpublished :121-128 → presign with item_id :132-138 → PUT bytes :139 → attach+publish :142-147); Idempotency-Key per attempt :99 + `plugins/publishings/podcast-pub/src/microfeed-client.ts:96`; vendor pin `vendors/microfeed/src/server/api/handlers.ts:805` ("You have to provide item_id for non-image categories"); hosted-audioUrl single create `plugins/publishings/podcast-pub/src/index.ts:101-118`; tests `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:180` (two-phase) and :242 (hosted audioUrl) |
+| R2 | MET | `plugins/publishings/podcast-pub/src/index.ts:180-256` operation routing (publish/list/get/update/delete/validate); endpoints `plugins/publishings/podcast-pub/src/microfeed-client.ts:107-143`; tests `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:283` (list), :314 (get), :352 (update), :381 (delete), :403 (validate) |
+| R3 | MET | `bun test plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` re-run 2026-09-02: 24 pass / 0 fail / 104 expects in 139ms; mocked fetch `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:32` + no-network flag :449-451; plugin coverage this run: index.ts 94.44%, map.ts 100%, microfeed-client.ts 100% |
+| R4 | MET | `plugins/publishings/podcast-pub/src/microfeed-client.ts:53-88` — transport fault :64-67, 4xx/5xx :69-81, non-JSON :83-87 all throw diagnostics; fail() `plugins/publishings/podcast-pub/src/index.ts:45-47`; stderr + exit 1 at `plugins/publishings/podcast-pub/src/index.ts:341-343` (echoError + return 1); tests :425 (server rejection), :470 (401 auth), :491 (network failure), :623 (CLI exit codes) |
+| R5 | MET | `plugins/publishings/podcast-pub/src/map.ts:51-97` pre-network validation (title :60, audio ref :65-72, duration :74-77); caught pre-call at `plugins/publishings/podcast-pub/src/index.ts:90-95`; tests :525 (invalid Content, zero fetch), :604 (invalid input JSON), :508 (missing credentials before network) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R3 | MET | test | tests/podcast-pub.test.ts publish two-phase (audioFile) + hosted (audioUrl) happy paths assert Result ok:true, target podcast-pub, url |
-| R4 | MET | test | tests/podcast-pub.test.ts list/get/update/delete/validate operation tests assert endpoint calls + Result JSON |
-| R5 | MET | test | tests/podcast-pub.test.ts full suite runs with mocked fetch + FakeFileCliTransport; zero network to real instance |
-| R6 | MET | test | tests/podcast-pub.test.ts 401/400/500/network-error paths assert ok:false Result, stderr, exit 1 |
-| R7 | MET | test | tests/podcast-pub.test.ts validation-rejection tests assert ok:false + exit 1 with zero fetch calls |
-
+|---------------------|--------|---------------|----------|
+| R3 — podcast-pub publishes a podcast episode with audio to microfeed | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:180` two-phase and :242 hosted-audioUrl happy paths assert Result ok:true, target podcast-pub, url — re-run green 2026-09-02 |
+| R4 — podcast-pub provides simple management operations over the REST API | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:283` :314 :352 :381 :403 — list/get/update/delete/validate assert endpoint calls + Result JSON, green 2026-09-02 |
+| R5 — podcast-pub passes offline contract tests without a live instance | MET | test | Full suite 24/24 in 139ms (2026-09-02) with `spyOn(globalThis, 'fetch')` mock at :32 — zero network to a real instance |
+| R6 — podcast-pub fails loudly with a diagnostic on API errors | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:425` :470 :491 :623 — 400/401/network paths assert ok:false + diagnostic + stderr + exit 1, green 2026-09-02 |
+| R7 — podcast-pub rejects invalid Content input before any network call | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:525` :604 :508 — validation rejections with fetch-not-called assertion, green 2026-09-02 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
 ### Review
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PASS)
+**SECU findings** (verifyall --force re-audit 2026-09-02 — verdict: PASS; suite 24/24 + lint green re-run)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | spur task check | — | task check passed |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
-
+| P4 | correctness (cosmetic) | `plugins/publishings/podcast-pub/src/microfeed-client.ts:66` | Transport-error message hardcodes "(POST/GET {path})" regardless of the actual method — misleading on DELETE/PUT failures; cosmetic only. |
+| P4 | doc-anchor hygiene | this task's prior Testing record | Prior record carried stale anchors (fail() cited index.ts:264, actual :45-47; registry fixtures cited :201/:512, actual `packages/kk-core/tests/registry.test.ts:202`/`:513`); file unchanged since c6c5e8b, so anchors were off at authoring. Refreshed record uses re-read anchors. |
+| P4 | spur task check | — | task check passed; `bun run lint` (biome 2.5.5 + typecheck) exit 0 repo-wide incl. @gobing-ai/podcast-pub (2026-09-02); evidence-rule-pass: all behavior-bearing AC rows have test evidence |
 ### References
 
 - Feature: E6 (`docs/features/E6_microfeed-podcast-publisher.md`)

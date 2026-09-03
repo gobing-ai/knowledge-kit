@@ -4,7 +4,7 @@ name: "Deploy microfeed instance on Cloudflare and wire API credentials"
 status: done
 template: feature-impl
 created_at: 2026-09-02T19:04:38.549Z
-updated_at: "2026-09-03T00:07:40.357Z"
+updated_at: "2026-09-03T01:42:43.190Z"
 feature_id: E6
 priority: P1
 tags: ["infra", "manual", "microfeed"]
@@ -93,34 +93,30 @@ Infra-only task — no repo code changed. Landed outside the repo:
 Command history: `manage init … --admin-auth built-in --no-open --yes` → complete; `manage status` healthy; `manage domain --hostname podcast.salty.vip` verified.
 
 ### Testing
-
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — microfeed instance deployed via `npx @microfeed/cli manage`, publicly reachable; `manage status` reports hosted app, database, media, and login healthy; `GET <instance-url>/json/` returns 200 | MET | `npx @microfeed/cli manage init --instance feed-gobing-ai --account-id 192f07ef97764f62eb76be2d84508d9e …` completed: "microfeed is live at <https://feed-gobing-ai.luonbin.workers.dev>"; `manage status` (2026-09-02): Worker feed-gobing-ai found · D1 feed-gobing-ai-db bound · R2 feed-gobing-ai-media exact bucket + MEDIA_BUCKET binding · Administrator <luonbin@hotmail.com> · built-in login active · deployment verified; `GET https://podcast.salty.vip/json/` → HTTP 200 (valid JSON Feed 1.1); same 200 on workers.dev origin at init time |
-| R2 — API access enabled in dashboard, named write-scope API key exists; `plugins.publishings.podcast-pub.env` in `~/.config/kk/config.yaml` carries non-empty `MICROFEED_BASE_URL` and `MICROFEED_API_KEY` | MET | Dashboard: API access enabled (probe without key on `/api/v1/items/` → HTTP 401, the enabled-but-unauthorized signal; disabled returns 404 per access middleware); named key with write scope verified live: `GET /api/v1/feed/` with `Authorization: Bearer <key>` → 200, `POST /api/v1/items/validate/` → 200 `{"valid":true}`; config lines 36–39: `plugins.publishings.podcast-pub.env` with `MICROFEED_BASE_URL: "https://podcast.salty.vip"` and non-empty `MICROFEED_API_KEY`; repo-wide scan for the key value → no hits |
+| R1 | MET | `npx @microfeed/cli manage status` re-run 2026-09-02: "Status checks passed" — Worker feed-gobing-ai found, D1 feed-gobing-ai-db bound, R2 feed-gobing-ai-media exact bucket + MEDIA_BUCKET binding, admin luonbin@hotmail.com, built-in login active, "Deployment verified at https://podcast.salty.vip/.well-known/microfeed.json", custom domain verified; `GET https://podcast.salty.vip/json/` → HTTP 200, JSON Feed 1.1 (re-run 2026-09-02) |
+| R2 | MET | kk user config `~/.config/kk/config.yaml` lines 36-38 — `plugins.publishings.podcast-pub.env` carries non-empty MICROFEED_BASE_URL (https://podcast.salty.vip) and MICROFEED_API_KEY (mf_ prefix, value never echoed); unauth `GET /api/v1/items/` → 401 (API enabled; disabled would be 404); repo-wide grep -rF for the key value (excluding .git, node_modules) → 0 hits (2026-09-02) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — Operator deploys a publicly reachable microfeed instance on Cloudflare | MET | command | `npx @microfeed/cli manage init --instance feed-gobing-ai …` completed ("microfeed is live at <https://feed-gobing-ai.luonbin.workers.dev>"); `manage status` (2026-09-02): Worker/D1/R2/admin all healthy, deployment verified; `GET https://podcast.salty.vip/json/` → 200 (JSON Feed 1.1); custom domain `podcast.salty.vip` bound via `manage domain` (operator-directed) |
-| R2 — microfeed API access is enabled with a named write API key in config | MET | command | Unauth `/api/v1/items/` → 401 (enabled; disabled would be 404 per access middleware); operator-created named write key live-tested: Bearer `GET /api/v1/feed/` → 200, `POST /api/v1/items/validate/` → 200 `{"valid":true}`; `~/.config/kk/config.yaml:36-39` `plugins.publishings.podcast-pub.env` carries `MICROFEED_BASE_URL: "https://podcast.salty.vip"` + non-empty `MICROFEED_API_KEY` (never echoed); `rg` repo scan for key value → no hits |
-
+| R1 — Operator deploys a publicly reachable microfeed instance on Cloudflare | MET | command | `npx @microfeed/cli manage status` exit 0 "Status checks passed" (2026-09-02); `curl -s -o /dev/null -w '%{http_code}' https://podcast.salty.vip/json/` → 200 (2026-09-02) |
+| R2 — microfeed API access is enabled with a named write API key in config | MET | command | unauth `/api/v1/items/` → 401 (2026-09-02); `~/.config/kk/config.yaml` lines 36-38 non-empty MICROFEED_BASE_URL + MICROFEED_API_KEY (mf_ prefix); key-value repo scan → 0 hits (2026-09-02) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
 ### Review
 <!-- spur:record-review -->
 
-**SECU findings** (verify step — verdict: PASS, live production evidence)
+**SECU findings** (verifyall --force re-audit 2026-09-02 — verdict: PASS, live production evidence)
 
 | Priority | Dimension | Location | Finding |
-| ---------- | ----------- | ---------- | ---------- |
-| P3 | version drift | deployed instance | microfeed 1.0.9 deployed vs vendored contract pin 1.0.8 (`vendors/microfeed/package.json`); same `/api/v1/` surface — 0086 live smoke exercises the real contract. Accepted. |
-| P4 | config accuracy | `~/.config/kk/config.yaml:36-39` | feed `home_page_url` still advertises workers.dev origin (stored site setting; `feed_url` already custom). Publish flow unaffected; re-check during 0086. |
-| P4 | spur task check | — | task check passed; evidence-rule-pass: both AC rows carry executable command evidence |
-
+|----------|-----------|----------|----------|
+| P3 | version drift | deployed instance | Deployed microfeed 1.0.9 vs vendored contract pin 1.0.8 (`vendors/microfeed/package.json`); same `/api/v1/` surface confirmed live 2026-09-02. Accepted. |
+| P4 | config accuracy | `~/.config/kk/config.yaml:36-38` | feed `home_page_url` still advertises the workers.dev origin (stored site setting; `feed_url` already custom). Publish flow unaffected; unchanged since the original verify. |
+| P4 | spur task check | — | task check passed; evidence-rule-pass: both AC rows carry fresh executable command evidence (manage status + HTTP probes, 2026-09-02) |
 ### References
 
 - Feature: E6 (`docs/features/E6_microfeed-podcast-publisher.md`)

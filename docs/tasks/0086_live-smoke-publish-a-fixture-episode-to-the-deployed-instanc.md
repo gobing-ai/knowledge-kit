@@ -4,7 +4,7 @@ name: "Live smoke: publish a fixture episode to the deployed instance"
 status: done
 template: feature-impl
 created_at: 2026-09-02T19:04:38.675Z
-updated_at: "2026-09-03T00:17:56.405Z"
+updated_at: "2026-09-03T01:42:43.502Z"
 feature_id: E6
 priority: P2
 tags: ["verification", "live", "microfeed"]
@@ -93,34 +93,31 @@ Live verification only — no repo code changed (non-goal). All steps ran from t
 Instance under test: microfeed 1.0.9 at <https://podcast.salty.vip> (custom domain; worker `feed-gobing-ai`; media on podcast-media.salty.vip). Plugin: `plugins/publishings/podcast-pub/` as built by 0085 (dist bundle). Drift surfaced: one — plugin `delete` op vs Astro 7 checkOrigin; evidence recorded below, follow-up task 0087 filed (`docs/tasks/0087_fix-podcast-pub-delete-op-vs-astro-7-cross-origin-guard-add-.md`). Root cause chain: `plugins/publishings/podcast-pub/src/microfeed-client.ts:135-140` sends DELETE with no headers → Astro 7 `checkOrigin` (`node_modules/astro/dist/core/app/origin-check.js:12-23`) rejects header-less non-safe methods unless same-origin → 403.
 
 ### Testing
-
 **Pipeline verify results**
 
 - Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 — fixture publishes end-to-end via podcast-pub `publish` and appears in `<MICROFEED_BASE_URL>/json/` | MET | command |
-| R2 — management ops verified live: validate, get, delete + removal from feed | PARTIAL | command |
-| R3 — drift recorded as follow-up with request/response evidence, no silent workaround | MET | command |
+|-------------|--------|----------|
+| R1 | MET | Publish path contract live-confirmed 2026-09-02: `kk executor run podcast-pub` validate op → {"ok":true,"target":"podcast-pub","message":"microfeed accepted the item input (POST /api/v1/items/validate)"}; `GET https://podcast.salty.vip/json/` → 200 with 0 items — original fixture (id YMwzVRyodKm, published in the 2026-09-02 run) fully removed, feed lifecycle closed |
+| R2 | PARTIAL | validate live ok:true (re-run 2026-09-02); get returned item fields in the original run; delete still fails live 2026-09-02: `kk executor run podcast-pub` delete op → exit 1, {"ok":false,"error":"microfeed API request failed (HTTP 403 Forbidden /api/v1/items/ZZZnonexistent000): Cross-site DELETE form submissions are forbidden"} (checkOrigin fires pre-routing — nonexistent id still 403, proving the guard, not the resource); root cause re-read at `plugins/publishings/podcast-pub/src/microfeed-client.ts:135-139` — deleteItem sends no Content-Type |
+| R3 | MET | Drift filed as follow-up `docs/tasks/0087_fix-podcast-pub-delete-op-vs-astro-7-cross-origin-guard-add-.md` carrying the 2026-09-02 request/response evidence (plugin delete 403 vs curl + Content-Type → 200); no inline patch — `git log` shows the plugin untouched since c6c5e8b (0085) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R3 — podcast-pub publishes a podcast episode with audio to microfeed | MET | command | publish ok:true id YMwzVRyodKm url <https://podcast.salty.vip/items/YMwzVRyodKm>; /json/ showed item + attachment <https://podcast-media.salty.vip/production/media/audio-abcf1> |
-| R4 — podcast-pub provides simple management operations over the REST API | PARTIAL | command | get op returned item fields (ok:true); delete op 403 (Astro 7 origin-check; microfeed-client.ts:135-140); DELETE + Content-Type: application/json → 200 {}, /json/ 0 items; client fix = task 0087 |
-
+| R3 — podcast-pub publishes a podcast episode with audio to microfeed | MET | command | Original run: publish ok:true id YMwzVRyodKm url https://podcast.salty.vip/items/YMwzVRyodKm, /json/ showed item + audio enclosure; re-audit 2026-09-02: validate op live ok:true and /json/ → 200 (0 items after cleanup) |
+| R4 — podcast-pub provides simple management operations over the REST API | PARTIAL | command | get ok in the original run; validate ok:true re-run 2026-09-02; delete → 403 "Cross-site DELETE form submissions are forbidden" reproduced live 2026-09-02 (`plugins/publishings/podcast-pub/src/microfeed-client.ts:135-139`); fix = task 0087 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
 ### Review
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PARTIAL)
+**SECU findings** (verifyall --force re-audit 2026-09-02 — verdict: PARTIAL, the designed terminal state per done_reason)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | spur task check | — | task check passed |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
-
+| P3 | correctness | `plugins/publishings/podcast-pub/src/microfeed-client.ts:135-139` | delete op sends DELETE with no Content-Type → Astro 7 checkOrigin 403; reproduced live 2026-09-02 (nonexistent id → 403 pre-routing, proving the guard); fix owned by 0087 (todo). |
+| P4 | evidence-rule-pass | — | Behavior-bearing AC rows carry command evidence; R4 PARTIAL is the recorded drift, not missing evidence. |
+| P4 | spur task check | — | task check passed; re-audit probes non-destructive (validate persists nothing; delete targeted a nonexistent id); feed confirmed 0 items after the run |
 ### References
 
 - Feature: E6 (`docs/features/E6_microfeed-podcast-publisher.md`)

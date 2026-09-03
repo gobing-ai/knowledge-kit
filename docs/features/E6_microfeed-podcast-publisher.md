@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E6"
 name: "microfeed podcast publisher"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-02T17:53:52.849Z"
-updated_at: "2026-09-03T00:00:48.832Z"
+updated_at: "2026-09-03T02:17:30.758Z"
 ---
 
 # E6: microfeed podcast publisher
@@ -115,3 +115,5 @@ Feature: microfeed podcast publisher
 ## History
 
 - 2026-09-03T00:00:48.832Z backlog → active (system)
+- 2026-09-03T02:09:46.085Z active → verifying (system)
+- 2026-09-03T02:17:30.758Z verifying → done (system)
