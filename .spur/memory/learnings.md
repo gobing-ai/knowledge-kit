@@ -512,3 +512,100 @@ Cross-task: C5 ran as a 3-task batch — 0062 ∥ 0063 parallel, 0064 last; no `
 - A `done` task with unchecked `- [ ]` Requirements boxes is `L3.unchecked-checklist`. Flip to `[x]` in the verify `--fix` pass before wrap.
 - Unrelated in-progress skills in the same tree (`taste-unslop`) must stay unstaged; mixing them into the F9 commit would smuggle a second capability.
 
+### Doc Drift Audit & Repairs (Tasks 0088–0091 / F61 Wayfinder)
+
+1. [docs/00_ADR.md](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/00_ADR.md#L6-L10):
+   - Flipped [ADR-014](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/00_ADR.md#L565-L578) and [ADR-015](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/00_ADR.md#L580-L595) status from `Accepted (design)` to `Accepted` (`shipped — A3; tasks 0065–0067`).
+   - Bumped frontmatter `version: 1.21.0` and `updated_at: 2026-09-03`.
+
+2. [docs/03_ARCHITECTURE.md](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/03_ARCHITECTURE.md#L6-L10):
+   - Added [`podcast-pub/`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/03_ARCHITECTURE.md#L39) to System shape under `plugins/publishings/`.
+   - Synchronized Section [§Output and diagnostics foundation](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/03_ARCHITECTURE.md#L178) title to strip obsolete `(accepted design — not yet built)` phrasing.
+   - Added [`@gobing-ai/podcast-pub`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/03_ARCHITECTURE.md#L270) to Module boundaries table.
+   - Bumped frontmatter `version: 2.20.0` and `updated_at: 2026-09-03`.
+
+3. [docs/04_DESIGN.md](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/04_DESIGN.md#L6-L10):
+   - Updated [§0 Design satellites](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/04_DESIGN.md#L20-L42): updated `podcast-pub.md` to `shipped (E6)` and added the 4 F61 satellites ([`kk-daily-ai-voice-gap-analysis.md`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/design/kk-daily-ai-voice-gap-analysis.md), [`ingestion-source-adapters.md`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/design/ingestion-source-adapters.md), [`core-facts-template.md`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/design/core-facts-template.md), [`article-publish-fanout-brief.md`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/design/article-publish-fanout-brief.md)).
+   - Updated [§3 Environment variables](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/04_DESIGN.md#L274-L276): added `MICROFEED_BASE_URL`, `MICROFEED_API_KEY`, `MICROFEED_TIMEOUT_MS`.
+   - Updated [§4 Public package surface](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/04_DESIGN.md#L381-L391): documented `@gobing-ai/podcast-pub` exports.
+   - Updated [§6 Design specifications](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/04_DESIGN.md#L427-L431): added `podcast-pub.md` and all 4 F61 wayfinder specifications.
+   - Bumped frontmatter `version: 2.26.0` and `updated_at: 2026-09-03`.
+
+4. [docs/design/podcast-pub.md](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/design/podcast-pub.md#L3) & [docs/design/kk-daily-ai-voice-gap-analysis.md](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/design/kk-daily-ai-voice-gap-analysis.md#L36):
+   - Flipped `podcast-pub.md` status to `Feature **E6** (shipped)`.
+   - Refined row 3.1 evidence in `kk-daily-ai-voice-gap-analysis.md` per task 0088 review and 0091 verification.
+
+5. [docs/99_PROJECT_CONSTITUTION.md](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/docs/99_PROJECT_CONSTITUTION.md#L6-L10):
+   - Appended 2 dated lessons in §8 under `03_ARCHITECTURE` and `04_DESIGN`.
+   - Bumped frontmatter `version: 1.5.0` and `updated_at: 2026-09-03`.
+
+6. Written [`.spur/run/wrapup-learnings.md`](file:///Users/robin/xprojects/knowledge-kit-runall-F61-1E76/.spur/run/wrapup-learnings.md).
+
+# Working Learnings: Tasks 0088–0091 (F61 Wayfinder Map)
+
+## 2026-09-03
+
+### Task 0088 — Gap analysis: kk-daily-ai-voice vs ideal end-to-end daily pipeline
+
+- **Conventions:**
+  - Standardized disposition taxonomy across research audits: `exists` (capability wired in workflow), `extend` (capability exists in code/CLI, needs workflow wiring), and `missing` (new capability + workflow state required).
+  - Architectural boundary: `kk` owns step execution (`executor run`, `executor fan-in`, `executor fan-out`), while `spur workflow` owns DAG orchestration. Fan-in/fan-out must never be modeled as custom engine states.
+- **Errors Fixed & Findings:**
+  - Corrected show-notes disposition claim: `podcast-pub` already maps `content.body` → `contentHtml` (`content_html` in microfeed item API) in `src/map.ts:86`. The gap was purely workflow wiring (no publish state invoked) rather than a plugin capability deficiency.
+  - Verified `kk executor fan-out` CLI options: `--target` is a repeatable option (`--target <p1> --target <p2>`), requiring list expansion rather than single space-separated string passing.
+- **Patterns:**
+  - Linear single-node workflow transition sketch: `prepare → ingest-last30days → ingest-horizon → blend-facts → article → cover → script → wrap-docs → generate → quality-control → publish → done`.
+  - Handoff contracts: 0090 consumes blend-home recommendation (merge via `kk executor fan-in`, facts render via generator); 0091 consumes article generator (`content-gen`) and publish dispositions (`podcast-pub` + `surfdash-pub` via `fan-out`).
+- **Gotchas:**
+  - SQLite database locking (`SQLITE_BUSY_RECOVERY`) when running `spur task check` concurrently with active parent pipeline executions.
+
+---
+
+### Task 0089 — Wrap last30days + Horizon as Doc[] ingestion sources
+
+- **Conventions:**
+  - Both external sources terminate in `Doc[]` (`input: null`, `output: DocListSchema`) conforming to `docs/design/ingestion-plugin-specification.md`.
+  - Ingestion plugins (`last30days-ingest`, `horizon-ingest`) wrap external CLI execution (`last30days.py`, `uv run horizon`) and isolate environment/credentials/secrets.
+- **Errors Fixed & Findings:**
+  - Rejected workflow shell-step alternative: mapping external JSON in workflow YAML bypasses `DocSchema` validation, reduces testability, and scatters schema knowledge across workflow states.
+  - Pinned exact machine-readable CLI modes: `last30days` requires `--emit=json --json-profile=agent` (flat, versioned `results[]` schema v1.2) rather than default compact text.
+  - Horizon item-level mapping: parsing localized enrichment blocks and 0-10 score anchors from generated `horizon-<date>-<lang>.md` summaries.
+- **Patterns:**
+  - Deterministic ID stability: `id = last30days:{candidate_id}` (or `sha256(url)`) and `id = horizon:{url-slug}` ensure stable identity across runs.
+  - Failure semantics: empty crawl output writes `[]` with exit code `0`; unrecoverable execution failure exits `1` with no output file written.
+- **Gotchas:**
+  - `last30days` setup dependency: `SETUP_COMPLETE=true` in `~/.config/last30days/.env` is required to avoid silent fallback to websearch-only degradation.
+  - Law 7 query planning: `--plan "$QUERY_PLAN_FILE"` is required by the last30days engine for named-entity queries.
+
+---
+
+### Task 0090 — Core-facts blend contract + template prototype
+
+- **Conventions:**
+  - Markdown template frontmatter: `date`, `sources` roster list, `dedup_rule: id`, `doc_count`.
+  - Section syntax: `## Headlines` repeat block using double-brace `{{...}}` placeholders with per-item attribution (`Source`, `URI`, `ID`, `Date`, `Score`, body).
+- **Errors Fixed & Findings:**
+  - Pipeline consumer decoupling: clarified that downstream generator steps (article, script, voice) consume the structured intermediate `Doc[]` artifact (`1-ingest/blended.json`), not the rendered markdown (`2-facts/core-facts.md`), preventing brittle markdown scraping.
+  - Score normalization gap: identified that score field names vary across sources (`metadata.score` in Horizon, `metadata.relevance_score` in last30days, absent in Aihot) and require normalization in downstream synthesis.
+- **Patterns:**
+  - Mechanical merge & render: `kk executor fan-in` merges N `Doc[]` streams with primary `Doc.id` deduplication and provenance merging (`metadata.sources`), followed by generator rendering into human/audit markdown.
+  - Transitive consumption: `voice-gen` transitively consumes the facts `Doc[]` through `dailynews-gen`'s intermediate `VoiceScript` Doc.
+- **Gotchas:**
+  - Disjoint ID namespaces: `aihot:`, `last30days:`, and `horizon:` use distinct prefixes, meaning identical real-world news stories from different feeds are not deduped by ID matching alone (requires future semantic/URL-normalized deduplication).
+  - Cover generation unrenderable: no `cover-gen` plugin exists today in `plugins/generations/`, identified as an open map fog item for F61.
+
+---
+
+### Task 0091 — Article generation + publish fan-out incl. podcast show notes
+
+- **Conventions:**
+  - Generator reuse: extend existing `content-gen` (owned STORM pipeline) via additive template input rather than creating redundant `article-gen` plugin.
+  - Single publish state: publish fan-out is executed via one `kk executor fan-out` step with repeatable `--target` flags (`surfdash-pub` and `podcast-pub`), avoiding sequential state explosion in workflow YAML.
+- **Errors Fixed & Findings:**
+  - Confirmed microfeed show-notes support: `mapContentToEpisode` maps `content.body` directly to `contentHtml` (`content_html` in microfeed API), matching RSS enclosure description standards.
+  - Identified 4 publish wiring seams: (1) missing publish state in workflow, (2) article `Content` lacks audio references, (3) field name mismatch between `voice-gen` (`metadata.audioPath`/`mp3Path`) and `podcast-pub` (`metadata.audioFile`/`audioUrl`), (4) environment configuration (`MICROFEED_BASE_URL`, `MICROFEED_API_KEY`).
+- **Patterns:**
+  - Aggregate publish outcome: `kk executor fan-out` produces `AggregateResult` with per-target statuses (`published`, `failed`, `skipped`); exits `1` on partial failure to fail loud while preserving successful publishes for resume via `--retry-from`.
+  - Extensibility: adding future publish channels (Zenn, Qiita, EmDash, Surfing) requires only adding repeatable `--target <plugin>` flags without altering workflow state machine structure.
+- **Gotchas:**
+  - Microfeed HTML sanitization: `podcast-pub` passes markdown body as `content_html` relying on server-side sanitization; verify rendering compatibility during live deployment.

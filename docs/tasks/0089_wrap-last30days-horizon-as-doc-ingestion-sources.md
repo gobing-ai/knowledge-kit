@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Wrap last30days + Horizon as Doc[] ingestion sources"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-03T04:21:27.333Z
-updated_at: "2026-09-03T04:40:45.627Z"
+updated_at: "2026-09-03T05:39:25.162Z"
 feature_id: F61
 ---
 
@@ -22,9 +22,9 @@ feature_id: F61
 
 ### Requirements
 
-- [ ] R1. last30days invocation contract + output shape documented; adapter recommended.
-- [ ] R2. Horizon invocation contract (profiles/config) + output shape documented; adapter recommended.
-- [ ] R3. Both adapters terminate in `Doc[]` per `docs/design/ingestion-plugin-specification.md`, or a justified shell-step alternative is recorded.
+- [x] R1. last30days invocation contract + output shape documented; adapter recommended.
+- [x] R2. Horizon invocation contract (profiles/config) + output shape documented; adapter recommended.
+- [x] R3. Both adapters terminate in `Doc[]` per `docs/design/ingestion-plugin-specification.md`, or a justified shell-step alternative is recorded.
 
 Non-goals: no live 30-day pulls or full Horizon crawls; no plugin code written; dedup/merge semantics belong to 0090, not here.
 
@@ -71,15 +71,100 @@ Verification intent: `spur task check 0089` clean; reviewer confirms both source
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Adapter decision (shared):** both sources are external Python CLIs (`last30days.py`, `uv run horizon`) that emit their own artifact and carry their own env/config/secrets. Chosen adapter for each is an **ingestion plugin (kind `ingestion`)** — a thin `Doc[]` boundary that shells out to the external tool and maps its artifact to `Doc[]`; the heavy fetch/score/enrich stays in the tool. Rationale: collect-stage uniformity (`kk executor run <name>` per source → `kk executor fan-in` merges plugin `--out` paths, per 0088 + the fan-in/fan-out spec), contract-for-free (`docs/design/ingestion-plugin-specification.md:28` exit-code contract, `:52` kind=input-null/output=DocListSchema, `:61` id-stability mapping, `:68` empty/partial failure), and one owned boundary. The shell-step alternative was rejected: it moves the `Doc[]` mapping into workflow YAML, bypasses `DocSchema` validation (`packages/kk-core/src/schemas.ts:4`), and splits the tool's schema knowledge across states. Honest caveat: neither crawl is network-free — the ingest step is the live boundary of the daily pipeline. Full contract in `docs/design/ingestion-source-adapters.md`.
+
+#### last30days
+
+**Invocation contract.** Tool: `~/.agents/skills/last30days/scripts/last30days.py` (SKILL_DIR = dir of the loaded `SKILL.md`; `scripts/` is a sibling). Runtime: Python 3.12+ (`LAST30DAYS_PYTHON`/`python3`); needs `node`+`python3` on PATH; first-run setup gate requires `SETUP_COMPLETE=true` in `~/.config/last30days/.env` (else degraded to WebSearch-only). Machine-readable command (what the plugin runs):
+
+```bash
+python3 scripts/last30days.py "<topic>" \
+  --emit=json --json-profile=agent \
+  --save-dir "<LAST30DAYS_MEMORY_DIR>" \
+  [--plan "$QUERY_PLAN_FILE"] [--days N] [--as-of YYYY-MM-DD] \
+  [--web-backend auto|brave|exa|serper|parallel|parallel-mcp|keyless|none] \
+  [--store] [--output "<abs-out>"]
+```
+
+`--emit=json` is the machine-readable mode (`scripts/last30days.py:630`); `--json-profile=agent` (default) is the stable, versioned, flat agent contract, `--json-profile=raw` is the full internal `Report` (local-only; remote API supports raw only) (`scripts/last30days.py:638`). `--plan` is required on named-entity topics (LAW 7) (`scripts/last30days.py:766`). Env: `LAST30DAYS_MEMORY_DIR` (default `~/Documents/Last30Days`, `scripts/last30days.py:734`), `LAST30DAYS_API_KEY`+`LAST30DAYS_API_BASE` (remote, optional), `LAST30DAYS_ENRICH_BUDGET_SECONDS`, `LAST30DAYS_NATIVE_SEARCH`, `LAST30DAYS_LIBRARY_CONTEXT`. Secrets (env-inherited): `SCRAPECREATORS_API_KEY` primary; optional `OPENAI/XAI/OPENROUTER/PERPLEXITY/PARALLEL/BRAVE/APIFY/AUTH_TOKEN/CT0/BSKY_*/TRUTHSOCIAL_TOKEN/XIAOHONGSHU_API_BASE`. Non-crawl diagnostics (`doctor [--json]`, `--preflight`, `--diagnose`) are allowed probes; this is otherwise a live network fan-out. Non-goals: no first-run wizard / browser-cookie extraction here; no full report synthesis (that's `--emit=compact`).
+
+**Output shape.** `--emit=json --json-profile=agent` flat contract (`scripts/lib/schema.py:879` top-level, `:891` `results`, `:842` `clusters`; `AGENT_EXPORT_SCHEMA_VERSION = "1.2"` at `scripts/lib/schema.py:642`): `{ schema_version, query, generated_at, window_days, source_status{source→state}, freshness_verdicts[], clusters[{title,summary,sources,engagement_total}], results[{candidate_id,title,source,url,published_at?,summary,engagement?,relevance_score,cluster}] }`. `source_status` states: `ok|no-results|partial|rate-limited|auth-failed|unreachable|timeout|schema-drift|skipped-unconfigured|error`. `results[]` is the item-level grain; no prose "What I learned" in agent JSON.
+
+**Adapter choice + rationale.** Ingestion plugin `last30days-ingest` (kind `ingestion`). Entry shells out to the command above, captures the agent JSON (stdout or `--output` file, `scripts/last30days.py:747`), maps `results[]` → `Doc[]` (one Doc per item: `id=last30days:{candidate_id}` (fallback sha256(url)), `title`, `body=results[].summary`, `sourceUri`, `mediaType=text/markdown`, `metadata={topic,window_days,cluster{index,title},source,engagement,relevance_score,published_at,schema_version}`). id is derived deterministically for id stability (`docs/design/ingestion-plugin-specification.md:61`); empty `results` → `[]` exit 0 (`:68`); partial failure → skip + stderr warning + exit 0. Plugin `--in` carries the JSON config (`{ topic, save_dir, web_backend, days, as_of, plan }`) per API-source semantics (`docs/design/ingestion-plugin-specification.md:57`). Weakness, stated: last30days is a topic-research query (one report per run), not a static doc store — but the plugin boundary still holds and keeps collect-stage uniform with Horizon. `Doc[]` terminates the path (`packages/kk-core/src/kinds.ts:58`).
+
+#### Horizon
+
+**Invocation contract.** Command: `(cd ~/tools/Horizon && uv run horizon [--hours N] [-d <data-dir>] [-c <config>] [-l <level>])` (`src/main.py:38` entry, `:45` `--hours`; `docs/configuration.md:16-17` `-d`/`-c`). `uv` + Python 3.11+; deps in `pyproject.toml` (optional `--extra` openbb/twitter/trafilatura). Defaults `-d data`, `-c <data-dir>/config.json`, `-l WARNING`; `--hours N` overrides `collection.time_window_hours`. Config (`data/config.json` or `--config`): `sources` (rss/github/hackernews/reddit/telegram/twitter(Apify)/openbb/ossinsight/gdelt/google_news), `collection.time_window_hours`, `processing{profiles_dir,default_profile,profile_settings{threshold,topic_dedup}}`, `digest{max_items,profile_order,category_groups}`, `ai{provider,model,api_key_env,throttle_sec,analysis_concurrency,enrichment_concurrency,languages}`, `display.icon_style` (optional `email`/`webhook`, out of scope). Profiles (`profiles/<id>/{profile.json,match.md,analysis.md,enrichment.md}`); built-ins `finance-news`,`tech-news`,`tech-blog` (`docs/profiles.md:40`); `profile` on a source routes it. Secrets via `.env` at repo root (`load_dotenv`): `api_key_env` names env vars (`ANTHROPIC/OPENAI/GOOGLE/MINIMAX/DASHSCOPE/DEEPSEEK_API_KEY`, `APIFY_TOKEN`); secrets never live in config.json. Output artifact: `uv run horizon` fetches → routes → analyzes (0-10 score/reason/summary/tags) → filters (`threshold`) → dedups (`topic_dedup`) → enriches (localized blocks per `ai.languages`) → writes `<data-dir>/summaries/horizon-<YYYY-MM-DD>-<lang>.md` (`docs/configuration.md:915`). MCP alternative: `uv run horizon-mcp` exposes `hz_validate_config`, `hz_fetch_items`, `hz_score_items`, `hz_filter_items`, `hz_enrich_items`, `hz_generate_summary`, `hz_run_pipeline`. Diagnostics: `uv run horizon --help`, `horizon-webhook --dry-run`. This is the live ingest boundary (network fetch + AI scoring).
+
+**Output shape.** Per language: `<data-dir>/summaries/horizon-<date>-<lang>.md` (`docs/configuration.md:915`). H1 title; per-profile H2 sections (localized profile name); each item H3 block = anchor `<a id="item-<profile>-<n>">`, `### [title](url) ⭐️ <score>/10`, source line (`<source> · <sub/author> · <date> · [community discussion](url)`), localized enrichment blocks (per `profile.json` `enrichment.blocks`), `<details><summary>参考链接</summary>` reference list, `**标签**: #tag…`. `enrichment.blocks` ids, the 0-10 `score`, source category, and `tags` are the structured pieces to parse.
+
+**Adapter choice + rationale.** Ingestion plugin `horizon-ingest` (kind `ingestion`). Entry runs `uv run horizon` (or the MCP pipeline), reads `<data-dir>/summaries/*.md` (`docs/configuration.md:915`), maps each item block → `Doc[]` (one Doc per item: `id=horizon:{url-slug}` or `horizon:{date}-{profile}-{n}` anchor, `title`, `body` = joined enrichment blocks, `sourceUri`, `mediaType=text/markdown`, `metadata={lang,profile,score,source_line,author,published_at,tags,references,date}`). id deterministic from url/anchor for stability (`docs/design/ingestion-plugin-specification.md:61`); empty digest → `[]` exit 0 (`:68`). `--in` config `{ data_dir, config, hours, languages }` per API-source semantics (`docs/design/ingestion-plugin-specification.md:57`); secrets env-inherited. Robustness: parse the generated summary MD deterministically (no MCP session needed). Cleaner fit than last30days — Horizon is a genuine "source → `Doc[]`" pipeline (`docs/design/ingestion-plugin-specification.md:52`; `packages/kk-core/src/kinds.ts:58`). A shell step was rejected (same uniformity/validation reasons as above). `Doc[]` terminates the path.
+
+**Handoff.**
+
+- **0090 consumes both output shapes:** `last30days-ingest` emits `Doc[]` from `--emit=json --json-profile=agent` `results[]` (`scripts/lib/schema.py:891`; metadata: topic/cluster/source/relevance_score); `horizon-ingest` emits `Doc[]` from `<data-dir>/summaries/horizon-<date>-<lang>.md` item blocks (`docs/configuration.md:915`; metadata: lang/profile/score/tags/references). 0090's blend (`kk executor fan-in`) merges these two `Doc[]` streams into the core-facts contract/template.
+- **0088's capability map gains the two source rows** (replacing its `missing` rows for 1.1/1.2 with concrete `Doc[]`-producing ingestion plugins): 1.1 `last30days-ingest` → `Doc[]` via last30days agent JSON `results[]`; 1.2 `horizon-ingest` → `Doc[]` via Horizon summary Markdown item blocks.
 
 ### Testing
+**Pipeline verify results**
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- Verdict: PASS (from verdict artifact)
 
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | last30days `## Solution` — invocation `--emit=json --json-profile=agent` (`scripts/last30days.py:630` `--emit` choices incl. json; `:638` `--json-profile` default=agent, choices agent/raw); output shape top-level keys `schema_version/query/generated_at/window_days/source_status/freshness_verdicts/clusters/results` at `scripts/lib/schema.py:879-892` with `AGENT_EXPORT_SCHEMA_VERSION="1.2"` at `:642`, `results[]` item grain (`candidate_id` at `:105,:221`); adapter = ingestion plugin `last30days-ingest` with shell-step rejection + rationale. |
+| R2 | MET | Horizon `## Solution` — invocation `(cd ~/tools/Horizon && uv run horizon [--hours N] [-d <data-dir>] [-c <config>] [-l <level>])` (`src/main.py:45` `--hours`; `-d`/`-c` per `docs/configuration.md`); profiles/config built-ins `finance-news`/`tech-news`/`tech-blog` (`profiles/`); output shape `horizon-<date>-<lang>.md` (`src/storage/manager.py:125` `save_daily_summary`), per-item anchor `item-<profile>-<n>` + `### [title](url) ⭐️ <score>/10` + reference `<details>` + `标签`; adapter = ingestion plugin `horizon-ingest` with shell-step rejection + rationale. |
+| R3 | MET | Both adapters terminate in `Doc[]` per spec §2.1 — `kind: ingestion → output: DocListSchema` (`packages/kk-core/src/kinds.ts:59`), `DocSchema` at `packages/kk-core/src/schemas.ts`; both `## Solution` subsections give explicit `results[]`→`Doc[]` and item-block→`Doc[]` mappings; the shell-step alternative is documented and rejected with rationale (moves `Doc[]` mapping into YAML, bypasses `DocSchema` validation). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Both sources have a documented, evidence-backed path to `Doc[]`. | MET | command | `grep -c 'Doc\[\]' docs/design/ingestion-source-adapters.md` → 12; `sed -n '58,60p' packages/kk-core/src/kinds.ts` → `ingestion: { kind: 'ingestion', input: null, output: DocListSchema }`; both sources each carry a `### \`Doc[]\` mapping` subsection (lines 80, 141) terminating in `Doc[]`. |
+| Recommendation names plugin vs shell step for each source, with rationale. | MET | command | `grep -c 'Ingestion plugin' docs/design/ingestion-source-adapters.md` → 2 (last30days line 99, Horizon line 160 = `last30days-ingest` / `horizon-ingest`, kind `ingestion`); `grep -c 'shell step was rejected' docs/design/ingestion-source-adapters.md` → 2; `grep -n 'because it moves the \`Doc\[\]\` mapping into YAML' docs/design/ingestion-source-adapters.md` → line 22 (rationale). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Review Report — task 0089 (last30days + Horizon → `Doc[]`)** · scope: doc-only research brief; `docs/tasks/0089_wrap-last30days-horizon-as-doc-ingestion-sources.md` `## Solution` + companion `docs/design/ingestion-source-adapters.md`. No plugin code written (anti-patterns respected; `plugins/ingestions/` still holds only `aihot-ingest`, `karakeep-local`, `web-search`).
+
+**Dimensions:** functional traceability · SECUA correctness · architecture depth
+**Verdict:** PASS-with-findings (P4-only; no P1/P2/P3)
+
+#### Findings (ranked)
+
+| # | Severity | Dimension | Finding | Location |
+| --- | ---------- | ----------- | --------- | ---------- |
+| 1 | P4 | traceability | R1/R2/R3 and both AC boxes remain `- [ ]` unchecked though the `## Solution` deliverable is complete. Housekeeping — tick on the `spur task check 0089` verify step. | task file Requirements/AC |
+| 2 | P4 | correctness | `:28` cited as the "exit-code contract" but line 28 is §1.3 (Secrets/secrets-never-committed clause); the exit-code contract is §1.4 (lines 30-33). Substance correct; line mis-cited. | `docs/design/ingestion-plugin-specification.md` |
+| 3 | P4 | traceability | `LAST30DAYS_MEMORY_DIR` default `~/Documents/Last30Days` cited at `scripts/last30days.py:734`; the default actually lives at `scripts/lib/library.py:14` (line 734 is the `--save-dir` argparse). | last30days |
+| 4 | P4 | traceability | LAW 7 `--plan`-required-on-named-entity claim cited at `scripts/last30days.py:766`; 766 is the `--plan` argparse help — the LAW 7 backstop lives at `scripts/lib/render.py:1252,1287-1290` and `scripts/lib/pipeline.py:2206`. | last30days |
+| 5 | P4 | traceability | `horizon-<date>-<lang>.md` filename cited at `docs/configuration.md:915`; 915 confirms the `data/summaries/` directory, exact filename is `src/storage/manager.py:125`. | Horizon |
+| 6 | P4 | traceability | built-in profile names cited at `docs/profiles.md:40` (table header row); the names are rows 42-45. Note: `profiles/` also carries a 4th profile `ai-creator` not listed in the doc's built-in table (completeness note, does not contradict the brief's assertion about the doc). | Horizon profiles |
+
+#### Functional Traceability
+
+| Req/AC | Status | Evidence |
+| -------- | -------- | ---------- |
+| R1 | MET | `last30days` subsection — invocation command, `--emit=json --json-profile=agent` contract, output shape (`schema.py:879` top-level, `:891` results), adapter = `last30days-ingest` plugin |
+| R2 | MET | `Horizon` subsection — `uv run horizon` command + `-d`/`-c`, profiles/config, output shape (`storage/manager.py:125`), adapter = `horizon-ingest` plugin |
+| R3 | MET | Both terminate in `Doc[]` per spec §2 (`kinds.ts:58` `DocListSchema`); shell-step alternative documented + justified |
+| AC1 | MET | Both sources have an evidence-backed `Doc[]` path (verified against actual tool + spec) |
+| AC2 | MET | Each source names plugin vs shell step with rationale (incl. shell-step rejection) |
+| Handoff → 0090 | MET | `## Solution` Handoff — both output shapes consumed by 0090 blend (`kk executor fan-in`) |
+| Handoff → 0088 | MET | Handoff — replaces 0088 `missing` rows 1.1/1.2 with `last30days-ingest`/`horizon-ingest` (0088 lines 79-80, 93-94) |
+
+#### Verified against reality (fresh evidence, not doc-reading)
+
+- last30days: `--emit`/`--json-profile` argparse (`last30days.py:629-642`), `AGENT_EXPORT_SCHEMA_VERSION="1.2"` (`schema.py:642`), agent-JSON top-level keys + `results[]` item grain (`candidate_id/title/source/url/published_at/summary/engagement/relevance_score/cluster`) at `schema.py:853-891` — matches the claimed shape exactly.
+- Horizon: `--hours`/`-d`/`-c` (`main.py:45`, `configuration.md:16-17`); artifact filename `horizon-<date>-<lang>.md` (`storage/manager.py:125`); item anchor `item-<profile>-<n>` + `### [title](url) ⭐️ <score>/10` + reference `<details>` + `标签` (`summarizer.py:76-77,208,422-423,455`).
+- Ingestion-plugin spec §2: kind `ingestion`, input `null`, output `DocListSchema` (`:52`); API-source `--in` JSON config (`:57`); id-stability determinism (`:61`); empty → `[]` exit 0 / partial → skip+stderr+exit 0 (`:68`). kk-core `kinds.ts:58` (`ingestion` → `DocListSchema`) and `schemas.ts:4` (`DocSchema`) confirm the contract.
+- Architecture: `kk executor run|fan-in|fan-out` are kk subcommands (`kk-cli-surface.md:38,84-85`); `plugins/ingestions/<name>/` layout (spec §1.5 / ADR-009). Shell-step rejection (mapping in YAML, bypasses `DocSchema` validation, splits schema knowledge across states) is justified and consistent with the contract.
+
+#### Residual risk
+
+Low. Both plugins will be thin wrappers around heavy, stateful external tools; the ingest step is the live network boundary of the daily pipeline (stated honestly in both the `## Solution` and the companion brief). No dedup/merge semantics on 0089 (deferred to 0090). The only findings are citation-precision/housekeeping nits that change no substantive claim.
+
+#### Final disposition
+
+**PASS-with-findings.** All three requirements and both acceptance criteria have correctly-verified, evidence-backed content; both handoff lines present; no plugin code written (anti-patterns respected); the adapter recommendations (ingestion plugin for both) and the shell-step rejection are consistent with the ingestion-plugin spec and the fan-in/fan-out architecture. Six (6) P4 findings — five (5) citation-precision nits + one (1) housekeeping nit (unchecked requirement/AC boxes) — with no P1/P2/P3. Nothing blocks; the box-tick belongs to `spur task check 0089`.
 
 ### References
 
@@ -88,3 +173,7 @@ Verification intent: `spur task check 0089` clean; reviewer confirms both source
 - Dependents: 0090 (blend consumes both output shapes)
 
 ### History
+
+- 2026-09-03T05:34:06.492Z todo → wip (system)
+- 2026-09-03T05:39:24.340Z wip → testing (system)
+- 2026-09-03T05:39:25.162Z testing → done (system)

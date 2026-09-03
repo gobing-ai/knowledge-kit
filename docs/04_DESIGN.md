@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
 authority: derived
-version: 2.25.0
+version: 2.26.0
 created_at: 2026-07-22
-updated_at: 2026-08-27
+updated_at: 2026-09-03
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -35,7 +35,11 @@ sync: [T3]
 | [aihot-ingest.md](design/aihot-ingest.md) | Ingestion plugin for aihot.virxact.com AI news | shipped (F6) |
 | [dailynews-gen.md](design/dailynews-gen.md) | Generator plugin for daily news VoiceScript Content | shipped (F6) |
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
-| [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | planned (E6) |
+| [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | shipped (E6) |
+| [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
+| [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
+| [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
+| [article-publish-fanout-brief.md](design/article-publish-fanout-brief.md) | Article generator home, podcast show notes, and fan-out shape brief | research (F61) |
 
 ## 1. CLI commands
 
@@ -267,6 +271,9 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
 | `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
 | `VOICE_GEN_MP3` | no (voice-gen) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
+| `MICROFEED_BASE_URL` | yes (podcast-pub) | Base URL for self-hosted microfeed REST API (e.g. `https://<instance>.workers.dev`) |
+| `MICROFEED_API_KEY` | yes (podcast-pub) | microfeed named API key (`mf_…`) with write scope |
+| `MICROFEED_TIMEOUT_MS` | no (podcast-pub) | Request / upload timeout in ms (default: `300000`) |
 
 ## 4. Public package surface
 
@@ -371,6 +378,17 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `createVoiceboxClient(opts?)` | function | Client factory for local Voicebox REST API |
 | `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
 
+### `@gobing-ai/podcast-pub` (`plugins/publishings/podcast-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload; requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` |
+| `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (`content.body`), `status`, `audio` (`metadata.audioUrl` or `metadata.audioFile`), `durationSeconds` |
+| `resolveAudioMimeType(ref, mimeType?)` | function | Extension → audio MIME mapping with override |
+| `getPublishTransport()` | function | Returns `FakeFileCliTransport` when `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else `PodcastPubTransport` |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `list`, `get`, `update`, `delete`, `validate`) |
+| `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
+
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
 
 | Export | Kind | Notes |
@@ -406,6 +424,11 @@ File: `.spur/config.yaml`
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
 | Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine orchestrating aihot-ingest -> dailynews-gen -> voice-gen (F6 **shipped** 2026-08-21) |
+| Podcast publish plugin | `docs/design/podcast-pub.md` | microfeed podcast publish channel + instance deploy (E6 **shipped** 2026-08-27) |
+| Daily AI voice gap analysis | `docs/design/kk-daily-ai-voice-gap-analysis.md` | Gap analysis vs ideal 3-stage daily pipeline (F61 task 0088) |
+| Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |
+| Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |
+| Article & publish fan-out brief | `docs/design/article-publish-fanout-brief.md` | content-gen home, podcast show notes, and single-state fan-out brief (F61 task 0091) |
 
 ## 7. Workflow resolution (run-anywhere) and `/workflow-run` surface
 

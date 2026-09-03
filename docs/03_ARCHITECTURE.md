@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.19.0
+version: 2.20.0
 created_at: 2026-07-22
-updated_at: 2026-08-21
+updated_at: 2026-09-03
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -37,6 +37,7 @@ plugins/
     zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
     qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
     emdash-pub/       # @gobing-ai/emdash-pub — publish channel, file-cli (EmDash REST token) (E5)
+    podcast-pub/      # @gobing-ai/podcast-pub — publish channel, file-cli (microfeed REST + presigned upload) (E6)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
                       # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
@@ -175,7 +176,7 @@ Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-
 (`invoke` / `fanin` / `fanout` / `plugins *`) keep the old names working but are not listed in
 `kk --help`.
 
-### Output and diagnostics foundation (accepted design — ADR-014/ADR-015; not yet built)
+### Output and diagnostics foundation (ADR-014/ADR-015)
 
 Feature A3 reuses two published ts-libs seams and adds no replacement logging package:
 
@@ -266,6 +267,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/emdash-pub` | `@gobing-ai/emdash-pub` | Publish channel: EmDash CMS REST token transport, Portable Text mapping (E5) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/podcast-pub` | `@gobing-ai/podcast-pub` | Publish channel: microfeed REST Bearer transport + upload flow, episode mapping (E6) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**

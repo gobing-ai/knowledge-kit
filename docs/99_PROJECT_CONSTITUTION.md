@@ -3,9 +3,9 @@ name: Project Constitution
 doc: 99_PROJECT_CONSTITUTION
 owns: PROCESS — how the key files are maintained
 authority: authoritative-on-process
-version: 1.4.0
+version: 1.5.0
 created_at: 2026-05-31T17:30:43.643Z
-updated_at: 2026-08-12T00:00:00.000Z
+updated_at: 2026-09-03T00:00:00.000Z
 ---
 
 # Project Constitution — How to Organize the Project
@@ -392,6 +392,7 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/03_ARCHITECTURE.md`
 
+- [2026-09-03] knowledge-kit: Downstream pipeline consumers (generators) read intermediate structured artifacts (merged Doc[]), not the human/audit markdown render (core-facts.md) — coupling consumers to the render instead of the data contract creates brittle text-parsing dependencies; audit markdown is for human inspection while Doc[]/Content remains the programmatic pipeline contract.
 - [2026-08-12] knowledge-kit: The `plugins/` tree diagram listed product plugins at the root
   (`plugins/surfdash-pub`, …) after ADR-009 kind collections shipped — same-commit 03 layout
   must match the on-disk collections, not the historical flat tree.
@@ -415,6 +416,7 @@ if it recurs, a new rule in §6.
 
 ### Lessons for `docs/04_DESIGN.md`
 
+- [2026-09-03] knowledge-kit: Wayfinder research/prototype tasks (0088–0091) created four design satellites (gap analysis, source adapters, core-facts template, fanout brief) and surfaced shipped E6 (podcast-pub) environment/package drift — research satellites and newly shipped publish packages are T3 surface: sync 03 (System shape, Module boundaries), 04 (§0, §3 env, §4 packages, §6 specs), and flip satellite statuses (planned→shipped) at the wayfinder/wrapup doc-sync exit.
 - [2026-08-13] knowledge-kit: The C3 wayfinder batch (0054/0055) landed a registry-visible ingestion plugin (`plugins/ingestions/web-search`, workspace member `@gobing-ai/web-search`) plus a state-machine workflow while C3 was still an unshipped research map — prototype surface is T3 surface too: sync 03 (tree, module table, workspace-membership note) and 04 (§4 package row) at the research-batch doc-sync exit, don't defer to graduated implementation.
 
 - [2026-08-12] knowledge-kit: ADR-011 renamed canonical paths to `kk executor run|fan-in|fan-out`, but the fan-in/fan-out spec under `docs/design/` still specified `kk invoke`/`kk fanin`/`kk fanout` after A21 shipped — design specs are T3 surface too; the same-commit rename sweep must grep every spec under `docs/design/`, not just `kk-cli-surface.md`.

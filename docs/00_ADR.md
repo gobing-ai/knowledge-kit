@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.20.0
+version: 1.21.0
 created_at: 2026-05-28
-updated_at: 2026-08-19
+updated_at: 2026-09-03
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -564,7 +564,7 @@ states, `kk` noun, or package dependency.
 
 ## ADR-014: Centralize ts-libs versions in the Bun workspace catalog
 
-**Status:** Accepted (design) · **Date:** 2026-08-16
+**Status:** Accepted (shipped — A3; tasks 0065–0067) · **Date:** 2026-08-16
 
 **Decision.** The root Bun catalog is the single version source for `@gobing-ai/ts-utils`,
 `@gobing-ai/ts-infra`, `@gobing-ai/ts-runtime`, and `@gobing-ai/ts-db`; a workspace declares a
@@ -579,7 +579,7 @@ runtime edges.
 
 ## ADR-015: Separate terminal output from structured diagnostics
 
-**Status:** Accepted (design) · **Date:** 2026-08-16
+**Status:** Accepted (shipped — A3; tasks 0065–0067) · **Date:** 2026-08-16
 
 **Decision.** `@gobing-ai/ts-utils` owns user-facing terminal output and `@gobing-ai/ts-infra`
 owns structured diagnostics; every executable process initializes logging once, direct terminal

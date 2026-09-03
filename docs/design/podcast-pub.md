@@ -1,6 +1,6 @@
 # podcast-pub publish plugin (microfeed)
 
-Feature **E6** (planned). Publish plugin `plugins/publishings/podcast-pub/`
+Feature **E6** (shipped). Publish plugin `plugins/publishings/podcast-pub/`
 (`kind: publish`, `file-cli` transport) that publishes podcast episodes to a
 self-hosted [microfeed](https://github.com/microfeed/microfeed) instance on
 Cloudflare via its Bearer-authenticated `/api/v1/` REST API, plus thin item
