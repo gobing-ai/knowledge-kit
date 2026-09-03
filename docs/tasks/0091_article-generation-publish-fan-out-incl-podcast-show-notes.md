@@ -4,7 +4,7 @@ name: "Article generation + publish fan-out incl. podcast show notes"
 status: done
 template: feature-impl
 created_at: 2026-09-03T04:21:27.667Z
-updated_at: "2026-09-03T07:02:03.305Z"
+updated_at: "2026-09-03T20:10:37.812Z"
 feature_id: F61
 dependencies: ["0088"]
 ---
@@ -65,7 +65,6 @@ dependencies: ["0088"]
 Verification intent: `spur task check 0091` clean; reviewer confirms all three contracted subsections exist with file-level evidence.
 
 ### Solution
-#### Article generator home
 
 **Decision: extend the existing `content-gen` generator. Do NOT create a new `article-gen` plugin.**
 
@@ -94,7 +93,7 @@ Evidence:
 
 1. No workflow state invokes `podcast-pub`. The workflow currently ends `quality-control → done` (`plugins/kk/workflows/kk-daily-ai-voice.yaml:154-155`); there is no publish state.
 2. The article `Content` alone carries no audio reference. `mapContentToEpisode` throws "audio reference is required" unless `metadata.audioUrl` or `metadata.audioFile` is present (`plugins/publishings/podcast-pub/src/map.ts:63-70`); `content-gen` emits `format: 'markdown'` `Content` with no audio metadata.
-3. Field-name seam in the audio handoff: the audio producer `voice-gen` emits `metadata.audioPath` / `metadata.mp3Path` (`plugins/generations/voice-gen/src/index.ts:203-223`), while `podcast-pub` reads `metadata.audioFile` / `metadata.audioUrl` (`plugins/publishings/podcast-pub/src/map.ts:63-64`). The publish wiring must map voice-gen's local `mp3Path` → podcast-pub's `audioFile` (plus `metadata.durationSeconds`).
+3. Field-name seam in the audio handoff: the audio producer `voice-gen` emits `metadata.audioPath` / `metadata.mp3Path` (`plugins/generations/voice-gen/src/index.ts:203-223`), while `podcast-pub` reads `metadata.audioFile` / `metadata.audioUrl` (`plugins/publishings/podcast-pub/src/map.ts:63-64`). The publish wiring must map voice-gen's local `mp3Path` → podcast-pub's `audioFile`, and rename the duration key: voice-gen emits `metadata.duration` (`plugins/generations/voice-gen/src/index.ts:206`) while podcast-pub reads `metadata.durationSeconds` (`plugins/publishings/podcast-pub/src/map.ts:74`).
 4. microfeed config must be present: `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` (`docs/design/podcast-pub.md` §5 D4); optional `MICROFEED_TIMEOUT_MS`/`KNOWLEDGE_KIT_PUBLISH_TRANSPORT`.
 
 **Residual-risk caveat (verify step, not a blocker).** `podcast-pub` passes `content.body` (markdown) verbatim as `content_html`; the field is named `_html` and the plugin comment says "microfeed sanitizes server-side." Whether microfeed renders markdown → HTML (or expects HTML) is not independently verified within the frozen read set (`vendors/microfeed` source is absent). If microfeed expects HTML, the publish wiring may need a markdown→HTML transform before feed — flag as a deploy-time smoke check, not a capability gap.
