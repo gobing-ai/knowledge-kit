@@ -76,3 +76,10 @@ Conventions / decisions discovered the hard way. Newest first.
 - **Verify answer-file machine contract**: `spur task verdict` parses markdown tables only — requirements table `| Requirement | Status | Evidence |`, AC table `| AC | Status | Evidence-Type | Evidence |` (evidence-type col 3: test/command/static-ref/manual-review/llm-judge/n-a). Prose "### R1 — : MET" headings yield 0 rows → UNKNOWN verdict. Emit both tables in verify answers.
 - **New direct-fetch publish transport admission**: add the boundary file to `.spur/rules/strict/http-boundaries.yaml` no-direct-fetch exclude (comment + precedent style, qiita-pub/emdash-pub). Binary local-file IO the FileSystem seam can't express (text-only) gets a no-direct-fs-io exclude with rationale (voice-gen WAV precedent).
 - **`spur task record` reads `.spur/run/<wbs>-verdict.json` (canonical artifact from `spur task verdict`)**, not ad-hoc JSON shapes — wrong shape silently writes "verdict UNKNOWN" sections.
+
+## 2026-09-02 — E6 verifyall re-audit + 0087 closeout
+
+- **`spur task record` overwrites authored `## Review`** despite the documented `sectionIsBare` guard: `spur task verdict --from-answer` does not parse the answer file's `### SECUA Review` table into `checks[]`, so record backfills Review from two generic checks and clobbers prior findings. Repair path: rewrite Review via `spur task update <wbs> --section Review --from-file` (keep the `<!-- spur:record-review -->` marker). Upstream-bug candidate for the spur CLI repo.
+- **Done-gate provenance layer**: manual (non-pipeline) execution hits `GuardDeniedError: No pipeline run recorded` on `testing → done`; sanctioned bypass `SPUR_PROVENANCE_OVERRIDE=1 spur task update <wbs> done` (recorded). Legitimate only with a fresh PASS verdict artifact.
+- **Shell HTTP probes are hook-blocked in agent sessions** — route live checks through ctx_execute; keep fixtures in /tmp and leave the instance clean (publish → present → delete → absent in one run).
+- **Astro 7 checkOrigin**: non-safe methods without Content-Type are 403'd when no Origin header — a bodyless DELETE with `Content-Type: application/json` passes (0087 fix pattern).
