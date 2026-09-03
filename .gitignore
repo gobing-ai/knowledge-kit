@@ -159,3 +159,4 @@ dist
 # Staged plugin/marketplace build artifacts (bundled into the npm tarball)
 /apps/cli/plugins/
 /apps/cli/.claude-plugin/
+/.spur/rules/**/@gobing-ai

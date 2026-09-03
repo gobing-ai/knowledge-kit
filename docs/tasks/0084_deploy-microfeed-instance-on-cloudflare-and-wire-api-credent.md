@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Deploy microfeed instance on Cloudflare and wire API credentials"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-02T19:04:38.549Z
-updated_at: "2026-09-02T21:02:23.863Z"
+updated_at: "2026-09-03T00:07:40.357Z"
 feature_id: E6
 priority: P1
 tags: ["infra", "manual", "microfeed"]
@@ -18,8 +18,8 @@ Feature E6 R1+R2. Operator-executed setup: run `npx @microfeed/cli manage` (wran
 
 ### Requirements
 
-- [ ] R1. A microfeed instance is deployed to Cloudflare via `npx @microfeed/cli manage` and publicly reachable: `npx @microfeed/cli manage status` reports the hosted application, database, media, and login healthy, and `GET <instance-url>/json/` returns HTTP 200.
-- [ ] R2. API access is enabled in the instance dashboard and a named API key with write scope exists; `plugins.publishings.podcast-pub.env` in `~/.config/kk/config.yaml` carries non-empty `MICROFEED_BASE_URL` (the workers.dev URL for now) and `MICROFEED_API_KEY` (mf_…).
+- [x] R1. A microfeed instance is deployed to Cloudflare via `npx @microfeed/cli manage` and publicly reachable: `npx @microfeed/cli manage status` reports the hosted application, database, media, and login healthy, and `GET <instance-url>/json/` returns HTTP 200.
+- [x] R2. API access is enabled in the instance dashboard and a named API key with write scope exists; `plugins.publishings.podcast-pub.env` in `~/.config/kk/config.yaml` carries non-empty `MICROFEED_BASE_URL` (the workers.dev URL for now) and `MICROFEED_API_KEY` (mf_…).
 
 **Non-goals (explicit out-of-scope):** custom domain binding (operator does it manually later, then edits `MICROFEED_BASE_URL`); Cloudflare Access hardening (`manage access`); snapshots/backups; any code or config change inside this repository.
 
@@ -84,15 +84,42 @@ WHERE: everything lands outside the repo — the Cloudflare account and `~/.conf
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Infra-only task — no repo code changed. Landed outside the repo:
+
+- Credentials surface: `~/.config/kk/config.yaml:36-39` — `plugins.publishings.podcast-pub.env` with `MICROFEED_BASE_URL: "https://podcast.salty.vip"` + `MICROFEED_API_KEY` (operator-created, write scope; consumed by the plugin at exec time).
+- Cloudflare (account `192f07ef…`): Worker `feed-gobing-ai`, D1 `feed-gobing-ai-db`, R2 `feed-gobing-ai-media` (MEDIA_BUCKET binding), Custom Domain `podcast.salty.vip`; microfeed **1.0.9**.
+- Instance: admin path `admin`, built-in auth, owner `luonbin@hotmail.com`; password set by operator via one-time private link (agent never handled it).
+
+Command history: `manage init … --admin-auth built-in --no-open --yes` → complete; `manage status` healthy; `manage domain --hostname podcast.salty.vip` verified.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — microfeed instance deployed via `npx @microfeed/cli manage`, publicly reachable; `manage status` reports hosted app, database, media, and login healthy; `GET <instance-url>/json/` returns 200 | MET | `npx @microfeed/cli manage init --instance feed-gobing-ai --account-id 192f07ef97764f62eb76be2d84508d9e …` completed: "microfeed is live at <https://feed-gobing-ai.luonbin.workers.dev>"; `manage status` (2026-09-02): Worker feed-gobing-ai found · D1 feed-gobing-ai-db bound · R2 feed-gobing-ai-media exact bucket + MEDIA_BUCKET binding · Administrator <luonbin@hotmail.com> · built-in login active · deployment verified; `GET https://podcast.salty.vip/json/` → HTTP 200 (valid JSON Feed 1.1); same 200 on workers.dev origin at init time |
+| R2 — API access enabled in dashboard, named write-scope API key exists; `plugins.publishings.podcast-pub.env` in `~/.config/kk/config.yaml` carries non-empty `MICROFEED_BASE_URL` and `MICROFEED_API_KEY` | MET | Dashboard: API access enabled (probe without key on `/api/v1/items/` → HTTP 401, the enabled-but-unauthorized signal; disabled returns 404 per access middleware); named key with write scope verified live: `GET /api/v1/feed/` with `Authorization: Bearer <key>` → 200, `POST /api/v1/items/validate/` → 200 `{"valid":true}`; config lines 36–39: `plugins.publishings.podcast-pub.env` with `MICROFEED_BASE_URL: "https://podcast.salty.vip"` and non-empty `MICROFEED_API_KEY`; repo-wide scan for the key value → no hits |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R1 — Operator deploys a publicly reachable microfeed instance on Cloudflare | MET | command | `npx @microfeed/cli manage init --instance feed-gobing-ai …` completed ("microfeed is live at <https://feed-gobing-ai.luonbin.workers.dev>"); `manage status` (2026-09-02): Worker/D1/R2/admin all healthy, deployment verified; `GET https://podcast.salty.vip/json/` → 200 (JSON Feed 1.1); custom domain `podcast.salty.vip` bound via `manage domain` (operator-directed) |
+| R2 — microfeed API access is enabled with a named write API key in config | MET | command | Unauth `/api/v1/items/` → 401 (enabled; disabled would be 404 per access middleware); operator-created named write key live-tested: Bearer `GET /api/v1/feed/` → 200, `POST /api/v1/items/validate/` → 200 `{"valid":true}`; `~/.config/kk/config.yaml:36-39` `plugins.publishings.podcast-pub.env` carries `MICROFEED_BASE_URL: "https://podcast.salty.vip"` + non-empty `MICROFEED_API_KEY` (never echoed); `rg` repo scan for key value → no hits |
+
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
+<!-- spur:record-review -->
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**SECU findings** (verify step — verdict: PASS, live production evidence)
+
+| Priority | Dimension | Location | Finding |
+| ---------- | ----------- | ---------- | ---------- |
+| P3 | version drift | deployed instance | microfeed 1.0.9 deployed vs vendored contract pin 1.0.8 (`vendors/microfeed/package.json`); same `/api/v1/` surface — 0086 live smoke exercises the real contract. Accepted. |
+| P4 | config accuracy | `~/.config/kk/config.yaml:36-39` | feed `home_page_url` still advertises workers.dev origin (stored site setting; `feed_url` already custom). Publish flow unaffected; re-check during 0086. |
+| P4 | spur task check | — | task check passed; evidence-rule-pass: both AC rows carry executable command evidence |
 
 ### References
 
@@ -103,3 +130,7 @@ WHERE: everything lands outside the repo — the Cloudflare account and `~/.conf
 - Dependents: 0085 (plugin), 0086 (live smoke)
 
 ### History
+
+- 2026-09-02T23:58:07.276Z todo → wip (system)
+- 2026-09-03T00:07:39.989Z wip → testing (system)
+- 2026-09-03T00:07:40.357Z testing → done (system)
