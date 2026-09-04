@@ -5,9 +5,10 @@ import { join } from 'node:path';
 
 /**
  * Task 0074 (F6) — kk-daily-ai-voice workflow static and structural invariants.
- * Verifies states (prepare, fetch, script, review, wrap-docs, generate, done, failed),
- * plugin execution commands (aihot-ingest, dailynews-gen, voice-gen),
- * variables, transitions, and HITL confirm step.
+ * Extended 2026-09-03 (F61 destination): states now cover collect (aihot + last30days +
+ * Horizon) → blend-facts → article → cover → script → voice → publish; the plugin set grew
+ * to aihot-ingest, last30days-ingest, horizon-ingest, core-facts-gen, content-gen,
+ * dailynews-gen, voice-gen plus the fan-in/fan-out subcommands.
  */
 describe('kk-daily-ai-voice workflow (0074)', () => {
     const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice.yaml');
@@ -19,11 +20,18 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(stateIds).toEqual([
             'prepare',
             'fetch',
+            'ingest-last30days',
+            'ingest-horizon',
+            'blend-facts',
+            'article',
+            'cover',
             'script',
             'review',
             'wrap-docs',
             'generate',
             'quality-control',
+            'publish-prep',
+            'publish',
             'done',
             'failed',
         ]);
@@ -40,12 +48,20 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('voice_profile: "Robin"');
         expect(yaml).toContain('skip_review: "false"');
         expect(yaml).toContain('transcode_mp3: "false"');
+        expect(yaml).toContain('cover_enabled: "true"');
+        expect(yaml).toContain('publish_enabled: "false"');
     });
 
-    it('R3 & R5 — invokes aihot-ingest, dailynews-gen, and voice-gen through kk executor', () => {
+    it('R3 & R5 — invokes the pipeline plugins through kk executor (incl. fan-in/fan-out)', () => {
         expect(yaml).toContain('kk executor run aihot-ingest');
+        expect(yaml).toContain('kk executor run last30days-ingest');
+        expect(yaml).toContain('kk executor run horizon-ingest');
+        expect(yaml).toContain('kk executor fan-in');
+        expect(yaml).toContain('kk executor run core-facts-gen');
+        expect(yaml).toContain('kk executor run content-gen');
         expect(yaml).toContain('kk executor run dailynews-gen');
         expect(yaml).toContain('kk executor run voice-gen');
+        expect(yaml).toContain('kk executor fan-out');
         expect(yaml).toContain('kind: hitl.confirm');
         expect(yaml).toContain('pause: true');
     });
@@ -54,7 +70,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('test "$' + '{vars.skip_review}" = "true"');
     });
 
-    it('R5 — executes all three plugin commands and creates pipeline artifacts', () => {
+    it('R5 — executes all plugin commands and creates pipeline artifacts', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
             return;
         }
@@ -75,14 +91,31 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path';
 
 const args = process.argv.slice(2);
-const plugin = args[2];
 const flag = (name) => {
     const index = args.indexOf(name);
     return index >= 0 ? args[index + 1] : undefined;
 };
+const flags = (name) => {
+    const out = [];
+    for (let i = 0; i < args.length; i++) if (args[i] === name) out.push(args[i + 1]);
+    return out;
+};
 const inPath = flag('--in');
 const outPath = flag('--out');
-if (args[0] !== 'executor' || args[1] !== 'run' || !plugin || !inPath || !outPath) process.exit(2);
+if (args[0] !== 'executor') process.exit(2);
+
+if (args[1] === 'fan-in') {
+    const ins = flags('--in');
+    if (!ins.length || !outPath) process.exit(2);
+    const merged = ins.flatMap((p) => JSON.parse(readFileSync(p, 'utf8')));
+    mkdirSync(dirname(outPath), { recursive: true });
+    appendFileSync(process.env.KK_TEST_CALL_LOG, JSON.stringify({ plugin: 'fan-in', inPath: ins.join('+'), outPath, pluginsPath: flag('--plugins-path') }) + '\\n');
+    writeFileSync(outPath, JSON.stringify(merged));
+    process.exit(0);
+}
+
+const plugin = args[2];
+if (args[1] !== 'run' || !plugin || !inPath || !outPath) process.exit(2);
 mkdirSync(dirname(outPath), { recursive: true });
 appendFileSync(process.env.KK_TEST_CALL_LOG, JSON.stringify({
     plugin,
@@ -94,16 +127,21 @@ appendFileSync(process.env.KK_TEST_CALL_LOG, JSON.stringify({
     voiceProfile: process.env.VOICEBOX_DEFAULT_PROFILE,
 }) + '\\n');
 
+const DOC = (id) => [{ id, title: 'AI News ' + id, sourceUri: 'https://example.com/' + id, body: 'Body ' + id, mediaType: 'text/markdown' }];
+
 if (plugin === 'aihot-ingest') {
     const config = JSON.parse(readFileSync(inPath, 'utf8'));
     if (config.limit !== 2 || config.cursor !== 'cursor-1') process.exit(3);
-    writeFileSync(outPath, JSON.stringify([{
-        id: 'news-1',
-        title: 'AI News',
-        sourceUri: 'https://example.com/news-1',
-        body: 'News summary',
-        mediaType: 'text/markdown',
-    }]));
+    writeFileSync(outPath, JSON.stringify(DOC('news-1')));
+} else if (plugin === 'last30days-ingest' || plugin === 'horizon-ingest') {
+    readFileSync(inPath, 'utf8');
+    writeFileSync(outPath, JSON.stringify(DOC(plugin + '-1')));
+} else if (plugin === 'core-facts-gen') {
+    const docs = JSON.parse(readFileSync(inPath, 'utf8'));
+    writeFileSync(outPath, JSON.stringify({ title: 'Core Facts', body: '# Core Facts\\n\\n' + docs.length + ' items', format: 'markdown' }));
+} else if (plugin === 'content-gen') {
+    readFileSync(inPath, 'utf8');
+    writeFileSync(outPath, JSON.stringify({ title: 'Article', body: '# Article body', format: 'markdown' }));
 } else if (plugin === 'dailynews-gen') {
     const docs = JSON.parse(readFileSync(inPath, 'utf8'));
     const script = {
@@ -143,6 +181,8 @@ if (plugin === 'aihot-ingest') {
                 cursor: 'cursor-1',
                 state_file: join(testRoot, 'cursor state.json'),
                 skip_review: 'true',
+                cover_enabled: 'false',
+                publish_enabled: 'false',
                 plugins_path: join(testRoot, 'plugin root'),
             });
             const result = Bun.spawnSync(
@@ -162,6 +202,13 @@ if (plugin === 'aihot-ingest') {
             expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
             expect(existsSync(join(workDir, '1-ingest/source.json'))).toBe(true);
             expect(existsSync(join(workDir, '1-ingest/docs.json'))).toBe(true);
+            expect(existsSync(join(workDir, '1-ingest/last30days-docs.json'))).toBe(true);
+            expect(existsSync(join(workDir, '1-ingest/horizon-docs.json'))).toBe(true);
+            expect(existsSync(join(workDir, '1-ingest/blended.json'))).toBe(true);
+            expect(existsSync(join(workDir, '2-facts/content.json'))).toBe(true);
+            expect(existsSync(join(workDir, '2-facts/core-facts.md'))).toBe(true);
+            expect(existsSync(join(workDir, '2-article/content.json'))).toBe(true);
+            expect(existsSync(join(workDir, '2-article/article.md'))).toBe(true);
             expect(existsSync(join(workDir, '2-script/content.json'))).toBe(true);
             expect(existsSync(join(workDir, '2-script/voicescript.yaml'))).toBe(true);
             expect(existsSync(join(workDir, '3-audio/docs.json'))).toBe(true);
@@ -172,8 +219,19 @@ if (plugin === 'aihot-ingest') {
                 .trim()
                 .split('\n')
                 .map((line) => JSON.parse(line));
-            expect(calls.map((call) => call.plugin)).toEqual(['aihot-ingest', 'dailynews-gen', 'voice-gen']);
-            expect(calls[1]).toMatchObject({ language: 'en', title: 'AI Today', voiceProfile: 'Alex' });
+            expect(calls.map((call) => call.plugin)).toEqual([
+                'aihot-ingest',
+                'last30days-ingest',
+                'horizon-ingest',
+                'fan-in',
+                'core-facts-gen',
+                'content-gen',
+                'dailynews-gen',
+                'voice-gen',
+            ]);
+            const scriptCall = calls.find((call) => call.plugin === 'dailynews-gen');
+            expect(scriptCall).toMatchObject({ language: 'en', title: 'AI Today', voiceProfile: 'Alex' });
+            expect(scriptCall?.inPath).toContain('blended.json');
             expect(calls.every((call) => call.pluginsPath === join(testRoot, 'plugin root'))).toBe(true);
 
             const wrappedDocs = JSON.parse(readFileSync(join(workDir, '3-audio/docs.json'), 'utf8'));

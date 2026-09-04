@@ -424,7 +424,7 @@ File: `.spur/config.yaml`
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
-| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine orchestrating aihot-ingest -> dailynews-gen -> voice-gen (F6 **shipped** 2026-08-21) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: collect (aihot-ingest + last30days-ingest + horizon-ingest) -> blend (fan-in + core-facts-gen) -> content-gen article + cover + dailynews-gen script + voice-gen -> fan-out publish (F61 destination, dogfooded 2026-09-03) |
 | Podcast publish plugin | `docs/design/podcast-pub.md` | microfeed podcast publish channel + instance deploy (E6 **shipped** 2026-08-27) |
 | Daily AI voice gap analysis | `docs/design/kk-daily-ai-voice-gap-analysis.md` | Gap analysis vs ideal 3-stage daily pipeline (F61 task 0088) |
 | Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |

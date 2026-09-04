@@ -244,6 +244,45 @@ segments:
         expect(parsed.sampleRate).toBe(24000);
     });
 
+    it('R3b — a segment that times out once is retried and the run completes', async () => {
+        // Regression (dogfood daily-ai-news-20260903): segment 108/132 timed out at 600s and
+        const scriptYaml = `
+title: "Retry Test"
+language: en
+default_profile: Robin
+segments:
+  - text: "First segment survives."
+    gap_ms: 100
+  - text: "Second segment stalls once."
+    gap_ms: 100
+`;
+        const doc: Doc = {
+            id: 'doc-retry',
+            sourceUri: 'https://example.com/retry',
+            title: 'Retry Test',
+            body: scriptYaml,
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+
+        let waitCalls = 0;
+        const client = createMockClient({
+            waitUntilDone: async () => {
+                waitCalls++;
+                if (waitCalls === 2) {
+                    throw new Error('Voicebox generation timed out after 600000ms for id: gen-2');
+                }
+                return { status: 'completed', duration: 1.0 };
+            },
+        });
+
+        await processGeneratorIO(inputPath, outputPath, client);
+
+        expect(waitCalls).toBe(3); // seg1 ok, seg2 stall, seg2 retry ok
+        expect(existsSync(outputPath)).toBe(true);
+        const content = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        expect(content.metadata.segments.length).toBe(2);
+    });
+
     it('R4 — Segment text over 50,000 characters fails loud without writing --out', async () => {
         const largeText = 'A'.repeat(50001);
         const doc: Doc = {

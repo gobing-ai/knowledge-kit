@@ -2,21 +2,31 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is an automated knowledge-kit product pipeline that ingests curated AI news, compiles a spoken broadcast script, and synthesizes audio via `voice-gen`.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → article (content-gen) + cover (wt-image-cover) + spoken broadcast script (dailynews-gen) + audio (voice-gen) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`.
 
 ## 2. Architecture & Data Flow
 
 ```mermaid
 flowchart TD
-    A[prepare] -->|Create workspace| B[fetch: aihot-ingest]
-    B -->|1-ingest/docs.json| C[script: dailynews-gen]
-    C -->|2-script/content.json & voicescript.yaml| D{skip_review?}
-    D -->|false| E[review: hitl.confirm]
-    D -->|true| F[wrap-docs]
-    E -->|Approved| F[wrap-docs: VoiceScript -> Doc]
-    E -->|Rejected| G[failed]
-    F -->|3-audio/docs.json| H[generate: voice-gen]
-    H -->|3-audio/content.wav + content.mp3| I[done]
+    A[prepare] -->|workspace + source configs| B[fetch: aihot-ingest]
+    B --> C[ingest-last30days]
+    C --> D[ingest-horizon]
+    D -->|Doc[] x3| E[blend-facts: fan-in + core-facts-gen]
+    E -->|1-ingest/blended.json + 2-facts/core-facts.md| F[article: content-gen]
+    F -->|cover_enabled| G[cover: wt-image-cover agent.run]
+    F -->|cover disabled| H[script: dailynews-gen]
+    G -->|2-cover/cover.png| H
+    H -->|2-script/content.json & voicescript.yaml| I{skip_review?}
+    I -->|false| J[review: hitl.confirm]
+    I -->|true| K[wrap-docs]
+    J -->|Approved| K[wrap-docs: VoiceScript -> Doc]
+    J -->|Rejected| L[failed]
+    K -->|3-audio/docs.json| M[generate: voice-gen]
+    M -->|3-audio/content.wav + content.mp3| N[quality-control]
+    N -->|publish_enabled| O[publish-prep: article + audio seam]
+    O --> P[publish: fan-out surfdash-pub + podcast-pub]
+    N -->|publish disabled| Q[done]
+    P --> Q
 ```
 
 ## 3. Invocation

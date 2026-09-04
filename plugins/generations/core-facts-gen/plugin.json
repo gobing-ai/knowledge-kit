@@ -1,0 +1,7 @@
+{
+    "name": "core-facts-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Renders a merged Doc[] into one dated core-facts markdown Content (mechanical, no LLM) per docs/design/core-facts-template.md"
+}

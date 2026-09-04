@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
@@ -38,8 +39,9 @@ describe('surfdash-pub plugin', () => {
         expect(markdown).toContain('title: "My Surfing Article"');
         expect(markdown).toContain('description: "Custom description from metadata"');
         expect(markdown).toContain('tags: ["web-dev","typescript"]');
-        expect(markdown).toContain('canonical_url: "https://example.com/ref-1"');
-        expect(markdown).toContain('published: true');
+        expect(markdown).toContain('canonical: "https://example.com/ref-1"');
+        expect(markdown).toContain('draft: false');
+        expect(markdown).toContain('publishDate: "');
         expect(markdown).toContain('# My Surfing Article');
     });
 
@@ -52,7 +54,7 @@ describe('surfdash-pub plugin', () => {
         const markdown = mapContentToSurfingMarkdown(content);
         expect(markdown).toContain('title: "Extracted Title"');
         expect(markdown).toContain('description: "This lead paragraph will become the description."');
-        expect(markdown).toContain('published: true');
+        expect(markdown).toContain('draft: false');
     });
 
     test('getPublishTransport resolves PostsurfingFileCliTransport by default and FakeFileCliTransport when configured', () => {
@@ -66,12 +68,22 @@ describe('surfdash-pub plugin', () => {
     });
 
     test('PostsurfingFileCliTransport handles missing postsurfing binary gracefully', async () => {
-        const transport = new PostsurfingFileCliTransport();
-        const content: Content = { title: 'CLI Test', body: 'Test body', format: 'markdown' };
-        const result = await transport.publish({ content });
-        expect(result.ok).toBe(false);
-        expect(result.target).toBe('surfdash');
-        expect(result.error).toContain('Postsurfing transport error');
+        const tmpDir = join(process.cwd(), '.tmp-missing-bin');
+        await mkdir(tmpDir, { recursive: true });
+        process.env.SURFDASH_ROOT = tmpDir; // bypass bin-path root derivation; spawn still targets a missing bin
+        process.env.POSTSURFING_BIN = 'postsurfing-definitely-missing-bin';
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const content: Content = { title: 'CLI Test', body: 'Test body', format: 'markdown' };
+            const result = await transport.publish({ content });
+            expect(result.ok).toBe(false);
+            expect(result.target).toBe('surfdash');
+            expect(result.error).toContain('Postsurfing transport error');
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            delete process.env.POSTSURFING_BIN;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
     });
 
     test('PostsurfingFileCliTransport handles CLI non-zero exit when binary exists', async () => {
@@ -82,6 +94,7 @@ describe('surfdash-pub plugin', () => {
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
 
         process.env.POSTSURFING_BIN = mockBin;
+        process.env.SURFDASH_ROOT = tmpDir;
         try {
             const transport = new PostsurfingFileCliTransport();
             const content: Content = { title: 'Fail Test', body: 'Test body', format: 'markdown' };
@@ -91,6 +104,7 @@ describe('surfdash-pub plugin', () => {
             expect(result.error).toContain('postsurfing CLI failed (exit 1): CLI error');
         } finally {
             delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -103,6 +117,7 @@ describe('surfdash-pub plugin', () => {
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
 
         process.env.POSTSURFING_BIN = mockBin;
+        process.env.SURFDASH_ROOT = tmpDir;
         try {
             const transport = new PostsurfingFileCliTransport();
             const content: Content = { title: 'Pass Test', body: 'Test body', format: 'markdown' };
@@ -110,8 +125,11 @@ describe('surfdash-pub plugin', () => {
             expect(result.ok).toBe(true);
             expect(result.target).toBe('surfdash');
             expect(result.message).toContain('Published successfully');
+            // Contract: the markdown lands at content/posts/articles/<locale>/<slug>/index.md in the site tree
+            expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh', 'pass-test', 'index.md'))).toBe(true);
         } finally {
             delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

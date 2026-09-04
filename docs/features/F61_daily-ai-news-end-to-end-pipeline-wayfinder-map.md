@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: ["wayfinder-map"]
 created_at: "2026-09-03T04:18:12.482Z"
-updated_at: "2026-09-03T06:16:57.255Z"
+updated_at: "2026-09-04T00:28:06.793Z"
 ---
 
 # F61: Daily AI news end-to-end pipeline (wayfinder map)
@@ -36,7 +36,6 @@ Wayfinder map — deliberately **no Gherkin AC**. The ship criterion is the dest
 <!-- END AUTO-GENERATED -->
 
 ## Notes
-
 ### Open questions
 
 _None._
@@ -52,7 +51,7 @@ _None._
 
 **Consult every session:** `docs/design/kk-daily-ai-voice.md`, `docs/design/fan-in-and-fan-out-specification.md`, `docs/design/{ingestion,generator,publish}-plugin-specification.md`, skill `sp:spur-cli`.
 
-**Existing pieces (recon 2026-09-02):** ingestions `aihot-ingest`, `karakeep-local`, `web-search`; generations `content-gen`, `dailynews-gen`, `voice-gen`; publishings `emdash-pub`, `podcast-pub`, `qiita-pub`, `surfdash-pub`, `zenn-pub`; workflows `kk-solo-podcast.yaml`, `kk-itc.yaml`, `judge-gated-publish-example.yaml` (judge-gate pattern). Current pipeline: prepare → fetch(aihot) → script(dailynews-gen) → review(HITL, `skip_review` var) → wrap-docs → generate(voice-gen) → quality-control → done. No publish step yet.
+**Existing pieces (recon 2026-09-02):** ingestions `aihot-ingest`, `karakeep-local`, `web-search`, `last30days-ingest`, `horizon-ingest` (F61, 2026-09-03); generations `content-gen`, `core-facts-gen` (F61, 2026-09-03), `dailynews-gen`, `voice-gen`; publishings `emdash-pub`, `podcast-pub`, `qiita-pub`, `surfdash-pub`, `zenn-pub`; workflows `kk-solo-podcast.yaml`, `kk-itc.yaml`, `judge-gated-publish-example.yaml` (judge-gate pattern). Current pipeline (extended 2026-09-03, dogfooded): prepare → collect (aihot + last30days + Horizon ingests) → blend-facts (fan-in + core-facts-gen) → article (content-gen) → cover (wt-image-cover via agent.run) → script (dailynews-gen) → review (HITL, `skip_review`) → wrap-docs → generate (voice-gen) → quality-control → publish-prep → publish (fan-out surfdash-pub + podcast-pub, gated `publish_enabled`) → done.
 
 **External sources to wrap:** `last30days` skill (`~/.agents/skills/last30days`); Horizon at `~/tools/Horizon` via `(cd ~/tools/Horizon && uv run horizon)`.
 
@@ -61,7 +60,7 @@ _None._
 ### Not yet specified
 
 - Scheduling mechanism for the daily morning run (launchd / cron / manual) and failure notification channel.
-- Cover-image generation path: `wt-image-cover` skill vs a `cover-gen` plugin; style/branding template.
+- Cover-image style/branding template (path decided 2026-09-03: `wt-image-cover` skill via workflow `agent.run`; style template still open).
 - Content quality gate before publish — whether the `judge-gated-publish-example.yaml` pattern (content-judge skill + `agent.run`) slots in, and where.
 - Source-roster growth: how new data sources register (plugin discovery is multi-root, ADR-012) without editing the workflow each time.
 - Whether the HITL review pause survives in an unattended daily run, or `skip_review: "true"` becomes the daily default.

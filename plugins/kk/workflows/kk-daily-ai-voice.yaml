@@ -3,7 +3,8 @@
 name: kk-daily-ai-voice
 kind: state-machine
 description: >-
-  Daily AI news broadcast pipeline orchestrating aihot-ingest, dailynews-gen, and voice-gen
+  Daily AI news end-to-end pipeline (F61 destination): collect (aihot + last30days + Horizon)
+  → blend core facts → article + cover + script + voice → publish (podcast w/ show notes + surfdash)
 initialState: prepare
 terminalStates:
   - done
@@ -21,19 +22,27 @@ vars:
   state_file: ""
   skip_review: "false"
   transcode_mp3: "false"
+  cover_enabled: "true"
+  max_items: "12"
   plugins_path: ""
+  last30days_topic: "AI news"
+  horizon_hours: "24"
+  publish_enabled: "false"
+  agent: "auto"
   __hitlAnswer: ""
 
 states:
   - id: prepare
-    description: "Create workspace subdirectories and validate parameters"
+    description: "Create workspace subdirectories and validate parameters; write source configs"
     onEnter:
       - kind: shell
         options:
           command: >-
             test -n "${vars.work_dir}" || { echo "missing required variable: work_dir" >&2 && exit 1; };
-            mkdir -p "${vars.work_dir}" "${vars.work_dir}/1-ingest" "${vars.work_dir}/2-script" "${vars.work_dir}/3-audio";
-            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ limit: Number(process.argv[2]), cursor: process.argv[3] || undefined, stateFile: process.argv[4] || undefined }, null, 2))' "${vars.work_dir}/1-ingest/source.json" "${vars.limit}" "${vars.cursor}" "${vars.state_file}"
+            mkdir -p "${vars.work_dir}/1-ingest" "${vars.work_dir}/2-facts" "${vars.work_dir}/2-article" "${vars.work_dir}/2-cover" "${vars.work_dir}/2-script" "${vars.work_dir}/3-audio" "${vars.work_dir}/3-publish";
+            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ limit: Number(process.argv[2]), cursor: process.argv[3] || undefined, stateFile: process.argv[4] || undefined }, null, 2))' "${vars.work_dir}/1-ingest/source.json" "${vars.limit}" "${vars.cursor}" "${vars.state_file}" &&
+            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ topic: process.argv[2] }, null, 2))' "${vars.work_dir}/1-ingest/last30days.json" "${vars.last30days_topic}" &&
+            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ hours: Number(process.argv[2]) }, null, 2))' "${vars.work_dir}/1-ingest/horizon.json" "${vars.horizon_hours}"
 
   - id: fetch
     description: "Ingest latest curated AI news from aihot.virxact.com"
@@ -45,15 +54,71 @@ states:
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             kk executor run aihot-ingest --in "${vars.work_dir}/1-ingest/source.json" --out "${vars.work_dir}/1-ingest/docs.json" "$@"
 
-  - id: script
-    description: "Compile news Doc[] into structured broadcast VoiceScript YAML Content"
+  - id: ingest-last30days
+    description: "Ingest last-30-days social/news research (last30days skill, degraded keyless without setup)"
     onEnter:
       - kind: shell
         options:
           command: >-
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/1-ingest/docs.json" --out "${vars.work_dir}/2-script/content.json" "$@" &&
+            kk executor run last30days-ingest --in "${vars.work_dir}/1-ingest/last30days.json" --out "${vars.work_dir}/1-ingest/last30days-docs.json" "$@"
+
+  - id: ingest-horizon
+    description: "Run Horizon crawl and parse the fresh digest into Doc[]"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor run horizon-ingest --in "${vars.work_dir}/1-ingest/horizon.json" --out "${vars.work_dir}/1-ingest/horizon-docs.json" "$@"
+
+  - id: blend-facts
+    description: "Merge all source Doc[] (fan-in) and render the dated core-facts markdown"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor fan-in --in "${vars.work_dir}/1-ingest/docs.json" --in "${vars.work_dir}/1-ingest/last30days-docs.json" --in "${vars.work_dir}/1-ingest/horizon-docs.json" --out "${vars.work_dir}/1-ingest/blended.json" "$@" &&
+            kk executor run core-facts-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-facts/content.json" "$@" &&
+            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-facts/content.json" "${vars.work_dir}/2-facts/core-facts.md"
+
+  - id: article
+    description: "Generate the templated article from blended facts (content-gen STORM)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor run content-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-article/content.json" "$@" &&
+            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-article/content.json" "${vars.work_dir}/2-article/article.md"
+
+  - id: cover
+    description: "Generate the article cover image via the wt-image-cover skill (agent.run)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the wt-image-cover skill.
+            Generate a 21:9 cover image for the article at ${vars.work_dir}/2-article/article.md and save it to ${vars.work_dir}/2-cover/cover.png.
+            Use style "news". Do not wait for operator confirmation; write the output file.
+          expectFile: ${vars.work_dir}/2-cover/cover.png
+
+  - id: script
+    description: "Compile blended facts Doc[] into structured broadcast VoiceScript YAML Content"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" DAILYNEWS_MAX_ITEMS="${vars.max_items}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-script/content.json" "$@" &&
             bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-script/content.json" "${vars.work_dir}/2-script/voicescript.yaml"
 
   - id: review
@@ -91,8 +156,26 @@ states:
           command: >-
             bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/content.json"
 
+  - id: publish-prep
+    description: "Merge article Content with the voice audio reference (podcast show-notes seam)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, durationSeconds: audioMeta.duration, ...(existsSync(coverPath) ? { coverImage: coverPath } : {}) } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/content.json" "${vars.work_dir}/3-audio/content.json" "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/2-cover/cover.png"
+
+  - id: publish
+    description: "Fan out the merged Content to surfdash-pub and podcast-pub (article as episode show notes)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target surfdash-pub --target podcast-pub --out "${vars.work_dir}/3-publish/result.json" "$@"
+
   - id: done
-    description: "Terminal — Daily AI news voice broadcast generated successfully"
+    description: "Terminal — Daily AI news pipeline completed (collect → facts → article/cover/script/voice → publish)"
   - id: failed
     description: "Terminal — Pipeline failed"
 
@@ -104,8 +187,45 @@ transitions:
       kind: always
 
   - from: fetch
+    to: ingest-last30days
+    description: "aihot ingested -> last30days source"
+    guard:
+      kind: always
+
+  - from: ingest-last30days
+    to: ingest-horizon
+    description: "last30days ingested -> Horizon crawl"
+    guard:
+      kind: always
+
+  - from: ingest-horizon
+    to: blend-facts
+    description: "Horizon ingested -> merge + render core facts"
+    guard:
+      kind: always
+
+  - from: blend-facts
+    to: article
+    description: "Core facts rendered -> generate article"
+    guard:
+      kind: always
+
+  - from: article
+    to: cover
+    description: "cover_enabled -> generate cover image"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.cover_enabled}" = "true"'
+
+  - from: article
     to: script
-    description: "News ingested -> build broadcast script"
+    description: "cover disabled -> skip to script"
+    guard:
+      kind: always
+  - from: cover
+    to: script
+    description: "Cover generated -> build broadcast script"
     guard:
       kind: always
 
@@ -152,7 +272,27 @@ transitions:
       kind: always
 
   - from: quality-control
+    to: publish-prep
+    description: "publish_enabled -> merge article + audio for fan-out"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+
+  - from: quality-control
     to: done
-    description: "Quality control checks complete -> done"
+    description: "publish disabled -> done after quality control"
+    guard:
+      kind: always
+
+  - from: publish-prep
+    to: publish
+    description: "Merged publish Content -> fan out to targets"
+    guard:
+      kind: always
+
+  - from: publish
+    to: done
+    description: "Publish fan-out complete -> done"
     guard:
       kind: always

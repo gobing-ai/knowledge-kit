@@ -86,6 +86,27 @@ describe('Voice Quality Control (QC)', () => {
         expect(report.segmentAudits[1]?.passed).toBe(false);
     });
 
+    it('auditVoiceSegments does not fail on ASR phantom repetition when duration is in range', async () => {
+        // Regression (dogfood daily-ai-news-20260903): whisper loops over trailing silence and
+        // emits "这个这个…" hallucinations; the audio is normal. Such segments must pass.
+        const script: VoiceScript = {
+            title: 'ASR phantom',
+            language: 'zh',
+            segments: [{ text: '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者。', gap_ms: 800 }],
+        };
+        const segmentWavs = [new Uint8Array(100)];
+        const segmentMetadata = [{ generationId: 'g1', profile: 'Robin', duration: 6.5 }]; // in range
+        const mockClient: Partial<VoiceboxClient> = {
+            transcribe: async (_audio, _lang) => ({
+                text: '在各种技术光环背后正是这样专注而不知疲倦的底层攻坚者' + '这个'.repeat(60),
+            }),
+        };
+        const report = await auditVoiceSegments(script, segmentWavs, segmentMetadata, mockClient as VoiceboxClient);
+        expect(report.segmentAudits[0]?.repetitionDetected).toBe(true); // raw ASR signal kept
+        expect(report.segmentAudits[0]?.passed).toBe(true); // but not corroborated by duration
+        expect(report.passed).toBe(true);
+    });
+
     it('auditVoiceSegments passes cleanly when all segments are healthy', async () => {
         const script: VoiceScript = {
             title: 'Healthy Script',

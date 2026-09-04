@@ -27,6 +27,17 @@ export async function processGeneratorIO(
         throw new Error(`Invalid DocList input: ${err instanceof Error ? err.message : String(err)}`);
     }
 
+    // Optional story cap (daily pipeline: the blend carries 50+ docs; a broadcast needs a bound).
+    // Input order is curated-first (fan-in first-seen), so a head-cap keeps the best items.
+    const maxItemsEnv = process.env.DAILYNEWS_MAX_ITEMS;
+    if (maxItemsEnv) {
+        const maxItems = Number.parseInt(maxItemsEnv, 10);
+        if (Number.isInteger(maxItems) && maxItems > 0 && docs.length > maxItems) {
+            console.error(`dailynews-gen: capping ${docs.length} docs to ${maxItems} (DAILYNEWS_MAX_ITEMS)`);
+            docs = docs.slice(0, maxItems);
+        }
+    }
+
     const script = buildNewsVoiceScript(docs, options);
     const yamlBody = formatVoiceScriptToYaml(script);
 

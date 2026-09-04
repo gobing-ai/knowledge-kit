@@ -156,6 +156,7 @@ describe('content-gen plugin adapter', () => {
         await writeSequentialMockSpur([
             { exitCode: 0, stdout: JSON.stringify(CURATION), stderr: '' },
             { exitCode: 1, stdout: '', stderr: 'outline agent crashed' },
+            { exitCode: 1, stdout: '', stderr: 'outline agent crashed' }, // stage-runner retry also crashes
         ]);
         const cap = captureOutput();
 
@@ -284,6 +285,7 @@ describe('content-gen plugin adapter', () => {
             { exitCode: 0, stdout: JSON.stringify(OUTLINE), stderr: '' },
             { exitCode: 0, stdout: JSON.stringify(ARTICLE), stderr: '' },
             { exitCode: 1, stdout: '', stderr: 'polish agent crashed' },
+            { exitCode: 1, stdout: '', stderr: 'polish agent crashed' }, // stage-runner retry also crashes
         ]);
         process.argv = ['bun', 'index.ts', '--in', IN_FILE, '--out', OUT_FILE];
         const errTarget = createBufferTarget();

@@ -16,6 +16,7 @@ export function mapAihotItemToDoc(item: AihotItem): Doc {
     const body = `${item.summary?.trim() || item.title.trim()}\n`;
 
     const metadata: Record<string, unknown> = {
+        source: 'aihot',
         sourceName: item.source.name,
         publishedAt: item.publishedAt,
         discoveredAt: item.discoveredAt,

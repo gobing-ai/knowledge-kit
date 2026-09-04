@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContentSchema, type Doc } from '@gobing-ai/kk-core';
+import { YAML } from 'bun';
 import {
     buildNewsVoiceScript,
     formatBroadcastDate,
@@ -46,6 +47,25 @@ describe('dailynews-gen plugin (0073)', () => {
     afterEach(() => {
         if (existsSync(testDir)) {
             rmSync(testDir, { recursive: true, force: true });
+        }
+    });
+
+    it('DAILYNEWS_MAX_ITEMS caps the story count (blend can carry 50+ docs)', async () => {
+        // Dogfood daily-ai-news-20260903: 64 blended docs produced 132 TTS segments (~2.2h).
+        const docs: Doc[] = Array.from({ length: 30 }, (_, i) => ({
+            id: `doc-${i}`,
+            title: `Story ${i}`,
+            sourceUri: `https://example.com/${i}`,
+            body: `Body ${i}`,
+        }));
+        writeFileSync(inPath, JSON.stringify(docs));
+        process.env.DAILYNEWS_MAX_ITEMS = '5';
+        try {
+            const content = await processGeneratorIO(inPath, outPath, { date: new Date(2026, 7, 22) });
+            const script = VoiceScriptSchema.parse(YAML.parse(content.body));
+            expect(script.segments.length).toBe(12); // intro + 2 segments per story x5 + outro
+        } finally {
+            delete process.env.DAILYNEWS_MAX_ITEMS;
         }
     });
 

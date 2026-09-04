@@ -1,0 +1,7 @@
+{
+    "name": "horizon-ingest",
+    "kind": "ingestion",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Wraps the Horizon CLI (uv run horizon) into Doc[] — one Doc per digest item block"
+}

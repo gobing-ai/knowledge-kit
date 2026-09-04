@@ -456,6 +456,79 @@ describe('spur stage runner (R1)', () => {
         expect(fallback[fallback.indexOf('--cwd') + 1]).toBe(process.cwd());
     });
 
+    test('retries a crashed agent run once, then returns the success', async () => {
+        // Regression (dogfood daily-ai-news-20260903): polish stage agent exit 1 killed a 90-min run.
+        await mkdir(FIXTURES_DIR, { recursive: true });
+        const counter = join(FIXTURES_DIR, 'attempts.txt');
+        await writeFile(
+            MOCK_SPUR,
+            `#!/usr/bin/env bun
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const f = ${JSON.stringify(counter)};
+const n = (existsSync(f) ? Number(readFileSync(f, 'utf8')) : 0) + 1;
+writeFileSync(f, String(n));
+if (n === 1) console.log(JSON.stringify({ exitCode: 1, stdout: '', stderr: 'Agent exited with code 1' }));
+else console.log(JSON.stringify({ exitCode: 0, stdout: '{"recovered":true}', stderr: '' }));
+`,
+            'utf-8',
+        );
+        await chmod(MOCK_SPUR, 0o755);
+        process.env.KNOWLEDGE_KIT_SPUR_BIN = MOCK_SPUR;
+
+        const envelope = await spurStageRunner.runStage('p');
+
+        expect(envelope.exitCode).toBe(0);
+        expect(envelope.stdout).toBe('{"recovered":true}');
+        expect(await Bun.file(counter).text()).toBe('2');
+    });
+
+    test('gives up after one retry when the agent keeps crashing', async () => {
+        await mkdir(FIXTURES_DIR, { recursive: true });
+        const counter = join(FIXTURES_DIR, 'attempts.txt');
+        await writeFile(
+            MOCK_SPUR,
+            `#!/usr/bin/env bun
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const f = ${JSON.stringify(counter)};
+const n = (existsSync(f) ? Number(readFileSync(f, 'utf8')) : 0) + 1;
+writeFileSync(f, String(n));
+console.log(JSON.stringify({ exitCode: 1, stdout: '', stderr: 'Agent exited with code 1' }));
+`,
+            'utf-8',
+        );
+        await chmod(MOCK_SPUR, 0o755);
+        process.env.KNOWLEDGE_KIT_SPUR_BIN = MOCK_SPUR;
+
+        const envelope = await spurStageRunner.runStage('p');
+
+        expect(envelope.exitCode).toBe(1);
+        expect(await Bun.file(counter).text()).toBe('2');
+    });
+
+    test('does not retry a malformed envelope (deterministic contract failure)', async () => {
+        await mkdir(FIXTURES_DIR, { recursive: true });
+        const counter = join(FIXTURES_DIR, 'attempts.txt');
+        await writeFile(
+            MOCK_SPUR,
+            `#!/usr/bin/env bun
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const f = ${JSON.stringify(counter)};
+const n = (existsSync(f) ? Number(readFileSync(f, 'utf8')) : 0) + 1;
+writeFileSync(f, String(n));
+console.log('garbage');
+`,
+            'utf-8',
+        );
+        await chmod(MOCK_SPUR, 0o755);
+        process.env.KNOWLEDGE_KIT_SPUR_BIN = MOCK_SPUR;
+
+        const envelope = await spurStageRunner.runStage('p');
+
+        expect(envelope.exitCode).toBe(1);
+        expect(envelope.stderr).toContain('malformed');
+        expect(await Bun.file(counter).text()).toBe('1');
+    });
+
     test('returns the CLI-level failure when the spur binary exits non-zero without an envelope', async () => {
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeFile(

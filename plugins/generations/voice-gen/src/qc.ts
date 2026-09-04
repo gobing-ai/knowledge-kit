@@ -115,16 +115,22 @@ export async function auditVoiceSegments(
                 transcriptionText = trans.text;
                 if (detectRepetitions(transcriptionText)) {
                     repetitionDetected = true;
-                    issues.push(
-                        `Repetition hallucination detected in audio transcription: "${transcriptionText.slice(0, 80)}..."`,
-                    );
+                    // Whisper loops over trailing gap/silence and emits phantom repetitions whose
+                    // audio duration stays normal; a real TTS loop always inflates duration.
+                    // Fail only when the duration channel corroborates (dogfood 2026-09-03:
+                    // 15/22 segments flagged with in-range durations = ASR artifacts).
+                    if (durationAnomaly) {
+                        issues.push(
+                            `Repetition hallucination corroborated by duration anomaly: "${transcriptionText.slice(0, 80)}..."`,
+                        );
+                    }
                 }
             } catch {
                 // Transcription service unavailable or optional
             }
         }
 
-        const passed = !durationAnomaly && !repetitionDetected;
+        const passed = !durationAnomaly && !(repetitionDetected && durationAnomaly);
         if (!passed) {
             criticalIssues.push(`Segment ${i + 1} (${meta?.profile || 'Unknown'}): ${issues.join('; ')}`);
         }

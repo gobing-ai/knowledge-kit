@@ -21,60 +21,85 @@ export interface StormStageRunner {
     runStage(prompt: string): Promise<AgentRunEnvelope>;
 }
 
-/** Concrete runner invoking the existing `spur agent run` boundary (same call shape as the D2 stand-in). */
-export const spurStageRunner: StormStageRunner = {
-    async runStage(prompt: string): Promise<AgentRunEnvelope> {
-        const proc = Bun.spawn(
-            [
-                process.env.KNOWLEDGE_KIT_SPUR_BIN ?? 'spur',
-                'agent',
-                'run',
-                prompt,
-                '--agent',
-                'auto',
-                '--mode',
-                'text',
-                '--json',
-                '--cwd',
-                // Anchor the agent's cwd to the project root (set by the executor, whose own
-                // cwd is the invocation root). process.cwd() here is the plugin package dir —
-                // using it makes spur auto-init a stray `.spur/` and drops agent files there.
-                process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
-            ],
-            { stdout: 'pipe', stderr: 'pipe' },
-        );
-        const [exitCode, stdout, stderr] = await Promise.all([
-            proc.exited,
-            new Response(proc.stdout).text(),
-            new Response(proc.stderr).text(),
-        ]);
-        if (exitCode !== 0) {
-            // CLI-level failure (spawn/argv): no envelope to unwrap; stages prefix the diagnostic.
-            return { exitCode, stdout, stderr };
+interface SpawnOutcome {
+    kind: 'ok' | 'crash' | 'malformed';
+    envelope: AgentRunEnvelope;
+}
+
+/** One `spur agent run` invocation + envelope unwrap. */
+async function spawnAgentOnce(prompt: string): Promise<SpawnOutcome> {
+    const proc = Bun.spawn(
+        [
+            process.env.KNOWLEDGE_KIT_SPUR_BIN ?? 'spur',
+            'agent',
+            'run',
+            prompt,
+            '--agent',
+            'auto',
+            '--mode',
+            'text',
+            '--json',
+            '--cwd',
+            // Anchor the agent's cwd to the project root (set by the executor, whose own
+            // cwd is the invocation root). process.cwd() here is the plugin package dir —
+            // using it makes spur auto-init a stray `.spur/` and drops agent files there.
+            process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+    );
+    const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+    ]);
+    if (exitCode !== 0) {
+        // CLI-level failure (spawn/argv): no envelope to unwrap; stages prefix the diagnostic.
+        return { kind: 'crash', envelope: { exitCode, stdout, stderr } };
+    }
+    // The CLI writes the agent envelope {exitCode, stdout, stderr, durationMs} to stdout.
+    // Unwrap it so stages consume the agent output.
+    try {
+        const parsed = JSON.parse(stdout) as Partial<AgentRunEnvelope>;
+        if (
+            typeof parsed.exitCode !== 'number' ||
+            typeof parsed.stdout !== 'string' ||
+            typeof parsed.stderr !== 'string'
+        ) {
+            throw new Error('expected envelope {exitCode:number, stdout:string, stderr:string}');
         }
-        // The CLI writes the agent envelope {exitCode, stdout, stderr, durationMs} to stdout.
-        // Unwrap it so stages consume the agent output.
-        let envelope: AgentRunEnvelope;
-        try {
-            const parsed = JSON.parse(stdout) as Partial<AgentRunEnvelope>;
-            if (
-                typeof parsed.exitCode !== 'number' ||
-                typeof parsed.stdout !== 'string' ||
-                typeof parsed.stderr !== 'string'
-            ) {
-                throw new Error('expected envelope {exitCode:number, stdout:string, stderr:string}');
-            }
-            envelope = parsed as AgentRunEnvelope;
-        } catch (error) {
-            // Exit-0 but non-envelope stdout: return a runner-level diagnostic so the calling
-            // stage prefixes it ({Stage} stage failed: …) instead of leaking a raw SyntaxError.
-            return {
+        const envelope = parsed as AgentRunEnvelope;
+        return { kind: envelope.exitCode === 0 ? 'ok' : 'crash', envelope };
+    } catch (error) {
+        // Exit-0 but non-envelope stdout: deterministic contract failure — never retried.
+        return {
+            kind: 'malformed',
+            envelope: {
                 exitCode: 1,
                 stdout: '',
                 stderr: `spur agent run returned malformed output: ${error instanceof Error ? error.message : String(error)}`,
-            };
+            },
+        };
+    }
+}
+
+/** Concrete runner invoking the existing `spur agent run` boundary (same call shape as the D2 stand-in). */
+export const spurStageRunner: StormStageRunner = {
+    async runStage(prompt: string): Promise<AgentRunEnvelope> {
+        // A crashed agent subprocess (e.g. polish stage exit 1, dogfood daily-ai-news-20260903)
+        // must not kill a 90-minute pipeline run — retry once. Malformed envelopes are a
+        // deterministic contract failure and are not retried.
+        let last: AgentRunEnvelope = { exitCode: 1, stdout: '', stderr: 'no attempt executed' };
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const outcome = await spawnAgentOnce(prompt);
+            if (outcome.kind !== 'crash') return outcome.envelope;
+            last = outcome.envelope;
+            if (attempt === 1) {
+                console.error(
+                    `spurStageRunner: agent run exited ${last.exitCode}; retrying once (${last.stderr.trim().slice(0, 200)})`,
+                );
+            }
         }
-        return { exitCode: envelope.exitCode, stdout: envelope.stdout, stderr: envelope.stderr };
+        return last;
     },
 };
 

@@ -170,24 +170,46 @@ export async function processGeneratorIO(
                 effects_chain,
             };
 
-            const { id } = await client.generate(generateBody);
-            const history = await client.waitUntilDone(id);
-            if (history.status === 'failed') {
-                throw new Error(
-                    `Voicebox generation failed for profile "${resolvedProfile.name}": ${history.error || 'status failed'}`,
-                );
+            // One retry per segment: a hung/timeout voicebox generation must not kill a
+            // multi-hour run (dogfood daily-ai-news-20260903: segment 108/132 timed out at
+            // 600s and failed the whole generate state after 140 minutes).
+            let wavBytes: Uint8Array | undefined;
+            let segDuration = 0;
+            let generationId = '';
+            let lastError: unknown;
+            for (let attempt = 1; attempt <= 2 && wavBytes === undefined; attempt++) {
+                try {
+                    const { id } = await client.generate(generateBody);
+                    generationId = id;
+                    const history = await client.waitUntilDone(id);
+                    if (history.status === 'failed') {
+                        throw new Error(
+                            `Voicebox generation failed for profile "${resolvedProfile.name}": ${history.error || 'status failed'}`,
+                        );
+                    }
+                    wavBytes = await client.downloadAudio(id);
+                    segDuration = history.duration ?? 0;
+                } catch (err: unknown) {
+                    lastError = err;
+                    if (attempt === 1) {
+                        console.error(
+                            `voice-gen: segment failed (${err instanceof Error ? err.message : String(err)}); retrying once`,
+                        );
+                    }
+                }
+            }
+            if (wavBytes === undefined) {
+                throw lastError instanceof Error ? lastError : new Error(String(lastError));
             }
 
-            const wavBytes = await client.downloadAudio(id);
             const gap = segment.gap_ms ?? 0;
 
             segmentWavs.push(wavBytes);
             segmentGaps.push(gap);
 
-            const segDuration = history.duration ?? 0;
             totalDuration += segDuration + gap / 1000;
             segmentMetadata.push({
-                generationId: id,
+                generationId,
                 profile: resolvedProfile.name,
                 speaker: segment.speaker,
                 emotion: rawEmotion,

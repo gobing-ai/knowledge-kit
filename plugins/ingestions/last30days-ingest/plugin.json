@@ -1,0 +1,7 @@
+{
+    "name": "last30days-ingest",
+    "kind": "ingestion",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Wraps the last30days skill CLI (agent JSON contract) into Doc[] — one Doc per results[] item"
+}

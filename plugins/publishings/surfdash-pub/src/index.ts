@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
@@ -56,23 +56,25 @@ export function mapContentToSurfingMarkdown(content: Content): string {
         .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
         .map((t: string) => slugify(t));
 
-    const date = new Date().toISOString();
+    const isoDate = new Date().toISOString().slice(0, 10);
     const firstRefUrl = content.references?.[0]?.url;
-    const canonicalUrl =
+    const canonical =
         typeof firstRefUrl === 'string'
             ? firstRefUrl
             : typeof content.metadata?.canonicalUrl === 'string'
               ? content.metadata.canonicalUrl
               : undefined;
-    const published = typeof content.metadata?.published === 'boolean' ? content.metadata.published : true;
+    const draft = typeof content.metadata?.published === 'boolean' ? !content.metadata.published : false;
 
+    // Strict surfdash PostSchema (surfdash/src/content/schema.ts): publishDate (ISO date) is
+    // required; unknown keys (`date`, `canonical_url`, `published`) are rejected.
     const frontmatterObj: Record<string, unknown> = {
         title,
-        ...(description ? { description } : {}),
+        description: description ?? '',
         tags,
-        date,
-        ...(canonicalUrl ? { canonical_url: canonicalUrl } : {}),
-        published,
+        publishDate: isoDate,
+        ...(canonical ? { canonical } : {}),
+        draft,
     };
 
     const yamlLines = ['---', ...Object.entries(frontmatterObj).map(([k, v]) => `${k}: ${JSON.stringify(v)}`), '---'];
@@ -87,16 +89,32 @@ export class PostsurfingFileCliTransport implements PublishTransport {
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
         const markdown = mapContentToSurfingMarkdown(payload.content);
-        const tempDir = join(process.cwd(), '.spur', 'run', '.tmp-surfdash');
-        await createNodeFileSystem().ensureDir(tempDir);
+        const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
 
-        const titleSlug = slugify(payload.content.title ?? 'post');
-        const fileName = `${titleSlug || 'post'}-${Date.now()}.md`;
-        const filePath = join(tempDir, fileName);
+        // The publishing FSM requires the markdown at
+        // content/posts/<collection>/<locale>/<slug>/index.md inside the surfdash site tree
+        // (its refine step rejects other layouts). Derive the site root from the bin path
+        // (<root>/scripts/<cli>) or take SURFDASH_ROOT explicitly.
+        const surfdashRoot =
+            process.env.SURFDASH_ROOT ??
+            (postsurfingBin.includes('/') ? resolve(dirname(dirname(postsurfingBin))) : undefined);
+        if (!surfdashRoot) {
+            return ResultSchema.parse({
+                ok: false,
+                target: 'surfdash',
+                error: 'SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout',
+            });
+        }
+
+        const locale = process.env.SURFDASH_LOCALE ?? 'zh';
+        const titleSlug = slugify(payload.content.title ?? '');
+        const slug = titleSlug || `post-${new Date().toISOString().slice(0, 10)}`;
+        const postDir = join(surfdashRoot, 'content', 'posts', 'articles', locale, slug);
+        await createNodeFileSystem().ensureDir(postDir);
+        const filePath = join(postDir, 'index.md');
 
         try {
             await createNodeFileSystem().writeFile(filePath, markdown);
-            const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
 
             const proc = Bun.spawn([postsurfingBin, 'publish', filePath], {
                 stdout: 'pipe',
@@ -120,7 +138,7 @@ export class PostsurfingFileCliTransport implements PublishTransport {
             return ResultSchema.parse({
                 ok: true,
                 target: 'surfdash',
-                url: `https://surfdash.local/posts/${fileName}`,
+                url: `https://surfdash.local/posts/${locale}/${slug}`,
                 message: 'Published successfully to Surfdash via postsurfing CLI',
             });
         } catch (err: unknown) {
@@ -129,13 +147,6 @@ export class PostsurfingFileCliTransport implements PublishTransport {
                 target: 'surfdash',
                 error: `Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`,
             });
-        } finally {
-            // Best-effort temp cleanup: a failure here must not mask the publish result.
-            try {
-                await createNodeFileSystem().deleteFile(filePath);
-            } catch {
-                // ignore
-            }
         }
     }
 }
