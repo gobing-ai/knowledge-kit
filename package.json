@@ -37,7 +37,8 @@
         "bump-ver": "bun scripts/release.ts bump-ver",
         "drop-tags": "bun scripts/release.ts drop-tags",
         "check": "bun run lint && bun run test",
-        "check:full": "bun run lint && bun run test:full"
+        "check:full": "bun run lint && bun run test:full",
+        "load-history": "DATABASE_URL='.spur/spur.db' spur history import && DATABASE_URL='.spur/spur.db' spur history analyze"
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.5",
