@@ -138,7 +138,7 @@ export class PostsurfingFileCliTransport implements PublishTransport {
             return ResultSchema.parse({
                 ok: true,
                 target: 'surfdash',
-                url: `https://surfdash.local/posts/${locale}/${slug}`,
+                url: `https://surfdash.local/${locale}/posts/${slug}`,
                 message: 'Published successfully to Surfdash via postsurfing CLI',
             });
         } catch (err: unknown) {

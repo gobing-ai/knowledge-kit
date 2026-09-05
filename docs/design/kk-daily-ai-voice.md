@@ -2,21 +2,22 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → article (content-gen) + cover (wt-image-cover) + spoken broadcast script (dailynews-gen) + audio (voice-gen) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → article (content-gen) + cover (wt-image-cover) + spoken broadcast script (dailynews-gen) + audio (voice-gen) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`. `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in. Article/script/cover/audio outputs are date-stamped (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`) and skipped when the day's file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
 
 ## 2. Architecture & Data Flow
 
 ```mermaid
 flowchart TD
-    A[prepare] -->|workspace + source configs| B[fetch: aihot-ingest]
-    B --> C[ingest-last30days]
+    A[prepare] -->|workspace + run_date + source configs| B[fetch: aihot-ingest]
+    B -->|last30days_enabled| C[ingest-last30days]
+    B -->|last30days disabled| D[ingest-horizon]
     C --> D[ingest-horizon]
     D -->|Doc[] x3| E[blend-facts: fan-in + core-facts-gen]
     E -->|1-ingest/blended.json + 2-facts/core-facts.md| F[article: content-gen]
     F -->|cover_enabled| G[cover: wt-image-cover agent.run]
     F -->|cover disabled| H[script: dailynews-gen]
     G -->|2-cover/cover.png| H
-    H -->|2-script/content.json & voicescript.yaml| I{skip_review?}
+    H -->|2-script/content-$run_date.json & voicescript-$run_date.yaml| I{skip_review?}
     I -->|false| J[review: hitl.confirm]
     I -->|true| K[wrap-docs]
     J -->|Approved| K[wrap-docs: VoiceScript -> Doc]
@@ -39,15 +40,16 @@ spur workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml \
 ## 4. Pipeline Artifacts Layout
 
 Within `${vars.work_dir}`:
+- `run-date.txt`: Local `YYYYMMDD` captured at `prepare`; read into `${vars.run_date}` for all dated outputs.
 - `1-ingest/source.json`: Executor-compatible Aihot input (`limit`, optional cursor/state path).
 - `1-ingest/docs.json`: Fetched news articles formatted as `Doc[]`.
-- `2-script/content.json`: Generator `Content` with VoiceScript YAML body and references.
-- `2-script/voicescript.yaml`: Human-readable VoiceScript for inspection or manual edits.
+- `1-ingest/last30days-docs.json`: last30days `Doc[]` (or `[]` stub written by `prepare` when `last30days_enabled: "false"`).
+- `2-article/content-${run_date}.json` / `2-article/article-${run_date}.md`: Generated article Content and markdown (skipped when the day's `.md` exists).
+- `2-cover/cover-${run_date}.png`: Cover image (cover state skipped when the day's file exists).
+- `2-script/content-${run_date}.json` / `2-script/voicescript-${run_date}.yaml`: Generator `Content` with VoiceScript YAML body and the human-readable VoiceScript (skipped when the day's `.yaml` exists).
 - `3-audio/docs.json`: VoiceScript wrapped as a single `Doc` for `voice-gen`.
-- `3-audio/content.json`: Synthesized audio `Content` metadata.
+- `3-audio/content.json`: Synthesized audio `Content` metadata (generate state skipped when the file exists and `metadata.qc.passed` is true).
 - `3-audio/content.wav`: Concatenated audio broadcast.
 - `3-audio/content.mp3`: (Optional) Transcoded MP3 audio when `transcode_mp3: "true"`.
 
 The workflow passes only the generic executor flags (`--in`, `--out`, optional `--plugins-path`).
-Daily-news language/title/profile are inherited environment values for the plugin process. The
-default `voice_profile` is `Robin`; review approval requires the explicit answer `yes`.

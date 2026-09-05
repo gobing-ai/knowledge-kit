@@ -49,6 +49,17 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('transcode_mp3: "false"');
         expect(yaml).toContain('cover_enabled: "true"');
         expect(yaml).toContain('publish_enabled: "false"');
+        expect(yaml).toContain('last30days_enabled: "false"');
+        expect(yaml).toContain('run_date: ""');
+        // last30days disable routes fetch directly to Horizon (F61 speed-up).
+        expect(yaml).toContain('test "$' + '{vars.last30days_enabled}" != "true"');
+        // Date-stamped caching: article/script/cover outputs carry $' + '{vars.run_date}.
+        expect(yaml).toContain('article-$' + '{vars.run_date}.md');
+        expect(yaml).toContain('voicescript-$' + '{vars.run_date}.yaml');
+        expect(yaml).toContain('cover-$' + '{vars.run_date}.png');
+        // Audio is cached when the day's content.json exists and QC passed.
+        // Publish fan-out shells into postsurfing's own spur workflow — unset the recursion guard.
+        expect(yaml).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE');
     });
 
     it('R3 & R5 — invokes the pipeline plugins through kk executor (incl. fan-in/fan-out)', () => {
@@ -62,6 +73,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('kk executor run voice-gen');
         expect(yaml).toContain('kk executor fan-out');
         expect(yaml).toContain('kind: hitl.confirm');
+
         expect(yaml).toContain('pause: true');
     });
 
@@ -73,7 +85,6 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
             return;
         }
-
         const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
         const binDir = join(testRoot, 'bin');
         const workDir = join(testRoot, 'work dir');
@@ -170,7 +181,6 @@ if (plugin === 'aihot-ingest') {
 `,
             );
             chmodSync(fakeKkPath, 0o755);
-
             const vars = JSON.stringify({
                 work_dir: workDir,
                 limit: '2',
@@ -182,6 +192,7 @@ if (plugin === 'aihot-ingest') {
                 skip_review: 'true',
                 cover_enabled: 'false',
                 publish_enabled: 'false',
+                last30days_enabled: 'true',
                 plugins_path: join(testRoot, 'plugin root'),
             });
             const result = Bun.spawnSync(
@@ -206,10 +217,11 @@ if (plugin === 'aihot-ingest') {
             expect(existsSync(join(workDir, '1-ingest/blended.json'))).toBe(true);
             expect(existsSync(join(workDir, '2-facts/content.json'))).toBe(true);
             expect(existsSync(join(workDir, '2-facts/core-facts.md'))).toBe(true);
-            expect(existsSync(join(workDir, '2-article/content.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-article/article.md'))).toBe(true);
-            expect(existsSync(join(workDir, '2-script/content.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-script/voicescript.yaml'))).toBe(true);
+            const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
+            expect(existsSync(join(workDir, `2-article/content-${runDate}.json`))).toBe(true);
+            expect(existsSync(join(workDir, `2-article/article-${runDate}.md`))).toBe(true);
+            expect(existsSync(join(workDir, `2-script/content-${runDate}.json`))).toBe(true);
+            expect(existsSync(join(workDir, `2-script/voicescript-${runDate}.yaml`))).toBe(true);
             expect(existsSync(join(workDir, '3-audio/docs.json'))).toBe(true);
             expect(existsSync(join(workDir, '3-audio/content.json'))).toBe(true);
             expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
