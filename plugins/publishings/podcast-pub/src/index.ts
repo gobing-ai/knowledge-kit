@@ -80,6 +80,25 @@ function audioAttachment(
     };
 }
 
+/** Spreads optional episode fields (image, date, link, itunes) into a microfeed item payload. */
+function episodeExtras(episode: EpisodeMapping): MicrofeedItemInput {
+    return {
+        ...(episode.imageUrl ? { image: episode.imageUrl } : {}),
+        ...(episode.datePublishedMs !== undefined ? { date_published_ms: episode.datePublishedMs } : {}),
+        ...(episode.link ? { url: episode.link } : {}),
+        ...{
+            _microfeed: {
+                'itunes:episodeType': episode.itunes?.episodeType ?? 'full',
+                ...(episode.itunes?.title ? { 'itunes:title': episode.itunes.title } : {}),
+                ...(episode.itunes?.season !== undefined ? { 'itunes:season': episode.itunes.season } : {}),
+                ...(episode.itunes?.episode !== undefined ? { 'itunes:episode': episode.itunes.episode } : {}),
+                ...(episode.itunes?.explicit !== undefined ? { 'itunes:explicit': episode.itunes.explicit } : {}),
+                ...(episode.itunes?.block !== undefined ? { 'itunes:block': episode.itunes.block } : {}),
+            },
+        },
+    };
+}
+
 /**
  * Two-phase publish (design D2, the only legal order): create a draft item →
  * presign with `item_id` → PUT bytes → PUT item with attachment + target status.
@@ -105,6 +124,7 @@ async function publishEpisode(client: MicrofeedClient, payload: PublishTransport
                 content_html: episode.contentHtml,
                 status: episode.status,
                 attachments: [audioAttachment(episode.audio, episode.audio.url, undefined, episode.durationSeconds)],
+                ...episodeExtras(episode),
             },
             idempotencyKey,
         );
@@ -144,6 +164,7 @@ async function publishEpisode(client: MicrofeedClient, payload: PublishTransport
         content_html: episode.contentHtml,
         status: episode.status,
         attachments: [audioAttachment(episode.audio, prepared.mediaUrl, bytes.byteLength, episode.durationSeconds)],
+        ...episodeExtras(episode),
     });
 
     return ResultSchema.parse({

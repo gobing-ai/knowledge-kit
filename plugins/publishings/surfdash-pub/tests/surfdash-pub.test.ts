@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
@@ -125,8 +125,47 @@ describe('surfdash-pub plugin', () => {
             expect(result.ok).toBe(true);
             expect(result.target).toBe('surfdash');
             expect(result.message).toContain('Published successfully');
-            // Contract: the markdown lands at content/posts/articles/<locale>/<slug>/index.md in the site tree
-            expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh', 'pass-test', 'index.md'))).toBe(true);
+            // Contract: date-stamped slug under content/posts/articles/<locale>/; markdown at index.md
+            const articlesDir = join(tmpDir, 'content', 'posts', 'articles', 'zh');
+            const entries = existsSync(articlesDir) ? await readdir(articlesDir) : [];
+            expect(entries.length).toBe(1);
+            expect(entries[0]).toMatch(/^\d{8}-pass-test$/);
+            expect(existsSync(join(articlesDir, entries[0] ?? '', 'index.md'))).toBe(true);
+        } finally {
+            delete process.env.POSTSURFING_BIN;
+            delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('PostsurfingFileCliTransport date-stamps slug from metadata.runDate and copies cover asset', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-mock-postsurfing-cover');
+        await mkdir(tmpDir, { recursive: true });
+        const mockBin = join(tmpDir, 'postsurfing');
+        await writeFile(mockBin, '#!/usr/bin/env bun\nconsole.log("Published"); process.exit(0);\n', 'utf-8');
+        await Bun.spawn(['chmod', '+x', mockBin]).exited;
+        const coverSrc = join(tmpDir, 'source-cover.png');
+        await writeFile(coverSrc, 'fake-png-bytes', 'utf-8');
+
+        process.env.POSTSURFING_BIN = mockBin;
+        process.env.SURFDASH_ROOT = tmpDir;
+        try {
+            const transport = new PostsurfingFileCliTransport();
+            const content: Content = {
+                title: '中文标题', // slugifies to '' — falls back to <date>-post
+                body: '# 中文标题\n\n正文段落。',
+                format: 'markdown',
+                metadata: { runDate: '20260904', coverImage: coverSrc },
+            };
+            const result = await transport.publish({ content });
+            expect(result.ok).toBe(true);
+
+            const postDir = join(tmpDir, 'content', 'posts', 'articles', 'zh', '20260904-post');
+            const markdown = await readFile(join(postDir, 'index.md'), 'utf-8');
+            expect(markdown).toContain('publishDate: "2026-09-04"');
+            expect(markdown).toContain('image: "./assets/cover.png"');
+            expect(markdown).toContain('og_image: "./assets/cover.png"');
+            expect(existsSync(join(postDir, 'assets', 'cover.png'))).toBe(true);
         } finally {
             delete process.env.POSTSURFING_BIN;
             delete process.env.SURFDASH_ROOT;

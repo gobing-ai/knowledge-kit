@@ -1,0 +1,7 @@
+{
+    "name": "daily-article-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Renders a merged Doc[] into a readable daily AI-news article with per-item source links (mechanical template, no LLM) — replaces the heavy STORM flow"
+}

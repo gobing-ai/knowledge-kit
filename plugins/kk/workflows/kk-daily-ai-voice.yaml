@@ -31,6 +31,9 @@ vars:
   last30days_enabled: "false"
   run_date: ""
   agent: "auto"
+  surfdash_post_path: ""
+  surfdash_en_post_path: ""
+  surfdash_ja_post_path: ""
   __hitlAnswer: ""
 
 states:
@@ -80,7 +83,7 @@ states:
           command: >-
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            kk executor run horizon-ingest --in "${vars.work_dir}/1-ingest/horizon.json" --out "${vars.work_dir}/1-ingest/horizon-docs.json" "$@"
+            HORIZON_OUT="${vars.work_dir}/1-ingest/horizon-docs-${vars.run_date}.json"; if [ -f "$HORIZON_OUT" ]; then echo "horizon cached: $HORIZON_OUT"; exit 0; fi; kk executor run horizon-ingest --in "${vars.work_dir}/1-ingest/horizon.json" --out "$HORIZON_OUT" "$@"
 
   - id: blend-facts
     description: "Merge all source Doc[] (fan-in) and render the dated core-facts markdown"
@@ -90,12 +93,12 @@ states:
           command: >-
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            kk executor fan-in --in "${vars.work_dir}/1-ingest/docs.json" --in "${vars.work_dir}/1-ingest/last30days-docs.json" --in "${vars.work_dir}/1-ingest/horizon-docs.json" --out "${vars.work_dir}/1-ingest/blended.json" "$@" &&
+            kk executor fan-in --in "${vars.work_dir}/1-ingest/docs.json" --in "${vars.work_dir}/1-ingest/last30days-docs.json" --in "${vars.work_dir}/1-ingest/horizon-docs-${vars.run_date}.json" --out "${vars.work_dir}/1-ingest/blended.json" "$@" &&
             kk executor run core-facts-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-facts/content.json" "$@" &&
             bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-facts/content.json" "${vars.work_dir}/2-facts/core-facts.md"
 
   - id: article
-    description: "Generate the templated article from blended facts (content-gen STORM)"
+    description: "Generate the dated daily article from blended facts (daily-article-gen template)"
     onEnter:
       - kind: shell
         options:
@@ -103,7 +106,7 @@ states:
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             CONTENT_OUT="${vars.work_dir}/2-article/content-${vars.run_date}.json"; ARTICLE_MD="${vars.work_dir}/2-article/article-${vars.run_date}.md";
-            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else CONTENT_LANGUAGE="${vars.language}" kk executor run content-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
+            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
 
   - id: cover
     description: "Generate the article cover image via the wt-image-cover skill (agent.run)"
@@ -165,13 +168,20 @@ states:
           command: >-
             bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/content.json"
 
-  - id: publish-prep
-    description: "Merge article Content with the voice audio reference (podcast show-notes seam)"
+  - id: show-notes
+    description: "Derive a compact podcast show-notes summary from the article (template, no LLM)"
     onEnter:
       - kind: shell
         options:
           command: >-
-            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, durationSeconds: audioMeta.duration, ...(existsSync(coverPath) ? { coverImage: coverPath } : {}) } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-audio/content.json" "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png"
+            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const sections = article.body.split(/\n(?=## )/).filter(s => s.startsWith("## ")); const lines = ["# " + article.title, ""]; for (const section of sections) { const parts = section.split("\n"); const heading = parts[0]; const paragraphs = parts.slice(1).join("\n").split(/\n\s*\n/).map(p => p.trim()).filter(Boolean); const first = paragraphs[0] ?? ""; const sentences = first.split(/(?<=[。！？.!?])\s*/).slice(0, 2).join(""); lines.push(heading, "", sentences, ""); } lines.push("完整内容见本期节目描述与网站文章。"); await Bun.write(process.argv[2], lines.join("\n"))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-publish/show-notes.md"
+  - id: publish-prep
+    description: "Merge article Content with audio + cover + run date + show-notes summary (podcast seam)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const showNotesPath = process.argv[5]; let showNotes; if (existsSync(showNotesPath)) { showNotes = await Bun.file(showNotesPath).text(); } const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, durationSeconds: audioMeta.duration, runDate: process.argv[6], ...(existsSync(coverPath) ? { coverImage: coverPath } : {}), ...(showNotes !== undefined ? { showNotes } : {}) } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-audio/content.json" "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png" "${vars.work_dir}/3-publish/show-notes.md" "${vars.run_date}"
 
   - id: publish
     description: "Fan out the merged Content to surfdash-pub and podcast-pub (article as episode show notes)"
@@ -183,6 +193,89 @@ states:
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target surfdash-pub --target podcast-pub --out "${vars.work_dir}/3-publish/result.json" "$@"
 
+
+  - id: translate-en
+    description: "Scaffold en draft from the zh article (postPath from publish result)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            bun -e 'const result = JSON.parse(await Bun.file(process.argv[1]).text()); const entry = result.targets?.find(t => t.target === "surfdash-pub" && t.ok); const path = entry?.metadata?.postPath; const valid = typeof path === "string" && path.endsWith("index.md"); if (!valid) console.error("translate-en: no surfdash-pub postPath in result — locale steps will be skipped"); await Bun.write(process.argv[2], valid ? path : ""); await Bun.write(process.argv[3], valid ? path.split("/zh/").join("/en/") : "")' "${vars.work_dir}/3-publish/result.json" "${vars.work_dir}/3-publish/zh-post-path.txt" "${vars.work_dir}/3-publish/en-post-path.txt"
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/3-publish/zh-post-path.txt
+          var: surfdash_post_path
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/3-publish/en-post-path.txt
+          var: surfdash_en_post_path
+      - kind: shell
+        options:
+          command: >-
+            test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-en"; exit 0; };
+            if [ -f "${vars.surfdash_en_post_path}" ]; then echo "en draft cached: ${vars.surfdash_en_post_path}"; exit 0; fi;
+            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")";
+            (cd "$SURFDASH_ROOT" && bun run sd translate "${vars.surfdash_post_path}" --source zh --target en) &&
+            cp -R "$(dirname "${vars.surfdash_post_path}")/assets" "$(dirname "${vars.surfdash_en_post_path}")/assets" 2>/dev/null || true
+
+  - id: translate-en-agent
+    description: "Translate the en draft in place via agent.run"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Translate the English draft post at ${vars.surfdash_en_post_path} from Chinese to English.
+            Edit the file in place: translate the title in frontmatter and the whole markdown body to natural English. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Keep the draft: true flag.
+            Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
+            Do not wait for operator confirmation. The file must end fully in English.
+          expectFile: ${vars.surfdash_en_post_path}
+
+  - id: translate-ja
+    description: "Scaffold ja draft from the zh article"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-ja"; exit 0; };
+            JA="$(printf '%s' "${vars.surfdash_post_path}" | sed 's|/zh/|/ja/|')";
+            if [ -f "$JA" ]; then echo "ja draft cached: $JA"; exit 0; fi;
+            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")";
+            (cd "$SURFDASH_ROOT" && bun run sd translate "${vars.surfdash_post_path}" --source zh --target ja) &&
+            cp -R "$(dirname "${vars.surfdash_post_path}")/assets" "$(dirname "$JA")/assets" 2>/dev/null || true
+      - kind: shell
+        options:
+          command: >-
+            printf '%s' "${vars.surfdash_post_path}" | sed 's|/zh/|/ja/|' > "${vars.work_dir}/3-publish/ja-post-path.txt"
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/3-publish/ja-post-path.txt
+          var: surfdash_ja_post_path
+
+  - id: translate-ja-agent
+    description: "Translate the ja draft in place via agent.run"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Translate the Japanese draft post at ${vars.surfdash_ja_post_path} from Chinese to Japanese.
+            Edit the file in place: translate the title in frontmatter and the whole markdown body to natural Japanese. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Keep the draft: true flag.
+            Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
+            Do not wait for operator confirmation. The file must end fully in Japanese.
+          expectFile: ${vars.surfdash_ja_post_path}
+
+  - id: translate-sync
+    description: "Sync the zh post and its en/ja locale variants into the surfdash CMS"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-sync"; exit 0; };
+            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")";
+            (cd "$SURFDASH_ROOT" && bun scripts/publish-orchestrator.ts sync "${vars.surfdash_post_path}")
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → facts → article/cover/script/voice → publish)"
   - id: failed
@@ -291,12 +384,18 @@ transitions:
       kind: always
 
   - from: quality-control
-    to: publish-prep
-    description: "publish enabled AND QC passed -> merge article + audio for fan-out"
+    to: show-notes
+    description: "publish enabled AND QC passed -> derive show notes from article"
     guard:
       kind: shell
       options:
         command: 'test "${vars.publish_enabled}" = "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/content.json")" = "true"'
+
+  - from: show-notes
+    to: publish-prep
+    description: "Show notes derived -> merge article + audio + cover + runDate for fan-out"
+    guard:
+      kind: always
 
   - from: quality-control
     to: done
@@ -312,14 +411,55 @@ transitions:
     guard:
       kind: always
 
-  - from: publish-prep
-    to: publish
-    description: "Merged publish Content -> fan out to targets"
+  - from: publish
+    to: translate-en
+    description: "Publish fan-out complete -> scaffold + translate en locale"
     guard:
       kind: always
 
-  - from: publish
-    to: done
-    description: "Publish fan-out complete -> done"
+  - from: translate-en
+    to: translate-en-agent
+    description: "zh path resolved -> run en translation agent"
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.surfdash_post_path}" && test -f "${vars.surfdash_en_post_path}"'
+
+  - from: translate-en
+    to: translate-ja
+    description: "no zh post path -> skip en translation"
     guard:
       kind: always
+
+  - from: translate-en-agent
+    to: translate-ja
+    description: "en translation complete -> scaffold ja locale"
+    guard:
+      kind: always
+
+  - from: translate-ja
+    to: translate-ja-agent
+    description: "zh path resolved -> run ja translation agent"
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.surfdash_post_path}" && test -f "${vars.surfdash_ja_post_path}"'
+
+  - from: translate-ja
+    to: translate-sync
+    description: "no zh post path -> skip ja translation"
+    guard:
+      kind: always
+
+  - from: translate-ja-agent
+    to: translate-sync
+    description: "ja translation complete -> sync locales to CMS"
+    guard:
+      kind: always
+
+  - from: translate-sync
+    to: done
+    description: "Locale sync complete -> done"
+    guard:
+      kind: always
+

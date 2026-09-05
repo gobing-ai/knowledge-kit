@@ -28,6 +28,8 @@ export interface TargetOutcome {
     id?: string;
     error?: string;
     durationMs?: number;
+    /** Transport-provided passthrough (e.g. surfdash-pub postPath) for downstream steps. */
+    metadata?: Record<string, unknown>;
 }
 
 /** Aggregate partial-success result written to `--out` (spec §3.1). */
@@ -107,6 +109,7 @@ export async function fanout(
                       status: 'published',
                       ...(result.url !== undefined ? { url: result.url } : {}),
                       ...(result.id !== undefined ? { id: result.id } : {}),
+                      ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
                       durationMs,
                   }
                 : {

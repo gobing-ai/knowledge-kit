@@ -72,6 +72,18 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/generations/daily-article-gen": {
+      "name": "@gobing-ai/daily-article-gen",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/generations/dailynews-gen": {
       "name": "@gobing-ai/dailynews-gen",
       "dependencies": {
@@ -247,6 +259,8 @@
     "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/generations/content-gen"],
 
     "@gobing-ai/core-facts-gen": ["@gobing-ai/core-facts-gen@workspace:plugins/generations/core-facts-gen"],
+
+    "@gobing-ai/daily-article-gen": ["@gobing-ai/daily-article-gen@workspace:plugins/generations/daily-article-gen"],
 
     "@gobing-ai/dailynews-gen": ["@gobing-ai/dailynews-gen@workspace:plugins/generations/dailynews-gen"],
 

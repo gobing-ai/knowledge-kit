@@ -30,8 +30,14 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'wrap-docs',
             'generate',
             'quality-control',
+            'show-notes',
             'publish-prep',
             'publish',
+            'translate-en',
+            'translate-en-agent',
+            'translate-ja',
+            'translate-ja-agent',
+            'translate-sync',
             'done',
             'failed',
         ]);
@@ -68,7 +74,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('kk executor run horizon-ingest');
         expect(yaml).toContain('kk executor fan-in');
         expect(yaml).toContain('kk executor run core-facts-gen');
-        expect(yaml).toContain('kk executor run content-gen');
+        expect(yaml).toContain('kk executor run daily-article-gen');
         expect(yaml).toContain('kk executor run dailynews-gen');
         expect(yaml).toContain('kk executor run voice-gen');
         expect(yaml).toContain('kk executor fan-out');
@@ -149,9 +155,9 @@ if (plugin === 'aihot-ingest') {
 } else if (plugin === 'core-facts-gen') {
     const docs = JSON.parse(readFileSync(inPath, 'utf8'));
     writeFileSync(outPath, JSON.stringify({ title: 'Core Facts', body: '# Core Facts\\n\\n' + docs.length + ' items', format: 'markdown' }));
-} else if (plugin === 'content-gen') {
-    readFileSync(inPath, 'utf8');
-    writeFileSync(outPath, JSON.stringify({ title: 'Article', body: '# Article body', format: 'markdown' }));
+} else if (plugin === 'daily-article-gen') {
+    const docs = JSON.parse(readFileSync(inPath, 'utf8'));
+    writeFileSync(outPath, JSON.stringify({ title: 'Daily AI News', body: '# Daily article\\n\\n' + docs.length + ' items', format: 'markdown' }));
 } else if (plugin === 'dailynews-gen') {
     const docs = JSON.parse(readFileSync(inPath, 'utf8'));
     const script = {
@@ -213,11 +219,11 @@ if (plugin === 'aihot-ingest') {
             expect(existsSync(join(workDir, '1-ingest/source.json'))).toBe(true);
             expect(existsSync(join(workDir, '1-ingest/docs.json'))).toBe(true);
             expect(existsSync(join(workDir, '1-ingest/last30days-docs.json'))).toBe(true);
-            expect(existsSync(join(workDir, '1-ingest/horizon-docs.json'))).toBe(true);
+            const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
+            expect(existsSync(join(workDir, `1-ingest/horizon-docs-${runDate}.json`))).toBe(true);
             expect(existsSync(join(workDir, '1-ingest/blended.json'))).toBe(true);
             expect(existsSync(join(workDir, '2-facts/content.json'))).toBe(true);
             expect(existsSync(join(workDir, '2-facts/core-facts.md'))).toBe(true);
-            const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
             expect(existsSync(join(workDir, `2-article/content-${runDate}.json`))).toBe(true);
             expect(existsSync(join(workDir, `2-article/article-${runDate}.md`))).toBe(true);
             expect(existsSync(join(workDir, `2-script/content-${runDate}.json`))).toBe(true);
@@ -236,7 +242,7 @@ if (plugin === 'aihot-ingest') {
                 'horizon-ingest',
                 'fan-in',
                 'core-facts-gen',
-                'content-gen',
+                'daily-article-gen',
                 'dailynews-gen',
                 'voice-gen',
             ]);

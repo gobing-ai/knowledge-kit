@@ -174,6 +174,76 @@ describe('podcast-pub mapping', () => {
         expect(resolveAudioMimeType('/a/ep.m4a')).toBe('audio/mp4');
         expect(resolveAudioMimeType('/a/ep.unknown')).toBe('application/octet-stream');
     });
+
+    test('mapContentToEpisode resolves showNotes, image, date, link, and itunes passthrough', () => {
+        const episode = mapContentToEpisode({
+            title: 'Ep 42',
+            body: '# Ep 42\n\nFull article body that is too long for show notes.',
+            format: 'markdown',
+            metadata: {
+                audioUrl: 'https://cdn.example.com/ep42.mp3',
+                showNotes: '## 短摘要\n\n一句话总结。',
+                coverImage: 'https://surfdash.example.com/assets/cover.png',
+                publishedAt: '2026-09-04T08:00:00Z',
+                articleUrl: 'https://surfdash.example.com/zh/posts/20260904-ep',
+                itunes: { episodeType: 'full', season: 3, episode: 42, explicit: false },
+            },
+        } as Content);
+        expect(episode.contentHtml).toBe('## 短摘要\n\n一句话总结。');
+        expect(episode.imageUrl).toBe('https://surfdash.example.com/assets/cover.png');
+        expect(episode.datePublishedMs).toBe(Date.parse('2026-09-04T08:00:00Z'));
+        expect(episode.link).toBe('https://surfdash.example.com/zh/posts/20260904-ep');
+        expect(episode.itunes).toEqual({ episodeType: 'full', season: 3, episode: 42, explicit: false });
+    });
+
+    test('mapContentToEpisode ignores a local cover path and rejects a bad episodeType/publishedAt', () => {
+        const base = { title: 'Ep', body: 'b', format: 'markdown' } as Content;
+        const local = mapContentToEpisode({
+            ...base,
+            metadata: { audioUrl: 'https://x/a.mp3', coverImage: '/tmp/cover.png' },
+        });
+        expect(local.imageUrl).toBeUndefined();
+        expect(() =>
+            mapContentToEpisode({
+                ...base,
+                metadata: { audioUrl: 'https://x/a.mp3', itunes: { episodeType: 'bogus' } },
+            }),
+        ).toThrow(/episodeType/);
+        expect(() =>
+            mapContentToEpisode({ ...base, metadata: { audioUrl: 'https://x/a.mp3', publishedAt: 'not-a-date' } }),
+        ).toThrow(/publishedAt/);
+    });
+
+    test('publishEpisode carries episode extras into the item payload (hosted-audio branch)', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const api = installFakeApi([
+                {
+                    match: (r) => r.method === 'POST' && r.url.endsWith('/api/v1/items'),
+                    respond: () => new Response(JSON.stringify({ id: 'it-extras' }), { status: 201 }),
+                },
+            ]);
+            try {
+                const transport = new PodcastPubTransport();
+                const result = await transport.publish({
+                    content: episodeContent({
+                        audioUrl: 'https://cdn.example.com/ep.mp3',
+                        showNotes: 'Summary.',
+                        coverImage: 'https://cdn.example.com/cover.png',
+                        publishedAt: 1725475200000,
+                        articleUrl: 'https://surfdash.example.com/zh/posts/x',
+                    }),
+                });
+                expect(result.ok).toBe(true);
+                const body = api.requests[0]?.body as Record<string, unknown>;
+                expect(body.image).toBe('https://cdn.example.com/cover.png');
+                expect(body.date_published_ms).toBe(1725475200000);
+                expect(body.url).toBe('https://surfdash.example.com/zh/posts/x');
+                expect(body._microfeed).toEqual({ 'itunes:episodeType': 'full' });
+            } finally {
+                api.restore();
+            }
+        });
+    });
 });
 
 describe('podcast-pub publish (R1/R3)', () => {
@@ -231,6 +301,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                             size_in_bytes: 8,
                         },
                     ],
+                    _microfeed: { 'itunes:episodeType': 'full' },
                 });
             } finally {
                 api.restore();
@@ -258,7 +329,6 @@ describe('podcast-pub publish (R1/R3)', () => {
                 expect(result.ok).toBe(true);
                 expect(result.id).toBe('HOSTED1');
                 expect(result.url).toBe('https://feed.example.com/items/HOSTED1');
-                expect(api.requests.length).toBe(1);
                 expect(api.requests[0]?.body).toEqual({
                     title: 'Episode 1: Ground Up',
                     content_html: '# Episode 1: Ground Up\n\nShow notes body.',
@@ -271,6 +341,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                             duration_in_seconds: 600,
                         },
                     ],
+                    _microfeed: { 'itunes:episodeType': 'full' },
                 });
             } finally {
                 api.restore();

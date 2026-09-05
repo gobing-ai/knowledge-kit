@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { copyFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
@@ -11,6 +13,10 @@ import { echoError } from '@gobing-ai/ts-utils';
 export interface MapContentOptions {
     /** Target publishing site name or base URL. Defaults to 'surfdash'. */
     targetName?: string;
+    /** Frontmatter image value (e.g. `./assets/cover.png`); written to `image` and `og_image`. */
+    image?: string;
+    /** ISO date for publishDate; defaults to today. */
+    publishDate?: string;
 }
 
 /**
@@ -27,7 +33,7 @@ export function slugify(str: string): string {
 /**
  * Maps Content object into Surfing frontmatter and body per the publish spec.
  */
-export function mapContentToSurfingMarkdown(content: Content): string {
+export function mapContentToSurfingMarkdown(content: Content, options: MapContentOptions = {}): string {
     let title = content.title;
     if (!title) {
         const match = content.body.match(/^#\s+(.+)$/m);
@@ -56,7 +62,7 @@ export function mapContentToSurfingMarkdown(content: Content): string {
         .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
         .map((t: string) => slugify(t));
 
-    const isoDate = new Date().toISOString().slice(0, 10);
+    const isoDate = options.publishDate ?? new Date().toISOString().slice(0, 10);
     const firstRefUrl = content.references?.[0]?.url;
     const canonical =
         typeof firstRefUrl === 'string'
@@ -75,6 +81,7 @@ export function mapContentToSurfingMarkdown(content: Content): string {
         publishDate: isoDate,
         ...(canonical ? { canonical } : {}),
         draft,
+        ...(options.image ? { image: options.image, og_image: options.image } : {}),
     };
 
     const yamlLines = ['---', ...Object.entries(frontmatterObj).map(([k, v]) => `${k}: ${JSON.stringify(v)}`), '---'];
@@ -88,7 +95,6 @@ export class PostsurfingFileCliTransport implements PublishTransport {
     public readonly kind = 'file-cli';
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
-        const markdown = mapContentToSurfingMarkdown(payload.content);
         const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
 
         // The publishing FSM requires the markdown at
@@ -107,15 +113,35 @@ export class PostsurfingFileCliTransport implements PublishTransport {
         }
 
         const locale = process.env.SURFDASH_LOCALE ?? 'zh';
+        // Date-stamped slug (metadata.runDate, e.g. 20260904) keeps same-title daily posts
+        // from colliding; Chinese titles slugify to '' and fall back to the bare date.
+        const runDate = typeof payload.content.metadata?.runDate === 'string' ? payload.content.metadata.runDate : '';
+        const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+        const dateStamp = runDate || today;
         const titleSlug = slugify(payload.content.title ?? '');
-        const slug = titleSlug || `post-${new Date().toISOString().slice(0, 10)}`;
+        const slug = titleSlug ? `${dateStamp}-${titleSlug}` : `${dateStamp}-post`;
         const postDir = join(surfdashRoot, 'content', 'posts', 'articles', locale, slug);
         await createNodeFileSystem().ensureDir(postDir);
+
+        // Cover image: metadata.coverImage (absolute local path) is copied into the post's
+        // assets dir and referenced relatively — the surfdash PostSchema accepts ./assets/<file>.
+        let imageFrontmatter: string | undefined;
+        const coverPath = payload.content.metadata?.coverImage;
+        if (typeof coverPath === 'string' && existsSync(coverPath)) {
+            const assetsDir = join(postDir, 'assets');
+            await createNodeFileSystem().ensureDir(assetsDir);
+            const coverName = `cover${coverPath.slice(coverPath.lastIndexOf('.'))}`;
+            await copyFile(coverPath, join(assetsDir, coverName));
+            imageFrontmatter = `./assets/${coverName}`;
+        }
+        const markdown = mapContentToSurfingMarkdown(payload.content, {
+            image: imageFrontmatter,
+            publishDate: runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined,
+        });
         const filePath = join(postDir, 'index.md');
 
         try {
             await createNodeFileSystem().writeFile(filePath, markdown);
-
             const proc = Bun.spawn([postsurfingBin, 'publish', filePath], {
                 stdout: 'pipe',
                 stderr: 'pipe',
@@ -140,6 +166,9 @@ export class PostsurfingFileCliTransport implements PublishTransport {
                 target: 'surfdash',
                 url: `https://surfdash.local/${locale}/posts/${slug}`,
                 message: 'Published successfully to Surfdash via postsurfing CLI',
+                // Absolute post path lets downstream steps (locale translation + CMS sync)
+                // derive the surfdash checkout root without extra configuration.
+                metadata: { postPath: filePath },
             });
         } catch (err: unknown) {
             return ResultSchema.parse({
