@@ -283,6 +283,95 @@ segments:
         expect(content.metadata.segments.length).toBe(2);
     });
 
+    it('R3c — looped-garbage transcription triggers regeneration with varied seed and halved chunk size', async () => {
+        // Regression (dogfood daily-ai-news-20260903): robin-news+qwen emitted contiguous
+        // loop garbage on ~15% of segments (fidelity 0.00); it must be caught per segment
+        // and regenerated, not shipped.
+        const scriptYaml = `
+title: "Garbage Once"
+language: zh
+default_profile: Robin
+segments:
+  - text: "今天我们聊聊人工智能领域的最新进展。"
+`;
+        const doc: Doc = {
+            id: 'doc-garbage',
+            sourceUri: 'https://example.com/garbage',
+            title: 'Garbage Once',
+            body: scriptYaml,
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+
+        const calls: VoiceboxGenerateBody[] = [];
+        let transcribeCount = 0;
+        const client = createMockClient({
+            generate: async (body) => {
+                calls.push(body);
+                return { id: `gen-${calls.length}` };
+            },
+            transcribe: async () => {
+                transcribeCount++;
+                // First attempt: contiguous loop garbage (fidelity ~0).
+                if (transcribeCount === 1) {
+                    return { text: '酒酒酒酒酒酒酒酒酒酒酒酒酒酒酒酒' };
+                }
+                return { text: '今天我们聊聊人工智能领域的最新进展' };
+            },
+        });
+
+        await processGeneratorIO(inputPath, outputPath, client);
+
+        expect(calls.length).toBe(2);
+        expect(calls[0].seed).toBeNull();
+        expect(calls[1].seed).not.toBeNull();
+        expect(calls[1].max_chunk_chars).toBe(400); // 800 / 2
+        expect(calls[1].text).toBe('今天我们聊聊人工智能领域的最新进展。');
+        expect(existsSync(outputPath)).toBe(true);
+        const content = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        expect(content.metadata.segments[0].verifyRetries).toBe(1);
+        expect(content.metadata.qc.passed).toBe(true);
+    });
+
+    it('R3d — clean audio generates once per segment with no regeneration overhead', async () => {
+        const scriptYaml = `
+title: "Clean Path"
+language: zh
+default_profile: Robin
+segments:
+  - text: "第一条测试文本。"
+  - text: "第二条测试文本。"
+`;
+        const doc: Doc = {
+            id: 'doc-clean',
+            sourceUri: 'https://example.com/clean',
+            title: 'Clean Path',
+            body: scriptYaml,
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+
+        const calls: VoiceboxGenerateBody[] = [];
+        let transcribeCount = 0;
+        const client = createMockClient({
+            generate: async (body) => {
+                calls.push(body);
+                return { id: `gen-${calls.length}` };
+            },
+            transcribe: async () => {
+                transcribeCount++;
+                return { text: transcribeCount === 1 ? '第一条测试文本' : '第二条测试文本' };
+            },
+        });
+
+        await processGeneratorIO(inputPath, outputPath, client);
+
+        expect(calls.length).toBe(2); // exactly one generate per segment
+        expect(transcribeCount).toBe(2); // exactly one transcribe per segment
+        const content = JSON.parse(readFileSync(outputPath, 'utf-8'));
+        expect(content.metadata.segments[0].verifyRetries).toBe(0);
+        expect(content.metadata.segments[1].verifyRetries).toBe(0);
+        expect(content.metadata.qc.passed).toBe(true);
+    });
+
     it('R4 — Segment text over 50,000 characters fails loud without writing --out', async () => {
         const largeText = 'A'.repeat(50001);
         const doc: Doc = {

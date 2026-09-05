@@ -50,6 +50,9 @@ export function detectRepetitions(text: string): boolean {
     return false;
 }
 
+/** Below this character-bigram coverage, audio is treated as looped/garbage (dogfood 2026-09-03). */
+export const TRANSCRIPTION_FIDELITY_FLOOR = 0.15;
+
 /**
  * Character-bigram coverage of the source text by the transcription. Whisper zh ASR is
  * lossy on good audio (0.23–0.8 across dogfood runs); looped/garbage TTS audio scores ≤0.05.
@@ -93,7 +96,13 @@ export function computeExpectedDurationRange(text: string, language = 'zh'): [nu
 export async function auditVoiceSegments(
     script: VoiceScript,
     segmentWavs: Uint8Array[],
-    segmentMetadata: Array<{ generationId: string; profile: string; duration: number }>,
+    segmentMetadata: Array<{
+        generationId: string;
+        profile: string;
+        duration: number;
+        transcription?: string;
+        verifyRetries?: number;
+    }>,
     client?: VoiceboxClient,
 ): Promise<VoiceQualityReport> {
     const audits: SegmentQualityAudit[] = [];
@@ -126,38 +135,37 @@ export async function auditVoiceSegments(
         let transcriptionText: string | undefined;
         let repetitionDetected = false;
 
-        if (client && wavBytes && typeof client.transcribe === 'function') {
+        if (meta && typeof meta.transcription === 'string') {
+            // Precomputed during generation (verify step) — reuse instead of re-transcribing.
+            transcriptionText = meta.transcription;
+        } else if (client && wavBytes && typeof client.transcribe === 'function') {
             try {
                 const trans = await client.transcribe(wavBytes, lang);
-
                 transcriptionText = trans.text;
-                if (detectRepetitions(transcriptionText)) {
-                    repetitionDetected = true;
-                    // Whisper loops over trailing gap/silence and emits phantom repetitions whose
-                    // audio duration stays normal; a real TTS loop always inflates duration.
-                    // Fail only when the duration channel corroborates (dogfood 2026-09-03:
-                    // 15/22 segments flagged with in-range durations = ASR artifacts).
-                    if (durationAnomaly) {
-                        issues.push(
-                            `Repetition hallucination corroborated by duration anomaly: "${transcriptionText.slice(0, 80)}..."`,
-                        );
-                    }
-                }
             } catch {
                 // Transcription service unavailable or optional
             }
         }
+        if (transcriptionText !== undefined && detectRepetitions(transcriptionText)) {
+            repetitionDetected = true;
+            // Whisper loops over trailing gap/silence and emits phantom repetitions whose
+            // audio duration stays normal; a real TTS loop always inflates duration.
+            // Fail only when the duration channel corroborates (dogfood 2026-09-03:
+            // 15/22 segments flagged with in-range durations = ASR artifacts).
+            if (durationAnomaly) {
+                issues.push(
+                    `Repetition hallucination corroborated by duration anomaly: "${transcriptionText.slice(0, 80)}..."`,
+                );
+            }
+        }
 
-        // Fidelity gate: when the transcription diverges from the source near-totally, the
-        // audio is looped/garbage regardless of duration (the published noise episodes scored
-        // ≤0.05 while real-but-noisy zh ASR stays ≥0.23 — dogfood daily-ai-news-20260903).
         let lowFidelity = false;
         if (transcriptionText !== undefined) {
             const fidelity = transcriptionFidelity(segment.text, transcriptionText);
-            if (fidelity < 0.15) {
+            if (fidelity < TRANSCRIPTION_FIDELITY_FLOOR) {
                 lowFidelity = true;
                 issues.push(
-                    `Transcription fidelity ${fidelity.toFixed(2)} below 0.15 — audio diverges from source text: "${transcriptionText.slice(0, 80)}..."`,
+                    `Transcription fidelity ${fidelity.toFixed(2)} below ${TRANSCRIPTION_FIDELITY_FLOOR} — audio diverges from source text: "${transcriptionText.slice(0, 80)}..."`,
                 );
             }
         }

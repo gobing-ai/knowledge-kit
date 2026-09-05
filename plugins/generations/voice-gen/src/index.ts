@@ -5,7 +5,7 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { concatWavs } from './concat';
 import { isMp3Requested, type Mp3Transcoder, transcodeWavToMp3 } from './mp3';
-import { auditVoiceSegments } from './qc';
+import { auditVoiceSegments, TRANSCRIPTION_FIDELITY_FLOOR, transcriptionFidelity } from './qc';
 import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } from './voicebox-client';
 import {
     mergeVoiceScripts,
@@ -92,6 +92,8 @@ export async function processGeneratorIO(
             speaker?: string;
             emotion?: string;
             duration: number;
+            verifyRetries?: number;
+            transcription?: string;
         }> = [];
         let totalDuration = 0;
 
@@ -171,36 +173,88 @@ export async function processGeneratorIO(
                 effects_chain,
             };
 
-            // One retry per segment: a hung/timeout voicebox generation must not kill a
-            // multi-hour run (dogfood daily-ai-news-20260903: segment 108/132 timed out at
-            // 600s and failed the whole generate state after 140 minutes).
+            // Timeout retry: a hung/timeout voicebox generation must not kill a multi-hour
+            // run (dogfood daily-ai-news-20260903: segment 108/132 timed out at 600s and
+            // failed the whole generate state after 140 minutes).
+            //
+            // Verify retry: qwen with cloned profiles occasionally emits contiguous loop
+            // garbage (fidelity 0.00 vs >=0.23 zh ASR floor on real audio — dogfood
+            // 2026-09-03). The server's runaway detector only catches gap-shaped failures,
+            // so verify per segment via transcription fidelity and regenerate failures with
+            // a varied seed and halved chunk size (mirrors the server's own retry policy).
             let wavBytes: Uint8Array | undefined;
             let segDuration = 0;
             let generationId = '';
+            let transcription: string | undefined;
+            let verifyRetries = 0;
             let lastError: unknown;
-            for (let attempt = 1; attempt <= 2 && wavBytes === undefined; attempt++) {
-                try {
-                    const { id } = await client.generate(generateBody);
-                    generationId = id;
-                    const history = await client.waitUntilDone(id);
-                    if (history.status === 'failed') {
-                        throw new Error(
-                            `Voicebox generation failed for profile "${resolvedProfile.name}": ${history.error || 'status failed'}`,
-                        );
-                    }
-                    wavBytes = await client.downloadAudio(id);
-                    segDuration = history.duration ?? 0;
-                } catch (err: unknown) {
-                    lastError = err;
-                    if (attempt === 1) {
-                        console.error(
-                            `voice-gen: segment failed (${err instanceof Error ? err.message : String(err)}); retrying once`,
-                        );
+            let attemptBody = generateBody;
+            for (let verifyAttempt = 0; verifyAttempt <= 2 && wavBytes === undefined; verifyAttempt++) {
+                if (verifyAttempt > 0) {
+                    verifyRetries = verifyAttempt;
+                    const chunkChars = Math.max(VOICEBOX_CHUNK_CHARS_MIN, Math.floor(attemptBody.max_chunk_chars / 2));
+                    attemptBody = {
+                        ...generateBody,
+                        seed: Math.floor(Math.random() * 2 ** 31),
+                        max_chunk_chars: chunkChars,
+                    };
+                    console.error(
+                        `voice-gen: regenerating segment with seed ${attemptBody.seed} and max_chunk_chars ${chunkChars}`,
+                    );
+                }
+                let attemptBytes: Uint8Array | undefined;
+                for (let attempt = 1; attempt <= 2 && attemptBytes === undefined; attempt++) {
+                    try {
+                        const { id } = await client.generate(attemptBody);
+                        generationId = id;
+                        // Long qwen segments synthesize slower than the fixed 600s deadline
+                        // (live 2026-09-04: 171s-audio segment took >600s twice, both completed
+                        // server-side). Scale the poll deadline with text length: 600s base
+                        // (or VOICEBOX_TIMEOUT_MS) + 60s per 100 chars, ~2x observed worst case.
+                        const envTimeout = process.env.VOICEBOX_TIMEOUT_MS
+                            ? parseInt(process.env.VOICEBOX_TIMEOUT_MS, 10)
+                            : 600000;
+                        const waitTimeout = envTimeout + Math.ceil(segment.text.length / 100) * 60_000;
+                        const history = await client.waitUntilDone(id, waitTimeout);
+                        if (history.status === 'failed') {
+                            throw new Error(
+                                `Voicebox generation failed for profile "${resolvedProfile.name}": ${history.error || 'status failed'}`,
+                            );
+                        }
+                        attemptBytes = await client.downloadAudio(id);
+                        segDuration = history.duration ?? 0;
+                    } catch (err: unknown) {
+                        lastError = err;
+                        if (attempt === 1) {
+                            console.error(
+                                `voice-gen: segment failed (${err instanceof Error ? err.message : String(err)}); retrying once`,
+                            );
+                        }
                     }
                 }
+                if (attemptBytes === undefined) {
+                    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+                }
+                if (typeof client.transcribe === 'function') {
+                    try {
+                        const trans = await client.transcribe(attemptBytes, language);
+                        const fidelity = transcriptionFidelity(segment.text, trans.text);
+                        if (fidelity < TRANSCRIPTION_FIDELITY_FLOOR && verifyAttempt < 2) {
+                            console.error(
+                                `voice-gen: transcription fidelity ${fidelity.toFixed(2)} below ${TRANSCRIPTION_FIDELITY_FLOOR} (looped/garbage audio): "${trans.text.slice(0, 80)}..."`,
+                            );
+                            continue;
+                        }
+                        transcription = trans.text;
+                    } catch {
+                        // Transcription unavailable — keep audio; the QC audit backstop decides.
+                    }
+                }
+                wavBytes = attemptBytes;
             }
             if (wavBytes === undefined) {
-                throw lastError instanceof Error ? lastError : new Error(String(lastError));
+                // Both network attempts and all verify attempts exhausted without audio.
+                throw lastError instanceof Error ? lastError : new Error(String(lastError ?? 'no audio'));
             }
 
             const gap = segment.gap_ms ?? 0;
@@ -215,6 +269,8 @@ export async function processGeneratorIO(
                 speaker: segment.speaker,
                 emotion: rawEmotion,
                 duration: segDuration,
+                verifyRetries,
+                transcription,
             });
         }
 
