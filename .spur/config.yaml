@@ -23,7 +23,30 @@ bootstrap:
     driver: bun-sqlite
     url: .spur/spur.db
   scheduler:
-    enabled: false
+    enabled: true
+    # Periodic executions live here and nowhere else (task 0750). A tick
+    # enqueues `scheduler.custom`, which the server's job worker runs through
+    # /bin/sh -c in the project root. Use the repo-local CLI, never a global
+    # `spur` that may be a stale bundle (AGENTS.md history-validation rule).
+    jobs:
+      # Incremental refresh, waking hours only (07:00-23:50; the cron hour range
+      # keeps 00:00-06:59 quiet). `history daily` = import + analyze; analyze is
+      # what refreshes the Board History rollups (token usage included) - import
+      # alone never does. Checkpoint resume + the rollup-freshness short-circuit
+      # keep a no-op tick cheap (I81).
+      - name: history-refresh
+        cron: "*/10 7-23 * * *"
+        command: spur --no-logo history daily
+
+      # 05:00 daily: full-corpus import (checkpoint resume self-heals gaps),
+      # then the twelve-section history-anatomy diagnostic report headless. On
+      # a cache hit the workflow skips the token-expensive model stages and
+      # republishes provenance (ADR-079), so a ready report costs no tokens.
+      - name: history-daily-report
+        cron: "3 5 * * *"
+        command: >-
+          spur --no-logo history import --source all &&
+          spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet
 
 # ── Spur app section (validated by spurConfigSchema in @gobing-ai/spur-config) ──
 agent:
