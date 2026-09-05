@@ -174,7 +174,7 @@ states:
       - kind: shell
         options:
           command: >-
-            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const sections = article.body.split(/\n(?=## )/).filter(s => s.startsWith("## ")); const lines = ["# " + article.title, ""]; for (const section of sections) { const parts = section.split("\n"); const heading = parts[0]; const paragraphs = parts.slice(1).join("\n").split(/\n\s*\n/).map(p => p.trim()).filter(Boolean); const first = paragraphs[0] ?? ""; const sentences = first.split(/(?<=[。！？.!?])\s*/).slice(0, 2).join(""); lines.push(heading, "", sentences, ""); } lines.push("完整内容见本期节目描述与网站文章。"); await Bun.write(process.argv[2], lines.join("\n"))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-publish/show-notes.md"
+            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const sections = article.body.split(/\n(?=## )/).filter(s => s.startsWith("## ")); const lines = ["# " + article.title, ""]; for (const section of sections) { const parts = section.split("\n"); const heading = parts[0]; const paragraphs = parts.slice(1).join("\n").split(/\n\s*\n/).map(p => p.trim()).filter(Boolean); const first = paragraphs.find(p => !p.startsWith("[来源")) ?? paragraphs[0] ?? ""; const sentences = first.split(/(?<=[。！？])\s*|(?<=\.)\s+/).slice(0, 2).join(""); lines.push(heading, "", sentences, ""); } lines.push("完整内容见本期节目描述与网站文章。"); await Bun.write(process.argv[2], lines.join("\n"))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-publish/show-notes.md"
   - id: publish-prep
     description: "Merge article Content with audio + cover + run date + show-notes summary (podcast seam)"
     onEnter:
@@ -191,6 +191,7 @@ states:
           command: >-
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            if jq -e '.ok == true and ([.targets[]? | select(.ok == true and .status == "published")] | length) == 2' "${vars.work_dir}/3-publish/result.json" > /dev/null 2>&1; then echo "publish cached: result.json (2 targets ok)"; exit 0; fi;
             env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target surfdash-pub --target podcast-pub --out "${vars.work_dir}/3-publish/result.json" "$@"
 
 
@@ -214,7 +215,7 @@ states:
           command: >-
             test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-en"; exit 0; };
             if [ -f "${vars.surfdash_en_post_path}" ]; then echo "en draft cached: ${vars.surfdash_en_post_path}"; exit 0; fi;
-            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")";
+            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")")")";
             (cd "$SURFDASH_ROOT" && bun run sd translate "${vars.surfdash_post_path}" --source zh --target en) &&
             cp -R "$(dirname "${vars.surfdash_post_path}")/assets" "$(dirname "${vars.surfdash_en_post_path}")/assets" 2>/dev/null || true
 
@@ -241,7 +242,7 @@ states:
             test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-ja"; exit 0; };
             JA="$(printf '%s' "${vars.surfdash_post_path}" | sed 's|/zh/|/ja/|')";
             if [ -f "$JA" ]; then echo "ja draft cached: $JA"; exit 0; fi;
-            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")";
+            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")")")";
             (cd "$SURFDASH_ROOT" && bun run sd translate "${vars.surfdash_post_path}" --source zh --target ja) &&
             cp -R "$(dirname "${vars.surfdash_post_path}")/assets" "$(dirname "$JA")/assets" 2>/dev/null || true
       - kind: shell
@@ -274,7 +275,7 @@ states:
         options:
           command: >-
             test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-sync"; exit 0; };
-            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")";
+            SURFDASH_ROOT="$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "${vars.surfdash_post_path}")")")")")")";
             (cd "$SURFDASH_ROOT" && bun scripts/publish-orchestrator.ts sync "${vars.surfdash_post_path}")
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → facts → article/cover/script/voice → publish)"
@@ -394,6 +395,12 @@ transitions:
   - from: show-notes
     to: publish-prep
     description: "Show notes derived -> merge article + audio + cover + runDate for fan-out"
+    guard:
+      kind: always
+
+  - from: publish-prep
+    to: publish
+    description: "Merged publish Content -> fan out to targets"
     guard:
       kind: always
 
