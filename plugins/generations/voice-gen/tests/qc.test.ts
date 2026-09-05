@@ -107,6 +107,25 @@ describe('Voice Quality Control (QC)', () => {
         expect(report.passed).toBe(true);
     });
 
+    it('auditVoiceSegments fails looped/garbage audio via the transcription fidelity gate', async () => {
+        // Regression (dogfood daily-ai-news-20260903): the published episode carried 7 segments
+        // of TTS loop noise that passed duration checks; fidelity ≤0.05 vs a ≥0.23 ASR-noise floor.
+        const script: VoiceScript = {
+            title: 'Fidelity gate',
+            language: 'zh',
+            segments: [{ text: '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者。', gap_ms: 500 }],
+        };
+        const segmentWavs = [new Uint8Array(100)];
+        const segmentMetadata = [{ generationId: 'g1', profile: 'Robin', duration: 6.5 }]; // in range
+        const mockClient: Partial<VoiceboxClient> = {
+            transcribe: async (_audio, _lang) => ({ text: '这个支持这个支持这个这个这个这个这个这个' }),
+        };
+        const report = await auditVoiceSegments(script, segmentWavs, segmentMetadata, mockClient as VoiceboxClient);
+        expect(report.segmentAudits[0]?.passed).toBe(false);
+        expect(report.segmentAudits[0]?.issues[0]).toContain('fidelity');
+        expect(report.passed).toBe(false);
+    });
+
     it('auditVoiceSegments passes cleanly when all segments are healthy', async () => {
         const script: VoiceScript = {
             title: 'Healthy Script',
@@ -123,9 +142,13 @@ describe('Voice Quality Control (QC)', () => {
             { generationId: 'g2', profile: 'Robin', duration: 4.1 },
         ];
 
+        // Return each segment's source text in call order (fidelity gate compares to source)
+        let call = 0;
         const mockClient: Partial<VoiceboxClient> = {
             transcribe: async (_audio, _lang) => {
-                return { text: '大家好，欢迎收听今日快讯。' };
+                const text = script.segments[call]?.text ?? '';
+                call++;
+                return { text };
             },
         };
 

@@ -16,7 +16,7 @@ vars:
   work_dir: ""
   limit: "10"
   language: "zh"
-  voice_profile: "Robin"
+  voice_profile: "robin-news"
   title: ""
   cursor: ""
   state_file: ""
@@ -94,7 +94,7 @@ states:
           command: >-
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            kk executor run content-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-article/content.json" "$@" &&
+            CONTENT_LANGUAGE="${vars.language}" kk executor run content-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-article/content.json" "$@" &&
             bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-article/content.json" "${vars.work_dir}/2-article/article.md"
 
   - id: cover
@@ -136,7 +136,7 @@ states:
       - kind: shell
         options:
           command: >-
-            bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "Robin" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/voicescript.yaml" "${vars.work_dir}/3-audio/docs.json" "${vars.voice_profile}"
+            bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "robin-news" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/voicescript.yaml" "${vars.work_dir}/3-audio/docs.json" "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice-gen generator plugin to generate audio"
@@ -273,15 +273,23 @@ transitions:
 
   - from: quality-control
     to: publish-prep
-    description: "publish_enabled -> merge article + audio for fan-out"
+    description: "publish enabled AND QC passed -> merge article + audio for fan-out"
     guard:
       kind: shell
       options:
-        command: 'test "${vars.publish_enabled}" = "true"'
+        command: 'test "${vars.publish_enabled}" = "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/content.json")" = "true"'
 
   - from: quality-control
     to: done
-    description: "publish disabled -> done after quality control"
+    description: "QC passed (publish off or after gate) -> done"
+    guard:
+      kind: shell
+      options:
+        command: 'test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/content.json")" = "true"'
+
+  - from: quality-control
+    to: failed
+    description: "QC failed -> abort rather than publish a noisy episode"
     guard:
       kind: always
 

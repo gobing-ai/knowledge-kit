@@ -103,6 +103,15 @@ export const spurStageRunner: StormStageRunner = {
     },
 };
 
+/** Language directive appended to outline/article/polish prompts when CONTENT_LANGUAGE is set. */
+function languageDirective(): string {
+    const lang = process.env.CONTENT_LANGUAGE?.trim();
+    if (!lang) return '';
+    return lang === 'zh'
+        ? 'Write everything in Simplified Chinese (简体中文), including the title and all section headings.'
+        : `Write everything in ${lang}, including the title and all section headings.`;
+}
+
 const PerspectiveSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
@@ -194,7 +203,9 @@ export async function curationStage(runner: StormStageRunner, docs: Doc[], input
         [
             'Develop multiple distinct perspectives (personas or angles) on the source material. For each perspective, list the questions it would ask and cite the supplied document IDs that ground it.',
             'Return only a JSON object matching {"perspectives":[{"id":string,"name":string,"questions":[string],"evidence":[string]}]} where every evidence entry is one of the allowed document IDs.',
-        ].join('\n'),
+        ]
+            .filter(Boolean)
+            .join('\n'),
     );
     const envelope = await runner.runStage(prompt);
     if (envelope.exitCode !== 0) {
@@ -232,8 +243,11 @@ export async function outlineStage(
         [
             `The validated curation result for the article is: ${JSON.stringify(curation)}`,
             'Produce a structured markdown outline for the article derived from that curation result.',
+            languageDirective(),
             'Return only a JSON object matching {"title":string,"outline":string,"references":[string]} where outline is markdown and every references entry is one of the allowed document IDs.',
-        ].join('\n'),
+        ]
+            .filter(Boolean)
+            .join('\n'),
     );
     const envelope = await runner.runStage(prompt);
     if (envelope.exitCode !== 0) {
@@ -270,9 +284,12 @@ export async function articleStage(
             `The validated curation result for the article is: ${JSON.stringify(curation)}`,
             `The validated outline for the article is: ${JSON.stringify(outline)}`,
             'Write the complete article as markdown, one section per outline heading. Every citation must reference one of the allowed document IDs.',
+            languageDirective(),
             'Synthesize: the body must draw findings from across the supplied documents, compare them, and state conclusions. Never list sources one per line or produce an index of references — references are evidence, not the deliverable.',
             'Return only a JSON object matching {"title":string,"body":string,"citations":[string]} where body is the full markdown draft and every citations entry is one of the allowed document IDs.',
-        ].join('\n'),
+        ]
+            .filter(Boolean)
+            .join('\n'),
     );
     const envelope = await runner.runStage(prompt);
     if (envelope.exitCode !== 0) {
@@ -306,8 +323,11 @@ export async function polishStage(
         [
             `The drafted article is: ${JSON.stringify(article)}`,
             'Polish the draft: preserve every heading and citation exactly, remove repetition, and tighten the prose. Do not cite any document outside the allowed IDs.',
+            languageDirective(),
             'Return only a JSON object matching {"title":string,"body":string,"outline":string} where body is the polished markdown (headings and citations preserved) and outline is a markdown outline of the final article.',
-        ].join('\n'),
+        ]
+            .filter(Boolean)
+            .join('\n'),
     );
     const envelope = await runner.runStage(prompt);
     if (envelope.exitCode !== 0) {

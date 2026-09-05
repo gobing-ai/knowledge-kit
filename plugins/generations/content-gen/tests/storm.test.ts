@@ -330,6 +330,26 @@ describe('polish stage (R3)', () => {
             'Polish stage failed: polish agent crashed',
         );
     });
+
+    test('CONTENT_LANGUAGE=zh appends the Chinese writing directive to outline/article/polish prompts', async () => {
+        const { runner, prompts } = scriptedRunner([
+            { exitCode: 0, stdout: JSON.stringify(VALID_CURATION), stderr: '' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_OUTLINE), stderr: '' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_ARTICLE), stderr: '' },
+            { exitCode: 0, stdout: JSON.stringify(VALID_POLISH), stderr: '' },
+        ]);
+        process.env.CONTENT_LANGUAGE = 'zh';
+        try {
+            await generateWithStormPipeline(DOCS, INPUT_PATH, runner);
+        } finally {
+            delete process.env.CONTENT_LANGUAGE;
+        }
+        const directive = 'Write everything in Simplified Chinese';
+        expect(prompts[0]).not.toContain(directive); // curation is internal-only
+        expect(prompts[1]).toContain(directive); // outline
+        expect(prompts[2]).toContain(directive); // article
+        expect(prompts[3]).toContain(directive); // polish
+    });
 });
 
 describe('owned STORM pipeline (R1)', () => {

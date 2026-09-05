@@ -42,10 +42,9 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
     });
 
     it('R2 — defines standard variables for configuration', () => {
-        expect(yaml).toContain('work_dir: ""');
+        expect(yaml).toContain('voice_profile: "robin-news"');
         expect(yaml).toContain('limit: "10"');
         expect(yaml).toContain('language: "zh"');
-        expect(yaml).toContain('voice_profile: "Robin"');
         expect(yaml).toContain('skip_review: "false"');
         expect(yaml).toContain('transcode_mp3: "false"');
         expect(yaml).toContain('cover_enabled: "true"');

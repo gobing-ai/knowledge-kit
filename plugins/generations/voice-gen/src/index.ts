@@ -115,7 +115,8 @@ export async function processGeneratorIO(
 
             const resolvedProfile = await client.resolveProfile(profileTarget);
 
-            const engine = segment.engine ?? speakerConfig?.engine ?? combinedScript.default_engine;
+            const engine =
+                segment.engine ?? speakerConfig?.engine ?? combinedScript.default_engine ?? process.env.VOICEBOX_ENGINE;
             const language = segment.language ?? speakerConfig?.language ?? combinedScript.language ?? 'en';
             const rawInstruct = segment.instruct ?? speakerConfig?.instruct;
             const rawEmotion = segment.emotion ?? speakerConfig?.emotion ?? combinedScript.default_emotion;

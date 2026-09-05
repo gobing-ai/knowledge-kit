@@ -51,6 +51,23 @@ export function detectRepetitions(text: string): boolean {
 }
 
 /**
+ * Character-bigram coverage of the source text by the transcription. Whisper zh ASR is
+ * lossy on good audio (0.23–0.8 across dogfood runs); looped/garbage TTS audio scores ≤0.05.
+ */
+export function transcriptionFidelity(source: string, transcription: string): number {
+    const bigrams = (t: string): Set<string> => {
+        const clean = t.replace(/\s+/g, '');
+        return new Set(Array.from({ length: Math.max(0, clean.length - 1) }, (_, i) => clean.slice(i, i + 2)));
+    };
+    const a = bigrams(source);
+    const b = bigrams(transcription);
+    if (a.size === 0) return 1;
+    let inter = 0;
+    for (const g of a) if (b.has(g)) inter++;
+    return inter / a.size;
+}
+
+/**
  * Compute expected speech duration range given text and language.
  */
 export function computeExpectedDurationRange(text: string, language = 'zh'): [number, number] {
@@ -112,6 +129,7 @@ export async function auditVoiceSegments(
         if (client && wavBytes && typeof client.transcribe === 'function') {
             try {
                 const trans = await client.transcribe(wavBytes, lang);
+
                 transcriptionText = trans.text;
                 if (detectRepetitions(transcriptionText)) {
                     repetitionDetected = true;
@@ -130,7 +148,21 @@ export async function auditVoiceSegments(
             }
         }
 
-        const passed = !durationAnomaly && !(repetitionDetected && durationAnomaly);
+        // Fidelity gate: when the transcription diverges from the source near-totally, the
+        // audio is looped/garbage regardless of duration (the published noise episodes scored
+        // ≤0.05 while real-but-noisy zh ASR stays ≥0.23 — dogfood daily-ai-news-20260903).
+        let lowFidelity = false;
+        if (transcriptionText !== undefined) {
+            const fidelity = transcriptionFidelity(segment.text, transcriptionText);
+            if (fidelity < 0.15) {
+                lowFidelity = true;
+                issues.push(
+                    `Transcription fidelity ${fidelity.toFixed(2)} below 0.15 — audio diverges from source text: "${transcriptionText.slice(0, 80)}..."`,
+                );
+            }
+        }
+
+        const passed = !durationAnomaly && !(repetitionDetected && durationAnomaly) && !lowFidelity;
         if (!passed) {
             criticalIssues.push(`Segment ${i + 1} (${meta?.profile || 'Unknown'}): ${issues.join('; ')}`);
         }
