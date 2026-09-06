@@ -57,6 +57,7 @@ export class MicrofeedClient {
                 ...init,
                 headers: {
                     Authorization: `Bearer ${this.apiKey}`,
+                    Origin: this.baseUrl, // Astro CSRF origin check rejects cross-site form-like methods (DELETE/PUT/POST)
                     ...init.headers,
                 },
                 signal: AbortSignal.timeout(this.timeoutMs),
