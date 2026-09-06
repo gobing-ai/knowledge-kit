@@ -113,19 +113,19 @@ states:
             test -f "$PLAN_DOCS" || { echo "plan: $PLAN_DOCS not written after episode-plan-gen"; exit 1; }
 
   - id: plan-translate
-    description: "Translate needsTranslation plan items in place via agent.run"
+    description: "Translate needsTranslation plan items into the output plan.json via agent.run"
     onEnter:
       - kind: agent.run
         options:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Edit the JSON file at ${vars.work_dir}/2-plan/plan.json in place.
-            It is a JSON array of news items (Doc[]). Some items carry "needsTranslation": true in metadata.
+            Read the JSON file at ${vars.work_dir}/2-plan/content.json. Its metadata.docs is a JSON array of news items (Doc[]) — this is the episode plan to translate. Do not edit content.json.
+            Some items carry "needsTranslation": true in metadata.
             For every item with needsTranslation: translate its "title" and "body" fields into natural, concise Chinese (simplified).
             Keep everything else untouched: metadata (including needsTranslation, planScore, mergedFrom, urls), sourceUri, id, mediaType.
             Preserve any URLs inside the body text. Keep technical terms (product/model/company names) in their original form where that is clearer.
-            The result must remain a valid JSON array of the same length, same item order, same ids.
+            Write the translated array — a valid JSON array of the same length, same item order, same ids — to ${vars.work_dir}/2-plan/plan.json (create the file).
             Do not wait for operator confirmation.
           expectFile: ${vars.work_dir}/2-plan/plan.json
           allowAppend: false
