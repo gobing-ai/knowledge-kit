@@ -121,8 +121,8 @@ states:
           agent: ${vars.agent}
           input: |
             Read the JSON file at ${vars.work_dir}/2-plan/content.json. Its metadata.docs is a JSON array of news items (Doc[]) — this is the episode plan to translate. Do not edit content.json.
-            Some items carry "needsTranslation": true in metadata.
             For every item with needsTranslation: translate its "title" and "body" fields into natural, concise Chinese (simplified).
+            Titles must read as a news event, not a bare label: derive the title from the item's body (first sentence carries the event) so "Sora 2" becomes e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型" — subject + action + object. Keep product/model/company names verbatim.
             Keep everything else untouched: metadata (including needsTranslation, planScore, mergedFrom, urls), sourceUri, id, mediaType.
             Preserve any URLs inside the body text. Keep technical terms (product/model/company names) in their original form where that is clearer.
             Write the translated array — a valid JSON array of the same length, same item order, same ids — to ${vars.work_dir}/2-plan/plan.json (create the file).

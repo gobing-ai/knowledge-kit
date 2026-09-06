@@ -93,6 +93,78 @@ describe('episode-plan-gen', () => {
         expect(plan).toHaveLength(1);
         expect(plan[0]?.id).toBe('a');
     });
+
+    test('freshness gate drops items published before the 7-day window', () => {
+        const plan = planEpisode(
+            [
+                doc({ metadata: { source: 'aihot', publishedAt: '2020-06-19T17:39:12.000Z' } }),
+                doc({ id: 'fresh', sourceUri: 'https://x.com/1', metadata: { source: 'hackernews' } }),
+            ],
+            { maxItems: 5, date: '2026-09-06' },
+        );
+        expect(plan.map((d) => d.id)).toEqual(['fresh']);
+    });
+
+    test('freshness gate keeps aihot items dated inside the window and passes dated last30days items', () => {
+        const plan = planEpisode(
+            [
+                doc({
+                    id: 'recent',
+                    sourceUri: 'https://x.com/1',
+                    metadata: { source: 'aihot', publishedAt: '2026-09-04T00:00:00.000Z' },
+                }),
+                doc({
+                    id: 'dated',
+                    title: 'Hacker News 上的独立 AI 项目盘点',
+                    sourceUri: 'https://x.com/2',
+                    metadata: { source: 'hackernews', date: '2026-09-06' },
+                }),
+            ],
+            { maxItems: 5, date: '2026-09-06' },
+        );
+        expect(plan.map((d) => d.id).sort()).toEqual(['dated', 'recent']);
+    });
+
+    test('non-news tag gate drops geopolitics items (horizon finance-news)', () => {
+        const plan = planEpisode(
+            [
+                doc({
+                    id: 'geo',
+                    title: 'U.S. strikes Iranian oil tankers',
+                    sourceUri: 'https://news.google.com/x',
+                    metadata: { source: 'rss', date: '2026-09-06', tags: ['geopolitics', 'oil-markets'] },
+                }),
+                doc({
+                    id: 'ai',
+                    sourceUri: 'https://x.com/1',
+                    metadata: { source: 'rss', date: '2026-09-06', tags: ['GPT-6'] },
+                }),
+            ],
+            { maxItems: 5, date: '2026-09-06' },
+        );
+        expect(plan.map((d) => d.id)).toEqual(['ai']);
+    });
+
+    test('per-source cap limits one feed to 5 slots', () => {
+        const docs = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+            doc({
+                id: `flood${n}`,
+                title: [
+                    'Sora 应用发布',
+                    'GPT-6 Astra 上线',
+                    'Rust vtables 图解',
+                    'Claude 5 发布',
+                    'Llama 5 开源',
+                    'Gemini 3 上线',
+                    'Mistral 融资',
+                ][n - 1],
+                sourceUri: `https://flood.example.com/${n}`,
+                metadata: { source: 'aihot', publishedAt: '2026-09-05T00:00:00.000Z' },
+            }),
+        );
+        const plan = planEpisode(docs, { maxItems: 10, date: '2026-09-06' });
+        expect(plan).toHaveLength(5);
+    });
     test('maxItems truncates and preserves score order', () => {
         const docs = [1, 2, 3, 4, 5].map((n) =>
             doc({

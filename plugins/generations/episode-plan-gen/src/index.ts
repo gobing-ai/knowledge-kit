@@ -29,9 +29,40 @@ const SOURCE_BASE: Record<string, number> = {
 };
 const DEFAULT_SOURCE_BASE = 5;
 const TITLE_SIMILARITY_THRESHOLD = 0.6; // character-bigram Jaccard
+const FRESHNESS_DAYS = 7; // a daily episode drops items published before this window (dogfood 20260906: aihot served a 2020-2025 blog archive as "selected")
+const PER_SOURCE_CAP = 5; // one feed can't flood the episode even when all its items score high
+const NON_NEWS_TAGS = new Set(['geopolitics', 'military-conflict', 'war']); // horizon finance-news tags (dogfood 20260906: Iran oil tankers in an AI episode)
 
 export interface PlanOptions {
     maxItems: number;
+    date?: string; // episode date (YYYY-MM-DD); freshness is judged against it, default today
+}
+
+/** Best-effort publication timestamp from mixed source metadata (aihot: publishedAt/discoveredAt; horizon: date). */
+function docTimestamp(doc: Doc): number | null {
+    const meta = asRecord(doc.metadata);
+    for (const key of ['publishedAt', 'discoveredAt']) {
+        const value = meta[key];
+        if (typeof value === 'string' && value.trim()) {
+            const t = Date.parse(value);
+            if (Number.isFinite(t)) return t;
+        }
+    }
+    const date = meta.date;
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date.trim())) {
+        return Date.parse(date.trim().slice(0, 10));
+    }
+    return null;
+}
+
+/** Freshness + non-news gates applied before scoring/dedup (archived or off-topic items never enter the pool). */
+function passesGates(doc: Doc, planDate: string): boolean {
+    const meta = asRecord(doc.metadata);
+    const tags = Array.isArray(meta.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [];
+    if (tags.some((tag) => NON_NEWS_TAGS.has(tag.toLowerCase()))) return false;
+    const published = docTimestamp(doc);
+    if (published === null) return true; // undated sources (hackernews/reddit last30days) are curated same-day by construction
+    return published >= Date.parse(planDate) - FRESHNESS_DAYS * 86_400_000;
 }
 
 /** Strip `⭐️ x.y/10` ratings and `### [title](url)` heading copies from a body. */
@@ -132,13 +163,15 @@ interface ScoredDoc {
     mergedFrom: MergedFrom[];
 }
 
-/** Full plan pipeline: clean → score → URL-dedup → title-dedup → top N. */
+/** Full plan pipeline: clean → gate (freshness/non-news) → score → URL-dedup → title-dedup → per-source cap → top N. */
 export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
+    const planDate = options.date ?? new Date().toISOString().slice(0, 10);
     // URL dedup happens on the original sourceUri (first occurrence wins ties,
     // resolved below by score after the map).
     const byUrl = new Map<string, ScoredDoc>();
     const scored: ScoredDoc[] = [];
     for (const doc of docs) {
+        if (!passesGates(doc, planDate)) continue;
         const cleaned: Doc = {
             ...doc,
             body: cleanBody(doc.body ?? ''),
@@ -191,24 +224,32 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
         }
     }
 
-    return scored
-        .filter((r) => !absorbed.has(r))
-        .sort((a, b) => b.score - a.score)
+    const candidates = scored.filter((r) => !absorbed.has(r)).sort((a, b) => b.score - a.score);
+    // Per-source cap, applied in score order: one feed's flood stops at PER_SOURCE_CAP.
+    const perSource = new Map<string, number>();
+    const selected: ScoredDoc[] = [];
+    for (const record of candidates) {
+        const source = sourceOf(record.doc);
+        const count = perSource.get(source) ?? 0;
+        if (count >= PER_SOURCE_CAP) continue;
+        perSource.set(source, count + 1);
+        selected.push(record);
+        if (selected.length >= Math.max(1, options.maxItems)) break;
+    }
 
-        .slice(0, Math.max(1, options.maxItems))
-        .map((r) => {
-            const meta = asRecord(r.doc.metadata);
-            const ascii = asciiRatio(r.doc.title ?? '');
-            return {
-                ...r.doc,
-                metadata: {
-                    ...meta,
-                    planScore: r.score,
-                    ...(ascii > 0.5 ? { needsTranslation: true } : {}),
-                    ...(r.mergedFrom.length > 0 ? { mergedFrom: r.mergedFrom } : {}),
-                },
-            } satisfies Doc;
-        });
+    return selected.map((r) => {
+        const meta = asRecord(r.doc.metadata);
+        const ascii = asciiRatio(r.doc.title ?? '');
+        return {
+            ...r.doc,
+            metadata: {
+                ...meta,
+                planScore: r.score,
+                ...(ascii > 0.5 ? { needsTranslation: true } : {}),
+                ...(r.mergedFrom.length > 0 ? { mergedFrom: r.mergedFrom } : {}),
+            },
+        } satisfies Doc;
+    });
 }
 
 function sourceOf(doc: Doc): string {
@@ -233,7 +274,7 @@ export function renderPlanMarkdown(docs: Doc[], date: string): string {
 
 /** Build the plan Content; `metadata.docs` is the contract with the workflow. */
 export function docsToContent(docs: Doc[], date: string): Content {
-    const planned = planEpisode(docs, { maxItems: maxItemsFromEnv() });
+    const planned = planEpisode(docs, { maxItems: maxItemsFromEnv(), date });
     return ContentSchema.parse({
         title: `每日 AI 播客选稿计划 — ${date}`,
         body: renderPlanMarkdown(planned, date),
