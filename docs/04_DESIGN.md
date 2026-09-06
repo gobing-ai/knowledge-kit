@@ -391,7 +391,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
 | `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload; requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` |
-| `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (`content.body`), `status`, `audio` (`metadata.audioUrl` or `metadata.audioFile`), `durationSeconds` |
+| `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (sanitized HTML — markdown showNotes/body rendered via the closed-dialect renderer in `show-notes.ts`; `format: 'html'` bodies pass through), `status`, `audio` (`metadata.audioUrl` or `metadata.audioFile`), `durationSeconds` |
 | `resolveAudioMimeType(ref, mimeType?)` | function | Extension → audio MIME mapping with override |
 | `getPublishTransport()` | function | Returns `FakeFileCliTransport` when `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else `PodcastPubTransport` |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `list`, `get`, `update`, `delete`, `validate`) |

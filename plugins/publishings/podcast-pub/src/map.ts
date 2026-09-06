@@ -1,10 +1,11 @@
 import type { Content } from '@gobing-ai/kk-core';
+import { renderShowNotesHtml } from './show-notes';
 
 /** Resolved episode fields derived from a Content payload (design D6). */
 export interface EpisodeMapping {
     /** Episode title: `content.title`, else the first `#` heading, else validation error. */
     title: string;
-    /** Episode show notes: `metadata.showNotes` (summary) or `content.body` verbatim. */
+    /** Episode show notes as sanitized HTML: `metadata.showNotes` (markdown → HTML) or `content.body` rendered. */
     contentHtml: string;
     /** microfeed item status; `metadata.status` when given, `published` by default. */
     status: string | number;
@@ -137,7 +138,12 @@ export function mapContentToEpisode(content: Content): EpisodeMapping {
 
     return {
         title,
-        contentHtml: showNotes && showNotes.length > 0 ? showNotes : content.body,
+        contentHtml:
+            showNotes && showNotes.length > 0
+                ? renderShowNotesHtml(showNotes)
+                : content.format === 'html'
+                  ? content.body
+                  : renderShowNotesHtml(content.body),
         status,
         audio: audioFile
             ? { kind: 'file', path: audioFile, mimeType: resolveAudioMimeType(audioFile, metadata.mimeType) }

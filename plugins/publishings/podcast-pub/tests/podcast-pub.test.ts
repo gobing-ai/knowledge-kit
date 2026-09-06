@@ -119,14 +119,16 @@ function twoPhaseRoutes(itemId: string): ScriptedResponse[] {
 }
 
 describe('podcast-pub mapping', () => {
-    test('mapContentToEpisode resolves title, body verbatim, default status, and hosted audio', () => {
+    test('mapContentToEpisode renders the body to sanitized HTML and drops the duplicate title heading', () => {
         const episode = mapContentToEpisode({
-            body: '# Heading Title\n\nNotes.',
+            body: '# Heading Title\n\nNotes with [a link](https://example.com/a).',
             format: 'markdown',
             metadata: { audioUrl: 'https://cdn.example.com/ep1.mp3' },
         } as Content);
         expect(episode.title).toBe('Heading Title');
-        expect(episode.contentHtml).toBe('# Heading Title\n\nNotes.');
+        expect(episode.contentHtml).toBe(
+            '<p>Notes with <a href="https://example.com/a" target="_blank" rel="noopener">a link</a>.</p>',
+        );
         expect(episode.status).toBe('published');
         expect(episode.audio).toEqual({ kind: 'url', url: 'https://cdn.example.com/ep1.mp3', mimeType: 'audio/mpeg' });
     });
@@ -175,7 +177,7 @@ describe('podcast-pub mapping', () => {
         expect(resolveAudioMimeType('/a/ep.unknown')).toBe('application/octet-stream');
     });
 
-    test('mapContentToEpisode resolves showNotes, image, date, link, and itunes passthrough', () => {
+    test('mapContentToEpisode resolves showNotes HTML, image, date, link, and itunes passthrough', () => {
         const episode = mapContentToEpisode({
             title: 'Ep 42',
             body: '# Ep 42\n\nFull article body that is too long for show notes.',
@@ -189,11 +191,34 @@ describe('podcast-pub mapping', () => {
                 itunes: { episodeType: 'full', season: 3, episode: 42, explicit: false },
             },
         } as Content);
-        expect(episode.contentHtml).toBe('## 短摘要\n\n一句话总结。');
+        expect(episode.contentHtml).toBe('<h2>短摘要</h2>\n<p>一句话总结。</p>');
         expect(episode.imageUrl).toBe('https://surfdash.example.com/assets/cover.png');
         expect(episode.datePublishedMs).toBe(Date.parse('2026-09-04T08:00:00Z'));
         expect(episode.link).toBe('https://surfdash.example.com/zh/posts/20260904-ep');
         expect(episode.itunes).toEqual({ episodeType: 'full', season: 3, episode: 42, explicit: false });
+    });
+
+    test('mapContentToEpisode renders markdown showNotes to HTML and passes html-format bodies through', () => {
+        const shown = mapContentToEpisode({
+            title: 'Ep 42',
+            body: '# Ep 42\n\nFull article body.',
+            format: 'markdown',
+            metadata: {
+                audioUrl: 'https://cdn.example.com/ep42.mp3',
+                showNotes: '## 短摘要\n\n一句话 **要点** 与 [来源](https://example.com/s)。',
+            },
+        } as Content);
+        expect(shown.contentHtml).toBe(
+            '<h2>短摘要</h2>\n<p>一句话 <strong>要点</strong> 与 <a href="https://example.com/s" target="_blank" rel="noopener">来源</a>。</p>',
+        );
+
+        const passthrough = mapContentToEpisode({
+            title: 'Ep 42',
+            body: '<p>Pre-sanitized by the caller.</p>',
+            format: 'html',
+            metadata: { audioUrl: 'https://cdn.example.com/ep42.mp3' },
+        } as Content);
+        expect(passthrough.contentHtml).toBe('<p>Pre-sanitized by the caller.</p>');
     });
 
     test('mapContentToEpisode ignores a local cover path and rejects a bad episodeType/publishedAt', () => {
@@ -268,7 +293,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                 expect(create?.headers.get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/);
                 expect(create?.body).toEqual({
                     title: 'Episode 1: Ground Up',
-                    content_html: '# Episode 1: Ground Up\n\nShow notes body.',
+                    content_html: '<p>Show notes body.</p>',
                     status: 'unpublished',
                 });
 
@@ -291,7 +316,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                 expect(finalize?.url).toBe('https://feed.example.com/api/v1/items/ITEM01');
                 expect(finalize?.body).toEqual({
                     title: 'Episode 1: Ground Up',
-                    content_html: '# Episode 1: Ground Up\n\nShow notes body.',
+                    content_html: '<p>Show notes body.</p>',
                     status: 'published',
                     attachments: [
                         {
@@ -331,7 +356,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                 expect(result.url).toBe('https://feed.example.com/items/HOSTED1');
                 expect(api.requests[0]?.body).toEqual({
                     title: 'Episode 1: Ground Up',
-                    content_html: '# Episode 1: Ground Up\n\nShow notes body.',
+                    content_html: '<p>Show notes body.</p>',
                     status: 'published',
                     attachments: [
                         {
