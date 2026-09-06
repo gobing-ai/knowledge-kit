@@ -158,12 +158,27 @@ async function publishEpisode(client: MicrofeedClient, payload: PublishTransport
     });
     await client.uploadBytes(prepared.presignedUrl, bytes, episode.audio.mimeType);
 
+    // Phase 2b: upload a local cover via the presigned image flow (no item_id needed).
+    let imageUrl = episode.imageUrl;
+    if (episode.imagePath && !imageUrl) {
+        const imageBytes = new Uint8Array(await readFile(episode.imagePath));
+        const imagePrepared = await client.prepareUpload({
+            category: 'image',
+            full_local_file_path: episode.imagePath,
+            size: imageBytes.byteLength,
+            type: 'image/png',
+        });
+        await client.uploadBytes(imagePrepared.presignedUrl, imageBytes, 'image/png');
+        imageUrl = imagePrepared.mediaUrl;
+    }
+
     // Phase 4: attach + publish; the response is the public item (url when live).
     const item = await client.updateItem(itemId, {
         title: episode.title,
         content_html: episode.contentHtml,
         status: episode.status,
         attachments: [audioAttachment(episode.audio, prepared.mediaUrl, bytes.byteLength, episode.durationSeconds)],
+        ...(imageUrl ? { image: imageUrl } : {}),
         ...episodeExtras(episode),
     });
 

@@ -118,6 +118,54 @@ function twoPhaseRoutes(itemId: string): ScriptedResponse[] {
     ];
 }
 
+/** Two-phase routes with a local cover: presign #1 = audio, #2 = image (sequence-keyed). */
+function twoPhaseRoutesWithCover(itemId: string): ScriptedResponse[] {
+    let presignCount = 0;
+    return [
+        {
+            match: (r) => r.method === 'POST' && r.url.endsWith('/api/v1/items'),
+            respond: () => new Response(JSON.stringify({ id: itemId }), { status: 201 }),
+        },
+        {
+            match: (r) => r.method === 'POST' && r.url.endsWith('/api/v1/media_files/presigned_urls'),
+            respond: () => {
+                presignCount += 1;
+                const isImage = presignCount === 2;
+                return new Response(
+                    JSON.stringify(
+                        isImage
+                            ? {
+                                  presigned_url: `https://feed.example.com/presign/${itemId}-img`,
+                                  media_url: `https://media.example.com/media/images/${itemId}.png`,
+                              }
+                            : {
+                                  presigned_url: `https://feed.example.com/presign/${itemId}`,
+                                  media_url: `https://media.example.com/media/audio/${itemId}.wav`,
+                              },
+                    ),
+                    { status: 201 },
+                );
+            },
+        },
+        {
+            match: (r) => r.method === 'PUT' && r.url.includes('/presign/'),
+            respond: () => new Response(null, { status: 200 }),
+        },
+        {
+            match: (r) => r.method === 'PUT' && r.url.endsWith(`/api/v1/items/${itemId}`),
+            respond: () =>
+                new Response(
+                    JSON.stringify({
+                        id: itemId,
+                        url: `https://feed.example.com/items/ep-1-ground-up-${itemId}`,
+                        status: 'published',
+                    }),
+                    { status: 200 },
+                ),
+        },
+    ];
+}
+
 describe('podcast-pub mapping', () => {
     test('mapContentToEpisode renders the body to sanitized HTML and drops the duplicate title heading', () => {
         const episode = mapContentToEpisode({
@@ -221,13 +269,14 @@ describe('podcast-pub mapping', () => {
         expect(passthrough.contentHtml).toBe('<p>Pre-sanitized by the caller.</p>');
     });
 
-    test('mapContentToEpisode ignores a local cover path and rejects a bad episodeType/publishedAt', () => {
+    test('mapContentToEpisode routes a local cover path to imagePath and rejects a bad episodeType/publishedAt', () => {
         const base = { title: 'Ep', body: 'b', format: 'markdown' } as Content;
         const local = mapContentToEpisode({
             ...base,
             metadata: { audioUrl: 'https://x/a.mp3', coverImage: '/tmp/cover.png' },
         });
         expect(local.imageUrl).toBeUndefined();
+        expect(local.imagePath).toBe('/tmp/cover.png');
         expect(() =>
             mapContentToEpisode({
                 ...base,
@@ -331,6 +380,48 @@ describe('podcast-pub publish (R1/R3)', () => {
             } finally {
                 api.restore();
                 await rm(join(process.cwd(), '.tmp-test-podcast'), { recursive: true, force: true });
+            }
+        });
+    });
+
+    test('local cover uploads via presigned image flow and lands in the final item image field', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const dir = join(process.cwd(), '.tmp-test-podcast-cover');
+            const audioPath = await makeAudioFile(dir);
+            const coverPath = await makeAudioFile(dir, 'cover.png');
+            const api = installFakeApi(twoPhaseRoutesWithCover('ITEM02'));
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioFile: audioPath, coverImage: coverPath }),
+                });
+
+                expect(result.ok).toBe(true);
+                expect(result.id).toBe('ITEM02');
+
+                // create → audio presign → audio PUT → image presign → image PUT → finalize
+                const presigns = api.requests.filter((r) => r.url.endsWith('/media_files/presigned_urls'));
+                expect(presigns.length).toBe(2);
+                expect(presigns[0]?.body).toEqual({
+                    category: 'audio',
+                    full_local_file_path: audioPath,
+                    item_id: 'ITEM02',
+                    size: 8,
+                    type: 'audio/wav',
+                });
+                expect(presigns[1]?.body).toEqual({
+                    category: 'image',
+                    full_local_file_path: coverPath,
+                    size: 8,
+                    type: 'image/png',
+                });
+
+                const finalize = api.requests[api.requests.length - 1];
+                expect(finalize?.method).toBe('PUT');
+                const finalizeBody = finalize?.body as Record<string, unknown>;
+                expect(finalizeBody.image).toBe('https://media.example.com/media/images/ITEM02.png');
+            } finally {
+                api.restore();
+                await rm(dir, { recursive: true, force: true });
             }
         });
     });

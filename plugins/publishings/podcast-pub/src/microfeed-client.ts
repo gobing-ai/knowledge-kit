@@ -150,12 +150,13 @@ export class MicrofeedClient {
 
     /**
      * `POST /api/v1/media_files/presigned_urls` — audio uploads require `item_id`
-     * (handlers.ts `prepareApiMediaUpload`), so the draft item must exist first (design D2).
+     * (handlers.ts `prepareApiMediaUpload`), so the draft item must exist first (design D2);
+     * image uploads (`category: 'image'`) presign without an item.
      */
     public async prepareUpload(input: {
-        category: 'audio';
+        category: 'audio' | 'image';
         full_local_file_path: string;
-        item_id: string;
+        item_id?: string;
         size?: number;
         type?: string;
     }): Promise<PreparedUpload> {

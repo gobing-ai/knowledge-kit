@@ -15,6 +15,8 @@ export interface EpisodeMapping {
     durationSeconds?: number;
     /** Optional episode cover: absolute or remote URL (`metadata.coverImage` → microfeed `image`). */
     imageUrl?: string;
+    /** Optional local episode cover file (`metadata.coverImage` local path → presigned image upload). */
+    imagePath?: string;
     /** Optional publish date as epoch ms (`metadata.publishedAt` ISO string or epoch). */
     datePublishedMs?: number;
     /** Optional public link for the episode (`metadata.articleUrl` → microfeed `url`). */
@@ -102,9 +104,10 @@ export function mapContentToEpisode(content: Content): EpisodeMapping {
     const articleUrl = typeof metadata.articleUrl === 'string' ? metadata.articleUrl.trim() : undefined;
     const link = articleUrl && articleUrl.length > 0 ? articleUrl : undefined;
     const coverImage = typeof metadata.coverImage === 'string' ? metadata.coverImage.trim() : undefined;
-    // microfeed keeps absolute/remote image URLs verbatim; a local cover file is not
-    // uploadable via the `image` field, so only http(s) paths pass through.
+    // microfeed keeps remote image URLs verbatim (`image` field); a local cover file
+    // goes through the presigned image upload flow (no item_id required) instead.
     const imageUrl = coverImage?.startsWith('http') ? coverImage : undefined;
+    const imagePath = !imageUrl && coverImage && coverImage.length > 0 ? coverImage : undefined;
 
     let datePublishedMs: number | undefined;
     const publishedAt = metadata.publishedAt;
@@ -154,6 +157,7 @@ export function mapContentToEpisode(content: Content): EpisodeMapping {
               },
         durationSeconds: duration as number | undefined,
         ...(imageUrl ? { imageUrl } : {}),
+        ...(imagePath ? { imagePath } : {}),
         ...(datePublishedMs !== undefined ? { datePublishedMs } : {}),
         ...(link ? { link } : {}),
         ...(itunes !== undefined ? { itunes } : {}),

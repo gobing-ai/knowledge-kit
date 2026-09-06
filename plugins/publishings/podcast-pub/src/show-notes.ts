@@ -55,11 +55,11 @@ export function renderShowNotesHtml(markdown: string): string {
         const heading = line.match(/^(#{1,3})\s+(.*)$/);
         if (heading) {
             flush();
-            const tag = heading[1].length === 1 ? 'h1' : heading[1].length === 2 ? 'h2' : 'h3';
+            const tag = heading[1]?.length === 1 ? 'h1' : heading[1]?.length === 2 ? 'h2' : 'h3';
             if (tag === 'h1' && blocks.length === 0 && paragraph.length === 0) {
                 continue; // drop the duplicate title heading
             }
-            blocks.push(`<${tag}>${renderInline(escapeHtml(heading[2]))}</${tag}>`);
+            blocks.push(`<${tag}>${renderInline(escapeHtml(heading[2] ?? ''))}</${tag}>`);
             continue;
         }
         paragraph.push(line);

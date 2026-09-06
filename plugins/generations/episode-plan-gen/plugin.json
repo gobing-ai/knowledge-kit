@@ -1,0 +1,7 @@
+{
+    "name": "episode-plan-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Plans the daily episode: scores blended Doc[] (source weight + normalized relevance + log-scaled engagement), dedups by URL and title bigram, selects top N, flags English items, strips rating/heading leftovers (mechanical, no LLM)"
+}

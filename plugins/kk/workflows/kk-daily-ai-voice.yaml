@@ -23,7 +23,8 @@ vars:
   skip_review: "false"
   transcode_mp3: "false"
   cover_enabled: "true"
-  max_items: "12"
+  plan_max_items: "20"
+  plan_translate_enabled: "true"
   plugins_path: ""
   last30days_topic: "AI news"
   horizon_hours: "24"
@@ -44,7 +45,7 @@ states:
         options:
           command: >-
             test -n "${vars.work_dir}" || { echo "missing required variable: work_dir" >&2 && exit 1; };
-            mkdir -p "${vars.work_dir}/1-ingest" "${vars.work_dir}/2-facts" "${vars.work_dir}/2-article" "${vars.work_dir}/2-cover" "${vars.work_dir}/2-script" "${vars.work_dir}/3-audio" "${vars.work_dir}/3-publish";
+            mkdir -p "${vars.work_dir}/1-ingest" "${vars.work_dir}/2-facts" "${vars.work_dir}/2-plan" "${vars.work_dir}/2-article" "${vars.work_dir}/2-cover" "${vars.work_dir}/2-script" "${vars.work_dir}/3-audio" "${vars.work_dir}/3-publish";
             date +%Y%m%d > "${vars.work_dir}/run-date.txt" &&
             bun -e 'await Bun.write(process.argv[1], JSON.stringify({ limit: Number(process.argv[2]), cursor: process.argv[3] || undefined, stateFile: process.argv[4] || undefined }, null, 2))' "${vars.work_dir}/1-ingest/source.json" "${vars.limit}" "${vars.cursor}" "${vars.state_file}" &&
             if [ "${vars.last30days_enabled}" != "true" ]; then printf '[]' > "${vars.work_dir}/1-ingest/last30days-docs.json"; fi &&
@@ -97,8 +98,38 @@ states:
             kk executor run core-facts-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-facts/content.json" "$@" &&
             bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-facts/content.json" "${vars.work_dir}/2-facts/core-facts.md"
 
+  - id: plan
+    description: "Score/dedup/select the blended Doc[] into the episode plan (episode-plan-gen)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            PLAN_CONTENT="${vars.work_dir}/2-plan/content.json"; PLAN_DOCS="${vars.work_dir}/2-plan/plan.json";
+            if [ -f "$PLAN_DOCS" ]; then echo "plan cached: $PLAN_DOCS"; exit 0; fi;
+            EPISODE_PLAN_MAX_ITEMS="${vars.plan_max_items}" EPISODE_PLAN_DATE="${vars.run_date}" kk executor run episode-plan-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$PLAN_CONTENT" "$@" &&
+            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const docs = content.metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("plan: content.metadata.docs missing or empty"); process.exit(1); } await Bun.write(process.argv[2], JSON.stringify(docs, null, 2))' "$PLAN_CONTENT" "$PLAN_DOCS"
+
+  - id: plan-translate
+    description: "Translate needsTranslation plan items in place via agent.run"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Edit the JSON file at ${vars.work_dir}/2-plan/plan.json in place.
+            It is a JSON array of news items (Doc[]). Some items carry "needsTranslation": true in metadata.
+            For every item with needsTranslation: translate its "title" and "body" fields into natural, concise Chinese (simplified).
+            Keep everything else untouched: metadata (including needsTranslation, planScore, mergedFrom, urls), sourceUri, id, mediaType.
+            Preserve any URLs inside the body text. Keep technical terms (product/model/company names) in their original form where that is clearer.
+            The result must remain a valid JSON array of the same length, same item order, same ids.
+            Do not wait for operator confirmation.
+          expectFile: ${vars.work_dir}/2-plan/plan.json
+          allowAppend: false
   - id: article
-    description: "Generate the dated daily article from blended facts (daily-article-gen template)"
+    description: "Generate the dated daily article from the episode plan (daily-article-gen template)"
     onEnter:
       - kind: shell
         options:
@@ -106,8 +137,7 @@ states:
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             CONTENT_OUT="${vars.work_dir}/2-article/content-${vars.run_date}.json"; ARTICLE_MD="${vars.work_dir}/2-article/article-${vars.run_date}.md";
-            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
-
+            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "${vars.work_dir}/2-plan/plan.json" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
   - id: cover
     description: "Generate the article cover image via the wt-image-cover skill (agent.run)"
     onEnter:
@@ -122,7 +152,7 @@ states:
           expectFile: ${vars.work_dir}/2-cover/cover-${vars.run_date}.png
 
   - id: script
-    description: "Compile blended facts Doc[] into structured broadcast VoiceScript YAML Content"
+    description: "Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content"
     onEnter:
       - kind: shell
         options:
@@ -130,7 +160,7 @@ states:
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             SCRIPT_CONTENT_OUT="${vars.work_dir}/2-script/content-${vars.run_date}.json"; VOICESCRIPT_YAML="${vars.work_dir}/2-script/voicescript-${vars.run_date}.yaml";
-            if [ -f "$VOICESCRIPT_YAML" ]; then echo "voicescript cached: $VOICESCRIPT_YAML"; else DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" DAILYNEWS_MAX_ITEMS="${vars.max_items}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$SCRIPT_CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$SCRIPT_CONTENT_OUT" "$VOICESCRIPT_YAML"; fi
+            if [ -f "$VOICESCRIPT_YAML" ]; then echo "voicescript capped by plan: $VOICESCRIPT_YAML"; else DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/2-plan/plan.json" --out "$SCRIPT_CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$SCRIPT_CONTENT_OUT" "$VOICESCRIPT_YAML"; fi
 
   - id: review
     description: "Operator reviews the generated news script before speech synthesis"
@@ -169,12 +199,12 @@ states:
             bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/content.json"
 
   - id: show-notes
-    description: "Derive a compact podcast show-notes summary from the article (template, no LLM)"
+    description: "Render uniform show notes from the episode plan (template, no LLM)"
     onEnter:
       - kind: shell
         options:
           command: >-
-            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const sections = article.body.split(/\n(?=## )/).filter(s => s.startsWith("## ")); const lines = ["# " + article.title, ""]; for (const section of sections) { const parts = section.split("\n"); const heading = parts[0]; const paragraphs = parts.slice(1).join("\n").split(/\n\s*\n/).map(p => p.trim()).filter(Boolean); const first = paragraphs.find(p => !p.startsWith("[来源")) ?? paragraphs[0] ?? ""; const sentences = first.split(/(?<=[。！？])\s*|(?<=\.)\s+/).slice(0, 2).join(""); lines.push(heading, "", sentences, ""); } lines.push("完整内容见本期节目描述与网站文章。"); await Bun.write(process.argv[2], lines.join("\n"))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-publish/show-notes.md"
+            bun -e 'const docs = JSON.parse(await Bun.file(process.argv[1]).text()); const runDate = process.argv[3]; const articleTitle = JSON.parse(await Bun.file(process.argv[4]).text()).title ?? ""; const slugify = (t) => { let s = t.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-"); return s.length > 0 ? s : "post"; }; const articleUrl = "https://surfing.salty.vip/zh/posts/" + runDate + "-" + slugify(articleTitle); const sourceLabel = (d) => { const m = d.metadata ?? {}; if (typeof m.sourceName === "string" && m.sourceName.trim()) return m.sourceName.trim(); try { return new URL(d.sourceUri ?? "").hostname.replace(/^www\./, ""); } catch { return "来源"; } }; const lines = ["# " + (process.argv[5] || articleTitle), ""]; docs.forEach((d, i) => { const body = (d.body ?? "").trim(); const sentences = body.split(/(?<=[。！？])\s*/).slice(0, 2).join(""); lines.push("## " + (i + 1) + ". " + (d.title ?? "条目 " + (i + 1)), "", sentences, "", "[来源：" + sourceLabel(d) + "](" + (d.sourceUri ?? "") + ")", ""); }); lines.push("详情见本期完整文章：[ " + articleTitle + " ](" + articleUrl + ")", ""); await Bun.write(process.argv[2], lines.join("\n"))' "${vars.work_dir}/2-plan/plan.json" "${vars.work_dir}/3-publish/show-notes.md" "${vars.run_date}" "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.title}"
   - id: publish-prep
     description: "Merge article Content with audio + cover + run date + show-notes summary (podcast seam)"
     onEnter:
@@ -318,8 +348,28 @@ transitions:
       kind: always
 
   - from: blend-facts
+    to: plan
+    description: "Core facts rendered -> plan the episode (score/dedup/select)"
+    guard:
+      kind: always
+
+  - from: plan
+    to: plan-translate
+    description: "plan_translate_enabled -> translate flagged items in place"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.plan_translate_enabled}" = "true"'
+
+  - from: plan
     to: article
-    description: "Core facts rendered -> generate article"
+    description: "plan-translate disabled -> skip straight to article"
+    guard:
+      kind: always
+
+  - from: plan-translate
+    to: article
+    description: "Plan translated -> generate article from plan"
     guard:
       kind: always
 

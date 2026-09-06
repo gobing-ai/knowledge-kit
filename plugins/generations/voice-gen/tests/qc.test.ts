@@ -98,7 +98,7 @@ describe('Voice Quality Control (QC)', () => {
         const segmentMetadata = [{ generationId: 'g1', profile: 'Robin', duration: 6.5 }]; // in range
         const mockClient: Partial<VoiceboxClient> = {
             transcribe: async (_audio, _lang) => ({
-                text: '在各种技术光环背后正是这样专注而不知疲倦的底层攻坚者' + '这个'.repeat(60),
+                text: `在各种技术光环背后正是这样专注而不知疲倦的底层攻坚者${'这个'.repeat(60)}`,
             }),
         };
         const report = await auditVoiceSegments(script, segmentWavs, segmentMetadata, mockClient as VoiceboxClient);

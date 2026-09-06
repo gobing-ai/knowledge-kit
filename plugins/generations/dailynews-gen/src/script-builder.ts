@@ -269,7 +269,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
             ? idx === 0
                 ? `首先来聊聊大家非常关注的【${cleanTitle}】。`
                 : isLast
-                  ? `最后，来跟大家分享一条很有温度的幕后故事，【${cleanTitle}】。`
+                  ? `最后，来看看今天的最后一条资讯，【${cleanTitle}】。`
                   : `接着我们把目光转向另一条重要进展，【${cleanTitle}】。`
             : idx === 0
               ? `First up today, let's look at ${cleanTitle}.`

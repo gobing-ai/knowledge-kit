@@ -160,7 +160,7 @@ export async function processIngestionIO(
     const entries = (await fs.exists(summariesDir)) ? await fs.readDir(summariesDir) : [];
     for (const entry of entries) {
         const match = entry.match(digestRe);
-        if (!match || !match[1] || !match[2] || !langs.has(match[2])) continue;
+        if (!match?.[1] || !match?.[2] || !langs.has(match[2])) continue;
         const file = join(summariesDir, entry);
         const stat = await fs.stat(file);
         if (!stat || stat.mtimeMs < runStartedAt - 1000) continue; // stale file from an earlier run

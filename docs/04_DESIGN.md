@@ -34,6 +34,7 @@ sync: [T3]
 | [kk-solo-podcast.md](design/kk-solo-podcast.md) | Solo-podcast product workflow over voice-gen | shipped (F5) |
 | [aihot-ingest.md](design/aihot-ingest.md) | Ingestion plugin for aihot.virxact.com AI news | shipped (F6) |
 | [dailynews-gen.md](design/dailynews-gen.md) | Generator plugin for daily news VoiceScript Content | shipped (F6) |
+| [episode-plan-gen.md](design/episode-plan-gen.md) | Episode plan generator: score, dedup, select, translate flag — single upstream for article/script/show notes | shipped (F61, 2026-09-05) |
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
 | [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | shipped (E6) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
@@ -272,7 +273,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `VOICEBOX_ENGINE` | no (voice-gen) | TTS engine override when script/profile omit it (`qwen` default; `qwen_custom_voice` has no clone support) |
 | `VOICE_GEN_FAIL_ON_QC` | no (voice-gen) | `true` fails generation when the QC audit fails (fidelity/duration/repetition); the daily workflow instead routes on `metadata.qc.passed` so artifacts survive for forensics |
 | — (per-segment verify) | no (voice-gen) | Unconditional post-generation check: each segment's audio is transcribed back and compared against the source text (`transcriptionFidelity`); below `TRANSCRIPTION_FIDELITY_FLOOR` (0.15) the segment is regenerated (≤2 retries) with a varied seed and halved `max_chunk_chars` (floor 100). Final attempt always accepted; the QC audit (which reuses the stored transcription) remains the backstop. Catches contiguous loop garbage the server's gap-based runaway detector misses (dogfood 2026-09-03) |
-| `DAILYNEWS_MAX_ITEMS` | no (dailynews-gen) | Caps story count in the broadcast script (input order is curated-first from fan-in); the daily workflow sets `max_items: "12"` |
+| `EPISODE_PLAN_MAX_ITEMS` | no (episode-plan-gen) | Caps selected episode items (default `20`); the daily workflow passes `plan_max_items` through |
+| `EPISODE_PLAN_DATE` | no (episode-plan-gen) | Optional run date stamped into the plan Content metadata (`planDate`) |
 | `CONTENT_LANGUAGE` | no (content-gen) | Writing language directive for STORM outline/article/polish (`zh` = Simplified Chinese incl. title); the daily workflow passes `language` through |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
 | `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`) |
@@ -363,6 +365,22 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 `--in` config: `{ "limit"?: integer (1–100, default 10), "cursor"?: non-empty string, "stateFile"?: non-empty path }`.
 
+### `@gobing-ai/episode-plan-gen` (`plugins/generations/episode-plan-gen`, kind `generator`)
+
+Curates the blended news `Doc[]` into the episode plan — the single upstream shared by the article,
+the audio script, and the show notes.
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `planEpisode(docs, options)` | function | Full pipeline: `cleanBody` → `planScore` → URL dedup (`normalizeUrl`) → title dedup (`titleSimilarity`, bigram Jaccard ≥ 0.6) → top `maxItems` by score. Losers of either dedup are recorded on the winner's `metadata.mergedFrom` (`{source, title, url}`); English-dominant titles get `metadata.needsTranslation: true`; each survivor carries `metadata.planScore` |
+| `cleanBody(text)` | function | Collapse blank-line runs to one, trim |
+| `normalizeUrl(url)` | function | Strip `utm_*`/tracking params and trailing slash for dedup keys |
+| `titleSimilarity(a, b)` | function | Bigram Jaccard similarity (0–1), CJK-aware |
+| `docsToContent(docs, options)` | function | Wrap the plan as markdown `Content` carrying the selected `Doc[]` in `metadata.docs` — the executor's generator contract output; the workflow extracts `metadata.docs` to `2-plan/plan.json` for downstream steps |
+| `main()` | function | Executor `--in`/`--out`; env `EPISODE_PLAN_MAX_ITEMS` (default 20), `EPISODE_PLAN_DATE`; exit 0 success / 1 failure |
+
+Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-translate` (agent.run, gated by `plan_translate_enabled`) translates `needsTranslation` items in place before the article step consumes the plan. `DAILYNEWS_MAX_ITEMS` is no longer set by the workflow — the plan is the single limiter.
+
 ### `@gobing-ai/dailynews-gen` (`plugins/generations/dailynews-gen`, kind `generator`)
 
 | Export | Kind | Notes |
@@ -390,8 +408,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload; requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` |
-| `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (sanitized HTML — markdown showNotes/body rendered via the closed-dialect renderer in `show-notes.ts`; `format: 'html'` bodies pass through), `status`, `audio` (`metadata.audioUrl` or `metadata.audioFile`), `durationSeconds` |
+| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload (audio, then optional local episode cover as `image/png`); requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` |
+| `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (sanitized HTML — markdown showNotes/body rendered via the closed-dialect renderer in `show-notes.ts`; `format: 'html'` bodies pass through), `status`, `audio` (`metadata.audioUrl` or `metadata.audioPath`/`audioFile`), `durationSeconds`, `imagePath` (non-http `coverImage`), `imageUrl` (http cover) |
 | `resolveAudioMimeType(ref, mimeType?)` | function | Extension → audio MIME mapping with override |
 | `getPublishTransport()` | function | Returns `FakeFileCliTransport` when `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else `PodcastPubTransport` |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `list`, `get`, `update`, `delete`, `validate`) |
@@ -431,8 +449,7 @@ File: `.spur/config.yaml`
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
-| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: collect (aihot-ingest + last30days-ingest + horizon-ingest) -> blend (fan-in + core-facts-gen) -> content-gen article + cover + dailynews-gen script + voice-gen -> fan-out publish (F61 destination, dogfooded 2026-09-03) |
-| Podcast publish plugin | `docs/design/podcast-pub.md` | microfeed podcast publish channel + instance deploy (E6 **shipped** 2026-08-27) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: collect (aihot-ingest + last30days-ingest + horizon-ingest) -> blend (fan-in + core-facts-gen) -> plan (episode-plan-gen score/dedup/select + plan-translate) -> article + cover + dailynews-gen script + voice-gen -> fan-out publish (F61 destination, dogfooded 2026-09-03; plan step added 2026-09-05) |
 | Daily AI voice gap analysis | `docs/design/kk-daily-ai-voice-gap-analysis.md` | Gap analysis vs ideal 3-stage daily pipeline (F61 task 0088) |
 | Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |
 | Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |

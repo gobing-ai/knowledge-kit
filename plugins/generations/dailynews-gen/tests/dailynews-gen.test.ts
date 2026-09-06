@@ -118,7 +118,7 @@ describe('dailynews-gen plugin (0073)', () => {
         // Personal insight
         const allText = script.segments.map((s) => s.text).join('\n');
         expect(allText).toContain('我个人觉得');
-        expect(allText).toContain('最后，来跟大家分享一条很有温度的幕后故事');
+        expect(allText).toContain('最后，来看看今天的最后一条资讯');
         expect(allText).toContain('Claude 3.7 Sonnet');
 
         // Outro
