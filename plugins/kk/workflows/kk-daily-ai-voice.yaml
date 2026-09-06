@@ -149,7 +149,7 @@ states:
           input: |
             Invoke the wt-image-cover skill.
             Generate a 21:9 cover image for the article at ${vars.work_dir}/2-article/article-${vars.run_date}.md and save it to ${vars.work_dir}/2-cover/cover-${vars.run_date}.png.
-            Use style "news". Do not wait for operator confirmation; write the output file.
+            Use style "news". If no image-generation backend is available, a procedurally rendered cover (e.g. PIL: news palette, headline typography) is an acceptable, expected deliverable — not a fake; generate it and write the file. Do not wait for operator confirmation.
           expectFile: ${vars.work_dir}/2-cover/cover-${vars.run_date}.png
 
   - id: script
