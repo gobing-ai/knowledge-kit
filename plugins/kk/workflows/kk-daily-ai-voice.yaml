@@ -109,7 +109,8 @@ states:
             PLAN_CONTENT="${vars.work_dir}/2-plan/content.json"; PLAN_DOCS="${vars.work_dir}/2-plan/plan.json";
             if [ -f "$PLAN_DOCS" ]; then echo "plan cached: $PLAN_DOCS"; exit 0; fi;
             EPISODE_PLAN_MAX_ITEMS="${vars.plan_max_items}" EPISODE_PLAN_DATE="${vars.run_date}" kk executor run episode-plan-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$PLAN_CONTENT" "$@" &&
-            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const docs = content.metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("plan: content.metadata.docs missing or empty"); process.exit(1); } await Bun.write(process.argv[2], JSON.stringify(docs, null, 2))' "$PLAN_CONTENT" "$PLAN_DOCS"
+            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const docs = content.metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("plan: content.metadata.docs missing or empty"); process.exit(1); } await Bun.write(process.argv[2], JSON.stringify(docs, null, 2))' "$PLAN_CONTENT" "$PLAN_DOCS" &&
+            test -f "$PLAN_DOCS" || { echo "plan: $PLAN_DOCS not written after episode-plan-gen"; exit 1; }
 
   - id: plan-translate
     description: "Translate needsTranslation plan items in place via agent.run"
