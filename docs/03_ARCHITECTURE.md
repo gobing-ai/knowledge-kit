@@ -145,6 +145,10 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
 - **Fan-in (N→1):** merge `Doc[]` sets; dedupe on primary `id` (first-seen wins); provenance
   retained in `metadata.sources`; stable ordering. Spec §1.2's `--dedupe` flag is deferred — id
   dedupe is the only rule (task 0042).
+- **Concurrent collect (`--source`):** the daily workflow's single collect state passes
+  `--source "<plugin>:<config-file>"` pairs instead of pre-materialized `--in` files; fan-in spawns
+  each plugin (executor `run` contract, plugin resolved by name) and merges the outputs, so
+  per-source documents never land in the workspace (0097).
 - **Fan-out (1→N):** dispatch `Content` to N publishers **in sequence**; emit one aggregate `Result`
   with a per-target entry (`published | failed | skipped`) plus summary counters.
 - **Partial success:** successful targets stay published and are individually re-runnable via

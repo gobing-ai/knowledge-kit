@@ -242,6 +242,7 @@ Registry inspection is **`kk plugin status`**. See **ADR-011**.
 > **Scope:** project-wide, binding.
 
 **Decision.** knowledge-kit is a spur-orchestrated **ingest → create → publish** platform.
+
 1. **Product framing (R1):** Creation and publishing are first-class co-equal capabilities, not downstream consequences of ingestion.
 2. **Historical name (R2):** The name `knowledge-kit` is historical and deliberately retained; renaming was considered and rejected on migration cost against zero capability gain.
 3. **Optional ingestion (R3):** Ingestion is optional: the content generator contract widens from `generate(Doc[]) → Content` to accept a `Brief` as an alternative input shape (`Doc[] | Brief`), making topic → article a first-class pipeline. Mechanism is delegated to `docs/03_ARCHITECTURE.md` and `docs/04_DESIGN.md` (ticket 0032).
@@ -343,7 +344,7 @@ boundaries), `docs/04_DESIGN.md` §3–§4, feature E4.
 **Decision.** The `plugins/` tree has exactly four top-level collections:
 
 | Collection | Holds | Manifest `kind` |
-|------------|-------|-----------------|
+| ------------ | ------- | ----------------- |
 | `plugins/ingestions/<name>/` | product ingestion plugins | `ingestion` |
 | `plugins/generations/<name>/` | product generator plugins | `generator` |
 | `plugins/publishings/<name>/` | product publish plugins | `publish` |
@@ -681,6 +682,38 @@ bootstrap — mirroring spur-new's `scripts/spur-dev.ts`.
 
 **Detail:** `.spur/rules/boundary/shipped-script-isolation.yaml`,
 `.spur/rules/typescript/output-boundaries.yaml`.
+
+---
+
+## ADR-019: Workflow concurrency lives in kk executor fan-in, not the engine
+
+**Status:** Accepted · **Date:** 2026-09-06
+
+**Decision.** `kk executor fan-in` gains a concurrent source-runner mode:
+`--source <plugin>:<inputFile>` (repeatable) resolves each named plugin against the merged registry,
+spawns every ingestion concurrently through `invoke.ts`'s async spawn seam
+(`spawnPluginEntryAsync`, per-source `AbortSignal.timeout` defaulting to 30m), and merges the
+surviving `Doc[]` outputs through the existing merge path. A failed or timed-out source degrades to
+a `metadata.sourceErrors[]` entry (`{ plugin, error, durationMs }`) instead of aborting siblings;
+exit is `0` when ≥1 source succeeded and `1` with no output only when all sources fail. The
+workflow engine stays sequential — `type: parallel` remains inert and ADR-007 R4 is unchanged.
+
+**Why.** The kk-daily-ai-voice pipeline ran fetch → ingest-last30days → ingest-horizon → blend-facts
+as four sequential workflow states; horizon alone took 20m40s in the 2026-09-06 dogfood. Engine-level
+parallelism is off the table by design (ADR-007 R4), and each ingestion is an independent
+`kk invoke`-shaped process, so the concurrency belongs at the one step that already owns "many
+`Doc[]` → one": fan-in. A separate verb would duplicate the merge/dedupe semantics; extending
+fan-in adds depth without a new surface.
+
+**Consequence.** Spawn remains allowlisted to `invoke.ts` only (`no-direct-process-spawn`); fan-in
+orchestrates but never spawns directly. Degradation means partial results are usable downstream, but
+consumers must check `metadata.sourceErrors[]` rather than assume every configured source
+contributed. Timeouts bound a hung source at the cost of killing it mid-run; the default (30m)
+exceeds the slowest observed real source.
+
+**Detail:** `apps/cli/src/invoke.ts` (`spawnPluginEntryAsync`), `apps/cli/src/fanin.ts`
+(source-runner branch), `apps/cli/src/commands/executor.ts` (`--source`, `--source-timeout`).
+Task 0092 (feature L1).
 
 ---
 

@@ -136,20 +136,35 @@ non-zero.
 
 ```text
 kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json>
+kk executor fan-in --source <plugin>:<f1> [--source <plugin>:<f2> …] [--source-timeout <ms>] [--source-timeout-override <plugin>:<ms> …] --out <merged.json>
 ```
 
 | Option | Type | Required | Default | Description |
-|--------|------|----------|---------|-------------|
-| `--in <file>` | string (repeatable) | yes (≥1) | — | Input `Doc[]` JSON files to merge |
+| -------- | ------ | ---------- | --------- | ------------- |
+| `--in <file>` | string (repeatable) | yes* | — | Input `Doc[]` JSON files to merge |
+| `--source <plugin>:<file>` | string (repeatable) | yes* | — | Ingestion source to spawn concurrently: plugin name and its input file |
+| `--source-timeout <ms>` | positive integer | no | 1800000 | Per-source timeout; a source cut short is recorded as failed |
+| `--source-timeout-override <plugin>:<ms>` | `<plugin>:<positive int>` (repeatable, once per plugin, plugin must be a `--source`) | no | — | Per-source timeout override for one named source — wins over `--source-timeout`/default for that source only (0099: the daily workflow pins `horizon-ingest:2700000` — horizon solo ran 28m39s in 0098 r7, straddling the 30m default) |
 | `--out <file>` | string | yes | — | Output merged `Doc[]` JSON path |
 
-**Behavior:** validate each input against `DocListSchema` (missing / unreadable / invalid-JSON /
-schema-violating file exits `1` naming the file) → dedupe by `Doc.id` (first-seen wins; later
-duplicates contribute only their provenance) → append `metadata.sources: Array<{ file,
+\* At least one `--in` or `--source` is required (runtime exit `2`); the two modes combine.
+
+**Behavior (`--in` merge mode):** validate each input against `DocListSchema` (missing / unreadable /
+invalid-JSON / schema-violating file exits `1` naming the file) → dedupe by `Doc.id` (first-seen
+wins; later duplicates contribute only their provenance) → append `metadata.sources: Array<{ file,
 sourceUri? }>` in `--in` order → keep first-appearance order → write merged `Doc[]`. Exit `0` on
 success, `2` on usage errors. **Deferred:** spec §1.2's `--dedupe <id|uri|none>` flag is **not
 shipped** — id dedupe (default) is the only rule; add the flag if a `uri`-dedupe consumer appears
 (task 0042).
+
+**Source-runner mode (`--source`, L1 / ADR-019):** each `--source <plugin>:<inputFile>` resolves
+against the same merged plugin registry as `kk invoke`, must be an `ingestion`-kind plugin, and is
+spawned concurrently through `invoke.ts`'s async spawn seam (`spawnPluginEntryAsync`; fan-in never
+spawns directly — `no-direct-process-spawn`). A failed, timed-out, or invalid-output source degrades
+to a `metadata.sourceErrors[]` entry (`{ plugin, error, durationMs }`, echoed to stderr) on the
+merged docs without aborting siblings; the output is written when ≥1 source succeeded (exit `0`),
+and exit `1` with no output only when every source failed. Provenance for source docs is the plugin
+name; merge order is `--in` inputs first, then `--source` declaration order (deterministic output).
 
 ### 1.6 `executor fan-out` — shipped (A21; engine B6)
 
@@ -275,6 +290,9 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | — (per-segment verify) | no (voice-gen) | Unconditional post-generation check: each segment's audio is transcribed back and compared against the source text (`transcriptionFidelity`); below `TRANSCRIPTION_FIDELITY_FLOOR` (0.15) the segment is regenerated (≤2 retries) with a varied seed and halved `max_chunk_chars` (floor 100). Final attempt always accepted; the QC audit (which reuses the stored transcription) remains the backstop. Catches contiguous loop garbage the server's gap-based runaway detector misses (dogfood 2026-09-03) |
 | `EPISODE_PLAN_MAX_ITEMS` | no (episode-plan-gen) | Caps selected episode items (default `20`); the daily workflow passes `plan_max_items` through |
 | `EPISODE_PLAN_DATE` | no (episode-plan-gen) | Optional run date stamped into the plan Content metadata (`planDate`) |
+| `EPISODE_PLAN_MODE` | no (episode-plan-gen) | Mode selector when the executor flag is unavailable: `plan` (default) or `filter`; precedence `--mode` flag > env > `plan`, unknown value → exit 1 naming both sources (0097 — the workflow's `quality-control-content` state sets `EPISODE_PLAN_MODE=filter` because `kk executor run` forwards only `--in`/`--out`) |
+| `QC_CATEGORIES` | no (episode-plan-gen `--mode filter`) | Comma-list category allowlist for the quality controller (default `ai-news,ai-industry`); unknown category → exit 1 (fail loud) |
+| `QC_MIN_QUALITY` / `QC_MIN_IMPORTANCE` / `QC_MIN_URGENCY` / `QC_MIN_IMPACT` | no (episode-plan-gen `--mode filter`) | Inclusive per-dimension minimums, integers 0–5 (defaults `2`/`3`/`2`/`1` — 0099 calibration from 0098 dogfood: 3/3/2/2 rejected 20/20 live candidates); non-integer or out-of-range → exit 1, never clamped |
 | `CONTENT_LANGUAGE` | no (content-gen) | Writing language directive for STORM outline/article/polish (`zh` = Simplified Chinese incl. title); the daily workflow passes `language` through |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
 | `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`) |
@@ -316,9 +334,9 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH) |
+| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default, unchanged) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`) / `sync` (publish-orchestrator) — 0096 |
 | `mapContentToSurfingMarkdown(content)` | function | Renders Surfdash markdown + frontmatter (title, description, tags, date, canonical_url, published) |
-| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1 |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; forwards a top-level input `options` object to the transport (operation selection, 0096) |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
 
 ### `@gobing-ai/zenn-pub` (`plugins/publishings/zenn-pub`, kind `publish`)
@@ -377,9 +395,10 @@ the audio script, and the show notes.
 | `normalizeUrl(url)` | function | Strip `utm_*`/tracking params and trailing slash for dedup keys |
 | `titleSimilarity(a, b)` | function | Bigram Jaccard similarity (0–1), CJK-aware |
 | `docsToContent(docs, options)` | function | Wrap the plan as markdown `Content` carrying the selected `Doc[]` in `metadata.docs` — the executor's generator contract output; the workflow extracts `metadata.docs` to `2-plan/plan.json` for downstream steps |
-| `main()` | function | Executor `--in`/`--out`; env `EPISODE_PLAN_MAX_ITEMS` (default 20), `EPISODE_PLAN_DATE`; exit 0 success / 1 failure |
+| `filterAnnotated(docs, config)` | function | Quality-controller gate (`--mode filter`, 0094): annotated `Doc[]` → `{ kept, rejected }`; survivor = category in the `QC_CATEGORIES` allowlist AND every `metadata.scores` dim ≥ its inclusive `QC_MIN_*` min (score == min passes); each `RejectedDoc` carries every failed check (`category:not-in-allowlist`, `quality:2<3`); missing/invalid annotations exit 1 naming the doc id; rejection audit at `<out>.rejected.json` as `{ rejected, config, total }`; zero survivors is a valid exit-0 (`metadata.docs: []`) |
+| `main()` | function | Executor `--in`/`--out` `--mode plan\|filter`; mode precedence flag > `EPISODE_PLAN_MODE` env > `plan` (unknown value → exit 1 naming both sources); env `EPISODE_PLAN_MAX_ITEMS` (default 20), `EPISODE_PLAN_DATE`, `QC_*` (filter mode); exit 0 success / 1 failure |
 
-Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-translate` (agent.run, gated by `plan_translate_enabled`) translates `needsTranslation` items in place before the article step consumes the plan. `DAILYNEWS_MAX_ITEMS` is no longer set by the workflow — the plan is the single limiter.
+Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-translate` (agent.run, gated by `plan_translate_enabled`) translates `needsTranslation` items in place before the article step consumes the plan. `DAILYNEWS_MAX_ITEMS` is no longer set by the workflow — the plan is the single limiter. `--mode filter` (0094) is wired into the workflow since 0097: the `quality-control-content` state runs it as `EPISODE_PLAN_MODE=filter` (`kk executor run` forwards only `--in`/`--out`, so the mode rides the env channel) with the `done-no-content` terminal + `qc_*` vars + rejection audit at `2-plan/candidates.rejected.json`.
 
 ### `@gobing-ai/dailynews-gen` (`plugins/generations/dailynews-gen`, kind `generator`)
 
@@ -408,11 +427,12 @@ Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-t
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload (audio, then optional local episode cover as `image/png`); requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY` |
+| `PodcastPubTransport` | class | `file-cli` transport: Bearer REST client + two-phase presigned upload (audio, then optional local episode cover as `image/png`); requires `MICROFEED_BASE_URL`, `MICROFEED_API_KEY`; `publish` accepts additive assembly options `{audioFile, coverPath, durationSec}` (plugin merges article + audio + cover itself, L1 R6) |
 | `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (sanitized HTML — markdown showNotes/body rendered via the closed-dialect renderer in `show-notes.ts`; `format: 'html'` bodies pass through), `status`, `audio` (`metadata.audioUrl` or `metadata.audioPath`/`audioFile`), `durationSeconds`, `imagePath` (non-http `coverImage`), `imageUrl` (http cover) |
 | `resolveAudioMimeType(ref, mimeType?)` | function | Extension → audio MIME mapping with override |
 | `getPublishTransport()` | function | Returns `FakeFileCliTransport` when `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else `PodcastPubTransport` |
-| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `list`, `get`, `update`, `delete`, `validate`) |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `show-notes`, `list`, `get`, `update`, `delete`, `validate`); a bare Doc[] `--in` selects `show-notes` and writes the markdown file to `--out` (render options via `PODCAST_PUB_TITLE` / `PODCAST_PUB_RUN_DATE` / `PODCAST_PUB_ARTICLE_BASE_URL`) |
+| `renderShowNotesMarkdown(docs, opts)` | function | Renders plan Doc[] → show-notes markdown (L1 R6 port of the workflow's inline renderer): `# title`, per-item `## N.` sections capped at two 。！？ sentences, `[来源：…]` links, full-article footer `<base>/zh/posts/<runDate>-<slug>` (default base `https://surfing.salty.vip`); golden-fixture byte-pinned in the plugin tests |
 | `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
 
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
@@ -449,7 +469,7 @@ File: `.spur/config.yaml`
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
-| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: collect (aihot-ingest + last30days-ingest + horizon-ingest) -> blend (fan-in + core-facts-gen) -> plan (episode-plan-gen score/dedup/select + plan-translate) -> article + cover + dailynews-gen script + voice-gen -> fan-out publish (F61 destination, dogfooded 2026-09-03; plan step added 2026-09-05) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + voice-gen -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial) (F61 destination; restructured 2026-09-06 by 0097) |
 | Daily AI voice gap analysis | `docs/design/kk-daily-ai-voice-gap-analysis.md` | Gap analysis vs ideal 3-stage daily pipeline (F61 task 0088) |
 | Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |
 | Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |
