@@ -1,11 +1,31 @@
 import { existsSync } from 'node:fs';
-import { copyFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { copyFile, cp } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+
+/** Result target name for this plugin. */
+const TARGET = 'surfdash';
+
+/** Management operations routed via `options.operation` (L1 R7; pattern from podcast-pub). */
+const OPERATIONS = ['publish', 'scaffold-locale', 'sync'] as const;
+type Operation = (typeof OPERATIONS)[number];
+
+/** Locales `scaffold-locale` can scaffold; LLM translation stays in the workflow's agent step. */
+const SCAFFOLD_LOCALES = ['en', 'ja'] as const;
+type ScaffoldLocale = (typeof SCAFFOLD_LOCALES)[number];
+
+/** Target-specific options carried on the invoke payload's `options` channel. */
+interface SurfdashPubOptions {
+    operation?: unknown;
+    /** zh `index.md` absolute path inside the surfdash tree; required for `scaffold-locale` and `sync`. */
+    postPath?: unknown;
+    /** Draft locale to scaffold; required for `scaffold-locale`. */
+    target?: unknown;
+}
 
 /**
  * Options for mapping Content into Surfing Markdown with frontmatter.
@@ -88,94 +108,290 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
     return `${yamlLines.join('\n')}\n\n${content.body.trim()}\n`;
 }
 
+/** `Result` failure helper: ok false + error (podcast-pub pattern). */
+function fail(error: string): Result {
+    return ResultSchema.parse({ ok: false, target: TARGET, error });
+}
+
+/** Parses and routes `options.operation`; unknown or misplaced values fail loud. */
+function resolveOperation(options: SurfdashPubOptions): { operation: Operation } | { error: string } {
+    const raw = options.operation ?? 'publish';
+    if (typeof raw !== 'string' || !OPERATIONS.includes(raw as Operation)) {
+        return { error: `invalid options.operation "${String(raw)}": expected one of ${OPERATIONS.join(', ')}` };
+    }
+    return { operation: raw as Operation };
+}
+
+/** `options.postPath` (zh index.md abs path inside the surfdash checkout) is required for the path-scoped operations. */
+function resolvePostPath(options: SurfdashPubOptions): { postPath: string } | { error: string } {
+    const raw = options.postPath;
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+        return { error: `options.postPath is required for the "${String(options.operation)}" operation` };
+    }
+    const postPath = raw.trim();
+    if (!isAbsolute(postPath)) {
+        return { error: `options.postPath must be an absolute path inside the surfdash checkout: ${postPath}` };
+    }
+    return { postPath };
+}
+
 /**
- * FileCli transport invoking postsurfing CLI.
+ * Containment guard (review fix #1): `resolve(postPath)` must land inside the resolved surfdash
+ * checkout — both CLI-backed operations spawn with cwd=surfdashRoot, so a relative or
+ * `..`-escaping path would otherwise be existence-checked against one base and executed against
+ * another (or act outside the checkout entirely). Array argv + no shell already rule out argv
+ * injection; this closes path traversal. Returns the fail-loud error text, or undefined when inside.
+ */
+function postPathOutsideRoot(postPath: string, surfdashRoot: string): string | undefined {
+    const root = resolve(surfdashRoot);
+    if (!resolve(postPath).startsWith(root + sep)) {
+        return `options.postPath must resolve inside the surfdash checkout (${root}): ${postPath}`;
+    }
+    return undefined;
+}
+
+/** `options.target` must be one of the scaffoldable locales — no default, fail loud. */
+function resolveScaffoldTarget(options: SurfdashPubOptions): { locale: ScaffoldLocale } | { error: string } {
+    const raw = options.target;
+    if (typeof raw !== 'string' || !SCAFFOLD_LOCALES.includes(raw as ScaffoldLocale)) {
+        return {
+            error: `options.target is required for the "scaffold-locale" operation: expected one of ${SCAFFOLD_LOCALES.join(', ')}`,
+        };
+    }
+    return { locale: raw as ScaffoldLocale };
+}
+
+/**
+ * Derives the locale draft path from the zh post path: the last `/zh/` segment becomes
+ * `/<locale>/` (`content/posts/articles/zh/<slug>/index.md` → `.../<locale>/<slug>/index.md`).
+ * Returns undefined when the path carries no `/zh/` segment (caller fails loud).
+ */
+function deriveLocaleDraftPath(postPath: string, locale: ScaffoldLocale): string | undefined {
+    const marker = `${sep}zh${sep}`;
+    const idx = postPath.lastIndexOf(marker);
+    if (idx < 0) {
+        return undefined;
+    }
+    return `${postPath.slice(0, idx)}${sep}${locale}${sep}${postPath.slice(idx + marker.length)}`;
+}
+
+/**
+ * Resolves the surfdash checkout root: `SURFDASH_ROOT` explicitly, or derived from a
+ * `POSTSURFING_BIN` path inside the checkout (`<root>/scripts/<cli>`). Returns undefined
+ * when neither channel yields a root — every operation fails loud on undefined.
+ */
+function resolveSurfdashRoot(): string | undefined {
+    const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
+    return (
+        process.env.SURFDASH_ROOT ??
+        (postsurfingBin.includes('/') ? resolve(dirname(dirname(postsurfingBin))) : undefined)
+    );
+}
+
+/** Spawn result shared by the CLI-backed operations. */
+interface CliSpawnResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+}
+
+/** One spawn helper for every CLI-backed operation (postsurfing publish / sd translate / orchestrator sync). */
+async function spawnCli(cmd: string[], cwd: string): Promise<CliSpawnResult> {
+    const proc = Bun.spawn(cmd, {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+    ]);
+    return { exitCode, stdout, stderr };
+}
+
+/** Stderr-first error text for a failed CLI spawn (stderr may be empty → fall back to stdout). */
+function cliErrorText(spawned: CliSpawnResult): string {
+    return spawned.stderr.trim() || spawned.stdout.trim() || 'Unknown error';
+}
+
+/**
+ * Scaffolds a locale draft for an existing zh post (L1 R7 / 0096): runs the surfdash
+ * `sd translate` scaffold CLI inside the surfdash checkout, copies the post's `assets/`
+ * dir into the draft dir when present, and returns the draft path in `metadata.draftPath`.
+ * No LLM translation happens here — the workflow's agent step edits the returned draft.
+ */
+async function scaffoldLocale(options: SurfdashPubOptions): Promise<Result> {
+    const postPath = resolvePostPath(options);
+    if ('error' in postPath) return fail(postPath.error);
+    const target = resolveScaffoldTarget(options);
+    if ('error' in target) return fail(target.error);
+
+    const surfdashRoot = resolveSurfdashRoot();
+    if (!surfdashRoot) {
+        return fail('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
+    }
+    const outsideRoot = postPathOutsideRoot(postPath.postPath, surfdashRoot);
+    if (outsideRoot) return fail(outsideRoot);
+    if (!existsSync(postPath.postPath)) {
+        return fail(`options.postPath does not exist: ${postPath.postPath}`);
+    }
+    const draftPath = deriveLocaleDraftPath(postPath.postPath, target.locale);
+    if (!draftPath) {
+        return fail(
+            `options.postPath must be a zh post path containing a "${sep}zh${sep}" segment: ${postPath.postPath}`,
+        );
+    }
+
+    try {
+        const spawned = await spawnCli(
+            ['bun', 'run', 'sd', 'translate', postPath.postPath, '--source', 'zh', '--target', target.locale],
+            surfdashRoot,
+        );
+        if (spawned.exitCode !== 0) {
+            return fail(`sd translate failed (exit ${spawned.exitCode}): ${cliErrorText(spawned)}`);
+        }
+        if (!existsSync(draftPath)) {
+            return fail(`sd translate reported success but the draft is missing: ${draftPath}`);
+        }
+        const assetsDir = join(dirname(postPath.postPath), 'assets');
+        if (existsSync(assetsDir)) {
+            await cp(assetsDir, join(dirname(draftPath), 'assets'), { recursive: true });
+        }
+        return ResultSchema.parse({
+            ok: true,
+            target: TARGET,
+            message: `Scaffolded ${target.locale} draft at ${draftPath}`,
+            metadata: { draftPath, postPath: postPath.postPath, target: target.locale },
+        });
+    } catch (error: unknown) {
+        return fail(`scaffold-locale transport error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Runs the surfdash publish-orchestrator sync for a post (L1 R7 / 0096): spawns
+ * `bun scripts/publish-orchestrator.ts sync <postPath>` inside the surfdash checkout
+ * and returns ok/fail with stderr on failure.
+ */
+async function syncPost(options: SurfdashPubOptions): Promise<Result> {
+    const postPath = resolvePostPath(options);
+    if ('error' in postPath) return fail(postPath.error);
+
+    const surfdashRoot = resolveSurfdashRoot();
+    if (!surfdashRoot) {
+        return fail('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
+    }
+    const outsideRoot = postPathOutsideRoot(postPath.postPath, surfdashRoot);
+    if (outsideRoot) return fail(outsideRoot);
+
+    try {
+        const spawned = await spawnCli(
+            ['bun', 'scripts/publish-orchestrator.ts', 'sync', postPath.postPath],
+            surfdashRoot,
+        );
+        if (spawned.exitCode !== 0) {
+            return fail(`publish-orchestrator sync failed (exit ${spawned.exitCode}): ${cliErrorText(spawned)}`);
+        }
+        return ResultSchema.parse({
+            ok: true,
+            target: TARGET,
+            message: 'publish-orchestrator sync completed',
+            metadata: { postPath: postPath.postPath },
+        });
+    } catch (error: unknown) {
+        return fail(`sync transport error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Publish path (behavior unchanged since E3): maps Content into surfdash markdown under
+ * `content/posts/<collection>/<locale>/<slug>/index.md` and invokes the postsurfing CLI.
+ */
+async function publishPost(payload: PublishTransportPayload): Promise<Result> {
+    const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
+
+    // The publishing FSM requires the markdown at
+    // content/posts/<collection>/<locale>/<slug>/index.md inside the surfdash site tree
+    // (its refine step rejects other layouts); the root resolution lives in resolveSurfdashRoot().
+    const surfdashRoot = resolveSurfdashRoot();
+    if (!surfdashRoot) {
+        return fail('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
+    }
+
+    const locale = process.env.SURFDASH_LOCALE ?? 'zh';
+    // Date-stamped slug (metadata.runDate, e.g. 20260904) keeps same-title daily posts
+    // from colliding; Chinese titles slugify to '' and fall back to the bare date.
+    const runDate = typeof payload.content.metadata?.runDate === 'string' ? payload.content.metadata.runDate : '';
+    const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+    const dateStamp = runDate || today;
+    const titleSlug = slugify(payload.content.title ?? '');
+    const slug = titleSlug ? `${dateStamp}-${titleSlug}` : `${dateStamp}-post`;
+    const postDir = join(surfdashRoot, 'content', 'posts', 'articles', locale, slug);
+    await createNodeFileSystem().ensureDir(postDir);
+
+    // Cover image: metadata.coverImage (absolute local path) is copied into the post's
+    // assets dir and referenced relatively — the surfdash PostSchema accepts ./assets/<file>.
+    let imageFrontmatter: string | undefined;
+    const coverPath = payload.content.metadata?.coverImage;
+    if (typeof coverPath === 'string' && existsSync(coverPath)) {
+        const assetsDir = join(postDir, 'assets');
+        await createNodeFileSystem().ensureDir(assetsDir);
+        const coverName = `cover${coverPath.slice(coverPath.lastIndexOf('.'))}`;
+        await copyFile(coverPath, join(assetsDir, coverName));
+        imageFrontmatter = `./assets/${coverName}`;
+    }
+    const markdown = mapContentToSurfingMarkdown(payload.content, {
+        image: imageFrontmatter,
+        publishDate: runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined,
+    });
+    const filePath = join(postDir, 'index.md');
+
+    try {
+        await createNodeFileSystem().writeFile(filePath, markdown);
+        const spawned = await spawnCli([postsurfingBin, 'publish', filePath], surfdashRoot);
+
+        if (spawned.exitCode !== 0) {
+            return fail(`postsurfing CLI failed (exit ${spawned.exitCode}): ${cliErrorText(spawned)}`);
+        }
+
+        return ResultSchema.parse({
+            ok: true,
+            target: TARGET,
+            url: `https://surfdash.local/${locale}/posts/${slug}`,
+            message: 'Published successfully to Surfdash via postsurfing CLI',
+            // Absolute post path lets downstream steps (locale translation + CMS sync)
+            // derive the surfdash checkout root without extra configuration.
+            metadata: { postPath: filePath },
+        });
+    } catch (err: unknown) {
+        return fail(`Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+}
+
+/**
+ * FileCli transport invoking postsurfing CLI for `publish` (default) and the
+ * `scaffold-locale` / `sync` surfdash mechanics via `options.operation` (L1 R7).
  */
 export class PostsurfingFileCliTransport implements PublishTransport {
     public readonly kind = 'file-cli';
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
-        const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
+        const options: SurfdashPubOptions =
+            payload.options !== undefined && typeof payload.options === 'object' && payload.options !== null
+                ? (payload.options as SurfdashPubOptions)
+                : {};
 
-        // The publishing FSM requires the markdown at
-        // content/posts/<collection>/<locale>/<slug>/index.md inside the surfdash site tree
-        // (its refine step rejects other layouts). Derive the site root from the bin path
-        // (<root>/scripts/<cli>) or take SURFDASH_ROOT explicitly.
-        const surfdashRoot =
-            process.env.SURFDASH_ROOT ??
-            (postsurfingBin.includes('/') ? resolve(dirname(dirname(postsurfingBin))) : undefined);
-        if (!surfdashRoot) {
-            return ResultSchema.parse({
-                ok: false,
-                target: 'surfdash',
-                error: 'SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout',
-            });
-        }
+        const routed = resolveOperation(options);
+        if ('error' in routed) return fail(routed.error);
 
-        const locale = process.env.SURFDASH_LOCALE ?? 'zh';
-        // Date-stamped slug (metadata.runDate, e.g. 20260904) keeps same-title daily posts
-        // from colliding; Chinese titles slugify to '' and fall back to the bare date.
-        const runDate = typeof payload.content.metadata?.runDate === 'string' ? payload.content.metadata.runDate : '';
-        const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-        const dateStamp = runDate || today;
-        const titleSlug = slugify(payload.content.title ?? '');
-        const slug = titleSlug ? `${dateStamp}-${titleSlug}` : `${dateStamp}-post`;
-        const postDir = join(surfdashRoot, 'content', 'posts', 'articles', locale, slug);
-        await createNodeFileSystem().ensureDir(postDir);
-
-        // Cover image: metadata.coverImage (absolute local path) is copied into the post's
-        // assets dir and referenced relatively — the surfdash PostSchema accepts ./assets/<file>.
-        let imageFrontmatter: string | undefined;
-        const coverPath = payload.content.metadata?.coverImage;
-        if (typeof coverPath === 'string' && existsSync(coverPath)) {
-            const assetsDir = join(postDir, 'assets');
-            await createNodeFileSystem().ensureDir(assetsDir);
-            const coverName = `cover${coverPath.slice(coverPath.lastIndexOf('.'))}`;
-            await copyFile(coverPath, join(assetsDir, coverName));
-            imageFrontmatter = `./assets/${coverName}`;
-        }
-        const markdown = mapContentToSurfingMarkdown(payload.content, {
-            image: imageFrontmatter,
-            publishDate: runDate ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}` : undefined,
-        });
-        const filePath = join(postDir, 'index.md');
-
-        try {
-            await createNodeFileSystem().writeFile(filePath, markdown);
-            const proc = Bun.spawn([postsurfingBin, 'publish', filePath], {
-                stdout: 'pipe',
-                stderr: 'pipe',
-            });
-
-            const [exitCode, stdout, stderr] = await Promise.all([
-                proc.exited,
-                new Response(proc.stdout).text(),
-                new Response(proc.stderr).text(),
-            ]);
-
-            if (exitCode !== 0) {
-                return ResultSchema.parse({
-                    ok: false,
-                    target: 'surfdash',
-                    error: `postsurfing CLI failed (exit ${exitCode}): ${stderr.trim() || stdout.trim() || 'Unknown error'}`,
-                });
-            }
-
-            return ResultSchema.parse({
-                ok: true,
-                target: 'surfdash',
-                url: `https://surfdash.local/${locale}/posts/${slug}`,
-                message: 'Published successfully to Surfdash via postsurfing CLI',
-                // Absolute post path lets downstream steps (locale translation + CMS sync)
-                // derive the surfdash checkout root without extra configuration.
-                metadata: { postPath: filePath },
-            });
-        } catch (err: unknown) {
-            return ResultSchema.parse({
-                ok: false,
-                target: 'surfdash',
-                error: `Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`,
-            });
+        switch (routed.operation) {
+            case 'scaffold-locale':
+                return scaffoldLocale(options);
+            case 'sync':
+                return syncPost(options);
+            case 'publish':
+                return publishPost(payload);
         }
     }
 }
@@ -193,6 +409,11 @@ export function getPublishTransport(): PublishTransport {
 
 /**
  * Processes input Content and writes output Result via transport.
+ *
+ * The input JSON may carry a top-level `options` object (`operation`, `postPath`,
+ * `target`) alongside the Content fields; it is forwarded to the transport so
+ * `kk executor run` callers can select scaffold-locale/sync without extra flags
+ * (podcast-pub pattern, 0096).
  */
 export async function processPublishIO(
     inputPath: string,
@@ -201,9 +422,14 @@ export async function processPublishIO(
 ): Promise<void> {
     await createNodeFileSystem().deleteFile(outputPath);
     const rawInput = await createNodeFileSystem().readFile(inputPath);
-    const content = ContentSchema.parse(JSON.parse(rawInput));
+    const raw = JSON.parse(rawInput) as Record<string, unknown>;
+    const content = ContentSchema.parse(raw);
+    const options =
+        raw.options !== undefined && typeof raw.options === 'object' && raw.options !== null
+            ? (raw.options as Record<string, unknown>)
+            : undefined;
 
-    const result = await transport.publish({ content });
+    const result = await transport.publish({ content, options });
     const validatedResult = ResultSchema.parse(result);
 
     const outDir = dirname(outputPath);
