@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
 import { pluginEnvFromConfig, runInvoke } from '../src/invoke';
-import { silenceOutput } from './capture';
+import { captureOutput, silenceOutput } from './capture';
 
 function pluginDirOf(root: string, kind: PluginKind, name: string): string {
     return join(root, collectionForKind(kind), name);
@@ -177,6 +177,159 @@ describe('runInvoke', () => {
             });
 
             expect(res).toBe(2);
+        });
+    });
+
+    it('0100 — publish pre-validation passes a bare Doc[] array --in through to the plugin entry', async () => {
+        await withTempDir(async (root) => {
+            const pluginDir = pluginDirOf(root, 'publish', 'array-pub');
+            const scriptsDir = join(pluginDir, 'scripts');
+            mkdirSync(scriptsDir, { recursive: true });
+
+            // Recording fake plugin entry: the seam under test is the executor's
+            // schema gate, not the plugin — the entry records the input shape it
+            // received and emits a valid publish Result so output validation passes.
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'array-pub', kind: 'publish', entry: 'scripts/run.ts' }),
+            );
+            const sawFile = join(root, 'entry-saw.json');
+            const scriptCode = `
+                import { readFileSync, writeFileSync } from 'node:fs';
+                const args = process.argv.slice(2);
+                const inPath = args[args.indexOf('--in') + 1];
+                const outPath = args[args.indexOf('--out') + 1];
+                const input = JSON.parse(readFileSync(inPath, 'utf-8'));
+                writeFileSync(${JSON.stringify(sawFile)}, JSON.stringify({ isArray: Array.isArray(input) }));
+                writeFileSync(outPath, JSON.stringify({ ok: true, target: 'array-pub' }));
+            `;
+            writeFileSync(join(scriptsDir, 'run.ts'), scriptCode);
+            const outFile = join(root, 'result.json');
+
+            // Bare Doc[] array --in (podcast-pub show-notes dispatch form): pre-validation
+            // must pass it through and the entry must be reached — no schema-violation exit.
+            const arrayIn = join(root, 'docs.json');
+            writeFileSync(arrayIn, JSON.stringify([{ id: 'd1', body: 'episode plan doc' }]));
+            let res = await runInvoke({
+                plugin: 'array-pub',
+                inPath: arrayIn,
+                outPath: outFile,
+                pluginsRoot: root,
+            });
+            expect(res).toBe(0);
+            expect(JSON.parse(await Bun.file(sawFile).text())).toEqual({ isArray: true });
+
+            // Content-object --in still validates and reaches the entry exactly as before.
+            const objectIn = join(root, 'content.json');
+            writeFileSync(objectIn, JSON.stringify({ body: 'Article content' }));
+            res = await runInvoke({
+                plugin: 'array-pub',
+                inPath: objectIn,
+                outPath: outFile,
+                pluginsRoot: root,
+            });
+            expect(res).toBe(0);
+            expect(JSON.parse(await Bun.file(sawFile).text())).toEqual({ isArray: false });
+        });
+    });
+
+    it('0101 — show-notes array-form publish invocations treat --out as an opaque markdown artifact', async () => {
+        await withTempDir(async (root) => {
+            const pluginDir = pluginDirOf(root, 'publish', 'markdown-pub');
+            const scriptsDir = join(pluginDir, 'scripts');
+            mkdirSync(scriptsDir, { recursive: true });
+
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'markdown-pub', kind: 'publish', entry: 'scripts/run.ts' }),
+            );
+
+            // Fake entry switching on a MODE file so one plugin serves every leg; the
+            // seam under test is the executor's output stage, not the plugin.
+            const modeFile = join(root, 'mode.txt');
+            const scriptCode = `
+                import { readFileSync, writeFileSync } from 'node:fs';
+                const args = process.argv.slice(2);
+                const outPath = args[args.indexOf('--out') + 1];
+                const mode = readFileSync(${JSON.stringify(modeFile)}, 'utf-8').trim();
+                if (mode === 'markdown') {
+                    writeFileSync(outPath, '# Show notes\\n\\n- Segment 1: intro\\n- Segment 2: deep dive\\n');
+                } else if (mode === 'invalid-json') {
+                    writeFileSync(outPath, 'not json at all {');
+                } else if (mode === 'empty') {
+                    writeFileSync(outPath, '');
+                } else if (mode === 'result') {
+                    writeFileSync(outPath, JSON.stringify({ ok: true, target: 'markdown-pub' }));
+                }
+                // mode === 'missing': writes nothing, exercising the output-exists gate.
+            `;
+            writeFileSync(join(scriptsDir, 'run.ts'), scriptCode);
+
+            const arrayIn = join(root, 'docs.json');
+            writeFileSync(arrayIn, JSON.stringify([{ id: 'd1', body: 'episode plan doc' }]));
+            const objectIn = join(root, 'content.json');
+            writeFileSync(objectIn, JSON.stringify({ body: 'Episode description content' }));
+            const outFile = join(root, 'show-notes.md');
+
+            // (a) Array-in + raw markdown --out: the 0095 show-notes op writes the markdown
+            // artifact itself — the output stage must NOT JSON-parse it (R1/R2).
+            writeFileSync(modeFile, 'markdown');
+            let res = await runInvoke({
+                plugin: 'markdown-pub',
+                inPath: arrayIn,
+                outPath: outFile,
+                pluginsRoot: root,
+            });
+            expect(res).toBe(0);
+            expect(await Bun.file(outFile).text()).toBe('# Show notes\n\n- Segment 1: intro\n- Segment 2: deep dive\n');
+
+            // (a-exists) Array-in but the entry wrote nothing: the existence gate still applies.
+            rmSync(outFile); // leg (a)'s artifact must not satisfy the exists gate
+            writeFileSync(modeFile, 'missing');
+            res = await runInvoke({
+                plugin: 'markdown-pub',
+                inPath: arrayIn,
+                outPath: outFile,
+                pluginsRoot: root,
+            });
+            expect(res).toBe(1);
+
+            // (a-nonempty) Array-in + empty --out: the non-emptiness gate still applies.
+            writeFileSync(modeFile, 'empty');
+            res = await runInvoke({
+                plugin: 'markdown-pub',
+                inPath: arrayIn,
+                outPath: outFile,
+                pluginsRoot: root,
+            });
+            expect(res).toBe(1);
+
+            // (b) Content-object --in + invalid-JSON --out: existing output validation stays
+            // byte-identical — 0101 must not blanket-skip (R1/R2).
+            const cap = captureOutput();
+            try {
+                writeFileSync(modeFile, 'invalid-json');
+                res = await runInvoke({
+                    plugin: 'markdown-pub',
+                    inPath: objectIn,
+                    outPath: outFile,
+                    pluginsRoot: root,
+                });
+                expect(res).toBe(1);
+                expect(cap.readErr()).toContain(`Output file ${outFile} is invalid JSON`);
+            } finally {
+                cap.restore();
+            }
+
+            // (c) Content-object --in + valid Result --out: exit 0 unchanged (R1/R2).
+            writeFileSync(modeFile, 'result');
+            res = await runInvoke({
+                plugin: 'markdown-pub',
+                inPath: objectIn,
+                outPath: outFile,
+                pluginsRoot: root,
+            });
+            expect(res).toBe(0);
         });
     });
 

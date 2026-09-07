@@ -57,7 +57,15 @@ export interface KindContract {
 const CONTRACTS: Record<PluginKind, KindContract> = {
     ingestion: { kind: 'ingestion', input: null, output: DocListSchema },
     generator: { kind: 'generator', input: DocListSchema, output: ContentSchema },
-    publish: { kind: 'publish', input: ContentSchema, output: ResultSchema },
+    // 0100: publish input is two-form — a Content object, or a bare episode-plan
+    // Doc[] array, the documented show-notes op IO (0095): podcast-pub's
+    // `processPublishIO` dispatches an array input to the show-notes renderer
+    // (`plugins/publishings/podcast-pub/src/index.ts:487-490`). With ContentSchema
+    // alone, the executor's `--in` pre-validation rejected that documented form
+    // before the plugin ever ran — the 0098 re-dogfood (dogfood-20260907-r1) died
+    // exactly there: `Input schema violation for kind 'publish': root: Invalid
+    // input: expected object, received array`.
+    publish: { kind: 'publish', input: z.union([ContentSchema, DocListSchema]), output: ResultSchema },
 };
 
 /**

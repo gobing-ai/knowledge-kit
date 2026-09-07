@@ -29,11 +29,16 @@ describe('kindContract', () => {
         expect(c.output).toBe(ContentSchema);
     });
 
-    it('resolves publish → input Content and output Result', () => {
+    it('resolves publish → input Content | Doc[] union and output Result', () => {
         const c = kindContract('publish');
         expect(c.kind).toBe('publish');
-        expect(c.input).toBe(ContentSchema);
         expect(c.output).toBe(ResultSchema);
+        // 0100 two-form publish input: a Content object, or a bare episode-plan
+        // Doc[] array (podcast-pub's documented show-notes dispatch form, 0095).
+        expect(c.input?.safeParse({ body: 'Article content', format: 'markdown' }).success).toBe(true);
+        expect(c.input?.safeParse([{ id: 'd1', body: 'episode plan doc' }]).success).toBe(true);
+        // Shapes matching neither form still fail loud — the union is not a passthrough.
+        expect(c.input?.safeParse({ nope: true }).success).toBe(false);
     });
 
     it('throws on unknown kind', () => {

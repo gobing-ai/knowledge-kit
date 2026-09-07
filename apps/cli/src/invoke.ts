@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { collectionForKind, discoverAllPlugins, getByName, kindContract, type PluginKind } from '@gobing-ai/kk-core';
@@ -36,6 +36,8 @@ export interface PluginEntrySpawnResult {
     exitCode: number;
     stdout: string;
     stderr: string;
+    /** Async spawns only: the child was cut short by `timeoutMs` (abort signal fired). */
+    timedOut?: boolean;
 }
 
 /** Operator config path: `KK_CONFIG` or `~/.config/kk/config.yaml`. */
@@ -112,27 +114,33 @@ export function pluginEnvFromConfig(
  * Precedence for plugin env: existing `process.env` wins over
  * `plugins.<collection>.<name>.env` in `$KK_CONFIG`.
  */
-export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpawnResult {
-    const cmd: string[] =
-        opts.entryPath.endsWith('.ts') || opts.entryPath.endsWith('.js')
-            ? [process.execPath, opts.entryPath, '--in', opts.inPath, '--out', opts.outPath]
-            : [opts.entryPath, '--in', opts.inPath, '--out', opts.outPath];
+/** Build the entry command: bun executes `.ts`/`.js` entries; anything else must be directly executable. */
+function pluginEntryCmd(opts: PluginEntrySpawnOptions): string[] {
+    return opts.entryPath.endsWith('.ts') || opts.entryPath.endsWith('.js')
+        ? [process.execPath, opts.entryPath, '--in', opts.inPath, '--out', opts.outPath]
+        : [opts.entryPath, '--in', opts.inPath, '--out', opts.outPath];
+}
 
+/** Build the spawn env: operator-config env under `process.env`, anchored at the kk invocation root. */
+function pluginEntryEnv(opts: PluginEntrySpawnOptions): Record<string, string | undefined> {
     const fromConfig =
         opts.pluginKind !== undefined && opts.pluginName !== undefined
             ? pluginEnvFromConfig(opts.pluginKind, opts.pluginName)
             : {};
+    // Plugins run with cwd = their package dir; hand them the kk invocation root so
+    // anything they spawn (e.g. content-gen's `spur agent run` stages) anchors there
+    // instead of self-initializing a stray .spur/ inside the plugin dir.
+    return {
+        ...fromConfig,
+        ...process.env,
+        KNOWLEDGE_KIT_PROJECT_ROOT: process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
+    };
+}
 
-    const proc = Bun.spawnSync(cmd, {
+export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpawnResult {
+    const proc = Bun.spawnSync(pluginEntryCmd(opts), {
         cwd: opts.cwd,
-        // Plugins run with cwd = their package dir; hand them the kk invocation root so
-        // anything they spawn (e.g. content-gen's `spur agent run` stages) anchors there
-        // instead of self-initializing a stray .spur/ inside the plugin dir.
-        env: {
-            ...fromConfig,
-            ...process.env,
-            KNOWLEDGE_KIT_PROJECT_ROOT: process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
-        },
+        env: pluginEntryEnv(opts),
         stdout: 'pipe',
         stderr: 'pipe',
     });
@@ -141,6 +149,46 @@ export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpaw
         exitCode: proc.exitCode === null ? 1 : proc.exitCode,
         stdout: proc.stdout.toString().trim(),
         stderr: proc.stderr.toString().trim(),
+    };
+}
+
+/** Options for the async plugin-entry spawn — the timeout-aware sibling of {@link PluginEntrySpawnOptions}. */
+export interface PluginEntryAsyncSpawnOptions extends PluginEntrySpawnOptions {
+    /** Abort the entry after this many ms; omit for no timeout. */
+    timeoutMs?: number;
+}
+
+/**
+ * Async sibling of {@link spawnPluginEntry} for concurrent source runs (ADR-019).
+ * Same cmd/env construction as the sync path; only the spawn call differs —
+ * `Bun.spawn` plus an optional `AbortSignal.timeout(timeoutMs)` so one slow
+ * source cannot pin a whole fan-in. A timeout kill surfaces as exit code 1
+ * with `timedOut: true`.
+ */
+export async function spawnPluginEntryAsync(opts: PluginEntryAsyncSpawnOptions): Promise<PluginEntrySpawnResult> {
+    const signal = opts.timeoutMs === undefined ? undefined : AbortSignal.timeout(opts.timeoutMs);
+    let timedOut = false;
+    signal?.addEventListener('abort', () => {
+        timedOut = true;
+    });
+
+    const proc = Bun.spawn(pluginEntryCmd(opts), {
+        cwd: opts.cwd,
+        env: pluginEntryEnv(opts),
+        stdout: 'pipe',
+        stderr: 'pipe',
+        signal,
+    });
+
+    // Drain both pipes before awaiting exit so a chatty child cannot wedge on a full buffer.
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    await proc.exited;
+
+    return {
+        exitCode: proc.exitCode === null ? 1 : proc.exitCode,
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        ...(timedOut ? { timedOut: true } : {}),
     };
 }
 
@@ -168,6 +216,11 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     const contract = kindContract(record.kind);
     const absInPath = resolve(opts.inPath);
     const absOutPath = resolve(opts.outPath);
+
+    // 0101: set by the input stage — true exactly when the invocation input is the
+    // bare Doc[] array show-notes form (publish's two-form union, 0100), whose --out
+    // is the raw markdown artifact rather than a Result JSON.
+    let showNotesArrayInput = false;
 
     if (contract.input !== null) {
         if (!existsSync(absInPath)) {
@@ -198,6 +251,11 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
             echoError(`Input schema violation for kind '${record.kind}': ${issues}`);
             return 1;
         }
+
+        // 0101: the array leg of publish's two-form input union (0100) is the show-notes
+        // dispatch (0095). Scoped to publish — a generator's Doc[] input is the ordinary
+        // form, so its --out stays a validated Content JSON.
+        showNotesArrayInput = record.kind === 'publish' && Array.isArray(json);
     } else {
         if (!existsSync(absInPath)) {
             echoError(`Source path does not exist: ${absInPath}`);
@@ -230,6 +288,23 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     if (!existsSync(absOutPath)) {
         echoError(`Plugin entry succeeded but did not write output file: ${absOutPath}`);
         return 1;
+    }
+
+    // 0101: show-notes markdown exemption. Publish's array input leg (0100) dispatches
+    // podcast-pub's show-notes op (0095), which writes the raw markdown artifact itself
+    // to --out (plugins/publishings/podcast-pub/src/index.ts:472-481) — the documented
+    // deliverable, consumed as-is by the workflow. JSON.parse + ResultSchema validation
+    // kills exactly that invocation with `Output file ... is invalid JSON` (0100's P3
+    // residual), so for this form --out is an opaque artifact: existence + non-emptiness
+    // only. Content-object invocations keep the exact JSON/Result validation and error
+    // messages below (an empty --out still fails there as invalid JSON, byte-identical);
+    // generator/ingestion kinds are untouched.
+    if (showNotesArrayInput) {
+        if (statSync(absOutPath).size === 0) {
+            echoError(`Plugin entry succeeded but wrote an empty output file: ${absOutPath}`);
+            return 1;
+        }
+        return 0;
     }
 
     let outContent: string;
