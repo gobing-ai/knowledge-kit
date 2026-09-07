@@ -4,7 +4,7 @@ name: "Add scaffold-locale and sync operations to surfdash-pub"
 status: done
 template: feature-impl
 created_at: 2026-09-06T14:35:05.228Z
-updated_at: "2026-09-07T01:22:49.290Z"
+updated_at: "2026-09-07T21:29:45.798Z"
 feature_id: L1
 priority: P1
 tags: ["publish", "surfdash-pub", "feature-K"]
@@ -100,20 +100,16 @@ Rationale: ADR-019 D4 — the workflow's inlined `sd translate` call, 6×dirname
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `plugins/publishings/surfdash-pub/src/index.ts:14` `OPERATIONS = ['publish', 'scaffold-locale', 'sync']` (podcast-pub pattern); default `'publish'` + unknown-op fail loud naming the valid list in `resolveOperation` (`:117-123`); dispatch via the payload `options` channel in `PostsurfingFileCliTransport.publish` (`:376-395`, cases `:388-394`); publish path extracted behavior-identical into `publishPost` (`:311-374`, same env reads / slug-date logic / cover copy / Result shape); regression: explicit `operation: 'publish'` test `plugins/publishings/surfdash-pub/tests/surfdash-pub.test.ts:636-659` + full pre-existing publish suite retained (`:19-318`); fresh gates this run: `bun run lint` exit 0, `bun run test` 611 pass / 0 fail across 44 files |
-| R2 | MET | `scaffoldLocale` (`plugins/publishings/surfdash-pub/src/index.ts:224-270`): option validation `:225-228`; root resolve `:230-233`; postPath containment guard (verify fix) `:234-235`; missing-post fail loud `:236-238`; non-zh postPath fail loud `:239-244`; `sd translate` spawn cwd=surfdashRoot `:246-250`; non-zero exit fail loud `:251-253`; draft-missing fail loud `:254-256`; assets copy when present `:257-260`; ok Result with `metadata.draftPath` `:261-266`; no LLM translation in the plugin. Tests: en draft created + assets copied + exact argv pin (`tests/surfdash-pub.test.ts:386-414`, draftPath `:401`, argv `:409`); assets-absent ja branch `:416-445`; `processPublishIO` options-channel ja `:661-690` |
-| R3 | MET | `syncPost` (`plugins/publishings/surfdash-pub/src/index.ts:277-309`): postPath containment guard (verify fix) `:285-286`; spawn `bun scripts/publish-orchestrator.ts sync <postPath>` cwd=surfdashRoot `:288-292`; non-zero exit -> fail Result with stderr-first text `:293-295`; ok Result `:296-301`. Tests: sync ok + orchestrator side-effect log proof (`tests/surfdash-pub.test.ts:447-467`, log assert `:462`); sync fail stderr surfaced `:590-609` |
-| R4 | MET | Plugin side: all surfdash-root resolution lives in `resolveSurfdashRoot()` (`plugins/publishings/surfdash-pub/src/index.ts:183-189`), shared by publish / scaffold-locale / sync; the workflow boundary sends only `postPath` through `options` (`:380-384`, `:427-430`). YAML side (report-only; 0097 owns the rewiring): fresh `grep -rn SURFDASH_ROOT plugins/kk/workflows/*.yaml` confirms the 6-dirname chain + inline mechanics still at `plugins/kk/workflows/kk-daily-ai-voice.yaml:249-251`, `:276-278`, `:309-310` — plugin ops are additive, zero-risk until 0097 |
-| R5 | MET | Fixture surfdash root, no real checkout: tmp `package.json` `sd` script + stub `scripts/sd.ts` / `publish-orchestrator.ts` (`tests/surfdash-pub.test.ts:318-381`); per-test env scoping (set/delete `SURFDASH_ROOT` in try/finally, fixture `rm` in every finally); no-root fail-loud `:611-634`; fresh this run: narrow suite 24 pass / 0 fail with `src/index.ts` 100% funcs / 100% lines; full `bun run test` 611 pass / 0 fail, no `.tmp-*` residue |
+|-------------|--------|----------|
+| R1 | MET | Default `publish` operation routing via resolveOperation (plugins/publishings/surfdash-pub/src/index.ts#B562 :117-123); unknown op fails loud (tests/surfdash-pub.test.ts#1FEF :469-495) |
+| R2 | MET | scaffold-locale: scaffoldLocale :224-270 (en + ja, no-assets ja variant) driven through spawnCli :199-211; argv pinned in tests :386-414 |
+| R3 | MET | sync: syncPost :277-305; sync proven by log assertion (tests :447-467) |
+| R4 | MET | Locale-root arithmetic in the plugin: resolveSurfdashRoot :183-189, resolvePostPath :126-136, postPathOutsideRoot :145-151; containment tests :497-539; options channel test :661-688 |
+| R5 | MET | Fixture tests: scaffold en + argv pin :386-414, no-assets ja :416-445, sync :447-467, unknown-op fail-loud :469-495; 24/0 fresh |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R7 — surfdash-pub owns locale scaffold and sync mechanics | MET | test | `plugins/publishings/surfdash-pub/tests/surfdash-pub.test.ts:386-414` (scaffold en), `:447-467` (sync ok), `:661-690` (IO options channel) against routing `plugins/publishings/surfdash-pub/src/index.ts:376-395` |
-| scaffold-locale on a fixture zh post returns en draft path and creates the scaffolded file | MET | test | `plugins/publishings/surfdash-pub/tests/surfdash-pub.test.ts:386-414` — `metadata.draftPath` exact match (`:401`), file exists + content (`:402-403`), assets copied (`:405`), exact sd argv (`:409`) |
-| sync on fixture post returns ok Result | MET | test | `plugins/publishings/surfdash-pub/tests/surfdash-pub.test.ts:447-467` — ok Result + `sync-log.txt` side-effect proof (`:462`) |
-| publish operation regression green | MET | command | Fresh this run: `bun run test` -> 611 pass / 0 fail, 2472 expect(), 44 files, exit 0 (publish suite `tests/surfdash-pub.test.ts:19-318` + explicit-op `:636-659`); `bun run lint` exit 0 |
-
+|---------------------|--------|---------------|----------|
+| R7 — surfdash-pub owns locale scaffold and sync mechanics | MET | command | bun test plugins/publishings/surfdash-pub → 24 pass / 0 fail (this session); live: surfdash zh post written, en/ja/zh tree present (0098 r2 result.json 2/2 ok/published) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

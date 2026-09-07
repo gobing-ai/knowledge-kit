@@ -83,3 +83,12 @@ Conventions / decisions discovered the hard way. Newest first.
 - **Done-gate provenance layer**: manual (non-pipeline) execution hits `GuardDeniedError: No pipeline run recorded` on `testing → done`; sanctioned bypass `SPUR_PROVENANCE_OVERRIDE=1 spur task update <wbs> done` (recorded). Legitimate only with a fresh PASS verdict artifact.
 - **Shell HTTP probes are hook-blocked in agent sessions** — route live checks through ctx_execute; keep fixtures in /tmp and leave the instance clean (publish → present → delete → absent in one run).
 - **Astro 7 checkOrigin**: non-safe methods without Content-Type are 403'd when no Origin header — a bodyless DELETE with `Content-Type: application/json` passes (0087 fix pattern).
+
+## 2026-09-07 — L1 pipeline redesign closed (0092–0101)
+
+- Executor publish seam is two-form: Content object → ResultSchema JSON on --out; bare Doc[] (show-notes) → raw markdown artifact, opaque to the executor (kinds.ts union + invoke.ts publish-scoped output exemption). A single-form contract silently kills any plugin op whose --out is not JSON — audit BOTH IO stages when a plugin op fails at the executor.
+- Scope an executor-side key narrowly (kind === 'publish' && Array.isArray(input)): generators' Doc[] input is the ordinary form; a blanket array-key exemption breaks their output validation.
+- Honest-dogfood protocol works: FAIL attempts (0098 r1 calibration, r2 show-notes seam) each converted into exactly one follow-up task (0099, 0100, 0101); never fix production defects inside a dogfood task.
+- Live seam probe before a long verification window: a 1-minute real `kk executor run podcast-pub --in prior-plan.json --out /tmp/probe.md` proved both fixes end-to-end before burning the 3h dogfood. Reuse a prior run's plan.json only as a probe fixture, never as pipeline cache.
+- max-not-sum collect re-confirmed on 4th live run (13m34s vs 20m42s serial). qcc pins 2/3/2/1 admit real items count-agnostically (1/19 and 2/20 across runs).
+- P4 cosmetic carry-over: empty digest-section headers ("## Financial News") flow through to article/script and get spoken (~212s segment). Candidate follow-up: strip empty markdown sections at annotate.

@@ -4,7 +4,7 @@ name: "Extend kk executor fan-in with concurrent source-runner mode"
 status: done
 template: feature-impl
 created_at: 2026-09-06T14:35:05.125Z
-updated_at: "2026-09-06T22:56:00.327Z"
+updated_at: "2026-09-07T21:27:08.354Z"
 feature_id: L1
 priority: P1
 tags: ["cli", "fan-in", "feature-K"]
@@ -115,36 +115,30 @@ Precedence honored: failed/timed-out sources degrade without aborting siblings; 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `apps/cli/src/commands/executor.ts:146-151` registers repeatable `--source <plugin>:<file>` + `--source-timeout <ms>` on `executor fan-in` (re-read this run); `apps/cli/src/fanin.ts:148-213` parseArgs parses repeatable `--source <plugin>:<inputFile>` (strict shape, :165/:169 usage throws) and `--source-timeout` (once, positive int); `apps/cli/src/fanin.ts:42` `DEFAULT_SOURCE_TIMEOUT_MS = 30*60*1000` (30m default); `apps/cli/src/invoke.ts:168-192` `spawnPluginEntryAsync` = `Bun.spawn` + `AbortSignal.timeout` (spawn boundary honored: `Bun.spawn`/`Bun.spawnSync` only in invoke.ts, grep this run); `apps/cli/src/fanin.ts:320-326` `Promise.allSettled` spawns all sources concurrently; test `apps/cli/tests/fanin.test.ts:320-358` (2× sleep-500ms fixture plugins, elapsed ≥ 500 and < 1500 — P3a ceiling — concurrent ≈ slowest, not the sum) |
-| R2 | MET | `apps/cli/src/fanin.ts:75-109` `mergeDocLists` (first-seen dedupe + provenance, unchanged); `apps/cli/src/fanin.ts:369` source-mode output merges through the same `mergeDocLists(inputs, sources)`; `:341-347` successes appended in `--source` declaration order with provenance = plugin name (`sources.push(source.plugin)` :346); tests `apps/cli/tests/fanin.test.ts:18-101` mergeDocLists unit suite + `:542-584` combined `--in`+`--source` (first-seen dedupe, per-origin provenance, no sourceErrors when clean) |
-| R3 | MET | `apps/cli/src/fanin.ts:24-30` `FaninSourceError {plugin, error, durationMs}`; `:329-331` per-source durationMs; `:349-353` `sourceErrors.push` through `capSourceError` (P3b fix — 2048-char cap, `apps/cli/src/fanin.ts:44-60`); `:357-360` every degradation echoed to run output; `:362-366` exit contract — exit 1 only when ALL sources fail (no out.json), else 0; `:372-376` sourceErrors copied onto every merged doc; tests `apps/cli/tests/fanin.test.ts:360-386` (one failing source → surviving docs + sourceErrors entry + exit 0 + stderr echoed), `:388-416` (100k-char stderr capped < 2200 chars, head survives, tail cut, truncation stated — P3b proof), `:418-455` (timeout degrades, siblings unharmed), `:457-478` (all fail → exit 1, no out.json) |
-| R4 | MET | `apps/cli/src/fanin.ts:303-310` the `--in` loop (`readDocList` → inputs) runs unchanged before the source branch; `:112-137` `readDocList` (exists/read/JSON/schema) untouched; source branch gated on `opts.sources` (`:312`) so `--in`-only argv takes the same merge+write path (`:369-385`); tests `apps/cli/tests/fanin.test.ts:102-247` `runFanin` `--in`-only describe untouched and green (dedupe/provenance/missing/invalid-JSON/schema/EISDIR/unwritable-out/usage), `apps/cli/tests/commands/executor.test.ts:204-217` main-level `--in` merge exit 0, `:181` missing input exit 1 |
-| R5 | MET | `apps/cli/tests/fanin.test.ts:305-620` source-runner describe covers all four clauses: concurrent spawn wall time < sum (`:320`, elapsed < 1500 and ≥ 500), partial failure degradation (`:360`, plus 2KB error cap `:388` and timeout `:418`), all-fail exit 1 (`:457`), `--in` regression (`:102-247`); flag registration asserted in `apps/cli/tests/commands/executor.test.ts:47-76`; full suite green this run (570 pass / 0 fail) |
+|-------------|--------|----------|
+| R1 | MET | Repeatable `--source <plugin>:<inputFile>` parsed (apps/cli/src/fanin.ts#5047 parseArgs :155-213); each source spawns its ingestion plugin concurrently via Bun.spawn with per-source timeout (apps/cli/src/invoke.ts#53B9 spawnPluginEntryAsync :168-193, AbortSignal.timeout); default 30m DEFAULT_SOURCE_TIMEOUT_MS fanin.ts:49, `--source-timeout` override, per-source `--source-timeout-override` resolution :362-365 |
+| R2 | MET | Successful sources merge into one Doc[] output — fanin.ts:351-408 source branch reuses `--in` merge semantics; merge covered by apps/cli/tests/fanin.test.ts#070A |
+| R3 | MET | metadata.sourceErrors[] (fanin.ts:412-418; capSourceError :62-67 carries plugin/error/durationMs); exit 0 when >=1 source succeeded, exit 1 only when all fail (:404-408); tests fanin.test.ts:418-455 and :457-489 |
+| R4 | MET | `--in` merge mode unchanged — regression tests fanin.test.ts:320-358 green in the fresh targeted run |
+| R5 | MET | Tests cover concurrent spawn wall-time<sum (:360-386), partial-failure degradation (:388-416), all-fail exit 1 (:457-489), `--in` regression (:320-358); executor wiring apps/cli/src/commands/executor.ts#D808 :155-167 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R1 — Concurrent source collection via kk-owned fan-in | MET | test | `apps/cli/tests/fanin.test.ts:320-358` — concurrent spawn + merge + provenance; implementation `apps/cli/src/fanin.ts:312-366`, `apps/cli/src/invoke.ts:168-192` |
-| `fan-in --source aihot-ingest:in.json --source horizon-ingest:in.json --out out.json` spawns both concurrently and merges both Doc[] | MET | test | `apps/cli/tests/fanin.test.ts:320-358` — two 500ms-sleep sources finish in < 1500ms (≥ 500ms), merge order = declaration order (`a1`,`b1`), provenance = plugin names |
-| one failing source → out.json written with surviving docs + metadata.sourceErrors entry, exit 0 | MET | test | `apps/cli/tests/fanin.test.ts:360-386` — surviving `ok1` doc + `sourceErrors {plugin:'fanin-bad', error, durationMs}` + exit 0 + stderr echoed; error now capped at 2KB (`:388-416`) |
-| all sources fail → exit 1, no out.json | MET | test | `apps/cli/tests/fanin.test.ts:457-478` — exit 1, `existsSync(outFile) === false`, both plugins named in run output |
-| `fan-in --in a.json --in b.json` unchanged (regression test green) | MET | test | `apps/cli/tests/fanin.test.ts:102-247` (`--in`-only describe untouched and green) + `apps/cli/tests/commands/executor.test.ts:204-217` main-level merge exit 0 |
-| bun run lint && bun run test clean | MET | command | This run: `bun run lint` exit 0 (biome + typecheck, all workspaces exit 0); `bun run test` → 570 pass / 0 fail, 2180 expect() calls, 44 files, 15.48s |
-
+|---------------------|--------|---------------|----------|
+| R1 — Concurrent source collection via kk-owned fan-in | MET | command | bun test apps/cli/tests/fanin.test.ts apps/cli/tests/commands/executor.test.ts → 42 pass / 0 fail (this session); full suite 636/0, lint exit 0 (this session) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
+
 <!-- spur:record-review -->
 
 **SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
-| ---------- | ----------- | ---------- | ---------- |
+|----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
-| P4 | design-conformance | — | All Design claims implemented: async spawn confined to invoke.ts (`Bun.spawn` grep this run — no other site), source branch in fanin.ts via shared mergeDocLists, flags in executor.ts, precedence + declaration-order merge as designed; P3a/P3b review fixes documented in Solution without semantic drift |
-| P4 | fix-pass | — | P3a `apps/cli/tests/fanin.test.ts:347` ceiling 900→1500ms; P3b `apps/cli/src/fanin.ts:44-60` + `:349-353` capSourceError 2048-char cap + proving test `:388-416`; fix-pass artifacts: `.spur/run/0092-verdict.json` (re-derived after fix) — touched deliverables: apps/cli/src/fanin.ts, apps/cli/tests/fanin.test.ts, docs/tasks/0092 (Solution section) |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows carry executable evidence (test or command run this turn) |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | design-conformance | — | Fan-in is kk-owned (apps/cli/src/fanin.ts); plugin spawn goes through the shared invoke seam (invoke.ts#53B9); no orchestration leaked into workflow YAML (`--source-timeout-override` in YAML is 0099 scope) |
+| P4 | evidence-rule-pass | — | Every row carries a test command run this session or a file#line anchor re-read this session |
+| P4 | ac-boxes | — | AC row uses the exact feature scenario title `R1 — Concurrent source collection via kk-owned fan-in` |
 
 ### References
 

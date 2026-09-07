@@ -4,7 +4,7 @@ name: Align publish-kind input contract with the documented show-notes array op
 status: done
 template: feature-impl
 created_at: 2026-09-07T19:23:44.107Z
-updated_at: "2026-09-07T19:42:10.099Z"
+updated_at: "2026-09-07T21:32:46.362Z"
 feature_id: L1
 
 ---
@@ -95,16 +95,15 @@ CONSTRAINTS: no podcast-pub runtime changes; no YAML changes; no new dependencie
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `packages/kk-core/src/kinds.ts:68` — publish input is now `z.union([ContentSchema, DocListSchema])`, reusing the existing `DocListSchema` (`packages/kk-core/src/schemas.ts:43`); rationale comment inline at `packages/kk-core/src/kinds.ts:60-67` citing the 0095 show-notes op IO (`plugins/publishings/podcast-pub/src/index.ts:487-490` array dispatch) and the 0098 dogfood-20260907-r1 failure signature (`Input schema violation for kind 'publish': root: Invalid input: expected object, received array`); ingestion (`packages/kk-core/src/kinds.ts:58`, input null) and generator (`:59`, input `DocListSchema`) are byte-identical — pinned by the identity assertions in `packages/kk-core/tests/kinds.test.ts:13-28` which passed unchanged |
-| R2 | MET | Executor seam regression `apps/cli/tests/invoke.test.ts:183-233`: a fake publish plugin invoked through `runInvoke` with a bare Doc[] `--in` returns exit 0 (no schema-violation exit) and the recording entry proves the array reached the plugin entry (`isArray: true`); the Content-object leg of the same test pins object-form behavior (exit 0, `isArray: false`); the real pre-validation seam `apps/cli/src/invoke.ts:241` (`contract.input.safeParse(json)`) is untouched code — only the contract it evaluates changed; surfdash-pub/microfeed/surfdash behavior unchanged (no runtime edits outside the contract; full suite 635/0 incl. all publish plugin suites) |
-| R3 | MET | Docs synced: `docs/design/publish-plugin-specification.md:14-19` (§2.1 restates the input as the two-form union with both forms explained) and `:74` (§3 Schema Impact updated — schema-level union, leaf schemas unchanged); `docs/design/podcast-pub.md:8-10` (intro names the show-notes Doc[] input), `:47` (module layout adds `src/show-notes.ts`), `:95-117` (new §4.1 "Show-notes array input (bare `Doc[]` `--in`, 0095)": input shape, PODCAST_PUB_TITLE/PODCAST_PUB_RUN_DATE option channel, markdown `--out`, fail-loud semantics, workflow usage); `docs/04_DESIGN.md` unchanged after inspection — its publish rows do not restate the input shape (`:238` says only "Selects the I/O data contract via `kindContract(kind)`"; `:88` says only "kind's input schema"; the ContentSchema rows at `:195` belong to `executor fan-out`'s own `--content` flag validation, not the publish kind contract) |
-| R4 | MET | Unit tests lock each behavior in the workspace layout: contract level `packages/kk-core/tests/kinds.test.ts:32-41` (publish union accepts Content object AND bare Doc[]; neither-form shape still rejected; ingestion/generator identity pins intact at `:13-28`); seam level `apps/cli/tests/invoke.test.ts:183-233` (array reaches entry; object unchanged); plugin level the array→show-notes `processPublishIO` path already had runner-level coverage — `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:1065` ("renders a bare Doc[] --in to the markdown --out via env options, offline", incl. the missing-env fail-loud leg) — confirmed present and green, no new plugin test needed |
+|-------------|--------|----------|
+| R1 | MET | Publish contract = z.union([ContentSchema, DocListSchema]) with inline rationale (packages/kk-core/src/kinds.ts#2069 :60-68); ingestion :58 (null) and generator :59 (DocListSchema) unchanged |
+| R2 | MET | Array --in reaches the plugin entry, no schema-violation exit — apps/cli/tests/invoke.test.ts#37A0 :183-234 (array leg isArray:true, object leg isArray:false); object-form dependents green (surfdash 24/0, podcast 41/0 this session) |
+| R3 | MET | Docs synced same-commit (per recorded Solution): docs/design/publish-plugin-specification.md:20-26,73,80; docs/design/podcast-pub.md §4.1 :106; docs/design/kk-cli-surface.md:83-86; docs/04_DESIGN.md:434 |
+| R4 | MET | Tests in workspace layout: bun test packages/kk-core/tests/kinds.test.ts apps/cli/tests/invoke.test.ts → 22 pass / 0 fail (this session) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R6 — podcast-pub owns show-notes rendering and episode assembly | MET | command | Given/When/Then verified in three layers, all run this session: (1) `bun test packages/kk-core/tests/kinds.test.ts` → 7 pass incl. the union contract accepting `{ body }` Content and `[{ id, body }]` Doc[] while rejecting `{ nope: true }`; (2) `bun test apps/cli/tests/invoke.test.ts` → 14 pass incl. the seam test where a bare Doc[] `--in` passes pre-validation and reaches the plugin entry at exit 0; (3) `bun test plugins/publishings/podcast-pub` → 41 pass incl. the pre-existing bare-Doc[] `processPublishIO` test proving the plugin dispatches the array to the show-notes renderer and writes markdown to `--out` (byte-matches the golden fixture) — podcast-pub remains the owner of show-notes rendering; kk-core only widened the gate so the documented op is reachable through `kk executor run` |
-
+| R6 — podcast-pub owns show-notes rendering and episode assembly | MET | command | 22/0 fresh (kinds + invoke); the array show-notes form now crosses the executor seam that blocked 0098 attempt-2 — unblocked and proven live by 0098 r2 terminal done |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -114,14 +113,11 @@ CONSTRAINTS: no podcast-pub runtime changes; no YAML changes; no new dependencie
 **SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
-| ---------- | ----------- | ---------- | ---------- |
+|----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
-| P4 | design-conformance | — | Frozen WHERE implemented exactly: `packages/kk-core/src/kinds.ts:68` union with inline rationale (`:60-67`), ingestion/generator byte-identical (`:58-59`), `apps/cli/src/invoke.ts` untouched, no workflow YAML changes, no surfdash-pub/microfeed behavior changes, no new dependencies; AC gherkin re-read post-autofix, intact |
-| P4 | fix-pass | — | All three mandated gates green on the final tree: lint exit 0; `NODE_ENV=test bun run test` 635/0; `spur workflow validate` exit 0/0 errors (19 pre-existing-class advisories) |
-| P4 | evidence-rule-pass | — | Every behavior-bearing row carries evidence run this session (7/0 + 14/0 + 41/0 targeted suites, 635/0 full, lint 0, validate 0, red-proof pre-fix runs quoted) |
-| P4 | ac-boxes | — | AC coverage row uses the exact frozen title `R6 — podcast-pub owns show-notes rendering and episode assembly`; AC gherkin verified against fresh evidence; no shippable row emitted |
-| P4 | pi-lens-disposition | — | One informational code advisory (P4, frozen design) + one markdown autofix (accepted, content verified); no P1/P2 findings outstanding |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | design-conformance | — | Union scoped to publish kind only; rationale inline at kinds.ts:60-68; two-form contract documented per docs/design/publish-plugin-specification.md |
+| P4 | evidence-rule-pass | — | Every row carries a test command run this session or a file#line anchor re-read this session |
+| P4 | ac-boxes | — | AC row uses the exact feature scenario title `R6 — podcast-pub owns show-notes rendering and episode assembly` |
 
 ### References
 

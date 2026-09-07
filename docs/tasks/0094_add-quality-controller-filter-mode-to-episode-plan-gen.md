@@ -4,7 +4,7 @@ name: "Add quality-controller filter mode to episode-plan-gen"
 status: done
 template: feature-impl
 created_at: 2026-09-06T14:35:05.202Z
-updated_at: "2026-09-07T01:58:40.355Z"
+updated_at: "2026-09-07T21:28:45.332Z"
 feature_id: L1
 priority: P1
 tags: ["generator", "episode-plan-gen", "feature-K"]
@@ -107,22 +107,16 @@ Filtering is the executor for L1's visible quality-control node (ADR-019 D3): sa
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `--mode filter` per frozen WHERE: parseArgs extended with `mode: { type: 'string', default: 'plan' }` (`plugins/generations/episode-plan-gen/src/index.ts:656-659`); unknown mode fails loud naming valid modes (`:667-669`); dispatch in `processGeneratorIO` (`:622-630`, plan default unchanged). Config in one place: `filterConfigFromEnv()` (`:544-556`) parses `QC_CATEGORIES` (MECE-validated comma list, `:530-541`) + `QC_MIN_QUALITY/IMPORTANCE/URGENCY/IMPACT` (integer 0–5 or absent, `:520-527` — non-integer/out-of-range throws, never clamped); defaults in one constant `DEFAULT_FILTER_CONFIG` (`:511-518`: `ai-news,ai-industry`, 3/3/2/2). Tests: defaults `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:614-620`, invalid env `:622-636`, unknown mode `:816-818` |
-| R2 | MET | `filterAnnotated` is pure pass-through — kept docs are the input references returned as-is, no re-annotation/mutation (`plugins/generations/episode-plan-gen/src/index.ts:585-605`); byte-identity test `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:683-698` (`JSON.stringify(kept[0])` equals the input snapshot incl. `sourceUri` + `metadata.urls`, input untouched after the call); r6 replay locks whole-plan byte equality `:848-862` |
-| R3 | MET | `RejectedDoc = { doc, reasons[] }` (`plugins/generations/episode-plan-gen/src/index.ts:505-509`); every failed check accumulated in fixed order category → quality → importance → urgency → impact (`:594-600`, exact-order test `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:667-681`); sibling path `<out>.json` → `<out>.rejected.json` via `rejectedOutPath` (`plugins/generations/episode-plan-gen/src/index.ts:608-613`); audit `{ rejected, config, total }` written through the plugin's atomic write seam (`:615-621`, `:650`) — artifact-shape test `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:716-752` (keys config/rejected/total, total = input count, per-doc reasons); real-data reason accuracy `:864-895` |
-| R4 | MET | Zero survivors is a valid exit-0: `processFilterIO` never branches on `kept.length` (`plugins/generations/episode-plan-gen/src/index.ts:644-653`); `planContent` keeps the same ContentSchema wrapper as plan mode with `metadata.docs: []` valid (`:452-464`); test `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:754-779` — `main --mode filter` returns 0, Content `metadata.docs: []` / `doc_count: 0`, audit still written (1 rejected) |
-| R5 | MET | Threshold boundary score == min passes on all four dims, min-1 fails with the exact `dim:score<min` reason (`plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:638-650`); category deny with reasons (`:652-665`); reasons accuracy + multi-reason accumulation (`:667-681`); missing-annotation exit 1 (`:700-709` pure + `:781-798` main); invalid env exit 1 (`:622-636` + `:800-814`); empty-survivors exit 0 (`:754-779`); plan-mode regression byte-identical, no rejected artifact (`:820-843`); the 33 pre-existing tests are unmodified (suite 33 → 49, +16 new) |
+|-------------|--------|----------|
+| R1 | MET | `--mode filter` applies category allowlist (QC_CATEGORIES) + per-dimension minimums (QC_MIN_QUALITY/IMPORTANCE/URGENCY/IMPACT) — DEFAULT_FILTER_CONFIG plugins/generations/episode-plan-gen/src/index.ts#7CFB :543, filterConfigFromEnv :581, filterAnnotated routing :622. Authored defaults 3/3/2/2 intentionally superseded by 0099 (2/3/2/1) at both sites — CHANGED-by-design (DEFAULT_FILTER_CONFIG comment + docs/04_DESIGN.md:295) |
+| R2 | MET | Surviving docs retain sourceUri and metadata.urls byte-identical — asserted by unit tests (53/0 fresh) |
+| R3 | MET | Rejected docs + per-doc reasons to QC_REJECTED_OUT or `<out>.rejected.json`; requireAnnotation guard :596; live proof: 0098 r2 `2-plan/candidates.rejected.json` 18 entries, reasons 18/18 |
+| R4 | MET | Zero survivors = valid exit-0 with empty candidates; workflow maps to `done-no-content` (0097 YAML guard + 0098 empty-r2 fixture terminal done-no-content) |
+| R5 | MET | Unit tests: threshold boundary (score == min passes), category deny, reasons accuracy, empty-survivors exit 0 — green in `bun test plugins/generations/episode-plan-gen` → 53/0 this session |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R4 — Quality-controller filters candidates by category allowlist and score thresholds | MET | test | `plugins/generations/episode-plan-gen/src/index.ts:585-605` (`filterAnnotated`: allowlist + inclusive per-dim minimums) proven by `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:638-681` (boundary/deny/reasons) and the real-r6 replay `:845-895` |
-| QC_CATEGORIES='ai-news' drops non-ai categories with reasons recorded | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:652-665` — ai-news kept; ai-industry + non-ai rejected with exactly `['category:not-in-allowlist']` each |
-| score exactly at threshold passes (boundary test) | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:638-650` — doc at 3/3/2/2 (all four minimums) kept; each dim at min-1 rejected with the single exact reason |
-| sourceUri/metadata.urls survive unchanged in kept docs | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:683-698` — kept doc byte-identical (`JSON.stringify` equality incl. `metadata.urls` array + `sourceUri`), input non-mutation asserted; whole-plan byte equality on r6 `:848-862` |
-| zero survivors → exit 0, empty candidates array | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:754-779` — `main --mode filter` exit 0, `metadata.docs: []`, `doc_count: 0`, audit records the rejection |
-| rejected artifact lists every dropped doc with its failed dimension(s) | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:716-752` — `candidates.rejected.json` shape `{ rejected, config, total }`, total 2, dropped doc id + reasons; every r6 rejection reason matches its annotation `:864-895` |
-
+|---------------------|--------|---------------|----------|
+| R4 — Quality-controller filters candidates by category allowlist and score thresholds | MET | command | bun test plugins/generations/episode-plan-gen → 53 pass / 0 fail (this session); live: 18 rejections with per-doc reasons in 2-plan/candidates.rejected.json (0098 r2) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

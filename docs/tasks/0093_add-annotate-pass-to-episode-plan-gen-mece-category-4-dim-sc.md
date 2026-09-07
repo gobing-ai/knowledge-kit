@@ -4,7 +4,7 @@ name: "Add annotate pass to episode-plan-gen (MECE category + 4-dim scores)"
 status: done
 template: feature-impl
 created_at: 2026-09-06T14:35:05.189Z
-updated_at: "2026-09-07T01:22:49.489Z"
+updated_at: "2026-09-07T21:27:38.534Z"
 feature_id: L1
 priority: P1
 tags: ["generator", "episode-plan-gen", "feature-K"]
@@ -100,22 +100,16 @@ Annotate pass implemented per the frozen WHERE list — exported pure `classifyC
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `plugins/generations/episode-plan-gen/src/index.ts:247-261` — `classifyCategory` returns exactly one of the closed 5-value `Category` union (`index.ts:43`), precedence tag → `NON_AI_SOURCES` deny → keyword scan → default `non-ai`; keyword scan now uses whole-word boundaries + common inflections (review P3-1 fix, `index.ts:231-240`) so `cli` never matches `client`; precedence + collision tests `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:248-386` (incl. whole-word boundary collision cases `:355-375`) |
-| R2 | MET | `plugins/generations/episode-plan-gen/src/index.ts:272-295` — `scoreDimensions` writes 4 integer 0–5 dims; rubric documented `docs/design/episode-plan-gen.md:45-73`; bounds/edge tests `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:388-439` (every call passes the now-required planDate) |
-| R3 | MET | Pure functions, no LLM/network. Verify-stage P3-2 fix removed the last wall-clock input: `planDate` is REQUIRED on `scoreDimensions` (`index.ts:272`, purity contract in JSDoc `index.ts:266-271`) — urgency is a pure function of (doc, planDate), no `new Date()` default (`index.ts:283` is `Date.parse(planDate)` only). Byte-identical reruns incl. real r6 fixture + input non-mutation `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:484-488,555-565` |
-| R4 | MET | Annotate runs before any gate and drops nothing: `plugins/generations/episode-plan-gen/src/index.ts:334-344` (annotate → `passesGates(cleaned)` at `:344`); gates/cap/dedup logic unchanged; R4 wiring test `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:495-523` (freshness gate drops an annotated stale doc; per-source cap stops 6 annotated same-source docs at 5); pre-existing 16 tests unmodified |
-| R5 | MET | `docs/design/episode-plan-gen.md:45-73` — "Annotate (category + dimension scores) — v1, tune later" with full precedence + 4-dim rubric; verify stage added the whole-word boundary description (`:50-54`) and the `scoreDimensions(doc, planDate)` purity note (`:64-67`); Surface rows `:22-24`; selection-metadata rows `:87-88` |
+|-------------|--------|----------|
+| R1 | MET | Exactly one metadata.category per blended doc from the MECE set {ai-news, ai-technical, ai-research, ai-industry, non-ai} — TAG_CATEGORY + matchesKeyword/classifyCategory (plugins/generations/episode-plan-gen/src/index.ts#7CFB :274-298, table :63-89 post-0099 expansion) |
+| R2 | MET | metadata.scores {quality, importance, urgency, impact}, integer 0-5 per documented rubric docs/design/episode-plan-gen.md:51 |
+| R3 | MET | Deterministic, no LLM — pure classification functions index.ts#7CFB :274-298 wired in planEpisode :364-381; determinism asserted by unit tests :395-443 |
+| R4 | MET | Annotate drops nothing; freshness <=7d, per-source cap 5, tag denylist run after annotation in the select leg (planEpisode :364-381) |
+| R5 | MET | Rubric + taxonomy documented in docs/design/episode-plan-gen.md:51 with 'v1, tune later' annotation |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R3 — Every blended candidate is annotated with category and dimension scores | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:469-482,527-553` — wiring + real-r6 replay |
-| fixture blended set (r6 real data) yields category + scores on every doc | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:527-553` — 4/15 survivors, MECE + integer 0–5; precedence hits asserted (research-paper tag → ai-research, GPT-6 headline → ai-news) |
-| same input twice → byte-identical annotation | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:484-488,555-565` (wiring + r6 at scale, non-mutating) |
-| all scores within 0–5; every doc has exactly one category | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:405-417,469-482,527-553` |
-| existing 16 episode-plan-gen tests + fdf3905 gates still pass | MET | command | Fresh this run: `bun test plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts` → 33 pass / 0 fail, 221 expect() (16 pre-existing unmodified + 17 annotate tests); coverage src/index.ts 100% funcs / 97.37% lines (uncovered = CLI error paths only); `NODE_ENV=test bun run test` → 587 pass / 0 fail, 2368 expect(), 44 files, 13.71s |
-| rubric documented in docs/design/episode-plan-gen.md | MET | command | Fresh this run: `grep -n '## Annotate (category + dimension scores) — v1, tune later' docs/design/episode-plan-gen.md` → heading at `:45`; `grep -cE '^  -`(quality\|importance\|urgency\|impact)`' docs/design/episode-plan-gen.md` → 4 (all four dimension rubric bullets), exit 0. Full rubric `docs/design/episode-plan-gen.md:45-73` (+ Scoring section `:36-43` repaired to the current planScore formula; `cleanBody`/`normalizeUrl` Surface rows `:23-24` describe actual behavior) |
-
+|---------------------|--------|---------------|----------|
+| R3 — Every blended candidate is annotated with category and dimension scores | MET | command | bun test plugins/generations/episode-plan-gen → 53 pass / 0 fail (this session); annotate paths :255-360/:361/:395-443/:475-499 exercised |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -4,7 +4,7 @@ name: "Move show-notes rendering and episode assembly into podcast-pub"
 status: done
 template: feature-impl
 created_at: 2026-09-06T14:35:05.214Z
-updated_at: "2026-09-07T00:34:17.720Z"
+updated_at: "2026-09-07T21:29:15.596Z"
 feature_id: L1
 priority: P1
 tags: ["publish", "podcast-pub", "feature-K"]
@@ -99,21 +99,16 @@ ADR-019 D4 / ADR-007: target-specific mechanics belong to the target plugin; the
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | `plugins/publishings/podcast-pub/src/show-notes.ts:95-131` `renderShowNotesMarkdown(docs, opts)` re-read this run: slugify :96-103 (`post` fallback), article URL :104 (`<articleBaseUrl ?? https://surfing.salty.vip>/zh/posts/<runDate>-<slug>`), sourceLabel :105-115 (`metadata.sourceName` trim → hostname strip `www.` → `来源`), per-item `## N.` sections :116-127 capped at first two 。！？ sentences, footer :130; `renderShowNotesHtml` untouched (git diff this run = 1 import + 63 added lines, 0 deletions); routed via `plugins/publishings/podcast-pub/src/index.ts:16` (`OPERATIONS` includes `'show-notes'`) + `plugins/publishings/podcast-pub/src/index.ts:330-336` (transport branch precedes `resolveClient` — "pure render; no microfeed API call"); byte-pinned by `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:943-952` (both goldens, green this run) |
-| R2 | MET | `plugins/publishings/podcast-pub/src/index.ts:124-156` `AssemblyOptions` + `resolveAssemblyOptions` (per-key fail-loud validation: nonempty path strings :135-147, finite ≥0 `durationSec` :148-155); `plugins/publishings/podcast-pub/src/index.ts:215-234` `publishEpisode` additive merge — `audioFile`→`metadata.audioFile` retiring `audioUrl` (:220, avoids map.ts ambiguity guard), `coverPath`→`coverImage` (:221), `durationSec`→`durationSeconds` (:222); absent keys leave `mapContentToEpisode` untouched (else-branch = `payload.content`); tests `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:1137-1173` (Result with enclosure+image+duration), `:1175-1201` (options beat metadata; absent keys keep Content mapping), `:1101-1135` (`durationSec: 0` boundary + hosted branch) |
-| R3 | MET | `plugins/publishings/podcast-pub/src/index.ts:16` `OPERATIONS` gains `'show-notes'`; `plugins/publishings/podcast-pub/src/index.ts:61-66` `resolveOperation` — unknown → `invalid options.operation "…": expected one of publish, show-notes, list, get, update, delete, validate`; tests `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:751-775` (unknown `options.operation "explode"` through `processPublishIO` writes fail-loud Result + rejects, no `MICROFEED_*` env, fetch spy asserts zero network — routing precedes credential resolution) + `:656` transport level |
-| R4 | MET | Both ops under fake/offline transport: show-notes op with fetch-spy, no HTTP (`plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:976-994` Result without credentials/HTTP; `:1065-1098` Doc[]→markdown IO via env, offline, incl. failure path with `FakeFileCliTransport` `getCallLogs().length === 0`); publish via `installFakeApi` scripted routes; fresh run: `bun test plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` → 41 pass / 0 fail (174 expect calls, incl. the new precedence test) |
-| R5 | MET | Fresh this run: `git diff --name-only HEAD -- '*.yaml' '*.yml'` → empty; `git status --porcelain \| grep -E '\.ya?ml$'` → no matches. Workflow switch left to 0097 (its Q&A now carries the effective-title contract) |
+|-------------|--------|----------|
+| R1 | MET | operation 'show-notes' in OPERATIONS (plugins/publishings/podcast-pub/src/index.ts#585B :16); resolveOperation :61-67; renderShowNotesMarkdown (show-notes.ts#AAEB :95-132; title heading :114, slug :104, footer :130, sentence cap :117-120); transport branch :326-333 renders purely before resolveClient; bare-array CLI form :464-466; absorbs the workflow inline bun -e logic incl. surfing.salty.vip article-URL construction |
+| R2 | MET | Full episode assembly inside publish: AssemblyOptions :124-128, resolveAssemblyOptions :131-158, publishEpisode additive merge :209-225 (audioFile retires audioUrl; attachment/duration/show-notes built internally) — absorbs publish-prep merge for the podcast seam |
+| R3 | MET | Routing via existing options.operation pattern (resolveOperation :61-67); unknown op fails loud — test podcast-pub.test.ts#36BD :751-779 (no network) |
+| R4 | MET | Both operations covered with fake transport (publish-harness): show-notes goldens :943-953, publish :1137-1173 (enclosure+image+duration), precedence :1175+; 41/0 fresh |
+| R5 | MET | No workflow-YAML changes in this task — the switch landed in the 0097 YAML task |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R6 — podcast-pub owns show-notes rendering and episode assembly | MET | test | R1+R2 evidence: `plugins/publishings/podcast-pub/src/show-notes.ts:95-131` generator + `plugins/publishings/podcast-pub/src/index.ts:215-234` assembly merge; AC box checked `[x]` at `docs/tasks/0095_move-show-notes-rendering-and-episode-assembly-into-podcast-.md:31` (re-read this run) |
-| `operation: 'show-notes'` on r6 plan Doc[] produces identical headings to the workflow's inline renderer (byte-diff on fixture) | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:943-952` — renderShowNotesMarkdown byte-matches `show-notes-golden.txt` AND `show-notes-r6-golden.txt` (captured pre-implementation by executing the workflow's bun -e verbatim); both green this run |
-| publish with assembly options yields a Result with enclosure + image + duration | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:1137-1173` — attachments[0] `duration_in_seconds: 1234.5` + finalize `image` |
-| unknown operation still fails loud | MET | test | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:751-775` (`"explode"` via processPublishIO, offline) + `:656` (transport) |
-| existing podcast-pub tests green | MET | command | This run: `bun test plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` → 41 pass / 0 fail; full gate `bun run lint` exit 0 (biome 166 files + typecheck, 19 workspaces exit 0); `bun run test` → 599 pass / 0 fail, 2415 expect() calls, 44 files |
-
+|---------------------|--------|---------------|----------|
+| R6 — podcast-pub owns show-notes rendering and episode assembly | MET | command | bun test plugins/publishings/podcast-pub → 41 pass / 0 fail (this session); live: 3-publish/result.json 2/2 ok/published, episode 06wiZN5N3WN playable (0098 r2) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

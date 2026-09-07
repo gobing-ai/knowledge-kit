@@ -4,7 +4,7 @@ name: "Restructure kk-daily-ai-voice.yaml around the new seams"
 status: done
 template: feature-impl
 created_at: 2026-09-06T14:35:05.242Z
-updated_at: "2026-09-07T03:08:32.502Z"
+updated_at: "2026-09-07T21:30:45.988Z"
 feature_id: L1
 priority: P1
 tags: ["workflow", "kk-daily-ai-voice", "feature-K"]
@@ -145,41 +145,34 @@ Handoff: 0098 dogfoods this YAML. Docs same commit: 03_ARCHITECTURE.md pipeline 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | fetch/ingest-last30days/ingest-horizon/blend-facts are gone; a single `collect` state (`plugins/kk/workflows/kk-daily-ai-voice.yaml:66`) concurrently ingests all three sources via `kk executor fan-in --source "aihot-ingest:…" --source "last30days-ingest:…" --source "horizon-ingest:…" --out …/1-ingest/blended.json` (`:73`), then renders core facts (`:78-80`); prepare writes the three source configs (`:48-64`); structural audit: exactly 24 states, terminals done/done-no-content/failed (`:10-13`), zero non-terminal states without an outgoing edge |
-| R2 | MET | plan runs episode-plan-gen annotate+select (`:83-95`, `EPISODE_PLAN_MAX_ITEMS`/`EPISODE_PLAN_DATE` at `:93`); new `quality-control-content` state (`:97`) runs the filter seam as `EPISODE_PLAN_MODE=filter QC_CATEGORIES=… QC_MIN_* … kk executor run episode-plan-gen --in …/2-plan/annotated.json --out …/2-plan/candidates.json` (`:107`) because `kk executor run` forwards only `--in`/`--out` (`apps/cli/src/invoke.ts:117-122`); the env selector `EPISODE_PLAN_MODE` (precedence `--mode` flag > env > `plan`, unknown value → exit 1 naming both sources, flag-absent+env-unset byte-identical) was added to the plugin under supervisor approval (`plugins/generations/episode-plan-gen/src/index.ts` main(), regression test in `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts`); empty candidates → `done-no-content` first-match guard `jq '.metadata.docs \| length == 0' candidates.json` → edge `to: done-no-content` (`:366-367`), terminal `done-no-content` (`:340`, declared `:12`) |
-| R3 | MET | show-notes state invokes `PODCAST_PUB_TITLE=… PODCAST_PUB_RUN_DATE=… kk executor run podcast-pub --in …/3-audio/docs.json --out …/3-publish/show-notes.md` (`:198`, command `:209`); publish-prep slimmed to the article+audio merge (`:211-217`); publish unchanged targets: `env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content …/3-publish/content.json --target surfdash-pub --target podcast-pub --out "$RESULT"` (`:219`, command `:230`) |
-| R4 | MET | translate-en → `translate-en` guard + `translate-en-agent` runs `kk executor run surfdash-pub --in …/3-publish/scaffold-en.json --out …/scaffold-en-result.json` scaffold-locale (`:247/:264/:275`); translate-ja mirrors it (`:289/:303/:311`); translate-sync runs `kk executor run surfdash-pub --in …/3-publish/sync.json --out …/sync-result.json` (`:325/:335`); grep gate: 0 `sd translate`, 0 `publish-orchestrator`, 0 dirname chains in the YAML (15 `kk executor` refs total) |
-| R5 | MET | publish partial (≥1 target ok) → `publish-partial` state (`:235`) records the failed set + preserves result.json for `--retry-from` (`:245`), edge `to: publish-partial` (`:500`), `publish-partial → done` (`:515`); publish none-ok → `failed`; review rejection → `failed` (`:439`); qcc empty → `done-no-content` (`:366-367`); structural audit: zero non-terminal states without an outgoing edge; hard failures keep the engine default failed routing |
-| R6 | MET | `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml` → exit 0, 0 errors (19 composition advisories: ADR-069 shell line thresholds + prompt pinning, same class as the pre-0097 baseline); r6 dogfood replay (`.spur/run/0097-replay/`): merge-equivalent blended corpus (15 docs, id-set equal), plan → exactly the 4 fdf3905 candidates (horizon:2026-09-06-ai-creator-1/2, horizon:2026-09-06-tech-news-1/2 — SAME-4-CANDIDATES-AS-FDF3905), permissive QC via the kk seam → 4 kept canonical-identical + `candidates.rejected.json`, default QC → exit 0 with 0 kept |
-| R7 | MET | Caching contract preserved: article `[ -f "$ARTICLE_MD" ]` short-circuit (`:136`), voicescript (`:160`), cover, audio `docs.json` gate (`:188`), publish cache predicate `2-plan/plan.json` + `3-audio/content.json` + result `.ok == true and 2 published` (`:226`); the rewritten contract test proves re-run behavior end-to-end (`apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` R5 integration case drives a full `spur workflow run` exit 0 with cached article/script short-circuits exercised) |
+|-------------|--------|----------|
+| R1 | MET | fetch/ingest-last30days/ingest-horizon/blend-facts → single `collect` state calling fan-in `--source` mode (plugins/kk/workflows/kk-daily-ai-voice.yaml, override YAML:79); validate confirms exactly one collect state |
+| R2 | MET | plan runs episode-plan-gen annotate+select; `quality-control-content` runs `--mode filter` with QC_* vars; empty candidates guard `jq '.metadata.docs \| length == 0'` → done-no-content terminal; live: 0098 empty-r2 fixture terminal done-no-content |
+| R3 | MET | show-notes state → podcast-pub show-notes operation; publish-prep slimmed to article+audio merge; publish fan-out unchanged targets with full/partial/none routing, publish-partial → done |
+| R4 | MET | translate states → surfdash-pub scaffold-locale + thin agent.run translate; translate-sync → surfdash-pub sync; `grep 'sd translate\|publish-orchestrator\|dirname'` over the YAML → no matches (exit 1, this session) |
+| R5 | MET | Every non-terminal state has an explicit failure edge with operator-readable description (validate output); contract tests assert review rejection → failed, publish partial → done, no-content → done-no-content |
+| R6 | MET | validate valid:true exit 0, 24 states (jq, this session); r6 corpus replay = 0098 r2 live run terminal `done` with pure plan |
+| R7 | MET | Caching contract preserved — per-state artifact guards retained; collect cache predicate at YAML:78 (empty-r2 fixture picked up the seeded blended.json without re-collect) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
-| --------------------- | -------- | --------------- | ---------- |
-| R2 — Workflow collect states collapse into one state | MET | test | Contract test `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` pins the 24-state inventory (prepare, collect, plan, quality-control-content, …, done-no-content, failed) and the `--source "aihot-ingest:` / `last30days-ingest:` / `horizon-ingest:` fan-in wiring (5/5 pass); live end-to-end `spur workflow run` through the fake kk binary: exit 0, expected artifact set, call order [aihot-ingest, last30days-ingest, horizon-ingest, fan-in, core-facts-gen, episode-plan-gen ×2 (plan, filter), daily-article-gen, dailynews-gen, voice-gen] |
-| R5 — Empty candidate set terminates as done-no-content, not failed | MET | test | Empty-corpus fixture (`.spur/run/0097-empty/`): plan on `[]` → exit 0/0 docs; qcc → exit 0/0 kept; guard `jq '.metadata.docs \| length == 0'` true → `to: done-no-content` edge (`plugins/kk/workflows/kk-daily-ai-voice.yaml:366-367`); no article/script/audio/publish artifacts exist; default-QC r6 replay independently confirms exit-0 zero-kept behavior through the real plugin |
-| R8 — Every non-terminal state has an explicit failure edge | MET | test | Structural audit (Bun.YAML): 24 states, zero non-terminal states without an outgoing edge; expected-and-routable failures have explicit operator-readable edges — qcc empty → done-no-content (`:366-367`), publish none → failed, review rejection → failed (`:439`), publish partial → publish-partial (`:500`) → done (`:515`); contract test pins terminals + publish-partial inventory |
-| collect replaces fetch / ingest-last30days / ingest-horizon / blend-facts with fan-in --source + kept core-facts render | MET | test | `plugins/kk/workflows/kk-daily-ai-voice.yaml:66-80` (collect: fan-in --source `:73` → core-facts `:78-80`); integration run: per-source docs never land in the workspace (docs.json / last30days-docs.json / horizon-docs-<date>.json asserted absent), only `1-ingest/blended.json` |
-| 24 states; validate exits 0 with only composition advisories | MET | command | `spur workflow validate` → exit 0, 0 errors, 19 advisories (ADR-069 thresholds + prompt pinning — pre-existing advisory class); Bun.YAML structural audit: exactly 24 state ids in frozen order |
-| grep gate: no 'sd translate', no 'publish-orchestrator', no ≥3× dirname chain | MET | command | `grep -c` on the YAML: sd translate 0, publish-orchestrator 0, dirname 0, kk executor 15 |
-| r6 replay yields the same 4 candidates as fdf3905's gates | MET | command | `.spur/run/0097-replay/`: fan-in merge-equivalent (15 docs, id-set equal, only `metadata.sources[].file` cwd-prefix differs), plan ids EXACTLY fdf3905's 4 (horizon:2026-09-06-ai-creator-1/2, horizon:2026-09-06-tech-news-1/2); permissive QC keeps 4 canonical-identical with audit sibling; default QC rejects all 4 with accurate reasons |
-
+|---------------------|--------|---------------|----------|
+| R2 — Workflow collect states collapse into one state | MET | command | spur workflow validate → valid:true; jq state count → exactly 24; single collect state with fan-in --source |
+| R5 — Empty candidate set terminates as done-no-content, not failed | MET | command | YAML guard routes empty filter output to done-no-content terminal; live fixture 0098 empty-r2 → finalState done-no-content |
+| R8 — Every non-terminal state has an explicit failure edge | MET | command | validate output confirms failure edges; apps/cli/tests/kk-daily-ai-voice-workflow.test.ts → 5/0 fresh (rejection → failed, publish-partial → done) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
+
 <!-- spur:record-review -->
 
 **SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
-| ---------- | ----------- | ---------- | ---------- |
+|----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
-| P4 | design-conformance | — | Frozen design implemented: 24 states in frozen order (structural audit), collect = fan-in --source + kept core-facts render (`:66-80`), qcc = filter seam via EPISODE_PLAN_MODE env channel + QC_* vars + done-no-content terminal (`:97-109`, `:340`, `:366-367`), show-notes → podcast-pub (`:209`), translate trio → surfdash-pub scaffold-locale/sync (`:264/:303/:335`), publish-partial route (`:235/:500/:515`), explicit edges only where expected-and-routable; AC gherkin in the task doc matches this behavior (3 scenarios re-read post-autofix, intact) |
-| P4 | fix-pass | — | All gates green after the final fixes (biome format on 2 touched TS files; via-tag fix in the contract test; L70 repair): lint exit 0, full suite 628/0, validate exit 0/0 errors |
-| P4 | evidence-rule-pass | — | Every behavior-bearing row carries executable evidence run this session (5/0 contract incl. live workflow run, 50/0 plugin suite, 628/0 full, lint 0, validate 0/0+19 advisories, grep 0/0/0, replay + empty-fixture artifacts) |
-| P4 | ac-boxes | — | Feature-coverage rows R2/R5/R8 use the exact frozen titles; AC gherkin boxes confirmed accurate against fresh evidence; no shippable row emitted |
-| P4 | pi-lens-disposition | — | L2 $schema finding dispositioned as documented false positive with 4-point evidence (HEAD parity, 6/6 sibling parity, package-scoped ID resolved in spur runtime, authoritative validate exit 0); no P1/P2 code findings outstanding |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | design-conformance | — | kk owns steps / spur workflow owns orchestration; zero sd/publish-orchestrator/dirname shell in YAML; plugin-owned seams for show-notes, scaffold-locale, sync |
+| P4 | evidence-rule-pass | — | Every row carries a CLI command or test run this session or a YAML/validate-output anchor |
+| P4 | ac-boxes | — | AC rows use exact feature scenario titles `R2 — Workflow collect states collapse into one state`, `R5 — Empty candidate set terminates as done-no-content, not failed`, `R8 — Every non-terminal state has an explicit failure edge` |
 
 ### References
 

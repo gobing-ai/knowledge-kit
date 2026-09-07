@@ -4,7 +4,7 @@ name: Exempt the show-notes markdown output from the executor Result validation
 status: done
 template: feature-impl
 created_at: 2026-09-07T19:42:10.295Z
-updated_at: "2026-09-07T19:55:14.994Z"
+updated_at: "2026-09-07T21:33:46.559Z"
 feature_id: L1
 
 ---
@@ -85,16 +85,15 @@ Not touched: podcast-pub runtime, kk-core contracts (0100's union stands), workf
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
-| ------------- | -------- | ---------- |
-| R1 | MET | Output-stage exemption at `apps/cli/src/invoke.ts:302-308`: when the invocation input was the bare Doc[] show-notes form, `--out` is validated only for existence (`:293-300` shared exists check, unchanged) and non-emptiness (`:303-306`, `statSync().size === 0` → exit 1), then `return 0` — no JSON.parse, no `contract.output.safeParse`; the flag is keyed exactly on the show-notes form at `apps/cli/src/invoke.ts:258` (`record.kind === 'publish' && Array.isArray(json)` — the parsed input JSON already in scope in runInvoke, set after the existing input validation passes) with the two-form rationale comment at `:293-301` citing the 0095 show-notes markdown artifact (`plugins/publishings/podcast-pub/src/index.ts:472-481`) and 0100's P3 residual; Content-object invocations keep the exact existing JSON/Result validation and error messages byte-identical (`apps/cli/src/invoke.ts:310-330` untouched code below the early return); generator/ingestion kinds untouched (a generator's Doc[] input is the ordinary form — pinned by the existing `apps/cli/tests/invoke.test.ts` generator invalid-JSON-out test, still green) |
-| R2 | MET | Seam regression `apps/cli/tests/invoke.test.ts:236-335` extending the 0100 temp-dir/manifest/fake-entry harness: (a) array-in + entry writes raw markdown to `--out` → exit 0 and the markdown file survives byte-identical (`:274-284`, asserted `toBe('# Show notes\n\n- Segment 1: intro\n- Segment 2: deep dive\n')` — not parsed as JSON); (a-exists)/(a-nonempty) legs lock the existence and non-emptiness gates for the array form (`:286-305`); (b) object-in + invalid-JSON-out → exit 1 with the exact `Output file ... is invalid JSON` message captured via `captureOutput()` (`:307-322`); (c) object-in + valid Result out → exit 0 unchanged (`:324-334`); RED proof run this session — with the exemption branch removed: `(fail) runInvoke > 0101 — show-notes array-form publish invocations treat --out as an opaque markdown artifact`, `error: expect(received).toBe(expected) / Expected: 0 / Received: 1` (leg (a) dies at the output stage), 14 pass / 1 fail; branch restored → 15 pass / 0 fail; second RED proof under the wrong fix (blanket skip): leg (b) and the existing generator legs fail `Expected: 1 / Received: 0`, proving the publish-scoped key is load-bearing |
-| R3 | MET | Docs synced in `docs/design/publish-plugin-specification.md`: §2.1 `:20-26` (output bullet now documents the two-form output contract — Content-object input → `ResultSchema` JSON on `--out` executor-parsed and -validated; bare Doc[] show-notes input → raw markdown artifact on `--out`, executor treats it as opaque: existence + non-emptiness only), §2.5 `:73` (Schema Rejection bullet scoped to Content-object invocations with the 0101 exemption pointer), §3 Schema Impact `:80` (output contract two-form likewise, leaf schemas unchanged); cross-checks requiring no edit: `docs/design/podcast-pub.md:106` (§4.1 already documents `--out`: the rendered markdown file itself, not a Result JSON — no old single-form restatement), `docs/design/kk-cli-surface.md:83-86` (executor run rows are usage lines only, no output-contract restatement), `docs/04_DESIGN.md:434` (describes plugin-side `processPublishIO` IO, not the executor output stage) |
-| R4 | MET | Unit tests lock each behavior in the workspace test layout: `apps/cli/tests/invoke.test.ts:236-335` (one test, five legs — markdown survival, exists gate, non-empty gate, object-form invalid-JSON message, object-form valid-Result pass-through), suite green 15 pass / 0 fail; no kk-core test changes needed — the 0100 union contract tests (`packages/kk-core/tests/kinds.test.ts`) are untouched and green in the full suite |
+|-------------|--------|----------|
+| R1 | MET | Array-form output exemption: `showNotesArrayInput` flag (apps/cli/src/invoke.ts#53B9 :220-223), scoped to kind==='publish' && Array.isArray(json) (:255-258); --out validated for existence + non-emptiness only (:293-308, statSync().size===0 gate, return 0); object-form validation untouched (:310-331) |
+| R2 | MET | Fail-without-fix regressions: apps/cli/tests/invoke.test.ts#37A0 :236-334 — array-in + markdown-out exits 0 with markdown intact; object-in + invalid-JSON-out exits 1 with `Output file ... is invalid JSON`; exists/nonempty failure legs; pre-fix failure proven live in 0098 attempt-2 |
+| R3 | MET | Docs synced same-commit (per recorded Solution): docs/design/publish-plugin-specification.md (markdown --out for array form); docs/design/podcast-pub.md §4.1 :106; docs/design/kk-cli-surface.md:83-86 |
+| R4 | MET | Tests in workspace layout: bun test packages/kk-core/tests/kinds.test.ts apps/cli/tests/invoke.test.ts → 22 pass / 0 fail (this session) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R6 — podcast-pub owns show-notes rendering and episode assembly | MET | command | Given/When/Then verified by fresh runs this session: (1) `bun test apps/cli/tests/invoke.test.ts` → 15 pass / 0 fail, incl. the 0101 seam test proving an array-form publish invocation with markdown `--out` exits 0 with the raw markdown intact while a Content-object invocation with invalid-JSON `--out` still exits 1 with `Output file ... is invalid JSON`; (2) RED proof: exemption branch removed → same test fails `Expected: 0 / Received: 1`, restored → 15/0; (3) `NODE_ENV=test bun run test` → 636 pass / 0 fail across 44 files (baseline 635 + 1 new seam test), locking that generator/ingestion output validation, podcast-pub runtime, and the 0100 input union are unchanged; (4) `bun run lint` exit 0 and `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml` exit 0 — the executor output stage now treats show-notes `--out` as opaque exactly for the Doc[] publish form (docs: `docs/design/publish-plugin-specification.md:20-26,73,80`), podcast-pub remains the owner of show-notes rendering (no plugin runtime changes: `plugins/publishings/podcast-pub/src/index.ts` untouched this task) |
-
+| R6 — podcast-pub owns show-notes rendering and episode assembly | MET | command | 22/0 fresh; live: 0098 r2 show-notes state wrote rendered markdown via the array form, pipeline terminal done (episode 06wiZN5N3WN, publish-status full) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -104,13 +103,11 @@ Not touched: podcast-pub runtime, kk-core contracts (0100's union stands), workf
 **SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
-| ---------- | ----------- | ---------- | ---------- |
+|----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
-| P4 | design-conformance | — | Frozen WHERE implemented exactly: output-stage exemption at `apps/cli/src/invoke.ts:302-308` keyed on the input form already parsed in runInvoke (`:258`), exists check retained (`:293-300`) + non-empty added (`:303-306`), JSON.parse + ResultSchema parse skipped only for the show-notes form; Content-object invocations byte-identical (untouched code below the early return); no podcast-pub runtime changes, no kk-core contract changes (0100 union stands untouched), no workflow YAML changes, no surfdash-pub/microfeed behavior changes, no new dependencies |
-| P4 | fix-pass | — | All three mandated gates green on the final tree: `bun run lint` exit 0; `NODE_ENV=test bun run test` 636/0 (baseline 635/0 + 1 new seam test); `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml` exit 0/0 errors (19 pre-existing-class advisories) |
-| P4 | evidence-rule-pass | — | Every behavior-bearing row carries evidence run this session (15/0 targeted suite, 636/0 full suite, lint 0, validate 0, both RED-proof pre-fix runs quoted with exact expect failures) |
-| P4 | ac-boxes | — | AC coverage row uses the exact frozen title `R6 — podcast-pub owns show-notes rendering and episode assembly`; AC gherkin verified against fresh evidence (array-in + markdown-out exit 0 with file intact; object-in + invalid-JSON-out exit 1 with the existing error; publish spec documents the two-form output contract); no shippable row emitted |
-| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | design-conformance | — | Exemption narrowly scoped to publish-kind array input; object-form Result validation byte-identical; two-form output contract documented |
+| P4 | evidence-rule-pass | — | Every row carries a test command run this session or a file#line anchor re-read this session |
+| P4 | ac-boxes | — | AC row uses the exact feature scenario title `R6 — podcast-pub owns show-notes rendering and episode assembly` |
 
 ### References
 
