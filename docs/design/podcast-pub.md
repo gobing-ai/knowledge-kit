@@ -4,7 +4,8 @@ Feature **E6** (shipped). Publish plugin `plugins/publishings/podcast-pub/`
 (`kind: publish`, `file-cli` transport) that publishes podcast episodes to a
 self-hosted [microfeed](https://github.com/microfeed/microfeed) instance on
 Cloudflare via its Bearer-authenticated `/api/v1/` REST API, plus thin item
-management operations. Companion setup: operator-deployed microfeed instance
+management operations and pure show-notes rendering from a bare episode-plan
+`Doc[]` input (§4.1). Companion setup: operator-deployed microfeed instance
 (`npx @microfeed/cli manage`, interactive by design; out of automation scope).
 
 > Chosen approach: direct REST transport (qiita-pub precedent). Rejected:
@@ -40,9 +41,10 @@ extends the E2/E4/E5 publish precedents; two-way door (delete the plugin dir).
 plugins/publishings/podcast-pub/
   plugin.json            # kind: publish, entry ./src/index.ts
   package.json           # @gobing-ai/podcast-pub
-  src/index.ts           # PublishTransport impl: publish() + management ops
+  src/index.ts           # PublishTransport impl: publish() + management ops + processPublishIO (Content | bare Doc[] array)
   src/microfeed-client.ts# Bearer REST client (items CRUD, feed list, validate, presigned upload)
   src/map.ts             # Content → apiItemInputSchema mapping
+  src/show-notes.ts      # Show-notes markdown renderer (episode-plan Doc[] → markdown, 0095)
   tests/                 # FakeFileCliTransport-based, no network
 docs/design/podcast-pub.md   # this satellite
 ```
@@ -89,6 +91,28 @@ Content + metadata.audioFile
 Any step failure → `Result { ok: false, error }`, stderr log, exit 1
 (spec §2.5). `metadata.audioUrl` (already-hosted audio) skips the middle two
 steps and creates the published item in one call.
+
+### 4.1 Show-notes array input (bare `Doc[]` `--in`, 0095)
+
+A **bare JSON array** input selects the pure show-notes render — no microfeed
+client, no credentials, no API call:
+
+- `--in`: episode-plan `Doc[]` array (the `2-plan/plan.json` shape). The
+  publish kind contract is the two-form union `Content | Doc[]` (0100), so
+  executor pre-validation passes this form through to the plugin entry.
+- Options come from `PODCAST_PUB_TITLE` and `PODCAST_PUB_RUN_DATE` env (or
+  `options.title` / `options.runDate` on the transport payload); both are
+  required — missing either fails loud.
+- `--out`: the rendered markdown file itself (not a `Result` JSON).
+- Render failure: fail-loud `Result { ok: false, error }` written to `--out`,
+  then reject (non-zero exit), matching the Content path.
+
+Usage (workflow show-notes state):
+
+```sh
+PODCAST_PUB_TITLE="…" PODCAST_PUB_RUN_DATE="2026-09-07" \
+  kk executor run podcast-pub --in "$WORK/2-plan/plan.json" --out "$WORK/3-publish/show-notes.md"
+```
 
 ## 5. Config surface (D4)
 

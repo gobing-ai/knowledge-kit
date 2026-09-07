@@ -8,6 +8,7 @@ import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { getPublishTransport, main, PodcastPubTransport, processPublishIO } from '../src/index';
 import { mapContentToEpisode, resolveAudioMimeType } from '../src/map';
 import { resolveTimeoutMs } from '../src/microfeed-client';
+import { renderShowNotesMarkdown } from '../src/show-notes';
 
 /** A recorded fake-API request. */
 interface CapturedRequest {
@@ -51,7 +52,14 @@ const VALID_ENV = { MICROFEED_BASE_URL: 'https://feed.example.com', MICROFEED_AP
 
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
     const saved: Record<string, string | undefined> = {};
-    for (const key of ['MICROFEED_BASE_URL', 'MICROFEED_API_KEY', 'MICROFEED_TIMEOUT_MS']) {
+    for (const key of [
+        'MICROFEED_BASE_URL',
+        'MICROFEED_API_KEY',
+        'MICROFEED_TIMEOUT_MS',
+        'PODCAST_PUB_TITLE',
+        'PODCAST_PUB_RUN_DATE',
+        'PODCAST_PUB_ARTICLE_BASE_URL',
+    ]) {
         saved[key] = process.env[key];
         if (env[key] === undefined) delete process.env[key];
         else process.env[key] = env[key];
@@ -740,6 +748,35 @@ describe('podcast-pub failure paths (R4/R5)', () => {
 });
 
 describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
+    test('an unknown options.operation fails loud at the processPublishIO surface (error Result + reject)', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-test-podcast-badop');
+        await mkdir(tmpDir, { recursive: true });
+        const inPath = join(tmpDir, 'in.json');
+        const outPath = join(tmpDir, 'out.json');
+        await writeFile(inPath, JSON.stringify({ ...episodeContent(), options: { operation: 'explode' } }), 'utf-8');
+
+        try {
+            // Routing precedes credential resolution: no MICROFEED_* env, and no network call.
+            await withEnv({}, async () => {
+                const spy = spyOn(globalThis, 'fetch').mockImplementation((async (): Promise<Response> => {
+                    throw new Error('unknown operation must fail before any network call');
+                }) as unknown as typeof fetch);
+                try {
+                    await expect(processPublishIO(inPath, outPath, new PodcastPubTransport())).rejects.toThrow(
+                        'invalid options.operation',
+                    );
+                    const result = ResultSchema.parse(JSON.parse(await readFile(outPath, 'utf-8')));
+                    expect(result.ok).toBe(false);
+                    expect(result.error).toContain('invalid options.operation "explode"');
+                    expect(result.error).toContain('publish, show-notes');
+                } finally {
+                    spy.mockRestore();
+                }
+            });
+        } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
     test('processPublishIO runs offline via FakeFileCliTransport and passes input options through', async () => {
         const transport = new FakeFileCliTransport();
         const tmpDir = join(process.cwd(), '.tmp-test-podcast-io');
@@ -889,5 +926,302 @@ describe('podcast-pub process IO + CLI (R3/R4/R5)', () => {
         } finally {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
         }
+    });
+});
+
+describe('podcast-pub show-notes rendering (L1 R6)', () => {
+    const FIXTURES_DIR = join(import.meta.dir, 'fixtures');
+    const GOLDEN = join(FIXTURES_DIR, 'show-notes-golden.txt');
+    const R6_GOLDEN = join(FIXTURES_DIR, 'show-notes-r6-golden.txt');
+    const R6_PLAN = join(
+        import.meta.dir,
+        '../../../../plugins/generations/episode-plan-gen/tests/fixtures/r6-blended.json',
+    );
+    const RUN_DATE = '2026-09-06';
+    const EPISODE_TITLE = '每日 AI 要闻：Sora 2 发布与充裕的智能';
+
+    test('renderShowNotesMarkdown byte-matches the workflow inline renderer on the captured plan fixture', async () => {
+        const docs = JSON.parse(await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8'));
+        const rendered = renderShowNotesMarkdown(docs, { title: EPISODE_TITLE, runDate: RUN_DATE });
+        expect(rendered).toBe(await readFile(GOLDEN, 'utf-8'));
+    });
+
+    test('renderShowNotesMarkdown byte-matches the workflow inline renderer on the real r6 blended plan', async () => {
+        const docs = JSON.parse(await readFile(R6_PLAN, 'utf-8'));
+        const rendered = renderShowNotesMarkdown(docs, { title: EPISODE_TITLE, runDate: RUN_DATE });
+        expect(rendered).toBe(await readFile(R6_GOLDEN, 'utf-8'));
+    });
+
+    test('renderShowNotesMarkdown defaults the article base URL and falls back to the "post" slug', () => {
+        const chineseOnly = renderShowNotesMarkdown([], { title: '每日要闻', runDate: '2026-01-02' });
+        expect(chineseOnly).toContain(
+            '详情见本期完整文章：[ 每日要闻 ](https://surfing.salty.vip/zh/posts/2026-01-02-post)',
+        );
+
+        const customBase = renderShowNotesMarkdown([], {
+            title: 'Sora 2!',
+            runDate: '2026-01-02',
+            articleBaseUrl: 'https://example.com',
+        });
+        expect(customBase).toContain('详情见本期完整文章：[ Sora 2! ](https://example.com/zh/posts/2026-01-02-sora-2)');
+    });
+});
+
+describe('podcast-pub show-notes operation (L1 R6)', () => {
+    const FIXTURES_DIR = join(import.meta.dir, 'fixtures');
+    const GOLDEN = join(FIXTURES_DIR, 'show-notes-golden.txt');
+    const RUN_DATE = '2026-09-06';
+    const EPISODE_TITLE = '每日 AI 要闻：Sora 2 发布与充裕的智能';
+
+    test('operation show-notes renders options.docs to a Result without credentials or HTTP', async () => {
+        const docs = JSON.parse(await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8'));
+        await withEnv({}, async () => {
+            const spy = spyOn(globalThis, 'fetch').mockImplementation((async (): Promise<Response> => {
+                throw new Error('show-notes must not make HTTP calls');
+            }) as unknown as typeof fetch);
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { operation: 'show-notes', docs, title: EPISODE_TITLE, runDate: RUN_DATE },
+                });
+                expect(result.ok).toBe(true);
+                expect(result.message).toContain('Rendered show notes markdown');
+                expect(result.metadata?.markdown).toBe(await readFile(GOLDEN, 'utf-8'));
+            } finally {
+                spy.mockRestore();
+            }
+        });
+    });
+
+    test('show-notes operation fails loud on missing docs, title, or runDate without network', async () => {
+        const docs = JSON.parse(await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8'));
+        await withEnv({}, async () => {
+            const spy = spyOn(globalThis, 'fetch').mockImplementation((async (): Promise<Response> => {
+                throw new Error('show-notes must not make HTTP calls');
+            }) as unknown as typeof fetch);
+            try {
+                const noDocs = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { operation: 'show-notes', title: EPISODE_TITLE, runDate: RUN_DATE },
+                });
+                expect(noDocs.ok).toBe(false);
+                expect(noDocs.error).toContain('options.docs');
+
+                const noTitle = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { operation: 'show-notes', docs, runDate: RUN_DATE },
+                });
+                expect(noTitle.ok).toBe(false);
+                expect(noTitle.error).toContain('PODCAST_PUB_TITLE');
+
+                const noRunDate = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { operation: 'show-notes', docs, title: EPISODE_TITLE },
+                });
+                expect(noRunDate.ok).toBe(false);
+                expect(noRunDate.error).toContain('PODCAST_PUB_RUN_DATE');
+
+                const badDocs = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: {
+                        operation: 'show-notes',
+                        docs: [{ nope: true }],
+                        title: EPISODE_TITLE,
+                        runDate: RUN_DATE,
+                    },
+                });
+                expect(badDocs.ok).toBe(false);
+                expect(badDocs.error).toContain('options.docs must be an episode plan Doc[] array');
+            } finally {
+                spy.mockRestore();
+            }
+        });
+    });
+
+    test('payload options beat set env vars when both are present (resolveOptionString precedence)', async () => {
+        const docs = JSON.parse(await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8'));
+        const envTitle = 'ENV-TITLE-MUST-LOSE';
+        await withEnv({ PODCAST_PUB_TITLE: envTitle, PODCAST_PUB_RUN_DATE: '1999-12-31' }, async () => {
+            const spy = spyOn(globalThis, 'fetch').mockImplementation((async (): Promise<Response> => {
+                throw new Error('show-notes must not make HTTP calls');
+            }) as unknown as typeof fetch);
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { operation: 'show-notes', docs, title: EPISODE_TITLE, runDate: RUN_DATE },
+                });
+                expect(result.ok).toBe(true);
+                const markdown = String(result.metadata?.markdown);
+                expect(markdown.startsWith(`# ${EPISODE_TITLE}`)).toBe(true);
+                expect(markdown).not.toContain(envTitle);
+                expect(markdown).toContain(`/zh/posts/${RUN_DATE}-`);
+                expect(markdown).not.toContain('/zh/posts/1999-12-31-');
+            } finally {
+                spy.mockRestore();
+            }
+        });
+    });
+
+    test('processPublishIO renders a bare Doc[] --in to the markdown --out via env options, offline', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-test-podcast-shownotes-io');
+        await mkdir(tmpDir, { recursive: true });
+        const planBytes = await readFile(join(FIXTURES_DIR, 'show-notes-plan.json'), 'utf-8');
+        const inPath = join(tmpDir, 'plan.json');
+        const outPath = join(tmpDir, 'show-notes.md');
+        await writeFile(inPath, planBytes, 'utf-8');
+
+        await withEnv({ PODCAST_PUB_TITLE: EPISODE_TITLE, PODCAST_PUB_RUN_DATE: RUN_DATE }, async () => {
+            const spy = spyOn(globalThis, 'fetch').mockImplementation((async (): Promise<Response> => {
+                throw new Error('show-notes must not make HTTP calls');
+            }) as unknown as typeof fetch);
+            const transport = new FakeFileCliTransport();
+            try {
+                await processPublishIO(inPath, outPath, transport);
+                expect(transport.getCallLogs().length).toBe(0);
+                expect(await readFile(outPath, 'utf-8')).toBe(await readFile(GOLDEN, 'utf-8'));
+            } finally {
+                spy.mockRestore();
+            }
+        });
+
+        await withEnv({}, async () => {
+            await expect(processPublishIO(inPath, outPath, new FakeFileCliTransport())).rejects.toThrow(
+                'show-notes render failed',
+            );
+            const failure = ResultSchema.parse(JSON.parse(await readFile(outPath, 'utf-8')));
+            expect(failure.ok).toBe(false);
+            expect(failure.error).toContain('PODCAST_PUB_TITLE');
+        });
+
+        await rm(tmpDir, { recursive: true, force: true });
+    });
+});
+
+describe('podcast-pub publish assembly options (L1 R6)', () => {
+    test('a lone durationSec: 0 (boundary) merges additively; metadata audioUrl still drives the hosted branch', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const api = installFakeApi([
+                {
+                    match: (r) => r.method === 'POST' && r.url.endsWith('/api/v1/items'),
+                    respond: () => new Response(JSON.stringify({ id: 'ASM03' }), { status: 201 }),
+                },
+            ]);
+            try {
+                // Content carries no durationSeconds — the single assembly key supplies it;
+                // audioFile/coverPath are absent, so metadata.audioUrl keeps the hosted branch.
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioUrl: 'https://cdn.example.com/ep.mp3' }),
+                    options: { durationSec: 0 },
+                });
+
+                expect(result.ok).toBe(true);
+                expect(api.requests[0]?.body).toEqual({
+                    title: 'Episode 1: Ground Up',
+                    content_html: '<p>Show notes body.</p>',
+                    status: 'published',
+                    attachments: [
+                        {
+                            category: 'audio',
+                            url: 'https://cdn.example.com/ep.mp3',
+                            mime_type: 'audio/mpeg',
+                            duration_in_seconds: 0,
+                        },
+                    ],
+                    _microfeed: { 'itunes:episodeType': 'full' },
+                });
+            } finally {
+                api.restore();
+            }
+        });
+    });
+    test('publish with assembly options assembles the episode itself: enclosure + image + duration', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const dir = join(process.cwd(), '.tmp-test-podcast-assembly');
+            const audioPath = await makeAudioFile(dir);
+            const coverPath = await makeAudioFile(dir, 'cover.png');
+            const api = installFakeApi(twoPhaseRoutesWithCover('ASM01'));
+            try {
+                // Content carries NO audio/cover metadata — the options alone drive assembly.
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { audioFile: audioPath, coverPath, durationSec: 1234.5 },
+                });
+
+                expect(result.ok).toBe(true);
+                expect(result.id).toBe('ASM01');
+
+                const finalize = api.requests[api.requests.length - 1];
+                expect(finalize?.method).toBe('PUT');
+                const body = finalize?.body as Record<string, unknown>;
+                // Enclosure + duration from the assembly options…
+                expect(body.attachments).toEqual([
+                    {
+                        category: 'audio',
+                        url: 'https://media.example.com/media/audio/ASM01.wav',
+                        mime_type: 'audio/wav',
+                        size_in_bytes: 8,
+                        duration_in_seconds: 1234.5,
+                    },
+                ]);
+                // …cover uploaded and attached as the episode image.
+                expect(body.image).toBe('https://media.example.com/media/images/ASM01.png');
+            } finally {
+                api.restore();
+                await rm(dir, { recursive: true, force: true });
+            }
+        });
+    });
+
+    test('assembly options override the matching metadata; absent keys keep the Content mapping', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const dir = join(process.cwd(), '.tmp-test-podcast-assembly-precedence');
+            const audioPath = await makeAudioFile(dir);
+            const coverPath = await makeAudioFile(dir, 'cover.png');
+            const api = installFakeApi(twoPhaseRoutesWithCover('ASM02'));
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({
+                        audioUrl: 'https://cdn.example.com/hosted.mp3',
+                        coverImage: 'https://cdn.example.com/remote-cover.png',
+                        durationSeconds: 1,
+                    }),
+                    options: { audioFile: audioPath, coverPath },
+                });
+
+                expect(result.ok).toBe(true);
+                // options.audioFile wins over metadata.audioUrl (file branch, no ambiguity error)…
+                expect(api.requests[1]?.body).toMatchObject({ category: 'audio', full_local_file_path: audioPath });
+                // …options.coverPath wins over the remote metadata cover.
+                expect(api.requests[3]?.body).toMatchObject({ category: 'image', full_local_file_path: coverPath });
+            } finally {
+                api.restore();
+                await rm(dir, { recursive: true, force: true });
+            }
+        });
+    });
+
+    test('malformed assembly options fail loud before any network call', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const spy = spyOn(globalThis, 'fetch').mockImplementation((async (): Promise<Response> => {
+                throw new Error('assembly validation must precede network calls');
+            }) as unknown as typeof fetch);
+            try {
+                for (const bad of [
+                    { audioFile: '' },
+                    { coverPath: '   ' },
+                    { durationSec: -1 },
+                    { durationSec: 'x' },
+                ]) {
+                    const result = await new PodcastPubTransport().publish({
+                        content: episodeContent(),
+                        options: bad,
+                    });
+                    expect(result.ok).toBe(false);
+                    expect(result.error).toContain(`options.${Object.keys(bad)[0]}`);
+                }
+            } finally {
+                spy.mockRestore();
+            }
+        });
     });
 });

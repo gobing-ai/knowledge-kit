@@ -1,18 +1,19 @@
 import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
+import { type Content, ContentSchema, DocListSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { type EpisodeMapping, mapContentToEpisode } from './map';
 import { MicrofeedClient, type MicrofeedItemInput, resolveTimeoutMs } from './microfeed-client';
+import { renderShowNotesMarkdown, type ShowNotesRenderOptions } from './show-notes';
 
 /** Result target name for this plugin. */
 const TARGET = 'podcast-pub';
 
 /** Management operations routed via `options.operation` (design D5). */
-const OPERATIONS = ['publish', 'list', 'get', 'update', 'delete', 'validate'] as const;
+const OPERATIONS = ['publish', 'show-notes', 'list', 'get', 'update', 'delete', 'validate'] as const;
 type Operation = (typeof OPERATIONS)[number];
 
 /** Target-specific options carried on the invoke payload. */
@@ -21,6 +22,16 @@ interface PodcastPubOptions {
     itemId?: unknown;
     /** Item input (`apiItemInputSchema` shape) sent by the `update` op / `validate` op. */
     item?: unknown;
+    /** Episode plan Doc[] rendered by the `show-notes` op (transport-level calls carry it here). */
+    docs?: unknown;
+    /** Show-notes render options; CLI callers may omit these (env fallbacks apply). */
+    title?: unknown;
+    runDate?: unknown;
+    articleBaseUrl?: unknown;
+    /** Episode-assembly options for the `publish` op (absorb publish-prep's merge; additive). */
+    audioFile?: unknown;
+    coverPath?: unknown;
+    durationSec?: unknown;
 }
 
 /** Re-reads env each call so tests can set credentials without constructor plumbing (design D4). */
@@ -64,6 +75,88 @@ function resolveItemId(options: PodcastPubOptions): { itemId: string } | { error
     return { itemId: raw.trim() };
 }
 
+/** Options the `show-notes` operation reads on the payload (a subset of {@link PodcastPubOptions}). */
+type ShowNotesOpOptions = Pick<PodcastPubOptions, 'docs' | 'title' | 'runDate' | 'articleBaseUrl'>;
+
+/**
+ * Option-then-env resolution for the show-notes render options: `kk executor run`
+ * passes only `--in`/`--out`, so workflow callers (task 0097) supply `title` and
+ * `runDate` as `PODCAST_PUB_*` environment variables, matching the dailynews-gen
+ * env-option convention. Raw values — no trimming — to keep the render byte-stable.
+ */
+function resolveOptionString(raw: unknown, envKey: string): string | undefined {
+    if (typeof raw === 'string' && raw.length > 0) return raw;
+    const fromEnv = process.env[envKey];
+    return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : undefined;
+}
+
+/** Resolves `{title, runDate, articleBaseUrl?}`; title and runDate are required. */
+function resolveShowNotesRenderOptions(
+    options: ShowNotesOpOptions,
+): { renderOptions: ShowNotesRenderOptions } | { error: string } {
+    const title = resolveOptionString(options.title, 'PODCAST_PUB_TITLE');
+    if (title === undefined) {
+        return { error: 'options.title (or PODCAST_PUB_TITLE) is required for the "show-notes" operation' };
+    }
+    const runDate = resolveOptionString(options.runDate, 'PODCAST_PUB_RUN_DATE');
+    if (runDate === undefined) {
+        return { error: 'options.runDate (or PODCAST_PUB_RUN_DATE) is required for the "show-notes" operation' };
+    }
+    const articleBaseUrl = resolveOptionString(options.articleBaseUrl, 'PODCAST_PUB_ARTICLE_BASE_URL');
+    return {
+        renderOptions: { title, runDate, ...(articleBaseUrl !== undefined ? { articleBaseUrl } : {}) },
+    };
+}
+
+/** Validates the plan Doc[] and renders show-notes markdown (pure render; no microfeed call). */
+function renderShowNotesFromOptions(options: ShowNotesOpOptions): { markdown: string } | { error: string } {
+    const docs = DocListSchema.safeParse(options.docs);
+    if (!docs.success) {
+        const reason = docs.error.issues[0]?.message ?? 'invalid document list';
+        return { error: `options.docs must be an episode plan Doc[] array: ${reason}` };
+    }
+    const renderOptions = resolveShowNotesRenderOptions(options);
+    if ('error' in renderOptions) return { error: renderOptions.error };
+    return { markdown: renderShowNotesMarkdown(docs.data, renderOptions.renderOptions) };
+}
+
+/** Episode-assembly options (R2): present keys make the plugin merge article + audio + cover itself. */
+interface AssemblyOptions {
+    audioFile?: string;
+    coverPath?: string;
+    durationSec?: number;
+}
+
+/** Resolves the additive assembly options; each key is independent, well-typed, and fails loud. */
+function resolveAssemblyOptions(options: PodcastPubOptions): { assembly: AssemblyOptions } | { error: string } {
+    const assembly: AssemblyOptions = {};
+    if (options.audioFile !== undefined) {
+        if (typeof options.audioFile !== 'string' || options.audioFile.trim().length === 0) {
+            return { error: 'invalid options.audioFile: expected a nonempty local audio file path' };
+        }
+        assembly.audioFile = options.audioFile.trim();
+    }
+    if (options.coverPath !== undefined) {
+        if (typeof options.coverPath !== 'string' || options.coverPath.trim().length === 0) {
+            return { error: 'invalid options.coverPath: expected a nonempty local cover image path' };
+        }
+        assembly.coverPath = options.coverPath.trim();
+    }
+    if (options.durationSec !== undefined) {
+        if (
+            typeof options.durationSec !== 'number' ||
+            !Number.isFinite(options.durationSec) ||
+            options.durationSec < 0
+        ) {
+            return {
+                error: `invalid options.durationSec: expected a nonnegative number, got ${String(options.durationSec)}`,
+            };
+        }
+        assembly.durationSec = options.durationSec;
+    }
+    return { assembly };
+}
+
 /** Builds the RSS-enclosure attachment from the presigned-upload media URL (design D2). */
 function audioAttachment(
     audio: ReturnType<typeof mapContentToEpisode>['audio'],
@@ -105,10 +198,35 @@ function episodeExtras(episode: EpisodeMapping): MicrofeedItemInput {
  * `metadata.audioUrl` (already hosted) skips the upload steps and creates the
  * published item in a single call.
  */
-async function publishEpisode(client: MicrofeedClient, payload: PublishTransportPayload): Promise<Result> {
+async function publishEpisode(
+    client: MicrofeedClient,
+    payload: PublishTransportPayload,
+    options: PodcastPubOptions,
+): Promise<Result> {
+    const assembly = resolveAssemblyOptions(options);
+    if ('error' in assembly) return fail(assembly.error);
+
+    // Assembly options are additive (L1 R6): present keys make the plugin own that channel
+    // (publish-prep's merge absorbed — options.audioFile retires metadata.audioUrl so the
+    // map.ts ambiguity guard is not tripped); absent keys leave the existing
+    // Content→episode mapping (map.ts) as the fallback, unchanged.
+    const { audioFile, coverPath, durationSec } = assembly.assembly;
+    const content: Content =
+        audioFile !== undefined || coverPath !== undefined || durationSec !== undefined
+            ? {
+                  ...payload.content,
+                  metadata: {
+                      ...payload.content.metadata,
+                      ...(audioFile !== undefined ? { audioFile, audioUrl: undefined } : {}),
+                      ...(coverPath !== undefined ? { coverImage: coverPath } : {}),
+                      ...(durationSec !== undefined ? { durationSeconds: durationSec } : {}),
+                  },
+              }
+            : payload.content;
+
     let episode: EpisodeMapping;
     try {
-        episode = mapContentToEpisode(payload.content);
+        episode = mapContentToEpisode(content);
     } catch (error: unknown) {
         return fail(`Invalid Content: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -208,6 +326,18 @@ export class PodcastPubTransport implements PublishTransport {
         const routed = resolveOperation(options);
         if ('error' in routed) return fail(routed.error);
 
+        // Pure render: no microfeed client (hence no credentials) and no API call (design L1 R6).
+        if (routed.operation === 'show-notes') {
+            const rendered = renderShowNotesFromOptions(options);
+            if ('error' in rendered) return fail(rendered.error);
+            return ResultSchema.parse({
+                ok: true,
+                target: TARGET,
+                message: 'Rendered show notes markdown (pure render; no microfeed API call)',
+                metadata: { markdown: rendered.markdown },
+            });
+        }
+
         const resolved = resolveClient();
         if ('error' in resolved) return fail(resolved.error);
         const { client } = resolved;
@@ -215,7 +345,7 @@ export class PodcastPubTransport implements PublishTransport {
         try {
             switch (routed.operation) {
                 case 'publish':
-                    return await publishEpisode(client, payload);
+                    return await publishEpisode(client, payload, options);
                 case 'list': {
                     const feed = await client.listItems();
                     return ResultSchema.parse({
@@ -314,12 +444,31 @@ async function writePublishResult(outputPath: string, result: Result): Promise<v
 }
 
 /**
+ * Show-notes operation IO: `--in` is the episode plan Doc[], `--out` the markdown
+ * file (pure render — no Content, no transport call). Render options come from the
+ * `PODCAST_PUB_*` environment variables. Failure writes a fail-loud Result to the
+ * output path and rejects, matching the Content path.
+ */
+async function renderShowNotesIO(docs: unknown[], outputPath: string): Promise<void> {
+    const rendered = renderShowNotesFromOptions({ docs });
+    if ('error' in rendered) {
+        const message = `show-notes render failed: ${rendered.error}`;
+        await writePublishResult(outputPath, fail(message));
+        throw new Error(message);
+    }
+    await createNodeFileSystem().writeFile(outputPath, rendered.markdown);
+}
+
+/**
  * Processes input Content and writes output Result via transport.
  *
- * The input JSON may carry a top-level `options` object (`operation`, `itemId`,
- * `item`) alongside the Content fields for management operations; validation
- * failure and transport failure both write a fail-loud Result (ok: false + error)
- * to the output path and reject (spec §2.5).
+ * A bare JSON array input selects the `show-notes` operation: `--in` is the
+ * episode plan Doc[] and `--out` receives the markdown file itself.
+ *
+ * The input JSON may otherwise carry a top-level `options` object (`operation`,
+ * `itemId`, `item`) alongside the Content fields for management operations;
+ * validation failure and transport failure both write a fail-loud Result
+ * (ok: false + error) to the output path and reject (spec §2.5).
  */
 export async function processPublishIO(
     inputPath: string,
@@ -333,6 +482,10 @@ export async function processPublishIO(
     try {
         const rawInput = await createNodeFileSystem().readFile(inputPath);
         const raw = JSON.parse(rawInput) as Record<string, unknown>;
+        if (Array.isArray(raw)) {
+            await renderShowNotesIO(raw, outputPath);
+            return;
+        }
         content = ContentSchema.parse(raw);
         if (raw.options !== undefined && typeof raw.options === 'object' && raw.options !== null) {
             options = raw.options as Record<string, unknown>;

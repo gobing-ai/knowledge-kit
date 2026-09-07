@@ -11,6 +11,8 @@
  * input is escaped first, and only the tags this module emits reach the API.
  */
 
+import type { Doc } from '@gobing-ai/kk-core';
+
 /** Escapes text content and attribute values (`&`, `<`, `>`, `"`). */
 function escapeHtml(value: string): string {
     return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -66,4 +68,65 @@ export function renderShowNotesHtml(markdown: string): string {
     }
     flush();
     return blocks.join('\n');
+}
+
+/**
+ * Options for {@link renderShowNotesMarkdown} — the workflow show-notes step's
+ * inputs (`title` = the effective episode title, `vars.title || article.title`
+ * at the call site; `runDate` = the `YYYY-MM-DD` slug prefix).
+ */
+export interface ShowNotesRenderOptions {
+    /** Episode heading, article-link text, and article-URL slug source. */
+    title: string;
+    /** Run date prefixing the article URL slug. */
+    runDate: string;
+    /** Article base URL; defaults to the production site (surfing.salty.vip). */
+    articleBaseUrl?: string;
+}
+
+/**
+ * Renders the episode show-notes markdown from a plan Doc[] — plugin-owned port
+ * of the workflow's inline show-notes bun -e (design L1 R6; the workflow keeps
+ * only the orchestration call). Output dialect: `# title` heading, per-item
+ * `## N. <title>` sections capped at the first two 。！？-terminated sentences,
+ * a `[来源：<label>](<sourceUri>)` link per item, and the full-article footer.
+ * Downstream HTML rendering stays with {@link renderShowNotesHtml}.
+ */
+export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOptions): string {
+    const slugify = (t: string): string => {
+        const s = t
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '')
+            .trim()
+            .replace(/[\s_]+/g, '-');
+        return s.length > 0 ? s : 'post';
+    };
+    const articleUrl = `${opts.articleBaseUrl ?? 'https://surfing.salty.vip'}/zh/posts/${opts.runDate}-${slugify(opts.title)}`;
+    const sourceLabel = (d: Doc): string => {
+        const m = d.metadata ?? {};
+        if (typeof m.sourceName === 'string' && m.sourceName.trim()) return m.sourceName.trim();
+        try {
+            return new URL(d.sourceUri ?? '').hostname.replace(/^www\./, '');
+        } catch {
+            return '来源';
+        }
+    };
+    const lines: string[] = [`# ${opts.title}`, ''];
+    docs.forEach((d, i) => {
+        const body = (d.body ?? '').trim();
+        const sentences = body
+            .split(/(?<=[。！？])\s*/)
+            .slice(0, 2)
+            .join('');
+        lines.push(
+            `## ${i + 1}. ${d.title ?? `条目 ${i + 1}`}`,
+            '',
+            sentences,
+            '',
+            `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''})`,
+            '',
+        );
+    });
+    lines.push(`详情见本期完整文章：[ ${opts.title} ](${articleUrl})`, '');
+    return lines.join('\n');
 }

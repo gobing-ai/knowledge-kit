@@ -1,0 +1,27 @@
+[
+    {
+        "id": "doc-0001",
+        "title": "Sora 2",
+        "body": "OpenAI发布Sora应用，集成Sora 2模型，支持快速创作。团队称其为\"创意领域的ChatGPT时刻\"。核心功能包括cameo客串特性。同时团队表达了对低质内容风险的担忧。",
+        "sourceUri": "https://blog.samaltman.com/sora-2",
+        "mediaType": "text/markdown",
+        "metadata": { "sourceName": "Sam Altman：Blog（RSS）" }
+    },
+    {
+        "id": "doc-0002",
+        "body": "计划打造每周可新增1吉瓦算力的AI基础设施工厂！芯片、电力到机器人的全栈创新将支撑宏大应用？项目将主要落地美国。",
+        "sourceUri": "https://www.theverge.com/ai-artificial-intelligence"
+    },
+    {
+        "id": "doc-0003",
+        "title": "充裕的智能",
+        "body": "通过芯片、电力到机器人的全栈创新，支撑治愈癌症等宏大应用。\n\n未来数月公布合作伙伴。",
+        "sourceUri": "https://blog.samaltman.com/abundant-intelligence",
+        "metadata": { "sourceName": "  Sam Altman：Blog（RSS）  " }
+    },
+    {
+        "id": "doc-0004",
+        "title": "无来源条目",
+        "body": "这条目没有来源链接，标签回退到「来源」。"
+    }
+]
