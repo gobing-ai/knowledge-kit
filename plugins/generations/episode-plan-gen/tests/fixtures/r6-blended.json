@@ -1,0 +1,405 @@
+[
+    {
+        "id": "cmnw1xr1o003zslc3y7ndvr9i",
+        "body": "OpenAI发布Sora应用，集成Sora 2模型，支持快速创作、分享和观看视频，团队称其为\"创意领域的ChatGPT时刻\"。核心功能包括cameo客串特性，可保持角色一致性并将用户及朋友置入视频。团队同时表达对成瘾性和低质内容（\"slop feed\"）风险的担忧，提出四项产品原则：优化长期用户满意度、赋予用户信息流控制权、优先鼓励创作、帮助实现长期目标，并配备深度伪造防护和情绪健康监测等安全措施。\n",
+        "title": "Sora 2",
+        "sourceUri": "https://blog.samaltman.com/sora-2",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2025-09-30T17:13:47.000Z",
+            "discoveredAt": "2025-09-30T17:13:47.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o003zslc3y7ndvr9i",
+            "originalUrl": "https://blog.samaltman.com/sora-2",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o003zslc3y7ndvr9i"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/sora-2"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0040slc35nmxy4dt",
+        "body": "计划打造每周可新增1吉瓦算力的AI基础设施工厂，通过芯片、电力到机器人的全栈创新，支撑治愈癌症、全球个性化教育等宏大应用。项目将主要落地美国，未来数月公布合作伙伴，年底披露融资方案。\n",
+        "title": "充裕的智能",
+        "sourceUri": "https://blog.samaltman.com/abundant-intelligence",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2025-09-23T13:41:02.000Z",
+            "discoveredAt": "2025-09-23T13:41:02.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0040slc35nmxy4dt",
+            "originalUrl": "https://blog.samaltman.com/abundant-intelligence",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0040slc35nmxy4dt"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/abundant-intelligence"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0041slc3lk8z2wfu",
+        "body": "OpenAI 高层公开致谢首席科学家 Jakub Pachocki 与 Szymon Sidor，二人多次联手攻克被认为不可能的技术难题，主导 Dota RL 扩展、GPT-4 预训练及推理突破，被形容为\"不知疲倦\"的黄金搭档。\n",
+        "title": "Jakub 与 Szymon",
+        "sourceUri": "https://blog.samaltman.com/jakub-and-szymon",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2025-09-09T00:10:22.000Z",
+            "discoveredAt": "2025-09-09T00:10:22.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0041slc3lk8z2wfu",
+            "originalUrl": "https://blog.samaltman.com/jakub-and-szymon",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0041slc3lk8z2wfu"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/jakub-and-szymon"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0042slc3uovocb28",
+        "body": "人类已越过AI发展的\"事件视界\"。2025年代理将承担真正认知工作，永久改变编程；2026年系统或能发现新见解，2027年机器人可能执行现实任务。科学家称生产力已提升2-3倍，递归改进正在加速。2030年代智能与能源将极大丰富，技术成本趋近电力。尽管就业结构剧变，但财富增长将带来前所未有的政策空间。人类正适应\"温和的奇点\"：奇迹迅速变成常态，我们将很快测试智能能超越人类多远。\n",
+        "title": "温和的奇点",
+        "sourceUri": "https://blog.samaltman.com/the-gentle-singularity",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2025-06-10T21:12:47.000Z",
+            "discoveredAt": "2025-06-10T21:12:47.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0042slc3uovocb28",
+            "originalUrl": "https://blog.samaltman.com/the-gentle-singularity",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0042slc3uovocb28"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/the-gentle-singularity"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0043slc32ynrxq7e",
+        "body": "OpenAI 阐述关于 AI 经济学的三点观察：模型智能与训练资源的对数成正比，可预测扩展；AI 使用成本每 12 个月下降约 10 倍，远超摩尔定律速度；智能线性增长将产生超指数级社会经济价值。据此，AI 代理将如虚拟同事般渗透各领域，科学进步将大幅加速，虽然短期内生活照旧，但长期将深刻重塑社会经济结构，个人意志力和适应能力将成为关键价值。\n",
+        "title": "三点观察",
+        "sourceUri": "https://blog.samaltman.com/three-observations",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2025-02-09T21:05:32.000Z",
+            "discoveredAt": "2025-02-09T21:05:32.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0043slc32ynrxq7e",
+            "originalUrl": "https://blog.samaltman.com/three-observations",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0043slc32ynrxq7e"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/three-observations"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0044slc32w2a0t6n",
+        "body": "Sam Altman在ChatGPT两周年之际回顾OpenAI九年历程：从坚信AGI可能实现，到2022年意外推出ChatGPT并引爆前所未有的增长曲线。他坦承过去两年从零构建公司的混乱压力，以及被董事会突然解雇的危机教训。如今周活用户已达3亿，在迈向AGI的道路上，他既感激这段经历，也承认未来仍充满未知。\n",
+        "title": "反思",
+        "sourceUri": "https://blog.samaltman.com/reflections",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2025-01-06T01:37:29.000Z",
+            "discoveredAt": "2025-01-06T01:37:29.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0044slc32w2a0t6n",
+            "originalUrl": "https://blog.samaltman.com/reflections",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0044slc32w2a0t6n"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/reflections"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0045slc3cskfadqi",
+        "body": "OpenAI 将 GPT-4o 向所有 ChatGPT 用户免费开放，无广告。全新语音（及视频）模式响应速度接近人类，表现力极强，被 Sam Altman 称为「用过最好的计算机界面」，像电影里的 AI。未来还将支持个性化、代操作等功能。\n",
+        "title": "GPT-4o",
+        "sourceUri": "https://blog.samaltman.com/gpt-4o",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2024-05-13T17:39:38.000Z",
+            "discoveredAt": "2024-05-13T17:39:38.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0045slc3cskfadqi",
+            "originalUrl": "https://blog.samaltman.com/gpt-4o",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0045slc3cskfadqi"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/gpt-4o"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o0046slc3qsv2eo79",
+        "body": "Sam Altman 分享17条创业与管理建议：以乐观、信念和人际网络启动项目，用凝聚团队和长期主义推动落地；集中资源押注高信念项目，设计好激励机制，保持快速迭代；警惕官僚作风，重视人才招聘与复利效应，与优秀的人共事。\n",
+        "title": "真希望有人早告诉我这些",
+        "sourceUri": "https://blog.samaltman.com/what-i-wish-someone-had-told-me",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2023-12-21T22:44:25.000Z",
+            "discoveredAt": "2023-12-21T22:44:25.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o0046slc3qsv2eo79",
+            "originalUrl": "https://blog.samaltman.com/what-i-wish-someone-had-told-me",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o0046slc3qsv2eo79"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/what-i-wish-someone-had-told-me"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o004cslc3c3zhbdgm",
+        "body": "曾与创始人合作、现与研究人员共事的作者发现，尽管两类人差异显著，但顶尖者都思考\"领域内最重要的问题\"、兼具短期专注与长期视野、极度坚持、偏向行动、创意丰富且重视自主，动机常源于好奇心。\n",
+        "title": "研究人员与创始人",
+        "sourceUri": "https://blog.samaltman.com/researchers-and-founders",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2020-06-19T17:39:12.000Z",
+            "discoveredAt": "2020-06-19T17:39:12.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o004cslc3c3zhbdgm",
+            "originalUrl": "https://blog.samaltman.com/researchers-and-founders",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o004cslc3c3zhbdgm"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/researchers-and-founders"
+                }
+            ]
+        }
+    },
+    {
+        "id": "cmnw1xr1o004eslc38o600b1y",
+        "body": "YC 曾实验资助无想法的优秀创始人，结果全部失败，证明创始人必须自身擅长产生想法。要身处正确环境：周围需有对未来敏感、乐观、想法丰富的人，远离愤世嫉俗者。关注重大结构性转变，区分真实与虚假趋势。评估想法时考虑能否做大、创始人与公司是否匹配，以及能否解释为何大多数人认为是坏主意但你看到价值。\n",
+        "title": "如何获得创业想法",
+        "sourceUri": "https://blog.samaltman.com/idea-generation",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "source": "aihot",
+            "sourceName": "Sam Altman：Blog（RSS）",
+            "publishedAt": "2020-05-28T19:12:40.000Z",
+            "discoveredAt": "2020-05-28T19:12:40.000Z",
+            "aihotUrl": "https://aihot.virxact.com/items/cmnw1xr1o004eslc38o600b1y",
+            "originalUrl": "https://blog.samaltman.com/idea-generation",
+            "attribution": {
+                "name": "AIHOT",
+                "url": "https://aihot.virxact.com/items/cmnw1xr1o004eslc38o600b1y"
+            },
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "sourceUri": "https://blog.samaltman.com/idea-generation"
+                }
+            ]
+        }
+    },
+    {
+        "id": "horizon:2026-09-06-tech-news-1",
+        "body": "### [Visualizing Rust&\\#x27;s Vtables and dyn Trait Memory Layout](https://sofiabelen.github.io/projects/visualizing-rusts-vtables-how-dyn-trait-works-in-memory/) ⭐️ 7.0/10\nA recent blog post titled “Visualizing Rust’s Vtables: How dyn Trait Works In Memory” walks through the low-level mechanics of runtime polymorphism in Rust, focusing on fat pointers and vtables. It explains that a dyn Trait value is represented as a wide pointer pairing a data address with a pointer to a vtable of method implementations, and it visualizes the in-memory layout to make the indirection concrete. The article contrasts this with C++ virtual tables and discusses edge cases such as zero-sized types and what the borrow checker can and cannot guarantee about pointer identity. It is positioned as an educational deep-dive aimed at Rust developers and language implementers who want to understand the compilation and runtime costs of dynamic dispatch.\n**「Background」** Rust supports two main forms of polymorphism: static dispatch through generics, which monomorphizes code at compile time, and dynamic dispatch through trait objects written as \\`dyn Trait\\`. A trait object is represented at runtime as a fat pointer consisting of two words — a pointer to the concrete type&\\#x27;s data and a pointer to a compiler-generated vtable that holds function pointers for each trait method, enabling calls to be resolved at runtime. The traits eligible for use behind \\`dyn Trait\\` must follow a set of rules historically called &\\#x27;object safety&\\#x27; but now officially termed &\\#x27;dyn compatibility&\\#x27;, ensuring every method can be dispatched through a vtable without knowing the concrete type.\n**「Community Discussion」** Commenters generally praised the post’s clarity and writing style, with one reader highlighting it as sparking joy, and another recommended cheats.rs \\(and its memory layout section\\) as a complementary resource. A substantive correction came from a reader who noted that the article still uses the term “object safety,” whereas current Rust documentation refers to this idea as “dyn compatibility,” reflecting the fact that the property exists primarily to allow dyn Trait usage. Other commenters raised follow-up questions, including whether the vtable is literally a flat list of function pointers and why programmers cannot query the borrow checker for ZST identity information even though the compiler knows it.",
+        "title": "Visualizing Rust&\\#x27;s Vtables and dyn Trait Memory Layout",
+        "sourceUri": "https://sofiabelen.github.io/projects/visualizing-rusts-vtables-how-dyn-trait-works-in-memory/",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "lang": "en",
+            "date": "2026-09-06",
+            "profile": "tech-news",
+            "score": 7,
+            "source": "hackernews",
+            "source_line": "hackernews · torutofu · Sep 5, 13:31 · [Discussion](https://news.ycombinator.com/item?id=49576343)",
+            "tags": ["rust", "dynamic-dispatch", "memory-layout", "systems-programming", "programming-languages"],
+            "references": [
+                "https://www.stanza.dev/courses/rust-traits/dispatch/rust-traits-dynamic-dispatch",
+                "https://www.eventhelix.com/rust/rust-to-assembly-tail-call-via-vtable-and-box-trait-free/",
+                "https://www.stanza.dev/courses/rust-traits/dispatch/rust-traits-dyn-compat-rules"
+            ],
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://sofiabelen.github.io/projects/visualizing-rusts-vtables-how-dyn-trait-works-in-memory/"
+                },
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://sofiabelen.github.io/projects/visualizing-rusts-vtables-how-dyn-trait-works-in-memory/"
+                }
+            ]
+        }
+    },
+    {
+        "id": "horizon:2026-09-06-tech-news-2",
+        "body": "### [Declarative Attention Lets LLMs Self-Skip KV Cache Reads](https://www.reddit.com/r/MachineLearning/comments/1w7sgf3/language_models_can_control_their_own_attention_r/) ⭐️ 7.0/10\nA research paper introduces Declarative Attention \\(DA\\), a protocol that lets language models self-declare which context regions they need to attend to during chain-of-thought generation, partitioning output into three modes: &lt;global&gt; \\(full context\\), &lt;focus&gt; \\(a specific region\\), and &lt;local&gt; \\(recent output only\\). The inference engine parses these declarations like tool calls and skips most of the KV cache read, addressing the long-context bottleneck where attention layers otherwise scan the full context every step. Unlike prior extrinsic proxy-scoring methods that still incur O\\(N\\) per step, DA takes an intrinsic approach that leverages the model&\\#x27;s own sense of relevance. Under zero-shot evaluation across 15 long-context tasks, DA on off-the-shelf Gemma-4-31B and Qwen-3.6-27B cuts total attended tokens during decoding by 52.0% and 31.1% respectively, with modest accuracy drops of 1.27pp and 2.75pp that shrink with model scale. The authors frame DA as a new axis of sparse attention and note further gains may come from future training-based extensions.\n**「Background」** During LLM inference, a key-value \\(KV\\) cache stores previously computed attention states for each token, and generating each new token typically requires reading from this cache. As context lengths grow into the hundreds of thousands or millions of tokens, scanning the full KV cache for every generated token becomes a dominant cost, since most of the context is irrelevant to the current answer. Prior work mitigates this with sparse-attention methods that pre-select relevant tokens via lightweight proxy scores, but these extrinsic selectors still scale linearly with context length per step.\n**「Impact」** For practitioners running long-context inference with off-the-shelf models such as Gemma-4-31B and Qwen-3.6-27B, DA can roughly halve KV cache reads during decoding with only a few percentage points of accuracy loss, with the accuracy gap narrowing at larger scales.\n**「Community Discussion」** Commenters expressed interest in trying a custom vLLM Gemma 31B implementation and surprise that such an intrinsic approach had not been pursued earlier, though substantive technical debate about the method was limited.\n## Financial News",
+        "title": "Declarative Attention Lets LLMs Self-Skip KV Cache Reads",
+        "sourceUri": "https://www.reddit.com/r/MachineLearning/comments/1w7sgf3/language_models_can_control_their_own_attention_r/",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "lang": "en",
+            "date": "2026-09-06",
+            "profile": "tech-news",
+            "score": 7,
+            "source": "reddit",
+            "source_line": "reddit · r/MachineLearning · eigenlaplace · Sep 5, 06:07",
+            "tags": [
+                "long-context-inference",
+                "kv-cache-optimization",
+                "llm-efficiency",
+                "attention-mechanisms",
+                "research-paper"
+            ],
+            "references": [
+                "https://aclanthology.org/2025.acl-long.703.pdf",
+                "https://hyper.ai/en/papers/2609.02737",
+                "https://academy.dair.ai/papers/language-models-can-control-their-own-attention-2609.02737"
+            ],
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://www.reddit.com/r/MachineLearning/comments/1w7sgf3/language_models_can_control_their_own_attention_r/"
+                },
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://www.reddit.com/r/MachineLearning/comments/1w7sgf3/language_models_can_control_their_own_attention_r/"
+                }
+            ]
+        }
+    },
+    {
+        "id": "horizon:2026-09-06-finance-news-1",
+        "body": "### [U.S. strikes Iranian oil tankers after missile attacks on Navy ships](https://news.google.com/rss/articles/CBMiekFVX3lxTE0wOTZYWC1FMTRxUzBPV2lSZlBIQS1mNHZTN2l1VlFRZW80SGMzWUtKT01Ca0xncjNiZHk4dXNRTGRFRnRuQnYtU3NSV2FkUUhyME13RllPYXZQNzJXWDVfYnVqN0p3cW5JeXljVWotcjFiSmI3dXZlTkhn?oc=5) ⭐️ 7.0/10\nThe U.S. military struck three Iranian oil tankers in retaliation for Iranian missile attacks on U.S. Navy ships, according to headline reports from NPR, CNN, the Wall Street Journal, and Reuters.\n**「Background」** This exchange is part of the 2026 Strait of Hormuz crisis, in which U.S. Central Command \\(CENTCOM\\) struck Iranian military and radar sites on June 26 and an oil tanker was hit on June 27, amid a broader U.S.-Iran military confrontation that escalated through 2026.\n**「Impact on shipping and oil markets」** Following the strikes, tanker rates climbed to their highest level since 2023 as shipowners raised fees for calling at Persian Gulf ports, raising shipping costs for oil-importing businesses and the risk of higher fuel prices for consumers.\n## AI Creator Radar",
+        "title": "U.S. strikes Iranian oil tankers after missile attacks on Navy ships",
+        "sourceUri": "https://news.google.com/rss/articles/CBMiekFVX3lxTE0wOTZYWC1FMTRxUzBPV2lSZlBIQS1mNHZTN2l1VlFRZW80SGMzWUtKT01Ca0xncjNiZHk4dXNRTGRFRnRuQnYtU3NSV2FkUUhyME13RllPYXZQNzJXWDVfYnVqN0p3cW5JeXljVWotcjFiSmI3dXZlTkhn?oc=5",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "lang": "en",
+            "date": "2026-09-06",
+            "profile": "finance-news",
+            "score": 7,
+            "source": "rss",
+            "source_line": "rss · Google News Top Stories · Sep 6, 01:07",
+            "tags": ["geopolitics", "oil-markets", "US-Iran", "military-conflict", "energy-supply"],
+            "references": [
+                "https://en.wikipedia.org/wiki/2026_Strait_of_Hormuz_crisis",
+                "https://www.ttnews.com/articles/tanker-rates-soar-iran",
+                "https://www.straitstimes.com/business/companies-markets/oil-tanker-rates-soar-to-highest-since-2023-on-middle-east-conflict"
+            ],
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://news.google.com/rss/articles/CBMiekFVX3lxTE0wOTZYWC1FMTRxUzBPV2lSZlBIQS1mNHZTN2l1VlFRZW80SGMzWUtKT01Ca0xncjNiZHk4dXNRTGRFRnRuQnYtU3NSV2FkUUhyME13RllPYXZQNzJXWDVfYnVqN0p3cW5JeXljVWotcjFiSmI3dXZlTkhn?oc=5"
+                },
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://news.google.com/rss/articles/CBMiekFVX3lxTE0wOTZYWC1FMTRxUzBPV2lSZlBIQS1mNHZTN2l1VlFRZW80SGMzWUtKT01Ca0xncjNiZHk4dXNRTGRFRnRuQnYtU3NSV2FkUUhyME13RllPYXZQNzJXWDVfYnVqN0p3cW5JeXljVWotcjFiSmI3dXZlTkhn?oc=5"
+                }
+            ]
+        }
+    },
+    {
+        "id": "horizon:2026-09-06-ai-creator-1",
+        "body": "### [Driving Blender from a coding agent on macOS](https://simonwillison.net/2026/Sep/5/blender-coding-agents-macos/) ⭐️ 6.0/10\nSimon Willison published a TIL post describing how he used ChatGPT Codex on macOS to control Blender through its Python API and render a 3D scene of a pelican riding a bicycle. The setup required installing the full Blender Mac application from blender.org, after which he prompted the coding agent with instructions such as ‘Use the already install /Applications/Blender to render a scene of a pelican riding a bicycle,’ followed by iterative refinement prompts \\(‘add a background and a lot of flair,’ then ‘make it a whole lot better’\\). The resulting image and the underlying Python script are published in a GitHub repository named simonw/gpt-6-astra-blender-pelican-bicycle, giving readers a reproducible example of a coding agent driving an installed desktop creative tool.\n**「Why it matters now」** It demonstrates that a general-purpose coding agent can drive installed desktop software through its existing Python API, with no extra plugin work, which lowers the setup cost for similar experiments with other creative tools. The post is framed as a personal hands-on test rather than a product announcement, and any broader implications for design pipelines remain untested in the source.\n**「Content angle」** Possible angle: walk through how ChatGPT Codex was prompted to call Blender&\\#x27;s Python API on macOS, using the published pelican-on-a-bicycle script as a reproducible reference example rather than as a showcase of render quality.",
+        "title": "Driving Blender from a coding agent on macOS",
+        "sourceUri": "https://simonwillison.net/2026/Sep/5/blender-coding-agents-macos/",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "lang": "en",
+            "date": "2026-09-06",
+            "profile": "ai-creator",
+            "score": 6,
+            "source": "rss",
+            "source_line": "rss · Simon Willison · Sep 5, 15:51",
+            "tags": ["Blender", "编程代理", "ChatGPT", "3D生成", "AI创意工具"],
+            "references": [],
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://simonwillison.net/2026/Sep/5/blender-coding-agents-macos/"
+                },
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://simonwillison.net/2026/Sep/5/blender-coding-agents-macos/"
+                }
+            ]
+        }
+    },
+    {
+        "id": "horizon:2026-09-06-ai-creator-2",
+        "body": "### [Simon Willison surfaces GPT-6 Astra developer video](https://simonwillison.net/2026/Sep/5/introducing-gpt-6-astra-for-developers/) ⭐️ 5.0/10\nSimon Willison posted a link on his blog to a YouTube video titled Introducing GPT-6 Astra for developers, having spotted it via a Hacker News comment. The only quoted passage from the video claims that Astra offers stronger attention to detail, better prompt understanding, more sophisticated outputs, and particularly excels at generating 3D models, citing renderings of gardens, shipyards, animals, cityscapes, and Dyson spheres as examples. The source material provides no model specifications, pricing, release timing, or availability details, and the post&\\#x27;s September 2026 date falls outside what can be independently verified from the supplied evidence.\n**「Why now」** A well-known independent AI blogger linking to a video that names GPT-6 Astra is a notable release signal, but the blog post itself is too thin to confirm a launch — any capability claims remain tied to a single descriptive quote until OpenAI publishes its own materials.\n**「Content angle」** Content angle: anchor on the explicitly named 3D model generation capability as the single verifiable hook, wait for OpenAI&\\#x27;s own announcement before comparing Astra with existing 3D generation tools, and avoid treating either the GPT-6 label or the pelican-riding-a-bicycle demo detail as confirmation of a released product.",
+        "title": "Simon Willison surfaces GPT-6 Astra developer video",
+        "sourceUri": "https://simonwillison.net/2026/Sep/5/introducing-gpt-6-astra-for-developers/",
+        "mediaType": "text/markdown",
+        "metadata": {
+            "lang": "en",
+            "date": "2026-09-06",
+            "profile": "ai-creator",
+            "score": 5,
+            "source": "rss",
+            "source_line": "rss · Simon Willison · Sep 5, 23:27",
+            "tags": ["GPT-6", "OpenAI", "3D生成", "多模态模型", "模型发布信号"],
+            "references": [],
+            "sources": [
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://simonwillison.net/2026/Sep/5/introducing-gpt-6-astra-for-developers/"
+                },
+                {
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "sourceUri": "https://simonwillison.net/2026/Sep/5/introducing-gpt-6-astra-for-developers/"
+                }
+            ]
+        }
+    }
+]
