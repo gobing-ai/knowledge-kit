@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-07T21:49:30.318Z",
+  "generatedAt": "2026-09-07T22:46:49.489Z",
   "spurVersion": "0.3.75",
   "selector": {
     "since": null,
@@ -14,11 +14,11 @@
     {
       "source": "pi",
       "status": "ok",
-      "files": 2152,
-      "messages": 327823,
-      "toolCalls": 148334,
+      "files": 2153,
+      "messages": 328356,
+      "toolCalls": 148368,
       "unknownRecords": 0,
-      "lastImportedAt": "2026-09-07T21:20:00.561Z",
+      "lastImportedAt": "2026-09-07T22:20:01.003Z",
       "parseErrors": 0,
       "validationErrors": 0,
       "parseErrorSamples": [],
@@ -27,11 +27,11 @@
     {
       "source": "claude",
       "status": "ok",
-      "files": 293,
-      "messages": 128736,
-      "toolCalls": 22670,
+      "files": 294,
+      "messages": 129263,
+      "toolCalls": 22768,
       "unknownRecords": 0,
-      "lastImportedAt": "2026-09-07T21:20:05.284Z",
+      "lastImportedAt": "2026-09-07T22:20:04.149Z",
       "parseErrors": 0,
       "validationErrors": 0,
       "parseErrorSamples": [],
@@ -105,11 +105,11 @@
     {
       "source": "omp",
       "status": "ok",
-      "files": 1116,
-      "messages": 327496,
-      "toolCalls": 121088,
+      "files": 1117,
+      "messages": 327664,
+      "toolCalls": 121147,
       "unknownRecords": 0,
-      "lastImportedAt": "2026-09-07T21:20:12.736Z",
+      "lastImportedAt": "2026-09-07T22:20:11.762Z",
       "parseErrors": 0,
       "validationErrors": 0,
       "parseErrorSamples": [],
@@ -143,19 +143,19 @@
     }
   ],
   "totals": {
-    "inputTokens": 51233392140,
-    "outputTokens": 155359454,
-    "cacheReadTokens": 42364110883,
+    "inputTokens": 51264742657,
+    "outputTokens": 155502015,
+    "cacheReadTokens": 42393668712,
     "cacheWriteTokens": 64396572,
-    "costUsd": 9045.427962250009,
-    "records": 1803695,
-    "recordsWithUsage": 324339,
-    "messages": 1803695,
-    "toolCalls": 523234,
-    "durationMs": 929781771,
-    "durationUnmeasured": 373840,
-    "assistantDurationMs": 4754131126.612799,
-    "assistantDurationUnmeasured": 155875
+    "costUsd": 9047.93345525001,
+    "records": 1804459,
+    "recordsWithUsage": 324586,
+    "messages": 1804459,
+    "toolCalls": 523425,
+    "durationMs": 930244585,
+    "durationUnmeasured": 373972,
+    "assistantDurationMs": 4756692326.333465,
+    "assistantDurationUnmeasured": 155877
   },
   "bySource": {
     "agy": {
@@ -174,19 +174,19 @@
       "assistantDurationUnmeasured": 81851
     },
     "claude": {
-      "inputTokens": 5236362592,
-      "outputTokens": 20840792,
-      "cacheReadTokens": 5113761693,
+      "inputTokens": 5262539316,
+      "outputTokens": 20939284,
+      "cacheReadTokens": 5138626205,
       "cacheWriteTokens": 60468985,
-      "costUsd": 306.975512,
-      "records": 114030,
-      "recordsWithUsage": 27685,
-      "messages": 114030,
-      "toolCalls": 22670,
+      "costUsd": 308.780184,
+      "records": 114557,
+      "recordsWithUsage": 27874,
+      "messages": 114557,
+      "toolCalls": 22768,
       "durationMs": 0,
-      "durationUnmeasured": 22670,
-      "assistantDurationMs": 180424460,
-      "assistantDurationUnmeasured": 113
+      "durationUnmeasured": 22768,
+      "assistantDurationMs": 182134765,
+      "assistantDurationUnmeasured": 115
     },
     "codex": {
       "inputTokens": 10530605251,
@@ -234,18 +234,18 @@
       "assistantDurationUnmeasured": 49319
     },
     "omp": {
-      "inputTokens": 14687480184,
-      "outputTokens": 42554147,
-      "cacheReadTokens": 13841357693,
+      "inputTokens": 14690271988,
+      "outputTokens": 42585126,
+      "cacheReadTokens": 13843855037,
       "cacheWriteTokens": 1403653,
-      "costUsd": 1058.468734999999,
-      "records": 325843,
-      "recordsWithUsage": 106904,
-      "messages": 325843,
-      "toolCalls": 121088,
-      "durationMs": 509284695,
+      "costUsd": 1058.918089999999,
+      "records": 326011,
+      "recordsWithUsage": 106939,
+      "messages": 326011,
+      "toolCalls": 121147,
+      "durationMs": 509747509,
       "durationUnmeasured": 38,
-      "assistantDurationMs": 1300397853.6127994,
+      "assistantDurationMs": 1301134843.3334653,
       "assistantDurationUnmeasured": 2
     },
     "opencode": {
@@ -264,18 +264,18 @@
       "assistantDurationUnmeasured": 0
     },
     "pi": {
-      "inputTokens": 17028203692,
-      "outputTokens": 66694871,
-      "cacheReadTokens": 16446193223,
+      "inputTokens": 17030585681,
+      "outputTokens": 66707961,
+      "cacheReadTokens": 16448389196,
       "cacheWriteTokens": 124465,
-      "costUsd": 915.8205829999999,
-      "records": 326218,
-      "recordsWithUsage": 134869,
-      "messages": 326218,
-      "toolCalls": 148334,
+      "costUsd": 916.0720489999999,
+      "records": 326287,
+      "recordsWithUsage": 134892,
+      "messages": 326287,
+      "toolCalls": 148368,
       "durationMs": 0,
-      "durationUnmeasured": 148334,
-      "assistantDurationMs": 2425499051,
+      "durationUnmeasured": 148368,
+      "assistantDurationMs": 2425612956,
       "assistantDurationUnmeasured": 10288
     }
   },
@@ -286,9 +286,9 @@
       "cacheReadTokens": 0,
       "cacheWriteTokens": 0,
       "costUsd": 0,
-      "records": 629421,
+      "records": 629426,
       "recordsWithUsage": 0,
-      "messages": 629421,
+      "messages": 629426,
       "toolCalls": 110597,
       "durationMs": 18774556,
       "durationUnmeasured": 97773,
@@ -416,19 +416,19 @@
       "assistantDurationUnmeasured": 621
     },
     "k3": {
-      "inputTokens": 1966671713,
-      "outputTokens": 6400501,
-      "cacheReadTokens": 1910953350,
+      "inputTokens": 1993709022,
+      "outputTokens": 6506016,
+      "cacheReadTokens": 1936545158,
       "cacheWriteTokens": 0,
-      "costUsd": 87.72086800000001,
-      "records": 50011,
-      "recordsWithUsage": 11286,
-      "messages": 50011,
-      "toolCalls": 10343,
-      "durationMs": 64087768,
-      "durationUnmeasured": 5176,
-      "assistantDurationMs": 186956997.8313768,
-      "assistantDurationUnmeasured": 38
+      "costUsd": 89.693944,
+      "records": 50808,
+      "recordsWithUsage": 11486,
+      "messages": 50808,
+      "toolCalls": 10459,
+      "durationMs": 64096540,
+      "durationUnmeasured": 5274,
+      "assistantDurationMs": 188955314.8247118,
+      "assistantDurationUnmeasured": 40
     },
     "claude-3-5-sonnet-20241022": {
       "inputTokens": 0,
@@ -701,18 +701,18 @@
       "assistantDurationUnmeasured": 30654
     },
     "MiniMax-M3": {
-      "inputTokens": 1157658999,
-      "outputTokens": 3149771,
-      "cacheReadTokens": 1123812103,
+      "inputTokens": 1160040988,
+      "outputTokens": 3162861,
+      "cacheReadTokens": 1126008076,
       "cacheWriteTokens": 0,
-      "costUsd": 49.59575100000001,
-      "records": 17057,
-      "recordsWithUsage": 8025,
-      "messages": 17057,
-      "toolCalls": 8296,
+      "costUsd": 49.847217,
+      "records": 17125,
+      "recordsWithUsage": 8048,
+      "messages": 17125,
+      "toolCalls": 8330,
       "durationMs": 16791214,
-      "durationUnmeasured": 2863,
-      "assistantDurationMs": 94336588.69750279,
+      "durationUnmeasured": 2897,
+      "assistantDurationMs": 94450493.69750279,
       "assistantDurationUnmeasured": 769
     },
     "astron-code-latest": {
@@ -896,18 +896,18 @@
       "assistantDurationUnmeasured": 570
     },
     "glm-5.3-flash": {
-      "inputTokens": 2960573671,
-      "outputTokens": 25011595,
-      "cacheReadTokens": 2772224896,
+      "inputTokens": 2962504890,
+      "outputTokens": 25035551,
+      "cacheReadTokens": 2773994944,
       "cacheWriteTokens": 0,
-      "costUsd": 313.40675,
-      "records": 81415,
-      "recordsWithUsage": 30308,
-      "messages": 81415,
-      "toolCalls": 34273,
-      "durationMs": 25180226,
+      "costUsd": 313.687701,
+      "records": 81309,
+      "recordsWithUsage": 30332,
+      "messages": 81309,
+      "toolCalls": 34314,
+      "durationMs": 25634268,
       "durationUnmeasured": 31407,
-      "assistantDurationMs": 655066863.687947,
+      "assistantDurationMs": 655515841.415278,
       "assistantDurationUnmeasured": 3814
     },
     "kimi-k3": {
@@ -1684,9 +1684,9 @@
       "cacheReadTokens": 0,
       "cacheWriteTokens": 0,
       "costUsd": 0,
-      "records": 44798,
+      "records": 44909,
       "recordsWithUsage": 0,
-      "messages": 44798,
+      "messages": 44909,
       "toolCalls": 429,
       "durationMs": 0,
       "durationUnmeasured": 429,
@@ -6127,38 +6127,38 @@
     },
     {
       "date": "2026-09-07",
-      "inputTokens": 489860629,
-      "outputTokens": 3422697,
-      "cacheReadTokens": 410430451,
+      "inputTokens": 521211146,
+      "outputTokens": 3565258,
+      "cacheReadTokens": 439988280,
       "cacheWriteTokens": 1624085,
-      "costUsd": 47.668047,
-      "records": 32072,
-      "recordsWithUsage": 4316,
-      "messages": 32072,
-      "toolCalls": 8380,
-      "durationMs": 8527858,
-      "durationUnmeasured": 7354,
-      "assistantDurationMs": 83942859.20429102,
-      "assistantDurationUnmeasured": 3886
+      "costUsd": 50.173539999999996,
+      "records": 32725,
+      "recordsWithUsage": 4563,
+      "messages": 32725,
+      "toolCalls": 8571,
+      "durationMs": 8990672,
+      "durationUnmeasured": 7486,
+      "assistantDurationMs": 86504058.92495702,
+      "assistantDurationUnmeasured": 3888
     }
   ],
   "byTool": [
     {
       "toolName": "bash",
-      "calls": 143532,
+      "calls": 143583,
       "errors": 31,
-      "durationMsTotal": 617505956,
-      "durationMsMean": 11732,
+      "durationMsTotal": 617577264,
+      "durationMsMean": 11729,
       "durationMsMax": 40301171,
-      "durationUnmeasured": 90901,
+      "durationUnmeasured": 90931,
       "resultBytes": 9100600
     },
     {
       "toolName": "hub",
-      "calls": 887,
+      "calls": 889,
       "errors": 0,
-      "durationMsTotal": 215093128,
-      "durationMsMean": 243869,
+      "durationMsTotal": 215475175,
+      "durationMsMean": 243750,
       "durationMsMax": 2765275,
       "durationUnmeasured": 5,
       "resultBytes": 0
@@ -6215,12 +6215,12 @@
     },
     {
       "toolName": "read",
-      "calls": 66910,
+      "calls": 66918,
       "errors": 57,
-      "durationMsTotal": 3964061,
+      "durationMsTotal": 3965332,
       "durationMsMean": 94,
       "durationMsMax": 18849,
-      "durationUnmeasured": 25137,
+      "durationUnmeasured": 25139,
       "resultBytes": 17209822
     },
     {
@@ -6265,9 +6265,9 @@
     },
     {
       "toolName": "write",
-      "calls": 10027,
+      "calls": 10045,
       "errors": 8,
-      "durationMsTotal": 1471763,
+      "durationMsTotal": 1478266,
       "durationMsMean": 345,
       "durationMsMax": 37202,
       "durationUnmeasured": 5766,
@@ -6275,9 +6275,9 @@
     },
     {
       "toolName": "grep",
-      "calls": 17096,
+      "calls": 17097,
       "errors": 16,
-      "durationMsTotal": 706213,
+      "durationMsTotal": 706443,
       "durationMsMean": 76,
       "durationMsMax": 29628,
       "durationUnmeasured": 7825,
@@ -6285,9 +6285,9 @@
     },
     {
       "toolName": "todo",
-      "calls": 7924,
+      "calls": 7934,
       "errors": 0,
-      "durationMsTotal": 699324,
+      "durationMsTotal": 700448,
       "durationMsMean": 183,
       "durationMsMax": 16826,
       "durationUnmeasured": 4117,
@@ -6335,9 +6335,9 @@
     },
     {
       "toolName": "glob",
-      "calls": 1223,
+      "calls": 1224,
       "errors": 0,
-      "durationMsTotal": 178917,
+      "durationMsTotal": 179248,
       "durationMsMean": 147,
       "durationMsMax": 5010,
       "durationUnmeasured": 11,
@@ -37307,6 +37307,17 @@
       "repeats": 13,
       "firstSeq": 184,
       "lastSeq": 382
+    },
+    {
+      "source": "pi",
+      "sessionId": "2026-09-07T22-08-07-208Z_01a07dea-1227-7146-b8d8-6c006c7d40f4",
+      "model": "MiniMax-M3",
+      "startedAt": "2026-09-07T22:08:39.194Z",
+      "toolName": "bash",
+      "argsDigest": "0a615b1b612f8b4171dfc9c75e2996a5cd363c6650634e430bbca111e21b0750",
+      "repeats": 13,
+      "firstSeq": 15,
+      "lastSeq": 62
     },
     {
       "source": "pi",
@@ -72543,6 +72554,28 @@
     },
     {
       "source": "claude",
+      "sessionId": "27b5cbd8-89f4-4e78-a4eb-e9d969eb1f50",
+      "model": "k3",
+      "startedAt": "2026-09-07T21:38:49.266Z",
+      "toolName": "Bash",
+      "argsDigest": "9d4269184d70b2d06bfc34175f285ef7924144e1e246242f287d0666079811e4",
+      "repeats": 4,
+      "firstSeq": 0,
+      "lastSeq": 0
+    },
+    {
+      "source": "claude",
+      "sessionId": "27b5cbd8-89f4-4e78-a4eb-e9d969eb1f50",
+      "model": "k3",
+      "startedAt": "2026-09-07T21:12:00.203Z",
+      "toolName": "Read",
+      "argsDigest": "566c843a496336f22cf2f6d06ee1dac2dac0d4c5bc24a490974f448960cdf5b2",
+      "repeats": 4,
+      "firstSeq": 0,
+      "lastSeq": 0
+    },
+    {
+      "source": "claude",
       "sessionId": "32372d3e-ccf7-4298-9a7d-61b3f35c72ab",
       "model": "claude-opus-5",
       "startedAt": "2026-08-10T01:00:34.235Z",
@@ -87453,17 +87486,6 @@
       "startedAt": "2026-09-01T01:06:23.291Z",
       "toolName": "Bash",
       "argsDigest": "27366b8d16b9a4b31f8352fa8c8ec9edf8e8e89d65d4712da84a0fcc378f916c",
-      "repeats": 3,
-      "firstSeq": 0,
-      "lastSeq": 0
-    },
-    {
-      "source": "claude",
-      "sessionId": "27b5cbd8-89f4-4e78-a4eb-e9d969eb1f50",
-      "model": "k3",
-      "startedAt": "2026-09-07T21:12:00.203Z",
-      "toolName": "Read",
-      "argsDigest": "566c843a496336f22cf2f6d06ee1dac2dac0d4c5bc24a490974f448960cdf5b2",
       "repeats": 3,
       "firstSeq": 0,
       "lastSeq": 0
@@ -111188,7 +111210,7 @@
   "warnings": [
     {
       "code": "derived-unattributed-time",
-      "detail": "43201883042.5768ms could not be attributed to llm/tool/idle because some durations were unmeasured. Check the stepSupport matrix for per-source coverage before treating this as workload."
+      "detail": "43208370221.5768ms could not be attributed to llm/tool/idle because some durations were unmeasured. Check the stepSupport matrix for per-source coverage before treating this as workload."
     }
   ],
   "pairings": [
@@ -112139,33 +112161,33 @@
       "invalidPhaseCount": 0
     },
     "timeDecomposition": {
-      "llmMs": 4848023943.612799,
-      "toolMs": 929781771,
-      "idleMs": 34497274870.405716,
-      "unattributedMs": 43201883042.5768,
-      "spanMs": 83272907667,
+      "llmMs": 4850585143.333465,
+      "toolMs": 930244585,
+      "idleMs": 34501446341.68506,
+      "unattributedMs": 43208370221.5768,
+      "spanMs": 83286590331,
       "spanExcludedSessions": 259
     },
     "bottlenecks": [
       {
         "label": "unattributed",
-        "ms": 43201883042.5768,
-        "share": 0.5187987816558153
+        "ms": 43208370221.5768,
+        "share": 0.5187914410934201
       },
       {
         "label": "idle",
-        "ms": 34497274870.405716,
-        "share": 0.41426768725738333
+        "ms": 34501446341.68506,
+        "share": 0.4142497154051859
       },
       {
         "label": "llm",
-        "ms": 4848023943.612799,
-        "share": 0.05821850202468683
+        "ms": 4850585143.333465,
+        "share": 0.05823968929519299
       },
       {
         "label": "tool",
-        "ms": 929781771,
-        "share": 0.011165477428962898
+        "ms": 930244585,
+        "share": 0.01116920000330179
       }
     ]
   },
@@ -112850,11 +112872,11 @@
     },
     {
       "source": "claude",
-      "assistantSteps": 42391,
-      "stepsWithUsage": 42391,
-      "stepsWithDuration": 42190,
-      "stepsWithDerivedDuration": 42190,
-      "stepsWithCacheRead": 42391
+      "assistantSteps": 42580,
+      "stepsWithUsage": 42580,
+      "stepsWithDuration": 42377,
+      "stepsWithDerivedDuration": 42377,
+      "stepsWithCacheRead": 42580
     },
     {
       "source": "codex",
@@ -112882,11 +112904,11 @@
     },
     {
       "source": "omp",
-      "assistantSteps": 106904,
-      "stepsWithUsage": 106904,
-      "stepsWithDuration": 106902,
+      "assistantSteps": 106939,
+      "stepsWithUsage": 106939,
+      "stepsWithDuration": 106937,
       "stepsWithDerivedDuration": 403,
-      "stepsWithCacheRead": 106904
+      "stepsWithCacheRead": 106939
     },
     {
       "source": "opencode",
@@ -112898,17 +112920,17 @@
     },
     {
       "source": "pi",
-      "assistantSteps": 134387,
-      "stepsWithUsage": 134387,
-      "stepsWithDuration": 124099,
-      "stepsWithDerivedDuration": 124099,
-      "stepsWithCacheRead": 134387
+      "assistantSteps": 134410,
+      "stepsWithUsage": 134410,
+      "stepsWithDuration": 124122,
+      "stepsWithDerivedDuration": 124122,
+      "stepsWithCacheRead": 134410
     }
   ],
   "population": {
-    "sessions": 5201,
+    "sessions": 5203,
     "tools": 256,
-    "loops": 9507,
+    "loops": 9509,
     "warnings": 1,
     "appliedTop": 20
   },
