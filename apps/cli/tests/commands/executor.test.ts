@@ -44,16 +44,30 @@ describe('registerExecutorCommand', () => {
         expect(cmd?.options.find((o) => o.long === '--plugins-root')?.mandatory).toBe(false);
     });
 
-    it('registers executor fan-in with repeatable --in and required --out', () => {
+    it('registers executor fan-in with repeatable --in/--source, source timeout (+ per-source override), and required --out', () => {
         const program = new Command();
         registerExecutorCommand(program);
 
         const cmd = program.commands.find((c) => c.name() === 'executor')?.commands.find((c) => c.name() === 'fan-in');
         expect(cmd).toBeDefined();
+        const longs = cmd?.options.map((o) => o.long) ?? [];
+        expect(longs).toEqual(
+            expect.arrayContaining(['--in', '--source', '--source-timeout', '--source-timeout-override', '--out']),
+        );
+        // The hidden one-release `fanin` alias registers the same flags (ADR-011 R4).
+        const alias = program.commands.find((c) => c.name() === 'fanin');
+        expect(alias?.options.map((o) => o.long)).toEqual(
+            expect.arrayContaining(['--in', '--source', '--source-timeout', '--source-timeout-override', '--out']),
+        );
         const inOpt = cmd?.options.find((o) => o.long === '--in');
         const outOpt = cmd?.options.find((o) => o.long === '--out');
-        expect(inOpt?.required).toBe(true);
-        expect(outOpt?.required).toBe(true);
+        const sourceOpt = cmd?.options.find((o) => o.long === '--source');
+        // --in is optional at parse time: source-runner mode (--source) replaces it.
+        // "at least one --in or --source" is enforced at runtime (exit 2).
+        // (commander: `mandatory` = requiredOption, `required` = <value> placeholder.)
+        expect(inOpt?.mandatory).toBe(false);
+        expect(sourceOpt?.mandatory).toBe(false);
+        expect(outOpt?.mandatory).toBe(true);
     });
 
     it('registers executor fan-out with the shipped flags (--content/--out required)', () => {
@@ -165,6 +179,33 @@ describe('registerExecutorCommand', () => {
             ]);
             // The entry's own exit code (3) surfaces through the CLI, not collapsed to 1.
             expect(code).toBe(3);
+        } finally {
+            restoreSilence();
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('fan-in --source-timeout-override parses through the command; unknown plugin exits 2', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-cmd-fanin-override');
+        await mkdir(tmpDir, { recursive: true });
+
+        const restoreSilence = silenceOutput();
+        try {
+            // Exercises the full chain: commander parses the repeatable flag (collector),
+            // runFaninAction rebuilds argv, runFanin rejects a plugin outside --source.
+            const code = await main([
+                'node',
+                'test',
+                'executor',
+                'fan-in',
+                '--source',
+                `p:${join(tmpDir, 'in.json')}`,
+                '--source-timeout-override',
+                'other-plugin:100',
+                '--out',
+                join(tmpDir, 'merged.json'),
+            ]);
+            expect(code).toBe(2);
         } finally {
             restoreSilence();
             await rm(tmpDir, { recursive: true, force: true });

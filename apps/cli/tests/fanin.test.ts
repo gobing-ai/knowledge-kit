@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
@@ -240,6 +240,514 @@ describe('runFanin', () => {
 
             expect(code).toBe(1);
             expect(errLog()).toContain('Failed to write output file');
+        });
+    });
+});
+
+/** Options for a fixture ingestion plugin written by {@link writeFixtureIngestionPlugin}. */
+interface FixturePluginOptions {
+    /** Sleep this many ms before writing output (concurrency / timeout tests). */
+    sleepMs?: number;
+    /** Exit with this code instead of writing output (failure tests). */
+    exitCode?: number;
+    /** Emit this many chars of stderr before the failure exit (sourceErrors truncation-cap test). */
+    stderrChars?: number;
+    /** Override the written Doc id (defaults to the plugin name). */
+    docId?: string;
+    /** Register under a non-ingestion kind (kind-mismatch test). */
+    kind?: 'ingestion' | 'generator';
+}
+
+/** Write a fixture plugin named `name` under `pluginsRoot`; its entry honors `--out` per `opts`. */
+function writeFixtureIngestionPlugin(pluginsRoot: string, name: string, opts: FixturePluginOptions = {}): void {
+    const kind = opts.kind ?? 'ingestion';
+    const collection = kind === 'ingestion' ? 'ingestions' : 'generations';
+    const dir = join(pluginsRoot, collection, name);
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'plugin.json'), JSON.stringify({ name, kind, entry: './src/index.ts', version: '1.0.0' }));
+    const lines = [
+        "import { writeFileSync } from 'node:fs';",
+        'const argv = process.argv.slice(2);',
+        "const outPath = argv[argv.indexOf('--out') + 1];",
+    ];
+    if (opts.sleepMs !== undefined) {
+        lines.push(`await Bun.sleep(${opts.sleepMs});`);
+    }
+    if (opts.exitCode !== undefined) {
+        if (opts.stderrChars !== undefined) {
+            lines.push(`console.error('head|' + 'x'.repeat(${opts.stderrChars}) + '|tail');`);
+        } else {
+            lines.push(`console.error('simulated ingestion failure');`);
+        }
+        lines.push(`process.exit(${opts.exitCode});`);
+    } else {
+        const docId = opts.docId ?? name;
+        lines.push(`writeFileSync(outPath, JSON.stringify([{ id: '${docId}', body: 'doc from ${name}' }]));`);
+    }
+    writeFileSync(join(dir, 'src', 'index.ts'), `${lines.join('\n')}\n`);
+}
+
+/** Run `fn` with KK_PLUGIN_PATH pointing at `pluginsRoot` (multi-root discovery), restoring it afterwards. */
+async function withPluginPath<T>(pluginsRoot: string, fn: () => Promise<T>): Promise<T> {
+    const prev = process.env.KK_PLUGIN_PATH;
+    process.env.KK_PLUGIN_PATH = pluginsRoot;
+    try {
+        return await fn();
+    } finally {
+        if (prev === undefined) {
+            delete process.env.KK_PLUGIN_PATH;
+        } else {
+            process.env.KK_PLUGIN_PATH = prev;
+        }
+    }
+}
+
+describe('runFanin source-runner mode (--source)', () => {
+    // Source failures echo via echoError intentionally; capture ts-utils stderr
+    // (instead of monkey-patching a logger) and keep the dots reporter clean.
+    let cap: ReturnType<typeof captureOutput>;
+
+    beforeEach(() => {
+        cap = captureOutput();
+    });
+
+    afterEach(() => {
+        cap.restore();
+    });
+
+    const errLog = (): string => cap.readErr();
+
+    it('R1 — spawns --source plugins concurrently (wall time ≈ slowest source, not the sum)', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-slow-a', { sleepMs: 500, docId: 'a1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-slow-b', { sleepMs: 500, docId: 'b1' });
+            const outFile = join(root, 'merged.json');
+            const inA = join(root, 'a-in.json');
+            const inB = join(root, 'b-in.json');
+            writeFileSync(inA, '[]');
+            writeFileSync(inB, '[]');
+
+            await withPluginPath(pluginsRoot, async () => {
+                const started = Date.now();
+                const code = await runFanin([
+                    '--source',
+                    `fanin-slow-a:${inA}`,
+                    '--source',
+                    `fanin-slow-b:${inB}`,
+                    '--out',
+                    outFile,
+                ]);
+                const elapsed = Date.now() - started;
+
+                expect(code).toBe(0);
+                // Sequential would be ≥ 1200ms (2× 500ms sleeps + 2 process startups); concurrent
+                // ≈ slowest source. The 1500ms ceiling (P3a) leaves headroom for parallel-CI load
+                // while still failing a sequential runner.
+                expect(elapsed).toBeLessThan(1500);
+                expect(elapsed).toBeGreaterThanOrEqual(500);
+            });
+
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            // Merge order = --source declaration order (deterministic output).
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['a1', 'b1']);
+            // Provenance = plugin name in source-runner mode.
+            expect(outData[0].metadata.sources).toEqual([{ file: 'fanin-slow-a' }]);
+            expect(outData[1].metadata.sources).toEqual([{ file: 'fanin-slow-b' }]);
+        });
+    });
+
+    it('one failing source degrades: surviving docs + metadata.sourceErrors entry, exit 0', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ok', { docId: 'ok1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-bad', { exitCode: 3 });
+            const outFile = join(root, 'merged.json');
+            const inOk = join(root, 'ok-in.json');
+            const inBad = join(root, 'bad-in.json');
+            writeFileSync(inOk, '[]');
+            writeFileSync(inBad, '[]');
+
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin(['--source', `fanin-ok:${inOk}`, '--source', `fanin-bad:${inBad}`, '--out', outFile]),
+            );
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['ok1']);
+            const errors = outData[0].metadata.sourceErrors;
+            expect(errors).toHaveLength(1);
+            expect(errors[0].plugin).toBe('fanin-bad');
+            expect(errors[0].error).toContain('simulated ingestion failure');
+            expect(typeof errors[0].durationMs).toBe('number');
+            // Degradations are also echoed to the run output (never swallowed).
+            expect(errLog()).toContain('fanin-bad');
+        });
+    });
+
+    it('a degraded source error string is capped at 2KB before it lands in sourceErrors (P3b)', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ok', { docId: 'ok1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-chatty', { exitCode: 4, stderrChars: 100_000 });
+            const outFile = join(root, 'merged.json');
+            const inOk = join(root, 'ok-in.json');
+            const inBad = join(root, 'bad-in.json');
+            writeFileSync(inOk, '[]');
+            writeFileSync(inBad, '[]');
+
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin(['--source', `fanin-ok:${inOk}`, '--source', `fanin-chatty:${inBad}`, '--out', outFile]),
+            );
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['ok1']);
+            const errors = outData[0].metadata.sourceErrors;
+            expect(errors).toHaveLength(1);
+            // Real stderr is captured (its head survives), the tail is cut, and the
+            // truncation is stated explicitly — never a silent swallow.
+            expect(errors[0].error).toContain('head|');
+            expect(errors[0].error).toContain('truncated');
+            expect(errors[0].error).not.toContain('|tail');
+            // 2048-char head + prefix + truncation marker — never the raw 100k stderr.
+            expect(errors[0].error.length).toBeLessThan(2200);
+        });
+    });
+
+    it('a timed-out source degrades and reports the timeout without aborting siblings', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-fast', { docId: 'fast1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-stuck', { sleepMs: 10_000 });
+            const outFile = join(root, 'merged.json');
+            const inFast = join(root, 'fast-in.json');
+            const inStuck = join(root, 'stuck-in.json');
+            writeFileSync(inFast, '[]');
+            writeFileSync(inStuck, '[]');
+
+            const started = Date.now();
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin([
+                    '--source',
+                    `fanin-fast:${inFast}`,
+                    '--source',
+                    `fanin-stuck:${inStuck}`,
+                    '--source-timeout',
+                    '300',
+                    '--out',
+                    outFile,
+                ]),
+            );
+            const elapsed = Date.now() - started;
+
+            expect(code).toBe(0);
+            // The 10s source was cut at ~300ms; the run did not wait for it.
+            expect(elapsed).toBeLessThan(5000);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['fast1']);
+            const errors = outData[0].metadata.sourceErrors;
+            expect(errors).toHaveLength(1);
+            expect(errors[0].plugin).toBe('fanin-stuck');
+            expect(errors[0].error).toContain('timed out after 300ms');
+            expect(errors[0].durationMs).toBeLessThan(5000);
+        });
+    });
+
+    it('--source-timeout-override extends ONE source past the global leash without touching siblings', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-fast', { docId: 'fast1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-medium', { sleepMs: 500, docId: 'medium1' });
+            const outFile = join(root, 'merged.json');
+            const inFast = join(root, 'fast-in.json');
+            const inMedium = join(root, 'medium-in.json');
+            writeFileSync(inFast, '[]');
+            writeFileSync(inMedium, '[]');
+
+            // Global leash 300ms would cut the 500ms source; its personal override (20s) saves it.
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin([
+                    '--source',
+                    `fanin-ovr-fast:${inFast}`,
+                    '--source',
+                    `fanin-ovr-medium:${inMedium}`,
+                    '--source-timeout',
+                    '300',
+                    '--source-timeout-override',
+                    'fanin-ovr-medium:20000',
+                    '--out',
+                    outFile,
+                ]),
+            );
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['fast1', 'medium1']);
+            expect(outData[0].metadata.sourceErrors).toBeUndefined();
+        });
+    });
+
+    it('--source-timeout-override tightens ONE source below the default without a global flag', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-ok', { docId: 'ok1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-stuck', { sleepMs: 10_000 });
+            const outFile = join(root, 'merged.json');
+            const inOk = join(root, 'ok-in.json');
+            const inStuck = join(root, 'stuck-in.json');
+            writeFileSync(inOk, '[]');
+            writeFileSync(inStuck, '[]');
+
+            // No --source-timeout: the default is 30m, so only the per-source override can cut the stuck source.
+            const started = Date.now();
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin([
+                    '--source',
+                    `fanin-ovr-ok:${inOk}`,
+                    '--source',
+                    `fanin-ovr-stuck:${inStuck}`,
+                    '--source-timeout-override',
+                    'fanin-ovr-stuck:300',
+                    '--out',
+                    outFile,
+                ]),
+            );
+            const elapsed = Date.now() - started;
+
+            expect(code).toBe(0);
+            expect(elapsed).toBeLessThan(5000);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['ok1']);
+            const errors = outData[0].metadata.sourceErrors;
+            expect(errors).toHaveLength(1);
+            expect(errors[0].plugin).toBe('fanin-ovr-stuck');
+            expect(errors[0].error).toContain('timed out after 300ms');
+        });
+    });
+
+    it('all sources fail → exit 1, no out.json', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-bad1', { exitCode: 2 });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-bad2', { exitCode: 5 });
+            const outFile = join(root, 'merged.json');
+            const inA = join(root, 'a-in.json');
+            const inB = join(root, 'b-in.json');
+            writeFileSync(inA, '[]');
+            writeFileSync(inB, '[]');
+
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin(['--source', `fanin-bad1:${inA}`, '--source', `fanin-bad2:${inB}`, '--out', outFile]),
+            );
+
+            expect(code).toBe(1);
+            expect(existsSync(outFile)).toBe(false);
+            expect(errLog()).toContain('fanin-bad1');
+            expect(errLog()).toContain('fanin-bad2');
+            expect(errLog()).toContain('all 2 source(s) failed');
+        });
+    });
+
+    it('an unknown or non-ingestion plugin degrades like a failed source', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-generator', { kind: 'generator' });
+            const outFile = join(root, 'merged.json');
+            const inA = join(root, 'a-in.json');
+            const inGen = join(root, 'gen-in.json');
+            writeFileSync(inA, '[]');
+            writeFileSync(inGen, '[]');
+
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin([
+                    '--source',
+                    `no-such-plugin:${inA}`,
+                    '--source',
+                    `fanin-generator:${inGen}`,
+                    '--out',
+                    outFile,
+                ]),
+            );
+
+            // Every source failed → exit 1, no output.
+            expect(code).toBe(1);
+            expect(existsSync(outFile)).toBe(false);
+            expect(errLog()).toContain("Plugin 'no-such-plugin' not found");
+            expect(errLog()).toContain("Plugin 'fanin-generator' is kind 'generator', not 'ingestion'");
+        });
+    });
+
+    it('a source writing invalid or schema-violating output degrades', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            const dir = join(pluginsRoot, 'ingestions', 'fanin-junk');
+            mkdirSync(join(dir, 'src'), { recursive: true });
+            writeFileSync(
+                join(dir, 'plugin.json'),
+                JSON.stringify({ name: 'fanin-junk', kind: 'ingestion', entry: './src/index.ts', version: '1.0.0' }),
+            );
+            // Exit 0 but write a non-Doc[] payload.
+            writeFileSync(
+                join(dir, 'src', 'index.ts'),
+                [
+                    "import { writeFileSync } from 'node:fs';",
+                    'const argv = process.argv.slice(2);',
+                    "const outPath = argv[argv.indexOf('--out') + 1];",
+                    'writeFileSync(outPath, JSON.stringify({ nope: true }));',
+                ].join('\n'),
+            );
+            const outFile = join(root, 'merged.json');
+            const inA = join(root, 'a-in.json');
+            writeFileSync(inA, '[]');
+
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin(['--source', `fanin-junk:${inA}`, '--out', outFile]),
+            );
+
+            expect(code).toBe(1);
+            expect(existsSync(outFile)).toBe(false);
+            expect(errLog()).toContain('Doc list schema');
+        });
+    });
+
+    it('combines --in and --source: --in docs first, source docs in declaration order, per-origin provenance', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-mix-a', { docId: 's1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-mix-b', { docId: 's2' });
+            const outFile = join(root, 'merged.json');
+            const inFile = join(root, 'file.json');
+            const inA = join(root, 'a-in.json');
+            const inB = join(root, 'b-in.json');
+            writeFileSync(
+                inFile,
+                JSON.stringify([
+                    { id: 'f1', body: 'from file' },
+                    { id: 's1', body: 'dup' },
+                ]),
+            );
+            writeFileSync(inA, '[]');
+            writeFileSync(inB, '[]');
+
+            const code = await withPluginPath(pluginsRoot, () =>
+                runFanin([
+                    '--in',
+                    inFile,
+                    '--source',
+                    `fanin-mix-a:${inA}`,
+                    '--source',
+                    `fanin-mix-b:${inB}`,
+                    '--out',
+                    outFile,
+                ]),
+            );
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            // --in docs keep first-appearance order; sources append in declaration order.
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['f1', 's1', 's2']);
+            expect(outData[0].metadata.sources).toEqual([{ file: inFile }]);
+            expect(outData[1].metadata.sources).toEqual([{ file: inFile }, { file: 'fanin-mix-a' }]);
+            expect(outData[2].metadata.sources).toEqual([{ file: 'fanin-mix-b' }]);
+            // No failures → no sourceErrors on the output.
+            expect(outData[0].metadata.sourceErrors).toBeUndefined();
+        });
+    });
+
+    it('exits 2 on source-flag usage errors', async () => {
+        await withTempDir(async (root) => {
+            const aFile = join(root, 'a.json');
+            const outFile = join(root, 'merged.json');
+            writeFileSync(aFile, JSON.stringify([{ id: 'd1', body: 'alpha' }]));
+
+            // --source without a value.
+            expect(await runFanin(['--source', '--out', outFile])).toBe(2);
+            expect(errLog()).toContain('--source requires <plugin>:<inputFile>');
+
+            cap = captureOutput();
+            // --source without the ':' separator, or with an empty side.
+            expect(await runFanin(['--source', 'just-a-file', '--out', outFile])).toBe(2);
+            cap = captureOutput();
+            expect(await runFanin(['--source', ':no-plugin.json', '--out', outFile])).toBe(2);
+            cap = captureOutput();
+            expect(await runFanin(['--source', 'no-file:', '--out', outFile])).toBe(2);
+
+            // --source-timeout must be a positive integer, given at most once, and only with --source.
+            cap = captureOutput();
+            expect(await runFanin(['--source', `p:${aFile}`, '--source-timeout', 'abc', '--out', outFile])).toBe(2);
+            cap = captureOutput();
+            expect(await runFanin(['--source', `p:${aFile}`, '--source-timeout', '0', '--out', outFile])).toBe(2);
+            cap = captureOutput();
+            expect(await runFanin(['--source', `p:${aFile}`, '--source-timeout', '-5', '--out', outFile])).toBe(2);
+            cap = captureOutput();
+            expect(
+                await runFanin([
+                    '--source',
+                    `p:${aFile}`,
+                    '--source-timeout',
+                    '10',
+                    '--source-timeout',
+                    '20',
+                    '--out',
+                    outFile,
+                ]),
+            ).toBe(2);
+            cap = captureOutput();
+            expect(await runFanin(['--in', aFile, '--source-timeout', '10', '--out', outFile])).toBe(2);
+            expect(errLog()).toContain('--source-timeout requires at least one --source');
+
+            // --source-timeout-override requires <plugin>:<ms>, a positive integer ms, known
+            // plugins only, at most one entry per plugin, and at least one --source.
+            cap = captureOutput();
+            expect(
+                await runFanin([
+                    '--source',
+                    `p:${aFile}`,
+                    '--source-timeout-override',
+                    'no-separator',
+                    '--out',
+                    outFile,
+                ]),
+            ).toBe(2);
+            cap = captureOutput();
+            expect(
+                await runFanin(['--source', `p:${aFile}`, '--source-timeout-override', ':100', '--out', outFile]),
+            ).toBe(2);
+            cap = captureOutput();
+            expect(
+                await runFanin(['--source', `p:${aFile}`, '--source-timeout-override', 'p:abc', '--out', outFile]),
+            ).toBe(2);
+            cap = captureOutput();
+            expect(
+                await runFanin(['--source', `p:${aFile}`, '--source-timeout-override', 'p:0', '--out', outFile]),
+            ).toBe(2);
+            cap = captureOutput();
+            expect(
+                await runFanin([
+                    '--source',
+                    `p:${aFile}`,
+                    '--source-timeout-override',
+                    'p:10',
+                    '--source-timeout-override',
+                    'p:20',
+                    '--out',
+                    outFile,
+                ]),
+            ).toBe(2);
+            cap = captureOutput();
+            expect(
+                await runFanin(['--source', `p:${aFile}`, '--source-timeout-override', 'other:10', '--out', outFile]),
+            ).toBe(2);
+            expect(errLog()).toContain('not among the --source plugins');
+            cap = captureOutput();
+            expect(await runFanin(['--in', aFile, '--source-timeout-override', 'p:10', '--out', outFile])).toBe(2);
+            expect(errLog()).toContain('--source-timeout-override requires at least one --source');
+
+            // Neither --in nor --source.
+            cap = captureOutput();
+            expect(await runFanin(['--out', outFile])).toBe(2);
+            expect(errLog()).toContain('at least one --in file or --source is required');
         });
     });
 });

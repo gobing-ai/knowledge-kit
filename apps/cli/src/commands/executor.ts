@@ -15,6 +15,9 @@ interface RunOptions {
 interface FaninOptions {
     in: string[];
     out: string;
+    source?: string[];
+    sourceTimeout?: string;
+    sourceTimeoutOverride?: string[];
 }
 
 /** Options accepted by the `executor fan-out` verb (and its hidden `fanout` alias). */
@@ -60,11 +63,26 @@ function collectIn(value: string, acc: string[]): string[] {
     return acc;
 }
 
+/** Collect repeated `--source` values into an array (commander last-wins otherwise). */
+function collectSource(value: string, acc: string[]): string[] {
+    acc.push(value);
+    return acc;
+}
+
 /** Rebuild the flag slice so runFanin owns the CLI contract. */
 async function runFaninAction(options: FaninOptions): Promise<void> {
     const argv: string[] = [];
     for (const inPath of options.in) {
         argv.push('--in', inPath);
+    }
+    for (const source of options.source ?? []) {
+        argv.push('--source', source);
+    }
+    if (options.sourceTimeout !== undefined) {
+        argv.push('--source-timeout', options.sourceTimeout);
+    }
+    for (const override of options.sourceTimeoutOverride ?? []) {
+        argv.push('--source-timeout-override', override);
     }
     argv.push('--out', options.out);
 
@@ -76,6 +94,12 @@ async function runFaninAction(options: FaninOptions): Promise<void> {
 
 /** Collect repeated `--target` values into an array (commander last-wins otherwise). */
 function collectTarget(value: string, acc: string[]): string[] {
+    acc.push(value);
+    return acc;
+}
+
+/** Collect repeated `--source-timeout-override` values into an array (commander last-wins otherwise). */
+function collectOverride(value: string, acc: string[]): string[] {
     acc.push(value);
     return acc;
 }
@@ -127,7 +151,20 @@ export function registerExecutorCommand(program: Command): void {
         .command('fan-in')
         .alias('fanin')
         .description('Merge N Doc[] JSON inputs into one deduplicated Doc[] output')
-        .requiredOption('--in <path>', 'Input Doc[] JSON file (repeatable)', collectIn, [])
+        .option('--in <path>', 'Input Doc[] JSON file (repeatable)', collectIn, [])
+        .option(
+            '--source <plugin>:<file>',
+            'Ingestion source to spawn concurrently: plugin name and its input file (repeatable)',
+            collectSource,
+            [],
+        )
+        .option('--source-timeout <ms>', 'Per-source timeout in milliseconds (default 1800000)')
+        .option(
+            '--source-timeout-override <plugin>:<ms>',
+            'Per-source timeout override for one named --source plugin, e.g. horizon-ingest:2700000 (repeatable; wins over --source-timeout/default)',
+            collectOverride,
+            [],
+        )
         .requiredOption('--out <path>', 'Output merged Doc[] JSON file path')
         .action(runFaninAction);
 
@@ -158,7 +195,20 @@ export function registerExecutorCommand(program: Command): void {
     program
         .command('fanin', { hidden: true })
         .description('Alias for `executor fan-in` (deprecated)')
-        .requiredOption('--in <path>', 'Input Doc[] JSON file (repeatable)', collectIn, [])
+        .option('--in <path>', 'Input Doc[] JSON file (repeatable)', collectIn, [])
+        .option(
+            '--source <plugin>:<file>',
+            'Ingestion source to spawn concurrently: plugin name and its input file (repeatable)',
+            collectSource,
+            [],
+        )
+        .option('--source-timeout <ms>', 'Per-source timeout in milliseconds (default 1800000)')
+        .option(
+            '--source-timeout-override <plugin>:<ms>',
+            'Per-source timeout override for one named --source plugin, e.g. horizon-ingest:2700000 (repeatable; wins over --source-timeout/default)',
+            collectOverride,
+            [],
+        )
         .requiredOption('--out <path>', 'Output merged Doc[] JSON file path')
         .action(runFaninAction);
 
