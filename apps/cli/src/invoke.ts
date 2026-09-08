@@ -137,6 +137,11 @@ function pluginEntryEnv(opts: PluginEntrySpawnOptions): Record<string, string | 
     };
 }
 
+/**
+ * Spawn a plugin entry synchronously (ADR-006): plugin IO contract via stdin/stdout
+ * around Bun.spawnSync, with the kk invocation root handed to the plugin env so
+ * nested tooling anchors at the invocation root (see pluginEntryEnv).
+ */
 export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpawnResult {
     const proc = Bun.spawnSync(pluginEntryCmd(opts), {
         cwd: opts.cwd,

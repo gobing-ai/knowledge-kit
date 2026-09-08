@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { type DiscoveryResult, type Doc, DocListSchema, discoverAllPlugins, getByName } from '@gobing-ai/kk-core';
@@ -268,13 +267,14 @@ async function collectSourceDocs(discovery: DiscoveryResult, source: FaninSource
         throw new Error(`Plugin '${source.plugin}' is kind '${record.kind}', not 'ingestion'`);
     }
 
+    const fs = createNodeFileSystem();
     const absInPath = resolve(source.inputFile);
-    if (!existsSync(absInPath)) {
+    if (!(await fs.exists(absInPath))) {
         throw new Error(`Input file does not exist: ${absInPath}`);
     }
 
     const entryPath = isAbsolute(record.entry) ? record.entry : resolve(record.dir, record.entry);
-    if (!existsSync(entryPath)) {
+    if (!(await fs.exists(entryPath))) {
         throw new Error(`Plugin entry script does not exist: ${entryPath}`);
     }
 
@@ -282,7 +282,6 @@ async function collectSourceDocs(discovery: DiscoveryResult, source: FaninSource
         tmpdir(),
         `kk-fanin-${source.plugin}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
-    const fs = createNodeFileSystem();
     try {
         const proc = await spawnPluginEntryAsync({
             entryPath,
