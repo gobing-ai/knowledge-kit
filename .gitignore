@@ -159,3 +159,6 @@ dist
 # Staged plugin/marketplace build artifacts (bundled into the npm tarball)
 /apps/cli/plugins/
 /apps/cli/.claude-plugin/
+
+# Spur history-anatomy analyze dumps (3.6 MiB each) — untracked 2026-09-08; keep the repo lean
+/.spur/reports/history/*/analyze-*.json
