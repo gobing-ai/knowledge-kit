@@ -55,6 +55,11 @@ rules:
             # that IS their transport mechanism (docs/design publish spec).
             - "plugins/publishings/surfdash-pub/src/index.ts"
             - "plugins/publishings/zenn-pub/src/index.ts"
+            # Ingest plugins whose transport IS a vendor CLI: horizon-ingest runs the
+            # `uv run horizon` crawler, last30days-ingest runs last30days.py — same
+            # vendor-CLI-boundary class as the publish/voice/web-search entries above.
+            - "plugins/ingestions/horizon-ingest/src/index.ts"
+            - "plugins/ingestions/last30days-ingest/src/index.ts"
             # HTML-to-text extraction shells out to a local binary before caching.
             - "plugins/ingestions/web-search/src/index.ts"
             # Optional WAV to MP3 transcode shells out to local ffmpeg binary.
@@ -101,3 +106,7 @@ rules:
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"
+            # surfdash-pub: sync existsSync probes in sync publish code, and binary
+            # asset/cover copies via node:fs/promises (cp/copyFile) — the seam is
+            # text-only, same class as podcast-pub. Sanctioned 2026-09-08 (sp fixall).
+            - "plugins/publishings/surfdash-pub/src/index.ts"
