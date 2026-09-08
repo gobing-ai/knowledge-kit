@@ -154,7 +154,7 @@ export async function processIngestionIO(
     const summariesDir = join(dataDir, 'summaries');
     const docs: Doc[] = [];
     if (!(await fs.exists(summariesDir))) {
-        console.error(`horizon-ingest: no summaries dir at ${summariesDir} — emitting []`);
+        echoError(`horizon-ingest: no summaries dir at ${summariesDir} — emitting []`);
     }
     const digestRe = /^horizon-(\d{4}-\d{2}-\d{2})-([a-z-]+)\.md$/;
     const entries = (await fs.exists(summariesDir)) ? await fs.readDir(summariesDir) : [];
@@ -167,7 +167,7 @@ export async function processIngestionIO(
         docs.push(...digestToDocs(await fs.readFile(file), match[1], match[2]));
     }
     if (docs.length === 0) {
-        console.error(
+        echoError(
             `horizon-ingest: no fresh digest in ${summariesDir} (languages: ${[...langs].join(', ')}) — emitting []`,
         );
     }

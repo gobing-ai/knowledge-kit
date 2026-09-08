@@ -91,7 +91,7 @@ export function mapResultsToDocs(agentJson: unknown, topic: string): Doc[] {
             };
             docs.push(doc);
         } catch (err: unknown) {
-            console.error(
+            echoError(
                 `last30days-ingest: skipping unparseable item (${err instanceof Error ? err.message : String(err)})`,
             );
         }

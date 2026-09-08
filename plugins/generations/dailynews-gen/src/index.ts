@@ -33,7 +33,7 @@ export async function processGeneratorIO(
     if (maxItemsEnv) {
         const maxItems = Number.parseInt(maxItemsEnv, 10);
         if (Number.isInteger(maxItems) && maxItems > 0 && docs.length > maxItems) {
-            console.error(`dailynews-gen: capping ${docs.length} docs to ${maxItems} (DAILYNEWS_MAX_ITEMS)`);
+            echoError(`dailynews-gen: capping ${docs.length} docs to ${maxItems} (DAILYNEWS_MAX_ITEMS)`);
             docs = docs.slice(0, maxItems);
         }
     }

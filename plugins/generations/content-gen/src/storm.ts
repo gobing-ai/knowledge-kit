@@ -1,4 +1,5 @@
 import { type Content, ContentSchema, type Doc } from '@gobing-ai/kk-core';
+import { echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import { parseAgentJson } from './agent-json';
 
@@ -94,7 +95,7 @@ export const spurStageRunner: StormStageRunner = {
             if (outcome.kind !== 'crash') return outcome.envelope;
             last = outcome.envelope;
             if (attempt === 1) {
-                console.error(
+                echoError(
                     `spurStageRunner: agent run exited ${last.exitCode}; retrying once (${last.stderr.trim().slice(0, 200)})`,
                 );
             }
