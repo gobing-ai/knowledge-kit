@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DocListSchema } from '@gobing-ai/kk-core';
@@ -10,11 +10,16 @@ import {
     type AihotSnapshotResponse,
     computeDocId,
     DEFAULT_AIHOT_USER_AGENT,
+    fetchRssDocs,
     main,
     mapAihotItemsToDocs,
     mapAihotItemToDoc,
+    mapRssEntryToDoc,
+    parseFeed,
     processIngestionIO,
 } from '../src/index';
+
+process.env.AIHOT_SOURCE = 'api'; // legacy API path under test
 
 const SAMPLE_ITEM_1: AihotItem = {
     id: 'item-1',
@@ -299,6 +304,112 @@ describe('aihot-ingest plugin (0072)', () => {
             expect(requestedUrl).toContain('limit=10');
         } finally {
             process.argv = origArgv;
+        }
+    });
+
+    const SAMPLE_RSS = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>AI News</title>
+    <item>
+      <title>OpenAI launches Sora 2 API</title>
+      <link>https://techcrunch.com/2026/09/08/openai-sora-2/</link>
+      <pubDate>Tue, 08 Sep 2026 09:00:00 +0000</pubDate>
+      <category><![CDATA[Artificial Intelligence]]></category>
+      <description><![CDATA[OpenAI released Sora 2 with real-time edits. &amp; updates.]]></description>
+    </item>
+    <item>
+      <title>Anthropic ships Claude 4</title>
+      <link>https://techcrunch.com/2026/09/08/anthropic-claude-4/</link>
+      <pubDate>Tue, 08 Sep 2026 07:30:00 +0000</pubDate>
+      <description>Anthropic introduced Claude 4 with hybrid reasoning.</description>
+    </item>
+    <item>
+      <title>Duplicate of Sora 2</title>
+      <link>https://techcrunch.com/2026/09/08/openai-sora-2/</link>
+      <pubDate>Tue, 08 Sep 2026 06:00:00 +0000</pubDate>
+      <description>Repeated feed entry – should dedupe against the first.</description>
+    </item>
+  </channel>
+</rss>`;
+
+    const SAMPLE_ATOM = `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Verge AI weekly</title>
+    <link href="https://www.theverge.com/ai/2026/9/8/weekly"/>
+    <published>2026-09-08T10:00:00Z</published>
+    <summary>Roundup of the week in AI.</summary>
+  </entry>
+</feed>`;
+
+    describe('aihot-ingest RSS source (default)', () => {
+        it('parseFeed extracts RSS items with cdata, entities and dates', () => {
+            const entries = parseFeed(SAMPLE_RSS);
+            expect(entries.length).toBe(3);
+            const first = entries[0];
+            expect(first?.title).toBe('OpenAI launches Sora 2 API');
+            expect(first?.link).toBe('https://techcrunch.com/2026/09/08/openai-sora-2/');
+            expect(first?.publishedAt).toBe('2026-09-08T09:00:00.000Z');
+            expect(first?.category).toBe('Artificial Intelligence');
+            expect(first?.summary).toBe('OpenAI released Sora 2 with real-time edits. & updates.');
+        });
+
+        it('parseFeed falls back to Atom entries', () => {
+            const entries = parseFeed(SAMPLE_ATOM);
+            expect(entries.length).toBe(1);
+            expect(entries[0]?.title).toBe('Verge AI weekly');
+            expect(entries[0]?.publishedAt).toBe('2026-09-08T10:00:00.000Z');
+            expect(entries[0]?.link).toBe('https://www.theverge.com/ai/2026/9/8/weekly');
+        });
+
+        it('mapRssEntryToDoc maps to a Doc with the aihot source tier and fresh publishedAt', () => {
+            const entries = parseFeed(SAMPLE_RSS);
+            const first = entries[0];
+            if (first === undefined) throw new Error('parseFeed returned no RSS items');
+            const doc = mapRssEntryToDoc(first, 'https://techcrunch.com/category/artificial-intelligence/feed/');
+            const meta = doc.metadata ?? {};
+            expect(meta.source).toBe('aihot');
+            expect(doc.id).toHaveLength(16);
+            expect(doc.sourceUri).toBe('https://techcrunch.com/2026/09/08/openai-sora-2/');
+            expect(meta.publishedAt).toBe('2026-09-08T09:00:00.000Z');
+            expect(typeof meta.sourceName).toBe('string');
+        });
+
+        it('fetchRssDocs limits, dedupes by link, and surfaces api errors', async () => {
+            const mockFetch = async () =>
+                new Response(SAMPLE_RSS, { status: 200, headers: { 'content-type': 'application/rss+xml' } });
+            const { docs, asOf } = await fetchRssDocs('https://example.com/feed', 10, mockFetch);
+            expect(docs.length).toBe(2); // 3 items, one duplicate link dropped
+            expect(docs[0]?.metadata?.publishedAt).toBe('2026-09-08T09:00:00.000Z');
+            expect(typeof asOf).toBe('string');
+
+            const failing = async () => new Response('nope', { status: 500 });
+            await expect(fetchRssDocs('https://example.com/feed', 10, failing)).rejects.toThrow(/HTTP 500/);
+        });
+    });
+
+    it('processIngestionIO defaults to the RSS source, writes docs + state (no cursor)', async () => {
+        const saved = process.env.AIHOT_SOURCE;
+        try {
+            delete process.env.AIHOT_SOURCE;
+            const tmp = mkdtempSync(join(tmpdir(), 'aihot-rss-io-'));
+            const out = join(tmp, 'docs.json');
+            const state = join(tmp, 'state.json');
+            const mockRss = async () =>
+                new Response(SAMPLE_RSS, { status: 200, headers: { 'content-type': 'application/rss+xml' } });
+            const res = await processIngestionIO({ out, limit: 2, stateFile: state }, undefined, mockRss);
+            expect(res.docs.length).toBe(2);
+            expect(res.cursor).toBe('');
+            const docs = DocListSchema.parse(JSON.parse(readFileSync(out, 'utf8')));
+            expect(docs[0]?.metadata?.source).toBe('aihot');
+            const stateJson = JSON.parse(readFileSync(state, 'utf8'));
+            expect(stateJson.source).toBe('rss');
+            expect(stateJson.itemCount).toBe(2);
+            rmSync(tmp, { recursive: true, force: true });
+        } finally {
+            if (saved === undefined) delete process.env.AIHOT_SOURCE;
+            else process.env.AIHOT_SOURCE = saved;
         }
     });
 });
