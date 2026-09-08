@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
     auditVoiceSegments,
     computeExpectedDurationRange,
+    detectLoudnessDip,
     detectRepetitions,
     type VoiceboxClient,
     type VoiceScript,
@@ -158,4 +159,69 @@ describe('Voice Quality Control (QC)', () => {
         expect(report.overallScore).toBe(100);
         expect(report.criticalIssues.length).toBe(0);
     });
+
+    it('detectLoudnessDip flags a quiet-but-not-silence collapse and ignores real pauses', () => {
+        // 24kHz mono 16-bit wav: 4s loud noise + 1s quiet (rms ~0.03, a dent) + 4s loud.
+        const rate = 24000;
+        const samples: number[] = [];
+        const pushNoise = (sec: number, amp: number) => {
+            for (let i = 0; i < sec * rate; i++) samples.push((Math.random() * 2 - 1) * amp);
+        };
+        pushNoise(4, 0.25);
+        for (let i = 0; i < rate; i++) samples.push((Math.random() * 2 - 1) * 0.03); // dent: quiet, not silence
+        pushNoise(4, 0.25);
+        expect(detectLoudnessDip(buildWav(samples, rate)).dip).toBe(true);
+
+        // Same shape but the middle second is true silence -> a pause, not a dent.
+        const withPause: number[] = [];
+        const pushNoiseInto = (target: number[], sec: number, amp: number) => {
+            for (let i = 0; i < sec * rate; i++) target.push((Math.random() * 2 - 1) * amp);
+        };
+        pushNoiseInto(withPause, 4, 0.25);
+        for (let i = 0; i < rate; i++) withPause.push(0);
+        pushNoiseInto(withPause, 4, 0.25);
+        expect(detectLoudnessDip(buildWav(withPause, rate)).dip).toBe(false);
+
+        // Pure loud audio -> no dip.
+        expect(detectLoudnessDip(buildWav(samples.slice(0, 6 * rate), rate)).dip).toBe(false);
+    });
+
+    it('detectLoudnessDip reads stereo 16-bit interleaved input without a dip', () => {
+        const rate = 24000;
+        const interleave: number[] = [];
+        for (let i = 0; i < 6 * rate; i++) {
+            const v = Math.round((Math.random() * 2 - 1) * 0.2 * 32767);
+            interleave.push(v, v);
+        }
+        expect(detectLoudnessDip(buildWav(interleave, rate, 2)).dip).toBe(false);
+    });
 });
+
+/** Minimal RIFF/WAVE builder for the tests above. */
+function buildWav(samples: number[], rate: number, channels = 1): Uint8Array {
+    const bytesPerSample = 2;
+    const dataLen = samples.length * bytesPerSample;
+    const buf = new Uint8Array(44 + dataLen);
+    const dv = new DataView(buf.buffer);
+    const w = (off: number, str: string) => {
+        for (let i = 0; i < str.length; i++) buf[off + i] = str.charCodeAt(i);
+    };
+    w(0, 'RIFF');
+    dv.setUint32(4, 36 + dataLen, true);
+    w(8, 'WAVE');
+    w(12, 'fmt ');
+    dv.setUint32(16, 16, true);
+    dv.setUint16(20, 1, true);
+    dv.setUint16(22, channels, true);
+    dv.setUint32(24, rate, true);
+    dv.setUint32(28, rate * channels * bytesPerSample, true);
+    dv.setUint16(32, channels * bytesPerSample, true);
+    dv.setUint16(34, 16, true);
+    w(36, 'data');
+    dv.setUint32(40, dataLen, true);
+    for (let i = 0; i < samples.length; i++) {
+        const v = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767)));
+        dv.setInt16(44 + i * bytesPerSample, v, true);
+    }
+    return buf;
+}

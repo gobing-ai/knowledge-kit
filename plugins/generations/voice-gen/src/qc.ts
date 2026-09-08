@@ -1,3 +1,4 @@
+import { type ParsedWav, parseWav } from './concat';
 import type { VoiceboxClient } from './voicebox-client';
 import type { VoiceScript, VoiceSegment } from './voicescript';
 
@@ -10,6 +11,8 @@ export interface SegmentQualityAudit {
     transcription?: string;
     repetitionDetected: boolean;
     durationAnomaly: boolean;
+    /** True when a loudness dip (voice dent) was detected in the final audio and survived regeneration. */
+    loudnessDip?: boolean;
     issues: string[];
     passed: boolean;
 }
@@ -71,6 +74,89 @@ export function transcriptionFidelity(source: string, transcription: string): nu
 }
 
 /**
+ * A ~1s window whose RMS sits below this fraction of its louder neighbour is a dent.
+ * Calibrated on dogfood 2026-09-08: audible Qwen3-TTS collapses measured 0.24–0.37 of
+ * the louder neighbour (rms 0.033–0.048); normal quieter phrases sit ≥0.45.
+ */
+export const DIP_RATIO = 0.4;
+
+/** A window below this RMS is a real pause (silence), not a dent — dents are quiet-but-not-silent. */
+export const DIP_SILENCE_FLOOR = 0.008;
+
+/** Windows above this absolute RMS are normal quieter narration, not collapses (file p25 ≈ 0.08). */
+export const DIP_ABS_CEILING = 0.06;
+
+/** Neighbour windows below this RMS carry no speech signal to compare against. */
+export const DIP_NEIGHBOR_FLOOR = 0.02;
+
+/**
+ * Detect a loudness dip (voice dent): a ~1s window of quiet-but-not-silent audio
+ * sandwiched between louder speech on both sides. Qwen3-TTS (AR clone, MLX) stochastically
+ * collapses loudness mid-utterance on long text (dogfood 2026-09-08 A/B: same text regenerated
+ * clean; official docs list "loudness drops" among AR long-form instabilities). The detector
+ * returns the first dip position; voice-gen regenerates on it (stochastic → retry usually clears).
+ * Returns null when the wav is too short or unparseable.
+ */
+export function detectLoudnessDip(wav: Uint8Array): { dip: boolean; dipAtSec: number | null } {
+    let parsed: ParsedWav;
+    try {
+        parsed = parseWav(wav);
+    } catch {
+        return { dip: false, dipAtSec: null };
+    }
+    if (parsed.bitsPerSample !== 16 && parsed.bitsPerSample !== 8) return { dip: false, dipAtSec: null };
+    const rate = parsed.sampleRate;
+    if (rate <= 0) return { dip: false, dipAtSec: null };
+    const data = parsed.dataBytes;
+    const bytesPerSample = parsed.bitsPerSample === 8 ? 1 : 2;
+    const frameBytes = parsed.numChannels * bytesPerSample;
+    const totalFrames = Math.floor(data.length / frameBytes);
+    const windowFrames = rate; // 1s windows
+    if (totalFrames < windowFrames * 5) return { dip: false, dipAtSec: null };
+
+    const sampleAt = (frame: number, channel = 0): number => {
+        const off = (frame * parsed.numChannels + channel) * bytesPerSample;
+        if (bytesPerSample === 1) return ((data[off] ?? 0) - 128) / 128;
+        let s = (data[off] ?? 0) | ((data[off + 1] ?? 0) << 8);
+        if (s >= 0x8000) s -= 0x10000;
+        return s / 32768;
+    };
+
+    // Non-overlapping 1s windows (step = window): a dent spans ~1s → exactly one window,
+    // with loud speech before and after. Frame-stepped windows would smear a 1s dent into a
+    // 24000-index plateau with equal neighbours, invisible to any adjacent comparison.
+    const nWins = Math.floor(totalFrames / windowFrames);
+    if (nWins < 7) return { dip: false, dipAtSec: null };
+    const windowRms: number[] = [];
+    for (let w = 0; w < nWins; w++) {
+        const base = w * windowFrames;
+        let sum = 0;
+        for (let f = base; f < base + windowFrames; f++) {
+            const v = sampleAt(f);
+            sum += v * v;
+        }
+        windowRms.push(Math.sqrt(sum / windowFrames));
+    }
+
+    // A dent = one ~1s window of quiet-but-not-silent audio (rms 0.008..0.06) that is
+    // notably quieter than BOTH its immediate 1s neighbours (ratio < 0.4) — an isolated
+    // loudness collapse amid otherwise steady speech. Non-overlapping windows keep
+    // neighbour semantics exact (a frame-stepped window would smear a 1s dent into a
+    // many-index plateau with equal neighbours). Sentence pauses are excluded by the
+    // silence floor; normal quieter phrases by the absolute ceiling (calibrated on
+    // dogfood 2026-09-08 prod audio: audible dents 0.047/0.042/0.048 vs normal p25 0.080).
+    for (let j = 1; j < windowRms.length - 1; j++) {
+        const center = windowRms[j] ?? 0;
+        if (center <= DIP_SILENCE_FLOOR) continue; // real pause, not a dent
+        if (center >= DIP_ABS_CEILING) continue; // normal quieter narration
+        const nbr = Math.max(windowRms[j - 1] ?? 0, windowRms[j + 1] ?? 0);
+        if (nbr <= DIP_NEIGHBOR_FLOOR) continue;
+        if (center < nbr * DIP_RATIO) return { dip: true, dipAtSec: j };
+    }
+    return { dip: false, dipAtSec: null };
+}
+
+/**
  * Compute expected speech duration range given text and language.
  */
 export function computeExpectedDurationRange(text: string, language = 'zh'): [number, number] {
@@ -102,6 +188,7 @@ export async function auditVoiceSegments(
         duration: number;
         transcription?: string;
         verifyRetries?: number;
+        loudnessDip?: boolean;
     }>,
     client?: VoiceboxClient,
 ): Promise<VoiceQualityReport> {
@@ -170,6 +257,17 @@ export async function auditVoiceSegments(
             }
         }
 
+        // Loudness dip (voice dent) that survived regeneration — record, don't fail the
+        // pipeline: the verify loop already regenerated on it, and a stubborn single dent
+        // is better surfaced than a whole-episode failure (dogfood 2026-09-08).
+        let loudnessDip = false;
+        if (meta?.loudnessDip === true) {
+            loudnessDip = true;
+            issues.push(
+                `Loudness dip persisted after regeneration (voice-gen auto-retried with varied seed; verifyRetries=${meta.verifyRetries ?? 0})`,
+            );
+        }
+
         const passed = !durationAnomaly && !(repetitionDetected && durationAnomaly) && !lowFidelity;
         if (!passed) {
             criticalIssues.push(`Segment ${i + 1} (${meta?.profile || 'Unknown'}): ${issues.join('; ')}`);
@@ -184,6 +282,7 @@ export async function auditVoiceSegments(
             transcription: transcriptionText,
             repetitionDetected,
             durationAnomaly,
+            loudnessDip,
             issues,
             passed,
         });

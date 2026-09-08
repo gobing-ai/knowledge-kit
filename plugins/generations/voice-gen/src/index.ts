@@ -5,7 +5,7 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { concatWavs } from './concat';
 import { isMp3Requested, type Mp3Transcoder, transcodeWavToMp3 } from './mp3';
-import { auditVoiceSegments, TRANSCRIPTION_FIDELITY_FLOOR, transcriptionFidelity } from './qc';
+import { auditVoiceSegments, detectLoudnessDip, TRANSCRIPTION_FIDELITY_FLOOR, transcriptionFidelity } from './qc';
 import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } from './voicebox-client';
 import {
     mergeVoiceScripts,
@@ -94,6 +94,7 @@ export async function processGeneratorIO(
             duration: number;
             verifyRetries?: number;
             transcription?: string;
+            loudnessDip?: boolean;
         }> = [];
         let totalDuration = 0;
 
@@ -187,6 +188,7 @@ export async function processGeneratorIO(
             let generationId = '';
             let transcription: string | undefined;
             let verifyRetries = 0;
+            let loudnessDip = false;
             let lastError: unknown;
             let attemptBody = generateBody;
             for (let verifyAttempt = 0; verifyAttempt <= 2 && wavBytes === undefined; verifyAttempt++) {
@@ -198,7 +200,7 @@ export async function processGeneratorIO(
                         seed: Math.floor(Math.random() * 2 ** 31),
                         max_chunk_chars: chunkChars,
                     };
-                    console.error(
+                    echoError(
                         `voice-gen: regenerating segment with seed ${attemptBody.seed} and max_chunk_chars ${chunkChars}`,
                     );
                 }
@@ -226,7 +228,7 @@ export async function processGeneratorIO(
                     } catch (err: unknown) {
                         lastError = err;
                         if (attempt === 1) {
-                            console.error(
+                            echoError(
                                 `voice-gen: segment failed (${err instanceof Error ? err.message : String(err)}); retrying once`,
                             );
                         }
@@ -240,7 +242,7 @@ export async function processGeneratorIO(
                         const trans = await client.transcribe(attemptBytes, language);
                         const fidelity = transcriptionFidelity(segment.text, trans.text);
                         if (fidelity < TRANSCRIPTION_FIDELITY_FLOOR && verifyAttempt < 2) {
-                            console.error(
+                            echoError(
                                 `voice-gen: transcription fidelity ${fidelity.toFixed(2)} below ${TRANSCRIPTION_FIDELITY_FLOOR} (looped/garbage audio): "${trans.text.slice(0, 80)}..."`,
                             );
                             continue;
@@ -249,6 +251,15 @@ export async function processGeneratorIO(
                     } catch {
                         // Transcription unavailable — keep audio; the QC audit backstop decides.
                     }
+                }
+                // Voice dent gate: Qwen3-TTS stochastically collapses loudness mid-utterance on
+                // long text; a dip that survives to the last verify attempt is recorded for QC
+                // (dogfood 2026-09-08 A/B: same text regenerated clean, so retry usually clears).
+                const dip = detectLoudnessDip(attemptBytes);
+                loudnessDip = dip.dip;
+                if (dip.dip && verifyAttempt < 2) {
+                    echoError(`voice-gen: loudness dip detected at ${dip.dipAtSec ?? '?'}s — regenerating segment`);
+                    continue;
                 }
                 wavBytes = attemptBytes;
             }
@@ -271,6 +282,7 @@ export async function processGeneratorIO(
                 duration: segDuration,
                 verifyRetries,
                 transcription,
+                loudnessDip,
             });
         }
 
