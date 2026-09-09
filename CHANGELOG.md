@@ -1,3 +1,76 @@
+## [0.0.12] - 2026-09-08
+
+### Added
+
+- swap source to fresh AI-news RSS feed (fa12c12)
+- detect and auto-regenerate loudness-dip segments (5534512)
+- scaffold-locale and sync operations (55317d2)
+- show-notes rendering and episode assembly ops (a6557cc)
+- MECE annotate pass and quality-controller filter mode (8247a40)
+- concurrent source runner mode for fan-in collection (9de5743)
+- redesign workflow with concurrent collect, content-qc seam, plugin-owned publish (47fee69)
+- episode plan step — score, dedup, translate, uniform show notes + episode covers (201ac21)
+- de-STORM daily article, full-locale publishing, and show-notes fixes in daily-ai-voice (6435785)
+- date-stamped caching, last30days gating, and publish fixes in daily-ai-voice (912213a)
+- QC fidelity gate, robin-news default voice, Chinese article, QC publish gate (1ca9faf)
+- F61 daily-news ingests, core-facts-gen, run resilience (d9adf9c)
+- add podcast-pub publish plugin for microfeed (task 0085) (c6c5e8b)
+- absorb avoid-ai-writing patterns into taste-unslop (e7f70a9)
+
+### Fixed
+
+- two-form publish IO contract for show-notes invocations (a0216a1)
+- harden plan-translate JSON contract and add article plan.json self-heal (723a92b)
+- gate episode plan against stale archives, feed floods, and non-news tags (fdf3905)
+- plan-translate writes plan.json from content.json instead of impossible in-place edit (55fb37f)
+- cover prompt authorizes procedural PIL fallback when no image backend (9f3ab23)
+- fail loudly when plan extraction produces no plan.json (421d9ef)
+- send Origin header on microfeed API requests (8a89a84)
+- send sanitized HTML show notes, not markdown (861b163)
+- harden daily-ai-voice publish seam and show-notes quality (80d0ba1)
+- per-segment fidelity verification, regeneration, and length-scaled timeouts (b3766c2)
+- anchor spawned agent cwd to project root, exclude .spur from bundled plugins (dcedbfd)
+- podcast-pub delete sends Content-Type for Astro 7 checkOrigin (task 0087) (f9810be)
+
+### Changed
+
+- use FileSystem seam for fanin probes; document spawnPluginEntry (db82f0a)
+- route plugin diagnostics through echoError seam (b91a615)
+- compact L1 pipeline R/AC rows + add derived learnings (0092–0101) (3dd6205)
+- close feature after strict gate PASS and full task chain (383a191)
+- restructure workflow YAML around the new seams (ef56d49)
+- update task status after verification (ae38a4f)
+- verifyall F61 re-verify with citation and checklist repairs (c702946)
+- F61 runall batch writes — tasks 0088-0091 done, design satellites + doc sync (research/prototype; map stays active) (d7a4d2d)
+- add core-facts blend template & contract (F61 2.1 prototype) (d0069af)
+- refine F61 wayfinder tickets 0088-0091 to implement-ready depth (3196e68)
+- re-parent wayfinder map K -> F61, lock surfdash-only article platform (890a9c7)
+- chart wayfinder map K for the daily AI news end-to-end pipeline (add62a8)
+- E6 verifyall re-audit (0084-0086), close 0087, E6 done (b69777c)
+- close 0086 — live smoke green (publish/get/feed verified); delete-op drift filed as 0087 (0a00194)
+- close 0084 — microfeed live at podcast.salty.vip, API key wired (d69b772)
+- record 0085 verify PASS + review evidence (173d656)
+- author 0085 Solution change-map after implementation (6e345f6)
+- E6 microfeed podcast publishing — feature, AC, design, tasks 0084-0086 (572a42b)
+
+### Other
+
+- untrack spur history analyze dumps (complete staged deletions) (ff76354)
+- untrack spur history analyze dumps and ignore future ones (95a169db)
+- sanction vendor-CLI boundary allowlist entries (3e6767b)
+- checkpoint history-anatomy report (2026-09-08) (032238e)
+- refresh history-anatomy report (2026-09-07) (9903b17)
+- checkpoint history-anatomy report (2026-09-07) (0dad5f9)
+- add new script entry load-history (7d8d30e)
+- update the spur config file (8a1cd45)
+- E6 verifyall + 0087 closeout learnings (record Review overwrite, provenance override, Astro 7 checkOrigin) (434facc)
+- drop gitignore entry for in-tree schema copy — spur rejects non-rule JSON under .spur/rules (d178aeb)
+- E6 0085 pipeline learnings (verdict contract, rule allowlists) (b7f75b9)
+- allowlist podcast-pub transport boundary files (3fd41d0)
+- clean .spur for spur 1.2 (bundled workflows/templates) (3965224)
+
+---
+
 ## [0.0.10] - 2026-08-27
 
 ### Added
