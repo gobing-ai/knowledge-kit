@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Design the kk agent surface: image skills and slash command"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-09T18:29:34.102Z
-updated_at: "2026-09-09T20:30:08.379Z"
+updated_at: "2026-09-09T21:15:25.982Z"
 feature_id: K
 
 dependencies: ["0102", "0104", "0105"]
@@ -464,3 +464,6 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 **Authoring gates:** `superskill skill --help`, `superskill command --help` — the validate/evaluate lifecycle both artefacts must clear.
 
 ### History
+
+- 2026-09-09T21:15:25.982Z backlog → todo (system)
+

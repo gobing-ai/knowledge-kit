@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Design style and format config generation from reference images
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-09T18:29:03.904Z
-updated_at: "2026-09-09T20:19:55.920Z"
+updated_at: "2026-09-09T21:15:27.703Z"
 feature_id: K
 
 dependencies: ["0102"]
@@ -347,3 +347,6 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 **Downstream:** 0106 places the extraction operation in the skill and owns its name and trigger.
 
 ### History
+
+- 2026-09-09T21:15:27.703Z backlog → todo (system)
+

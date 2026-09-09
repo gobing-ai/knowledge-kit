@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Map image jobs onto the generator-plugin Doc-to-Content IO contract
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-09T18:28:33.705Z
-updated_at: "2026-09-09T20:32:41.703Z"
+updated_at: "2026-09-09T21:15:33.167Z"
 feature_id: K
 
 ac_altitude: task-local
@@ -404,3 +404,6 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 **Upstream / downstream:** consumes 0102 (`composePrompt`, `FormatPreset`, `StylePreset`, `resolvePresetRoots`) and 0103 (`selectProvider`, `ImageProvider`, `ImageRequest`, `ImageResult`); hands 0106 the `--in` envelope, the `Content` shape, the `metadata.positions` handoff, and the `KK_IMAGE_DRY_RUN` confirmation mechanism.
 
 ### History
+
+- 2026-09-09T21:15:33.167Z backlog → todo (system)
+

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Define the format x style preset schema and resolution contract
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-09T18:27:33.268Z
-updated_at: "2026-09-09T20:21:51.892Z"
+updated_at: "2026-09-09T21:15:31.117Z"
 feature_id: K
 
 ac_altitude: task-local
@@ -311,3 +311,6 @@ Assert it as a single string literal in `tests/presets.test.ts`. If the port cha
 - baoyu prior art (MIT, Copyright 2026 Jim Liu — `vendors/baoyu-skills/LICENSE`): `baoyu-cover-image/references/{base-prompt.md,palettes/*.md,config/preferences-schema.md}`, `baoyu-infographic/references/{styles,layouts}/*.md`
 
 ### History
+
+- 2026-09-09T21:15:31.117Z backlog → todo (system)
+

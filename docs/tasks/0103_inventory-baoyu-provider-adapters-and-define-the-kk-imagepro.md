@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Inventory baoyu provider adapters and define the kk ImageProvider interface
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-09T18:28:03.499Z
-updated_at: "2026-09-09T20:13:36.608Z"
+updated_at: "2026-09-09T21:15:29.518Z"
 feature_id: K
 
 ac_altitude: task-local
@@ -355,3 +355,6 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 **Downstream consumers of this ticket's output:** 0104 (calls `selectProvider` and `generate`), 0105 (routes on `supportsReferenceImages`).
 
 ### History
+
+- 2026-09-09T21:15:29.518Z backlog → todo (system)
+
