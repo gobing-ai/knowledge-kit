@@ -7,6 +7,7 @@ import {
     type FormatPreset,
     FormatPresetSchema,
     loadPresets,
+    renderTemplate,
     type StylePreset,
     StylePresetSchema,
 } from '../src/presets';
@@ -175,6 +176,27 @@ describe('R2 — the frozen composition rule', () => {
             variables: { subtitle: { description: 'Subtitle', default: '' } },
         });
         expect(composePrompt(format, testStyle(), { subtitle: '' })).toContain(', subtitled "{{subtitle}}"');
+    });
+});
+
+describe('renderTemplate edge cases', () => {
+    test('a value wins over a plain-text fallback, and the plain fallback is never re-scanned', () => {
+        // The fallback embeds {{other}}, which HAS a value — but since it does not
+        // wrap {{name}}, it is a literal default, so the value wins untouched.
+        expect(renderTemplate('{{name | see {{other}}}}', { name: 'A', other: 'B' }, 'f')).toBe('A');
+    });
+
+    test('an unterminated {{ is left literal instead of eating the rest of the template', () => {
+        expect(renderTemplate('draw {{open and {{done}} here', { done: 'X' }, 'f')).toBe('draw {{open and X here');
+    });
+
+    test('nested braces count depth, so {{a {{b}} }} resolves as one outer placeholder', () => {
+        expect(renderTemplate('{{outer | fallback}}', {}, 'f')).toBe('fallback');
+        expect(renderTemplate('{{title}} and {{title}}', { title: 'T' }, 'f')).toBe('T and T');
+    });
+
+    test('a fallback is emitted literally and never re-scanned', () => {
+        expect(renderTemplate('{{missing | {{alsoMissing}}}}', {}, 'f')).toBe('{{alsoMissing}}');
     });
 });
 
