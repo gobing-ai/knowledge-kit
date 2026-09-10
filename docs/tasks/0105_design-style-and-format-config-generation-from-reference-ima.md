@@ -4,7 +4,7 @@ name: Design style and format config generation from reference images
 status: done
 template: feature-impl
 created_at: 2026-09-09T18:29:03.904Z
-updated_at: "2026-09-10T03:05:58.971Z"
+updated_at: "2026-09-10T03:33:55.394Z"
 feature_id: K
 
 dependencies: ["0102"]
@@ -346,7 +346,7 @@ Merge rules (frozen in the prompt file): `palette` keeps colours common to the s
 - Extraction grounding (real pixel sampling, reproducible):
   - `magick .spur/run/0105-ref.png -resize 200x -colors 8 -unique-colors txt:-` → dominant colours `#F4F5F6` (near-white), `#C1C1BB`/`#A1A6A5` (greys), `#647E9C` (steel blue), `#BD9B67` (warm tan), `#272828`/`#373738` (ink). Sidebar strip mean `#F8F8F8` — light theme throughout.
   - Ratio: observed 4530×1956 = 2.3160 → nearest named ratio **21:9** (|d| = 0.0174; next nearest 16:9 at 0.5382).
-- Four-axis verdict (method: human eyeball on the pair, per R3): **palette** — matched by construction; extracted hexes are sampled from the reference pixels. **Rendering technique / composition density / typographic treatment** — REGENERATED 2026-09-10: xAI still `invalid_grant`; Antigravity produced the image from the recorded composed prompt (first attempt used a wrong generic subject and was discarded; second used the recorded Karakeep prompt verbatim, 21:9). Image persisted at `.spur/run/0105-regen.jpg` beside the reference `.spur/run/0105-ref.png` (both gitignored). The driver session has no vision, so the R3 human-eyeball verdict remains the operator's single open step; the committed preset's fidelity comment now says take-the-lower (= low) applies until the operator records it.
+- Four-axis verdict (method: human eyeball on the pair, per R3): **palette** — matched by construction; extracted hexes are sampled from the reference pixels. **Rendering technique / composition density / typographic treatment** — REGENERATED 2026-09-10: xAI still `invalid_grant`; Antigravity produced the image from the recorded composed prompt (first attempt used a wrong generic subject and was discarded; second used the recorded Karakeep prompt verbatim, 21:9). Image persisted at `.spur/run/0105-regen.jpg` beside the reference `.spur/run/0105-ref.png` (both gitignored). POSTSCRIPT 2026-09-10: the pixel pair was then lost with the runall worktree cleanup (gitignored, committed nowhere — by design, but it made the pair single-copy). The style data (hexes, modifiers, composed prompt, procedure) is fully preserved, so the take-the-lower rule resolves the four-axis verdict to LOW; the committed and user-root presets record this, and re-running the style-extraction procedure on a fresh reference is the documented upgrade path.
 - **No live provider generation ran in this hop** — no ARK credential in the environment. The regenerated image is produced by the authoring agent's own image tooling from the exact composed prompt below.
 
 **Regeneration record:** attempted twice per provider — Antigravity (quota exhausted) and xAI (invalid_grant) — neither produced an image this hop. The regenerated image is therefore **not** present; the composed prompt above is the committed regeneration input. Fidelity verdict stands at: palette verified by construction (extracted hexes sampled from reference pixels); rendering technique, composition density and typographic treatment **pending** until a generation backend is available. The four-axis procedure itself is executed as specified from the extracted preset onward; only the terminal eyeball comparison awaits the image.

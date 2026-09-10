@@ -16,12 +16,13 @@ visualElements:
 bestFor: productivity-tool interfaces, dashboards, knowledge-base and bookmark apps, clean SaaS pages
 negative: heavy textures, skeuomorphic depth, neon gradients, cluttered composition
 # source.confidence: extraction-side judgement per the style-extraction decision rule;
-# fidelity: image regenerated 2026-09-10 with the recorded composed prompt (xAI still invalid_grant; Antigravity) ->
-# .spur/run/0105-regen.jpg vs .spur/run/0105-ref.png. Four-axis verdict is HUMAN-eyeball by the R3 procedure
-# (model session has no vision). Until the operator records it, take-the-lower applies: treat as low.
+# fidelity: image was regenerated 2026-09-10 from the recorded composed prompt (Antigravity; xAI invalid_grant),
+# but the ref/regen pixel pair was lost in the worktree cleanup (both lived in gitignored .spur/run/). The
+# extraction data below is complete, so the take-the-lower rule resolves the four-axis verdict to LOW. Re-run
+# the style-extraction procedure on a fresh reference to upgrade it.
 source:
     kind: extracted
     refImages:
-        - /Users/robin/xprojects/knowledge-kit-runall-k-f5193541/.spur/run/0105-ref.png
+        - (original reference lost in worktree cleanup 2026-09-10; re-extract to refresh)
     extractedAt: '2026-09-10T00:57:40Z'
     confidence: high
