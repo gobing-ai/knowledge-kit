@@ -422,11 +422,6 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     // executor must exit nonzero even when the child exited 0 (fan-out parity: the
     // dispatch result's ok flag already marks such targets failed). The failure
     // artifact stays on disk for inspection; the child's own nonzero exit remains
-    // authoritative and unchanged.
-    // 0110 I6: a valid Result with ok:false is a publish failure, not success — the
-    // executor must exit nonzero even when the child exited 0 (fan-out parity: the
-    // dispatch result's ok flag already marks such targets failed). The failure
-    // artifact stays on disk for inspection; the child's own nonzero exit remains
     // authoritative and unchanged. KindContract.output is an unparameterized ZodType,
     // so safeParse().data is unknown; the shape cast keeps the ok-check honest without
     // re-declaring the Result schema here.
