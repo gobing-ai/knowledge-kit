@@ -1,11 +1,11 @@
 ---
 name: Design
 doc: 04_DESIGN
-owns: SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO
+owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.26.0
+version: 2.27.0
 created_at: 2026-07-22
-updated_at: 2026-09-03
+updated_at: 2026-09-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -83,15 +83,23 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 
 **Behavior:**
 
-1. Resolves `<plugin>` name via `discoverAllPlugins` & `getByName` (default discovery), or
-   `discoverPlugins` when `--plugins-root` is given.
+1. Resolves `<plugin>` name via `discoverAllPlugins` & `getByName`; `--plugins-root` selects
+   an exclusive root through that same merged entry point, including single-plugin directories.
 2. Validates input file against kind's input schema before spawn (fails loud if schema violated).
 3. Spawns plugin entry executable with `--in <in>` and `--out <out>`.
 4. On non-zero entry exit, fails loud and surfaces error message (returns entry exit code).
-5. Validates written output file against kind's output schema.
+5. Validates output against the kind's output schema, except publish array-input invocations:
+   those currently check only file existence and non-zero size (task 0110 I3).
 6. `--plugins-root` and `--plugins-path` are mutually exclusive (usage error, exit 2).
 
 **Implementation:** `apps/cli/src/commands/executor.ts` (`registerExecutorCommand`, `executor run`) & `apps/cli/src/invoke.ts` (engine).
+
+**Known completion gaps (task 0110; fixes pending):** the current publisher input schema is
+`Content | Doc[]`, although only podcast-pub dispatches the array form as show-notes rendering.
+That form writes raw markdown instead of `Result`. Other forms receive schema validation, but
+the executor neither verifies output freshness nor turns a valid `Result { ok: false }` into a
+non-zero exit. Required repaired behavior is fresh, validated output and non-zero exit for a
+failed publish result; migration of the array form must preserve the existing workflow artifact.
 
 ### `plugin status`
 
@@ -166,6 +174,10 @@ merged docs without aborting siblings; the output is written when ≥1 source su
 and exit `1` with no output only when every source failed. Provenance for source docs is the plugin
 name; merge order is `--in` inputs first, then `--source` declaration order (deterministic output).
 
+**Timeout limitation (task 0110 I2):** the current signal terminates the immediate plugin entry;
+descendant tools can continue after the timeout result. Descendant termination/reaping is an
+accepted repair requirement, not an implemented guarantee. Existing timeout flags stay unchanged.
+
 ### 1.6 `executor fan-out` — shipped (A21; engine B6)
 
 Dispatches one `Content` to N publish targets **in sequence**, emitting one aggregate `Result`.
@@ -209,6 +221,14 @@ succeeded, failed, skipped }, targets }` (spec §3.1) to `--out`.
 
 Partial success is **not** exit 0 — the run fails loud (ADR-007 R5), while successful targets stay
 published and are individually re-runnable via `--retry-from` (spec §5).
+
+**Retry gaps and required repair (task 0110 I4/I7):** current retry decoding/carry-forward drops
+`TargetOutcome.metadata?: Record<string, unknown>`, including `postPath`, and omits prior failures
+outside explicit `--target` selection. The repaired aggregate must preserve that metadata and all
+unresolved target outcomes; remaining failures keep `ok: false` and exit `1`. No new result fields
+or flags are specified here. Runtime currently allows explicit targets absent from the prior
+result; the satellite's "un-attempted" wording permits this, while this section describes narrowing.
+Task 0110 must reconcile that ambiguity before changing target eligibility.
 
 ## 1.7 `plugin.json` manifest surface
 

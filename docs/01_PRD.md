@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.11.0
+version: 3.11.1
 created_at: 2026-07-22
-updated_at: 2026-08-27
+updated_at: 2026-09-10
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -71,7 +71,9 @@ Technical content creation and published output are fragmented: turning ideas or
 | Agent capabilities and product workflows | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) · **F4 IT-content workflow** (`kk-itc`) · **F5 Solo-podcast workflow** (`kk-solo-podcast`) · **F6 Daily AI news voice workflow** (`aihot-ingest` → `dailynews-gen` → `voice-gen`) · **F9 Explain-things** (`explain-things` smallest-view skill + thin `/tell-me`) |
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
 
-A user can answer "can I run this to write an article about X with nothing ingested?" directly from this PRD: **Yes**, by passing a `Brief` to a `ContentGeneratorPlugin` and piping `Content` to a `PublishPlugin`.
+Topic → article without prior ingestion is in scope through the planned `Brief` generator input.
+This is a product requirement, not a shipped CLI claim: `docs/04_DESIGN.md` §1.7/§4 identifies
+the unimplemented `Brief` / `GeneratorInput` contract.
 
 ## Out of scope / deferred
 

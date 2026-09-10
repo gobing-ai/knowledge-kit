@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.20.0
+version: 2.21.0
 created_at: 2026-07-22
-updated_at: 2026-09-03
+updated_at: 2026-09-10
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -100,9 +100,9 @@ supersedes the 2026-08-02 fourth-kind amendment):
 
 | Kind | Contract | Notes |
 | ------ | ---------- | ------- |
-| `ingestion` | `source → Doc[]` | Optional — a pipeline may start from a `Brief` instead |
-| `generator` | `Doc[] \| Brief → Content` | Combined input shape; at least one of `docs` / `brief` |
-| `publish` | `Content → Result` | Fan-out dispatches N of these |
+| `ingestion` | `source → Doc[]` | Optional; the alternative `Brief` generator input is planned |
+| `generator` | `Doc[] → Content` (shipped) | `Brief` / combined input is planned; see Generator input dispatch |
+| `publish` | `Content → Result` (intended) | Current executor also accepts `Doc[]` with opaque output; see Execution boundary integrity I3 |
 
 > **Agent capabilities are not plugin kinds.** Quality gating ships as the `content-judge`
 > agent skill + `agent.run` (ADR-007 amdt 2026-08-07, rename 2026-08-19): the fat skill emits
@@ -118,18 +118,20 @@ supersedes the 2026-08-02 fourth-kind amendment):
 > `superskill install kk` yields `kk:content-judge` / `kk:topic` / `kk:itc-generating` /
 > `/kk:workflow-run` (ADR-009 amdt 2026-08-14 / 2026-08-19).
 
-### Generator input dispatch
+### Generator input dispatch (accepted design — not yet built)
 
-The widened generator input is a **combined shape**, not a strict union:
+The shipped input is a bare `Doc[]` (`kindContract('generator')`). `BriefSchema`,
+`GeneratorInputSchema`, and manifest `accepts` remain specified but unimplemented; see `04`
+§1.7 and §4. The planned widened input is a **combined shape**, not a strict union:
 
 ```text
 GeneratorInput = { brief?: Brief, docs?: Doc[] }   refine: brief || docs.length > 0
 ```
 
 A strict `Brief | Doc[]` union would foreclose the composite case ("write about X *using these
-sources*"), which is the most useful of the three. `kk executor run` validates the input against
-the resolved plugin's kind contract before running the entry and **fails loud** on mismatch — a
-brief-only input handed to a docs-only generator is a named error, never an empty `Content`.
+sources*"), which is the most useful of the three. The planned dispatcher checks populated input
+keys against the plugin's accepted forms before spawn. Today `kk executor run` validates only
+the shipped kind contract, so a brief object is rejected as invalid `Doc[]`.
 
 ### Fan-in / fan-out
 
@@ -170,8 +172,41 @@ Full specification: `docs/design/fan-in-and-fan-out-specification.md`.
                                                                  └─→ kk executor fan-out ─→ result.json ─→ [targets…]
 ```
 
-Every arrow is a file on disk validated against a `@gobing-ai/kk-core` schema; every box is one
-`spur workflow` state whose `onEnter` shells a `kk` subcommand.
+The Brief branch is planned. Executable domain steps exchange files through `kk` subcommands;
+judge steps use `agent.run`. The intended domain boundary validates each file against a
+`@gobing-ai/kk-core` contract. Current validation exceptions and completion gaps are recorded below.
+
+### Execution boundary integrity
+
+**Accepted design with open implementation gaps (2026-09-10).** The dated amendments to
+ADR-006/007/012/019 own the decisions. [Task 0110](tasks/0110_repair-plugin-packaging-execution-contracts-cancellation-and.md)
+owns reproductions, affected callers, remediation choices, and regression acceptance criteria.
+These requirements are not claims that the current implementation enforces them.
+
+| Boundary / owner | Required behavior | Observed gap / task issue |
+| --- | --- | --- |
+| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Raw copied entries still import private workspaces; CLI bundling does not provide modules to child processes (I1) |
+| Cancellation / `apps/cli/src/invoke.ts` | Source timeout terminates and reaps owned descendants without affecting siblings | The adapter exits on timeout while its spawned tool continues (I2) |
+| Kind contract / `kk-core` + executor | Plugin-specific render operations preserve generic kind validation | Every publisher accepts `Doc[]`; that form bypasses output-schema validation for a podcast-specific operation (I3) |
+| Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | Both projections drop `metadata`, including Surfdash's downstream `postPath` (I4) |
+| Invocation completion / `apps/cli/src/invoke.ts` | Only output produced by this invocation can establish success | A child that writes nothing can reuse a valid pre-existing output (I5) |
+| Publish completion / `apps/cli/src/invoke.ts` | A valid `Result` with `ok: false` yields non-zero exit | Single invocation checks result shape only; fan-out checks `ok` (I6) |
+| Retry aggregation / `apps/cli/src/fanout.ts` | Retain failures excluded from the selected retry subset | Unselected failures disappear and the aggregate can become `ok: true` (I7) |
+
+Keep process lifecycle handling at the existing spawn seam and result validation at the executor
+boundary. Each plugin retains its own validation for direct entry execution. Prefer bundling
+product-plugin entries at packaging time over introducing a second registry or publishing private
+workspaces. Keep copied assets alongside the entry, with an isolated distribution smoke test.
+
+Show-notes migration must retain the markdown deliverable through a declared rendering/generation
+path; it must not silently break the current daily workflow. Retry repairs must preserve the
+existing aggregate fields and sequential dispatch. The conflicting descriptions of whether retry
+may introduce a new target need resolution in task 0110 before changing that behavior.
+
+Verification must exercise these boundaries directly: execution outside workspace dependency
+resolution, nested child cancellation, negative plugin output, and a persisted-result round trip
+through the locale-scaffolding selector. A passing in-checkout suite or an existing entry file
+does not prove these flows.
 
 ### Two-layer CLI nouns (shipped — ADR-011, feature A21)
 
@@ -292,7 +327,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 
 ```text
 builtin (package plugins/)
-  → ~/.kk/plugins              (default global store, if present)
+  → ~/.config/kk/plugins       (default global store, if present)
   → <cwd>/plugins              (if present and not builtin realpath)
   → KK_PLUGIN_PATH entries     (left → right)
   → --plugins-path entries     (repeatable; any folder)
@@ -301,7 +336,7 @@ builtin (package plugins/)
 
 `--plugins-path` is the **dynamic** seam: a `spur workflow` var (or the CLI) names any
 folder — a plugins tree, a kind collection, or a single `plugin.json` directory — without
-dropping built-ins or `~/.kk/plugins`. `--plugins-root` skips the union (exclusive
+dropping built-ins or `~/.config/kk/plugins`. `--plugins-root` skips the union (exclusive
 single-root: tests and isolation only). Combining the two flags is a usage error.
 
 Built-ins are the `bundle-plugins` staged tree next to the published `kk` package, not a

@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.21.0
+version: 1.22.0
 created_at: 2026-05-28
-updated_at: 2026-09-03
+updated_at: 2026-09-10
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -234,6 +234,20 @@ under kind collections (`plugins/ingestions|generations|publishings/<name>/plugi
 The uniform step entrypoint is **`kk executor run`**. `kk invoke` is a hidden compatibility alias.
 Registry inspection is **`kk plugin status`**. See **ADR-011**.
 
+### Amendment — 2026-09-10 (executor owns invocation completion)
+
+**Status:** Accepted (design; enforcement gaps tracked in task 0110).
+
+**Decision.** The executor owns the completion boundary: success requires output produced by
+this invocation, valid under its declared contract, and a successful domain result. A child exit
+code alone is insufficient. Plugin-specific rendering operations must not weaken validation for
+an entire kind; the generic publish contract remains `Content → Result`.
+
+**Why.** Stale files, `ok: false` results, and the podcast array-input exception currently pass
+through independent gaps in the generic success path.
+
+**Detail:** `docs/03_ARCHITECTURE.md` → Execution boundary integrity; task 0110 I3/I5/I6.
+
 ---
 
 ## ADR-007 — Reposition knowledge-kit as an ingest-create-publish platform (2026-08-02)
@@ -308,6 +322,21 @@ The 2026-08-02 amendment is superseded in full:
 - **Historical note.** Ticket 0037 and F1's shipped AC still describe the wrappers as of
   2026-08-12. This amendment records the 2026-08-19 retirement; those corpus files stay
   append-only.
+
+---
+
+### Amendment to ADR-007 — 2026-09-10 (retry preserves publication state)
+
+**Status:** Accepted (design; enforcement gaps tracked in task 0110).
+
+**Decision.** A fan-out retry preserves the prior target ledger, including validated artifact
+metadata and failures outside the selected retry subset. Selecting fewer targets does not resolve
+or remove the others; overall success requires no remaining failed target.
+
+**Why.** Reconstructing only selected outcomes loses both downstream artifact locations and
+unresolved publication failures.
+
+**Detail:** `docs/03_ARCHITECTURE.md` → Execution boundary integrity; task 0110 I4/I7.
 
 ---
 
@@ -549,6 +578,21 @@ combining it with `--plugins-path` exits `2`. The B3 workflow template injects
 
 ---
 
+### Amendment to ADR-012 — 2026-09-10 (packaged entry dependency closure)
+
+**Status:** Accepted (design; implementation pending task 0110).
+
+**Decision.** Each shipped product-plugin entry must resolve its runtime dependencies from the
+installed distribution, independently of the development checkout and dependency auto-install.
+Bundling the CLI does not satisfy the dependency closure of separately spawned plugin entries.
+Manifest discovery and the file-based subprocess boundary remain unchanged.
+
+**Why.** Copying source files exposes private workspace imports that the installed package cannot resolve.
+
+**Detail:** `docs/03_ARCHITECTURE.md` → Execution boundary integrity; task 0110 I1.
+
+---
+
 ## ADR-013 — Per-reference evidence cache + report digestion in STORM (2026-08-15)
 
 > **Status:** Accepted · **Date:** 2026-08-15 · **Amends:** the frozen 0056 works
@@ -729,6 +773,20 @@ exceeds the slowest observed real source.
 **Detail:** `apps/cli/src/invoke.ts` (`spawnPluginEntryAsync`), `apps/cli/src/fanin.ts`
 (source-runner branch), `apps/cli/src/commands/executor.ts` (`--source`, `--source-timeout`).
 Task 0092 (feature L1).
+
+---
+
+### Amendment to ADR-019 — 2026-09-10 (source cancellation owns descendants)
+
+**Status:** Accepted (design; implementation pending task 0110).
+
+**Decision.** The executor's source-process boundary owns cancellation and reaping of the
+plugin process and its descendants. Reporting a source as timed out must not leave its child
+tools running or writing artifacts; healthy sibling sources remain independent.
+
+**Why.** Killing an adapter alone leaves its external ingestion tool outside the timeout boundary.
+
+**Detail:** `docs/03_ARCHITECTURE.md` → Execution boundary integrity; task 0110 I2.
 
 ---
 

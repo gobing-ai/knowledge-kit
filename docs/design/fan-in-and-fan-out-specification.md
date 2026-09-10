@@ -157,6 +157,15 @@ kk executor fan-out \
 4. Only failed or un-attempted targets are invoked.
 5. Exit code for the retry run reflects the new aggregate result (`0` if all remaining targets succeed).
 
+**2026-09-10 clarification (accepted repair; not yet implemented).** The ADR-007 retry-state
+amendment requires preserving validated per-target `metadata` as well as `url`/`id`, and carrying
+forward prior failed targets excluded from the selected retry subset. Remaining failures keep
+the aggregate unsuccessful. Current code drops both metadata and unselected failures; task
+[0110](../tasks/0110_repair-plugin-packaging-execution-contracts-cancellation-and.md) I4/I7 owns
+the regression evidence and repair. Item 4 permits unattempted explicit targets, whereas `04`
+describes narrowing to previous failures; reconcile that eligibility wording before changing
+the existing runtime's support for new explicit targets. The repair does not declare new flags.
+
 ---
 
 ## 6. Worked Example (R7)

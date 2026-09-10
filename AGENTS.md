@@ -209,6 +209,9 @@ If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--fo
 `docs/00_ADR.md` is authoritative. Read it before non-trivial changes to the workspace graph, CLI
 surface, or cross-package boundaries. Contradictions require a new dated ADR entry first.
 
+For plugin packaging, invocation completion, cancellation, and retry changes, read
+`docs/03_ARCHITECTURE.md` → **Execution boundary integrity** for required behavior and known gaps.
+
 ---
 
 ## Spur CLI surface
