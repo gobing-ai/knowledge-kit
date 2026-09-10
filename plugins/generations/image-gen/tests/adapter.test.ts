@@ -228,6 +228,87 @@ describe('seedream adapter', () => {
         const adapter = createSeedream({ fetch: fetchFn });
         await expect(adapter.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('429');
     });
+
+    test('validate refuses reference images on a non-ref model', () => {
+        const adapter = createSeedream();
+        expect(() => adapter.validate?.({ prompt: 'x', model: 'imagen-4', referenceImages: ['/tmp/a.png'] })).toThrow(
+            'does not accept reference images',
+        );
+        expect(() =>
+            adapter.validate?.({ prompt: 'x', model: 'doubao-seedream-4-5-x', referenceImages: ['/tmp/a.png'] }),
+        ).not.toThrow();
+    });
+
+    test('url payloads are fetched; extension parsed from the clean segment', async () => {
+        const urls: string[] = [];
+        const fetchFn = (async (url: string) => {
+            urls.push(url);
+            if (url.includes('/images/generations')) {
+                return new Response(
+                    JSON.stringify({ data: [{ url: 'https://cdn.example.com/a/photo.jpeg?sig=xyz' }] }),
+                    {
+                        status: 200,
+                    },
+                );
+            }
+            return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 });
+        }) as unknown as typeof fetch;
+        process.env.ARK_API_KEY = 'k';
+        const adapter = createSeedream({ fetch: fetchFn });
+        const result = await adapter.generate({ prompt: 'x', model: 'm' });
+        expect(result.extension).toBe('jpg');
+        expect(result.bytes.byteLength).toBe(3);
+        expect(urls[1]).toBe('https://cdn.example.com/a/photo.jpeg?sig=xyz');
+    });
+
+    test('url fetch failure throws with status', async () => {
+        const fetchFn = (async (url: string) => {
+            if (url.includes('/images/generations')) {
+                return new Response(JSON.stringify({ data: [{ url: 'https://cdn.example.com/x.png' }] }), {
+                    status: 200,
+                });
+            }
+            return new Response('gone', { status: 410 });
+        }) as unknown as typeof fetch;
+        process.env.ARK_API_KEY = 'k';
+        const adapter = createSeedream({ fetch: fetchFn });
+        await expect(adapter.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('fetch URL HTTP 410');
+    });
+
+    test('non-JSON, API error, and empty-data responses each throw their own error', async () => {
+        process.env.ARK_API_KEY = 'k';
+        const nonJson = createSeedream({
+            fetch: (async () => new Response('<html>', { status: 200 })) as unknown as typeof fetch,
+        });
+        await expect(nonJson.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('non-JSON');
+        const apiErr = createSeedream({
+            fetch: (async () =>
+                new Response(JSON.stringify({ error: { code: 'InvalidParameter', message: 'bad size' } }), {
+                    status: 200,
+                })) as unknown as typeof fetch,
+        });
+        await expect(apiErr.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('InvalidParameter');
+        const empty = createSeedream({
+            fetch: (async () => new Response(JSON.stringify({ data: [] }), { status: 200 })) as unknown as typeof fetch,
+        });
+        await expect(empty.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('no image data');
+    });
+
+    test('image entry with neither url nor b64_json throws, naming the image error when present', async () => {
+        process.env.ARK_API_KEY = 'k';
+        const bare = createSeedream({
+            fetch: (async () =>
+                new Response(JSON.stringify({ data: [{}] }), { status: 200 })) as unknown as typeof fetch,
+        });
+        await expect(bare.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('neither url nor b64_json');
+        const withErr = createSeedream({
+            fetch: (async () =>
+                new Response(JSON.stringify({ data: [{ error: { code: 'ContentFiltered', message: 'blocked' } }] }), {
+                    status: 200,
+                })) as unknown as typeof fetch,
+        });
+        await expect(withErr.generate({ prompt: 'x', model: 'm' })).rejects.toThrow('ContentFiltered');
+    });
 });
 
 describe('0107 P4 advisories', () => {
