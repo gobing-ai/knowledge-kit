@@ -178,35 +178,35 @@ judge steps use `agent.run`. The intended domain boundary validates each file ag
 
 ### Execution boundary integrity
 
-**Accepted design with open implementation gaps (2026-09-10).** The dated amendments to
-ADR-006/007/012/019 own the decisions. [Task 0110](tasks/0110_repair-plugin-packaging-execution-contracts-cancellation-and.md)
-owns reproductions, affected callers, remediation choices, and regression acceptance criteria.
-These requirements are not claims that the current implementation enforces them.
+**Shipped (2026-09-10, task 0110).** The dated amendments to ADR-006/007/012/019 own the
+decisions; [task 0110](tasks/0110_repair-plugin-packaging-execution-contracts-cancellation-and.md)
+implemented them with regression coverage. The executor now enforces:
 
-| Boundary / owner | Required behavior | Observed gap / task issue |
+| Boundary / owner | Required behavior | Shipped mechanism (task issue) |
 | --- | --- | --- |
-| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Raw copied entries still import private workspaces; CLI bundling does not provide modules to child processes (I1) |
-| Cancellation / `apps/cli/src/invoke.ts` | Source timeout terminates and reaps owned descendants without affecting siblings | The adapter exits on timeout while its spawned tool continues (I2) |
-| Kind contract / `kk-core` + executor | Plugin-specific render operations preserve generic kind validation | Every publisher accepts `Doc[]`; that form bypasses output-schema validation for a podcast-specific operation (I3) |
-| Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | Both projections drop `metadata`, including Surfdash's downstream `postPath` (I4) |
-| Invocation completion / `apps/cli/src/invoke.ts` | Only output produced by this invocation can establish success | A child that writes nothing can reuse a valid pre-existing output (I5) |
-| Publish completion / `apps/cli/src/invoke.ts` | A valid `Result` with `ok: false` yields non-zero exit | Single invocation checks result shape only; fan-out checks `ok` (I6) |
-| Retry aggregation / `apps/cli/src/fanout.ts` | Retain failures excluded from the selected retry subset | Unselected failures disappear and the aggregate can become `ok: true` (I7) |
+| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Product entries are Bun-bundled to `dist/index.js` at staging; manifests rewritten to `./dist/index.js`; missing entry / failed build / zero plugins fail loud (I1) |
+| Cancellation / `apps/cli/src/invoke.ts` | Source timeout terminates and reaps owned descendants without affecting siblings | `killProcessTree` (descendants first, then entry) on a self-managed `timeoutMs` timer so the walk runs while the entry is alive (I2) |
+| Kind contract / `kk-core` + executor | Plugin-specific render operations preserve generic kind validation | Publish input is `Content` again; non-`Content` inputs require a manifest-declared `operations` entry, validated and dispatched by declaration (I3) |
+| Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | `TargetOutcome.metadata` round-trips; primitive metadata in a prior ledger is a named input error, exit 2 (I4) |
+| Invocation completion / `apps/cli/src/invoke.ts` | Only output produced by this invocation can establish success | `--in`/`--out` aliasing rejected pre-mutation; stale `--out` unlinked before spawn (delete-or-verify) (I5) |
+| Publish completion / `apps/cli/src/invoke.ts` | A valid `Result` with `ok: false` yields non-zero exit | Single invocations reject `ok: false` with `reported failure: <reason>`, exit 1, artifact kept (I6) |
+| Retry aggregation / `apps/cli/src/fanout.ts` | Retain failures excluded from the selected retry subset | Prior failures outside the explicit selection stay `failed` in the aggregate; `ok: false` and exit 1 preserved (I7) |
 
 Keep process lifecycle handling at the existing spawn seam and result validation at the executor
-boundary. Each plugin retains its own validation for direct entry execution. Prefer bundling
-product-plugin entries at packaging time over introducing a second registry or publishing private
-workspaces. Keep copied assets alongside the entry, with an isolated distribution smoke test.
+boundary. Each plugin retains its own validation for direct entry execution. Product-plugin
+entries stay bundled at packaging time (no second registry, no published private workspaces);
+copied assets remain alongside the entry.
 
-Show-notes migration must retain the markdown deliverable through a declared rendering/generation
-path; it must not silently break the current daily workflow. Retry repairs must preserve the
-existing aggregate fields and sequential dispatch. The conflicting descriptions of whether retry
-may introduce a new target need resolution in task 0110 before changing that behavior.
+Show-notes rendering keeps its markdown deliverable through the declared
+`operations["show-notes"]` (doc-list → markdown) path; the daily workflow artifact is unchanged.
+Retry repairs preserve the existing aggregate fields and sequential dispatch, and target
+eligibility is reconciled: without explicit targets exactly the prior failures retry; an explicit
+selection narrows that attempt set and previously unattempted names remain eligible, while
+unselected prior failures are retained in the aggregate.
 
-Verification must exercise these boundaries directly: execution outside workspace dependency
+Verification exercises these boundaries directly: execution outside workspace dependency
 resolution, nested child cancellation, negative plugin output, and a persisted-result round trip
-through the locale-scaffolding selector. A passing in-checkout suite or an existing entry file
-does not prove these flows.
+through the locale-scaffolding selector.
 
 ### Two-layer CLI nouns (shipped — ADR-011, feature A21)
 

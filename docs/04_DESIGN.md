@@ -88,18 +88,20 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 2. Validates input file against kind's input schema before spawn (fails loud if schema violated).
 3. Spawns plugin entry executable with `--in <in>` and `--out <out>`.
 4. On non-zero entry exit, fails loud and surfaces error message (returns entry exit code).
-5. Validates output against the kind's output schema, except publish array-input invocations:
-   those currently check only file existence and non-zero size (task 0110 I3).
+5. Validates output against the kind's output schema. Publish invocations additionally reject a
+   parsed `Result { ok: false }` as an invocation failure (exit 1; artifact kept, 0110 I6).
+   Manifest-declared `operations` dispatch (0110 I3) validates input/output per declaration;
+   undeclared array dispatch is rejected pre-spawn.
 6. `--plugins-root` and `--plugins-path` are mutually exclusive (usage error, exit 2).
+7. Rejects `--in`/`--out` aliasing the same path pre-mutation (0110 I5) and unlinks the stale
+   `--out` file before spawn, so only output produced by this invocation can establish success.
 
-**Implementation:** `apps/cli/src/commands/executor.ts` (`registerExecutorCommand`, `executor run`) & `apps/cli/src/invoke.ts` (engine).
-
-**Known completion gaps (task 0110; fixes pending):** the current publisher input schema is
-`Content | Doc[]`, although only podcast-pub dispatches the array form as show-notes rendering.
-That form writes raw markdown instead of `Result`. Other forms receive schema validation, but
-the executor neither verifies output freshness nor turns a valid `Result { ok: false }` into a
-non-zero exit. Required repaired behavior is fresh, validated output and non-zero exit for a
-failed publish result; migration of the array form must preserve the existing workflow artifact.
+**Implementation:** `apps/cli/src/invoke.ts` (engine). Shipped in task 0110: the publisher input
+schema is `Content` again; the podcast-pub array show-notes form is a manifest-declared
+`operations["show-notes"]` (doc-list → markdown) reachable only through the executor's declared-op
+dispatch — no undeclared `Doc[]` can bypass output-schema validation. Completion is fresh,
+validated output (stale `--out` unlinked pre-spawn) and a valid `Result { ok: false }` exits 1
+with the artifact preserved.
 
 ### `plugin status`
 
@@ -174,9 +176,11 @@ merged docs without aborting siblings; the output is written when ≥1 source su
 and exit `1` with no output only when every source failed. Provenance for source docs is the plugin
 name; merge order is `--in` inputs first, then `--source` declaration order (deterministic output).
 
-**Timeout limitation (task 0110 I2):** the current signal terminates the immediate plugin entry;
-descendant tools can continue after the timeout result. Descendant termination/reaping is an
-accepted repair requirement, not an implemented guarantee. Existing timeout flags stay unchanged.
+**Timeout semantics (0110 I2, shipped):** a `timeoutMs` timeout kills the source plugin's whole
+process tree — descendants first, then the entry (`killProcessTree`, POSIX `pgrep -P` walk),
+reaped via a self-managed timer so the tree walk runs while the entry is still alive. The result
+surfaces as exit 1 with `timedOut: true`; sibling sources are unaffected. Existing timeout flags
+stay unchanged.
 
 ### 1.6 `executor fan-out` — shipped (A21; engine B6)
 
@@ -197,7 +201,7 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …] \
 | `--content <file>` | string | yes | — | `Content` JSON to publish |
 | `--target <plugin>` | string (repeatable) | yes (≥1)\* | — | Publish plugin name per target |
 | `--out <file>` | string | yes | — | Aggregate `Result` JSON path |
-| `--retry-from <file>` | string | no | — | Prior `Result`; published/skipped targets carried as `skipped` (url/id preserved), only prior failures re-dispatched |
+| `--retry-from <file>` | string | no | — | Prior `Result`; published/skipped targets carried as `skipped` (url/id **and metadata** preserved, 0110 I4), only prior failures re-dispatched; failures outside the explicit selection are retained as `failed` in the aggregate (0110 I7) |
 | `--plugins-root <dir>` | string | no | — | Exclusive single-root scan (isolation/tests only; no union with defaults) |
 | `--plugins-path <dir>` | string[] | no | — | Extra plugin root to union with the default roots (repeatable; tree, kind collection, or single `plugin.json` dir) |
 
@@ -222,13 +226,13 @@ succeeded, failed, skipped }, targets }` (spec §3.1) to `--out`.
 Partial success is **not** exit 0 — the run fails loud (ADR-007 R5), while successful targets stay
 published and are individually re-runnable via `--retry-from` (spec §5).
 
-**Retry gaps and required repair (task 0110 I4/I7):** current retry decoding/carry-forward drops
-`TargetOutcome.metadata?: Record<string, unknown>`, including `postPath`, and omits prior failures
-outside explicit `--target` selection. The repaired aggregate must preserve that metadata and all
-unresolved target outcomes; remaining failures keep `ok: false` and exit `1`. No new result fields
-or flags are specified here. Runtime currently allows explicit targets absent from the prior
-result; the satellite's "un-attempted" wording permits this, while this section describes narrowing.
-Task 0110 must reconcile that ambiguity before changing target eligibility.
+**Retry semantics (0110 I4/I7, shipped):** `TargetOutcome.metadata` round-trips through read and
+carry-forward (Surfdash's `postPath` survives), with a primitive `metadata` value in a prior
+ledger named as an input error (exit 2). Aggregate order is `skipped` → retained `failed` →
+fresh outcomes; unselected prior failures keep `ok: false` and exit 1. Target eligibility per
+spec §5: without explicit targets, exactly the prior failures retry; an explicit `--target`
+selection narrows the attempt set (deduped, published names stay skipped) and previously
+unattempted names remain eligible. No new result fields or flags.
 
 ## 1.7 `plugin.json` manifest surface
 
@@ -260,6 +264,7 @@ preserved, not rejected.
 | `version` | string | no | shipped | Informational |
 | `description` | string | no | shipped | Informational |
 | `accepts` | `('brief' \| 'docs')[]` | no | **specified — not implemented** (D) | Generator-only. Declares which input shapes the plugin handles; defaults to both when absent. Lets a mismatch fail at **resolve time** rather than inside the plugin |
+| `operations` | `Record<string, { input: 'doc-list' \| 'markdown', output: 'doc-list' \| 'markdown' }>` | no | shipped (0110 I3) | Named non-Result operations the plugin accepts (e.g. podcast-pub `show-notes`: doc-list → markdown). Only declared operations can receive non-`Content` inputs; undeclared array dispatch is rejected pre-spawn |
 
 **Resolve-time validation (shipped).** `kk executor run` resolves the manifest, selects the contract with
 `kindContract(record.kind)` (`apps/cli/src/invoke.ts:35`), and validates the input file with
@@ -272,6 +277,17 @@ against `accepts`. A brief-only input handed to an `accepts: ["docs"]` generator
 error rather than a silent empty `Content`. **Migration note:** the existing `content-gen` plugin
 does *not* survive this change unchanged — its entry must read `{ docs: Doc[] }` instead of a
 root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
+
+**Declared operations dispatch (shipped, 0110 I3).** A `Doc[]` input resolves against the
+manifest's `operations`: an undeclared operation name (or no `operations` at all) is rejected
+**before spawn** (`undeclared operation '<name>' for plugin '<plugin>'`); a declared operation has
+its `Doc[]` validated with `DocListSchema`, dispatches, and its `output` form decides completion
+checking — `markdown` ops check artifact existence/non-empty only, `doc-list` ops validate the
+array. Ordinary `Content` invocations bypass operations entirely and validate against
+`kindContract('publish').input`/`.output` as before; a publish whose `Result` parses but carries
+`ok: false` fails the invocation (`reported failure: <reason>`, exit 1, artifact kept for
+inspection, 0110 I6). `--in` and `--out` aliasing the same path is rejected pre-mutation (0110 I5);
+the exact `--out` path is unlinked before spawn, so success always reflects fresh output (delete-or-verify).
 
 ## 2. Configuration keys
 

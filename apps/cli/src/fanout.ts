@@ -231,6 +231,19 @@ async function readAggregateResult(fs: FileSystem, path: string): Promise<Aggreg
             echoError(`Result file ${path} violates the aggregate result schema (target ${String(t.target)})`);
             return null;
         }
+        // 0110 I4: metadata is an optional object and must round-trip (Surfdash postPath
+        // survives deserialization and later retries). A primitive metadata value is a
+        // named input error — dropped fields would silently strand downstream consumers.
+        let metadata: Record<string, unknown> | undefined;
+        if (t.metadata !== undefined) {
+            if (typeof t.metadata !== 'object' || t.metadata === null || Array.isArray(t.metadata)) {
+                echoError(
+                    `Result file ${path} violates the aggregate result schema: target '${String(t.target)}' metadata must be an object`,
+                );
+                return null;
+            }
+            metadata = t.metadata as Record<string, unknown>;
+        }
         targets.push({
             target: t.target,
             ok: t.ok,
@@ -239,6 +252,7 @@ async function readAggregateResult(fs: FileSystem, path: string): Promise<Aggreg
             ...(typeof t.id === 'string' ? { id: t.id } : {}),
             ...(typeof t.error === 'string' ? { error: t.error } : {}),
             ...(typeof t.durationMs === 'number' ? { durationMs: t.durationMs } : {}),
+            ...(metadata !== undefined ? { metadata } : {}),
         });
     }
 
@@ -440,13 +454,16 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     let prior: AggregateResult | undefined;
     let skipped: TargetOutcome[] = [];
     let targets = opts.targets;
+    // 0110 I7: prior failures not selected for attempt stay in the ledger as failed.
+    let retainedFailed: TargetOutcome[] = [];
     if (opts.retryFromPath !== undefined) {
         const parsed = await readAggregateResult(fs, opts.retryFromPath);
         if (parsed === null) {
             return EXIT_INPUT;
         }
         prior = parsed;
-        // Published/skipped targets are carried over as skipped with their prior url/id (spec §5.1).
+        // Published/skipped targets are carried over as skipped with their prior url/id
+        // and metadata (spec §5.1, 0110 I4).
         skipped = prior.targets
             .filter((t) => t.status !== 'failed')
             .map((t) => ({
@@ -455,10 +472,24 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
                 status: 'skipped' as const,
                 ...(t.url !== undefined ? { url: t.url } : {}),
                 ...(t.id !== undefined ? { id: t.id } : {}),
+                ...(t.metadata !== undefined ? { metadata: t.metadata } : {}),
             }));
-        // Retry exactly the prior failures; explicit --target narrows to the still-unpublished subset.
         const carried = new Set(skipped.map((t) => t.target));
-        targets = opts.targets.length > 0 ? opts.targets.filter((t) => !carried.has(t)) : selectRetryTargets(prior);
+        const priorFailed = prior.targets.filter((t) => t.status === 'failed');
+        if (opts.targets.length > 0) {
+            // Explicit selection (spec §5): names already published/skipped stay skipped,
+            // previously unattempted names are eligible, and each attempt happens at most
+            // once (dedupe). Prior failures excluded from the selection remain failed in
+            // the aggregate (0110 R7) so counters, exit code, and later retry rounds see
+            // the full outstanding ledger.
+            const attempt = [...new Set(opts.targets.filter((t) => !carried.has(t)))];
+            const attemptSet = new Set(attempt);
+            targets = attempt;
+            retainedFailed = priorFailed.filter((t) => !attemptSet.has(t.target));
+        } else {
+            // No explicit targets: retry exactly the prior failures (spec §5).
+            targets = priorFailed.map((t) => t.target);
+        }
     }
 
     const dispatch = deps.dispatch ?? ((t: Target) => pluginDispatch(t, opts.contentPath, discovery));
@@ -467,7 +498,7 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
     }
 
     const fresh = await fanout(content, targets, dispatch);
-    const result = prior !== undefined ? aggregate([...skipped, ...fresh.targets]) : fresh;
+    const result = prior !== undefined ? aggregate([...skipped, ...retainedFailed, ...fresh.targets]) : fresh;
 
     try {
         await fs.writeFile(resolve(opts.outPath), `${JSON.stringify(result, null, 2)}\n`);

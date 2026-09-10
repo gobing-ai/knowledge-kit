@@ -29,15 +29,18 @@ describe('kindContract', () => {
         expect(c.output).toBe(ContentSchema);
     });
 
-    it('resolves publish → input Content | Doc[] union and output Result', () => {
+    it('resolves publish → input Content and output Result', () => {
         const c = kindContract('publish');
         expect(c.kind).toBe('publish');
         expect(c.output).toBe(ResultSchema);
-        // 0100 two-form publish input: a Content object, or a bare episode-plan
-        // Doc[] array (podcast-pub's documented show-notes dispatch form, 0095).
+        // 0110 I3: publish input is the ordinary Content object again. The bare
+        // Doc[] show-notes form (0095) is reachable only via a manifest-declared
+        // doc-list operation — not through the kind contract (the executor
+        // cannot treat an undeclared array as safe, and its output bypassed
+        // Result validation).
         expect(c.input?.safeParse({ body: 'Article content', format: 'markdown' }).success).toBe(true);
-        expect(c.input?.safeParse([{ id: 'd1', body: 'episode plan doc' }]).success).toBe(true);
-        // Shapes matching neither form still fail loud — the union is not a passthrough.
+        expect(c.input?.safeParse([{ id: 'd1', body: 'episode plan doc' }]).success).toBe(false);
+        // Off-schema shapes still fail loud.
         expect(c.input?.safeParse({ nope: true }).success).toBe(false);
     });
 

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
-import { pluginEnvFromConfig, runInvoke } from '../src/invoke';
+import { pluginEnvFromConfig, runInvoke, spawnPluginEntryAsync } from '../src/invoke';
 import { captureOutput, silenceOutput } from './capture';
 
 function pluginDirOf(root: string, kind: PluginKind, name: string): string {
@@ -180,7 +180,7 @@ describe('runInvoke', () => {
         });
     });
 
-    it('0100 — publish pre-validation passes a bare Doc[] array --in through to the plugin entry', async () => {
+    it('0110 I3 — publish Doc[] input is rejected undeclared, dispatched when the manifest declares a doc-list op', async () => {
         await withTempDir(async (root) => {
             const pluginDir = pluginDirOf(root, 'publish', 'array-pub');
             const scriptsDir = join(pluginDir, 'scripts');
@@ -206,8 +206,8 @@ describe('runInvoke', () => {
             writeFileSync(join(scriptsDir, 'run.ts'), scriptCode);
             const outFile = join(root, 'result.json');
 
-            // Bare Doc[] array --in (podcast-pub show-notes dispatch form): pre-validation
-            // must pass it through and the entry must be reached — no schema-violation exit.
+            // (AC5) Undeclared publish plugin + bare Doc[] array --in: rejected before the
+            // child runs — the entry is never reached.
             const arrayIn = join(root, 'docs.json');
             writeFileSync(arrayIn, JSON.stringify([{ id: 'd1', body: 'episode plan doc' }]));
             let res = await runInvoke({
@@ -216,18 +216,28 @@ describe('runInvoke', () => {
                 outPath: outFile,
                 pluginsRoot: root,
             });
+            expect(res).toBe(1);
+            expect(existsSync(sawFile)).toBe(false);
+
+            // Declared doc-list operation (podcast-pub show-notes shape): the array input
+            // validates against DocListSchema and reaches the entry.
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({
+                    name: 'array-pub',
+                    kind: 'publish',
+                    entry: 'scripts/run.ts',
+                    operations: { 'show-notes': { input: 'doc-list', output: 'markdown' } },
+                }),
+            );
+            res = await runInvoke({ plugin: 'array-pub', inPath: arrayIn, outPath: outFile, pluginsRoot: root });
             expect(res).toBe(0);
             expect(JSON.parse(await Bun.file(sawFile).text())).toEqual({ isArray: true });
 
             // Content-object --in still validates and reaches the entry exactly as before.
             const objectIn = join(root, 'content.json');
             writeFileSync(objectIn, JSON.stringify({ body: 'Article content' }));
-            res = await runInvoke({
-                plugin: 'array-pub',
-                inPath: objectIn,
-                outPath: outFile,
-                pluginsRoot: root,
-            });
+            res = await runInvoke({ plugin: 'array-pub', inPath: objectIn, outPath: outFile, pluginsRoot: root });
             expect(res).toBe(0);
             expect(JSON.parse(await Bun.file(sawFile).text())).toEqual({ isArray: false });
         });
@@ -241,7 +251,12 @@ describe('runInvoke', () => {
 
             writeFileSync(
                 join(pluginDir, 'plugin.json'),
-                JSON.stringify({ name: 'markdown-pub', kind: 'publish', entry: 'scripts/run.ts' }),
+                JSON.stringify({
+                    name: 'markdown-pub',
+                    kind: 'publish',
+                    entry: 'scripts/run.ts',
+                    operations: { 'show-notes': { input: 'doc-list', output: 'markdown' } },
+                }),
             );
 
             // Fake entry switching on a MODE file so one plugin serves every leg; the
@@ -284,7 +299,8 @@ describe('runInvoke', () => {
             expect(await Bun.file(outFile).text()).toBe('# Show notes\n\n- Segment 1: intro\n- Segment 2: deep dive\n');
 
             // (a-exists) Array-in but the entry wrote nothing: the existence gate still applies.
-            rmSync(outFile); // leg (a)'s artifact must not satisfy the exists gate
+            // 0110 I5: the prior success's artifact is cleared up front, so 'missing' cannot
+            // read as fresh success over stale bytes.
             writeFileSync(modeFile, 'missing');
             res = await runInvoke({
                 plugin: 'markdown-pub',
@@ -330,6 +346,92 @@ describe('runInvoke', () => {
                 pluginsRoot: root,
             });
             expect(res).toBe(0);
+
+            // 0110 I5: a failed rerun leaves no --out — the stale artifact was cleared
+            // before the spawn, and a zero-exit child that writes nothing fails.
+            writeFileSync(modeFile, 'missing');
+            res = await runInvoke({ plugin: 'markdown-pub', inPath: objectIn, outPath: outFile, pluginsRoot: root });
+            expect(res).toBe(1);
+            expect(existsSync(outFile)).toBe(false);
+
+            // 0110 I6: a zero-exit child reporting Result.ok=false is a failure — exit 1,
+            // failure artifact kept on disk for inspection.
+            const scriptCode2 = `${scriptCode}\nif (mode === 'ok-false') { writeFileSync(outPath, JSON.stringify({ ok: false, target: 'markdown-pub', error: 'upstream 502' })); }`;
+            writeFileSync(join(scriptsDir, 'run.ts'), scriptCode2);
+            writeFileSync(modeFile, 'ok-false');
+            const cap2 = captureOutput();
+            try {
+                res = await runInvoke({
+                    plugin: 'markdown-pub',
+                    inPath: objectIn,
+                    outPath: outFile,
+                    pluginsRoot: root,
+                });
+                expect(res).toBe(1);
+                expect(cap2.readErr()).toContain('reported failure: upstream 502');
+            } finally {
+                cap2.restore();
+            }
+            expect(JSON.parse(await Bun.file(outFile).text()).ok).toBe(false);
+        });
+    });
+
+    it('0110 I5 — --in and --out aliasing the same path is rejected before mutation', async () => {
+        await withTempDir(async (root) => {
+            const pluginDir = pluginDirOf(root, 'publish', 'alias-pub');
+            const scriptsDir = join(pluginDir, 'scripts');
+            mkdirSync(scriptsDir, { recursive: true });
+            writeFileSync(
+                join(pluginDir, 'plugin.json'),
+                JSON.stringify({ name: 'alias-pub', kind: 'publish', entry: 'scripts/run.ts' }),
+            );
+            writeFileSync(join(scriptsDir, 'run.ts'), 'console.log("never runs");');
+
+            const sameFile = join(root, 'io.json');
+            writeFileSync(sameFile, JSON.stringify({ body: 'Article content' }));
+            const cap = captureOutput();
+            try {
+                const res = await runInvoke({
+                    plugin: 'alias-pub',
+                    inPath: sameFile,
+                    outPath: sameFile,
+                    pluginsRoot: root,
+                });
+                expect(res).toBe(1);
+                expect(cap.readErr()).toContain('alias the same path');
+            } finally {
+                cap.restore();
+            }
+            // Input untouched.
+            expect(JSON.parse(await Bun.file(sameFile).text())).toEqual({ body: 'Article content' });
+        });
+    });
+
+    it('0110 I2 — async timeout kills the whole spawned tree, not just the direct child', async () => {
+        await withTempDir(async (root) => {
+            const scriptsDir = join(root, 'scripts');
+            mkdirSync(scriptsDir, { recursive: true });
+            // If the grandchild survives the timeout it writes the marker at ~2s; the
+            // entry itself sleeps past the timeout doing nothing else.
+            const marker = join(root, 'grandchild-lived.txt');
+            const grandchild = `setTimeout(() => { const { writeFileSync } = require('node:fs'); writeFileSync(${JSON.stringify(marker)}, 'x'); }, 2000); setInterval(() => {}, 1000);`;
+            writeFileSync(
+                join(scriptsDir, 'run.ts'),
+                `import { spawn } from 'node:child_process';\nspawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });\nsetInterval(() => {}, 1000);\n`,
+            );
+
+            const res = await spawnPluginEntryAsync({
+                entryPath: join(scriptsDir, 'run.ts'),
+                cwd: root,
+                inPath: join(root, 'in.json'),
+                outPath: join(root, 'out.json'),
+                timeoutMs: 300,
+            });
+            expect(res.timedOut).toBe(true);
+
+            // Grace past the grandchild's 2s write deadline: the tree must be gone.
+            await Bun.sleep(2600);
+            expect(existsSync(marker)).toBe(false);
         });
     });
 

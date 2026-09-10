@@ -57,15 +57,12 @@ export interface KindContract {
 const CONTRACTS: Record<PluginKind, KindContract> = {
     ingestion: { kind: 'ingestion', input: null, output: DocListSchema },
     generator: { kind: 'generator', input: DocListSchema, output: ContentSchema },
-    // 0100: publish input is two-form — a Content object, or a bare episode-plan
-    // Doc[] array, the documented show-notes op IO (0095): podcast-pub's
-    // `processPublishIO` dispatches an array input to the show-notes renderer
-    // (`plugins/publishings/podcast-pub/src/index.ts:487-490`). With ContentSchema
-    // alone, the executor's `--in` pre-validation rejected that documented form
-    // before the plugin ever ran — the 0098 re-dogfood (dogfood-20260907-r1) died
-    // exactly there: `Input schema violation for kind 'publish': root: Invalid
-    // input: expected object, received array`.
-    publish: { kind: 'publish', input: z.union([ContentSchema, DocListSchema]), output: ResultSchema },
+    // 0110 I3: publish input is the ordinary Content object again. The bare episode-plan
+    // Doc[] show-notes form (0095) is reachable only through a manifest-declared auxiliary
+    // operation (see `operations` in PluginManifestSchema, honored by invoke.ts). With the
+    // kind-level union (0100) every publish plugin accepted arbitrary arrays and its output
+    // bypassed Result validation — the executor cannot know an undeclared form is safe.
+    publish: { kind: 'publish', input: ContentSchema, output: ResultSchema },
 };
 
 /**

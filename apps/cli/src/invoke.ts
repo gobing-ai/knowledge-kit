@@ -1,7 +1,14 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { collectionForKind, discoverAllPlugins, getByName, kindContract, type PluginKind } from '@gobing-ai/kk-core';
+import {
+    collectionForKind,
+    DocListSchema,
+    discoverAllPlugins,
+    getByName,
+    kindContract,
+    type PluginKind,
+} from '@gobing-ai/kk-core';
 import { echoError } from '@gobing-ai/ts-utils';
 
 /** Options for running a plugin invocation. */
@@ -36,7 +43,7 @@ export interface PluginEntrySpawnResult {
     exitCode: number;
     stdout: string;
     stderr: string;
-    /** Async spawns only: the child was cut short by `timeoutMs` (abort signal fired). */
+    /** Async spawns only: the child was cut short by `timeoutMs` (self-managed timer). */
     timedOut?: boolean;
 }
 
@@ -164,30 +171,73 @@ export interface PluginEntryAsyncSpawnOptions extends PluginEntrySpawnOptions {
 }
 
 /**
+ * Kill a process and all of its descendants, children first so nothing
+ * respawns a parent (0110 I2). Owned-tool termination for the async spawn
+ * seam: on timeout the direct child dies via the abort signal, but children
+ * it spawned (e.g. a `spur agent run` stage) would survive and keep writing
+ * artifacts. Depth-first pgrep walk; SIGKILL throughout.
+ *
+ * ponytail: POSIX only (`pgrep -P` walk). A Windows kk executor would use
+ * `taskkill /T /F /PID <pid>` — add when one exists.
+ */
+function killProcessTree(pid: number): void {
+    let stdout: string;
+    try {
+        stdout = Bun.spawnSync(['pgrep', '-P', String(pid)]).stdout.toString();
+    } catch {
+        stdout = '';
+    }
+    for (const line of stdout.trim().split('\n')) {
+        const child = Number(line);
+        if (Number.isInteger(child) && child > 0) {
+            killProcessTree(child);
+        }
+    }
+    try {
+        process.kill(pid, 'SIGKILL');
+    } catch {
+        // Already gone — the end state we want.
+    }
+}
+
+/**
  * Async sibling of {@link spawnPluginEntry} for concurrent source runs (ADR-019).
  * Same cmd/env construction as the sync path; only the spawn call differs —
- * `Bun.spawn` plus an optional `AbortSignal.timeout(timeoutMs)` so one slow
+ * `Bun.spawn` plus an optional self-managed `timeoutMs` timer so one slow
  * source cannot pin a whole fan-in. A timeout kill surfaces as exit code 1
- * with `timedOut: true`.
+ * with `timedOut: true`, and the child's whole process tree is reaped (0110 I2):
+ * descendants die even if the direct child already spawned them, so a
+ * timed-out source leaves no owned tool running or writing artifacts.
  */
 export async function spawnPluginEntryAsync(opts: PluginEntryAsyncSpawnOptions): Promise<PluginEntrySpawnResult> {
-    const signal = opts.timeoutMs === undefined ? undefined : AbortSignal.timeout(opts.timeoutMs);
     let timedOut = false;
-    signal?.addEventListener('abort', () => {
-        timedOut = true;
-    });
 
+    // The timeout is driven by our own timer, not `AbortSignal.timeout` on the spawn:
+    // Bun's abort-kill beats any late listener to the direct child, so a tree walk
+    // running after abort sees an already-dead pid (grandchildren reparented and
+    // invisible). Firing killProcessTree first, while the child is still alive, is the
+    // only order that reaps the whole tree (0110 I2).
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const proc = Bun.spawn(pluginEntryCmd(opts), {
         cwd: opts.cwd,
         env: pluginEntryEnv(opts),
         stdout: 'pipe',
         stderr: 'pipe',
-        signal,
     });
+
+    if (opts.timeoutMs !== undefined) {
+        timer = setTimeout(() => {
+            timedOut = true;
+            killProcessTree(proc.pid);
+        }, opts.timeoutMs);
+    }
 
     // Drain both pipes before awaiting exit so a chatty child cannot wedge on a full buffer.
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     await proc.exited;
+    if (timer !== undefined) {
+        clearTimeout(timer);
+    }
 
     return {
         exitCode: proc.exitCode === null ? 1 : proc.exitCode,
@@ -222,10 +272,19 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     const absInPath = resolve(opts.inPath);
     const absOutPath = resolve(opts.outPath);
 
-    // 0101: set by the input stage — true exactly when the invocation input is the
-    // bare Doc[] array show-notes form (publish's two-form union, 0100), whose --out
-    // is the raw markdown artifact rather than a Result JSON.
-    let showNotesArrayInput = false;
+    // 0110 I5: an aliased --in/--out cannot pass freshness handling — the stale-output
+    // clear below would delete the input before the child reads it. Reject before any
+    // mutation or spawn; sidecar semantics stay intact because nothing is renamed.
+    if (existsSync(absInPath) && absInPath === absOutPath) {
+        echoError(`--in and --out alias the same path (${absInPath}); refusing to overwrite the input`);
+        return 1;
+    }
+
+    // 0110 I3: a publish array input is allowed only when the manifest declares a
+    // doc-list operation (e.g. podcast-pub show-notes). Undeclared arrays are rejected
+    // before the child runs — no kind- or name-based exceptions, and the output-side
+    // validation bypass dies with the old shape-sniffing (AC5).
+    let artifactOutput = false;
 
     if (contract.input !== null) {
         if (!existsSync(absInPath)) {
@@ -248,19 +307,31 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
             return 1;
         }
 
-        const parseResult = contract.input.safeParse(json);
-        if (!parseResult.success) {
-            const issues = parseResult.error.issues
-                .map((i) => `${i.path.join('.') || 'root'}: ${i.message}`)
-                .join('; ');
-            echoError(`Input schema violation for kind '${record.kind}': ${issues}`);
-            return 1;
+        if (record.kind === 'publish' && Array.isArray(json)) {
+            const op = Object.values(record.operations ?? {}).find((o) => o.input === 'doc-list');
+            if (!op) {
+                echoError(
+                    `Publish plugin '${record.name}' received a Doc[] array but declares no doc-list operation; a Content object is required`,
+                );
+                return 1;
+            }
+            const docs = DocListSchema.safeParse(json);
+            if (!docs.success) {
+                const issues = docs.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
+                echoError(`Input schema violation for the declared doc-list operation of '${record.name}': ${issues}`);
+                return 1;
+            }
+            artifactOutput = op.output === 'markdown';
+        } else {
+            const parseResult = contract.input.safeParse(json);
+            if (!parseResult.success) {
+                const issues = parseResult.error.issues
+                    .map((i) => `${i.path.join('.') || 'root'}: ${i.message}`)
+                    .join('; ');
+                echoError(`Input schema violation for kind '${record.kind}': ${issues}`);
+                return 1;
+            }
         }
-
-        // 0101: the array leg of publish's two-form input union (0100) is the show-notes
-        // dispatch (0095). Scoped to publish — a generator's Doc[] input is the ordinary
-        // form, so its --out stays a validated Content JSON.
-        showNotesArrayInput = record.kind === 'publish' && Array.isArray(json);
     } else {
         if (!existsSync(absInPath)) {
             echoError(`Source path does not exist: ${absInPath}`);
@@ -272,6 +343,23 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     if (!existsSync(entryPath)) {
         echoError(`Plugin entry script does not exist: ${entryPath}`);
         return 1;
+    }
+
+    // 0110 I5: fresh-output ownership. Any pre-existing --out is removed before the
+    // spawn, so existence after the child exits proves the output was produced by this
+    // invocation — a zero-exit child that writes nothing fails even over a previously
+    // valid file. Only the exact --out path is removed: output-relative sidecars keep
+    // their locations, and a failed rerun leaves no --out at all (the old artifact was
+    // cleared up front, so stale output can never read as fresh success).
+    if (existsSync(absOutPath)) {
+        try {
+            unlinkSync(absOutPath);
+        } catch (err: unknown) {
+            echoError(
+                `Failed to clear stale output ${absOutPath}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return 1;
+        }
     }
 
     const proc = spawnPluginEntry({
@@ -295,16 +383,11 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
         return 1;
     }
 
-    // 0101: show-notes markdown exemption. Publish's array input leg (0100) dispatches
-    // podcast-pub's show-notes op (0095), which writes the raw markdown artifact itself
-    // to --out (plugins/publishings/podcast-pub/src/index.ts:472-481) — the documented
-    // deliverable, consumed as-is by the workflow. JSON.parse + ResultSchema validation
-    // kills exactly that invocation with `Output file ... is invalid JSON` (0100's P3
-    // residual), so for this form --out is an opaque artifact: existence + non-emptiness
-    // only. Content-object invocations keep the exact JSON/Result validation and error
-    // messages below (an empty --out still fails there as invalid JSON, byte-identical);
-    // generator/ingestion kinds are untouched.
-    if (showNotesArrayInput) {
+    // 0110 I3: declared-operation artifact output (e.g. show-notes markdown). The op's
+    // output form is part of the manifest declaration, so --out stays an opaque artifact
+    // only for invocations the plugin actually declared: existence + non-emptiness, no
+    // JSON/Result validation. Content invocations keep exact Result validation below.
+    if (artifactOutput) {
         if (statSync(absOutPath).size === 0) {
             echoError(`Plugin entry succeeded but wrote an empty output file: ${absOutPath}`);
             return 1;
@@ -332,6 +415,25 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     if (!outResult.success) {
         const issues = outResult.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
         echoError(`Output schema violation for kind '${record.kind}': ${issues}`);
+        return 1;
+    }
+
+    // 0110 I6: a valid Result with ok:false is a publish failure, not success — the
+    // executor must exit nonzero even when the child exited 0 (fan-out parity: the
+    // dispatch result's ok flag already marks such targets failed). The failure
+    // artifact stays on disk for inspection; the child's own nonzero exit remains
+    // authoritative and unchanged.
+    // 0110 I6: a valid Result with ok:false is a publish failure, not success — the
+    // executor must exit nonzero even when the child exited 0 (fan-out parity: the
+    // dispatch result's ok flag already marks such targets failed). The failure
+    // artifact stays on disk for inspection; the child's own nonzero exit remains
+    // authoritative and unchanged. KindContract.output is an unparameterized ZodType,
+    // so safeParse().data is unknown; the shape cast keeps the ok-check honest without
+    // re-declaring the Result schema here.
+    const parsed = outResult.data as { ok?: boolean; error?: string; message?: string };
+    if (record.kind === 'publish' && parsed.ok === false) {
+        const reason = parsed.error ?? parsed.message ?? 'publish failed';
+        echoError(`Plugin '${record.name}' reported failure: ${reason}`);
         return 1;
     }
 

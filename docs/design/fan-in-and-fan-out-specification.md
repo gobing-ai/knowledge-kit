@@ -157,14 +157,15 @@ kk executor fan-out \
 4. Only failed or un-attempted targets are invoked.
 5. Exit code for the retry run reflects the new aggregate result (`0` if all remaining targets succeed).
 
-**2026-09-10 clarification (accepted repair; not yet implemented).** The ADR-007 retry-state
-amendment requires preserving validated per-target `metadata` as well as `url`/`id`, and carrying
-forward prior failed targets excluded from the selected retry subset. Remaining failures keep
-the aggregate unsuccessful. Current code drops both metadata and unselected failures; task
-[0110](../tasks/0110_repair-plugin-packaging-execution-contracts-cancellation-and.md) I4/I7 owns
-the regression evidence and repair. Item 4 permits unattempted explicit targets, whereas `04`
-describes narrowing to previous failures; reconcile that eligibility wording before changing
-the existing runtime's support for new explicit targets. The repair does not declare new flags.
+**2026-09-10 clarification (shipped — task 0110 I4/I7).** The ADR-007 retry-state
+amendment is enforced: validated per-target `metadata` round-trips alongside `url`/`id` (a
+primitive `metadata` value in a prior ledger is a named input error, exit 2), and prior failed
+targets excluded from the selected retry subset are carried into the aggregate as `failed`, so
+remaining failures keep the aggregate unsuccessful (exit 1). Eligibility wording is reconciled:
+item 4 stands — only prior failed targets are retried by default, and an explicit `--target`
+selection narrows that set (deduped); previously unattempted names in an explicit selection
+remain eligible and are dispatched fresh. The aggregate always carries every outstanding
+outcome. No new flags.
 
 ---
 

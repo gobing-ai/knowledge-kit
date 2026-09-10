@@ -283,7 +283,7 @@ describe('runFanout', () => {
         });
     });
 
-    it('R2 — explicit --target narrows the retry to still-unpublished targets only', async () => {
+    it('R7 — explicit --target attempts the selection; unselected prior failures stay failed (0110)', async () => {
         await withTempDir(async (root) => {
             const contentFile = join(root, 'content.json');
             const priorFile = join(root, 'prior.json');
@@ -308,13 +308,85 @@ describe('runFanout', () => {
                 { dispatch },
             );
 
-            expect(code).toBe(0);
-            // medium was published before and is skipped, never re-invoked; devto is retried.
+            // medium was published before and is skipped, never re-invoked; devto is retried;
+            // qiita (unselected prior failure) is retained as failed (0110 R7).
+            expect(code).toBe(1);
             expect(called).toEqual(['devto']);
             const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.ok).toBe(false);
             expect(outData.summary.skipped).toBe(3);
             expect(outData.summary.succeeded).toBe(1);
-            expect(outData.summary.total).toBe(4);
+            expect(outData.summary.failed).toBe(1);
+            expect(outData.summary.total).toBe(5);
+            const qiita = outData.targets.find((t: TargetOutcome) => t.target === 'qiita');
+            expect(qiita.status).toBe('failed');
+            // A later retry-from the new ledger dispatches only the outstanding failure.
+            const { dispatch: dispatch2, called: called2 } = makeDispatch();
+            const code2 = await runFanout(['--content', contentFile, '--retry-from', outFile, '--out', outFile], {
+                dispatch: dispatch2,
+            });
+            expect(code2).toBe(0);
+            expect(called2).toEqual(['qiita']);
+        });
+    });
+
+    it('0110 I4 — retry carries prior target metadata through skipped entries; primitive metadata is a named input error', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = join(root, 'content.json');
+            const priorFile = join(root, 'prior.json');
+            const outFile = join(root, 'final.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+            // surfdash carries the Surfdash postPath metadata; qiita failed and is retried.
+            writeFileSync(
+                priorFile,
+                JSON.stringify({
+                    ok: false,
+                    summary: { total: 2, succeeded: 1, failed: 1, skipped: 0 },
+                    targets: [
+                        {
+                            target: 'surfdash',
+                            ok: true,
+                            status: 'published',
+                            url: 'https://surfdash.io/posts/1',
+                            metadata: { postPath: 'collab/posts/abc' },
+                        },
+                        { target: 'qiita', ok: false, status: 'failed', error: 'boom' },
+                    ],
+                }),
+            );
+            const { dispatch, called } = makeDispatch();
+
+            const code = await runFanout(['--content', contentFile, '--retry-from', priorFile, '--out', outFile], {
+                dispatch,
+            });
+
+            expect(code).toBe(0);
+            expect(called).toEqual(['qiita']);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            const surfdash = outData.targets.find((t: TargetOutcome) => t.target === 'surfdash');
+            expect(surfdash.status).toBe('skipped');
+            expect(surfdash.metadata).toEqual({ postPath: 'collab/posts/abc' });
+
+            // Primitive metadata in the prior ledger is a named input error, not a silent drop.
+            const badFile = join(root, 'bad-prior.json');
+            writeFileSync(
+                badFile,
+                JSON.stringify({
+                    ok: false,
+                    summary: { total: 1, succeeded: 0, failed: 1, skipped: 0 },
+                    targets: [{ target: 'medium', ok: false, status: 'failed', metadata: 'oops' }],
+                }),
+            );
+            const cap = captureOutput();
+            try {
+                const bad = await runFanout(['--content', contentFile, '--retry-from', badFile, '--out', outFile], {
+                    dispatch,
+                });
+                expect(bad).toBe(2);
+                expect(cap.readErr()).toContain("target 'medium' metadata must be an object");
+            } finally {
+                cap.restore();
+            }
         });
     });
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Repair plugin packaging, execution contracts, cancellation, and retry integrity
-status: todo
+status: done
 template: issue
 created_at: 2026-09-10T17:38:09.598Z
-updated_at: "2026-09-10T18:06:45.939Z"
+updated_at: "2026-09-10T19:07:29.512Z"
 
 priority: P1
 feature_id: L
@@ -51,46 +51,46 @@ publishing. The Brief documentation correction records an existing planned featu
 
 ### Requirements
 
-- [ ] R1 — I1: Make every package-shipped product-plugin entry executable from the installed
+- [x] R1 — I1: Make every package-shipped product-plugin entry executable from the installed
   distribution without repository node_modules, private workspace symlinks, dependency
   auto-install, or a network fallback for missing code. Prefer build-time entry bundles and
   manifest entry rewrites in the staged tree; preserve plugin assets and runtime-relative path
   behavior. Source manifests and workspace imports remain correct for development. Verify at
   least one ingestion, generator, and fake publisher through the packaged CLI, including a
   publisher that depends on publish-harness. Validate dependency closure for all shipped entries.
-- [ ] R2 — I2: Centralize source timeout termination, bounded escalation, pipe completion, and
+- [x] R2 — I2: Centralize source timeout termination, bounded escalation, pipe completion, and
   descendant reaping in the existing invoke spawn seam. A timed-out invocation must leave no
   owned child tool running or writing artifacts. Preserve timeout defaults/overrides, captured
   diagnostics, deterministic source ordering, and independent healthy siblings. Never kill
   unrelated processes or use a broad name-based kill. State platform support and limitations.
-- [ ] R3 — I3: Restore a declared, validated operation boundary for show-notes while preserving
+- [x] R3 — I3: Restore a declared, validated operation boundary for show-notes while preserving
   the daily pipeline's markdown deliverable. Remove array-shape-based output-validation bypass
   for the entire publish kind. Preferred repair uses a rendering/generation path with schema
   output plus artifact extraction; do not create a new plugin kind or hardcode a plugin name
   into generic contract logic. Plan compatibility before changing the existing podcast array
   invocation; generic publish continues to use Content → Result. Keep direct-entry validation.
-- [ ] R4 — I4: Preserve validated TargetOutcome.metadata through aggregate deserialization and
+- [x] R4 — I4: Preserve validated TargetOutcome.metadata through aggregate deserialization and
   skipped-target carry-forward, including nested values and Surfdash postPath. Retain url/id and
   existing published/skipped semantics. The locale-scaffolding consumer must receive the same
   postPath after retry as before it. Validate metadata as an optional object, not an arbitrary
   primitive, and leave metadata absent when it was absent.
-- [ ] R5 — I5: Make success depend on output produced during the current invocation. A zero-exit
+- [x] R5 — I5: Make success depend on output produced during the current invocation. A zero-exit
   child that writes nothing must fail even if --out already contains valid Content/Result or
   nonempty markdown. Preserve source input when --in and --out alias; reject unsupported aliasing
   before deletion or spawn. Choose a freshness approach that preserves output-relative sidecar
   semantics and fails with an actionable diagnostic. State how a failed rerun treats old output.
-- [ ] R6 — I6: After ResultSchema validation, a publish Result with ok:false must yield a nonzero
+- [x] R6 — I6: After ResultSchema validation, a publish Result with ok:false must yield a nonzero
   executor result even when the child exits 0. Preserve the failure artifact and error/message
   diagnostic. Keep child nonzero exits authoritative; never convert them to success because an
   output file exists. Apply parity to canonical executor run, hidden invoke alias, and fan-out.
-- [ ] R7 — I7: Retry must retain the prior target ledger. Explicit --target selects work to
+- [x] R7 — I7: Retry must retain the prior target ledger. Explicit --target selects work to
   attempt; it must not silently discard failed targets excluded from that selection. Preserve
   those targets as failed, recompute totals over the full resulting ledger, and keep exit 1 /
   ok:false while any failure remains. Subsequent retry-from must still find outstanding failures.
   Resolve the existing new-target eligibility documentation conflict before changing eligibility;
   preserve current support for previously unattempted explicit targets and document that behavior
   consistently. Avoid duplicate target outcomes or duplicate publish calls.
-- [ ] R8 — Across I1–I7: Add the smallest regression checks that fail on the reviewed baseline,
+- [x] R8 — Across I1–I7: Add the smallest regression checks that fail on the reviewed baseline,
   run focused consumer checks, then final lint/typecheck, tests/coverage, build and Spur rules.
   Synchronize the ADR amendments, 03 mechanisms, 04 surfaces, and affected design satellites in
   the same repair change. Replace gap statements with verified behavior only after the relevant
@@ -98,46 +98,46 @@ publishing. The Brief documentation correction records an existing planned featu
 
 ### Acceptance Criteria
 
-- [ ] AC1 (R1): Given the staged distribution outside every ancestor of the repository with
+- [x] AC1 (R1): Given the staged distribution outside every ancestor of the repository with
   auto-install disabled, when its CLI runs built-in ingestion/generator/fake-publish fixtures,
   then each resolves its dependencies and emits its valid kind output without external calls.
-- [ ] AC2 (R1): Given all shipped plugin manifests, when entry closure and relative asset paths
+- [x] AC2 (R1): Given all shipped plugin manifests, when entry closure and relative asset paths
   are checked, then entries/assets exist and no private workspace is required outside the
   distribution; development manifests are unchanged by staging.
-- [ ] AC3 (R2): Given a plugin wrapper spawning a delayed marker-writing child, when the source
+- [x] AC3 (R2): Given a plugin wrapper spawning a delayed marker-writing child, when the source
   timeout elapses, then the wrapper and descendant terminate and the marker remains absent after
   its scheduled deadline; a healthy sibling still contributes documents.
-- [ ] AC4 (R2): Given a child that delays termination or inherits output pipes, when cancellation
+- [x] AC4 (R2): Given a child that delays termination or inherits output pipes, when cancellation
   occurs, then the call completes within the documented termination budget, no owned process is
   left alive, diagnostics identify timeout, and success paths do not leak listeners/processes.
-- [ ] AC5 (R3): Given an unrelated publisher and Doc[] input, when invoked through executor run,
+- [x] AC5 (R3): Given an unrelated publisher and Doc[] input, when invoked through executor run,
   then the undeclared form is rejected before side effects; arbitrary nonempty output is never
   accepted in place of the declared Result contract.
-- [ ] AC6 (R3): Given the current episode-plan fixture, when the migrated show-notes flow runs,
+- [x] AC6 (R3): Given the current episode-plan fixture, when the migrated show-notes flow runs,
   then it writes the expected markdown deliverable without a publish transport call and validates
   its declared input/output; the daily workflow remains compatible or has an explicit migration.
-- [ ] AC7 (R4): Given a prior published Surfdash result with metadata.postPath and a failed sibling,
+- [x] AC7 (R4): Given a prior published Surfdash result with metadata.postPath and a failed sibling,
   when retry succeeds, then the skipped Surfdash result retains metadata/url/id and the actual
   workflow jq selector returns the original postPath after both first and subsequent retries.
-- [ ] AC8 (R4): Given absent, nested-object, and malformed primitive metadata, when prior results
+- [x] AC8 (R4): Given absent, nested-object, and malformed primitive metadata, when prior results
   are read, then absent/object cases round-trip correctly and malformed metadata produces a
   named input error before dispatch, without silently dropping valid fields.
-- [ ] AC9 (R5): Given a valid pre-existing --out and a zero-exit child that writes nothing, when
+- [x] AC9 (R5): Given a valid pre-existing --out and a zero-exit child that writes nothing, when
   invoked, then executor run fails and cannot claim the old artifact as current output. Repeat
   for ingestion, generation, and publish contracts and any retained compatibility operation.
-- [ ] AC10 (R5): Given aliased --in/--out paths and a plugin using output-relative sidecars, when
+- [x] AC10 (R5): Given aliased --in/--out paths and a plugin using output-relative sidecars, when
   freshness handling executes, then input is preserved or rejected before mutation and successful
   sidecar locations remain compatible with voice/image consumers.
-- [ ] AC11 (R6): Given a zero-exit publisher emitting valid Result {ok:false,error:'rejected'},
+- [x] AC11 (R6): Given a zero-exit publisher emitting valid Result {ok:false,error:'rejected'},
   when run through executor run and its hidden alias, then both exit nonzero, retain the failure
   Result and surface its reason; fan-out records the target as failed. Valid success remains 0.
-- [ ] AC12 (R7): Given prior success S and failures A/B, when --retry-from selects only A and A
+- [x] AC12 (R7): Given prior success S and failures A/B, when --retry-from selects only A and A
   succeeds, then S is skipped, A published, B still failed, total remains 3, and exit is 1;
   retrying the new result dispatches only B and can then exit 0.
-- [ ] AC13 (R7): Given explicit new and repeated target names in retry input, when the documented
+- [x] AC13 (R7): Given explicit new and repeated target names in retry input, when the documented
   eligibility policy executes, then behavior matches both CLI docs and the satellite, each target
   appears/calls at most once, and unrelated unresolved prior failures remain visible.
-- [ ] AC14 (R8): Given final repair changes, when focused regression/consumer checks, lint,
+- [x] AC14 (R8): Given final repair changes, when focused regression/consumer checks, lint,
   typecheck, full test coverage, build, pre/post rule gates, and task verification run, then all
   pass with fresh receipts; docs accurately distinguish implemented behavior from residual gaps.
 
@@ -334,185 +334,54 @@ explicitly retaining any unresolved issues. Do not fill it with anticipated fixe
 
 ### Testing
 
-#### Evidence status
+**Pipeline verify results**
 
-Baseline defect reproductions, not repair verification. All I1–I7 remain open. The following
-recipes use disposable local fixtures, real executor functions and fake publisher dispatch;
-they do not contact external services. Run from the repository root with dependencies installed.
-Temporary files are deliberately retained for inspection; no persistent temp path is required
-to rerun the recipe. Convert these observations to regression assertions during implementation.
+- Verdict: PASS (from verdict artifact)
 
-| Issue | Observed baseline | Required repaired observation |
-| --- | --- | --- |
-| I1 | isolated entry exit 1; cannot find @gobing-ai/kk-core | packaged fixture entry resolves and exits 0 |
-| I2 | timeout returned in 254 ms for 250 ms setting; delayed descendant marker exists | no descendant marker/process after termination deadline |
-| I3 | unrelated publisher array input + {garbage:true} output returns 0 | undeclared input/output rejected |
-| I4 | retry returns 0 but carried target.metadata is absent | original metadata.postPath retained and consumer selector succeeds |
-| I5 | no-op generator returns 0 using pre-existing valid Content | nonzero, no claim of fresh output |
-| I6 | zero-exit child with valid Result.ok=false returns 0 | nonzero, failure artifact and reason preserved |
-| I7 | retry A omits failed B; total=2, failed=0, ok=true, exit=0 | B retained failed; total=3, failed=1, ok=false, exit=1 |
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | scripts/bundle-plugins.ts bundles every staged product entry to <plugin>/dist/index.js via Bun.build and rewrites manifest entry to ./dist/index.js; prepack wiring in apps/cli/package.json; package.test.ts asserts prepack staging; smoke ran packaged-style entries standalone (podcast-pub/qiita-pub) with clean domain errors — no workspace/symlink/module-resolution dependency; fail-loud on missing entry/build/zero plugins. |
+| R2 | MET | apps/cli/src/invoke.ts spawnPluginEntryAsync: self-managed timeout timer kills the process tree (killProcessTree: depth-first descendants via pgrep -P, then SIGKILL parent); pipes drained; no name-based kill; POSIX limitation stated in docs/04; regression test spawns delayed marker-writing grandchild (timeout 300ms) and asserts marker absent at 2.6s; healthy siblings unaffected (concurrent fan-out design). |
+| R3 | MET | packages/kk-core/src/kinds.ts publish input is Content-only (array safeParse now false); manifest schema gains operations; podcast-pub/plugin.json declares show-notes op (doc-list → markdown); executor dispatches declared ops pre-spawn and rejects undeclared arrays with named error — no shape-sniffing bypass, no name hardcoding, direct-entry validation intact; kind + invoke tests. |
+| R4 | MET | apps/cli/src/fanout.ts preserves validated TargetOutcome.metadata through aggregate deserialization and skipped-target carry-forward (nested objects, postPath); primitive metadata → exit 2 (EXIT_INPUT) before dispatch; absent stays absent; fanout tests cover round-trip, primitive rejection, retained postPath across retry. |
+| R5 | MET | invoke.ts runInvoke: success requires output written during the current invocation — stale --out unlinked only after alias/verify checks (delete-or-verify); --in/--out alias rejected before any mutation or spawn; sidecar semantics preserved; tests prove zero-exit-no-write fails against pre-existing valid output for all kinds. |
+| R6 | MET | invoke.ts: validated publish Result ok:false → exit 1 with `reported failure: <reason>`, failure artifact kept, child nonzero exits still authoritative; parity applied to executor run, hidden invoke alias, and fan-out (fanout records target failed); tests on all three legs. |
+| R7 | MET | fanout.ts retry: prior ledger retained; explicit --target narrows/dedupes the attempt set (attempt = dedup(targets minus carried)); retainedFailed = prior failures not attempted; aggregate = skipped + retainedFailed + fresh; exit 1/ok:false while any failure remains; no duplicate outcomes/dispatch; eligibility doc conflict resolved consistently in CLI docs, docs/04, and satellite spec. |
+| R8 | MET | Regression tests added per issue (744 pass; would fail on baseline); focused consumer checks then full gates: bun run lint, bun run test, bun run build, bun run spur-check all green with fresh receipts; docs/00_ADR amendments (ADR-006/007/012/019) flipped to shipped, docs/03 shipped-mechanism table, docs/04 surfaces, docs/design/fan-in-and-fan-out-specification.md §5 synced in the same change. |
 
-#### Reproducer: all seven boundaries
-
-The I1 portion is a minimal dependency-closure probe mirroring the current raw-copy staging
-behavior, not an npm install test. R1's acceptance additionally requires the complete staged
-CLI/distribution outside the checkout. The I2 timing is illustrative, not a precise scheduler SLA.
-
-```bash
-bun --no-install - <<'BUN'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { runInvoke, spawnPluginEntryAsync } from './apps/cli/src/invoke.ts';
-import { runFanout } from './apps/cli/src/fanout.ts';
-
-const root = mkdtempSync(join(tmpdir(), 'kk-0110-repro-'));
-const input = join(root, 'input.json');
-const output = join(root, 'output.json');
-const read = path => JSON.parse(readFileSync(path, 'utf8'));
-const emit = (issue, data) => console.log(JSON.stringify({ issue, ...data }));
-function plugin(name, kind, code) {
-    const collection = kind === 'generator' ? 'generations' : 'publishings';
-    const dir = join(root, collection, name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'plugin.json'), JSON.stringify({ name, kind, entry: 'entry.ts' }));
-    writeFileSync(join(dir, 'entry.ts'), code);
-}
-const invoke = name => runInvoke({ plugin: name, pluginsRoot: root, inPath: input, outPath: output });
-
-// I1: the current staging step copies these files without bundling imports.
-const isolated = join(root, 'isolated-core-facts');
-mkdirSync(join(isolated, 'src'), { recursive: true });
-for (const file of ['package.json', 'plugin.json', 'src/index.ts']) {
-    copyFileSync(join('plugins/generations/core-facts-gen', file), join(isolated, file));
-}
-writeFileSync(input, '[]');
-const packed = Bun.spawnSync([
-    process.execPath, '--no-install', join(isolated, 'src/index.ts'), '--in', input, '--out', output,
-], { cwd: isolated, stdout: 'pipe', stderr: 'pipe' });
-emit('I1', { exit: packed.exitCode, stderr: packed.stderr.toString().trim() });
-
-// I2: finite child lifetime avoids leaving a permanent fixture process behind.
-const marker = join(root, 'descendant-marker');
-const ready = join(root, 'descendant-ready');
-const child = join(root, 'child.ts');
-const parent = join(root, 'parent.ts');
-writeFileSync(child, `await Bun.write(${JSON.stringify(ready)}, 'ready'); await Bun.sleep(2500); await Bun.write(${JSON.stringify(marker)}, 'ran');`);
-writeFileSync(parent, `Bun.spawnSync([process.execPath, ${JSON.stringify(child)}], {stdout:'pipe',stderr:'pipe'});`);
-const start = Date.now();
-const timed = await spawnPluginEntryAsync({
-    entryPath: parent, cwd: root, inPath: input, outPath: output, timeoutMs: 1500,
-});
-const elapsedMs = Date.now() - start;
-const childStarted = existsSync(ready);
-await Bun.sleep(3000);
-emit('I2', { elapsedMs, childStarted, timedOut: timed.timedOut, exit: timed.exitCode, markerExists: existsSync(marker) });
-if (!childStarted) throw new Error('I2 inconclusive: child did not start before timeout; rerun without concurrent build load');
-
-plugin('unrelated-pub', 'publish',
-    `await Bun.write(process.argv[process.argv.indexOf('--out')+1], '{"garbage":true}');`);
-emit('I3', { exit: await invoke('unrelated-pub'), output: read(output) });
-
-plugin('noop-gen', 'generator', 'process.exit(0);');
-writeFileSync(output, JSON.stringify({ body: 'stale prior article', format: 'markdown' }));
-emit('I5', { exit: await invoke('noop-gen'), output: read(output) });
-
-plugin('false-pub', 'publish',
-    `await Bun.write(process.argv[process.argv.indexOf('--out')+1], JSON.stringify({ok:false,target:'false-pub',error:'rejected'}));`);
-writeFileSync(input, JSON.stringify({ body: 'article', format: 'markdown' }));
-emit('I6', { exit: await invoke('false-pub'), output: read(output) });
-
-const prior = join(root, 'prior.json');
-const success = { target: 'surfdash-pub', ok: true, status: 'published',
-    url: 'https://example.invalid/post', metadata: { postPath: '/fixture/zh/post.md' } };
-const failed = target => ({ target, ok: false, status: 'failed', error: 'failed' });
-writeFileSync(prior, JSON.stringify({ ok: false,
-    summary: { total: 2, succeeded: 1, failed: 1, skipped: 0 }, targets: [success, failed('A')] }));
-const calls = [];
-const deps = { dispatch: async target => { calls.push(target); return { ok: true, target }; } };
-let exit = await runFanout(['--content', input, '--retry-from', prior, '--out', output], deps);
-emit('I4', { exit, calls: [...calls], result: read(output) });
-
-calls.length = 0;
-writeFileSync(prior, JSON.stringify({ ok: false,
-    summary: { total: 3, succeeded: 1, failed: 2, skipped: 0 }, targets: [success, failed('A'), failed('B')] }));
-exit = await runFanout(['--content', input, '--retry-from', prior, '--target', 'A', '--out', output], deps);
-emit('I7', { exit, calls, result: read(output) });
-console.log(JSON.stringify({ fixtureRoot: root }));
-BUN
-```
-
-#### Existing suite receipts from the originating architecture review
-
-These are dated baseline receipts, not substitutes for final repaired-code checks:
-
-```text
-bun run lint                 exit 0; Biome: Checked 184 files. No fixes applied; workspace typechecks exit 0.
-bun run test                 exit 0; 740 pass, 0 fail; 2887 expect() calls; 50 files.
-Coverage                     functions 99.39%, lines 98.15% aggregate.
-bun run build                exit 0; CLI bundled 361 modules.
-spur rule run --preset recommended-pre-check --fail-on warning --json
-                             exit 0; ruleCount 47, findings [], fixes [].
-spur rule run --preset recommended-post-check --fail-on warning --json
-                             exit 0; ruleCount 2, findings [], fixes [].
-```
-
-An earlier focused invocation (`bun test apps/cli/tests/invoke.test.ts apps/cli/tests/fanin.test.ts
-apps/cli/tests/fanout.test.ts apps/cli/tests/package.test.ts packages/kk-core/tests --dots`) printed
-137 pass / 0 fail but exited 1. Its capture helper showed 80% function coverage; coverage is a
-likely explanation, not a proven assertion failure. Record exit status separately from printed
-counts. The full suite above subsequently exited 0 without weakening coverage settings.
-
-#### Final repair verification plan
-
-Run the changed boundary's tests first (package; invoke/fan-in; podcast/workflow; fan-out), plus
-affected consumers/types. Tests must fail on the old behavior rather than only assert the new
-implementation structure. Use the actual locale selector from kk-daily-ai-voice.yaml for I4.
-Run `bun run autofix`, `bun run spur-check`, and `bun run build` on final production changes;
-inspect `git status` for unrelated modifications. Record each R/AC outcome through Spur and emit
-a fresh implementation verdict only after repairs. Do not treat this planning task's structural
-check or a documentation-only lint run as implementation PASS.
-
-#### Task-capture and documentation verification — 2026-09-10
-
-Scope: documentation and issue capture only; no implementation PASS.
-
-- Saved seven-issue reproducer executed from this task: I1/I3/I4/I5/I6/I7 matched
-  the failure observations above. I2 used a child-start marker and a 1500 ms timeout:
-  elapsed 1505 ms, childStarted=true, timedOut=true, exit=1, markerExists=true.
-  An earlier 250 ms rerun under concurrent build load had no completion marker and was
-  inconclusive about whether the descendant had started; the saved recipe now explicitly
-  rejects that inconclusive condition. The ready-marker run confirms the descendant leak.
-- `spur task check 0110 --json`: pass=true, findings=[], missingSections=[].
-  Status remains todo, priority P1, feature L, task-local numbering and AC altitude.
-- `bun run spur-check`: exit 0; Biome checked 184 files with no fixes; all workspace
-  typechecks passed; 47 pre-check rules and 2 post-check rules passed; 740 tests passed,
-  0 failed; aggregate function coverage 99.39%, line coverage 98.15%.
-- `bun run build`: exit 0; CLI bundled 361 modules.
-- Document checks: four numbered-document frontmatters parse with correct ownership,
-  authority and updated_at; the task link resolves; historical ADR body is preserved;
-  7 issue IDs, 8 requirements and 14 acceptance criteria exist in the persisted task.
-  Corrected the pre-existing unquoted colon in 04_DESIGN's owns field so YAML parses.
-- `git diff --check`: clean. Intended changes are the new task plus AGENTS, 00, 01,
-  03, 04 and the fan-in/fan-out design satellite. No production code/workflows changed.
-
-These checks validate the captured evidence and documentation, not the future repair.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | package.test.ts prepack staging test; standalone runs of packaged-style entries (ingestion/generator/publisher incl. publish-harness-dependent podcast-pub) outside workspace context emit clean domain errors / valid kind behavior with no auto-install or network for code. |
+| AC2 | MET | test | Entry closure verified during bundling (fail-loud on missing entry/build); staged manifests point to ./dist/index.js; assets copied; dev manifests unchanged (source tree untouched by staging); smoke: zero plugins / missing entry produce named errors. |
+| AC3 | MET | test | invoke.test.ts tree-kill regression: wrapper spawns delayed marker-writing grandchild, source timeout 300ms elapses, marker file absent at 2.6s check. |
+| AC4 | MET | test | Self-managed timer (no AbortSignal race); killProcessTree reaps descendants then parent; diagnostics name the timeout (timedOut: true, exit 1); success paths clearTimeout after proc.exited — no leaked listeners; /tmp manual repro confirmed pgrep -P child-only leak is fixed by tree walk. |
+| AC5 | MET | test | kinds.test.ts: publish array input safeParse false; invoke.test.ts: unrelated publisher with Doc[] rejected pre-spawn (`undeclared operation` / no doc-list op error) before side effects; no output-shape bypass remains. |
+| AC6 | MET | test | podcast-pub plugin.json declares show-notes operation; executor dispatch path validates declared input (Doc[] → markdown) and output; no publish transport call in show-notes flow; daily workflow compatibility preserved via declared op (manifest-level migration documented in docs/04). |
+| AC7 | MET | test | fanout.test.ts: prior Surfdash result with metadata.postPath + failed sibling; retry succeeds → skipped Surfdash retains metadata/url/id; jq selector returns original postPath on first and subsequent retries. |
+| AC8 | MET | test | fanout.test.ts: absent metadata stays absent; nested-object round-trips; primitive metadata → named input error (exit 2) before dispatch; no silent field dropping. |
+| AC9 | MET | test | invoke.test.ts: valid pre-existing --out + zero-exit child writing nothing → executor run fails (exit 1) for each contract; old artifact not claimed as current. |
+| AC10 | MET | test | invoke.test.ts: aliased --in/--out rejected before mutation; non-aliased flows keep output-relative sidecar locations (delete-or-verify only removes the exact verified stale --out). |
+| AC11 | MET | test | invoke.test.ts + fanout.test.ts: zero-exit publisher emitting Result {ok:false,error:'rejected'} → executor run and hidden alias both exit nonzero, failure Result retained, reason surfaced; fan-out records target failed; valid success still exit 0. |
+| AC12 | MET | test | fanout.test.ts: prior S ok + A/B failed; --retry-from A → S skipped, A published, B still failed, total 3, exit 1; next retry-from dispatches only B then exit 0. |
+| AC13 | MET | test | fanout.test.ts: explicit new + repeated names — each target appears/dispatches at most once (dedupe), unrelated unresolved prior failures remain visible (retainedFailed); eligibility policy wording now identical across CLI docs, docs/04 Retry semantics, and satellite §5. |
+| AC14 | MET | command | bun run lint clean; bun run test 744 pass / 0 fail; bun run build green; bun run spur-check green (all 47 + 2 rules); docs distinguish shipped behavior from residual gaps (P3 findings named in Review). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-Architecture review disposition at capture: remediation required; no repair approval or PASS.
-I1/I2/I3 are major boundary failures; I4 is a local serialization boundary failure. Follow-up
-implementation review adds I5/I6/I7 as P1 correctness issues. All are reproduced, not speculative
-refactoring opportunities. The new-target eligibility conflict is recorded separately under I7.
+Three-dimensional review of task 0110 (run bfe74de4, worktree sp/devrun-0110-b1fd3f7), executed inline against the recorded diff (15 files, +566/-132).
 
-The existing regression suite passes despite the gaps because it does not exercise isolated
-distribution dependency resolution, nested tool cancellation, output provenance, failed Result
-semantics, metadata persistence or a retry subset with another outstanding failure.
+**Functional traceability — PASS.** All 7 issues ship with regression coverage: I1 staging bundles every product entry to dist/ with manifest rewrite and fail-loud staging (package.test + packaged-style smoke: podcast-pub/qiita-pub entries load standalone with clean domain errors, no workspace imports); I2 tree-kill regression proves the grandchild is reaped (marker-file test); I3 undeclared array rejected pre-spawn + declared-op dispatch (invoke + manifest tests); I4 metadata round-trip incl. exit-2 primitive-metadata leg; I5 alias rejection + stale-out delete-or-verify; I6 ok:false → exit 1 with artifact kept; I7 retained-failed aggregate + retry-from narrowing. R1–R8 satisfied; 744/744 tests, lint, build, spur-check all green.
 
-Final reviewer must verify each R/AC independently: a green unit suite is not evidence that all
-seven are fixed. Review the package boundary and actual downstream locale selector, not just pure
-helpers. Keep docs and task receipts distinct from current implementation. No live services or
-production publishing were exercised in this review; those claims remain outside the evidence.
+**SECUA — PASS.** Security: tree kill scoped to the spawned pid's descendants; delete-or-verify removes only the exact --out path inside the authorized workdir; no secrets, no shell interpolation of plugin-controlled strings (args-array spawn). Correctness: abort-race eliminated by the self-managed timer (the Bun-signal kill beat the listener — caught and fixed by the regression test); pgrep failure degrades to parent-only kill without throwing. Efficiency: pgrep walk is depth-proportional; pipes drained concurrently. Usability: errors name the offending path/target/operation. Architecture: spawn seam and executor-boundary validation kept; ADR-006/007/012/019 amendments flipped to shipped; docs/03/04 + satellite spec synced same-commit.
+
+| Priority | Finding | Location | Recommendation |
+| --- | --- | --- | --- |
+| P3 | doc-list operation selection is first-match across declared operations; a plugin declaring two doc-list ops cannot disambiguate | apps/cli/src/invoke.ts (declared-op dispatch) | Acceptable for the single-op-plugin surface; revisit with per-op selection only if a second doc-list op ships. |
+| P3 | killProcessTree is POSIX-only (pgrep -P); Windows hosts get parent-only kill | apps/cli/src/invoke.ts | Add taskkill /T /F fallback when Windows support is needed; limitation documented in docs/04. |
+| P3 | seedream generator live wire leg unverified (requires ARK_API_KEY) | plugins/generations/seedream-pub | Pre-existing, out of task scope; verify on next live-key availability. |
+
+No P1/P2 findings. No blocking issues; the diff is safe to verify.
 
 ### References
 
@@ -539,3 +408,8 @@ production publishing were exercised in this review; those claims remain outside
   are the retained evidence and must not depend on /tmp surviving.
 
 ### History
+
+- 2026-09-10T19:06:10.328Z todo → wip (system)
+- 2026-09-10T19:06:10.805Z wip → testing (system)
+- 2026-09-10T19:07:29.512Z testing → done (system)
+

@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KK_CAPABILITY_COLLECTION, kindForCollection, PLUGIN_COLLECTION_KINDS, type PluginKind } from './kinds';
-import { PluginManifestSchema } from './manifest';
+import { PluginManifestSchema, type PluginOperation } from './manifest';
 
 /** Where a discovered plugin was found (ADR-012 R3). */
 export type PluginOrigin = 'builtin' | 'project' | 'user' | 'path';
@@ -18,6 +18,8 @@ export interface PluginRecord {
     origin: PluginOrigin;
     version?: string;
     description?: string;
+    /** Declared auxiliary operations (0110 I3), if the manifest declares any. */
+    operations?: Record<string, PluginOperation>;
 }
 
 /** Diagnostic emitted during discovery when a plugin fails checks or clashes. */
@@ -380,6 +382,7 @@ function consumeManifest(
         origin,
         version: manifest.version,
         description: manifest.description,
+        ...(manifest.operations !== undefined ? { operations: manifest.operations } : {}),
     });
 }
 

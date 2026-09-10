@@ -236,7 +236,7 @@ Registry inspection is **`kk plugin status`**. See **ADR-011**.
 
 ### Amendment — 2026-09-10 (executor owns invocation completion)
 
-**Status:** Accepted (design; enforcement gaps tracked in task 0110).
+**Status:** Accepted; enforced by the executor (task 0110, shipped 2026-09-10).
 
 **Decision.** The executor owns the completion boundary: success requires output produced by
 this invocation, valid under its declared contract, and a successful domain result. A child exit
@@ -327,7 +327,7 @@ The 2026-08-02 amendment is superseded in full:
 
 ### Amendment to ADR-007 — 2026-09-10 (retry preserves publication state)
 
-**Status:** Accepted (design; enforcement gaps tracked in task 0110).
+**Status:** Accepted; enforced by the executor (task 0110, shipped 2026-09-10).
 
 **Decision.** A fan-out retry preserves the prior target ledger, including validated artifact
 metadata and failures outside the selected retry subset. Selecting fewer targets does not resolve
@@ -580,7 +580,7 @@ combining it with `--plugins-path` exits `2`. The B3 workflow template injects
 
 ### Amendment to ADR-012 — 2026-09-10 (packaged entry dependency closure)
 
-**Status:** Accepted (design; implementation pending task 0110).
+**Status:** Accepted; implemented (task 0110, shipped 2026-09-10).
 
 **Decision.** Each shipped product-plugin entry must resolve its runtime dependencies from the
 installed distribution, independently of the development checkout and dependency auto-install.
@@ -778,7 +778,7 @@ Task 0092 (feature L1).
 
 ### Amendment to ADR-019 — 2026-09-10 (source cancellation owns descendants)
 
-**Status:** Accepted (design; implementation pending task 0110).
+**Status:** Accepted; implemented (task 0110, shipped 2026-09-10).
 
 **Decision.** The executor's source-process boundary owns cancellation and reaping of the
 plugin process and its descendants. Reporting a source as timed out must not leave its child
