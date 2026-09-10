@@ -420,6 +420,8 @@ describe('runFanin source-runner mode (--source)', () => {
             const pluginsRoot = join(root, 'plugins');
             writeFixtureIngestionPlugin(pluginsRoot, 'fanin-fast', { docId: 'fast1' });
             writeFixtureIngestionPlugin(pluginsRoot, 'fanin-stuck', { sleepMs: 10_000 });
+            // Leash 1000ms: comfortably above a bun child's cold-start (~250-350ms) so the
+            // fast sibling always finishes, yet far below the 10s stuck source.
             const outFile = join(root, 'merged.json');
             const inFast = join(root, 'fast-in.json');
             const inStuck = join(root, 'stuck-in.json');
@@ -434,7 +436,7 @@ describe('runFanin source-runner mode (--source)', () => {
                     '--source',
                     `fanin-stuck:${inStuck}`,
                     '--source-timeout',
-                    '300',
+                    '1000',
                     '--out',
                     outFile,
                 ]),
@@ -442,14 +444,14 @@ describe('runFanin source-runner mode (--source)', () => {
             const elapsed = Date.now() - started;
 
             expect(code).toBe(0);
-            // The 10s source was cut at ~300ms; the run did not wait for it.
+            // The 10s source was cut at ~1000ms; the run did not wait for it.
             expect(elapsed).toBeLessThan(5000);
             const outData = JSON.parse(await Bun.file(outFile).text());
             expect(outData.map((d: { id: string }) => d.id)).toEqual(['fast1']);
             const errors = outData[0].metadata.sourceErrors;
             expect(errors).toHaveLength(1);
             expect(errors[0].plugin).toBe('fanin-stuck');
-            expect(errors[0].error).toContain('timed out after 300ms');
+            expect(errors[0].error).toContain('timed out after 1000ms');
             expect(errors[0].durationMs).toBeLessThan(5000);
         });
     });
@@ -458,14 +460,14 @@ describe('runFanin source-runner mode (--source)', () => {
         await withTempDir(async (root) => {
             const pluginsRoot = join(root, 'plugins');
             writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-fast', { docId: 'fast1' });
-            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-medium', { sleepMs: 500, docId: 'medium1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-medium', { sleepMs: 1500, docId: 'medium1' });
             const outFile = join(root, 'merged.json');
             const inFast = join(root, 'fast-in.json');
             const inMedium = join(root, 'medium-in.json');
             writeFileSync(inFast, '[]');
             writeFileSync(inMedium, '[]');
 
-            // Global leash 300ms would cut the 500ms source; its personal override (20s) saves it.
+            // Global leash 1000ms would cut the 1500ms source; its personal override (20s) saves it.
             const code = await withPluginPath(pluginsRoot, () =>
                 runFanin([
                     '--source',
@@ -473,7 +475,7 @@ describe('runFanin source-runner mode (--source)', () => {
                     '--source',
                     `fanin-ovr-medium:${inMedium}`,
                     '--source-timeout',
-                    '300',
+                    '1000',
                     '--source-timeout-override',
                     'fanin-ovr-medium:20000',
                     '--out',
