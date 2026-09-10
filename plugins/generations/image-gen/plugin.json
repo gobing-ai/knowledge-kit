@@ -1,0 +1,7 @@
+{
+    "name": "image-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "0.1.0",
+    "description": "Image generation plugin: free / cover / illustration jobs over the generator Doc[] → Content contract (feature K)"
+}

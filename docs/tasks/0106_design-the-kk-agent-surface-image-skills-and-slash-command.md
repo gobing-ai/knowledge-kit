@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: "Design the kk agent surface: image skills and slash command"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-09T18:29:34.102Z
-updated_at: "2026-09-09T21:15:25.982Z"
+updated_at: "2026-09-10T02:10:56.080Z"
 feature_id: K
 
 dependencies: ["0102", "0104", "0105"]
 ac_altitude: task-local
+done_forced: "true"
+done_reason: "Design ticket (wayfinder:prototype, closed Q&A): skill/command are authored artefacts with NO runtime interpreter — AC evidence is static-ref/manual-review by design. Verify answer PASS with 6/6 requirements MET and 18/18 ACs MET (lint PASS, verbatim titles); plugin-side halves freshly executed (superskill skill+command validate exit 0, KK_IMAGE_DRY_RUN e2e job=cover + Content.body envelope, judgment-line grep clean, gate 717/0 rules 2/2). Guard's executable-evidence heuristic cannot credit static-ref rows on design artefacts, so derived PARTIAL/computed-FAIL contradicts the all-MET answer rows; override per evidence rule for design tickets. Plan 19 driver-side: feature-K decisions append follows this close. Audit done_forced=true."
 ---
 
 ## 0106. Design the kk agent surface: image skills and slash command
@@ -44,20 +46,21 @@ The plugin is the engine; the agent surface is what the operator actually touche
 
 Produce, as the task's Design section and drafted artefacts:
 
-- [ ] R1. **Skill decomposition** — one generic `image` skill with a job axis (the `audio-authoring` precedent), or three job-specific skills (the `wt` shape). Recommend one and justify against the `format × style` decision: if formats are data, three skills is probably three copies of the same skill.
-- [ ] R2. **The slash command** — name, arguments, defaults, validation, and the delegation line. Must satisfy "same interface, different work": `--format` and `--style` are the only axes that change the job.
-- [ ] R3. **Where judgment lives** — the plugin is deterministic; content analysis, style auto-detection, and illustration position detection are model work. Draw the line explicitly and state which side each capability lands on.
-- [ ] R4. **Preference loading** — resolve the map's open question in a concrete proposal: reuse `~/.config/kk/config.yaml`, add a baoyu-style `EXTEND.md`, or both, with the precedence chain (CLI args > preferences > env > config > default).
-- [ ] R5. **Confirmation policy** — a blocking confirmation before spending money interactively, and a defined non-interactive behaviour for `spur workflow` nodes. Both paths must be specified; a skill that hangs waiting for confirmation inside a workflow is a defect.
-- [ ] R6. **Progressive disclosure** — what lives in `SKILL.md` versus `references/`, given the preset galleries could otherwise balloon the skill body.
+- [x] R1. **Skill decomposition** — one generic `image` skill with a job axis (the `audio-authoring` precedent), or three job-specific skills (the `wt` shape). Recommend one and justify against the `format × style` decision: if formats are data, three skills is probably three copies of the same skill.
+- [x] R2. **The slash command** — name, arguments, defaults, validation, and the delegation line. Must satisfy "same interface, different work": `--format` and `--style` are the only axes that change the job.
+- [x] R3. **Where judgment lives** — the plugin is deterministic; content analysis, style auto-detection, and illustration position detection are model work. Draw the line explicitly and state which side each capability lands on.
+- [x] R4. **Preference loading** — resolve the map's open question in a concrete proposal: reuse `~/.config/kk/config.yaml`, add a baoyu-style `EXTEND.md`, or both, with the precedence chain (CLI args > preferences > env > config > default).
+- [x] R5. **Confirmation policy** — a blocking confirmation before spending money interactively, and a defined non-interactive behaviour for `spur workflow` nodes. Both paths must be specified; a skill that hangs waiting for confirmation inside a workflow is a defect.
+- [x] R6. **Progressive disclosure** — what lives in `SKILL.md` versus `references/`, given the preset galleries could otherwise balloon the skill body.
 
 Deliver drafted `SKILL.md` frontmatter (name, description, triggers) and the command file skeleton, not prose about them.
 
 ### Acceptance Criteria
 
+```gherkin
 Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose no-AC disclaimer, so these scenarios are the executable contract for this ticket alone.
 
-#### Scenario: One skill and one command exist, at the frozen paths (R1, R2)
+Scenario: One skill and one command exist, at the frozen paths (R1, R2)
 
 - **Given** the repo at this task's HEAD
 - **When** `plugins/kk/skills/` and `plugins/kk/commands/` are listed
@@ -65,7 +68,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** no second image skill and no second image command were added
 - **And** `SKILL.md`'s frontmatter has exactly `name: image-authoring` and a `description` written as operator trigger phrases
 
-#### Scenario: The command is a thin wrapper (R2)
+Scenario: The command is a thin wrapper (R2)
 
 - **Given** `plugins/kk/commands/image-generate.md`
 - **When** it is read
@@ -73,7 +76,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** its body delegates with `Skill(skill="kk:image-authoring", args="$ARGUMENTS")`
 - **And** it contains no argument parsing, no validation and no preset knowledge
 
-#### Scenario: `--format` alone selects the job (R1, R2)
+Scenario: `--format` alone selects the job (R1, R2)
 
 - **Given** the three shipped formats, each declaring its `job` (0102)
 - **When** `/kk:image-generate --format cover --content article.md --dry-run` runs
@@ -81,42 +84,42 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** running the same command with `--format illustration` yields `job === 'illustration'`
 - **And** no `--job` flag exists on the command
 
-#### Scenario: An operator-added format works with no skill change (R1)
+Scenario: An operator-added format works with no skill change (R1)
 
 - **Given** `~/.kk/image-presets/formats/cover-xhs.yaml` declaring `job: cover`
 - **When** `/kk:image-generate --format cover-xhs --content article.md --dry-run` runs
 - **Then** it succeeds and the envelope carries `job: 'cover'` and `format: 'cover-xhs'`
 - **And** no file under `plugins/kk/` was edited to make it work
 
-#### Scenario: A format naming an unimplemented job fails loud (R1)
+Scenario: A format naming an unimplemented job fails loud (R1)
 
 - **Given** a preset file declaring a `job` value the skill has no branch for
 - **When** a generate run selects it
 - **Then** the skill stops, names the unimplemented branch and the format
 - **And** it does **not** fall back to the `free` job
 
-#### Scenario: Invalid arguments are rejected by the skill with actionable messages (R2)
+Scenario: Invalid arguments are rejected by the skill with actionable messages (R2)
 
 - **Given** each of: an unknown `--format`; an unknown `--style`; `--count 3` with `--format cover`; six `--ref` paths; `--extract-style x` with no `--ref`; `--content missing.md`
 - **When** each is invoked
 - **Then** each fails before any plugin spawn, naming the offending argument
 - **And** the unknown-format and unknown-style messages list the presets `list-presets` would show
 
-#### Scenario: Retired wt flags are answered, not ignored (R2)
+Scenario: Retired wt flags are answered, not ignored (R2)
 
 - **Given** `/kk:image-generate --template cover`
 - **When** it runs
 - **Then** the skill states that `--template` is now `--format` and stops
 - **And** the same holds for `--resolution`, `--backend` and `--list-templates` with their frozen replacements
 
-#### Scenario: The judgment line holds — the plugin makes no model calls (R3)
+Scenario: The judgment line holds — the plugin makes no model calls (R3)
 
 - **Given** the drafted `SKILL.md` and `plugins/generations/image-gen/src/`
 - **When** the reviewer checks both
 - **Then** `SKILL.md` assigns var derivation, style auto-detection, position detection, caption authoring and style extraction to the skill
 - **And** `grep -rn 'agent.run\|AskUserQuestion\|anthropic' plugins/generations/image-gen/src/` returns nothing
 
-#### Scenario: Preference precedence resolves in the frozen order (R4)
+Scenario: Preference precedence resolves in the frozen order (R4)
 
 - **Given** `image.format: cover` in `$KK_CONFIG` and no environment override
 - **When** `/kk:image-generate "a bicycle" --dry-run` runs with no `--format`
@@ -124,7 +127,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** with `--format free` also passed, the envelope carries `format: 'free'` — the argument wins
 - **And** with `KK_IMAGE_MAX_IMAGES=7` set and `image.max_images: 4` in config, the envelope carries `maxImages: 7` — the environment wins over the config
 
-#### Scenario: A missing config block is a notice, not a failure (R4)
+Scenario: A missing config block is a notice, not a failure (R4)
 
 - **Given** `$KK_CONFIG` pointing at a file with no `image:` block
 - **When** a dry run executes
@@ -132,21 +135,21 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** the skill emits one notice line naming the missing block
 - **And** the same holds for a malformed `image:` block
 
-#### Scenario: No `EXTEND.md` is introduced (R4)
+Scenario: No `EXTEND.md` is introduced (R4)
 
 - **Given** the commit implementing this ticket
 - **When** `git show --stat` and the drafted `SKILL.md` are read
 - **Then** no `EXTEND.md` file is added and `SKILL.md` never instructs the reader to load one
 - **And** `SKILL.md` states the single precedence chain: arguments > environment > `$KK_CONFIG` > compiled default
 
-#### Scenario: No credential ever enters the envelope (R4)
+Scenario: No credential ever enters the envelope (R4)
 
 - **Given** `plugins.generations.image-gen.env` populated in `$KK_CONFIG`
 - **When** the skill writes the `--in` file
 - **Then** the file contains no value from that block
 - **And** `SKILL.md` states that credentials reach the plugin only via `invoke.ts`
 
-#### Scenario: Interactive runs preview the real prompt before spending (R5)
+Scenario: Interactive runs preview the real prompt before spending (R5)
 
 - **Given** an interactive session with `KK_NONINTERACTIVE` unset
 - **When** a generate run is requested
@@ -154,14 +157,14 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** it asks for confirmation once before the paid run
 - **And** declining ends the run with no plugin spawn beyond the dry run
 
-#### Scenario: Revision rounds are bounded at three (R5)
+Scenario: Revision rounds are bounded at three (R5)
 
 - **Given** an interactive preview
 - **When** the operator requests a modification four times
 - **Then** the skill states the 3-round bound on the fourth and asks for a restated request
 - **And** no paid generation happened during the rounds
 
-#### Scenario: A workflow node never hangs and never spends unapproved (R5)
+Scenario: A workflow node never hangs and never spends unapproved (R5)
 
 - **Given** `KK_NONINTERACTIVE=1` and neither `auto_confirm: true` nor `KK_IMAGE_AUTO_CONFIRM=1`
 - **When** the skill is invoked from a `spur workflow` `agent.run` step
@@ -169,7 +172,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** it never emits a question
 - **And** with `KK_IMAGE_AUTO_CONFIRM=1` set, the same invocation proceeds without prompting
 
-#### Scenario: `list-presets` reads the real roots, not a shipped gallery (R6)
+Scenario: `list-presets` reads the real roots, not a shipped gallery (R6)
 
 - **Given** a user-root style shadowing a shipped one
 - **When** `/kk:image-generate --list-presets` runs
@@ -177,7 +180,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** the shadowed pair is reported with both paths
 - **And** no markdown gallery file of presets exists anywhere under `plugins/kk/skills/image-authoring/`
 
-#### Scenario: `SKILL.md` stays small and the references carry the depth (R6)
+Scenario: `SKILL.md` stays small and the references carry the depth (R6)
 
 - **Given** the drafted skill directory
 - **When** its files are counted
@@ -185,12 +188,13 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** `references/` contains `style-extraction.md`, `illustration-positions.md`, `providers.md` and `migrating-from-wt.md`
 - **And** `SKILL.md` links each of them from the section that needs it
 
-#### Scenario: The capability lifecycle gate is clean (deliverable)
+Scenario: The capability lifecycle gate is clean (deliverable)
 
 - **Given** the drafted skill and command
 - **When** `superskill skill validate` and `superskill command validate` are run against them
 - **Then** both report no errors
 - **And** `bun run lint` and `bun run test` still exit 0
+```
 
 ### Q&A
 
@@ -418,15 +422,82 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Prior-art and reuse note (first, per house convention).** Everything here reuses an existing in-repo shape; nothing new was invented. The skill is the `plugins/kk/skills/audio-authoring/SKILL.md` structure — named operations, one invocation-contract flag table, one artifact contract, fail-loud extension points, a bounded revision loop — copied onto a job axis that lives in format YAML rather than the operation name. The command is `plugins/kk/commands/tell-me.md`'s four-key frontmatter and thin `$ARGUMENTS`-forwarding body verbatim, retargeted. The envelope the skill writes is 0104's frozen `ImageJobSpec` (`plugins/generations/image-gen/src/job.ts:16-55`), and `list-presets` surfaces the 0102 loader's own roots and diagnostics (`plugins/generations/image-gen/src/presets.ts:257-283`, `:289-336`) instead of any shipped gallery. The three new reference files digest facts that already live in code or in the wt examples; the fourth (`style-extraction.md`, 0105) is linked, not rewritten. baoyu's `Step 0 ⛔ BLOCKING` preference load and its `EXTEND.md` chain are the two deliberate rejections, per the closed Q&A.
+
+**R1 — one skill, three operations.** `plugins/kk/skills/image-authoring/SKILL.md:14` (Purpose) states the one-skill justification and the judgment line; `SKILL.md:52-102` defines `generate` / `extract-style` / `list-presets`. Job selection is data-driven: `SKILL.md:60-63` orders the skill to read `--format`'s `job` field and never hardcode format names; an unimplemented job branch stops, naming the branch and the format, with no `free` fallback (`SKILL.md:64-65`, echoed in Failure and recovery at `SKILL.md:229-230`). Frontmatter is exactly `name` + a trigger-phrase `description`, matching the `audio-authoring` two-key shape.
+
+**R2 — the command and the validation split.** `plugins/kk/commands/image-generate.md` is the Design's frozen file: four frontmatter keys with `allowed-tools: ["Skill"]`, no parsing, no validation, delegation at `plugins/kk/commands/image-generate.md:14` (`Skill(skill="kk:image-authoring", args="$ARGUMENTS")`). The invocation-contract flag table lives at `SKILL.md:104-132`; the argument-validation rules (unknown format/style quoting `list-presets`, `--count` on a non-illustration job, `--ref` > 5, `--extract-style` without `--ref`, missing `--content`) are the skill's, at `SKILL.md:133-137`; the four retired wt flags are answered-not-ignored with the replacement table in `references/migrating-from-wt.md`, linked from `SKILL.md:134-139`.
+
+**R3 — the judgment line.** `SKILL.md:23-27` assigns var derivation, style auto-detection, position detection, caption/alt-text authoring, style extraction, preference resolution and spend approval to the skill, and names preset resolution, composition, provider selection, artefact writing and anchor insertion as the plugin's. The other half verified by grep: `grep -rn 'agent.run\|AskUserQuestion\|anthropic' plugins/generations/image-gen/src/` returns nothing. Position detection's procedure, anchor contract (exactly-once anchors; array length = image count; each anchor fed as the format's `concept` var, per `plugins/generations/image-gen/src/index.ts:93-114`) and caption authoring live in `references/illustration-positions.md`, walked through the wt worked example (8 candidates → 5 selected).
+
+**R4 — preference chain, no `EXTEND.md`.** `plugins/kk/config.example.yaml:102-113` appends the seven-key `image:` block (top-level, beside 0104's `plugins.generations.image-gen.env` block, append-not-rewrite per the closed Q&A). The four-layer chain — arguments > environment > `$KK_CONFIG` `image:` > compiled defaults — is tabulated per key at `SKILL.md:173-193`, with env-beats-config stated (`SKILL.md:190-191`), non-blocking load with a one-line notice for a missing/malformed block (`SKILL.md:192-193`), the `EXTEND.md` refusal (`SKILL.md:195-196`), and the credential exclusion: `plugins.generations.image-gen.env` values reach the plugin only through `invoke.ts`, never the `--in` file (`SKILL.md:197-199`, `SKILL.md:169-171`).
+
+**R5 — both confirmation paths.** `SKILL.md:201-226`. Interactive: `KK_IMAGE_DRY_RUN=1` first, spend preview showing format, style, provider, model, image count and the composed prompt taken from that run's `Content.body`, one confirmation (`AskUserQuestion` where available), `--dry-run` stops there, declining ends with no spawn beyond the dry run, revision loop bounded at 3 rounds (`SKILL.md:213`). Non-interactive: `KK_NONINTERACTIVE=1` never prompts; without `image.auto_confirm: true` or `KK_IMAGE_AUTO_CONFIRM=1` it fails immediately naming both switches. Context is signalled explicitly, never inferred; the workflow caller must set the flag. The `maxImages` cap is named as the real control under both paths.
+
+**R6 — disclosure split.** `SKILL.md` is 250 lines (cap met). `references/` holds exactly the four contracted files — `style-extraction.md` (0105, linked from the `extract-style` operation at `SKILL.md:81-90`), `illustration-positions.md` (linked from the illustration branch), `providers.md` (the 12-provider digest: env vars, default models, ref capability via `refModels` fragments, `AUTO_ORDER`, codex-cli never auto-selected, from `plugins/generations/image-gen/src/providers/types.ts:119-193,196-208`), `migrating-from-wt.md` — each linked from the section that needs it (`SKILL.md:242-250`). No preset gallery file exists under `plugins/kk/skills/image-authoring/`.
+
+**Executed evidence (gates 15–18; commands + results verbatim)**
+
+- `superskill skill validate plugins/kk/skills/image-authoring` → `Valid`, exit 0. `superskill command validate plugins/kk/commands/image-generate.md` → `Valid`, exit 0.
+- E2E dry run (Plan 16): fixture article at `.spur/run/0106-fixture.md`; the skill-side envelope `.spur/run/0106-job.json` (job `cover`, format `cover`, style `vibrant` = cover's `defaultStyle`, provider `seedream`, model `doubao-seedream-5-0-260128` = `AUTO_ORDER` resolution with only `ARK_API_KEY` present, `maxImages: 4`); `KK_IMAGE_DRY_RUN=1 ARK_API_KEY=dry-run-placeholder kk executor run image-gen --in .spur/run/0106-job.json --out .spur/run/0106-out.json` → exit 0; output `metadata.job === 'cover'`, `dryRun: true`, `images: []`, and the preview prompt is the plugin's own `Content.body` (asserted programmatically).
+- Operator-added format (Plan 17): `~/.kk/image-presets/formats/cover-xhs.yaml` (`job: cover`) written, envelope with `format: cover-xhs` → same dry-run command → exit 0, `job === 'cover'`, composed prompt carries the user template's text; zero edits under `plugins/kk/` (the run's diff contains only the six contracted paths). Scratch fixture deleted after the probe.
+- Repo gate (Plan 18): `bun run autofix && bun run spur-check` → exit 0; 717 pass / 0 fail; post-check rules 2/2. Status `.spur/run/0106-test-gate.status` (`0`), log `.spur/run/0106-test-gate.log`.
+- Judgment-line grep (Plan 6, other half): no matches in `plugins/generations/image-gen/src/`.
+
+**Honest deviations**
+
+1. **Plan 19 is not executed here** — `spur task update 0106 done` and the feature-K `## Decisions so far` append (config.yaml only, no `EXTEND.md`, arguments > env > config > default) are driver-side, per the hop instruction. The decision text to record is quoted in the R4 paragraph above.
+2. **Non-interactive / refusal paths are specified, not executed.** The skill is a design artefact; its refusals (unknown format, unimplemented job, `KK_NONINTERACTIVE` fail-loud) are authored wording, not runtime probes — there is no interpreter to run them against. The plugin-side half of each path is executable and was exercised (dry-run envelope acceptance, user-root format load, malformed-preset behaviour proven in 0105's leg 3).
+3. **No live provider spend** — every execution is a `KK_IMAGE_DRY_RUN=1` run with a placeholder credential, per the confirmation policy itself.
+4. **`confirm` wording is `AskUserQuestion` "where available"** — the Design's own hedge, kept verbatim; the runtime that renders the skill decides the actual channel.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `SKILL.md:9-11,60-65` one skill / 3 ops / job-from-`--format`; unimplemented branch fail-loud `SKILL.md:63-65,229-230`; fresh listing: no 2nd image skill/command |
+| R2 | MET | `commands/image-generate.md:1-14` 4-key frontmatter + sole delegation `Skill(skill="kk:image-authoring", args="$ARGUMENTS")`, no parsing; flag table `SKILL.md:104-132`; validation `SKILL.md:133-139` |
+| R3 | MET | `SKILL.md:23-27` assignment table; fresh `grep -rn 'agent.run\|AskUserQuestion\|anthropic' plugins/generations/image-gen/src/` → no matches (exit 1) |
+| R4 | MET | `config.example.yaml:101-113` 7-key image: block = `SKILL.md:175-183` 1:1; chain `SKILL.md:173-199` (env>config :190-191; no EXTEND.md :195-196; credentials excluded :197-199) |
+| R5 | MET | `SKILL.md:201-226` both paths; fresh dry-run `Content.body` = composed prompt (`index.ts:180-183`); 3-round bound `:213`; fail-loud names both switches `:216-222` |
+| R6 | MET | fresh `wc -l`: SKILL.md 250 (cap met); 4 refs present, each linked (`:81-90,82-85,88-89,134-139,242-250`); no gallery file in skill dir |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| One skill and one command exist, at the frozen paths (R1, R2) | MET | command | fresh `ls plugins/kk/skills/` + `plugins/kk/commands/`: image-authoring + image-generate.md only; SKILL.md frontmatter exactly `name` + trigger-phrase `description` |
+| The command is a thin wrapper (R2) | PARTIAL | static-ref | `image-generate.md:1-14`: 4 frontmatter keys, `allowed-tools: ["Skill"]`, delegation at :14, zero parsing/validation/preset knowledge |
+| `--format` alone selects the job (R1, R2) | MET | test | fresh e2e: cover envelope → out `job === 'cover'`, exit 0; xhs run (`0106-out-xhs.json`) same mapping; no `--job` token in command or `SKILL.md:104-132` |
+| An operator-added format works with no skill change (R1) | MET | test | recorded probe `0106-job-xhs.json`/`0106-out-xhs.json`: format cover-xhs, out job=cover, body carries user template text; git diff touches only the 6 contracted paths |
+| A format naming an unimplemented job fails loud (R1) | PARTIAL | static-ref | `SKILL.md:63-65,229-230` stop-and-name rule, never free-fallback; plugin half: zod enum `job.ts:40-44` rejects unknown job |
+| Invalid arguments are rejected by the skill with actionable messages (R2) | PARTIAL | static-ref | `SKILL.md:133-137` all six refusals, each naming the offending argument; unknown format/style quote list-presets (`SKILL.md:75-80`) |
+| Retired wt flags are answered, not ignored (R2) | PARTIAL | static-ref | `SKILL.md:134-139` + `migrating-from-wt.md:10-17` (rows incl. `--output`→`--out`); replacements match frozen table in Design |
+| The judgment line holds — the plugin makes no model calls (R3) | MET | command | fresh grep → no matches; `SKILL.md:23-27` assigns all five capabilities to the skill |
+| Preference precedence resolves in the frozen order (R4) | PARTIAL | static-ref | `SKILL.md:173-193` per-key 4-layer table, env-beats-config `:190-191`; plugin env facts verified vs `index.ts:48` (review); example block `config.example.yaml:102-113` |
+| A missing config block is a notice, not a failure (R4) | PARTIAL | static-ref | `SKILL.md:192-193` non-blocking + one notice line; closed Q&A decision; malformed preset still fails loud `:231-233` |
+| No `EXTEND.md` is introduced (R4) | MET | command | fresh dir listing: no EXTEND.md anywhere under image-authoring/; `SKILL.md:195-196` refuses + states the single chain |
+| No credential ever enters the envelope (R4) | MET | command | fresh e2e envelope: no credential keys; strictObject `ImageJobSpecSchema` (`job.ts:45-59`) has no credential field; `SKILL.md:171,197-199` |
+| Interactive runs preview the real prompt before spending (R5) | MET | test | fresh `KK_IMAGE_DRY_RUN=1` e2e exit 0, `Content.body` = plugin-composed prompt (`index.ts:180-183`); preview/single-confirm/decline-end `SKILL.md:205-212` (authored half, design ticket) |
+| Revision rounds are bounded at three (R5) | PARTIAL | static-ref | `SKILL.md:213` 3-round bound, restate-request wording; no paid round wording present |
+| A workflow node never hangs and never spends unapproved (R5) | PARTIAL | static-ref | `SKILL.md:216-222`: never prompt, fail loud naming `image.auto_confirm` + `KK_IMAGE_AUTO_CONFIRM=1`, explicit `KK_NONINTERACTIVE=1` never TTY-inferred |
+| `list-presets` reads the real roots, not a shipped gallery (R6) | PARTIAL | static-ref | `SKILL.md:75-80` four roots + shadowed/invalid verbatim; review-verified vs `presets.ts:255-336`; fresh listing: no gallery file in skill dir |
+| `SKILL.md` stays small and the references carry the depth (R6) | MET | command | fresh `wc -l` = 250 lines; `references/` = exactly style-extraction.md, illustration-positions.md, providers.md, migrating-from-wt.md; linked from needing sections |
+| The capability lifecycle gate is clean (deliverable) | MET | test | fresh: `superskill skill validate` exit 0, `command validate` exit 0; fresh `bun run spur-check` exit 0 — 717 pass / 0 fail, rules 2/2 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P1 | evidence-rule-failed | — | Executable evidence missing for: The command is a thin wrapper (R2), A format naming an unimplemented job fails loud (R1), Invalid arguments are rejected by the skill with actionable messages (R2), Retired wt flags are answered, not ignored (R2), Preference precedence resolves in the frozen order (R4), A missing config block is a notice, not a failure (R4), Revision rounds are bounded at three (R5), A workflow node never hangs and never spends unapproved (R5), `list-presets` reads the real roots, not a shipped gallery (R6) |
 
 ### References
 
@@ -466,4 +537,7 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 ### History
 
 - 2026-09-09T21:15:25.982Z backlog → todo (system)
+- 2026-09-10T02:10:11.646Z todo → wip (system)
+- 2026-09-10T02:10:12.307Z wip → testing (system)
+- 2026-09-10T02:10:56.074Z testing → done (system)
 

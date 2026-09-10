@@ -22,6 +22,73 @@ plugins:
         VOICEBOX_POLL_MS: "1000"                   # GET /history/{id} interval
         VOICEBOX_MAX_CHUNK_CHARS: "800"            # Voicebox auto-chunk size (100–5000)
         VOICEBOX_CROSSFADE_MS: "50"                # Voicebox chunk crossfade (0–500)
+
+    # image-gen (task 0103/0104): full credential inventory, placeholder values only —
+    # source of truth: plugins/generations/image-gen/config.example.yaml
+    image-gen:
+      env:
+        # -- google (Gemini multimodal + Imagen; GOOGLE_* and GEMINI_* are fallback pairs) --
+        GOOGLE_API_KEY: ""                 # or GEMINI_API_KEY — either one enables google
+        GEMINI_API_KEY: ""
+        GOOGLE_IMAGE_MODEL: ""             # optional — default gemini-3-pro-image
+        GOOGLE_BASE_URL: ""                # optional — default https://generativelanguage.googleapis.com
+        # -- openai (gpt-image generations/edits; OPENAI_IMAGE_USE_CHAT is a debug escape hatch) --
+        OPENAI_API_KEY: ""                 # platform.openai.com — required for openai
+        OPENAI_IMAGE_MODEL: ""             # optional — default gpt-image-2
+        OPENAI_BASE_URL: ""                # optional — default https://api.openai.com/v1
+        OPENAI_IMAGE_USE_CHAT: ""          # optional — "true" routes through chat completions
+        # -- openrouter (multi-host gateway) --
+        OPENROUTER_API_KEY: ""             # openrouter.ai/settings/keys — required for openrouter
+        OPENROUTER_IMAGE_MODEL: ""         # optional — default google/gemini-3.1-flash-image
+        OPENROUTER_BASE_URL: ""            # optional — default https://openrouter.ai/api/v1
+        OPENROUTER_HTTP_REFERER: ""        # optional — attribution header
+        OPENROUTER_TITLE: ""               # optional — attribution header
+        # -- dashscope (Alibaba; refs only on wan2.7 models) --
+        DASHSCOPE_API_KEY: ""              # required for dashscope
+        DASHSCOPE_IMAGE_MODEL: ""          # optional — default qwen-image-2.0-pro
+        DASHSCOPE_BASE_URL: ""             # optional — default https://dashscope.aliyuncs.com
+        # -- zai (Z.AI / bigmodel.cn; refs unsupported) --
+        ZAI_API_KEY: ""                    # or BIGMODEL_API_KEY — either one enables zai
+        BIGMODEL_API_KEY: ""
+        ZAI_IMAGE_MODEL: ""                # optional — default glm-image
+        BIGMODEL_IMAGE_MODEL: ""
+        ZAI_BASE_URL: ""                   # optional — default https://api.z.ai/api/paas/v4
+        BIGMODEL_BASE_URL: ""
+        # -- minimax (image-01; refs via subject_reference, jpg/png <10MB) --
+        MINIMAX_API_KEY: ""                # required for minimax
+        MINIMAX_IMAGE_MODEL: ""            # optional — default image-01
+        MINIMAX_BASE_URL: ""               # optional — default https://api.minimaxi.com
+        # -- replicate (hosted model surface; prediction polling) --
+        REPLICATE_API_TOKEN: ""            # replicate.com/account/api-tokens — required for replicate
+        REPLICATE_IMAGE_MODEL: ""          # optional — default google/nano-banana-2
+        REPLICATE_BASE_URL: ""             # optional — default https://api.replicate.com
+        # -- jimeng (Volcengine; BOTH key halves required, HMAC-signed) --
+        JIMENG_ACCESS_KEY_ID: ""           # required for jimeng (with the secret key)
+        JIMENG_SECRET_ACCESS_KEY: ""       # required for jimeng (with the access key)
+        JIMENG_IMAGE_MODEL: ""             # optional — default jimeng_t2i_v40
+        JIMENG_REGION: ""                  # optional — default cn-north-1
+        JIMENG_BASE_URL: ""                # optional — default https://visual.volcengineapi.com
+        # -- seedream (ByteDance Ark; key is ARK_API_KEY, not SEEDREAM_*) --
+        ARK_API_KEY: ""                    # required for seedream
+        SEEDREAM_IMAGE_MODEL: ""           # optional — default doubao-seedream-5-0-260128
+        SEEDREAM_BASE_URL: ""              # optional — default https://ark.cn-beijing.volces.com/api/v3
+        # -- azure (Azure OpenAI; model is addressed by deployment name) --
+        AZURE_OPENAI_API_KEY: ""           # required for azure
+        AZURE_OPENAI_BASE_URL: ""          # required resource endpoint, e.g. https://<res>.openai.azure.com
+        AZURE_OPENAI_DEPLOYMENT: ""        # deployment hosting a gpt-image model
+        AZURE_OPENAI_IMAGE_MODEL: ""       # optional — default gpt-image-2
+        AZURE_API_VERSION: ""              # optional — default 2025-04-01-preview
+        # -- agnes (OpenAI-compatible images endpoint) --
+        AGNES_API_KEY: ""                  # required for agnes
+        AGNES_IMAGE_MODEL: ""              # optional — default agnes-image-2.1-flash
+        AGNES_BASE_URL: ""                 # optional — default https://apihub.agnes-ai.com/v1
+        # -- codex-cli (subprocess; NEVER auto-selected — pin explicitly) --
+        BAOYU_CODEX_IMAGEGEN_BIN: ""           # optional — wrapper entrypoint override
+        BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS: ""    # optional — per-call timeout (ms)
+        BAOYU_CODEX_IMAGEGEN_RETRIES: ""       # optional — retry count
+        # -- 0104 R6 runtime seams (behavior, not credentials; placeholder values only) --
+        KK_IMAGE_MAX_IMAGES: ""                # optional — per-run budget cap; default 4 (OPEN for the operator to set)
+        KK_IMAGE_DRY_RUN: ""                   # optional — "1" composes every prompt, selects the provider, spends nothing
   publishings:
     qiita-pub:
       env:
@@ -32,3 +99,16 @@ plugins:
     surfdash-pub:
       env:
         POSTSURFING_BIN: ""    # optional — delete if unused; defaults to `postsurfing` on PATH
+
+# Image-authoring preferences (task 0106) — read by the kk:image-authoring skill,
+# not by the plugin; the plugin sees only the resolved winners in its --in envelope.
+# Precedence: arguments > environment (KK_IMAGE_*) > this block > compiled defaults.
+# Credentials never live here — see plugins.generations.image-gen.env above.
+image:
+  format: free            # default --format
+  style: ~                # ~ = use the format's defaultStyle
+  provider: ~             # ~ = auto (0103 AUTO_ORDER)
+  model: ~
+  auto_confirm: false     # baoyu's quick_mode, renamed to say what it does
+  max_images: 4           # mirrors KK_IMAGE_MAX_IMAGES (0104)
+  preset_path: ~          # extra roots, ':'-separated → KK_IMAGE_PRESET_PATH

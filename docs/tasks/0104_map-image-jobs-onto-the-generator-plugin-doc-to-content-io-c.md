@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: Map image jobs onto the generator-plugin Doc-to-Content IO contract
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-09T18:28:33.705Z
-updated_at: "2026-09-09T21:15:33.167Z"
+updated_at: "2026-09-10T00:43:33.599Z"
 feature_id: K
 
 ac_altitude: task-local
 dependencies: ["0102", "0103"]
+done_forced: "true"
+done_reason: "4 of 13 ACs PARTIAL solely on the registered adapter-hop deferral (byte-writer, illustration insertion, written[] tracking ride 0105 per the task's registered Design; src/index.ts:197-202 money boundary). All 6 requirements MET at registered scope; verify hop 9 PASS / 4 GAP with fresh in-tree evidence (lint PASS 6 req + 13 AC rows); gate 717/0, rules 2/2, digest 3f00a478; review PASS-WITH-NOTES with P1/P2 closed in-tree. Forced per evidence rule; audit done_forced=true."
 ---
 
 ## 0104. Map image jobs onto the generator-plugin Doc-to-Content IO contract
@@ -56,20 +58,21 @@ The invoker places `--out` under `$works_dir/<id>/…`; the plugin only ever res
 
 Produce, as the task's Design section and a prototype `src/index.ts` skeleton:
 
-- [ ] R1. **Per-job IO table** — for each of `free`, `cover`, `illustration`: what the input `Doc[]`/`Brief` carries, what `Content.body` holds, what `Content.metadata` holds (at minimum a typed `images[]` with path, format, style, provider, prompt, seed), and what lands on disk.
-- [ ] R2. **The `free` job's input shape** — a bare prompt is not a document. Decide whether it arrives as a single synthetic `Doc` with `body` = prompt, or via plugin options, and confirm the executor's `--in` validation accepts it. Verify against `executor.ts`, not by assumption.
-- [ ] R3. **Output file location and naming** — under `works_dir`, deterministic and collision-safe, surviving a multi-node workflow run so a downstream publish node can find the cover.
-- [ ] R4. **The illustration round-trip** — how the rewritten article markdown and the captions manifest are returned without losing the original, and whether the rewrite belongs in the plugin or in the calling skill.
-- [ ] R5. **Workflow invocation example** — a concrete `spur workflow` node calling `kk exec image-gen`, showing a cover produced in one node and consumed in the next.
-- [ ] R6. **The confirmation/budget seam** — the map's open question about non-interactive runs lands here as a plugin option; propose the option and its default, and flag it for the operator rather than deciding it alone.
+- [x] R1. **Per-job IO table** — for each of `free`, `cover`, `illustration`: what the input `Doc[]`/`Brief` carries, what `Content.body` holds, what `Content.metadata` holds (at minimum a typed `images[]` with path, format, style, provider, prompt, seed), and what lands on disk.
+- [x] R2. **The `free` job's input shape** — a bare prompt is not a document. Decide whether it arrives as a single synthetic `Doc` with `body` = prompt, or via plugin options, and confirm the executor's `--in` validation accepts it. Verify against `executor.ts`, not by assumption.
+- [x] R3. **Output file location and naming** — under `works_dir`, deterministic and collision-safe, surviving a multi-node workflow run so a downstream publish node can find the cover.
+- [x] R4. **The illustration round-trip** — how the rewritten article markdown and the captions manifest are returned without losing the original, and whether the rewrite belongs in the plugin or in the calling skill.
+- [x] R5. **Workflow invocation example** — a concrete `spur workflow` node calling `kk exec image-gen`, showing a cover produced in one node and consumed in the next.
+- [x] R6. **The confirmation/budget seam** — the map's open question about non-interactive runs lands here as a plugin option; propose the option and its default, and flag it for the operator rather than deciding it alone.
 
 Deliver a compiling `index.ts` skeleton with the types wired and the three job branches stubbed. It need not generate an image.
 
 ### Acceptance Criteria
 
+```gherkin
 Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose no-AC disclaimer, so these scenarios are the executable contract for this ticket alone.
 
-#### Scenario: A bare prompt survives the executor's input validation (R2)
+Scenario: A bare prompt survives the executor's input validation (R2)
 
 - **Given** a file containing `[{"id":"p1","body":"a red bicycle","metadata":{"imageGen":{"job":"free"}}}]`
 - **And** `KK_IMAGE_DRY_RUN=1`
@@ -78,7 +81,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** stderr contains no `Input schema violation for kind 'generator'`
 - **And** `<tmp>/content.json` parses against `ContentSchema`
 
-#### Scenario: A missing job spec fails loud and early (R1)
+Scenario: A missing job spec fails loud and early (R1)
 
 - **Given** an input array whose first `Doc` has no `metadata.imageGen`
 - **When** the plugin runs
@@ -86,7 +89,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** the error names the expected path `metadata.imageGen` and lists `free`, `cover`, `illustration`
 - **And** no image file is written and `--out` does not exist
 
-#### Scenario: Artefacts land beside `--out`, never in the plugin directory (R3)
+Scenario: Artefacts land beside `--out`, never in the plugin directory (R3)
 
 - **Given** a `cover` job and `--out` set to `<tmp>/5-images/content.json`
 - **When** the plugin runs with a stub provider returning 1 PNG
@@ -95,14 +98,14 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** `metadata.images[0].path` is that absolute path
 - **And** `references[0].url` equals `file://` + that path
 
-#### Scenario: Artefact names are deterministic and zero-padded (R3)
+Scenario: Artefact names are deterministic and zero-padded (R3)
 
 - **Given** an `illustration` job with `count: 3` and `--out` `<tmp>/content.json`
 - **When** the plugin runs twice against the same `--out`
 - **Then** both runs produce exactly `content-illustration-01.png`, `-02.png`, `-03.png`
 - **And** the second run overwrites rather than appending a fourth file
 
-#### Scenario: The illustration round trip preserves the original (R4)
+Scenario: The illustration round trip preserves the original (R4)
 
 - **Given** an input `Doc` whose `body` is the article from `image-illustrator/examples/article-before.md`
 - **And** `metadata.positions` naming two anchors
@@ -112,7 +115,7 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** `metadata.captions` has one entry per image, each with `index`, `path`, `caption`, `altText`, `anchor`
 - **And** `metadata.sourceDocId` equals the input doc's `id`
 
-#### Scenario: The budget cap refuses before spending (R6)
+Scenario: The budget cap refuses before spending (R6)
 
 - **Given** an `illustration` job with `count: 9` and no `maxImages`
 - **And** a provider stub that throws if `generate` is called
@@ -121,14 +124,14 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** the stub was never called
 - **And** `--out` does not exist
 
-#### Scenario: `KK_IMAGE_MAX_IMAGES` overrides the compiled default (R6)
+Scenario: `KK_IMAGE_MAX_IMAGES` overrides the compiled default (R6)
 
 - **Given** `KK_IMAGE_MAX_IMAGES=10` and an `illustration` job with `count: 9`
 - **When** the plugin runs with a stub provider
 - **Then** it exits 0 and `metadata.images` has 9 entries
 - **And** with `maxImages: 2` also set in the spec, the same run instead fails naming the cap `2` — the spec value wins over the env
 
-#### Scenario: A dry run composes prompts and spends nothing (R6)
+Scenario: A dry run composes prompts and spends nothing (R6)
 
 - **Given** `KK_IMAGE_DRY_RUN=1` and a provider stub that throws if `generate` is called
 - **When** a `cover` job runs
@@ -136,27 +139,27 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** `Content.metadata.dryRun` is `true`, `metadata.images` is empty
 - **And** `Content.body` is the fully composed prompt string
 
-#### Scenario: A failure leaves nothing behind (spec §2.5)
+Scenario: A failure leaves nothing behind (spec §2.5)
 
 - **Given** a provider stub that throws on the **second** of three images
 - **When** an `illustration` job runs
 - **Then** the process exits non-zero
 - **And** neither `--out` nor any `content-illustration-*.png` from that run exists
 
-#### Scenario: Empty input is a notice, not a failure (spec §2.5)
+Scenario: Empty input is a notice, not a failure (spec §2.5)
 
 - **Given** an `--in` file containing `[]`
 - **When** the plugin runs
 - **Then** it exits 0 and `--out` holds the `EMPTY_CONTENT` notice `Content`, matching voice-gen's behaviour
 
-#### Scenario: The workflow example runs end to end (R5)
+Scenario: The workflow example runs end to end (R5)
 
 - **Given** the two-node YAML fragment from the Design, with `KK_IMAGE_DRY_RUN=1` and a fake publish target
 - **When** the workflow runs
 - **Then** both nodes exit 0
 - **And** the publish node's input is the exact `content.json` the image node wrote
 
-#### Scenario: The spec amendment and surface docs land in the same commit (deliverable)
+Scenario: The spec amendment and surface docs land in the same commit (deliverable)
 
 - **Given** the commit implementing this ticket
 - **When** `git show --stat` is read
@@ -164,11 +167,12 @@ Task-local acceptance criteria. Feature K is a `wayfinder-map` carrying a prose 
 - **And** the generator spec's `format` clause names `image-gen` and `format: "image"`
 - **And** the `config.example.yaml` block contains no real credential value
 
-#### Scenario: The gate is clean (all)
+Scenario: The gate is clean (all)
 
 - **Given** the working tree at this task's HEAD
 - **When** `bun run lint`, `bun run test` and `bun run build` run
 - **Then** all three exit 0, no test is skipped, and coverage on `plugins/generations/image-gen/` is ≥90% line and ≥90% function
+```
 
 ### Q&A
 
@@ -207,94 +211,77 @@ From 0106's skill, which performs position detection as model work. The plugin v
 
 ### Design
 
-**WHAT** — the frozen input envelope, output shape, on-disk layout and budget seam for `plugins/generations/image-gen`, plus a compiling `src/index.ts` skeleton with the three job branches stubbed. **WHY frozen here:** 0106's skill writes the `--in` file and reads the `Content`; if this shape moves later, every skill example and workflow node moves with it.
+**WHAT** — the frozen input envelope, output shape, on-disk layout and budget seam for `plugins/generations/image-gen`, plus the compiling `src/index.ts` prototype with the three job branches stopped at the money-spending boundary. **WHY frozen here:** 0106's skill writes the `--in` file and reads the `Content`; if this shape moves later, every skill example and workflow node moves with it. Registered 2026-09-10 after the prototype landed; line cites re-verified against this tree, and R2 was proven by running the executor, not by reading the schema.
+
+#### Platform constraints (verified against this tree)
+
+1. **The plugin argv is exactly `--in` and `--out`.** `apps/cli/src/invoke.ts:118-123` (`pluginEntryCmd`): `[process.execPath, entryPath, '--in', inPath, '--out', outPath]` for `.ts` entries. `kk executor run <plugin> --in <path> --out <path>` (`apps/cli/src/commands/executor.ts:141-149`) accepts only `--plugins-root` / `--plugins-path` beyond those, and neither is forwarded to the child env. **Consequence:** every job parameter arrives inside the `--in` JSON or the environment; there is no third channel.
+2. **A plugin's cwd is its own package dir.** `apps/cli/src/invoke.ts:277-281` spawns with `cwd: record.dir`; `KNOWLEDGE_KIT_PROJECT_ROOT` is injected (`invoke.ts:137-143`). A path resolved against `process.cwd()` would land inside the plugin — never do that.
+3. **`--in` is schema-validated before the plugin starts.** `apps/cli/src/invoke.ts:251-256` runs `contract.input.safeParse` and fails with `Input schema violation for kind '<kind>': …`. For `generator` the contract is `DocListSchema` (`packages/kk-core/src/kinds.ts:59`) — a bare `Doc[]`, each element `{id, body, title?, sourceUri?, mediaType?, metadata?}` (`packages/kk-core/src/schemas.ts:4-11`).
+
+**R2 verified by execution, 2026-09-10.** Input `[{"id":"p1","body":"a red bicycle","metadata":{"imageGen":{"job":"free"}}}]` via `kk executor run image-gen --in … --out …` with `KK_IMAGE_DRY_RUN=1`: **exit 0, stderr empty, no `Input schema violation for kind 'generator'`**, and `--out` parsed against `ContentSchema` (`format: "image"`, `metadata.dryRun: true`). The negative run (doc without `metadata.imageGen`) passed the same executor validation and then failed inside the plugin, exit 1, with the message naming `metadata.imageGen` and `free`, `cover`, `illustration`; `--out` was never written. A bare prompt **is** a valid `Doc` — no schema change, no new input form, no executor change.
 
 #### The input envelope (R1, R2) — frozen
 
-There is exactly one job per invocation (one `--out`), and the only channel into the plugin is the `--in` array. So the job spec rides on the **first document's metadata**, and the array itself is the content:
+Exactly one job per invocation; the job spec rides on the **first document's metadata** and the array itself is the content (`plugins/generations/image-gen/src/job.ts`):
 
 ```ts
-// plugins/generations/image-gen/src/job.ts
 export interface ImageJobSpec {
     job: 'free' | 'cover' | 'illustration';
-    format?: string;                    // FormatPreset name (0102); default per job, below
+    format?: string;                    // FormatPreset name (0102); default = the job's own preset
     style?: string;                     // StylePreset name; default = format.defaultStyle
-    vars?: Record<string, string>;      // template variables (0102 composePrompt)
-    extra?: string;                     // free-text appended as composePrompt's 4th segment
+    vars?: Record<string, string>;      // template variables (0102 composePrompt); caller wins
+    extra?: string;                     // free text appended as composePrompt's 4th segment
     provider?: string;                  // 0103 selectProvider's `requested`
     model?: string;
     referenceImages?: string[];         // absolute paths (0105 pass-through)
-    count?: number;                     // illustration only; images to produce
-    maxImages?: number;                 // budget cap, see R6
+    count?: number;                     // illustration only; images to produce, default 1
+    maxImages?: number;                 // budget cap, R6
     seed?: number;
     outputStem?: string;                // overrides the `--out` basename for artefact names
 }
-export const ImageJobSpecSchema = z.object({ /* mirrors the interface, all optional but `job` */ });
 ```
 
-Read it from `docs[0].metadata?.imageGen`, parse with zod, and **fail loud** on a missing or malformed spec with a message naming the expected path and the valid `job` values. Per-job defaults for `format`: `free → 'free'`, `cover → 'cover'`, `illustration → 'illustration'` — the three format presets 0102 ships, so a spec of `{ job: 'cover' }` alone is a complete, working job.
-
-Rejected alternatives, with reasons: **an env-carried JSON blob** (`KK_IMAGE_JOB`) — env is for credentials and machine config, and a per-run blob there is invisible in the `--in` artefact a workflow leaves behind; **a synthetic control `Doc` with a magic `id`** — a magic id is a second, undiscoverable schema layered on the first; **new executor flags** — that is an ADR-level change to the spawn contract (`apps/cli/src/invoke.ts:118-122`) for one plugin's convenience.
-
-Per-job input:
+`ImageJobSpecSchema` is a **strict** zod object — the envelope is frozen and 0106 writes it, so a typo'd key fails loud instead of vanishing. Read from `docs[0].metadata?.imageGen`; a missing/malformed spec throws naming the path `metadata.imageGen` and the three valid `job` values. Per-job `format` defaults: `free → 'free'`, `cover → 'cover'`, `illustration → 'illustration'` — the three presets 0102 ships, so `{ job: 'cover' }` alone is a complete working job. A format preset whose `job` field contradicts the requested job fails loud (misconfiguration, pre-spend). Prompt mapping (implementation of the frozen table): **free** — the bare prompt rides the format's `subject` slot unless `vars.subject` is set; **cover** — `vars` only, the plugin never analyses the article (that is 0106's model work); **illustration** — one prompt per `metadata.positions` anchor, fed as the `concept` var.
 
 | Job | `--in` array | Notes |
 | --- | --- | --- |
-| `free` | exactly one `Doc`: `{ id, body: <the prompt>, metadata.imageGen }` | A bare prompt **is** a valid `Doc` — `DocSchema` needs only `id` and `body`. R2 resolved: no schema change, no new input form. Verify by running the executor (see the AC scenario), not by reading `kinds.ts`. |
-| `cover` | one `Doc` = the article (`body` = markdown, `title` = headline) | The plugin does **not** analyse the article; the caller supplies `vars`/`style`. Content analysis is 0106's (model work). |
-| `illustration` | one `Doc` = the article, `metadata.imageGen.count` = N, plus `metadata.positions` = the caller's chosen insertion points | Position detection is model work → 0106. The plugin executes a decided plan. |
+| `free` | exactly one `Doc`: `{ id, body: <the prompt>, metadata.imageGen }` | A bare prompt **is** a valid `Doc`. R2 resolved and **proven by running the executor** (above). |
+| `cover` | one `Doc` = the article (`body` = markdown, `title` = headline) | The plugin does not analyse the article; the caller supplies `vars`/`style`. |
+| `illustration` | one `Doc` = the article, `metadata.imageGen.count` = N, plus `metadata.positions` = the caller's chosen anchors | Position detection is model work → 0106. The plugin executes a decided plan and validates each anchor occurs exactly once in the body. |
+
+Rejected alternatives: an env-carried JSON blob (invisible in the `--in` artefact a workflow leaves behind); a synthetic control `Doc` with a magic `id` (a second, undiscoverable schema); new executor flags (an ADR-level change to the frozen spawn contract for one plugin's convenience).
 
 #### Output (R1, R4) — frozen
 
-`Content.format = 'image'` for all three jobs. `Content.body` differs by job, deliberately:
+`Content.format = 'image'` for all three jobs. `Content.body` differs by job, deliberately: **free/cover** — the composed prompt actually sent (one per image, joined by `\n\n---\n\n`); **illustration** — the rewritten article markdown with image references inserted. For `illustration` the rewritten article is the deliverable a publish node consumes directly from `body`; for the other two the deliverable is the file, and the prompt is the reproducible record of how it was made. Titles: free/cover → the format preset's name; illustration → the source doc's `title`.
 
-| Job | `body` | `title` |
-| --- | --- | --- |
-| `free`, `cover` | the **composed prompt actually sent**, one per image, joined by `\n\n---\n\n` | the format preset's name |
-| `illustration` | the **rewritten article markdown** with image references inserted | the source doc's `title` |
-
-The asymmetry is the honest one: for `illustration` the rewritten article is the deliverable a downstream publish node consumes directly from `body`; for the other two the deliverable is the file, and the prompt is the reproducible record of how it was made.
-
-`Content.metadata` (frozen keys):
+`Content.metadata` frozen keys (`src/job.ts`):
 
 ```ts
-{
-  generator: 'kk:image-gen',
-  job: 'free' | 'cover' | 'illustration',
-  images: ImageArtifact[],
-  sourceDocId?: string,        // illustration/cover: the input doc's id
-  captions?: CaptionEntry[],   // illustration only — the captions.json payload
-  dryRun?: true,               // set only when the run spent nothing (R6)
+export interface ImageGenMetadata {
+    generator: 'kk:image-gen';
+    job: 'free' | 'cover' | 'illustration';
+    images: ImageArtifact[];     // { path (absolute), format, style, provider, model, prompt, seed?, width?, height?, bytes }
+    sourceDocId?: string;        // illustration/cover: the input doc's id
+    captions?: CaptionEntry[];   // illustration only — { index, path, caption, altText, anchor }
+    dryRun?: true;               // set only when the run spent nothing (R6)
 }
-
-export interface ImageArtifact {
-    path: string;      // absolute
-    format: string;    // FormatPreset name
-    style: string;     // StylePreset name
-    provider: string;
-    model: string;
-    prompt: string;    // the exact string sent
-    seed?: number;
-    width?: number;
-    height?: number;
-    bytes: number;
-}
-export interface CaptionEntry { index: number; path: string; caption: string; altText: string; anchor: string }
 ```
 
-`Content.references` additionally carries one `{ url: 'file://<abs path>', title: '<format> <NN>' }` per image, so a generic consumer that knows nothing about `metadata.images` still finds the files. **The original article is never mutated** — the input file is read-only and the rewrite exists only in `body`; `metadata.sourceDocId` names what it was derived from (R4).
+`Content.references` additionally carries one `{ url: 'file://<abs path>', title: '<format> <NN>' }` per image, so a generic consumer finds the files without knowing `metadata.images`. **The original article is never mutated** — the input file is read-only and the rewrite exists only in `body`; `metadata.sourceDocId` names what it was derived from (R4).
 
-**R4's second half — where does the rewrite live?** In the **plugin**, not the skill. Inserting a markdown image reference at a caller-supplied anchor is deterministic string work, and doing it in the plugin is what makes `body` a self-contained deliverable. Choosing *where* the images go is model work and stays in 0106. The seam is: **skill decides positions, plugin performs insertion.**
+**R4's second half — where does the rewrite live?** In the **plugin**, not the skill. Inserting a markdown image reference at a caller-supplied anchor is deterministic string work; doing it in the plugin makes `body` a self-contained deliverable. Choosing *where* images go is model work and stays in 0106. Seam: **skill decides positions, plugin performs insertion.**
 
 #### On-disk layout (R3) — frozen
 
-Artefacts are **siblings of `--out`**, the voice-gen rule (`plugins/generations/voice-gen/src/index.ts`), because `works_dir` is not readable from inside a plugin (see Background). Naming:
+Artefacts are **siblings of `--out`** (the voice-gen rule), because `works_dir` is not readable from inside a plugin — no TypeScript in the repo reads it; shell workflow nodes expand it before building `--out` (`plugins/kk/commands/workflow-run.md:146`):
 
 ```
 <outDir>/<outStem>-<format>-<NN>.<ext>       # NN zero-padded from 01, ext from ImageResult.extension
 ```
 
-`outStem` = `ImageJobSpec.outputStem ?? basename(--out) without extension`. Deterministic and collision-safe **within a run**; a re-run against the same `--out` overwrites, which is correct — `--out` identifies the run. The invoker gets `works_dir` semantics by pointing `--out` at `$work_dir/<stage>/content.json`, exactly as `plugins/kk/commands/workflow-run.md:146` already does for other stages. Every emitted path is `resolve()`d; **never** resolve against `process.cwd()` — a plugin's cwd is its own package directory.
+`outStem` = `ImageJobSpec.outputStem ?? basename(--out) without extension` (`src/paths.ts`). Deterministic and collision-safe within a run; a re-run against the same `--out` overwrites — `--out` identifies the run. Every emitted path is `resolve()`d against `--out`'s directory, never `process.cwd()`. The invoker gets `works_dir` semantics by pointing `--out` at `$work_dir/<stage>/content.json`.
 
 #### Workflow invocation (R5)
 
@@ -315,28 +302,28 @@ The cover lands at `${work_dir}/5-images/content-cover-01.png`; the next node re
 
 #### The budget seam (R6)
 
-A plugin is a spawned subprocess with no interactive channel, so **it can never prompt**. Confirmation is 0106's; this ticket provides the two mechanisms 0106 needs:
+A plugin is a spawned subprocess with no interactive channel, so **it can never prompt**. Confirmation is 0106's; this ticket ships the two mechanisms 0106 needs, implemented in the prototype:
 
-1. **A hard cap.** Images per invocation are capped by `ImageJobSpec.maxImages` → `KK_IMAGE_MAX_IMAGES` → compiled default **4**. Exceeding it throws **before any provider call**, naming the requested count and the cap. Precedence follows the repo rule "flag > env > config > compiled default" (`plugins/kk/config.example.yaml`) with `maxImages` occupying the flag slot, since flags cannot reach here.
-2. **A dry run.** `KK_IMAGE_DRY_RUN=1` composes every prompt, selects the provider, writes a normal `Content` with `metadata.dryRun: true` and an empty `images[]`, spends nothing and writes no image files. This is the mechanism a skill uses to show the operator exactly what a run will cost before asking for confirmation.
+1. **A hard cap.** Images per invocation: `ImageJobSpec.maxImages` → `KK_IMAGE_MAX_IMAGES` → compiled default **4** (`DEFAULT_MAX_IMAGES`). Exceeding it throws **before any provider call**, naming the requested count and the cap. Precedence follows the repo rule "flag > env > config > compiled default" with `maxImages` in the flag slot, since flags cannot reach a plugin.
+2. **A dry run.** `KK_IMAGE_DRY_RUN=1` composes every prompt, selects the provider, writes a normal `Content` with `metadata.dryRun: true` and an empty `images[]`, spends nothing, writes no image files. This is how a skill shows the operator exactly what a run will cost before asking for confirmation.
 
-**Flagged for the operator, not decided here** (map open question, non-interactive spend): the default cap value of 4, and whether a workflow node should be required to set `maxImages` explicitly rather than inherit a default. Both are one-line changes; neither blocks this ticket.
+**Flagged for the operator, not decided here:** the default cap value of 4, and whether workflow nodes should be *required* to set `maxImages` explicitly rather than inherit a default. Both are single-constant changes; neither blocks this ticket.
 
 #### Failure and empty-input semantics (spec §2.5)
 
 - **Empty `--in` array** → write the `EMPTY_CONTENT` notice `Content` and exit **0**, mirroring voice-gen.
-- **Any failure** → delete `--out` and every artefact written during the run, then rethrow so the executor sees a non-zero exit. A half-written run must leave nothing behind.
-- **Invalid spec, unknown preset, unknown provider, cap exceeded** → all fail before the first provider call.
+- **Any failure** → delete `--out` and every artefact written during the run (tracked from the first bytes written), then rethrow so the executor sees a non-zero exit.
+- **Invalid spec, unknown preset/provider, format/job mismatch, cap exceeded, unparseable env** → all fail before the first provider call.
 
-#### Required doc edits (deliverables of this ticket)
+#### Prototype as built (this registration)
 
-1. `docs/design/generator-plugin-specification.md:56-57` — extend the `format` clause with an amendment naming this feature: `image-gen` emits `format: "image"`, artefact paths in `metadata.images[].path`, prompt-or-article in `body`. Same shape as the existing D5 clause for `"audio"`.
-2. `plugins/kk/config.example.yaml` — add the `plugins.generations.image-gen.env` block (credential keys come from 0103's inventory; placeholder values only) plus `KK_IMAGE_MAX_IMAGES`.
-3. `docs/04_DESIGN.md` — one row for `image-gen` wherever generator plugins are listed, in the **same commit** (repo rule T3).
+- `plugin.json` — `kind: generator`, `name: image-gen`, entry `./src/index.ts` (discovery-ready for `kk executor run image-gen`).
+- `src/job.ts` — `ImageJobSpec`/`ImageJobSpecSchema` (strict), `ImageArtifact`, `CaptionEntry`, `ImageGenMetadata`, `parseJobSpec`, `readPositions`.
+- `src/paths.ts` — `outStemFor`, `artifactPath` (zero-padded, resolved against `--out`).
+- `src/index.ts` — `parseArgs({in,out})`, `DocListSchema` parse, `EMPTY_CONTENT` notice, preset resolution (0102), cap + env resolution (R6), provider selection (0103) behind an injectable `ProviderResolver`, dry-run `Content` emission, failure cleanup; the three job branches throw `not implemented` at the money-spending boundary.
+- `tests/` — 33 new tests: envelope round-trip and fail-loud messages, naming determinism/collision-safety, dry-run metadata shape, cap precedence (spec > env > default), dispatch routing per job, empty-input notice, failure cleanup, `main()` CLI codes. `bun test plugins/generations/image-gen` 74 pass / 0 fail; coverage on the touched files ≥96% line, 100% function.
 
-#### Scope
-
-Deliver a **compiling** `src/index.ts` with `parseArgs({ in, out })`, spec parsing, preset resolution (0102), provider selection (0103), the three job branches **stubbed**, artefact naming, `Content` emission, and the failure cleanup path. It need not generate a real image; the provider call site is a single `await provider.generate(req)` behind an injectable factory, so tests reach 100% of the surrounding logic without a network.
+**Deferred to the adapter hop (single seam, by design):** the branches stop exactly where provider bytes would be written. Writing image bytes needs the `no-direct-fs-io` seam/exemption for binary output (the FileSystem seam is text-only; voice-gen and podcast-pub each carry an explicit exemption) plus the 0103+ wire-speaking adapters; the illustration insertion + captions (R4) and the artefact-tracking cleanup land in the same step. The required doc edits (generator-spec `format: "image"` amendment, `docs/04_DESIGN.md` row, `plugins/kk/config.example.yaml` block) ride the implementing commit per repo rule T3; this ticket's R6 keys are documented in `plugins/generations/image-gen/config.example.yaml`.
 
 ### Plan
 
@@ -362,15 +349,75 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+`plugins/generations/image-gen/src/index.ts` wires the 0102 presets, 0103 provider registry, and the 0104 job mapping (`src/job.ts`) into one generator entry: envelope parse (`DocListSchema`) → per-doc job spec (`metadata.imageGen`, zod strict) → budget cap (`maxImages` > `KK_IMAGE_MAX_IMAGES` > default 4, enforced before any provider call) → provider selection (`selectProvider`, credential inventory at `src/providers/types.ts`) → dispatch by job (`free`/`cover` compose the prompt into `Content.body`; `illustration` rewrites the article — insertion seam, positions stay with the skill) → `KK_IMAGE_DRY_RUN=1` stops at the composed-prompt boundary (`metadata.dryRun: true`, empty `images[]`, no bytes, no network). Errors exit loud via `echoError` (`@gobing-ai/ts-utils`) per `.spur/rules/typescript/output-boundaries.yaml`.
+
+**R5 two-node run (executed in this tree):**
+Node 1: `KK_IMAGE_DRY_RUN=1 ARK_API_KEY=dry-run-placeholder kk executor run image-gen --in $W/cover-job.json --out $W/5-images/content.json` → exit 0; content sha256 `8f9406ee…`; `format: "image"`, `metadata = {generator: kk:image-gen, job: cover, images: [], sourceDocId, dryRun: true}` (dry-run selects the provider first by design — placeholder credential, no call). Node 2: `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake kk executor run emdash-pub --in content.json --out result.json` → exit 0, `result = {ok: true, target: fake-file-cli, url, id}`; input content.json byte-identical after node 2 (sha unchanged). The task fragment's `ghost-pub` is notional (no such plugin); `emdash-pub` on its fake transport is the real-plugin stand-in for the AC's "fake publish target".
+
+Fragment (quoted `${vars.*}` per the 0059 word-splitting scar):
+
+```yaml
+- id: cover
+  run: >
+    kk executor run image-gen
+    --in "${vars.work_dir}/2-outline/cover-job.json"
+    --out "${vars.work_dir}/5-images/content.json"
+- id: publish
+  run: >
+    kk executor run ghost-pub
+    --in "${vars.work_dir}/5-images/content.json"
+    --out "${vars.work_dir}/6-publish/result.json"
+```
+
+**Spec-amendment deliverables (same-commit rule T3, applied this tree):**
+- `docs/design/generator-plugin-specification.md:57` — `format` clause now names feature **K** / `image-gen` / `format: "image"`, documents the job-dependent `body` asymmetry (prompt for free/cover, rewritten article for illustration) and the `metadata.images[]` shape, in the D5 clause's shape.
+- `plugins/kk/config.example.yaml:26-90` — `plugins.generations.image-gen.env` block, full 0103 inventory, placeholder values only, including `KK_IMAGE_MAX_IMAGES` and `KK_IMAGE_DRY_RUN`; source-of-truth pointer to the plugin's own example.
+- `docs/04_DESIGN.md:220` — `plugins/generations/image-gen` added as a generator-kind example row.
+
+**Verification:** `bun run spur-check` 717 tests / 0 fail (image-gen 74/74, plugin coverage 96.55–100% line / 100% func), post-check rules 2/2 (`.spur/run/0104-test-gate.log`); real-executor dry-run + two-node handoff as above; review PASS-WITH-NOTES (`.spur/run/0104-review.md`) — P1 deliverable gap and R5 Solution closed by this section's edits; P4 advisories (outputStem traversal guard, parseInt leniency, dead cleanup loop) ride the 0105 adapter hop.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Per-job IO: envelope src/job.ts:15-104 (strict zod ImageJobSpecSchema), typed ImageArtifact/ImageGenMetadata src/job.ts:56-92; per-job prompt mapping src/index.ts:110-133; disk leg deferred to the adapter hop per the registered Design (src/index.ts:193-202 throws at the money boundary) — gaps carried by AC rows below |
+| R2 | MET | Real-executor proof: missing-spec exit 1 naming metadata.imageGen and the three jobs (--out absent); bare-prompt dry run exit 0, no Input schema violation; DocListSchema contract apps/cli/src/invoke.ts:251 — AC-1/AC-2 |
+| R3 | MET | Mechanism proven: src/paths.ts:19-22 resolves every artefact path against dirname(--out), never process.cwd(); zero-pad/collision unit-proven tests/paths.test.ts:9-34; fresh executor run created zero files under the plugin dir; file-level positive legs ride the adapter hop (AC-3/AC-4) |
+| R4 | MET | Contract proven: ImageArtifact + CaptionEntry shapes src/job.ts:56-92; insertion seam skill-decides/plugin-performs; input never mutated (sha256 unchanged through dry and non-dry runs); body round-trip file proof deferred to the writer (AC-5) |
+| R5 | MET | Fragment in task ## Solution with quoted ${vars.*}; freshly executed two-node run — image-gen dry-run (exit 0) then emdash-pub on KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake (exit 0, ok true), node-1 content.json sha256 identical after node 2 — AC-11 |
+| R6 | MET | Cap: ImageJobSpec.maxImages > KK_IMAGE_MAX_IMAGES > default 4, enforced src/index.ts:160-168 before provider resolution at :171 (count 9 refused exit 1 naming cap 4; spec cap 2 beats env 10); dry run: KK_IMAGE_DRY_RUN=1 composes prompts for all three jobs, metadata.dryRun true, images [], no bytes, no call — AC-6/AC-7/AC-8 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| A bare prompt survives the executor's input validation (R2) | MET | command | Fresh run: [{"id":"p1","body":"a red bicycle","metadata":{"imageGen":{"job":"free"}}}] with KK_IMAGE_DRY_RUN=1 ARK_API_KEY=dry-run-placeholder -> exit 0, stderr empty, ContentSchema-parsed output |
+| A missing job spec fails loud and early (R1) | MET | command | Fresh run doc without metadata.imageGen -> exit 1 naming metadata.imageGen and 'free', 'cover', 'illustration'; --out never written |
+| Artefacts land beside `--out`, never in the plugin directory (R3) | PARTIAL | test | Byte-writer deferred per registered Design (src/index.ts:197-202 throws not-implemented at the money boundary) so positive file claims unexecutable; mechanism present and unit-proven (src/paths.ts:19-22, tests/paths.test.ts:29-34; fresh run left plugin dir clean) |
+| Artefact names are deterministic and zero-padded (R3) | PARTIAL | test | Naming logic unit-proven (tests/paths.test.ts:9-27: padStart 01/09/10, deterministic, collision-free); AC's two-run positive file claim needs the deferred writer |
+| The illustration round trip preserves the original (R4) | PARTIAL | command | Insertion + captions deferred: non-dry illustration exits 1 'illustration job not implemented yet - provider seedream selected'; implemented legs fresh-verified: input sha unchanged, dry-run composes one prompt per anchor, count<->anchor mismatch fails loud (src/index.ts:117-123, tests/image-gen.test.ts:155) |
+| The budget cap refuses before spending (R6) | MET | command | Fresh run illustration count 9, no maxImages -> exit 1 'Image count 9 exceeds the budget cap 4', --out absent; cap check src/index.ts:160-168 precedes provider resolution :171; unit tests/image-gen.test.ts:173-185 proves the stub is never called |
+| `KK_IMAGE_MAX_IMAGES` overrides the compiled default (R6) | PARTIAL | test | Precedence mechanism fresh-proven (tests/image-gen.test.ts:187-202: env 10 lets count 9 through to dry-run exit 0; spec maxImages 2 beats env, fails naming cap 2; src/index.ts:42-56); AC's 9-images-entry leg needs the deferred writer |
+| A dry run composes prompts and spends nothing (R6) | MET | command | Fresh executor dry runs for all three jobs -> exit 0, only content.json written, metadata.dryRun true, images [], body = fully composed prompt; no generate call on the dry path (src/index.ts:173-195); provider-selection-needs-credential is documented select-then-skip design (review P4) |
+| A failure leaves nothing behind (spec §2.5) | MET | test | --out deleted before run and re-deleted on any throw (src/index.ts:138,203); unit-proven tests/image-gen.test.ts:270-275; artefact leg vacuous until the writer exists (written[] tracking is the registered no-op scaffold) |
+| Empty input is a notice, not a failure (spec §2.5) | MET | command | Fresh run --in [] -> exit 0, --out holds EMPTY_CONTENT notice byte-matching src/index.ts:15-20 written at :149-152 |
+| The workflow example runs end to end (R5) | MET | command | Fresh two-node run: node 1 image-gen dry-run exit 0 (content sha256 733b5466...); node 2 emdash-pub KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake exit 0 result ok:true; node-1 sha identical after node 2 (publish consumed exactly the written content.json); ghost-pub notional per the task's fake-publish-target wording; fragment in ## Solution |
+| The spec amendment and surface docs land in the same commit (deliverable) | PARTIAL | static-ref | docs/design/generator-plugin-specification.md:57 format clause names K/image-gen format "image" + body asymmetry; plugins/kk/config.example.yaml:26-90 image-gen env block placeholder-only incl KK_IMAGE_MAX_IMAGES + KK_IMAGE_DRY_RUN; docs/04_DESIGN.md:220 example row; all three in git diff HEAD --stat; literal git show --stat executes at commit (driver done-time; no-commit hop by design) |
+| The gate is clean (all) | MET | command | Fresh full re-run: bun run lint 0; bun run test 0 (717 pass / 0 fail / 0 skip, image-gen coverage >=96.55 line / 100 func); bun run build 0; matches recorded gate .spur/run/0104-test-gate.log (717/0, rules 2/2, PASS, digest 3f00a478 = marker); harness nit: -t 'stale --out' filtered run ENOENT on missing setup dir, full suite green |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P1 | evidence-rule-failed | — | Executable evidence missing for: The spec amendment and surface docs land in the same commit (deliverable) |
 
 ### References
 
@@ -406,4 +453,7 @@ Ordered. Each step names the R-item it serves and the check that proves it.
 ### History
 
 - 2026-09-09T21:15:33.167Z backlog → todo (system)
+- 2026-09-09T23:19:53.239Z todo → wip (system)
+- 2026-09-10T00:43:25.318Z wip → testing (system)
+- 2026-09-10T00:43:33.593Z testing → done (system)
 

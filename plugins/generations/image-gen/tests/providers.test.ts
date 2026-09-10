@@ -1,0 +1,188 @@
+import { describe, expect, test } from 'bun:test';
+import {
+    AUTO_ORDER,
+    type ImageProvider,
+    type ImageRequest,
+    type ImageResult,
+    PROVIDERS,
+    type ProviderFactory,
+    selectProvider,
+} from '../src/providers/types';
+
+/**
+ * Task 0103 — pins the frozen selection order (the money-spending decision) before any
+ * adapter exists. No network, no subprocess: every test injects `env` and/or an
+ * `isAvailable` stub, and the I/O-free test's `fetch` stub fails the test if invoked.
+ */
+
+const ALL_NAMES = Object.keys(PROVIDERS).sort();
+
+const throwingFetch: typeof fetch = () => {
+    throw new Error('network I/O is forbidden in this suite');
+};
+
+describe('PROVIDERS registry (R1/R2)', () => {
+    test('registers exactly the 12 baoyu adapters', () => {
+        expect(ALL_NAMES).toEqual([
+            'agnes',
+            'azure',
+            'codex-cli',
+            'dashscope',
+            'google',
+            'jimeng',
+            'minimax',
+            'openai',
+            'openrouter',
+            'replicate',
+            'seedream',
+            'zai',
+        ]);
+    });
+
+    test('AUTO_ORDER is frozen, excludes codex-cli, and covers the other 11', () => {
+        expect(AUTO_ORDER).not.toContain('codex-cli');
+        expect([...AUTO_ORDER].sort()).toEqual(ALL_NAMES.filter((name) => name !== 'codex-cli'));
+    });
+
+    test('ImageRequest accepts referenceImages without a cast and shells satisfy ImageProvider', () => {
+        const request: ImageRequest = { prompt: 'p', model: 'gemini-3-pro-image', referenceImages: ['/abs/a.png'] };
+        expect(request.referenceImages).toEqual(['/abs/a.png']);
+
+        const factory: ProviderFactory = PROVIDERS.openai.create;
+        const provider: ImageProvider = factory({ env: {} });
+        expect(provider.name).toBe('openai');
+
+        const result: ImageResult = { bytes: new Uint8Array([1]), extension: 'png', provider: 'x', model: 'm' };
+        expect(result.bytes.length).toBe(1);
+    });
+});
+
+describe('isAvailable performs no I/O (R2/R5)', () => {
+    test('every registered shell answers from env only — the injected fetch is never invoked', () => {
+        for (const name of ALL_NAMES) {
+            const provider = PROVIDERS[name].create({ fetch: throwingFetch, env: {} });
+            expect(provider.isAvailable()).toBe(false);
+        }
+    });
+
+    test('a set env var makes a shell available without touching fetch', () => {
+        const provider = PROVIDERS.openai.create({ fetch: throwingFetch, env: { OPENAI_API_KEY: 'sk-test' } });
+        expect(provider.isAvailable()).toBe(true);
+    });
+
+    test('an empty-string env value counts as unset', () => {
+        const provider = PROVIDERS.openai.create({ fetch: throwingFetch, env: { OPENAI_API_KEY: '' } });
+        expect(provider.isAvailable()).toBe(false);
+    });
+});
+
+describe('env-only provider shells (registry facts)', () => {
+    test('name and defaultModel come from the registry row', () => {
+        const provider = PROVIDERS.google.create({ env: {} });
+        expect(provider.name).toBe('google');
+        expect(provider.defaultModel()).toBe('gemini-3-pro-image');
+    });
+
+    test('supportsReferenceImages follows the per-model gates recorded in the inventory', () => {
+        const google = PROVIDERS.google.create({ env: {} });
+        expect(google.supportsReferenceImages('gemini-3-pro-image')).toBe(true);
+        expect(google.supportsReferenceImages('models/gemini-3-pro-image')).toBe(true);
+        expect(google.supportsReferenceImages('imagen-3.0-generate-002')).toBe(false);
+
+        const openai = PROVIDERS.openai.create({ env: {} });
+        expect(openai.supportsReferenceImages('gpt-image-2')).toBe(true);
+        expect(openai.supportsReferenceImages('dall-e-3')).toBe(false);
+
+        const dashscope = PROVIDERS.dashscope.create({ env: {} });
+        expect(dashscope.supportsReferenceImages('wan2.7-image-pro')).toBe(true);
+        expect(dashscope.supportsReferenceImages('qwen-image-2.0-pro')).toBe(false);
+
+        const seedream = PROVIDERS.seedream.create({ env: {} });
+        expect(seedream.supportsReferenceImages('doubao-seedream-5-0-260128')).toBe(true);
+        expect(seedream.supportsReferenceImages('doubao-seedream-3-0-t2i-250415')).toBe(false);
+
+        expect(PROVIDERS.zai.create({ env: {} }).supportsReferenceImages('glm-image')).toBe(false);
+        expect(PROVIDERS.jimeng.create({ env: {} }).supportsReferenceImages('jimeng_t2i_v40')).toBe(true);
+        expect(PROVIDERS.minimax.create({ env: {} }).supportsReferenceImages('image-01')).toBe(true);
+    });
+
+    test('jimeng requires both halves of its credential pair', () => {
+        const jimeng = PROVIDERS.jimeng;
+        expect(jimeng.create({ env: { JIMENG_ACCESS_KEY_ID: 'a' } }).isAvailable()).toBe(false);
+        expect(jimeng.create({ env: { JIMENG_SECRET_ACCESS_KEY: 'b' } }).isAvailable()).toBe(false);
+        expect(jimeng.create({ env: { JIMENG_ACCESS_KEY_ID: 'a', JIMENG_SECRET_ACCESS_KEY: 'b' } }).isAvailable()).toBe(
+            true,
+        );
+    });
+
+    test('generate throws until the adapter tickets land (no wire logic in this file)', () => {
+        const provider = PROVIDERS.zai.create({ env: { ZAI_API_KEY: 'k' } });
+        expect(() => provider.generate({ prompt: 'p', model: 'glm-image' })).toThrow('has no adapter yet');
+    });
+});
+
+describe('selectProvider resolution order (R3)', () => {
+    test('path 1 — an explicit request wins over everything else', () => {
+        const available = (name: string): boolean => name === 'openai' || name === 'replicate';
+        expect(selectProvider('replicate', { isAvailable: available })).toBe('replicate');
+    });
+
+    test('path 2 — IMAGE_GEN_PROVIDER is honoured when nothing is requested', () => {
+        const available = (name: string): boolean => name === 'openai' || name === 'replicate' || name === 'zai';
+        const env = { IMAGE_GEN_PROVIDER: 'zai' };
+        expect(selectProvider(undefined, { env, isAvailable: available })).toBe('zai');
+    });
+
+    test('path 3 — auto picks the earliest AUTO_ORDER provider that is available', () => {
+        const available = (name: string): boolean => name === 'replicate' || name === 'openai';
+        expect(selectProvider(undefined, { env: {}, isAvailable: available })).toBe('openai');
+    });
+
+    test('path 4 — nothing available throws with the per-provider credential map', () => {
+        const action = (): string => selectProvider(undefined, { env: {}, isAvailable: () => false });
+        expect(action).toThrow('No image provider is configured');
+        expect(action).toThrow('google: GOOGLE_API_KEY or GEMINI_API_KEY');
+        expect(action).toThrow("codex-cli: requires the 'codex' CLI on PATH with an active login");
+    });
+
+    test('an empty-string explicit request falls through to auto-selection', () => {
+        const available = (name: string): boolean => name === 'minimax';
+        expect(selectProvider('', { env: { IMAGE_GEN_PROVIDER: '' }, isAvailable: available })).toBe('minimax');
+    });
+
+    test('failure — an unknown provider throws listing all 12 valid names, without falling through', () => {
+        const action = (): string => selectProvider('stable-diffusion', { env: {}, isAvailable: () => true });
+        expect(action).toThrow('Unknown image provider');
+        for (const name of ALL_NAMES) {
+            expect(action).toThrow(name);
+        }
+    });
+
+    test('failure — IMAGE_GEN_PROVIDER with an unknown name throws the same way', () => {
+        const action = (): string => selectProvider(undefined, { env: { IMAGE_GEN_PROVIDER: 'nope' } });
+        expect(action).toThrow('Unknown image provider');
+        expect(action).toThrow('codex-cli');
+    });
+
+    test('failure — a known-but-unconfigured provider names provider and env var, no silent downgrade', () => {
+        const action = (): string => selectProvider('openai', { env: {} });
+        expect(action).toThrow("Provider 'openai' is not configured: missing OPENAI_API_KEY");
+    });
+
+    test('failure — google reports either half of its fallback chain', () => {
+        const action = (): string => selectProvider('google', { env: {} });
+        expect(action).toThrow('missing GOOGLE_API_KEY or GEMINI_API_KEY');
+    });
+
+    test('codex-cli is never auto-selected even when it is the only available provider', () => {
+        const action = (): string =>
+            selectProvider(undefined, { env: {}, isAvailable: (name) => name === 'codex-cli' });
+        expect(action).toThrow('No image provider is configured');
+    });
+
+    test('codex-cli can still be pinned explicitly', () => {
+        expect(selectProvider('codex-cli', { env: {}, isAvailable: (name) => name === 'codex-cli' })).toBe('codex-cli');
+        const unavailable = (): string => selectProvider('codex-cli', { env: {} });
+        expect(unavailable).toThrow("Provider 'codex-cli' is not available: requires the 'codex' CLI");
+    });
+});

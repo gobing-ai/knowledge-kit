@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Define the format x style preset schema and resolution contract
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-09T18:27:33.268Z
-updated_at: "2026-09-09T21:15:31.117Z"
+updated_at: "2026-09-09T22:22:04.906Z"
 feature_id: K
 
 ac_altitude: task-local
@@ -46,84 +46,86 @@ The load-bearing contract of the whole map: every other ticket consumes it. Two 
 
 Produce, as the task's Design section and a runnable prototype:
 
-- [ ] R1. **Zod schemas** for `FormatPreset` and `StylePreset` in TypeScript, matching repo conventions (`interface` for object shapes, `any` is an error).
-- [ ] R2. **The composition rule** — the deterministic order in which format skeleton, style modifiers, user prompt, variables, and provider-specific hints concatenate into one final prompt string. Order must be explicit and testable, not emergent.
-- [ ] R3. **File format decision** — YAML, Markdown-with-frontmatter, or TS module — with the reason. Note that `wt` used `.tpl.md` frontmatter and baoyu uses plain `.md` galleries; kk's own precedent is YAML (`config.example.yaml`, workflows).
-- [ ] R4. **Resolution order across roots** — built-in (package-shipped) → user → project → env override, with the shadowing rule when the same preset name appears twice, mirroring ADR-012.
-- [ ] R5. **The v1 preset inventory** — which of `wt`'s 9 styles and 4 cover styles survive as `styles/`, and the exact three `formats/` (`free`, `cover`, `illustration`) with their aspect ratios and variable sets.
-- [ ] R6. **One rendered example checked into the task**: `format: cover` × `style: editorial` × `{title, subtitle, topics}` → the exact final prompt string.
+- [x] R1. **Zod schemas** for `FormatPreset` and `StylePreset` in TypeScript, matching repo conventions (`interface` for object shapes, `any` is an error).
+- [x] R2. **The composition rule** — the deterministic order in which format skeleton, style modifiers, user prompt, variables, and provider-specific hints concatenate into one final prompt string. Order must be explicit and testable, not emergent.
+- [x] R3. **File format decision** — YAML, Markdown-with-frontmatter, or TS module — with the reason. Note that `wt` used `.tpl.md` frontmatter and baoyu uses plain `.md` galleries; kk's own precedent is YAML (`config.example.yaml`, workflows).
+- [x] R4. **Resolution order across roots** — built-in (package-shipped) → user → project → env override, with the shadowing rule when the same preset name appears twice, mirroring ADR-012.
+- [x] R5. **The v1 preset inventory** — which of `wt`'s 9 styles and 4 cover styles survive as `styles/`, and the exact three `formats/` (`free`, `cover`, `illustration`) with their aspect ratios and variable sets.
+- [x] R6. **One rendered example checked into the task**: `format: cover` × `style: editorial` × `{title, subtitle, topics}` → the exact final prompt string.
 
 The prototype must show a real rendered prompt, not a schema alone — a schema that has never rendered anything is not evidence.
 
 ### Acceptance Criteria
 
+```gherkin
 Task-local scenarios (`ac_altitude: task-local`). Feature K is a wayfinder map tagged `wayfinder-map` and carries a prose no-AC disclaimer instead of Gherkin, so these scenarios are this task's own ship criteria, not a subset of feature AC.
 
-#### Scenario: A valid format file parses into a FormatPreset (R1)
+Scenario: A valid format file parses into a FormatPreset (R1)
 - **Given** `presets/formats/cover.yaml` with `name, description, job, aspectRatio, defaultStyle, keywords, outputFilename, variables, template`
 - **When** `FormatPresetSchema.parse` runs on the `Bun.YAML.parse` result
 - **Then** it returns a `FormatPreset` whose `name` equals the filename stem, whose `job` is `'cover'`, and whose `template` retains its embedded newlines
 
-#### Scenario: A format file without `job` is rejected (R1)
+Scenario: A format file without `job` is rejected (R1)
 - **Given** a format YAML identical to `cover.yaml` but with the `job` key removed
 - **When** `FormatPresetSchema.parse` runs on it
 - **Then** it throws, and the message names `job`
 - **And** `loadPresets()` emits an `invalid` diagnostic for that file rather than throwing, leaving the other formats loadable
 
-#### Scenario: A style file with only name, description and modifiers parses (R1)
+Scenario: A style file with only name, description and modifiers parses (R1)
 - **Given** `presets/styles/editorial.yaml` carrying exactly `name`, `description` and `modifiers`
 - **When** `StylePresetSchema.parse` runs on it
 - **Then** it succeeds and `palette`, `typography`, `visualElements`, `bestFor`, `negative` and `source` are all `undefined`
 
-#### Scenario: composePrompt concatenates the four segments in the frozen order (R2)
+Scenario: composePrompt concatenates the four segments in the frozen order (R2)
 - **Given** a format whose `template` renders to `BODY`, whose `keywords` are `['K1','K2']`, and a style whose `modifiers` are `M`
 - **When** `composePrompt(format, style, {}, 'E')` is called
 - **Then** the result is exactly `BODY, K1, K2, M, E`
 
-#### Scenario: An empty optional segment is dropped, not left as a stray comma (R2)
+Scenario: An empty optional segment is dropped, not left as a stray comma (R2)
 - **Given** the same format and style but `keywords: []` and no `extra` argument
 - **When** `composePrompt(format, style, {})` is called
 - **Then** the result is exactly `BODY, M` — no doubled or trailing `, `
 
-#### Scenario: A placeholder with no value and no fallback fails loud (R2)
+Scenario: A placeholder with no value and no fallback fails loud (R2)
 - **Given** a format whose `template` contains `{{nonesuch}}` and whose `variables` map has no `nonesuch` key
 - **When** `composePrompt` is called without a `nonesuch` value
 - **Then** it throws an `Error` whose message names both `nonesuch` and the format's `name`
 
-#### Scenario: The fallback form is used when the variable resolves empty (R2)
+Scenario: The fallback form is used when the variable resolves empty (R2)
 - **Given** a format whose `template` contains `{{subtitle | , subtitled "{{subtitle}}"}}`
 - **When** `composePrompt` is called with `subtitle: ''`
 - **Then** the rendered segment is the literal fallback text, not an empty string
 
-#### Scenario: A project-root preset shadows the built-in of the same name (R4)
+Scenario: A project-root preset shadows the built-in of the same name (R4)
 - **Given** a built-in `presets/styles/editorial.yaml` and a `<project>/.kk/image-presets/styles/editorial.yaml` with different `modifiers`
 - **When** `loadPresets()` runs
 - **Then** `styles.get('editorial')!.modifiers` is the project file's value **and** `diagnostics` contains one `shadowed` entry naming the built-in path
 
-#### Scenario: KK_IMAGE_PRESET_PATH wins over the project root (R4)
+Scenario: KK_IMAGE_PRESET_PATH wins over the project root (R4)
 - **Given** the same two files plus a third `editorial.yaml` in a directory named by `KK_IMAGE_PRESET_PATH`
 - **When** `loadPresets()` runs
 - **Then** the `KK_IMAGE_PRESET_PATH` copy wins and two `shadowed` diagnostics are emitted
 
-#### Scenario: A malformed preset file is skipped, not fatal (R4)
+Scenario: A malformed preset file is skipped, not fatal (R4)
 - **Given** a user-root `styles/broken.yaml` that fails `StylePresetSchema.parse`
 - **When** `loadPresets()` runs
 - **Then** it returns normally, `styles` contains all 9 built-in styles, `styles.has('broken')` is `false`, and `diagnostics` contains one `invalid` entry naming that path
 
-#### Scenario: Every shipped format declares a distinct job (R5)
+Scenario: Every shipped format declares a distinct job (R5)
 - **Given** the three shipped format files
 - **When** each is parsed
 - **Then** `free.job === 'free'`, `cover.job === 'cover'` and `illustration.job === 'illustration'`
 
-#### Scenario: The v1 inventory is exactly three formats and nine styles (R5)
+Scenario: The v1 inventory is exactly three formats and nine styles (R5)
 - **Given** no user, project or `KK_IMAGE_PRESET_PATH` roots
 - **When** `loadPresets()` runs against the shipped `presets/` directory
 - **Then** `[...formats.keys()].sort()` is `['cover','free','illustration']` and `[...styles.keys()].sort()` is `['cute','editorial','fresh','minimalist','photorealistic','sketch','technical-diagram','vibrant','warm']`
 
-#### Scenario: The golden cover prompt renders byte-for-byte (R6)
+Scenario: The golden cover prompt renders byte-for-byte (R6)
 - **Given** the shipped `cover` format and `editorial` style
 - **When** `composePrompt` runs with `{ title: 'Microservices Guide', subtitle: 'From monolith to mesh', topics: 'distributed systems' }`
 - **Then** the result equals the exact string literal pinned in the Design section
+```
 
 ### Q&A
 
@@ -271,7 +273,9 @@ Assert it as a single string literal in `tests/presets.test.ts`. If the port cha
 - **Leaves to 0103:** how `aspectRatio` / `width` / `height` / `negative` translate into each provider's wire format.
 - **Leaves to 0104:** how a caller names a format, a style and the variables (they arrive in `Doc.metadata` — 0104's contract), and where the rendered image is written.
 - **Leaves to 0105:** populating `StylePreset.palette` / `visualElements` / `source` from a reference image. The `source` field exists **now** so 0105 has a landing place and does not need to reopen this schema.
-- **Leaves to 0106:** the content-type heuristics, and the preference file (if any) that supplies a default style — the map's open question (a) is unresolved, so **Why `job` is a field and not a name convention.** The three v1 formats are named `free`, `cover` and `illustration`, one per plugin job branch — so today the mapping could be read off the name. It must not be: an operator adding `cover-xhs` (or any fourth format) would have no way to say which branch it drives, and the slash command's whole promise is that `--format` alone selects the work (0106 R2). `job` is required with no default, so every preset file — shipped or operator-authored — states it explicitly. 0104's `ImageJobSpec.job` stays the plugin's authoritative input; the skill fills it from the chosen format's `job`.
+- **Leaves to 0106:** the content-type heuristics, and the preference file (if any) that supplies a default style — the map's open question (a) is unresolved.
+
+**Why `job` is a field and not a name convention.** The three v1 formats are named `free`, `cover` and `illustration`, one per plugin job branch — so today the mapping could be read off the name. It must not be: an operator adding `cover-xhs` (or any fourth format) would have no way to say which branch it drives, and the slash command's whole promise is that `--format` alone selects the work (0106 R2). `job` is required with no default, so every preset file — shipped or operator-authored — states it explicitly. 0104's `ImageJobSpec.job` stays the plugin's authoritative input; the skill fills it from the chosen format's `job`.
 
 `presets.ts` reads **no** preference file; it takes explicit arguments only.
 
@@ -290,15 +294,61 @@ Assert it as a single string literal in `tests/presets.test.ts`. If the port cha
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Format × style preset contract for the image generator, ported from the wt plugin per the Design (R1-R6), all in `plugins/generations/image-gen/`:
+
+- **R1 schemas** — `plugins/generations/image-gen/src/presets.ts:35` (`FormatPreset`), `:57` (`StylePreset`) interfaces with Zod gates at `:80`/`:95`; minimal style files parse with optionals `undefined`.
+- **R2 composition** — `plugins/generations/image-gen/src/presets.ts:212` `composePrompt` freezes segment order `body → keywords → style → extra` (`.filter(Boolean).join(', ')`); `renderTemplate` (`:183`) supports `{{name}}` and `{{name | fallback}}` (fallback-with-slot pinned as mini-template per the R6 golden); unknown placeholder throws naming placeholder + format (`:200`).
+- **R3 YAML** — presets are `.yaml` parsed via `Bun.YAML.parse` (`plugins/generations/image-gen/src/presets.ts:305`), per the decided Design R3.
+- **R4 resolution** — `plugins/generations/image-gen/src/presets.ts:257` `resolvePresetRoots`: builtin → `~/.kk/image-presets` → `$KNOWLEDGE_KIT_PROJECT_ROOT/.kk/image-presets` → `KK_IMAGE_PRESET_PATH`; whole-file shadowing with `shadowed` diagnostics (`:317`); malformed files emit `invalid` and are skipped, never fatal (`:308`).
+- **R5 inventory** — `plugins/generations/image-gen/presets/formats/free.yaml`, `cover.yaml`, `illustration.yaml` (distinct jobs 1:1/21:9/4:3) + 9 styles under `plugins/generations/image-gen/presets/styles/` with wt `modifiers` transcribed verbatim.
+- **R6 golden** — `plugins/generations/image-gen/tests/presets.test.ts:288` asserts the Design's rendered example byte-for-byte; 15 tests cover all 13 AC scenarios (100% funcs / 96.55% lines on `src/presets.ts`).
+- **IO seam** — file access goes through `@gobing-ai/ts-runtime` `createNodeFileSystem` (`plugins/generations/image-gen/src/presets.ts:229`), satisfying strict rule `no-direct-fs-io`; workspace registered in `plugins/generations/image-gen/package.json:9`.
+
+Deferred to 0104+: `plugin.json` manifest (generator contract), provider adapters, agent surface.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/generations/image-gen/src/presets.ts:35` (`FormatPreset` interface), `:57` (`StylePreset`), `:80` (`FormatPresetSchema`), `:95` (`StylePresetSchema`); object shapes declared as `interface`, zero `any` (grep clean), `bun run typecheck` exit 0; schema parse tests at `tests/presets.test.ts:108,117,141` |
+| R2 | MET | `presets.ts:212` `composePrompt` — frozen order body → keywords → style → extra via `.filter(Boolean).join(', ')`; `renderTemplate` :183 two-form `{{name}}`/`{{name \| fallback}}` grammar; `mergeVars` :110; unknown placeholder throws naming placeholder+format (`presets.ts:200-204`); tests `tests/presets.test.ts:157,161,165,171` |
+| R3 | MET | YAML decided with rationale in task Design §R3 (rejected .tpl.md frontmatter / .md gallery / TS module); implementation matches: all presets are `.yaml` parsed via `Bun.YAML.parse` (`presets.ts:305`) |
+| R4 | MET | `presets.ts:257` `resolvePresetRoots` builtin → `~/.kk/image-presets` → `$KNOWLEDGE_KIT_PROJECT_ROOT/.kk/image-presets` → `KK_IMAGE_PRESET_PATH` (`:`-split, left→right); whole-file shadowing with `shadowed` diagnostic naming the losing path (`presets.ts:317-322`); schema-fail → `invalid` diagnostic, skip not throw (`presets.ts:308,313`); tests `tests/presets.test.ts:182,200,229,243` |
+| R5 | MET | 3 formats: `formats/free.yaml:3-4` (job free, 1:1), `formats/cover.yaml:3-4` (job cover, 21:9), `formats/illustration.yaml:3-4` (job illustration, 4:3); 9 styles in `presets/styles/` — all 9 `modifiers` strings diff-verified VERBATIM against wt `materials/styles.yaml`, `editorial.yaml:2` description matches wt `materials/styles/editorial.md:5`; cover.yaml template body diff-clean vs wt `cover.tpl.md` body; tests `tests/presets.test.ts:262,269` |
+| R6 | MET | Golden literal pinned at `tests/presets.test.ts:22-36`, asserted at `:288`; independently re-rendered cover × editorial from shipped YAML via a separate script and compared byte-for-byte against the Design fence — equal (1000 chars, incl. trailing space after `concepts, ` and embedded newlines) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| A valid format file parses into a FormatPreset (R1) | MET | test | `tests/presets.test.ts:108` — name=cover=stem, job='cover', template retains `\n`; passes |
+| A format file without `job` is rejected (R1) | MET | test | `tests/presets.test.ts:117` (parse throws naming `job`) + `:124` (loadPresets emits `invalid`, built-in cover still loads, 3 formats present) |
+| A style file with only name, description and modifiers parses (R1) | MET | test | `tests/presets.test.ts:141` — palette/typography/visualElements/bestFor/negative/source all `toBeUndefined()` |
+| composePrompt concatenates the four segments in the frozen order (R2) | MET | test | `tests/presets.test.ts:157` — `composePrompt(format, style, {}, 'E')` === `'BODY, K1, K2, M, E'` |
+| An empty optional segment is dropped, not left as a stray comma (R2) | MET | test | `tests/presets.test.ts:161` — keywords `[]`, no extra → `'BODY, M'` |
+| A placeholder with no value and no fallback fails loud (R2) | MET | test | `tests/presets.test.ts:165` — throws matching both `{{nonesuch}}` and format name `cover` |
+| The fallback form is used when the variable resolves empty (R2) | MET | test | `tests/presets.test.ts:171` — `subtitle: ''` renders literal fallback `, subtitled "{{subtitle}}"`, not empty string |
+| A project-root preset shadows the built-in of the same name (R4) | MET | test | `tests/presets.test.ts:182` — project `.kk/image-presets/styles/editorial.yaml` wins; exactly one `shadowed` diagnostic naming the built-in path |
+| KK_IMAGE_PRESET_PATH wins over the project root (R4) | MET | test | `tests/presets.test.ts:200` — env-path modifiers win; exactly two `shadowed` diagnostics (builtin + project paths) |
+| A malformed preset file is skipped, not fatal (R4) | MET | test | `tests/presets.test.ts:229` — user-root `broken.yaml` (missing description/modifiers) → returns normally, 9 built-in styles, no `broken`, one `invalid` naming the path; also `:243` YAML-garbage variant |
+| Every shipped format declares a distinct job (R5) | MET | test | `tests/presets.test.ts:262` — free/cover/illustration jobs match; YAML files corroborate (`free.yaml:3`, `cover.yaml:3`, `illustration.yaml:3`) |
+| The v1 inventory is exactly three formats and nine styles (R5) | MET | test | `tests/presets.test.ts:269` — sorted keys `['cover','free','illustration']` and the exact 9 style names, zero diagnostics, isolated env; directory listing corroborates 3+9 files |
+| The golden cover prompt renders byte-for-byte (R6) | MET | test | `tests/presets.test.ts:288` `expect(prompt).toBe(GOLDEN_COVER_PROMPT)`; plus independent manual rerun: fresh compose from shipped YAML === Design fence byte-for-byte |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | 6d84a657ed6176003df4a674065ad62fca7953e65a3c9a1bef5d732d5ae41861 |
 
 ### References
 
@@ -313,4 +363,7 @@ Assert it as a single string literal in `tests/presets.test.ts`. If the port cha
 ### History
 
 - 2026-09-09T21:15:31.117Z backlog → todo (system)
+- 2026-09-09T21:51:48.947Z todo → wip (system)
+- 2026-09-09T22:21:41.456Z wip → testing (system)
+- 2026-09-09T22:22:04.906Z testing → done (system)
 

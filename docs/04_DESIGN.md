@@ -217,7 +217,7 @@ Product plugins live under kind collections (ADR-009):
 | Collection | `kind` | Example |
 | ------------ | -------- | --------- |
 | `plugins/ingestions/<name>/` | `ingestion` | `plugins/ingestions/karakeep-local` |
-| `plugins/generations/<name>/` | `generator` | `plugins/generations/content-gen` |
+| `plugins/generations/<name>/` | `generator` | `plugins/generations/content-gen`, `plugins/generations/image-gen` |
 | `plugins/publishings/<name>/` | `publish` | `plugins/publishings/surfdash-pub` |
 
 Default runtime discovery is a **merged multi-root scan** (ADR-012): the package-shipped built-in

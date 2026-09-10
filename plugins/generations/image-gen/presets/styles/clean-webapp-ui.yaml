@@ -1,0 +1,25 @@
+name: clean-webapp-ui
+description: Clean light-mode web-app interface — neutral near-white surfaces, card grid, restrained steel-blue and warm-tan accents on an ink text base.
+modifiers: clean web-app interface style, light neutral surfaces, generous whitespace, card grid layout, rounded corners, subtle borders, restrained steel-blue accents, warm tan highlights, crisp sans-serif typography, flat modern UI
+palette:
+    - { role: background, name: near-white, hex: '#F4F5F6' }
+    - { role: text, name: ink, hex: '#272828' }
+    - { role: primary, name: steel blue, hex: '#647E9C' }
+    - { role: secondary, name: warm tan, hex: '#BD9B67' }
+    - { role: secondary, name: light grey, hex: '#C1C1BB' }
+typography: crisp geometric sans-serif, small muted labels, strong weight contrast between headings and body text
+visualElements:
+    - card grid with rounded corners
+    - hairline borders on neutral ground
+    - flat icons
+    - sparse colour accents against a light grey field
+bestFor: productivity-tool interfaces, dashboards, knowledge-base and bookmark apps, clean SaaS pages
+negative: heavy textures, skeuomorphic depth, neon gradients, cluttered composition
+# source.confidence: extraction-side judgement per the style-extraction decision rule;
+# four-axis fidelity verdict pending the regenerated image (both image backends down at extraction time); take-the-lower tie-break applies once it exists
+source:
+    kind: extracted
+    refImages:
+        - /Users/robin/xprojects/knowledge-kit-runall-k-f5193541/.spur/run/0105-ref.png
+    extractedAt: '2026-09-10T00:57:40Z'
+    confidence: high
