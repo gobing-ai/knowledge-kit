@@ -4,7 +4,7 @@ name: Repair plugin packaging, execution contracts, cancellation, and retry inte
 status: done
 template: issue
 created_at: 2026-09-10T17:38:09.598Z
-updated_at: "2026-09-10T19:07:29.512Z"
+updated_at: "2026-09-10T22:53:19.056Z"
 
 priority: P1
 feature_id: L
@@ -318,19 +318,31 @@ re-resolved after changes. No live publishing/network service was used.
 
 ### Solution
 
-Not implemented. All I1–I7 remediation work remains open.
+Implemented I1–I7 on the existing packaging, invoke, kind-contract, and fan-out seams (commit
+`5503d8c`). No new plugin kind, registry, workflow engine, or published private workspace.
 
-The capture session adds detailed reproduction/acceptance evidence to this task and updates
-documentation only: ADR-006 completion ownership, ADR-007 retry state, ADR-012 distribution
-closure, ADR-019 descendant cancellation; 03 mechanisms/gap inventory; 04 observed surfaces;
-01 clarification that Brief input is planned; AGENTS pointer to the owning boundary section.
-Documentation anchors: `docs/00_ADR.md:237`, `docs/03_ARCHITECTURE.md:179`,
-`docs/04_DESIGN.md:97`, and `docs/01_PRD.md:74`.
-These changes prevent documentation from representing broken or planned paths as verified runtime
-behavior. They do not fix production code or replace the verification required by R8.
+Close-out after that commit (this wrap): replace the leftover capture-session Solution text;
+qualify Testing evidence to repo-root paths; run the missing AC1 isolated packaged-CLI smoke
+(ingestion + generator + fake publisher emitting valid kind output); drop the stale I3 gap row
+in `docs/03_ARCHITECTURE.md:105`.
 
-During implementation, replace this section with an I1–I7 change map (file, symbol, why, tests),
-explicitly retaining any unresolved issues. Do not fill it with anticipated fixes or old review receipts.
+#### Change map
+
+| Issue | Change (`file:line`) | Why | Tests |
+| --- | --- | --- | --- |
+| I1 | `scripts/bundle-plugins.ts:49-73` `bundleStagedEntry`; `:76-94` `bundleStagedEntries`; `:118-121` fail-loud zero plugins; `apps/cli/package.json:26` `prepack` → `build:bundle` | Staged entries must be self-contained; source manifests stay `./src/index.ts` | `apps/cli/tests/package.test.ts:20`; isolated packaged-CLI smoke (AC1) |
+| I2 | `apps/cli/src/invoke.ts:183-201` `killProcessTree`; `:220-240` self-managed timer then `clearTimeout` | Bun abort-kill races a late tree walk; kill descendants while the child is alive | `apps/cli/tests/invoke.test.ts:410` |
+| I3 | `packages/kk-core/src/kinds.ts:65` Content-only publish input; `packages/kk-core/src/manifest.ts:27` `operations`; `apps/cli/src/invoke.ts:310-324` declared-op dispatch; `:390-396` markdown artifact output; `plugins/publishings/podcast-pub/plugin.json:7-9` | Restore generic publish `Content → Result`; show-notes is a declared op, not a kind-wide bypass | `apps/cli/tests/invoke.test.ts:183`; `packages/kk-core/tests/kinds.test.ts:32-42`; `packages/kk-core/tests/manifest.test.ts:41-58` |
+| I4 | `apps/cli/src/fanout.ts:234-255` metadata object validation; `:467-476` skipped carry-forward | `metadata.postPath` must survive retry for locale scaffolding | `apps/cli/tests/fanout.test.ts:333` |
+| I5 | `apps/cli/src/invoke.ts:278-281` alias reject; `:354-363` unlink exact `--out` before spawn; `:381-383` missing-out fail | Success is current-invocation output; sidecars keep their paths | `apps/cli/tests/invoke.test.ts:379`; `:302-303` / `:350-351` stale-out comments |
+| I6 | `apps/cli/src/invoke.ts:428-432` `ok:false` → exit 1; `:374-378` child nonzero still authoritative | Domain failure is not success just because the child exited 0 | `apps/cli/tests/invoke.test.ts:357-371`; `apps/cli/src/fanout.ts:114-120` |
+| I7 | `apps/cli/src/fanout.ts:457-501` `retainedFailed` + deduped `attempt` | Explicit `--target` must not drop unselected prior failures | `apps/cli/tests/fanout.test.ts:286` |
+
+#### Unresolved (documented, not blocking)
+
+- First-match doc-list operation selection (`apps/cli/src/invoke.ts:311`) — P3; one declared op today.
+- `killProcessTree` is POSIX-only (`apps/cli/src/invoke.ts:180-181`) — P3; stated in `docs/04_DESIGN.md`.
+- Seedream live-wire leg still needs `ARK_API_KEY` — P3, out of scope.
 
 ### Testing
 
@@ -340,31 +352,31 @@ explicitly retaining any unresolved issues. Do not fill it with anticipated fixe
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | scripts/bundle-plugins.ts bundles every staged product entry to <plugin>/dist/index.js via Bun.build and rewrites manifest entry to ./dist/index.js; prepack wiring in apps/cli/package.json; package.test.ts asserts prepack staging; smoke ran packaged-style entries standalone (podcast-pub/qiita-pub) with clean domain errors — no workspace/symlink/module-resolution dependency; fail-loud on missing entry/build/zero plugins. |
-| R2 | MET | apps/cli/src/invoke.ts spawnPluginEntryAsync: self-managed timeout timer kills the process tree (killProcessTree: depth-first descendants via pgrep -P, then SIGKILL parent); pipes drained; no name-based kill; POSIX limitation stated in docs/04; regression test spawns delayed marker-writing grandchild (timeout 300ms) and asserts marker absent at 2.6s; healthy siblings unaffected (concurrent fan-out design). |
-| R3 | MET | packages/kk-core/src/kinds.ts publish input is Content-only (array safeParse now false); manifest schema gains operations; podcast-pub/plugin.json declares show-notes op (doc-list → markdown); executor dispatches declared ops pre-spawn and rejects undeclared arrays with named error — no shape-sniffing bypass, no name hardcoding, direct-entry validation intact; kind + invoke tests. |
-| R4 | MET | apps/cli/src/fanout.ts preserves validated TargetOutcome.metadata through aggregate deserialization and skipped-target carry-forward (nested objects, postPath); primitive metadata → exit 2 (EXIT_INPUT) before dispatch; absent stays absent; fanout tests cover round-trip, primitive rejection, retained postPath across retry. |
-| R5 | MET | invoke.ts runInvoke: success requires output written during the current invocation — stale --out unlinked only after alias/verify checks (delete-or-verify); --in/--out alias rejected before any mutation or spawn; sidecar semantics preserved; tests prove zero-exit-no-write fails against pre-existing valid output for all kinds. |
-| R6 | MET | invoke.ts: validated publish Result ok:false → exit 1 with `reported failure: <reason>`, failure artifact kept, child nonzero exits still authoritative; parity applied to executor run, hidden invoke alias, and fan-out (fanout records target failed); tests on all three legs. |
-| R7 | MET | fanout.ts retry: prior ledger retained; explicit --target narrows/dedupes the attempt set (attempt = dedup(targets minus carried)); retainedFailed = prior failures not attempted; aggregate = skipped + retainedFailed + fresh; exit 1/ok:false while any failure remains; no duplicate outcomes/dispatch; eligibility doc conflict resolved consistently in CLI docs, docs/04, and satellite spec. |
-| R8 | MET | Regression tests added per issue (744 pass; would fail on baseline); focused consumer checks then full gates: bun run lint, bun run test, bun run build, bun run spur-check all green with fresh receipts; docs/00_ADR amendments (ADR-006/007/012/019) flipped to shipped, docs/03 shipped-mechanism table, docs/04 surfaces, docs/design/fan-in-and-fan-out-specification.md §5 synced in the same change. |
+| R1 | MET | `scripts/bundle-plugins.ts:49-73` bundles every staged entry to `<plugin>/dist/index.js` and rewrites the staged manifest; fail-loud on missing entry/build (`scripts/bundle-plugins.ts:58-69`) and on zero plugins (`scripts/bundle-plugins.ts:120`). Isolated packaged-CLI smoke this run (layout `/tmp/kk-0110-ac1`, `bun --no-install`, no `node_modules`, outside every repo ancestor): `karakeep-local` → 2 Docs; `core-facts-gen` → Content `format: markdown`; `emdash-pub` with `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` → `ok: true, target: fake-file-cli`. Dev manifest unchanged at `plugins/publishings/podcast-pub/plugin.json` `./src/index.ts`. |
+| R2 | MET | `apps/cli/src/invoke.ts:183-201` killProcessTree (depth-first `pgrep -P` descendants, SIGKILL, no name-based kill); `apps/cli/src/invoke.ts:220-240` self-managed timeout timer fires tree kill while child alive; pipes drained concurrently; regression `apps/cli/tests/invoke.test.ts:410` '0110 I2 — async timeout kills the whole spawned tree'. POSIX-only limitation documented `docs/04_DESIGN.md`. |
+| R3 | MET | `packages/kk-core/src/kinds.ts:65` publish input is Content-only; `packages/kk-core/src/manifest.ts:27` manifest `operations` record; `apps/cli/src/invoke.ts:310-324` declared doc-list op dispatch, undeclared array rejected pre-spawn (`apps/cli/src/invoke.ts:312-316`); no shape-sniffing bypass remains. Tests: `apps/cli/tests/invoke.test.ts:183`, `packages/kk-core/tests/kinds.test.ts:32-42`, `packages/kk-core/tests/manifest.test.ts:41-58`. Stale I3 gap row in `docs/03_ARCHITECTURE.md:105` replaced with the shipped contract. |
+| R4 | MET | `apps/cli/src/fanout.ts:234-255` metadata validated as optional object through aggregate deserialization (primitive → named input error, exit 2); `apps/cli/src/fanout.ts:467-476` skipped-target carry-forward retains url/id/metadata; fresh success preserves metadata (`apps/cli/src/fanout.ts:107-113`). Test `apps/cli/tests/fanout.test.ts:333` '0110 I4 — retry carries prior target metadata through skipped entries; primitive metadata is a named input error'. |
+| R5 | MET | `apps/cli/src/invoke.ts:278-281` --in/--out alias rejected before any mutation or spawn; `apps/cli/src/invoke.ts:354-363` stale --out unlinked before spawn so existence-after-exit proves current-invocation provenance (sidecar paths untouched — only the exact --out is removed); zero-exit-no-write fails (`apps/cli/src/invoke.ts:381-383`). Tests: `apps/cli/tests/invoke.test.ts:379` (alias rejected), `apps/cli/tests/invoke.test.ts:302-303` / `apps/cli/tests/invoke.test.ts:350-351` stale-out comments. |
+| R6 | MET | `apps/cli/src/invoke.ts:428-432` validated publish Result ok:false → exit 1 with `reported failure: <reason>`, failure artifact kept; child nonzero exit still authoritative (`apps/cli/src/invoke.ts:374-378`). Test `apps/cli/tests/invoke.test.ts:357-371` (I6, asserts `reported failure: upstream 502`); fan-out parity via result.ok failed branch `apps/cli/src/fanout.ts:114-120`. |
+| R7 | MET | `apps/cli/src/fanout.ts:457-501` prior ledger retained: `attempt` = deduped explicit targets minus carried (`apps/cli/src/fanout.ts:485`), `retainedFailed` = prior failures not attempted (`apps/cli/src/fanout.ts:488`), aggregate = skipped + retainedFailed + fresh (`apps/cli/src/fanout.ts:501`), ok:false/exit 1 while any failure remains. Test `apps/cli/tests/fanout.test.ts:286` 'R7 — explicit --target attempts the selection; unselected prior failures stay failed'. Eligibility wording consistent across CLI help, `docs/04_DESIGN.md`, and `docs/design/fan-in-and-fan-out-specification.md` §5. |
+| R8 | MET | Fresh receipts this wrap: `bun run lint` exit 0; `bun run test` 744 pass / 0 fail / 2913 expect() across 50 files (funcs 99.27% / lines 98.11%); `bun run build` exit 0 (`Bundled 361 modules`); `spur rule run --preset recommended-pre-check` 47/47; `spur rule run --preset recommended-post-check` 2/2; `spur task check 0110 --strict --as done` pass true, 0 findings. Regression tests: `apps/cli/tests/invoke.test.ts:183`, `apps/cli/tests/invoke.test.ts:379`, `apps/cli/tests/invoke.test.ts:410`, `apps/cli/tests/fanout.test.ts:286`, `apps/cli/tests/fanout.test.ts:333`, `packages/kk-core/tests/kinds.test.ts:32-42`, `packages/kk-core/tests/manifest.test.ts:41-58`, `apps/cli/tests/package.test.ts:20`. Docs synced in `5503d8c`; leftover I3 gap row in `docs/03_ARCHITECTURE.md:105` closed this wrap. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | package.test.ts prepack staging test; standalone runs of packaged-style entries (ingestion/generator/publisher incl. publish-harness-dependent podcast-pub) outside workspace context emit clean domain errors / valid kind behavior with no auto-install or network for code. |
-| AC2 | MET | test | Entry closure verified during bundling (fail-loud on missing entry/build); staged manifests point to ./dist/index.js; assets copied; dev manifests unchanged (source tree untouched by staging); smoke: zero plugins / missing entry produce named errors. |
-| AC3 | MET | test | invoke.test.ts tree-kill regression: wrapper spawns delayed marker-writing grandchild, source timeout 300ms elapses, marker file absent at 2.6s check. |
-| AC4 | MET | test | Self-managed timer (no AbortSignal race); killProcessTree reaps descendants then parent; diagnostics name the timeout (timedOut: true, exit 1); success paths clearTimeout after proc.exited — no leaked listeners; /tmp manual repro confirmed pgrep -P child-only leak is fixed by tree walk. |
-| AC5 | MET | test | kinds.test.ts: publish array input safeParse false; invoke.test.ts: unrelated publisher with Doc[] rejected pre-spawn (`undeclared operation` / no doc-list op error) before side effects; no output-shape bypass remains. |
-| AC6 | MET | test | podcast-pub plugin.json declares show-notes operation; executor dispatch path validates declared input (Doc[] → markdown) and output; no publish transport call in show-notes flow; daily workflow compatibility preserved via declared op (manifest-level migration documented in docs/04). |
-| AC7 | MET | test | fanout.test.ts: prior Surfdash result with metadata.postPath + failed sibling; retry succeeds → skipped Surfdash retains metadata/url/id; jq selector returns original postPath on first and subsequent retries. |
-| AC8 | MET | test | fanout.test.ts: absent metadata stays absent; nested-object round-trips; primitive metadata → named input error (exit 2) before dispatch; no silent field dropping. |
-| AC9 | MET | test | invoke.test.ts: valid pre-existing --out + zero-exit child writing nothing → executor run fails (exit 1) for each contract; old artifact not claimed as current. |
-| AC10 | MET | test | invoke.test.ts: aliased --in/--out rejected before mutation; non-aliased flows keep output-relative sidecar locations (delete-or-verify only removes the exact verified stale --out). |
-| AC11 | MET | test | invoke.test.ts + fanout.test.ts: zero-exit publisher emitting Result {ok:false,error:'rejected'} → executor run and hidden alias both exit nonzero, failure Result retained, reason surfaced; fan-out records target failed; valid success still exit 0. |
-| AC12 | MET | test | fanout.test.ts: prior S ok + A/B failed; --retry-from A → S skipped, A published, B still failed, total 3, exit 1; next retry-from dispatches only B then exit 0. |
-| AC13 | MET | test | fanout.test.ts: explicit new + repeated names — each target appears/dispatches at most once (dedupe), unrelated unresolved prior failures remain visible (retainedFailed); eligibility policy wording now identical across CLI docs, docs/04 Retry semantics, and satellite §5. |
-| AC14 | MET | command | bun run lint clean; bun run test 744 pass / 0 fail; bun run build green; bun run spur-check green (all 47 + 2 rules); docs distinguish shipped behavior from residual gaps (P3 findings named in Review). |
+| AC1 | MET | command | Isolated packaged CLI at `/tmp/kk-0110-ac1` (copied `apps/cli/dist/index.js` + `apps/cli/package.json` + three staged `plugin.json`/`dist/index.js` only; no `node_modules`; path is not a repo ancestor). `bun --no-install dist/index.js executor run` with `--plugins-root plugins`: `karakeep-local` wrote 2 Docs (`Sample Article Title`, `Standalone JSON Note`); `core-facts-gen` wrote Content `title: Core Facts — 2026-09-10`, `format: markdown`; `emdash-pub` `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` wrote Result `{ok: true, target: fake-file-cli}`. All three exit 0; no `Cannot find module`; no auto-install; no network for code. |
+| AC2 | MET | test | `scripts/bundle-plugins.ts:58-71` fail-loud entry/build closure; staged manifest `apps/cli/plugins/publishings/podcast-pub/plugin.json` entry `./dist/index.js`; dev manifest `plugins/publishings/podcast-pub/plugin.json` still `./src/index.ts`; `apps/cli/tests/package.test.ts:20` prepack staging test. |
+| AC3 | MET | test | `apps/cli/tests/invoke.test.ts:410` '0110 I2 — async timeout kills the whole spawned tree, not just the direct child' (delayed marker grandchild; marker absent after deadline). |
+| AC4 | MET | test | `apps/cli/src/invoke.ts:220-240` self-managed timer (no AbortSignal race), `clearTimeout` after `proc.exited` on success (no leaked listeners), timedOut diagnostics; covered by `apps/cli/tests/invoke.test.ts:410`. |
+| AC5 | MET | test | `apps/cli/tests/invoke.test.ts:183` '0110 I3 — publish Doc[] input is rejected undeclared' — unrelated publisher with Doc[] rejected pre-spawn before side effects; `packages/kk-core/tests/kinds.test.ts:32-42` publish array input no longer parses. |
+| AC6 | MET | test | `plugins/publishings/podcast-pub/plugin.json:7-9` declares `operations.show-notes` doc-list → markdown; `apps/cli/src/invoke.ts:310-324` declared-op input; `apps/cli/src/invoke.ts:390-396` opaque-markdown output (existence + non-empty, no transport call); `apps/cli/tests/invoke.test.ts:183` declared-op dispatch leg; daily workflow consumer `plugins/kk/workflows/kk-daily-ai-voice.yaml:204-215` unchanged. |
+| AC7 | MET | test | `apps/cli/tests/fanout.test.ts:333` 0110 I4 leg — skipped Surfdash target retains metadata/url/id across retry; workflow jq selector `plugins/kk/workflows/kk-daily-ai-voice.yaml:260` reads `.metadata.postPath`. |
+| AC8 | MET | test | `apps/cli/tests/fanout.test.ts:333` — absent metadata stays absent, nested object round-trips, primitive metadata → named input error before dispatch (exit 2 leg). |
+| AC9 | MET | test | `apps/cli/src/invoke.ts:354-363` delete-then-spawn freshness; `apps/cli/tests/invoke.test.ts:302-303` stale-out comment + legs — pre-existing valid --out + zero-exit child writing nothing fails. |
+| AC10 | MET | test | `apps/cli/tests/invoke.test.ts:379` alias rejected before mutation; only the exact --out unlinked (`apps/cli/src/invoke.ts:356`) so output-relative sidecars keep locations. |
+| AC11 | MET | test | `apps/cli/tests/invoke.test.ts:357-371` (executor + hidden alias legs assert exit nonzero, `reported failure: upstream 502` surfaced, artifact retained); fan-out failed branch `apps/cli/src/fanout.ts:114-120`; valid success still exit 0 (`apps/cli/tests/fanout.test.ts:239`). |
+| AC12 | MET | test | `apps/cli/tests/fanout.test.ts:286` 'R7 — explicit --target attempts the selection; unselected prior failures stay failed' — S skipped, A published, B still failed, total 3, exit 1; subsequent retry dispatches only B. |
+| AC13 | MET | test | `apps/cli/src/fanout.ts:485` dedupe (`new Set`) — each target attempted at most once; unrelated unresolved failures remain visible via `retainedFailed` (`apps/cli/src/fanout.ts:488`); eligibility wording consistent across CLI help, `docs/04_DESIGN.md`, satellite §5 (commit `5503d8c`). |
+| AC14 | MET | command | Fresh receipts this wrap: `bun run lint` exit 0; `bun run test` 744 pass / 0 fail / 2913 expect() across 50 files; `bun run build` exit 0 (`Bundled 361 modules`); pre-check 47 rules + post-check 2 rules green; `spur task check 0110 --strict --as done` pass true, 0 findings. Isolated AC1 smoke PASS; leftover I3 architecture row closed; Testing anchors repo-root-qualified. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

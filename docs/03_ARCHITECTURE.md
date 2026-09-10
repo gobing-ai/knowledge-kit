@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.21.0
+version: 2.21.1
 created_at: 2026-07-22
 updated_at: 2026-09-10
 derived_from: [00_ADR, 01_PRD]
@@ -102,7 +102,7 @@ supersedes the 2026-08-02 fourth-kind amendment):
 | ------ | ---------- | ------- |
 | `ingestion` | `source → Doc[]` | Optional; the alternative `Brief` generator input is planned |
 | `generator` | `Doc[] → Content` (shipped) | `Brief` / combined input is planned; see Generator input dispatch |
-| `publish` | `Content → Result` (intended) | Current executor also accepts `Doc[]` with opaque output; see Execution boundary integrity I3 |
+| `publish` | `Content → Result` | Auxiliary `Doc[]` forms require a manifest-declared `operations` entry (Execution boundary integrity I3, shipped 0110) |
 
 > **Agent capabilities are not plugin kinds.** Quality gating ships as the `content-judge`
 > agent skill + `agent.run` (ADR-007 amdt 2026-08-07, rename 2026-08-19): the fat skill emits
@@ -174,7 +174,8 @@ Full specification: `docs/design/fan-in-and-fan-out-specification.md`.
 
 The Brief branch is planned. Executable domain steps exchange files through `kk` subcommands;
 judge steps use `agent.run`. The intended domain boundary validates each file against a
-`@gobing-ai/kk-core` contract. Current validation exceptions and completion gaps are recorded below.
+`@gobing-ai/kk-core` contract. Packaging, cancellation, kind-contract, freshness, and retry
+completion rules shipped in task 0110 are the table below.
 
 ### Execution boundary integrity
 
