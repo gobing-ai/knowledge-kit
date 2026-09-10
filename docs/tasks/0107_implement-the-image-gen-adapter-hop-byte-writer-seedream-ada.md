@@ -4,7 +4,7 @@ name: "Implement the image-gen adapter hop: byte-writer, seedream adapter, illus
 status: done
 template: feature-impl
 created_at: 2026-09-10T05:43:47.363Z
-updated_at: "2026-09-10T07:34:58.685Z"
+updated_at: "2026-09-10T07:48:24.179Z"
 feature_id: K
 
 dependencies: ["0103", "0104"]
@@ -60,8 +60,10 @@ Owns the registered adapter-hop deferral from 0104 (Design: "Deferred to the ada
 ### Testing
 
 - `bun run lint` — clean (Biome 2.5.5 check + tsc across all workspaces).
-- `bun test` — 735 pass / 0 fail, no skips. New coverage: `plugins/generations/image-gen/tests/adapter.test.ts` (14 tests: money-branch artefacts, deterministic overwrite, mid-batch cleanup, illustration round trip, 9-image `KK_IMAGE_MAX_IMAGES` leg, dry-run no-byte path, seedream mapSize/auth/b64/error/data-URI legs, 0104-p4 traversal + extension guards, parseInt leniency) plus rewritten boundary tests in `image-gen.test.ts` (free/cover/illustration now cross the provider boundary with a generating stub).
+- `bun test` — 740 pass / 0 fail, no skips. New coverage: `plugins/generations/image-gen/tests/adapter.test.ts` (20 tests: money-branch artefacts, deterministic overwrite, mid-batch cleanup, illustration round trip, 9-image `KK_IMAGE_MAX_IMAGES` leg, dry-run no-byte path, seedream mapSize/auth/b64/url/error/data-URI legs, 0104-p4 traversal + extension guards, parseInt leniency) plus rewritten boundary tests in `image-gen.test.ts` (free/cover/illustration now cross the provider boundary with a generating stub).
 - Live seedream calls remain blocked on ARK_API_KEY — wire adapter is exercised via injected fetch stubs; live leg stays a credential-gated gap, see Review P3.
+
+**Re-verify 2026-09-10 (--force --fix all):** coverage gate found RED at handoff — seedream.ts 76.9% lines / 72.8% functions vs the 0.9 bunfig threshold. Fixed in-tree: 6 added seedream test legs → 92.3% lines / 100% functions. Verdict **PASS** — all 5 requirements + 5 ACs MET with fresh evidence (`.spur/run/0107-verdict.json`, `0107-verify-answer.txt`); fresh `bun run spur-check` exit 0 (lint clean, 740/740, 47/47 + 2/2 rules). Residual: live seedream wire leg awaits ARK_API_KEY (Review P3).
 
 ### Review
 
@@ -82,4 +84,5 @@ Owns the registered adapter-hop deferral from 0104 (Design: "Deferred to the ada
 - 2026-09-10T07:32:43.193Z todo → wip (system)
 - 2026-09-10T07:33:38.559Z wip → testing (system)
 - 2026-09-10T07:34:58.653Z testing → done (system)
+- 2026-09-10 Re-verify (--force --fix all): coverage gate red at handoff (seedream.ts 76.9/72.8) — fixed with 6 test legs (92.3/100); verdict PASS, all R + AC MET; spur-check green. Residual: live wire leg credential-gated (P3).
 

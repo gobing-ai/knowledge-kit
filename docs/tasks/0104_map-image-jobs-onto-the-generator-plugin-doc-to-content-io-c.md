@@ -4,7 +4,7 @@ name: Map image jobs onto the generator-plugin Doc-to-Content IO contract
 status: done
 template: feature-impl
 created_at: 2026-09-09T18:28:33.705Z
-updated_at: "2026-09-10T00:43:33.599Z"
+updated_at: "2026-09-10T15:20:35.736Z"
 feature_id: K
 
 ac_altitude: task-local
@@ -380,14 +380,14 @@ Fragment (quoted `${vars.*}` per the 0059 word-splitting scar):
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PARTIAL (from verdict artifact) — adapter-hop deferral discharged by 0107 (implementation `f3bc10c`, verify PASS `.spur/run/0107-verdict.json`, 2026-09-10): byte-writer, illustration insertion, written[] tracking all implemented and fresh-tested; deferral rows below updated to MET.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Per-job IO: envelope src/job.ts:15-104 (strict zod ImageJobSpecSchema), typed ImageArtifact/ImageGenMetadata src/job.ts:56-92; per-job prompt mapping src/index.ts:110-133; disk leg deferred to the adapter hop per the registered Design (src/index.ts:193-202 throws at the money boundary) — gaps carried by AC rows below |
+| R1 | MET | Per-job IO: envelope src/job.ts:15-104 (strict zod ImageJobSpecSchema), typed ImageArtifact/ImageGenMetadata src/job.ts:56-92; per-job prompt mapping src/index.ts:110-133; disk leg discharged by 0107 (`f3bc10c`: money branch writes bytes via artifactPath; adapter.test money-branch legs fresh pass) |
 | R2 | MET | Real-executor proof: missing-spec exit 1 naming metadata.imageGen and the three jobs (--out absent); bare-prompt dry run exit 0, no Input schema violation; DocListSchema contract apps/cli/src/invoke.ts:251 — AC-1/AC-2 |
-| R3 | MET | Mechanism proven: src/paths.ts:19-22 resolves every artefact path against dirname(--out), never process.cwd(); zero-pad/collision unit-proven tests/paths.test.ts:9-34; fresh executor run created zero files under the plugin dir; file-level positive legs ride the adapter hop (AC-3/AC-4) |
-| R4 | MET | Contract proven: ImageArtifact + CaptionEntry shapes src/job.ts:56-92; insertion seam skill-decides/plugin-performs; input never mutated (sha256 unchanged through dry and non-dry runs); body round-trip file proof deferred to the writer (AC-5) |
+| R3 | MET | Mechanism proven: src/paths.ts:19-22 resolves every artefact path against dirname(--out), never process.cwd(); zero-pad/collision unit-proven tests/paths.test.ts:9-34; fresh executor run created zero files under the plugin dir; file-level positive legs discharged by 0107 (`f3bc10c`; AC-3/AC-4 rows below) |
+| R4 | MET | Contract proven: ImageArtifact + CaptionEntry shapes src/job.ts:56-92; insertion seam skill-decides/plugin-performs; input never mutated (sha256 unchanged through dry and non-dry runs); body round-trip file proof discharged by 0107 (`f3bc10c` illustration round-trip test) |
 | R5 | MET | Fragment in task ## Solution with quoted ${vars.*}; freshly executed two-node run — image-gen dry-run (exit 0) then emdash-pub on KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake (exit 0, ok true), node-1 content.json sha256 identical after node 2 — AC-11 |
 | R6 | MET | Cap: ImageJobSpec.maxImages > KK_IMAGE_MAX_IMAGES > default 4, enforced src/index.ts:160-168 before provider resolution at :171 (count 9 refused exit 1 naming cap 4; spec cap 2 beats env 10); dry run: KK_IMAGE_DRY_RUN=1 composes prompts for all three jobs, metadata.dryRun true, images [], no bytes, no call — AC-6/AC-7/AC-8 |
 
@@ -395,16 +395,16 @@ Fragment (quoted `${vars.*}` per the 0059 word-splitting scar):
 |---------------------|--------|---------------|----------|
 | A bare prompt survives the executor's input validation (R2) | MET | command | Fresh run: [{"id":"p1","body":"a red bicycle","metadata":{"imageGen":{"job":"free"}}}] with KK_IMAGE_DRY_RUN=1 ARK_API_KEY=dry-run-placeholder -> exit 0, stderr empty, ContentSchema-parsed output |
 | A missing job spec fails loud and early (R1) | MET | command | Fresh run doc without metadata.imageGen -> exit 1 naming metadata.imageGen and 'free', 'cover', 'illustration'; --out never written |
-| Artefacts land beside `--out`, never in the plugin directory (R3) | PARTIAL | test | Byte-writer deferred per registered Design (src/index.ts:197-202 throws not-implemented at the money boundary) so positive file claims unexecutable; mechanism present and unit-proven (src/paths.ts:19-22, tests/paths.test.ts:29-34; fresh run left plugin dir clean) |
-| Artefact names are deterministic and zero-padded (R3) | PARTIAL | test | Naming logic unit-proven (tests/paths.test.ts:9-27: padStart 01/09/10, deterministic, collision-free); AC's two-run positive file claim needs the deferred writer |
-| The illustration round trip preserves the original (R4) | PARTIAL | command | Insertion + captions deferred: non-dry illustration exits 1 'illustration job not implemented yet - provider seedream selected'; implemented legs fresh-verified: input sha unchanged, dry-run composes one prompt per anchor, count<->anchor mismatch fails loud (src/index.ts:117-123, tests/image-gen.test.ts:155) |
+| Artefacts land beside `--out`, never in the plugin directory (R3) | MET | test | Discharged by 0107 (`f3bc10c`): byte-writer live at the money branch, artefact paths asserted under --out dir in adapter.test money-branch leg (fresh pass 2026-09-10); mechanism unit-proven (src/paths.ts:19-22, tests/paths.test.ts:29-34) |
+| Artefact names are deterministic and zero-padded (R3) | MET | test | Discharged by 0107: deterministic zero-padded overwrite across re-runs proven end-to-end (adapter.test 'deterministic zero-padded names overwrite across re-runs', fresh pass); naming logic unit-proven (tests/paths.test.ts:9-27) |
+| The illustration round trip preserves the original (R4) | MET | command | Discharged by 0107: insertion + captions implemented with occurs-exactly-once anchor check; round-trip test proves input body not mutated and refs+captions inserted (adapter.test illustration leg, fresh pass 2026-09-10) |
 | The budget cap refuses before spending (R6) | MET | command | Fresh run illustration count 9, no maxImages -> exit 1 'Image count 9 exceeds the budget cap 4', --out absent; cap check src/index.ts:160-168 precedes provider resolution :171; unit tests/image-gen.test.ts:173-185 proves the stub is never called |
-| `KK_IMAGE_MAX_IMAGES` overrides the compiled default (R6) | PARTIAL | test | Precedence mechanism fresh-proven (tests/image-gen.test.ts:187-202: env 10 lets count 9 through to dry-run exit 0; spec maxImages 2 beats env, fails naming cap 2; src/index.ts:42-56); AC's 9-images-entry leg needs the deferred writer |
+| `KK_IMAGE_MAX_IMAGES` overrides the compiled default (R6) | MET | test | Discharged by 0107: 9-image override leg completes end-to-end through the money branch (adapter.test 'KK_IMAGE_MAX_IMAGES override leg with 9 images', fresh pass); precedence mechanism unit-proven (tests/image-gen.test.ts:187-202; src/index.ts:42-56) |
 | A dry run composes prompts and spends nothing (R6) | MET | command | Fresh executor dry runs for all three jobs -> exit 0, only content.json written, metadata.dryRun true, images [], body = fully composed prompt; no generate call on the dry path (src/index.ts:173-195); provider-selection-needs-credential is documented select-then-skip design (review P4) |
 | A failure leaves nothing behind (spec §2.5) | MET | test | --out deleted before run and re-deleted on any throw (src/index.ts:138,203); unit-proven tests/image-gen.test.ts:270-275; artefact leg vacuous until the writer exists (written[] tracking is the registered no-op scaffold) |
 | Empty input is a notice, not a failure (spec §2.5) | MET | command | Fresh run --in [] -> exit 0, --out holds EMPTY_CONTENT notice byte-matching src/index.ts:15-20 written at :149-152 |
 | The workflow example runs end to end (R5) | MET | command | Fresh two-node run: node 1 image-gen dry-run exit 0 (content sha256 733b5466...); node 2 emdash-pub KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake exit 0 result ok:true; node-1 sha identical after node 2 (publish consumed exactly the written content.json); ghost-pub notional per the task's fake-publish-target wording; fragment in ## Solution |
-| The spec amendment and surface docs land in the same commit (deliverable) | PARTIAL | static-ref | docs/design/generator-plugin-specification.md:57 format clause names K/image-gen format "image" + body asymmetry; plugins/kk/config.example.yaml:26-90 image-gen env block placeholder-only incl KK_IMAGE_MAX_IMAGES + KK_IMAGE_DRY_RUN; docs/04_DESIGN.md:220 example row; all three in git diff HEAD --stat; literal git show --stat executes at commit (driver done-time; no-commit hop by design) |
+| The spec amendment and surface docs land in the same commit (deliverable) | MET | static-ref | `git show --stat 40b461e` confirms all three surfaces in the implementing commit: docs/design/generator-plugin-specification.md format clause, plugins/kk/config.example.yaml env block (KK_IMAGE_MAX_IMAGES + KK_IMAGE_DRY_RUN), docs/04_DESIGN.md example row — T3 satisfied |
 | The gate is clean (all) | MET | command | Fresh full re-run: bun run lint 0; bun run test 0 (717 pass / 0 fail / 0 skip, image-gen coverage >=96.55 line / 100 func); bun run build 0; matches recorded gate .spur/run/0104-test-gate.log (717/0, rules 2/2, PASS, digest 3f00a478 = marker); harness nit: -t 'stale --out' filtered run ENOENT on missing setup dir, full suite green |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
@@ -456,4 +456,5 @@ Fragment (quoted `${vars.*}` per the 0059 word-splitting scar):
 - 2026-09-09T23:19:53.239Z todo → wip (system)
 - 2026-09-10T00:43:25.318Z wip → testing (system)
 - 2026-09-10T00:43:33.593Z testing → done (system)
+- 2026-09-10 Adapter-hop deferral discharged by 0107 (`f3bc10c`, verify PASS `.spur/run/0107-verdict.json`): 4 deferral PARTIAL rows + same-commit deliverable row updated to MET in Testing. done_reason above retained as the original force audit record.
 
