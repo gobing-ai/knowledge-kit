@@ -511,6 +511,21 @@ Operator feedback on B7: a `spur workflow` YAML already injects locations via va
    **union** with the default roots. A workflow injects any folder this way. An extra path
    may be a plugins tree, a kind collection, **or a single directory that contains
    `plugin.json`**. Extra paths do not drop built-ins or `~/.kk/plugins`.
+
+### Amendment — 2026-09-10 (user roots live under `~/.config/kk/`)
+
+All HOME-based user roots conform to `~/.config/kk/` (matching `config.yaml`, `works/`, `workflows/`):
+
+1. **User plugin-discovery root renamed** `~/.kk/plugins` → `~/.config/kk/plugins` (was empty on all
+   machines; no migration). The 2026-08-13 text above keeps `~/.kk/plugins` as the historical record.
+2. **User preset root renamed** `~/.kk/image-presets` → `~/.config/kk/image-presets`
+   (feature M/0109; previously `~/.kk/image-presets` from the image-preset batch).
+3. **Predefined preset SSOT stays with the product plugin** (`plugins/generations/image-gen/presets/`):
+   presets resolve in place from the installed package; the user root starts empty and fine-tuning is
+   single-file shadowing (a user-root file with a builtin name replaces it). No bulk seeding and no
+   superskill runtime-asset mechanism — decided 2026-09-10 after superskill source review
+   (its installer has no data-dir concept; ADR-012 R1 keeps kind-collection plugins independent of
+   `plugins/kk`). Project root `.kk/image-presets` under CWD is project-scoped and unchanged.
 3. **`--plugins-root` stays exclusive (R4)** for tests and isolation only. It is not the
    workflow injection flag. Combining `--plugins-root` with `--plugins-path` is a usage
    error (exit 2).

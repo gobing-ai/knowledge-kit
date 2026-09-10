@@ -84,7 +84,7 @@ Requires `--ref` (one to five images). **Authoritative procedure:
 [references/style-extraction.md](references/style-extraction.md)** — read it first; it
 owns the schema-fill rules, the multi-image merge rules, the cap-5 refusal wording,
 where the preset is written (user root, shadowing by design), and the validation step:
-read the images with your own vision, write `~/.kk/image-presets/styles/<name>.yaml`
+read the images with your own vision, write `~/.config/kk/image-presets/styles/<name>.yaml`
 filling exactly the `StylePreset` fields, then validate with a `KK_IMAGE_DRY_RUN=1` run
 whose `style` is the new preset's name. Extraction never writes a `formats/*.yaml` —
 a format is not recoverable from a picture.
@@ -92,7 +92,7 @@ a format is not recoverable from a picture.
 ### list-presets
 
 Enumerate the **real** preset roots the 0102 loader scans — builtin
-(`plugins/generations/image-gen/presets/`), then `~/.kk/image-presets/`, then
+(`plugins/generations/image-gen/presets/`), then `~/.config/kk/image-presets/`, then
 `$KNOWLEDGE_KIT_PROJECT_ROOT/.kk/image-presets/`, then each `:`-separated
 `KK_IMAGE_PRESET_PATH` entry — printing every format and style with its **origin
 root**, plus (formats) `job`, `aspectRatio`, `defaultStyle`. Surface the loader's

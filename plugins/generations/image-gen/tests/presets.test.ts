@@ -58,7 +58,7 @@ function setEnv(key: string, value: string | undefined): void {
 
 /**
  * Point every non-builtin preset root at a controlled location so no test
- * reads the real `~/.kk/image-presets` or an ambient project root.
+ * reads the real ~/.config/kk/image-presets` or an ambient project root.
  */
 function isolateEnv(opts: { home?: string; project?: string; envPath?: string } = {}): void {
     process.env.HOME = opts.home ?? EMPTY_TMP;
@@ -250,7 +250,12 @@ describe('R4 — resolution order and shadowing', () => {
 
     test('a malformed preset file is skipped, not fatal', () => {
         const home = join(EMPTY_TMP, 'home');
-        const brokenPath = writeOverride(join(home, '.kk', 'image-presets'), 'styles', 'broken.yaml', 'name: broken');
+        const brokenPath = writeOverride(
+            join(home, '.config', 'kk', 'image-presets'),
+            'styles',
+            'broken.yaml',
+            'name: broken',
+        );
         process.env.HOME = home;
 
         const { styles, diagnostics } = loadPresets(); // must not throw
@@ -265,7 +270,7 @@ describe('R4 — resolution order and shadowing', () => {
     test('a YAML-unparseable preset file is skipped with an invalid diagnostic', () => {
         const home = join(EMPTY_TMP, 'home-garbage');
         const garbagePath = writeOverride(
-            join(home, '.kk', 'image-presets'),
+            join(home, '.config', 'kk', 'image-presets'),
             'styles',
             'garbage.yaml',
             'unbalanced: [',

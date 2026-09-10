@@ -6,7 +6,7 @@ driving **one skill** (`kk:image-authoring`). Flag by flag:
 
 | wt flag | kk replacement | Why |
 | --- | --- | --- |
-| `--template <name>` | `--format <name>` | Templates are formats now — data presets (0102). wt's `default` → `free`; `cover` → `cover`; `illustrator` → `illustration`. A custom template like `cover-xhs` becomes a YAML file in `~/.kk/image-presets/formats/` — no skill or plugin edit needed. |
+| `--template <name>` | `--format <name>` | Templates are formats now — data presets (0102). wt's `default` → `free`; `cover` → `cover`; `illustrator` → `illustration`. A custom template like `cover-xhs` becomes a YAML file in `~/.config/kk/image-presets/formats/` — no skill or plugin edit needed. |
 | `--resolution WxH` | *(dropped)* | The format's `aspectRatio` owns dimensions (0102 R1) — a portable ratio beats per-call pixels across twelve providers. A different shape means a different or overridden format. |
 | `--backend <name>` | `--provider <name>` | 0103's inventory replaces wt's three backends: `gemini` → `google`; `nano_banana` → `replicate`; `huggingface` has no kk equivalent. Omitting `--provider` auto-selects (see providers.md). |
 | `--list-templates` | `--list-presets` | Lists formats **and** styles from the real preset roots, with origin and shadowing diagnostics. |

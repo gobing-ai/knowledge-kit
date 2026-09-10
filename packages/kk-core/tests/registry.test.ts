@@ -241,12 +241,12 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
         });
     });
 
-    it('R2 — a user plugin under ~/.kk/plugins merges with built-ins', () => {
+    it('R2 — a user plugin under ~/.config/kk/plugins merges with built-ins', () => {
         withTempDir((tmp) => {
             const builtin = join(tmp, 'builtin');
             writePlugin(builtin, 'publish', 'builtin-pub');
             const home = join(tmp, 'home');
-            writePlugin(join(home, '.kk', 'plugins'), 'publish', 'my-pub');
+            writePlugin(join(home, '.config', 'kk', 'plugins'), 'publish', 'my-pub');
 
             const res = discoverAllPlugins({
                 packagePluginsRoot: builtin,
@@ -287,7 +287,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             const builtin = join(tmp, 'builtin');
             const builtinDir = writePlugin(builtin, 'ingestion', 'same-name');
             const home = join(tmp, 'home');
-            const userDir = writePlugin(join(home, '.kk', 'plugins'), 'ingestion', 'same-name');
+            const userDir = writePlugin(join(home, '.config', 'kk', 'plugins'), 'ingestion', 'same-name');
 
             const res = discoverAllPlugins({
                 packagePluginsRoot: builtin,
@@ -310,7 +310,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             const builtin = join(tmp, 'builtin');
             writePlugin(builtin, 'ingestion', 'a-builtin');
             const home = join(tmp, 'home');
-            writePlugin(join(home, '.kk', 'plugins'), 'ingestion', 'b-user');
+            writePlugin(join(home, '.config', 'kk', 'plugins'), 'ingestion', 'b-user');
             const cwd = join(tmp, 'cwd');
             writePlugin(join(cwd, 'plugins'), 'ingestion', 'c-project');
             const envRoot = join(tmp, 'env-root');
@@ -393,7 +393,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             const builtin = join(tmp, 'builtin');
             writePlugin(builtin, 'generator', 'builtin-gen');
             const home = join(tmp, 'home');
-            writePlugin(join(home, '.kk', 'plugins'), 'publish', 'global-pub');
+            writePlugin(join(home, '.config', 'kk', 'plugins'), 'publish', 'global-pub');
             // Single plugin dir: plugin.json lives in the folder itself (ADR-012 R6).
             const single = join(tmp, 'single');
             mkdirSync(single, { recursive: true });
@@ -470,7 +470,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             const builtin = join(tmp, 'builtin');
             writePlugin(builtin, 'ingestion', 'x');
             const home = join(tmp, 'home');
-            writePlugin(join(home, '.kk', 'plugins'), 'ingestion', 'y');
+            writePlugin(join(home, '.config', 'kk', 'plugins'), 'ingestion', 'y');
             const cwd = join(tmp, 'cwd');
             writePlugin(join(cwd, 'plugins'), 'ingestion', 'z');
             const envRoot = join(tmp, 'env-root');

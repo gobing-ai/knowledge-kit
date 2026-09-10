@@ -105,7 +105,7 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 **Behavior:**
 
 1. Default discovery runs `discoverAllPlugins` — a merged low→high scan of the package-shipped
-   built-in tree, `~/.kk/plugins` (when present), CWD `./plugins` (when present and not the
+   built-in tree, `~/.config/kk/plugins` (when present), CWD `./plugins` (when present and not the
    built-in realpath), `KK_PLUGIN_PATH` entries, and `--plugins-path` dirs (ADR-012).
    `--plugins-root` skips the defaults and scans that one root only.
 2. Filters by `--kind` if specified. Health is **tree-wide**: `healthy` and `diagnostics` are
@@ -221,7 +221,7 @@ Product plugins live under kind collections (ADR-009):
 | `plugins/publishings/<name>/` | `publish` | `plugins/publishings/surfdash-pub` |
 
 Default runtime discovery is a **merged multi-root scan** (ADR-012): the package-shipped built-in
-tree, `~/.kk/plugins` (when present), CWD `./plugins` (when present and not the built-in realpath),
+tree, `~/.config/kk/plugins` (when present), CWD `./plugins` (when present and not the built-in realpath),
 `KK_PLUGIN_PATH` entries, and repeatable `--plugins-path` dirs — low→high priority, a later root
 shadowing an earlier `name` (with a `shadowed` diagnostic). `--plugins-root` is the exclusive
 single-root override (isolation/tests only) and stays the same scan the old default `./plugins`

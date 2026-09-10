@@ -258,7 +258,7 @@ export function resolvePresetRoots(): string[] {
     const roots: string[] = [join(import.meta.dir, '..', 'presets')];
     // process.env.HOME directly: Bun snapshots os.homedir() at startup, so a
     // runtime HOME override (tests) would be invisible through homedir().
-    const userRoot = join(process.env.HOME ?? homedir(), '.kk', 'image-presets');
+    const userRoot = join(process.env.HOME ?? homedir(), '.config', 'kk', 'image-presets');
     if (isDirectory(userRoot)) {
         roots.push(userRoot);
     }

@@ -36,7 +36,7 @@ export interface DiscoverAllOptions {
     cwd?: string;
     /** Environment snapshot; `KK_PLUGIN_PATH` (colon-separated) is read from it. */
     env?: { KK_PLUGIN_PATH?: string };
-    /** Home directory; `~/.kk/plugins` resolves against it. Defaults to `os.homedir()`. */
+    /** Home directory; `~/.config/kk/plugins` resolves against it. Defaults to `os.homedir()`. */
     homeDir?: string;
     /** Package-shipped built-in tree (ADR-012 D2); injectable for tests. */
     packagePluginsRoot?: string;
@@ -114,7 +114,7 @@ export function discoverPlugins(pluginsRoot: string, origin: PluginOrigin = 'pat
  * later root shadows an earlier `name`:
  *
  * 1. package-shipped built-in tree (always, when resolvable)
- * 2. `~/.kk/plugins` (when present)
+ * 2. `~/.config/kk/plugins` (when present)
  * 3. CWD `./plugins` (when present and not the built-in tree's realpath)
  * 4. `KK_PLUGIN_PATH` entries, left → right
  * 5. `extraPaths` (`--plugins-path`), left → right
@@ -134,7 +134,7 @@ export function resolvePluginRoots(opts: DiscoverAllOptions = {}): readonly { or
         roots.push({ origin: 'builtin', root: builtinRoot });
     }
 
-    const userRoot = join(opts.homeDir ?? homedir(), '.kk', 'plugins');
+    const userRoot = join(opts.homeDir ?? homedir(), '.config', 'kk', 'plugins');
     if (isDirectory(userRoot)) {
         roots.push({ origin: 'user', root: userRoot });
     }

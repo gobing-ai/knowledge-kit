@@ -78,7 +78,7 @@ Then a rule says `evaluator: { type: <export.name> }`. Paths are `(baseDir = dir
 |----|--------|----------|-----|
 | D1 | Multi-root merge in `@gobing-ai/kk-core` next to `discoverPlugins` | New package; CLI-only merge | Discovery is already I/O in kk-core; one module owns the registry |
 | D2 | Built-ins resolved from the packaged tree (`bundle-plugins` staging) | Static `import` table of plugins; CWD-only `./plugins` | Pack-time ship already exists; runtime must consume it |
-| D3 | `~/.kk/plugins` is the **default global store**, plus CWD `./plugins` | Treat `~/.kk/plugins` as the only user location | A fixed home is a convenience, not a lock; exclusive home would make path injection pointless |
+| D3 | `~/.config/kk/plugins` is the **default global store**, plus CWD `./plugins` | Treat `~/.config/kk/plugins` as the only user location | A fixed home is a convenience, not a lock; exclusive home would make path injection pointless |
 | D4 | Repeatable `--plugins-path` is additive (any folder). `--plugins-root` stays exclusive isolation | Make `--plugins-root` the injection flag (today's exclusive replace) | Workflow YAML already injects a folder via vars; replace-not-union hides built-ins |
 | D5 | Shadow: later / higher-priority `name` wins + diagnostic | Fail the scan; silent last-write | Fail-loud about the collision; keep a usable registry |
 | D6 | Workflow YAML names plugins via `kk executor *` | Custom workflow action kinds | kk owns steps; spur owns orchestration (ADR-006/007) |
@@ -94,7 +94,7 @@ Default discovery (no `--plugins-root`), **low → high**. A later root shadows 
 | Order | Origin | Root | Present when |
 |-------|--------|------|----------------|
 | 1 | `builtin` | Package-shipped kind collections | Always (resolved from the `kk` package) |
-| 2 | `user` | `~/.kk/plugins` | Directory exists |
+| 2 | `user` | `~/.config/kk/plugins` | Directory exists |
 | 3 | `project` | `<cwd>/plugins` | Directory exists and is not the builtin realpath |
 | 4 | `path` | Each `KK_PLUGIN_PATH` entry (colon-separated, left → right) | Entry is a non-empty existing directory |
 | 5 | `path` | Each `--plugins-path <dir>` (repeatable, left → right) | Flag present; highest default-path priority |
@@ -118,7 +118,7 @@ Tried in order for each `--plugins-path` / `KK_PLUGIN_PATH` entry:
 3. **Plugins tree** — scan kind collections under it (ADR-009). `plugins/kk` skipped.
 
 This is the dynamic-load seam: the caller names any folder at runtime; the registry
-classifies it. A default global store (`~/.kk/plugins`) does not replace this.
+classifies it. A default global store (`~/.config/kk/plugins`) does not replace this.
 
 ### Built-in root resolution
 

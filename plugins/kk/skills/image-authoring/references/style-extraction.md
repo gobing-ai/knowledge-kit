@@ -17,7 +17,7 @@ boundary between them:
 
 ## Where the preset goes
 
-Write to the **user root**: `~/.kk/image-presets/styles/<name>.yaml`. A cloned
+Write to the **user root**: `~/.config/kk/image-presets/styles/<name>.yaml`. A cloned
 look is usually the operator's, not the repository's. An operator who wants the
 preset shared with a team writes to the project root
 (`<KNOWLEDGE_KIT_PROJECT_ROOT>/.kk/image-presets/styles/`) instead — it ranks
