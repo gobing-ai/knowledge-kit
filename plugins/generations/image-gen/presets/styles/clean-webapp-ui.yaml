@@ -16,7 +16,9 @@ visualElements:
 bestFor: productivity-tool interfaces, dashboards, knowledge-base and bookmark apps, clean SaaS pages
 negative: heavy textures, skeuomorphic depth, neon gradients, cluttered composition
 # source.confidence: extraction-side judgement per the style-extraction decision rule;
-# four-axis fidelity verdict pending the regenerated image (both image backends down at extraction time); take-the-lower tie-break applies once it exists
+# fidelity: image regenerated 2026-09-10 with the recorded composed prompt (xAI still invalid_grant; Antigravity) ->
+# .spur/run/0105-regen.jpg vs .spur/run/0105-ref.png. Four-axis verdict is HUMAN-eyeball by the R3 procedure
+# (model session has no vision). Until the operator records it, take-the-lower applies: treat as low.
 source:
     kind: extracted
     refImages:
