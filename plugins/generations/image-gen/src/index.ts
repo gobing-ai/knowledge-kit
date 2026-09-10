@@ -3,9 +3,18 @@ import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import { type ImageGenMetadata, type ImageJobSpec, parseJobSpec, readPositions } from './job';
+import { writeBytes } from './bytes';
+import {
+    type CaptionEntry,
+    type ImageArtifact,
+    type ImageGenMetadata,
+    type ImageJobSpec,
+    parseJobSpec,
+    readPositions,
+} from './job';
+import { artifactPath, outStemFor } from './paths';
 import { composePrompt, type FormatPreset, loadPresets, type StylePreset } from './presets';
-import { type ImageProvider, PROVIDERS, selectProvider } from './providers/types';
+import { type ImageProvider, type ImageRequest, PROVIDERS, selectProvider } from './providers/types';
 
 export * from './job';
 export * from './paths';
@@ -49,7 +58,7 @@ export function resolveMaxImages(spec: ImageJobSpec): number {
     if (raw === undefined || raw === '') {
         return DEFAULT_MAX_IMAGES;
     }
-    const parsed = Number.parseInt(raw, 10);
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
     if (!Number.isInteger(parsed) || parsed < 1) {
         throw new Error(`KK_IMAGE_MAX_IMAGES must be a positive integer, received '${raw}'`);
     }
@@ -192,13 +201,88 @@ export async function processGeneratorIO(
             return;
         }
 
-        // The money-spending branches (feature K adapter tickets): each will build
-        // its ImageRequests, await provider.generate, write bytes beside --out via
-        // artifactPath (R3), and — illustration — insert the round-trip refs (R4).
-        throw new Error(
-            `image-gen: ${spec.job} job not implemented yet — provider '${provider.name}' selected, ` +
-                'image generation lands with the adapter tickets (feature K phase plan)',
-        );
+        // The money-spending branch: one provider call per prompt, bytes written
+        // beside `--out` via artifactPath (R1/R3 worded as 0104 R3), written[]
+        // tracking keeps failure cleanup live (dead-loop advisory closed here).
+        await fs.ensureDir(dirname(outputPath));
+        const stem = outStemFor(outputPath, spec.outputStem);
+        const artifacts: ImageArtifact[] = [];
+        const captions: CaptionEntry[] = [];
+        let body = doc?.body ?? '';
+        for (const [index, prompt] of prompts.entries()) {
+            const request: ImageRequest = {
+                prompt,
+                model: spec.model ?? provider.defaultModel(),
+                aspectRatio: format.aspectRatio,
+                ...(spec.referenceImages && spec.referenceImages.length > 0
+                    ? { referenceImages: spec.referenceImages }
+                    : {}),
+            };
+            provider.validate?.(request);
+            const result = await provider.generate(request);
+            // Illustration: the anchor must occur exactly once before we spend image 1.
+            let anchor: string | undefined;
+            if (spec.job === 'illustration') {
+                anchor = positions?.[index];
+                if (anchor === undefined) {
+                    throw new Error('Illustration anchor missing from metadata.positions');
+                }
+                const parts = body.split(anchor);
+                if (parts.length !== 2) {
+                    throw new Error(
+                        `Illustration anchor must occur exactly once in the source body, found ${parts.length - 1}: '${anchor.slice(0, 50)}'`,
+                    );
+                }
+            }
+            const path = artifactPath(outputPath, stem, format.name, index + 1, result.extension);
+            await writeBytes(path, result.bytes);
+            written.push(path);
+            const artifact: ImageArtifact = {
+                path,
+                format: format.name,
+                style: style.name,
+                provider: result.provider,
+                model: result.model,
+                prompt,
+                bytes: result.bytes.byteLength,
+            };
+            if (spec.seed !== undefined) {
+                artifact.seed = spec.seed;
+            }
+            artifacts.push(artifact);
+            if (anchor !== undefined) {
+                const parts = body.split(anchor);
+                const altText = `Illustration ${index + 1}`;
+                const markdown = `${anchor}\n\n![${altText}](${path})`;
+                captions.push({
+                    index: index + 1,
+                    path,
+                    caption: anchor,
+                    altText,
+                    anchor,
+                });
+                // Reinsert the anchor verbatim, then the image — index stays human-reviewable.
+                body = `${parts[0]}${markdown}${parts[1]}`;
+            }
+        }
+        const metadata: ImageGenMetadata = {
+            generator: 'kk:image-gen',
+            job: spec.job,
+            images: artifacts,
+            ...(spec.job !== 'free' && doc?.id !== undefined ? { sourceDocId: doc.id } : {}),
+            ...(captions.length > 0 ? { captions } : {}),
+        };
+        const content = ContentSchema.parse({
+            // free/cover: the body is the prompt trail (same as dry run); illustration: the
+            // source body with round-trip refs inserted (0104 R4 — the input is never mutated).
+            body: spec.job === 'illustration' ? body : prompts.join('\n\n---\n\n'),
+            title: spec.job === 'illustration' ? (doc?.title ?? format.name) : format.name,
+            format: 'image',
+            references: [],
+            metadata,
+        });
+        await fs.writeFile(outputPath, JSON.stringify(content, null, 2));
+        return;
     } catch (err: unknown) {
         await fs.deleteFile(outputPath);
         for (const path of written) {

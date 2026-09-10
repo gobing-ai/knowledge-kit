@@ -9,6 +9,8 @@
  * are new, `ImageResult` wraps the bytes — are recorded in the task Design.
  */
 
+import { createSeedream } from './seedream';
+
 /** The two quality levels baoyu exposes (SKILL.md); every provider maps or ignores them. */
 export type ImageQuality = 'normal' | '2k';
 
@@ -178,12 +180,14 @@ export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
         env: ['REPLICATE_API_TOKEN'],
         defaultModel: 'google/nano-banana-2',
     }),
-    seedream: defineProvider({
+    seedream: {
         name: 'seedream',
         env: ['ARK_API_KEY'],
         defaultModel: 'doubao-seedream-5-0-260128',
         refModels: ['doubao-seedream-5-0', 'doubao-seedream-4-5-', 'doubao-seedream-4-0-'],
-    }),
+        // 0107: the first wire-speaking adapter — replaces the envOnly shell.
+        create: createSeedream,
+    },
     zai: defineProvider({
         name: 'zai',
         env: ['ZAI_API_KEY', 'BIGMODEL_API_KEY'],

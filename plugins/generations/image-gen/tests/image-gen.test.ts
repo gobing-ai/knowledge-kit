@@ -252,16 +252,34 @@ describe('preset and provider resolution fail loud before any spend', () => {
     });
 });
 
-describe('the three job branches are stubbed at the money-spending boundary', () => {
+describe('the three job branches cross the money-spending boundary (0107)', () => {
+    let genCalls = 0;
+    beforeEach(() => {
+        genCalls = 0;
+    });
+    const generatingResolver: ProviderResolver = () => ({
+        name: 'generating-stub',
+        defaultModel: () => 'stub-model',
+        isAvailable: () => true,
+        supportsReferenceImages: () => true,
+        generate: (req) => {
+            genCalls += 1;
+            return Promise.resolve({
+                bytes: new Uint8Array([9]),
+                extension: 'png',
+                provider: 'generating-stub',
+                model: req.model,
+            });
+        },
+    });
     for (const job of ['free', 'cover', 'illustration'] as const) {
-        test(`a ${job} job without dry run reports not implemented, naming the job and selected provider`, async () => {
-            const { resolver, generateCalls } = stubProvider('stub-provider');
-            await expect(
-                runWith([{ id: 'a', body: 'x', metadata: { imageGen: { job } } }], { providerResolver: resolver }),
-            ).rejects.toThrow(new RegExp(`${job} job not implemented[\\s\\S]*stub-provider`));
-            expect(generateCalls()).toBe(0);
-            expect(existsSync(OUT)).toBe(false);
-            expect(readdirSync(join(TMP, 'out')).filter((name) => name.endsWith('.png'))).toEqual([]);
+        test(`a ${job} job calls the provider and writes its artefact beside --out`, async () => {
+            await runWith([{ id: 'a', body: 'anchor', metadata: { imageGen: { job }, positions: ['anchor'] } }], {
+                providerResolver: generatingResolver,
+            });
+            expect(genCalls).toBe(1);
+            expect(readdirSync(join(TMP, 'out')).filter((name) => name.includes(`-${job}-0`))).toHaveLength(1);
+            expect(existsSync(OUT)).toBe(true);
         });
     }
 });

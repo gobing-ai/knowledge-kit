@@ -103,6 +103,11 @@ rules:
             - "apps/cli/src/commands/plugin.ts"
             # Binary audio WAV buffer write for voice-gen generator plugin
             - "plugins/generations/voice-gen/src/index.ts"
+            # image-gen binary byte-writer + reference-image reads (0107 R1): image
+            # generation IS binary IO; the FileSystem seam is text-only, same class as
+            # voice-gen/podcast-pub. All path maths routes through artifactPath, whose
+            # stem/extension guards block path escape.
+            - "plugins/generations/image-gen/src/bytes.ts"
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"
