@@ -34,13 +34,12 @@ export function parseAzureBaseURL(url: string): AzureEndpoint {
 
 function azureEndpoint(env: Record<string, string | undefined>): AzureEndpoint {
     const url = env.AZURE_OPENAI_BASE_URL ?? '';
-    const parsed = parseAzureBaseURL(url);
     if (url === '') {
         throw new Error(
             'AZURE_OPENAI_BASE_URL is required. Set it to your Azure resource or deployment endpoint, e.g.: https://your-resource.openai.azure.com or https://your-resource.openai.azure.com/openai/deployments/your-deployment',
         );
     }
-    return parsed;
+    return parseAzureBaseURL(url);
 }
 
 function getApiKey(env: Record<string, string | undefined>): string {

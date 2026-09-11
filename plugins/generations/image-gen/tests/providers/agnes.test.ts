@@ -90,3 +90,43 @@ describe('agnes provider', () => {
         );
     });
 });
+
+describe('agnes provider — metadata and error paths', () => {
+    test('provider metadata', () => {
+        const withKey = PROVIDERS.agnes.create({ env: { AGNES_API_KEY: 'k' } });
+        expect(withKey.isAvailable()).toBe(true);
+        expect(withKey.defaultModel()).toBe('agnes-image-2.1-flash');
+        expect(withKey.supportsReferenceImages()).toBe(true);
+        expect(PROVIDERS.agnes.create({ env: {} }).isAvailable()).toBe(false);
+    });
+
+    test('non-ok API response fails loudly with status and body', async () => {
+        const provider = PROVIDERS.agnes.create({
+            env: { AGNES_API_KEY: 'k' },
+            fetch: (async () => new Response('blocked', { status: 402 })) as typeof fetch,
+        });
+        expect(await provider.generate({ prompt: 'p', model: 'm' }).catch((e: Error) => e.message)).toContain(
+            'Agnes API error (402): blocked',
+        );
+    });
+
+    test('url download failure mid-flow throws', async () => {
+        const provider = PROVIDERS.agnes.create({
+            env: { AGNES_API_KEY: 'k' },
+            fetch: (async (input) =>
+                String(input).includes('images/generations')
+                    ? new Response(JSON.stringify({ data: [{ url: 'https://img.example/pic.jpg' }] }), { status: 200 })
+                    : new Response('gone', { status: 404 })) as typeof fetch,
+        });
+        expect(await provider.generate({ prompt: 'p', model: 'm' }).catch((e: Error) => e.message)).toContain(
+            'Failed to download image from Agnes: 404',
+        );
+    });
+
+    test('size helpers reject zero or malformed ratios by falling back to the default', () => {
+        expect(parseAspectRatio('0:9')).toBe(null);
+        expect(resolveSize({ aspectRatio: 'nope' })).toBe('1024x1024');
+        expect(snapDim(1)).toBe(32);
+        expect(resolveSize({ aspectRatio: '0.5:0.25' })).toBe('2048x1024');
+    });
+});

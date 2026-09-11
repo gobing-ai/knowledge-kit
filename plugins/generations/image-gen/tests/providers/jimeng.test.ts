@@ -40,7 +40,7 @@ describe('jimeng size selection', () => {
 });
 
 describe('jimeng provider', () => {
-    test('isAvailable needs both keys; refs unsupported at generate time', () => {
+    test('isAvailable needs both halves of its credential pair; refs unsupported at generate time', () => {
         const jimeng = PROVIDERS.jimeng.create({ env: {} });
         expect(jimeng.isAvailable()).toBe(false);
         expect(
@@ -102,5 +102,159 @@ describe('jimeng provider', () => {
                 .generate({ prompt: 'p', model: 'jimeng_t2i_v40', referenceImages: ['/tmp/a.png'] })
                 .catch((e: Error) => e.message),
         ).toContain('--provider google');
+    });
+});
+
+type JimengPollBody = { code: number; data: Record<string, unknown>; message?: string };
+
+/** Deterministic jimeng double: submit returns t-1; `poll(n)` shapes the n-th poll body. */
+function jimengFetch(opts: {
+    poll: () => JimengPollBody;
+    downloadOk?: boolean;
+    pollStatus?: (n: number) => number;
+}): typeof fetch {
+    let polls = 0;
+    return (async (_input, init) => {
+        if (init?.body === undefined) {
+            // Image-URL download branch (no request init).
+            return opts.downloadOk === false
+                ? new Response('not found', { status: 404 })
+                : new Response('img', { status: 200 });
+        }
+        const payload = JSON.parse(String(init.body)) as { task_id?: string };
+        if (payload.task_id === undefined)
+            return new Response(JSON.stringify({ code: 10_000, data: { task_id: 't-1' } }), { status: 200 });
+        polls++;
+        const status = opts.pollStatus?.(polls) ?? 200;
+        return new Response(JSON.stringify(opts.poll()), { status });
+    }) as typeof fetch;
+}
+
+describe('jimeng generate — uncovered branches (0116 coverage follow-up)', () => {
+    const ENV = { JIMENG_ACCESS_KEY_ID: 'ak', JIMENG_SECRET_ACCESS_KEY: 'sk' };
+
+    test('submit HTTP failure surfaces status + body text', async () => {
+        const provider = PROVIDERS.jimeng.create({
+            env: ENV,
+            fetch: (async () => new Response('rate limited', { status: 429 })) as typeof fetch,
+        });
+        const message = await provider
+            .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+            .catch((e: Error) => e.message);
+        expect(message).toContain('Jimeng API submit error (429)');
+        expect(message).toContain('rate limited');
+    });
+
+    test('missing credentials fail loudly before any request', async () => {
+        const provider = PROVIDERS.jimeng.create({ env: {} });
+        const message = await provider
+            .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+            .catch((e: Error) => e.message);
+        expect(message).toContain('JIMENG_ACCESS_KEY_ID and JIMENG_SECRET_ACCESS_KEY are required');
+    });
+
+    test('poll returns inline binary_data_base64 when present', async () => {
+        const b64 = Buffer.from('inline-bytes').toString('base64');
+        const provider = PROVIDERS.jimeng.create({
+            env: ENV,
+            fetch: jimengFetch({
+                poll: () => ({ code: 10_000, data: { binary_data_base64: [b64], status: 'done' } }),
+            }),
+        });
+        const result = await provider.generate({ prompt: 'p', model: 'jimeng_t2i_v40' });
+        expect(new TextDecoder().decode(result.bytes)).toBe('inline-bytes');
+        expect(result.provider).toBe('jimeng');
+    });
+
+    test('in_queue polls again, then done with image download', async () => {
+        let polls = 0;
+        const provider = PROVIDERS.jimeng.create({
+            env: ENV,
+            fetch: jimengFetch({
+                poll: () => {
+                    polls++;
+                    return polls === 1
+                        ? { code: 10_000, data: { status: 'in_queue' } }
+                        : { code: 10_000, data: { status: 'done', image_urls: ['https://img.example/x.png'] } };
+                },
+            }),
+        });
+        const result = await provider.generate({ prompt: 'p', model: 'jimeng_t2i_v40' });
+        expect(polls).toBe(2);
+        expect(new TextDecoder().decode(result.bytes)).toBe('img');
+    });
+
+    test('failed download of a done-task image URL is loud', async () => {
+        const provider = PROVIDERS.jimeng.create({
+            env: ENV,
+            fetch: jimengFetch({
+                poll: () => ({ code: 10_000, data: { status: 'done', image_urls: ['https://img.example/x.png'] } }),
+                downloadOk: false,
+            }),
+        });
+        const message = await provider
+            .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+            .catch((e: Error) => e.message);
+        expect(message).toBe('Failed to download image from https://img.example/x.png');
+    });
+
+    test('status=fail and unexpected codes surface provider messages', async () => {
+        const make = (pollBody: unknown) =>
+            PROVIDERS.jimeng.create({
+                env: ENV,
+                fetch: (async (_input, init) => {
+                    if (init?.body === undefined)
+                        return new Response(JSON.stringify({ code: 10_000, data: { task_id: 't-1' } }), {
+                            status: 200,
+                        });
+                    const payload = JSON.parse(String(init.body)) as { task_id?: string };
+                    if (payload.task_id === undefined)
+                        return new Response(JSON.stringify({ code: 10_000, data: { task_id: 't-1' } }), {
+                            status: 200,
+                        });
+                    return new Response(JSON.stringify(pollBody), { status: 200 });
+                }) as typeof fetch,
+            });
+        expect(
+            await make({ code: 10_000, data: { status: 'fail' }, message: 'content policy' })
+                .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+                .catch((e: Error) => e.message),
+        ).toContain('Jimeng task failed: content policy');
+        expect(
+            await make({ code: 10_000, data: { status: 'done' } })
+                .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+                .catch((e: Error) => e.message),
+        ).toContain('Unexpected response during polling');
+    });
+
+    test('poll HTTP failure is loud with status', async () => {
+        let polls = 0;
+        const provider = PROVIDERS.jimeng.create({
+            env: ENV,
+            fetch: jimengFetch({
+                poll: () => {
+                    polls++;
+                    return polls === 1
+                        ? { code: 10_000, data: { status: 'in_queue' } }
+                        : { code: 10_000, data: { status: 'done' } };
+                },
+                pollStatus: (n) => (n >= 2 ? 500 : 200),
+            }),
+        });
+        const message = await provider
+            .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+            .catch((e: Error) => e.message);
+        expect(message).toContain('Jimeng API poll error (500)');
+    });
+
+    test('invalid JIMENG_BASE_URL throws from endpoint resolution', async () => {
+        const provider = PROVIDERS.jimeng.create({
+            env: { ...ENV, JIMENG_BASE_URL: 'not-a-url' },
+            fetch: (async () => new Response('{}', { status: 200 })) as typeof fetch,
+        });
+        const message = await provider
+            .generate({ prompt: 'p', model: 'jimeng_t2i_v40' })
+            .catch((e: Error) => e.message);
+        expect(message).toContain('Invalid JIMENG_BASE_URL');
     });
 });
