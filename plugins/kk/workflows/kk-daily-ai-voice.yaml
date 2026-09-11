@@ -153,11 +153,12 @@ states:
             This node is a non-interactive workflow step: run every image command with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 in the environment (this workflow approves the image spend via cover_enabled) — never prompt, never open a question.
             Command: --format cover --content ${vars.work_dir}/2-article/article-${vars.run_date}.md --out ${vars.work_dir}/2-cover
             Derive the cover template variables (title, subtitle, topics) from the article as the skill owns; style is the format's default — do not pass --style.
-            The plugin writes ${vars.work_dir}/2-cover/content.json plus the artifact ${vars.work_dir}/2-cover/content-cover-01.png. If generation fails, report the error verbatim and stop — no procedural fallback.
-          expectFile: ${vars.work_dir}/2-cover/content-cover-01.png
+            The plugin writes ${vars.work_dir}/2-cover/content.json plus the artifact ${vars.work_dir}/2-cover/content-cover-01.<ext>, where <ext> follows the elected provider's native output (payload honesty: minimax returns JPEG, google/ark return PNG). If generation fails, report the error verbatim and stop — no procedural fallback.
+            Run 20260911 context: only MINIMAX_API_KEY is credentialed (ARK out of token, google key unset), so the elected provider is minimax and the artifact lands as content-cover-01.jpg.
+          expectFile: ${vars.work_dir}/2-cover/content-cover-01.jpg
       - kind: shell
         options:
-          command: 'mv "${vars.work_dir}/2-cover/content-cover-01.png" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png" && echo "cover normalized: cover-${vars.run_date}.png"'
+          command: 'cd "${vars.work_dir}/2-cover" && src="content-cover-01.png"; test -f "$src" || src="content-cover-01.jpg"; test -f "$src" || { echo "cover normalize: no content-cover-01.{png,jpg} artifact" >&2; exit 1; }; case "$src" in *.jpg) command -v sips >/dev/null 2>&1 || { echo "cover normalize: sips not found; cannot transcode jpg -> png" >&2; exit 1; }; sips -s format png "$src" --out "cover-${vars.run_date}.png" >/dev/null;; *) mv "$src" "cover-${vars.run_date}.png";; esac; rm -f content-cover-01.jpg content-cover-01.png; echo "cover normalized: cover-${vars.run_date}.png"'
 
   - id: script
     description: "Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content"

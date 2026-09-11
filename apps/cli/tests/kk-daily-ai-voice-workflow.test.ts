@@ -93,9 +93,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         const runDate = '$' + '{vars.run_date}';
         expect(yaml).toContain(`--content ${workDir}/2-article/article-${runDate}.md`);
         expect(yaml).toContain(`--out ${workDir}/2-cover`);
-        expect(yaml).toContain(
-            `mv "${workDir}/2-cover/content-cover-01.png" "${workDir}/2-cover/cover-${runDate}.png"`,
-        );
+        expect(yaml).toContain(`expectFile: ${workDir}/2-cover/content-cover-01.jpg`);
+        expect(yaml).toContain(`cover-${runDate}.png`); // canonical downstream artifact stays PNG (sips-normalized from jpg)
         expect(yaml).not.toContain('wt-image-cover');
     });
 
