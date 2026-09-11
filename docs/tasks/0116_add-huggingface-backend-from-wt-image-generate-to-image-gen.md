@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add huggingface backend from wt-image-generate to image-gen
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-11T16:54:52.908Z
-updated_at: "2026-09-11T16:55:17.924Z"
+updated_at: "2026-09-11T21:39:35.151Z"
 feature_id: K
 
 ---
@@ -46,23 +46,54 @@ Scenario: R1 — huggingface is first-class
 
 ### Design
 
-<!-- Chosen implementation approach, key tradeoffs, invariants, and impacted surfaces. -->
+HuggingFace Inference backend ported from wt-image-generate.
+
+- `plugins/generations/image-gen/src/providers/huggingface.ts` — new adapter: POST {inputs, parameters:{width,height,num_inference_steps}} to https://api-inference.huggingface.co/models/<model> (wt scripts/image_generator.py:142 wire shape); 200 → raw bytes + content-type-derived extension (png default), 503 → loud model-loading error, others loud; `hf:` model prefix supported; text-to-image only (`supportsReferenceImages=false`, wt parity).
+- `plugins/generations/image-gen/src/providers/types.ts` — registry row `huggingface` (env HUGGINGFACE_API_TOKEN, default stabilityai/stable-diffusion-xl-base-1.0) + AUTO_ORDER prepend `huggingface` (before google, mirroring wt primary/fallback order).
+- `plugins/generations/image-gen/tests/providers/huggingface.test.ts` — payload/wire-shape, token gate, 200/503/401 behaviors, auto-selection (13 total tests incl. providers.test.ts registry growth to 13).
+- Evidence: 854 pass / 0 fail across 63 files; `bun run lint` exit 0; commit `7e1f186`.
 
 ### Plan
 
-<!-- Ordered implementation checklist. Fill before moving to todo/wip. -->
+HuggingFace Inference backend ported from wt-image-generate.
+
+- `plugins/generations/image-gen/src/providers/huggingface.ts` — new adapter: POST {inputs, parameters:{width,height,num_inference_steps}} to https://api-inference.huggingface.co/models/<model> (wt scripts/image_generator.py:142 wire shape); 200 → raw bytes + content-type-derived extension (png default), 503 → loud model-loading error, others loud; `hf:` model prefix supported; text-to-image only (`supportsReferenceImages=false`, wt parity).
+- `plugins/generations/image-gen/src/providers/types.ts` — registry row `huggingface` (env HUGGINGFACE_API_TOKEN, default stabilityai/stable-diffusion-xl-base-1.0) + AUTO_ORDER prepend `huggingface` (before google, mirroring wt primary/fallback order).
+- `plugins/generations/image-gen/tests/providers/huggingface.test.ts` — payload/wire-shape, token gate, 200/503/401 behaviors, auto-selection (13 total tests incl. providers.test.ts registry growth to 13).
+- Evidence: 854 pass / 0 fail across 63 files; `bun run lint` exit 0; commit `7e1f186`.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+HuggingFace Inference backend ported from wt-image-generate.
+
+- `plugins/generations/image-gen/src/providers/huggingface.ts` — new adapter: POST {inputs, parameters:{width,height,num_inference_steps}} to https://api-inference.huggingface.co/models/<model> (wt scripts/image_generator.py:142 wire shape); 200 → raw bytes + content-type-derived extension (png default), 503 → loud model-loading error, others loud; `hf:` model prefix supported; text-to-image only (`supportsReferenceImages=false`, wt parity).
+- `plugins/generations/image-gen/src/providers/types.ts` — registry row `huggingface` (env HUGGINGFACE_API_TOKEN, default stabilityai/stable-diffusion-xl-base-1.0) + AUTO_ORDER prepend `huggingface` (before google, mirroring wt primary/fallback order).
+- `plugins/generations/image-gen/tests/providers/huggingface.test.ts` — payload/wire-shape, token gate, 200/503/401 behaviors, auto-selection (13 total tests incl. providers.test.ts registry growth to 13).
+- Evidence: 854 pass / 0 fail across 63 files; `bun run lint` exit 0; commit `7e1f186`.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — huggingface is first-class | MET | registry row + AUTO_ORDER prepend in plugins/generations/image-gen/src/providers/types.ts; adapter ported from wt HuggingFaceBackend (huggingface.ts); selectProvider picks huggingface when only its token present (huggingface.test.ts) |
+| R2 — mocked-fetch tests mirror wt wire shape | MET | plugins/generations/image-gen/tests/providers/huggingface.test.ts — payload {inputs, parameters:{width,height,num_inference_steps}}, bearer header, 200 bytes / 503 model-loading / 401 loud errors via injected fetch |
+| R3 — wt runtime untouched | MET | no edits under /Users/robin/.agents/skills/wt-image-generate; only git-tracked knowledge-kit files changed (commit 7e1f186) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | bun test apps packages plugins scripts | — |  |
+| P4 | bun run lint | — |  |
 
 ### References
 
@@ -71,4 +102,7 @@ Scenario: R1 — huggingface is first-class
 ### History
 
 - 2026-09-11T16:55:17.924Z backlog → todo (system)
+- 2026-09-11T21:36:06.367Z todo → wip (system)
+- 2026-09-11T21:39:30.547Z wip → testing (system)
+- 2026-09-11T21:39:35.151Z testing → done (system)
 
