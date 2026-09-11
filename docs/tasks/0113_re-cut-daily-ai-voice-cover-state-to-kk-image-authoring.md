@@ -4,7 +4,7 @@ name: Re-cut daily-ai-voice cover state to kk image-authoring
 status: done
 template: feature-impl
 created_at: 2026-09-11T05:55:57.575Z
-updated_at: "2026-09-11T05:59:21.580Z"
+updated_at: "2026-09-11T21:35:44.259Z"
 feature_id: N
 priority: P2
 tags:
@@ -82,17 +82,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/workflows/kk-daily-ai-voice.yaml cover state: agent.run input sets KK_NONINTERACTIVE=1 + KK_IMAGE_AUTO_CONFIRM=1, kk:image-authoring generate, --format cover, --content article-${run_date}.md, --out 2-cover dir; expectFile content-cover-01.png |
-| R2 | MET | cover state onEnter adds shell mv 2-cover/content-cover-01.png -> cover-${runtime_date}.png (canonical name); downstream publish-prep/cover-guard untouched (rg cover-<date> consumers unchanged) |
-| R3 | MET | cover_enabled var and the enabled/missing guard transitions (test ! -f cover-<date>.png) unchanged; skip semantics preserved |
-| R4 | MET | spur workflow validate passes (0 errors; advisories pre-existing pattern); diff touches only the cover state + description header |
+| R1 — cover state invokes kk image-authoring under the non-interactive contract | MET | plugins/kk/workflows/kk-daily-ai-voice.yaml cover state: agent.run input sets KK_NONINTERACTIVE=1 + KK_IMAGE_AUTO_CONFIRM=1, kk:image-authoring generate, --format cover, --content article-${run_date}.md, --out 2-cover dir; expectFile content-cover-01.png |
+| R2 — canonical cover artifact reaches downstream states unchanged | MET | cover state onEnter adds shell mv 2-cover/content-cover-01.png -> cover-${runtime_date}.png (canonical name); downstream publish-prep/cover-guard untouched (rg cover-<date> consumers unchanged) |
+| R3 — cover_enabled=false skips all image spend | MET | cover_enabled var and the enabled/missing guard transitions (test ! -f cover-<date>.png) unchanged; skip semantics preserved |
+| R4 — the rest of the workflow is untouched | MET | spur workflow validate passes (0 errors; advisories pre-existing pattern); diff touches only the cover state + description header |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 | MET | code+test | apps/cli/tests/kk-daily-ai-voice-workflow.test.ts new R1/R2 (N) assertions pass |
-| R2 | MET | test | mv normalization assertion passes; 'cover-${run_date}.png' consumers untouched |
-| R3 | MET | code | guard/vars unchanged in diff |
-| R4 | MET | test | upstream workflow test suite passes unchanged |
+| R1 — cover state invokes kk image-authoring under the non-interactive contract | MET |  | apps/cli/tests/kk-daily-ai-voice-workflow.test.ts new R1/R2 (N) assertions pass |
+| R2 — canonical cover artifact reaches downstream states unchanged | MET |  | mv normalization assertion passes; 'cover-${run_date}.png' consumers untouched |
+| R3 — cover_enabled=false skips all image spend | MET |  | guard/vars unchanged in diff |
+| R4 — the rest of the workflow is untouched | MET |  | upstream workflow test suite passes unchanged |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

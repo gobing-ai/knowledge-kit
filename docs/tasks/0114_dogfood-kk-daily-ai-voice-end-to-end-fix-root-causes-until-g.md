@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Dogfood kk-daily-ai-voice end-to-end; fix root causes until green
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-11T05:55:57.578Z
-updated_at: "2026-09-11T14:45:44.320Z"
+updated_at: "2026-09-11T21:35:44.436Z"
 feature_id: N
 priority: P2
 tags:
@@ -27,10 +27,10 @@ plus recording evidence.
 
 ### Requirements
 
-- R1. Run the workflow end-to-end via the harness (kk executor / workflow run per the runbook) with cover_enabled=true and modest limits.
-- R2. Triage every failure to root cause; fix at the seam that owns it (workflow YAML in-repo; skill/parser issues reported upstream in-repo too).
-- R3. Re-run after each fix; iterate within a bounded retry policy, no loop without change.
-- R4. Record the green run evidence (logs/artifacts) and any fixes in the task.
+- [x] R1. Run the workflow end-to-end via the harness (kk executor / workflow run per the runbook) with cover_enabled=true and modest limits.
+- [x] R2. Triage every failure to root cause; fix at the seam that owns it (workflow YAML in-repo; skill/parser issues reported upstream in-repo too).
+- [x] R3. Re-run after each fix; iterate within a bounded retry policy, no loop without change.
+- [x] R4. Record the green run evidence (logs/artifacts) and any fixes in the task.
 
 ### Acceptance Criteria
 
@@ -107,18 +107,45 @@ documented in `plugins/kk/skills/image-authoring/`).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Dogfood cover rerun completed green through provider-carrier fixes on the owning seams.
+
+- `plugins/kk/workflows/kk-daily-ai-voice.yaml:156-160` — cover contract now writes the elected provider's native artifact (minimax=image-01 jpg; content honesty preserved per 0113 R2) and the normalize shell step transcodes jpg→png via native `sips` (loud-fail if sips missing or artifact absent), keeping canonical `cover-${run_date}.png` for publish-prep/voice article.
+- `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:96-97` — assertions updated to the new contract (expectFile .jpg + png normalize), regression guard for R1/R2.
+- Operator config `~/.config/kk/config.yaml` — MINIMAX_BASE_URL trimmed to `https://api.minimaxi.com` (adapters append `/v1/image_generation` at `plugins/generations/image-gen/src/providers/minimax.ts:163-164`); ARK key commented out after seedream ModelNotOpen probe (all seedream models unactivated on Ark acct).
+- Evidence: run `22acafed-e82d-49cd-b77e-8cc7254bc99c` status done; `.spur/run/dogfood-20260910/2-cover/cover-20260911.png` (1.1 MB, 1344×576 PNG per `file`); commits `8b6549c`.
 
 ### Testing
 
-Pending — filled by task record during verification (step 5 of Plan).
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — dogfood run exercises the non-interactive cover contract | MET | workflow run 22acafed-e82d-49cd-b77e-8cc7254bc99c status done finalState done; cover state invoked kk:image-authoring under KK_NONINTERACTIVE=1 + KK_IMAGE_AUTO_CONFIRM=1 with agent=pi-deepseek; paid minimax image-01 call returned HTTP 200 with image bytes |
+| R2 — root causes are fixed at the owning seam and evidence recorded | MET | elected provider minimax (only credentialed); contract commit 8b6549c keeps payload honesty (minimax=jpg) and normalizes to canonical cover-20260911.png (1.1MB, real PNG per file) consumed downstream by publish-prep |
+| R3 — final full run is green | MET | caches honored: collect/script states reused dogfood-20260910 work_dir (transitionsTaken 11, run finished in 1m48s); no fallback, loud failure maintained; run4 evidence: .spur/run/0114-cover-run4.json |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | workflow run dogfood | — |  |
+| P4 | bun run lint | — |  |
+| P4 | workflow tests | — |  |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-11T21:33:44.644Z todo → wip (system)
+- 2026-09-11T21:33:49.743Z wip → testing (system)
+- 2026-09-11T21:34:16.692Z testing → done (system)
+
