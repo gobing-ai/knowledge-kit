@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,16 @@ describe('package publish metadata (R1/R2)', () => {
         expect(result.status, result.stderr ?? result.stdout).toBe(0);
         for (const bin of Object.values(pkg.bin)) {
             expect(existsSync(join(pkgDir, bin))).toBe(true);
+        }
+        // 0111: staged product plugins must not carry checkout-bound node_modules.
+        for (const collection of ['ingestions', 'generations', 'publishings'] as const) {
+            const collectionDir = join(pkgDir, 'plugins', collection);
+            if (!existsSync(collectionDir)) {
+                continue;
+            }
+            for (const name of readdirSync(collectionDir)) {
+                expect(existsSync(join(collectionDir, name, 'node_modules')), `${collection}/${name}`).toBe(false);
+            }
         }
     });
 });

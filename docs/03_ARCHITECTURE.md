@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.21.1
+version: 2.21.2
 created_at: 2026-07-22
 updated_at: 2026-09-10
 derived_from: [00_ADR, 01_PRD]
@@ -185,7 +185,7 @@ implemented them with regression coverage. The executor now enforces:
 
 | Boundary / owner | Required behavior | Shipped mechanism (task issue) |
 | --- | --- | --- |
-| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Product entries are Bun-bundled to `dist/index.js` at staging; manifests rewritten to `./dist/index.js`; missing entry / failed build / zero plugins fail loud (I1) |
+| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Product entries are Bun-bundled to `dist/index.js` at staging; manifests rewritten to `./dist/index.js`; `node_modules` is pruned so workspace symlinks do not ship; missing entry / failed build / zero plugins fail loud (I1, 0111) |
 | Cancellation / `apps/cli/src/invoke.ts` | Source timeout terminates and reaps owned descendants without affecting siblings | `killProcessTree` (descendants first, then entry) on a self-managed `timeoutMs` timer so the walk runs while the entry is alive (I2) |
 | Kind contract / `kk-core` + executor | Plugin-specific render operations preserve generic kind validation | Publish input is `Content` again; non-`Content` inputs require a manifest-declared `operations` entry, validated and dispatched by declaration (I3) |
 | Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | `TargetOutcome.metadata` round-trips; primitive metadata in a prior ledger is a named input error, exit 2 (I4) |
