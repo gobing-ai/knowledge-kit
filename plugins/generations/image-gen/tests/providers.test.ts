@@ -22,13 +22,14 @@ const throwingFetch: typeof fetch = () => {
 };
 
 describe('PROVIDERS registry (R1/R2)', () => {
-    test('registers exactly the 12 baoyu adapters', () => {
+    test('registers exactly the 12 baoyu adapters plus huggingface (0116)', () => {
         expect(ALL_NAMES).toEqual([
             'agnes',
             'azure',
             'codex-cli',
             'dashscope',
             'google',
+            'huggingface',
             'jimeng',
             'minimax',
             'openai',
@@ -39,7 +40,7 @@ describe('PROVIDERS registry (R1/R2)', () => {
         ]);
     });
 
-    test('AUTO_ORDER is frozen, excludes codex-cli, and covers the other 11', () => {
+    test('AUTO_ORDER is frozen, excludes codex-cli, and covers the other 12', () => {
         expect(AUTO_ORDER).not.toContain('codex-cli');
         expect([...AUTO_ORDER].sort()).toEqual(ALL_NAMES.filter((name) => name !== 'codex-cli'));
     });
@@ -145,7 +146,7 @@ describe('selectProvider resolution order (R3)', () => {
         expect(selectProvider('', { env: { IMAGE_GEN_PROVIDER: '' }, isAvailable: available })).toBe('minimax');
     });
 
-    test('failure — an unknown provider throws listing all 12 valid names, without falling through', () => {
+    test('failure — an unknown provider throws listing all 13 valid names, without falling through', () => {
         const action = (): string => selectProvider('stable-diffusion', { env: {}, isAvailable: () => true });
         expect(action).toThrow('Unknown image provider');
         for (const name of ALL_NAMES) {

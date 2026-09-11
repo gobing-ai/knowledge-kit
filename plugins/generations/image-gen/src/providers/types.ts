@@ -14,6 +14,7 @@ import { createAzure } from './azure';
 import { createCodexCli } from './codex-cli';
 import { createDashscope } from './dashscope';
 import { createGoogle } from './google';
+import { createHuggingface } from './huggingface';
 import { createJimeng } from './jimeng';
 import { createMinimax } from './minimax';
 import { createOpenai } from './openai';
@@ -140,6 +141,12 @@ export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
         ],
         create: createGoogle,
     },
+    huggingface: {
+        name: 'huggingface',
+        env: ['HUGGINGFACE_API_TOKEN'],
+        defaultModel: 'stabilityai/stable-diffusion-xl-base-1.0',
+        create: createHuggingface,
+    },
     jimeng: {
         name: 'jimeng',
         env: [],
@@ -191,6 +198,7 @@ export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
 
 /** Frozen auto-selection priority (task 0103 Design). `codex-cli` is absent on purpose. */
 export const AUTO_ORDER = [
+    'huggingface',
     'google',
     'openai',
     'replicate',
