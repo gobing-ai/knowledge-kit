@@ -28,7 +28,7 @@ export function mapSize(req: ImageRequest): string {
     return '2K';
 }
 
-function extensionFromUrl(url: string): string {
+export function extensionFromUrl(url: string): string {
     // data.b64_json path carries no extension — default png; URL paths end ?sig=… so take the last clean segment.
     const match = /(?:png|jpe?g|webp)/i.exec(url.split('?')[0] ?? '');
     return match === null ? 'jpg' : match[0].toLowerCase().replace(/^jpeg$/, 'jpg');

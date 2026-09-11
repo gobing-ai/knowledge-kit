@@ -44,7 +44,7 @@ describe('PROVIDERS registry (R1/R2)', () => {
         expect([...AUTO_ORDER].sort()).toEqual(ALL_NAMES.filter((name) => name !== 'codex-cli'));
     });
 
-    test('ImageRequest accepts referenceImages without a cast and shells satisfy ImageProvider', () => {
+    test('ImageRequest accepts referenceImages without a cast and providers satisfy ImageProvider', () => {
         const request: ImageRequest = { prompt: 'p', model: 'gemini-3-pro-image', referenceImages: ['/abs/a.png'] };
         expect(request.referenceImages).toEqual(['/abs/a.png']);
 
@@ -58,7 +58,7 @@ describe('PROVIDERS registry (R1/R2)', () => {
 });
 
 describe('isAvailable performs no I/O (R2/R5)', () => {
-    test('every registered shell answers from env only — the injected fetch is never invoked', () => {
+    test('every registered adapter answers isAvailable from env only — the injected fetch is never invoked', () => {
         for (const name of ALL_NAMES) {
             const provider = PROVIDERS[name].create({ fetch: throwingFetch, env: {} });
             expect(provider.isAvailable()).toBe(false);
@@ -76,7 +76,7 @@ describe('isAvailable performs no I/O (R2/R5)', () => {
     });
 });
 
-describe('env-only provider shells (registry facts)', () => {
+describe('providers (registry facts)', () => {
     test('name and defaultModel come from the registry row', () => {
         const provider = PROVIDERS.google.create({ env: {} });
         expect(provider.name).toBe('google');
@@ -113,11 +113,6 @@ describe('env-only provider shells (registry facts)', () => {
         expect(jimeng.create({ env: { JIMENG_ACCESS_KEY_ID: 'a', JIMENG_SECRET_ACCESS_KEY: 'b' } }).isAvailable()).toBe(
             true,
         );
-    });
-
-    test('generate throws until the adapter tickets land (no wire logic in this file)', () => {
-        const provider = PROVIDERS.zai.create({ env: { ZAI_API_KEY: 'k' } });
-        expect(() => provider.generate({ prompt: 'p', model: 'glm-image' })).toThrow('has no adapter yet');
     });
 });
 

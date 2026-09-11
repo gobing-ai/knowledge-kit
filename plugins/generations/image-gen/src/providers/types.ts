@@ -9,7 +9,18 @@
  * are new, `ImageResult` wraps the bytes — are recorded in the task Design.
  */
 
+import { createAgnes } from './agnes';
+import { createAzure } from './azure';
+import { createCodexCli } from './codex-cli';
+import { createDashscope } from './dashscope';
+import { createGoogle } from './google';
+import { createJimeng } from './jimeng';
+import { createMinimax } from './minimax';
+import { createOpenai } from './openai';
+import { createOpenrouter } from './openrouter';
+import { createReplicate } from './replicate';
 import { createSeedream } from './seedream';
+import { createZai } from './zai';
 
 /** The two quality levels baoyu exposes (SKILL.md); every provider maps or ignores them. */
 export type ImageQuality = 'normal' | '2k';
@@ -88,60 +99,35 @@ interface ProviderSpec {
 
 type ProviderRegistration = ProviderSpec & { readonly create: ProviderFactory };
 
-/**
- * Env-only shell: makes the frozen registry executable (`isAvailable` /
- * `supportsReferenceImages` answer from the inventory facts) before the adapter tickets
- * land; `generate` throws until then. An adapter ticket replaces `create` with the real
- * wire-speaking factory. A spec with no env criteria (codex-cli) reports not-ready — its
- * readiness (codex on PATH) is not env-expressible.
- */
-function envOnlyProvider(spec: ProviderSpec): ProviderFactory {
-    return (options) => ({
-        name: spec.name,
-        defaultModel: () => spec.defaultModel,
-        isAvailable: () => {
-            const env = options?.env ?? process.env;
-            const present = (key: string): boolean => (env[key] ?? '') !== '';
-            const anyOf = spec.env.length > 0 ? spec.env.some(present) : spec.envAll !== undefined;
-            return anyOf && (spec.envAll ?? []).every(present);
-        },
-        supportsReferenceImages: (model) =>
-            spec.refModels === undefined ? true : spec.refModels.some((fragment) => model.includes(fragment)),
-        generate: () => {
-            throw new Error(`Provider '${spec.name}' has no adapter yet (feature K phase plan, task 0103 Design).`);
-        },
-    });
-}
-
-function defineProvider(spec: ProviderSpec): ProviderRegistration {
-    return { ...spec, create: envOnlyProvider(spec) };
-}
-
 /** The 12 baoyu adapters, one row each (task 0103 R1 inventory). Keys sorted alphabetically. */
 export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
-    agnes: defineProvider({
+    agnes: {
         name: 'agnes',
         env: ['AGNES_API_KEY'],
         defaultModel: 'agnes-image-2.1-flash',
-    }),
-    azure: defineProvider({
+        create: createAgnes,
+    },
+    azure: {
         name: 'azure',
         env: ['AZURE_OPENAI_API_KEY'],
         defaultModel: 'gpt-image-2',
-    }),
-    'codex-cli': defineProvider({
+        create: createAzure,
+    },
+    'codex-cli': {
         name: 'codex-cli',
         env: [],
         defaultModel: 'codex-image-gen',
         note: "requires the 'codex' CLI on PATH with an active login (never auto-selected)",
-    }),
-    dashscope: defineProvider({
+        create: createCodexCli,
+    },
+    dashscope: {
         name: 'dashscope',
         env: ['DASHSCOPE_API_KEY'],
         defaultModel: 'qwen-image-2.0-pro',
         refModels: ['wan2.7'],
-    }),
-    google: defineProvider({
+        create: createDashscope,
+    },
+    google: {
         name: 'google',
         env: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
         defaultModel: 'gemini-3-pro-image',
@@ -152,34 +138,40 @@ export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
             'gemini-3-flash-preview',
             'gemini-3.1-flash-image-preview',
         ],
-    }),
-    jimeng: defineProvider({
+        create: createGoogle,
+    },
+    jimeng: {
         name: 'jimeng',
         env: [],
         envAll: ['JIMENG_ACCESS_KEY_ID', 'JIMENG_SECRET_ACCESS_KEY'],
         defaultModel: 'jimeng_t2i_v40',
-    }),
-    minimax: defineProvider({
+        create: createJimeng,
+    },
+    minimax: {
         name: 'minimax',
         env: ['MINIMAX_API_KEY'],
         defaultModel: 'image-01',
-    }),
-    openai: defineProvider({
+        create: createMinimax,
+    },
+    openai: {
         name: 'openai',
         env: ['OPENAI_API_KEY'],
         defaultModel: 'gpt-image-2',
         refModels: ['gpt-image'],
-    }),
-    openrouter: defineProvider({
+        create: createOpenai,
+    },
+    openrouter: {
         name: 'openrouter',
         env: ['OPENROUTER_API_KEY'],
         defaultModel: 'google/gemini-3.1-flash-image',
-    }),
-    replicate: defineProvider({
+        create: createOpenrouter,
+    },
+    replicate: {
         name: 'replicate',
         env: ['REPLICATE_API_TOKEN'],
         defaultModel: 'google/nano-banana-2',
-    }),
+        create: createReplicate,
+    },
     seedream: {
         name: 'seedream',
         env: ['ARK_API_KEY'],
@@ -188,12 +180,13 @@ export const PROVIDERS: Readonly<Record<string, ProviderRegistration>> = {
         // 0107: the first wire-speaking adapter — replaces the envOnly shell.
         create: createSeedream,
     },
-    zai: defineProvider({
+    zai: {
         name: 'zai',
         env: ['ZAI_API_KEY', 'BIGMODEL_API_KEY'],
         defaultModel: 'glm-image',
         refModels: [],
-    }),
+        create: createZai,
+    },
 };
 
 /** Frozen auto-selection priority (task 0103 Design). `codex-cli` is absent on purpose. */
