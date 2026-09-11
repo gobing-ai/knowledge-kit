@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.27.0
+version: 2.27.1
 created_at: 2026-07-22
 updated_at: 2026-09-10
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -267,8 +267,8 @@ preserved, not rejected.
 | `operations` | `Record<string, { input: 'doc-list' \| 'markdown', output: 'doc-list' \| 'markdown' }>` | no | shipped (0110 I3) | Named non-Result operations the plugin accepts (e.g. podcast-pub `show-notes`: doc-list → markdown). Only declared operations can receive non-`Content` inputs; undeclared array dispatch is rejected pre-spawn |
 
 **Resolve-time validation (shipped).** `kk executor run` resolves the manifest, selects the contract with
-`kindContract(record.kind)` (`apps/cli/src/invoke.ts:35`), and validates the input file with
-`contract.input.safeParse(json)` (`apps/cli/src/invoke.ts:65`) **before** spawning the entry — a
+`kindContract(record.kind)` (`apps/cli/src/invoke.ts:271`), and validates the input file with
+`contract.input.safeParse(json)` (`apps/cli/src/invoke.ts:326`) **before** spawning the entry — a
 schema violation exits non-zero with `Input schema violation for kind '<kind>': <issues>`.
 
 **Planned extension (feature D).** Once the generator contract widens to `GeneratorInput`
@@ -278,16 +278,18 @@ error rather than a silent empty `Content`. **Migration note:** the existing `co
 does *not* survive this change unchanged — its entry must read `{ docs: Doc[] }` instead of a
 root-level `Doc[]` array, and should declare `"accepts": ["docs"]`.
 
-**Declared operations dispatch (shipped, 0110 I3).** A `Doc[]` input resolves against the
-manifest's `operations`: an undeclared operation name (or no `operations` at all) is rejected
-**before spawn** (`undeclared operation '<name>' for plugin '<plugin>'`); a declared operation has
-its `Doc[]` validated with `DocListSchema`, dispatches, and its `output` form decides completion
-checking — `markdown` ops check artifact existence/non-empty only, `doc-list` ops validate the
-array. Ordinary `Content` invocations bypass operations entirely and validate against
-`kindContract('publish').input`/`.output` as before; a publish whose `Result` parses but carries
-`ok: false` fails the invocation (`reported failure: <reason>`, exit 1, artifact kept for
-inspection, 0110 I6). `--in` and `--out` aliasing the same path is rejected pre-mutation (0110 I5);
-the exact `--out` path is unlinked before spawn, so success always reflects fresh output (delete-or-verify).
+**Declared operations dispatch (shipped, 0110 I3).** A publish `Doc[]` input is accepted only when
+the manifest declares an `operations` entry with `input: 'doc-list'` — selection is first-match
+across declared ops (`apps/cli/src/invoke.ts:311`). No matching op (or no `operations` at all) is
+rejected **before spawn** (`Publish plugin '<name>' received a Doc[] array but declares no
+doc-list operation; a Content object is required`). A matching op has its `Doc[]` validated with
+`DocListSchema`, dispatches, and its `output` form decides completion checking — `markdown` ops
+check artifact existence/non-empty only, `doc-list` ops validate the array. Ordinary `Content`
+invocations bypass operations entirely and validate against `kindContract('publish').input`/`.output`
+as before; a publish whose `Result` parses but carries `ok: false` fails the invocation
+(`reported failure: <reason>`, exit 1, artifact kept for inspection, 0110 I6). `--in` and `--out`
+aliasing the same path is rejected pre-mutation (0110 I5); the exact `--out` path is unlinked
+before spawn, so success always reflects fresh output (delete-or-verify).
 
 ## 2. Configuration keys
 

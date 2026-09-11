@@ -11,19 +11,19 @@ This specification cites Section 1 of `docs/design/ingestion-plugin-specificatio
 ### 2.1 Kind Definition
 
 - `kind`: `"publish"`
-- `input`: `z.union([ContentSchema, DocListSchema])` — two forms (0100):
-  - **Content object** (`{ body, title?, format?, outline?, references?, metadata? }`) — the
-      publish / management payload.
-  - **Bare `Doc[]` array** — the show-notes dispatch form (episode-plan `Doc[]` in → markdown
-      written to `--out`; introduced for podcast-pub, 0095). Executor pre-validation
-      (`runInvoke`) validates `--in` against this union, so both forms reach the plugin entry.
-- `output`: two-form, mirroring the input union (0101):
-  - **Content-object input** → a `ResultSchema` JSON on `--out`
-      (`{ ok, target, url?, id?, message?, error?, metadata? }`); the executor JSON-parses and
-      `ResultSchema`-validates it.
-  - **Bare `Doc[]` array input (show-notes)** → the raw markdown artifact itself on `--out`
-      (e.g. podcast-pub's `3-publish/show-notes.md`); the executor treats `--out` as opaque —
-      existence + non-emptiness only, no JSON or `ResultSchema` parse.
+- `input`: `ContentSchema` (`kindContract('publish')` in `packages/kk-core/src/kinds.ts:65`).
+  Generic publish is `Content → Result` (ADR-006 amendment 2026-09-10, task 0110 I3). A
+  `Doc[]` input is **not** a kind-level form: `runInvoke` accepts it only when the manifest
+  declares an `operations` entry with `input: 'doc-list'` (podcast-pub `show-notes`, 0095/0110).
+  Undeclared arrays are rejected before spawn.
+- `output`:
+  - **Content input** → a `ResultSchema` JSON on `--out`
+      (`{ ok, target, url?, id?, message?, error?, metadata? }`); the executor JSON-parses,
+      `ResultSchema`-validates it, and treats `ok: false` as invocation failure (exit 1, artifact
+      kept, 0110 I6).
+  - **Declared `operations` with `output: 'markdown'`** (e.g. show-notes) → the raw markdown
+      artifact on `--out` (podcast-pub's `3-publish/show-notes.md`); the executor checks existence
+      + non-emptiness only. This exemption is per declared operation, not per input shape.
 
 ### 2.2 Transport Abstraction Interface
 
@@ -70,14 +70,14 @@ For targets expecting frontmatter (e.g. static site generators like Surfing/Astr
 - **Success Path (`exit 0`)**: The plugin writes a `Result` JSON with `ok: true`, `target: "<name>"`, `url: "<canonical-url>"`, `message: "..."`, and exits with code `0`.
 - **Validation Failure (`exit 1`)**: Missing required input fields or invalid `Content` JSON causes the plugin to write a `Result` JSON with `ok: false`, `error: "Diagnostic message"`, log to `stderr`, and exit `1`.
 - **Transport / CLI Error (`exit 1`)**: Command execution failures or transport errors write `Result` JSON with `ok: false`, `error: "Stderr output"`, log to `stderr`, and exit `1`.
-- **Schema Rejection (`exit != 0`)**: If the output written to `--out` violates `ResultSchema`, `runInvoke` rejects execution, logs diagnostic details to `stderr`, and propagates non-zero exit. (Content-object invocations only; the show-notes array form's `--out` is the raw markdown artifact and is exempt — §2.1, 0101.)
+- **Schema Rejection (`exit != 0`)**: If a Content invocation's `--out` violates `ResultSchema`, `runInvoke` rejects execution, logs diagnostic details to `stderr`, and propagates non-zero exit. Declared markdown operations are exempt from JSON/`ResultSchema` parse (existence + non-emptiness only — §2.1, 0110 I3).
 
 ---
 
 ## 3. Platform Alignment
 
-- **Core Verification**: Tested against `kindContract('publish')` in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts:68`) and `runInvoke` execution in `apps/cli/src/invoke.ts`.
-- **Schema Impact**: The publish input contract is the two-form union above (0100) and the output contract is two-form likewise (0101): Content-object invocations return `ResultSchema` JSON on `--out`, show-notes array invocations write the raw markdown artifact, which `runInvoke` treats as opaque (existence + non-emptiness only). `ContentSchema` / `ResultSchema` / `DocListSchema` themselves are unchanged, and no core framework modifications are required.
+- **Core Verification**: Tested against `kindContract('publish')` in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts:65`) and `runInvoke` execution in `apps/cli/src/invoke.ts`.
+- **Schema Impact**: The kind contract is `Content → Result`. Auxiliary `Doc[]` → markdown (show-notes) is a manifest-declared `operations` entry, not a kind-level union (0100/0101 were superseded by 0110 I3). `ContentSchema` / `ResultSchema` / `DocListSchema` themselves are unchanged.
 - **Shipped reference instances**: `plugins/publishings/surfdash-pub` (E3), `plugins/publishings/zenn-pub` and
   `plugins/publishings/qiita-pub` (E4), `plugins/publishings/emdash-pub` (E5) — each implements `PublishTransport`
   with `kind: 'file-cli'`, its own target mapper, and env-only secrets; all are offline-tested via

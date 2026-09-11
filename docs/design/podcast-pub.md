@@ -98,8 +98,10 @@ A **bare JSON array** input selects the pure show-notes render — no microfeed
 client, no credentials, no API call:
 
 - `--in`: episode-plan `Doc[]` array (the `2-plan/plan.json` shape). The
-  publish kind contract is the two-form union `Content | Doc[]` (0100), so
-  executor pre-validation passes this form through to the plugin entry.
+  generic publish kind is `Content → Result`; this array form reaches the
+  entry only because `plugin.json` declares `operations["show-notes"]`
+  (`doc-list` → `markdown`, 0110 I3). An undeclared publisher is rejected
+  before spawn.
 - Options come from `PODCAST_PUB_TITLE` and `PODCAST_PUB_RUN_DATE` env (or
   `options.title` / `options.runDate` on the transport payload); both are
   required — missing either fails loud.
