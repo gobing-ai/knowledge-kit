@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { echoError } from '@gobing-ai/ts-utils';
 import { refToDataUri } from './refs';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
@@ -354,7 +355,7 @@ function validateWan27Size(size: string, maxPixels: number, model: string): stri
 function getQwenFixedSizeFromAspectRatio(ar: string | undefined, quality: 'normal' | '2k'): string {
     if (quality === 'normal') {
         // ponytail: upstream warns on stderr; kk runs quiet — the fixed-size behaviour is unchanged.
-        console.warn(
+        echoError(
             'DashScope qwen-image-max/plus/image models use fixed output sizes; quality does not change the resolution.',
         );
     }

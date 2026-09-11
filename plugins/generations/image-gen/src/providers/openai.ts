@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
-import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { readBytes } from '../bytes';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -293,7 +293,7 @@ export const createOpenai: ProviderFactory = (options?: ProviderOptions): ImageP
                     const quality = getOpenAIQuality(req.model, args.quality);
                     if (quality !== null && quality !== 'standard' && quality !== 'hd') form.append('quality', quality);
                     for (const refPath of refs) {
-                        const bytes = await readFile(refPath);
+                        const bytes = await readBytes(refPath);
                         const filename = basename(refPath);
                         form.append('image[]', new Blob([bytes], { type: getMimeType(filename) }), filename);
                     }

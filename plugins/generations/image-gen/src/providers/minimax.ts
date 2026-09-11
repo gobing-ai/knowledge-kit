@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { readFile } from 'node:fs/promises';
+import { readBytes } from '../bytes';
 import { mimeForPath } from './refs';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
@@ -102,7 +102,7 @@ export async function buildSubjectReference(referenceImages: string[]): Promise<
         if (!ext.includes('.jpg') && !ext.includes('.jpeg') && !ext.includes('.png')) {
             throw new Error(`MiniMax subject_reference only supports JPG, JPEG, or PNG files: ${refPath}`);
         }
-        const bytes = await readFile(refPath);
+        const bytes = Buffer.from(await readBytes(refPath));
         if (bytes.length > MAX_REFERENCE_IMAGE_BYTES) {
             throw new Error(`MiniMax subject_reference images must be smaller than 10MB: ${refPath}`);
         }

@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
+import { readBytes } from '../bytes';
 import { extractImageFromResponse, getOpenAISize, type OpenAIImageResponse } from './openai';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
@@ -127,7 +127,7 @@ export const createAzure: ProviderFactory = (options?: ProviderOptions): ImagePr
                     form.append('n', '1');
                     form.append('quality', getAzureQuality(req.quality));
                     for (const refPath of refs) {
-                        const fileBytes = await readFile(refPath);
+                        const fileBytes = await readBytes(refPath);
                         const filename = refPath.split('/').pop() ?? refPath;
                         const mimeType = extname(filename).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
                         form.append('image[]', new Blob([fileBytes], { type: mimeType }), filename);

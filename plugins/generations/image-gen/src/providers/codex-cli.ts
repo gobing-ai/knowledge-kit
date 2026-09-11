@@ -1,9 +1,16 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { readBytes } from '../bytes';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
+
+/**
+ * no-direct-fs-io / no-direct-process-spawn exemption is recorded as per-file
+ * exclusions in .spur/rules/strict/runtime-boundaries.yaml: this provider's
+ * transport IS spawning the local `codex` CLI and staging temp files for it
+ * (same vendor-CLI-boundary class as the file-cli publish transports).
 
 /**
  * codex-cli adapter (0115 R1) — port of
@@ -70,7 +77,6 @@ function spawnWrapper(wrapperPath: string, cliArgs: string[]): Promise<SpawnResu
         child.stderr.on('data', (chunk: Buffer) => {
             const text = chunk.toString('utf8');
             stderr += text;
-            process.stderr.write(text);
         });
         child.on('error', (err) => rejectSpawn(err));
         child.on('close', (code) => resolveSpawn({ stdout, stderr, code: code ?? 1 }));
@@ -154,8 +160,8 @@ export const createCodexCli: ProviderFactory = (options?: ProviderOptions): Imag
                         `Invalid codex-cli result: wrapper exited with code ${spawnResult.code} despite reporting status=ok.`,
                     );
                 }
-                const bytes = await readFile(parsed.path ?? tmpOutput);
-                return { bytes: new Uint8Array(bytes), extension: 'png', provider: 'codex-cli', model: req.model };
+                const bytes = await readBytes(parsed.path ?? tmpOutput);
+                return { bytes, extension: 'png', provider: 'codex-cli', model: req.model };
             } finally {
                 await Promise.allSettled([rm(tmpOutput, { force: true }), rm(tmpPrompt, { force: true })]);
             }

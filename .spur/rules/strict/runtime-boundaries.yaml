@@ -64,6 +64,13 @@ rules:
             - "plugins/ingestions/web-search/src/index.ts"
             # Optional WAV to MP3 transcode shells out to local ffmpeg binary.
             - "plugins/generations/voice-gen/src/mp3.ts"
+            # image-gen providers whose transport is a local CLI by contract
+            # (same class as file-cli transports + mp3.ts): codex-cli IS a wrapper
+            # around the `codex` CLI (NEVER_AUTO, login-gated) and stages temp
+            # wrapper/output files for it; google shells to curl only when a proxy
+            # is set because Bun fetch drops long-lived proxied sockets (0115 port).
+            - "plugins/generations/image-gen/src/providers/codex-cli.ts"
+            - "plugins/generations/image-gen/src/providers/google.ts"
 
   - id: no-direct-fs-io
     description: "File IO must go through @gobing-ai/ts-runtime's FileSystem seam (createNodeFileSystem). Sync-structural sites are allowlisted below."
@@ -108,6 +115,10 @@ rules:
             # voice-gen/podcast-pub. All path maths routes through artifactPath, whose
             # stem/extension guards block path escape.
             - "plugins/generations/image-gen/src/bytes.ts"
+            # codex-cli stages a temp wrapper + output file for the `codex` CLI and
+            # needs access/mkdir/writeFile/rm around it — same vendor-CLI-transport
+            # class as the spawn exclusion above (0115 port).
+            - "plugins/generations/image-gen/src/providers/codex-cli.ts"
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"
