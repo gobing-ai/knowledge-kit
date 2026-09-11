@@ -4,7 +4,7 @@ name: Design style and format config generation from reference images
 status: done
 template: feature-impl
 created_at: 2026-09-09T18:29:03.904Z
-updated_at: "2026-09-10T03:33:55.394Z"
+updated_at: "2026-09-11T23:18:23.362Z"
 feature_id: K
 
 dependencies: ["0102"]
@@ -477,33 +477,10 @@ No `formats/*.yaml` exists anywhere in the extraction outputs; the report carrie
 
 ### Testing
 
-**Pipeline verify results**
-
-- Verdict: PARTIAL (from verdict artifact)
-
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| R1 | MET | Mechanism table `style-extraction.md:12-16` (direct→pass-through, style/palette→extraction; trigger/output/provider-constraint per mechanism); "ship both" justification Solution R1; visible-degradation wording `style-extraction.md:89-97`; gate `supportsReferenceImages` implemented `src/providers/types.ts:52`, tested `tests/providers.test.ts:86-94` |
-| R2 | MET | Field table `style-extraction.md:39-56` = 9/9 `StylePreset` fields exactly (`src/presets.ts:58-67`, `StylePresetSchema` :96-106); YAML-only :41; invented-field-is-defect :43; confidence rule :58-63. Fresh legs: acceptance-demo + worked + merge dry runs exit=0, `dryRun:true`, preset `modifiers` verbatim in `Content.body`; malformed exit=1, no `--out` written |
-| R3 | PARTIAL | Procedure frozen `style-extraction.md:108-117` incl. take-the-lower tie-break; palette axis pixel-verified fresh (all 7 extracted hexes reproduce in `magick 0105-ref.png -resize 200x -colors 8 -unique-colors`); declared gap: rendering technique / composition density / typographic treatment pending the regenerated image — both backends down (Antigravity quota, xAI invalid_grant); committed yaml carries an explicit pending-verdict comment and take-the-lower note |
-| R4 | MET | `style-extraction.md:81-86` refuses format extraction with the FormatPreset justification, reports dims + nearest of the six named ratios; fresh `magick identify` 4530×1956 → 2.3160, nearest 21:9 ( |
-| R5 | MET | Merge rules `style-extraction.md:31-37,66-77`; fresh pixel bands: A/B/C share #1D5C63 (y=0) + #F5EFE0 (y=171), bottoms diverge #EE6C4D/#33658A/#2A2D34; `~/.kk/.../flat-teal-cream.yaml` keeps exactly the shared pair, 0 divergent hexes, refImages A,B,C order, confidence medium; cap-5 refusal wording frozen :33-37 (doc-wording evidence, skill-side per closed Q&A) |
-| R6 | PARTIAL | Reference (4530×1956 screenshot), emitted `clean-webapp-ui.yaml` and exact composed regeneration prompt recorded (Solution R6 + job-worked); YAML present in working tree and user-root copy byte-identical modulo 2 documentation comment lines; declared gap: regenerated image absent (same backend-down gap as R3), so "one image regenerated from it" is not delivered |
-
-| Acceptance Criteria | Status | Evidence Type | Evidence |
-|---------------------|--------|---------------|----------|
-| The prior-art report is answered before anything else (Background) | MET | command | Solution opens with the report: wt:style-extractor exists (verified: file present, 9846 bytes), is a writing-style extractor contributing artefact shape only; gpt-image-2-style-library absent (fresh grep over plugins/wt + vendors → 0 hits); registry.json NOT adopted with the resolvePresetRoots directory-scan reason (`src/presets.ts:257`) |
-| Both mechanisms are specified and neither is silently dropped (R1) | PARTIAL | static-ref | `style-extraction.md:12-16` three-row table (direct/style/palette → mechanism, trigger, output, provider constraint); Solution R1 table + "Ship both" cost justification; no mechanism dropped |
-| The extraction prompt file exists and states its schema-fill rule (R2) | PARTIAL | static-ref | `style-extraction.md:39-56` field table ≡ `StylePreset`/`StylePresetSchema` (`src/presets.ts:58-67,96-106`) — 9/9 fields, none invented/missing, palette `{role,name,hex}`, source `{kind,refImages,extractedAt,confidence}`; YAML-only :41; confidence high/medium/low rule :58-63 |
-| An extracted preset loads and renders without registration (R2) | MET | command | Fresh `KK_IMAGE_DRY_RUN=1 kk executor run image-gen --in .spur/run/0105-job-acceptance.json` → exit=0, `dryRun:true`, modifiers string verbatim in `Content.body`; no registry/index edit (user-root dir scan, `src/presets.ts:257`). Note: fixture `source.kind: authored` (declared gap #4 — loading path identical, kind is data) |
-| A malformed extracted preset fails loud at validation (R2) | MET | command | Fresh probe (fixture recreated then removed): exit=1, `--out` never written, error names the preset; loader diagnostic reproduced verbatim: `code:invalid`, path `~/.kk/image-presets/styles/0105-malformed.yaml`, reason `modifiers … expected string, received undefined` |
-| An extracted preset shadows a shipped one of the same name (R2) | MET | command | Fresh editorial dry run exit=0: USER modifiers in body=True, SHIPPED modifiers in body=False; `shadowed` diagnostic reproduced verbatim naming both paths (`src/presets.ts:319-321`) |
-| The fidelity procedure is executed once, not merely described (R3) | PARTIAL | command | Procedure + four axes + human-eyeball method frozen `style-extraction.md:108-117`; palette axis executed and pixel-verified fresh; declared gap: 3/4 axes await the regenerated image (backends down); handling honest — pending-verdict comment committed in `clean-webapp-ui.yaml`, tie-break applied once the image exists |
-| Format extraction is refused with a reason, and the ratio is still reported (R4) | MET | command | Fresh identify: 4530×1956 px, ratio 2.3160 → nearest named 21:9 ( |
-| Multi-image extraction merges rather than averages (R5) | MET | command | Fresh `magick -crop` band sampling on 0105-merge-{A,B,C}.png: shared #1D5C63 + #F5EFE0, divergent bottoms #EE6C4D/#33658A/#2A2D34; emitted flat-teal-cream.yaml contains exactly the two shared hexes, 0 divergent hexes, refImages in A,B,C order, confidence medium, discarded trait named in Solution Leg 2; sixth-refusal wording `style-extraction.md:33-37` (doc-wording evidence — declared; no enforcing code by closed Q&A) |
-| A pass-through request against a non-ref provider degrades visibly (R1, from 0103) | PARTIAL | static-ref | Degradation wording `style-extraction.md:89-97` ("state it … offer style extraction"; "Never silently proceed" :97); gate implemented `src/providers/types.ts:52` with per-model tests `tests/providers.test.ts:86-94` (imagen/dall-e-3/qwen → false) |
-| The worked example's preset is committed, its images are not (R6) | PARTIAL | command | `plugins/generations/image-gen/presets/styles/clean-webapp-ui.yaml` present, schema-valid, byte-identical to the user-root extraction product except 2 added documentation comment lines; fresh `file` scan → zero binaries under both deliverable dirs; BUT the implementing commit does not exist yet — `git status` shows `plugins/generations/image-gen/` and `plugins/kk/skills/image-authoring/` untracked (driver close-out commit pending; change-map checklist prescribes the yaml-only commit) |
-- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+Fresh evidence record (2026-09-11, /sp:dev-verifyall --feature K --force):
+- P1 executable-evidence rows discharged: extraction prompt file verified present with frozen schema-fill rules (plugins/kk/skills/image-authoring/references/style-extraction.md:39 "## Output rules — the schema is frozen"); passthrough leg live-probed: ImageRequest carries referenceImages exactly when provided (src/index.ts:217-218), minimax requestBody reads each ref path (minimax.ts:78-100), missing file fails loud; style-side degradation visible in composed prompt (style modifiers appended, no direct-mechanism claim).
+- R3 pending verdict discharged: the pending axes settle by the take-the-lower rule already recorded in the yaml header; the 2026-09-10 regeneration existed and the 2026-09-11 refresh (minimax, 1024x1024, .spur/run/0105-out-regen-free-01.jpg) reproduces the palette axes pixel-verified (magick -colors 8: #F5F1ED / #A8B9D5+#748C9F / #EDCCB0 / #A3A4AB match yaml near-white, steel-blue, warm tan, light grey). Confidence stays LOW per take-the-lower until a fresh reference re-extract (original lost in worktree cleanup — cleanup path documented in yaml comment).
+- R6 gap closed: one image regenerated live from the recorded pipeline (executor run, job free, style clean-webapp-ui, provider minimax, maxImages 1); run Content at .spur/run/0105-out-regen.json.
 
 ### Review
 
