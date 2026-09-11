@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Re-cut daily-ai-voice cover state to kk image-authoring
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-11T05:55:57.575Z
-updated_at: "2026-09-11T05:56:27.473Z"
+updated_at: "2026-09-11T05:59:21.580Z"
 feature_id: N
 priority: P2
 tags:
@@ -67,18 +67,54 @@ Small seam swap: skill decides (derive title/subtitle/topics from the article = 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:87` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/workflows/kk-daily-ai-voice.yaml cover state: agent.run input sets KK_NONINTERACTIVE=1 + KK_IMAGE_AUTO_CONFIRM=1, kk:image-authoring generate, --format cover, --content article-${run_date}.md, --out 2-cover dir; expectFile content-cover-01.png |
+| R2 | MET | cover state onEnter adds shell mv 2-cover/content-cover-01.png -> cover-${runtime_date}.png (canonical name); downstream publish-prep/cover-guard untouched (rg cover-<date> consumers unchanged) |
+| R3 | MET | cover_enabled var and the enabled/missing guard transitions (test ! -f cover-<date>.png) unchanged; skip semantics preserved |
+| R4 | MET | spur workflow validate passes (0 errors; advisories pre-existing pattern); diff touches only the cover state + description header |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R1 | MET | code+test | apps/cli/tests/kk-daily-ai-voice-workflow.test.ts new R1/R2 (N) assertions pass |
+| R2 | MET | test | mv normalization assertion passes; 'cover-${run_date}.png' consumers untouched |
+| R3 | MET | code | guard/vars unchanged in diff |
+| R4 | MET | test | upstream workflow test suite passes unchanged |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | bun run lint | — | exit 0 (biome 2.5.5 + typecheck) |
+| P4 | bun run test | — | 755 tests, 0 fail |
+| P4 | spur workflow validate kk-daily-ai-voice.yaml | — | no errors |
+| P4 | focused bun test kk-daily-ai-voice-workflow | — | 6 pass incl. new R1/R2 (N) regression |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-11T05:59:12.774Z todo → wip (system)
+- 2026-09-11T05:59:21.281Z wip → testing (system)
+- 2026-09-11T05:59:21.580Z testing → done (system)
+

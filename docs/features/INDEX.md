@@ -52,5 +52,5 @@
 [done] **L**: kk-daily-ai-voice — daily AI voice news pipeline ([L_kk-daily-ai-voice-daily-ai-voice-news-pipeline.md](./L_kk-daily-ai-voice-daily-ai-voice-news-pipeline.md))
     └── [done] **L1**: Redesign kk-daily-ai-voice workflow: kk-owned concurrent collect, explicit content QC seam, plugin-owned publish mechanics ([L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md](./L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md))
 [backlog] **M**: kk-user-config-roots ([M_kk-user-config-roots.md](./M_kk-user-config-roots.md))
-[verifying] **N**: daily-ai-voice-cover-image-authoring ([N_daily-ai-voice-cover-image-authoring.md](./N_daily-ai-voice-cover-image-authoring.md))
+[active] **N**: daily-ai-voice-cover-image-authoring ([N_daily-ai-voice-cover-image-authoring.md](./N_daily-ai-voice-cover-image-authoring.md))
 <!-- END AUTO-GENERATED -->

@@ -84,6 +84,21 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE');
     });
 
+    it('R1/R2 (N) — cover state invokes kk:image-authoring under the non-interactive contract and normalizes the artifact', () => {
+        expect(yaml).toContain('kk:image-authoring');
+        expect(yaml).toContain('KK_NONINTERACTIVE=1');
+        expect(yaml).toContain('KK_IMAGE_AUTO_CONFIRM=1');
+        expect(yaml).toContain('--format cover');
+        const workDir = '$' + '{vars.work_dir}';
+        const runDate = '$' + '{vars.run_date}';
+        expect(yaml).toContain(`--content ${workDir}/2-article/article-${runDate}.md`);
+        expect(yaml).toContain(`--out ${workDir}/2-cover`);
+        expect(yaml).toContain(
+            `mv "${workDir}/2-cover/content-cover-01.png" "${workDir}/2-cover/cover-${runDate}.png"`,
+        );
+        expect(yaml).not.toContain('wt-image-cover');
+    });
+
     it('R3 & R5 — invokes the pipeline plugins through kk executor (incl. fan-in/fan-out)', () => {
         // 0097: the ingest plugins spawn inside kk executor fan-in --source (concurrent collect).
         expect(yaml).toContain('--source "aihot-ingest:');

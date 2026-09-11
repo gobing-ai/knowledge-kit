@@ -142,17 +142,22 @@ states:
             if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else PLAN_IN="${vars.work_dir}/2-plan/plan.json"; PLAN_OK=1; bun -e 'try { JSON.parse(await Bun.file(process.argv[1]).text()); process.exit(0); } catch (e) { console.warn("article: plan.json invalid JSON — replacing with untranslated plan (downstream states read this file): " + e.message); const docs = JSON.parse(await Bun.file(process.argv[2]).text()).metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("article: candidates.json metadata.docs missing"); process.exit(2); } await Bun.write(process.argv[1], JSON.stringify(docs, null, 2)); process.exit(1); }' "$PLAN_IN" "${vars.work_dir}/2-plan/candidates.json"; case $? in 0|1) PLAN_OK=0;; esac; test "$PLAN_OK" -eq 0 || { echo "article: no usable plan input"; exit 1; }; ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "$PLAN_IN" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
 
   - id: cover
-    description: "Generate the article cover image via the wt-image-cover skill (agent.run)"
+    description: "Generate the article cover image via the kk:image-authoring skill (agent.run)"
     onEnter:
       - kind: agent.run
         options:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Invoke the wt-image-cover skill.
-            Generate a 21:9 cover image for the article at ${vars.work_dir}/2-article/article-${vars.run_date}.md and save it to ${vars.work_dir}/2-cover/cover-${vars.run_date}.png.
-            Use style "news". If no image-generation backend is available, a procedurally rendered cover (e.g. PIL: news palette, headline typography) is an acceptable, expected deliverable — not a fake; generate it and write the file. Do not wait for operator confirmation.
-          expectFile: ${vars.work_dir}/2-cover/cover-${vars.run_date}.png
+            Invoke the kk:image-authoring skill (generate operation).
+            This node is a non-interactive workflow step: run every image command with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 in the environment (this workflow approves the image spend via cover_enabled) — never prompt, never open a question.
+            Command: --format cover --content ${vars.work_dir}/2-article/article-${vars.run_date}.md --out ${vars.work_dir}/2-cover
+            Derive the cover template variables (title, subtitle, topics) from the article as the skill owns; style is the format's default — do not pass --style.
+            The plugin writes ${vars.work_dir}/2-cover/content.json plus the artifact ${vars.work_dir}/2-cover/content-cover-01.png. If generation fails, report the error verbatim and stop — no procedural fallback.
+          expectFile: ${vars.work_dir}/2-cover/content-cover-01.png
+      - kind: shell
+        options:
+          command: 'mv "${vars.work_dir}/2-cover/content-cover-01.png" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png" && echo "cover normalized: cover-${vars.run_date}.png"'
 
   - id: script
     description: "Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content"
