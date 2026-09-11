@@ -15,7 +15,7 @@ describe('huggingface request building', () => {
         const provider = createHuggingface();
         expect(provider.name).toBe('huggingface');
         expect(provider.supportsReferenceImages()).toBe(false);
-        expect(PROVIDERS['huggingface']?.defaultModel).toBe('stabilityai/stable-diffusion-xl-base-1.0');
+        expect(PROVIDERS.huggingface?.defaultModel).toBe('stabilityai/stable-diffusion-xl-base-1.0');
     });
 
     test('hf: model prefix maps to the inference path (default model without prefix)', () => {

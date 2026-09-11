@@ -133,7 +133,7 @@ describe('generate', () => {
         ).rejects.toThrow('No image URL in Z.AI response');
 
         let calls = 0;
-        const badDownload = async (input: RequestInfo | URL): Promise<Response> => {
+        const badDownload = async (_input: RequestInfo | URL): Promise<Response> => {
             if (++calls === 1) {
                 return new Response(JSON.stringify({ data: [{ url: 'https://img.example/x.png' }] }), { status: 200 });
             }
