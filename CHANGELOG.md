@@ -1,3 +1,37 @@
+## [0.0.13] - 2026-09-10
+
+### Added
+
+- implement image-gen adapter hop (0107) (f3bc10c)
+- port wt image skills to kk generator plugin (feature K) (40b461e)
+
+### Fixed
+
+- prune node_modules from staged plugin packaging (008272d)
+- ship plugin packaging and execution contract repairs (0110) (5503d8c)
+- move kk user roots to ~/.config/kk (aa6157c)
+- resolve 0105 fidelity verdict to low after pixel-pair loss (a95ef4a)
+
+### Other
+
+- chore: record 0110 wrap learnings and retarget latest report (21f2063)
+- chore: drop redundant 0110 I6 inline comment (91b20a0)
+- chore: record task 0107 lifecycle and verify evidence (9fbbaf6)
+- chore: register task 0107 (adapter-hop carry-forward), cancel stray 0108 duplicate (d703801)
+- chore: record feature M (kk-user-config-roots) and task 0109 (cc538bd)
+- test: cover seedream url/error/data-uri legs (fe45ec4)
+- test: pin renderTemplate edge cases (fb549ce)
+- test: deflake kk-fanin suite (e8ead01)
+- docs: close out tasks 0111/0112 and make feature L shippable (398fd41)
+- docs: tighten publish doc-list operation dispatch semantics (1cf592c)
+- docs: close out task 0110 with change map and repo-root evidence (8b5b782)
+- docs: register task 0110 and record executor boundary integrity design (b1fd3f7)
+- docs: record 0107 re-verify PASS and 0104 deferral discharge (02b5dd2)
+- docs: record 0105 regeneration; verdict pending operator eyeball (62073b5)
+- docs: update task status after refinement (6da4389)
+- docs: chart first task batch for wayfinder map K (0102-0106) (7e04149)
+- docs: register kk-image-pipeline wayfinder map K (2a91421)
+
 ## [0.0.12] - 2026-09-08
 
 ### Added
