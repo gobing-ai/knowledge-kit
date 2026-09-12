@@ -4,7 +4,7 @@ name: Dogfood verify round of the enhanced AI-voice pipeline
 status: todo
 template: issue
 created_at: 2026-09-11T23:55:04.611Z
-updated_at: "2026-09-12T00:05:02.141Z"
+updated_at: "2026-09-12T00:09:36.118Z"
 feature_id: O
 priority: P1
 tags:
@@ -26,7 +26,16 @@ R5 (real transport verified live, fail-loud on missing SURFDASH_ROOT/POSTSURFING
 
 ### Acceptance Criteria
 
-Dogfood run end to end: run report, timeline episode notes with timestamps and URLs, ai-news tag all verified against live state; evidence captured.
+```gherkin
+Feature: Dogfood verification
+Scenario: Publish path is the real transport with no simulated residue
+  Given real credentials are present for surfdash and podcast publish
+  When the enhanced `kk-daily-ai-voice` workflow runs end to end
+  Then a real surfdash post and real podcast episode are produced — no dummy or dry-run artifacts
+Scenario: Next dogfood run exercises all enhancements
+  Given the run completed with real publish
+  Then the report, timeline show notes, and `ai-news` frontmatter are visible in the artifacts and live surfaces
+```
 
 ### Q&A
 

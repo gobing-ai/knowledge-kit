@@ -4,7 +4,7 @@ name: Timeline show notes with briefings, timestamps, and article URLs
 status: todo
 template: feature-impl
 created_at: 2026-09-11T23:55:04.609Z
-updated_at: "2026-09-12T00:04:56.444Z"
+updated_at: "2026-09-12T00:09:35.635Z"
 feature_id: O
 priority: P0
 tags:
@@ -32,16 +32,31 @@ Feature O / R2-R3. Show notes are currently URLs and full-body text rendered bef
 ### Acceptance Criteria
 
 ```gherkin
-Scenario: Enhanced notes render per-item briefing, timestamp, and article URL
-  Given an episode plan whose items carry metadata.brief and metadata.publishAt, and a surfdash publish result with metadata.postPath
-  When the workflow `show-notes` state runs with surfdash published
-  Then `show-notes.md` renders every item with its 1-2-sentence briefing, an HH:MM timestamp, timeline ordering, and its surfdash article URL
-  And the `publish-podcast` mapping carries the enhanced notes into the episode page via `metadata.showNotes`
-Scenario: Surfdash failed -> legacy fallback notes
-  Given the surfdash publish target failed so no postPath exists
-  When the `show-notes` state renders
-  Then `show-notes.md` has no article URLs and uses the legacy full-body layout
-  And `publish-podcast` uses `content.body` as the episode page notes as today
+Feature: Timeline show notes
+Scenario: Show notes render one briefing line per news item
+  Given plan items carry a one-to-two sentence briefing
+  When the `show-notes` state renders the enhanced timeline
+  Then each item opens with its briefing line
+Scenario: Show notes carry a timestamp per item
+  Given plan items carry a publish timestamp
+  When the timeline renders
+  Then each item shows its HH:MM timestamp and items are in timeline order
+Scenario: Show notes link each item's surfdash article
+  Given the surfdash publish result carries `postPath`
+  When the timeline renders
+  Then each item ends with its surfdash article URL derived O(1) from the result
+Scenario: Surfdash publish failed -> show notes degrade without URLs
+  Given the surfdash target failed so no `postPath` exists
+  When the timeline renders
+  Then no article URLs are shown and the legacy full-body layout is used
+Scenario: Fallback keeps the legacy episode notes on degraded runs
+  Given the degraded timeline output without article URLs
+  When the podcast publish maps the episode notes
+  Then the episode page uses `content.body` instead of the enhanced timeline
+Scenario: Podcast episode publishes with the timeline show notes
+  Given a surfdash-published run and the enhanced timeline rendered
+  When the podcast publish state maps the episode notes
+  Then the episode page carries the briefing/timeline format via `metadata.showNotes`
 ```
 
 ### Q&A

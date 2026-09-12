@@ -4,7 +4,7 @@ name: Run report generator plugin and workflow report step
 status: todo
 template: feature-impl
 created_at: 2026-09-11T23:55:04.605Z
-updated_at: "2026-09-12T00:04:21.207Z"
+updated_at: "2026-09-12T00:09:35.345Z"
 feature_id: O
 tags:
   - workflow
@@ -28,7 +28,17 @@ Feature O / R1. `kk-daily-ai-voice` runs produce no tunable-quality surface: sco
 
 ### Acceptance Criteria
 
-Given a completed run, the report exists with per-step wall-clock and total; per-candidate dimension scores and per-dimension min/max/avg appear; rejected-by-threshold counts match the QC verdicts.
+```gherkin
+Feature: Run report emission
+Scenario: A completed daily-voice run emits a run report
+  Given a completed `kk-daily-ai-voice` run with per-step timing recorded
+  When the `run-report` state executes
+  Then `run-report-<date>.md` exists with a per-step timing table and total duration
+Scenario: The report carries the scoring breakdown of plan candidates
+  Given the blended plan records QC scores per candidate
+  When the report is assembled
+  Then it shows per-dimension min/max/avg aggregates and per-threshold rejected counts
+```
 
 ### Q&A
 

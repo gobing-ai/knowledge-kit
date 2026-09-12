@@ -4,7 +4,7 @@ name: Stamp ai-news tag on daily AI voice articles
 status: todo
 template: feature-impl
 created_at: 2026-09-11T23:55:04.610Z
-updated_at: "2026-09-12T00:04:57.184Z"
+updated_at: "2026-09-12T00:09:35.874Z"
 feature_id: O
 priority: P1
 tags:
@@ -27,7 +27,13 @@ Feature O / R4. surfdash-pub already maps `content.metadata.tags` to article fro
 
 ### Acceptance Criteria
 
-Generated article content carries `metadata.tags ['ai-news']`; surfdash frontmatter includes the tag.
+```gherkin
+Feature: ai-news tagging
+Scenario: Article publish stamps the tag
+  Given the daily article is assembled by `daily-article-gen`
+  When the publish workflow produces frontmatter
+  Then the frontmatter tags include `ai-news` for every article shipped this flow
+```
 
 ### Q&A
 
