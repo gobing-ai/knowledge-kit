@@ -230,6 +230,8 @@ describe('episode-plan-gen', () => {
                         id: `d${n}`,
                         title: ['Anthropic 发布 Claude 5', '欧盟通过 AI 法案修正案', '谷歌 Gemini 3 正式上线'][n - 1],
                         sourceUri: `https://x.com/${n}`,
+                        // freshness is judged against today UTC; a fixed date rots past FRESHNESS_DAYS (7)
+                        metadata: { publishedAt: new Date(Date.now() - 3600_000).toISOString() },
                     }),
                 ),
             ),
