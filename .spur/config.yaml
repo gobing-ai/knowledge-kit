@@ -53,6 +53,15 @@ bootstrap:
           spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet &&
           spur --no-logo self maintain
 
+      # 06:00 daily: kk-daily-ai-voice end-to-end (ingest → article → plan →
+      # publish surfdash + podcast → run report). Morning results (episode
+      # audio, show notes, run report) land in the run's work_dir. Note: the
+      # ARK quota outage (429, resets 2026-09-18) stalls voice-gen until then;
+      # the run fails loud like any other stage.
+      - name: kk-daily-ai-voice
+        cron: "0 6 * * *"
+        command: spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
+
       # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
       # page compaction, PRAGMA optimize, and WAL checkpoint truncation).
       - name: database-weekly-maintenance
