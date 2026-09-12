@@ -30,6 +30,7 @@ Voicebox caps and request shapes: `vendors/voicebox/backend/models.py` (verified
 | D11 | No ADR | ADR for “audio as generator output” | Extends D3; two-way door (delete the plugin). `format: "audio"` convention lives here; generator spec gets a one-line pointer at ship (T3) |
 | D12 | `vendors/voicebox` is reference only | Workspace dependency on Voicebox Python; fork | External runtime, like Firecrawl |
 | D13 | Optional sibling MP3 via ffmpeg after WAV (`VOICE_GEN_MP3`) | Replace WAV; ffmpeg inside concat; extra npm encoder | Voicebox returns WAV. Keep the D5 sibling. Opt-in transcode with PATH `ffmpeg` + libmp3lame. Fail-loud if ffmpeg is missing or the transcode fails. |
+| D14 | Per-segment stderr progress + optional global render budget (`VOICE_GEN_MAX_RUN_MS`) | Silent multi-hour render; hard cap inside the plugin | Local render of a daily episode takes 1.5–3 h; without progress lines a healthy render is indistinguishable from a hang (dogfood 2026-09-12). Progress = one stderr line per segment; budget off by default, checked at segment granularity |
 
 ---
 
@@ -137,6 +138,7 @@ export interface VoiceboxClient {
 | `VOICEBOX_MAX_CHUNK_CHARS` | no | `800` | Default chunk size if script omits it |
 | `VOICEBOX_CROSSFADE_MS` | no | `50` | Default crossfade if script omits it |
 | `VOICE_GEN_MP3` | no | unset (off) | `true`/`1`/`yes`/`on` → ffmpeg transcodes the sibling WAV to `<outStem>.mp3` and sets `metadata.mp3Path`. WAV is always written. Missing ffmpeg or transcode failure → exit 1, no `--out` |
+| `VOICE_GEN_MAX_RUN_MS` | no | unset (unlimited) | Total render budget across all segments. Exceeded → fail loud before the next segment with progress in the error. Guard against a wedged Voicebox crawling for hours; raise for legitimately long scripts |
 
 The plugin reads **only** `process.env` (D9). Operator defaults may live under
 `plugins.generations.voice-gen.env` in `$KK_CONFIG` (default `~/.config/kk/config.yaml`);

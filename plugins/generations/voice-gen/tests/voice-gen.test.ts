@@ -77,6 +77,7 @@ describe('voice-gen generator plugin (0070)', () => {
         audioPath = join(testDir, 'output.wav');
         mp3Path = join(testDir, 'output.mp3');
         delete process.env.VOICE_GEN_MP3;
+        delete process.env.VOICE_GEN_MAX_RUN_MS;
     });
 
     afterEach(() => {
@@ -1254,5 +1255,51 @@ segments:
         expect(spec).toContain('format: "audio"');
         const features = await Bun.file(join(root, 'docs/05_FEATURES.md')).text();
         expect(features).toContain('Voice generator (Voicebox)');
+    });
+
+    it('progress — emits per-segment stderr progress during a local render', async () => {
+        const scriptYaml = `\ntitle: "Progress Test"\ndefault_profile: Robin\nsegments:\n  - text: "First."\n  - text: "Second."\n`;
+        const doc: Doc = {
+            id: 'doc-progress',
+            sourceUri: 'https://example.com/progress',
+            title: 'Progress Test',
+            body: scriptYaml,
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+
+        const errTarget = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: errTarget });
+        try {
+            await processGeneratorIO(inputPath, outputPath, createMockClient());
+        } finally {
+            restore();
+        }
+
+        const log = errTarget.text();
+        expect(log).toContain('2 segments queued for local render');
+        expect(log).toContain('segment 1/2 done in');
+        expect(log).toContain('segment 2/2 done in');
+    });
+
+    it('progress — VOICE_GEN_MAX_RUN_MS budget exceeded fails loud with progress in the error', async () => {
+        const scriptYaml = `\ntitle: "Budget Test"\ndefault_profile: Robin\nsegments:\n  - text: "First."\n  - text: "Second."\n`;
+        const doc: Doc = {
+            id: 'doc-budget',
+            sourceUri: 'https://example.com/budget',
+            title: 'Budget Test',
+            body: scriptYaml,
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+
+        process.env.VOICE_GEN_MAX_RUN_MS = '1';
+        const client = createMockClient({
+            resolveProfile: async (nameOrId: string) => {
+                await new Promise((resolve) => setTimeout(resolve, 6));
+                return { id: 'prof-1', name: nameOrId || 'Robin' };
+            },
+        });
+
+        await expect(processGeneratorIO(inputPath, outputPath, client)).rejects.toThrow(/render budget 1ms exceeded/);
+        expect(existsSync(outputPath)).toBe(false);
     });
 });

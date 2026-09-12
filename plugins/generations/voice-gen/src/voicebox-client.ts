@@ -73,7 +73,9 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
                 }
             } catch (err: unknown) {
                 const reason = err instanceof Error ? err.message : String(err);
-                throw new Error(`Voicebox health check failed at ${url}: ${reason}`);
+                throw new Error(
+                    `Voicebox health check failed at ${url}: ${reason} — is Voicebox.app running with its REST server enabled? (restart the app or fix VOICEBOX_URL)`,
+                );
             }
         },
 

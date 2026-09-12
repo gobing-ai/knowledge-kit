@@ -83,6 +83,12 @@ export async function processGeneratorIO(
         // 3. Validate VoiceScript
         validateVoiceScript(combinedScript);
 
+        // Local render can take hours; per-segment progress + an optional total budget keep
+        // long renders observable and bounded (dogfood 2026-09-12: healthy 72-min render read as a hang).
+        const renderStartedAt = Date.now();
+        const maxRunMs = process.env.VOICE_GEN_MAX_RUN_MS ? parseInt(process.env.VOICE_GEN_MAX_RUN_MS, 10) : 0;
+        echoError(`voice-gen: ${combinedScript.segments.length} segments queued for local render`);
+
         // 4. Generate each segment
         const segmentWavs: Uint8Array[] = [];
         const segmentGaps: number[] = [];
@@ -98,7 +104,13 @@ export async function processGeneratorIO(
         }> = [];
         let totalDuration = 0;
 
-        for (const segment of combinedScript.segments) {
+        for (const [segIndex, segment] of combinedScript.segments.entries()) {
+            if (maxRunMs > 0 && Date.now() - renderStartedAt > maxRunMs) {
+                throw new Error(
+                    `voice-gen: render budget ${maxRunMs}ms exceeded after ${segIndex}/${combinedScript.segments.length} segments — Voicebox may be wedged; raise VOICE_GEN_MAX_RUN_MS if the render is legitimately long`,
+                );
+            }
+            const segStartedAt = Date.now();
             const speakerConfig = segment.speaker ? combinedScript.speakers?.[segment.speaker] : undefined;
             const profileTarget =
                 segment.profile_id ??
@@ -284,6 +296,9 @@ export async function processGeneratorIO(
                 transcription,
                 loudnessDip,
             });
+            echoError(
+                `voice-gen: segment ${segIndex + 1}/${combinedScript.segments.length} done in ${((Date.now() - segStartedAt) / 1000).toFixed(1)}s${verifyRetries ? ` (${verifyRetries} verify ${verifyRetries === 1 ? 'retry' : 'retries'})` : ''}`,
+            );
         }
 
         // 5. Concatenate audio
