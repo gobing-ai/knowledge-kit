@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.12",
+      "version": "0.0.13",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -110,6 +110,18 @@
     },
     "plugins/generations/image-gen": {
       "name": "@gobing-ai/image-gen",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/generations/news-report-gen": {
+      "name": "@gobing-ai/news-report-gen",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/ts-runtime": "catalog:",
@@ -303,6 +315,8 @@
     "@gobing-ai/knowledge-kit": ["@gobing-ai/knowledge-kit@workspace:apps/cli"],
 
     "@gobing-ai/last30days-ingest": ["@gobing-ai/last30days-ingest@workspace:plugins/ingestions/last30days-ingest"],
+
+    "@gobing-ai/news-report-gen": ["@gobing-ai/news-report-gen@workspace:plugins/generations/news-report-gen"],
 
     "@gobing-ai/podcast-pub": ["@gobing-ai/podcast-pub@workspace:plugins/publishings/podcast-pub"],
 

@@ -82,6 +82,20 @@ export interface ShowNotesRenderOptions {
     runDate: string;
     /** Article base URL; defaults to the production site (surfing.salty.vip). */
     articleBaseUrl?: string;
+    /**
+     * Brief/timeline mode (task 0118): per-item 1–2-sentence briefing + `HH:MM`
+     * timestamp + per-item article link. When no surfdash article path is
+     * available the render degrades to the legacy full-body layout — never
+     * throws, never invents a URL.
+     */
+    briefMode?: boolean;
+    /**
+     * Absolute surfdash `metadata.postPath` from the publish result
+     * (`content/posts/articles/<locale>/<slug>/index.md`); the article URL is
+     * derived O(1) from its slug+locale — authoritative over the title/runDate
+     * slug construction, which stays the fallback.
+     */
+    articlePostPath?: string;
 }
 
 /**
@@ -101,7 +115,18 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
             .replace(/[\s_]+/g, '-');
         return s.length > 0 ? s : 'post';
     };
-    const articleUrl = `${opts.articleBaseUrl ?? 'https://surfing.salty.vip'}/zh/posts/${opts.runDate}-${slugify(opts.title)}`;
+    const baseUrl = opts.articleBaseUrl ?? 'https://surfing.salty.vip';
+    // O(1) postPath derivation (task 0118): the published slug + locale come from
+    // the real path, not from re-slugging the title. Falls back to the legacy
+    // title/runDate construction when no postPath exists (surfdash failed).
+    const segments = opts.articlePostPath?.split(/[\\/]/).filter((s) => s.length > 0) ?? [];
+    const postSlug = segments.length >= 2 ? (segments[segments.length - 2] ?? '') : '';
+    const postLocale = segments.find((s) => ['zh', 'en', 'ja'].includes(s)) ?? 'zh';
+    const articleUrl =
+        postSlug.length > 0
+            ? `${baseUrl}/${postLocale}/posts/${postSlug}`
+            : `${baseUrl}/zh/posts/${opts.runDate}-${slugify(opts.title)}`;
+    const briefMode = opts.briefMode === true && postSlug.length > 0;
     const sourceLabel = (d: Doc): string => {
         const m = d.metadata ?? {};
         if (typeof m.sourceName === 'string' && m.sourceName.trim()) return m.sourceName.trim();
@@ -111,6 +136,23 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
             return '来源';
         }
     };
+    const itemBrief = (d: Doc): string => {
+        const meta = d.metadata ?? {};
+        if (typeof meta.brief === 'string' && meta.brief.trim().length > 0) return meta.brief.trim();
+        return (d.body ?? '')
+            .trim()
+            .split(/(?<=[。！？])\s*/)
+            .slice(0, 2)
+            .join('');
+    };
+    const itemTimestamp = (d: Doc): string => {
+        const meta = d.metadata ?? {};
+        const raw = meta.publishAt;
+        const t = typeof raw === 'string' ? Date.parse(raw) : typeof raw === 'number' ? raw : Number.NaN;
+        if (!Number.isFinite(t)) return '--:--';
+        const at = new Date(t);
+        return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    };
     const lines: string[] = [`# ${opts.title}`, ''];
     docs.forEach((d, i) => {
         const body = (d.body ?? '').trim();
@@ -118,14 +160,19 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
             .split(/(?<=[。！？])\s*/)
             .slice(0, 2)
             .join('');
-        lines.push(
-            `## ${i + 1}. ${d.title ?? `条目 ${i + 1}`}`,
-            '',
-            sentences,
-            '',
-            `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''})`,
-            '',
-        );
+        lines.push(`## ${i + 1}. ${d.title ?? `条目 ${i + 1}`}`, '');
+        if (briefMode) {
+            // Timeline entry: HH:MM + 1–2-sentence briefing; the trailing link pair
+            // ends with the surfdash article URL (task 0118 R2.1–R2.4).
+            lines.push(
+                `${itemTimestamp(d)} · ${itemBrief(d)}`,
+                '',
+                `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''}) · [文章](${articleUrl})`,
+                '',
+            );
+        } else {
+            lines.push(sentences, '', `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''})`, '');
+        }
     });
     lines.push(`详情见本期完整文章：[ ${opts.title} ](${articleUrl})`, '');
     return lines.join('\n');

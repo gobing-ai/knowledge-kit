@@ -4,7 +4,7 @@ name: Timeline show notes with briefings, timestamps, and article URLs
 status: todo
 template: feature-impl
 created_at: 2026-09-11T23:55:04.609Z
-updated_at: "2026-09-12T00:09:35.635Z"
+updated_at: "2026-09-12T00:30:01.376Z"
 feature_id: O
 priority: P0
 tags:
@@ -95,11 +95,17 @@ SPLIT kk-daily-ai-voice.yaml `publish` into `publish-surfdash` / `show-notes` / 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `plugins/publishings/podcast-pub/src/show-notes.ts` — `ShowNotesRenderOptions` gains `briefMode?` + `articlePostPath?`; `renderShowNotesMarkdown` derives the article URL O(1) from the postPath slug+locale when present (fallback stays the legacy title/runDate slug), and briefMode renders per-item `HH:MM · <briefing>` + `[来源](sourceUri) · [文章](articleUrl)` timeline entries; no postPath => legacy full-body layout, never throws, never invents a URL. Footer template reused.
+- `plugins/publishings/podcast-pub/src/index.ts` — `show-notes` op routes `briefMode`/`articlePostPath` (options or `PODCAST_PUB_BRIEF_MODE` / `PODCAST_PUB_ARTICLE_POST_PATH` env).
+- `plugins/generations/episode-plan-gen/src/index.ts` — plan items emit `metadata.brief` (first two sentence-terminated sentences of the cleaned body) and `metadata.publishAt` (ISO, from the existing `docTimestamp`); omitted when empty/unparseable.
+- `plugins/kk/workflows/kk-daily-ai-voice.yaml` — publish seam split into `publish-prep` -> `publish-surfdash` (fan-out to surfdash-pub only, result in `result-surfdash.json`) -> `show-notes` (briefMode=true, `PODCAST_PUB_ARTICLE_POST_PATH` from the surfdash result postPath; empty on failure => legacy fallback) -> `publish-podcast` (stamps `metadata.showNotes` from `show-notes.md` into `content.json`, then fan-out to podcast-pub only; `map.ts:8` maps `metadata.showNotes ?? content.body`) -> `publish` (classification jq-merges both per-target results into `result.json`; full|partial|none per target). Transitions rewired accordingly; `publish-partial` marker text unchanged.
+- `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` — state-list expectation reflects the split.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun run lint` clean (only the pre-existing 4 MiB `.spur/reports` size warning); `spur workflow validate` exit 0.
+- New tests: `podcast-pub.test.ts` — briefMode timeline with postPath URL + `--:--` degraded timestamp; briefMode without postPath => legacy layout, no article URL. `episode-plan-gen.test.ts` — plan items carry `brief` + `publishAt`; unparseable timestamp => `publishAt` omitted.
+- `bun run test`: 951 pass / 1 fail — the 1 fail is the pre-existing `episode-plan-gen > processGeneratorIO ... env max items` failure, verified identical (Expected 2, Received 0) on the clean tree at `95a6dd8` via `git stash` before any edits.
 
 ### Review
 

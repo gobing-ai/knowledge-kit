@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type Content, ResultSchema } from '@gobing-ai/kk-core';
+import { type Content, type Doc, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
@@ -964,6 +964,69 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
             articleBaseUrl: 'https://example.com',
         });
         expect(customBase).toContain('详情见本期完整文章：[ Sora 2! ](https://example.com/zh/posts/2026-01-02-sora-2)');
+    });
+
+    test('briefMode renders briefing, HH:MM timestamp, and postPath-derived article URL (task 0118)', () => {
+        const docs = [
+            {
+                id: 'a',
+                title: 'Sora 2 发布',
+                body: 'OpenAI 发布 Sora 应用，集成 Sora 2 模型。这是第二句。',
+                sourceUri: 'https://blog.samaltman.com/sora-2',
+                mediaType: 'text/markdown',
+                metadata: { brief: 'OpenAI 发布 Sora 应用，集成 Sora 2 模型。', publishAt: '2026-09-06T08:05:00.000Z' },
+            },
+            {
+                id: 'b',
+                title: '无时间戳条目',
+                body: '没有时间戳的条目正文。',
+                sourceUri: 'https://example.com/b',
+                mediaType: 'text/markdown',
+                metadata: { brief: '没有时间戳的条目。' },
+            },
+        ] as Doc[];
+        const rendered = renderShowNotesMarkdown(docs, {
+            title: '每日 AI 要闻',
+            runDate: '2026-09-06',
+            briefMode: true,
+            articlePostPath: '/srv/surfdash/content/posts/articles/zh/20260906-ai-daily/index.md',
+        });
+        // HH:MM local render of the publish timestamp; missing timestamp degrades to --:--.
+        expect(rendered).toMatch(/\d{2}:\d{2} · OpenAI 发布 Sora 应用，集成 Sora 2 模型。/);
+        expect(rendered).toContain('--:-- · 没有时间戳的条目。');
+        // O(1) URL from the real published slug + locale, not re-slugged from the title.
+        expect(rendered).toContain('[文章](https://surfing.salty.vip/zh/posts/20260906-ai-daily)');
+        // Footer reuses the full-article template with the postPath-derived URL.
+        expect(rendered).toContain(
+            '详情见本期完整文章：[ 每日 AI 要闻 ](https://surfing.salty.vip/zh/posts/20260906-ai-daily)',
+        );
+        // Full body text is replaced by the briefing.
+        expect(rendered).not.toContain('这是第二句。');
+    });
+
+    test('briefMode without a postPath degrades to the legacy full-body layout without URLs (task 0118 R2.5)', () => {
+        const docs = [
+            {
+                id: 'a',
+                title: 'Sora 2 发布',
+                body: 'OpenAI 发布 Sora 应用，集成 Sora 2 模型。这是第二句。',
+                sourceUri: 'https://blog.samaltman.com/sora-2',
+                mediaType: 'text/markdown',
+                metadata: { brief: 'OpenAI 发布 Sora 应用，集成 Sora 2 模型。' },
+            },
+        ] as Doc[];
+        const rendered = renderShowNotesMarkdown(docs, {
+            title: '每日 AI 要闻',
+            runDate: '2026-09-06',
+            briefMode: true,
+        });
+        // Legacy layout: two-sentence body, source link only, slug fallback footer.
+        expect(rendered).toContain('OpenAI 发布 Sora 应用，集成 Sora 2 模型。这是第二句。');
+        expect(rendered).not.toContain('· OpenAI');
+        expect(rendered).not.toContain('[文章](');
+        expect(rendered).toContain(
+            '详情见本期完整文章：[ 每日 AI 要闻 ](https://surfing.salty.vip/zh/posts/2026-09-06-ai)',
+        );
     });
 });
 

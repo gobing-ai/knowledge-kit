@@ -498,6 +498,32 @@ describe('annotate wiring in planEpisode', () => {
         expect(plan.map((d) => d.id)).toEqual(['a', 'b']); // geopolitics tag gate still applies
     });
 
+    test('plan items carry brief + publishAt (task 0118 show-notes inputs)', () => {
+        const plan = planEpisode(blended, { maxItems: 10, date: '2026-09-06' });
+        const item = plan.find((d) => d.id === 'a');
+        expect(item).toBeDefined();
+        // 1–2-sentence briefing derived from the cleaned body.
+        expect(item?.metadata?.brief).toBe('模型发布。');
+        // Best-effort publish timestamp rides as ISO from the source metadata.
+        expect(item?.metadata?.publishAt).toBe('2026-09-06T08:00:00.000Z');
+    });
+
+    test('plan items without a parseable timestamp omit publishAt (show-notes renders --:--)', () => {
+        const undated = planEpisode(
+            [
+                doc({
+                    id: 'u',
+                    title: 'KV cache optimization for long-context inference',
+                    sourceUri: 'https://arxiv.org/abs/kv-cache',
+                    metadata: { source: 'hackernews', relevance_score: 0.9, engagement: { points: 300 } },
+                }),
+            ],
+            { maxItems: 10, date: '2026-09-06' },
+        );
+        expect(undated.length).toBeGreaterThan(0);
+        for (const entry of undated) expect(entry.metadata?.publishAt).toBeUndefined();
+    });
+
     test('gates and per-source cap still bind annotated docs (R4 — annotate drops nothing)', () => {
         const titles = [
             'Anthropic 发布 Claude 5',

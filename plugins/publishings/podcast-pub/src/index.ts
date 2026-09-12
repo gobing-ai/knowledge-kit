@@ -28,6 +28,10 @@ interface PodcastPubOptions {
     title?: unknown;
     runDate?: unknown;
     articleBaseUrl?: unknown;
+    /** Brief/timeline render flag (task 0118). */
+    briefMode?: unknown;
+    /** Surfdash publish result `metadata.postPath` (briefMode URL source). */
+    articlePostPath?: unknown;
     /** Episode-assembly options for the `publish` op (absorb publish-prep's merge; additive). */
     audioFile?: unknown;
     coverPath?: unknown;
@@ -76,7 +80,10 @@ function resolveItemId(options: PodcastPubOptions): { itemId: string } | { error
 }
 
 /** Options the `show-notes` operation reads on the payload (a subset of {@link PodcastPubOptions}). */
-type ShowNotesOpOptions = Pick<PodcastPubOptions, 'docs' | 'title' | 'runDate' | 'articleBaseUrl'>;
+type ShowNotesOpOptions = Pick<
+    PodcastPubOptions,
+    'docs' | 'title' | 'runDate' | 'articleBaseUrl' | 'briefMode' | 'articlePostPath'
+>;
 
 /**
  * Option-then-env resolution for the show-notes render options: `kk executor run`
@@ -103,8 +110,17 @@ function resolveShowNotesRenderOptions(
         return { error: 'options.runDate (or PODCAST_PUB_RUN_DATE) is required for the "show-notes" operation' };
     }
     const articleBaseUrl = resolveOptionString(options.articleBaseUrl, 'PODCAST_PUB_ARTICLE_BASE_URL');
+    const briefModeRaw = options.briefMode ?? process.env.PODCAST_PUB_BRIEF_MODE;
+    const briefMode = briefModeRaw === true || briefModeRaw === 'true' || briefModeRaw === '1';
+    const articlePostPath = resolveOptionString(options.articlePostPath, 'PODCAST_PUB_ARTICLE_POST_PATH');
     return {
-        renderOptions: { title, runDate, ...(articleBaseUrl !== undefined ? { articleBaseUrl } : {}) },
+        renderOptions: {
+            title,
+            runDate,
+            ...(articleBaseUrl !== undefined ? { articleBaseUrl } : {}),
+            ...(briefMode ? { briefMode: true } : {}),
+            ...(articlePostPath !== undefined ? { articlePostPath } : {}),
+        },
     };
 }
 

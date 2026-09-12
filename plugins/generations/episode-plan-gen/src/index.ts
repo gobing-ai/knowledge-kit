@@ -442,11 +442,22 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
     return selected.map((r) => {
         const meta = asRecord(r.doc.metadata);
         const ascii = asciiRatio(r.doc.title ?? '');
+        // Task 0118: 1–2-sentence briefing (first two 。！？-terminated sentences of the
+        // cleaned body) + best-effort publish timestamp ride the plan metadata so the
+        // podcast show-notes brief/timeline render stays deterministic, no LLM.
+        const brief = (r.doc.body ?? '')
+            .trim()
+            .split(/(?<=[。！？])\s*/)
+            .slice(0, 2)
+            .join('');
+        const published = docTimestamp(r.doc);
         return {
             ...r.doc,
             metadata: {
                 ...meta,
                 planScore: r.score,
+                ...(brief.length > 0 ? { brief } : {}),
+                ...(published !== null ? { publishAt: new Date(published).toISOString() } : {}),
                 ...(ascii > 0.5 ? { needsTranslation: true } : {}),
                 ...(r.mergedFrom.length > 0 ? { mergedFrom: r.mergedFrom } : {}),
             },

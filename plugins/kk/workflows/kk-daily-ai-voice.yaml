@@ -217,8 +217,31 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"quality-control\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/content.json"
 
+  - id: publish-prep
+    description: "Merge article Content with audio (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-prep\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
+            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, runDate: process.argv[5] }, options: { audioFile, durationSec: audioMeta.duration, coverPath: existsSync(coverPath) ? coverPath : undefined } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-audio/content.json" "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png" "${vars.run_date}"
+
+  - id: publish-surfdash
+    description: "Publish the merged Content to surfdash (single target); result lands in result.json — surfdash publishes first so show-notes can link the article (task 0118 seam reorder)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-surfdash\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            RESULT="${vars.work_dir}/3-publish/result-surfdash.json";
+            if jq -e '.targets[]? | select(.target == "surfdash-pub" and .ok == true and .status == "published")' "$RESULT" > /dev/null 2>&1; then echo "publish-surfdash cached: surfdash target ok in $RESULT"; exit 0; fi;
+            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target surfdash-pub --out "$RESULT" "$@" || true;
+            echo "publish-surfdash: surfdash target dispatched; classification happens after podcast publish"
+
   - id: show-notes
-    description: "Render uniform show notes from the episode plan (podcast-pub show-notes operation; PODCAST_PUB_TITLE carries the effective title vars.title || article.title)"
+    description: "Render timeline show notes from the episode plan (podcast-pub show-notes op, briefMode; article URL from the surfdash result postPath — surfdash failure degrades to legacy full-body layout)"
     onEnter:
       - kind: shell
         options:
@@ -229,36 +252,43 @@ states:
             TITLE_ARG="${vars.title}";
             EFFECTIVE_TITLE="$(jq -r '.title // ""' "${vars.work_dir}/2-article/content-${vars.run_date}.json")";
             if [ -z "$TITLE_ARG" ]; then TITLE_ARG="$EFFECTIVE_TITLE"; fi;
-            PODCAST_PUB_TITLE="$TITLE_ARG" PODCAST_PUB_RUN_DATE="${vars.run_date}" kk executor run podcast-pub --in "${vars.work_dir}/2-plan/plan.json" --out "${vars.work_dir}/3-publish/show-notes.md" "$@"
+            RESULT="${vars.work_dir}/3-publish/result.json";
+            POST_PATH="$(jq -r '[(.targets // [])[] | select(.target == "surfdash-pub" and .ok == true) | .metadata.postPath // empty] | first // ""' "$RESULT" 2>/dev/null || true)";
+            PODCAST_PUB_TITLE="$TITLE_ARG" PODCAST_PUB_RUN_DATE="${vars.run_date}" PODCAST_PUB_BRIEF_MODE=true PODCAST_PUB_ARTICLE_POST_PATH="$POST_PATH" kk executor run podcast-pub --in "${vars.work_dir}/2-plan/plan.json" --out "${vars.work_dir}/3-publish/show-notes.md" "$@"
 
-  - id: publish-prep
-    description: "Merge article Content with audio (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
+  - id: publish-podcast
+    description: "Publish the episode to podcast-pub with the rendered show notes (metadata.showNotes carries the brief/timeline markdown; map.ts falls back to content.body when absent — task 0118 R3)"
     onEnter:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-prep\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, runDate: process.argv[5] }, options: { audioFile, durationSec: audioMeta.duration, coverPath: existsSync(coverPath) ? coverPath : undefined } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-audio/content.json" "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png" "${vars.run_date}"
+            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-podcast\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
+            set --;
+            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
+            RESULT="${vars.work_dir}/3-publish/result-podcast.json";
+            if jq -e '.targets[]? | select(.target == "podcast-pub" and .ok == true and .status == "published")' "$RESULT" > /dev/null 2>&1; then echo "publish-podcast cached: podcast target ok in $RESULT"; exit 0; fi;
+            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const notes = await Bun.file(process.argv[2]).text(); content.metadata = { ...(content.metadata ?? {}), showNotes: notes }; await Bun.write(process.argv[1], JSON.stringify(content, null, 2))' "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/3-publish/show-notes.md" &&
+            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target podcast-pub --out "$RESULT" "$@" || true;
+            echo "publish-podcast: podcast target dispatched"
 
   - id: publish
-    description: "Fan out the merged Content to surfdash-pub and podcast-pub; classify the outcome full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned)"
+    description: "Classify the sequenced surfdash → podcast outcomes full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned; task 0118: per-target classification over the merged result.json)"
     onEnter:
       - kind: shell
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             RESULT="${vars.work_dir}/3-publish/result.json"; STATUS_FILE="${vars.work_dir}/3-publish/publish-status.txt";
-            if jq -e '.ok == true and ([.targets[]? | select(.ok == true and .status == "published")] | length) == 2' "$RESULT" > /dev/null 2>&1; then echo "publish cached: $RESULT (2 targets ok)"; printf 'full' > "$STATUS_FILE"; exit 0; fi;
-            OK_COUNT=0; TOTAL=0; STATUS="none";
-            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target surfdash-pub --target podcast-pub --out "$RESULT" "$@" || true;
-            if [ -f "$RESULT" ]; then OK_COUNT="$(jq '[.targets[]? | select(.ok == true and .status == "published")] | length' "$RESULT")"; TOTAL="$(jq '[.targets[]?] | length' "$RESULT")"; if [ "$OK_COUNT" -gt 0 ] && [ "$OK_COUNT" -eq "$TOTAL" ]; then STATUS="full"; elif [ "$OK_COUNT" -gt 0 ]; then STATUS="partial"; fi; else echo "publish: fan-out wrote no result.json — routing to none" >&2; fi;
+            TARGETS="$(jq -s '[(.[0].targets // []), (.[1].targets // [])] | add' "${vars.work_dir}/3-publish/result-surfdash.json" "${vars.work_dir}/3-publish/result-podcast.json" 2>/dev/null || echo '[]')";
+            OK_COUNT="$(printf '%s' "$TARGETS" | jq '[.[]? | select(.ok == true and .status == "published")] | length')";
+            TOTAL="$(printf '%s' "$TARGETS" | jq 'length')";
+            if [ "$OK_COUNT" -gt 0 ] && [ "$OK_COUNT" -eq "$TOTAL" ]; then STATUS="full"; elif [ "$OK_COUNT" -gt 0 ]; then STATUS="partial"; else STATUS="none"; fi;
+            jq -n --argjson targets "$TARGETS" --argjson ok "$OK_COUNT" --argjson total "$TOTAL" '{ok: ($ok == $total and $total > 0), targets: $targets}' > "$RESULT";
             printf '%s' "$STATUS" > "$STATUS_FILE";
             echo "publish: status=$STATUS ($OK_COUNT/$TOTAL targets published); routing is transition-owned"
 
   - id: publish-partial
-    description: "Partial publish — at least one target published, at least one failed; echo warning, write a .spur/run marker, preserve result.json for --retry-from, continue to done"
+    description: "Partial publish — at least one target published, at least one failed; echo warning, write a .spur/run marker, preserve result.json for --retry-from, continue to done (task 0118: surfdash failure = no-URL fallback notes; podcast failure = its own partial)"
     onEnter:
       - kind: shell
         options:
@@ -502,8 +532,8 @@ transitions:
       kind: always
 
   - from: quality-control
-    to: show-notes
-    description: "publish enabled AND QC passed -> render show notes, then publish"
+    to: publish-prep
+    description: "publish enabled AND QC passed -> merge article + audio for the publish seam"
     guard:
       kind: shell
       options:
@@ -523,15 +553,27 @@ transitions:
     guard:
       kind: always
 
-  - from: show-notes
-    to: publish-prep
-    description: "Show notes rendered -> merge article + audio for the publish seam"
+  - from: publish-prep
+    to: publish-surfdash
+    description: "Merged content ready -> surfdash publishes first (task 0118 seam reorder: article URLs must exist before show-notes render)"
     guard:
       kind: always
 
-  - from: publish-prep
+  - from: publish-surfdash
+    to: show-notes
+    description: "Surfdash dispatched (ok or failed — failure degrades to no-URL notes) -> render timeline show notes"
+    guard:
+      kind: always
+
+  - from: show-notes
+    to: publish-podcast
+    description: "Show notes rendered (briefMode timeline or legacy fallback) -> podcast publish carries them via metadata.showNotes"
+    guard:
+      kind: always
+
+  - from: publish-podcast
     to: publish
-    description: "Merged content ready -> fan out to surfdash-pub + podcast-pub"
+    description: "Podcast dispatched -> classify the per-target outcomes full|partial|none"
     guard:
       kind: always
 
