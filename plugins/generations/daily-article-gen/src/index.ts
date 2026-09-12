@@ -42,6 +42,18 @@ export function renderDailyArticle(docs: Doc[], date: string): string {
     return `# 每日 AI 资讯 — ${date}\n\n本期共 ${docs.length} 条新闻，均附可点击来源链接。\n\n${items}\n`;
 }
 
+/** Single-source daily tag: stamped on every Content this generator emits (task 0119). */
+const AI_NEWS_TAG = 'ai-news';
+
+/** Merge existing item tags (deduped) with the mandatory `ai-news` tag, first position. */
+function tagsFor(docs: Doc[]): string[] {
+    const existing = docs.flatMap((d) => {
+        const meta = d.metadata as Record<string, unknown> | undefined;
+        return Array.isArray(meta?.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [];
+    });
+    return [AI_NEWS_TAG, ...existing.filter((t) => t !== AI_NEWS_TAG)];
+}
+
 /** Build the article Content from a merged Doc[]. */
 export function docsToContent(docs: Doc[], date: string): Content {
     return ContentSchema.parse({
@@ -49,7 +61,7 @@ export function docsToContent(docs: Doc[], date: string): Content {
         body: renderDailyArticle(docs, date),
         format: 'markdown',
         references: docs.filter((d) => d.sourceUri).map((d) => ({ url: d.sourceUri, title: d.title, cite: d.id })),
-        metadata: { generator: 'kk:daily-article', date, doc_count: docs.length },
+        metadata: { generator: 'kk:daily-article', date, doc_count: docs.length, tags: tagsFor(docs) },
     });
 }
 

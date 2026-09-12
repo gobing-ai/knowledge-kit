@@ -52,7 +52,33 @@ describe('daily-article-gen', () => {
         expect(content.references).toEqual([
             { url: 'https://blog.samaltman.com/sora-2', title: 'Sora 2 发布', cite: 'd1' },
         ]);
-        expect(content.metadata).toEqual({ generator: 'kk:daily-article', date: '2026-09-04', doc_count: 1 });
+        expect(content.metadata).toEqual({
+            generator: 'kk:daily-article',
+            date: '2026-09-04',
+            doc_count: 1,
+            tags: ['ai-news'],
+        });
+    });
+
+    test('metadata.tags leads with ai-news even when no item carries tags', () => {
+        const content: Content = docsToContent([doc()], '2026-09-04');
+        expect(content.metadata?.tags).toEqual(['ai-news']);
+    });
+
+    test('metadata.tags merges existing item tags after ai-news without duplicates', () => {
+        const content: Content = docsToContent(
+            [doc({ metadata: { tags: ['openai', 'ai-news'] } }), doc({ metadata: { tags: ['video'] } })],
+            '2026-09-04',
+        );
+        expect(content.metadata?.tags).toEqual(['ai-news', 'openai', 'video']);
+    });
+
+    test('metadata.tags ignores non-string tag entries instead of clobbering them in', () => {
+        const content: Content = docsToContent(
+            [doc({ metadata: { tags: ['keep', 'me', 42, null, 'x'] } })],
+            '2026-09-04',
+        );
+        expect(content.metadata?.tags).toEqual(['ai-news', 'keep', 'me', 'x']);
     });
 
     test('processGeneratorIO reads Doc[] and writes article Content (ARTICLE_DATE=YYYYMMDD)', async () => {
