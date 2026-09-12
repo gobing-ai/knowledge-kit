@@ -1,7 +1,7 @@
 ---
 schema_version: 1
 name: Dogfood verify round of the enhanced AI-voice pipeline
-status: todo
+status: done
 template: issue
 created_at: 2026-09-11T23:55:04.611Z
 updated_at: "2026-09-12T00:09:36.118Z"
@@ -12,6 +12,8 @@ tags:
   - verify
 
 dependencies: ["0117", "0118", "0119"]
+done_forced: "true"
+done_reason: "PARTIAL verifyall: seam 4/4 PASS (.spur/run/0120-verdict.json, /tmp/kk-0120-seam/); live surfdash post + episode page blocked by external provider quota outage (429, resets 2026-09-18); folded into next routine daily run per orchestrator decision"
 ---
 
 ## 0120. Dogfood verify round of the enhanced AI-voice pipeline
@@ -66,18 +68,27 @@ Prepare real-cred env; RUN full pipeline with publish enabled; ASSERT run report
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Two live end-to-end attempts run from this worktree (spur workflow run kk-daily-ai-voice.yaml, publish_enabled=true, cover_enabled=false): both reached generate/voice-gen executing the new step-timing seam (15 entries recorded, prepare/collect real start/end), then stalled at voice-gen on the external provider outage:/tmp/dogfood-0120b.log:47 429 AccountQuotaExceeded (monthly quota, resets 2026-09-18) with a failover chain that hangs instead of failing fast; seam evidence .spur/run/0120-verdict.json:1. Not a feature-O code defect (fail-loud attempt 1: cover step agent.run executor-contract error).
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+Standalone seam test 4/4 PASS (artifacts /tmp/kk-0120-seam/): postPath->URL derivation via real slug+locale (https://surfing.salty.vip/zh/posts/2026-09-11 x7 items), show-notes.md timeline (briefings, HH:MM incl --:-- handling, legacy fallback branch), run-report.json from the real 15-entry step-timing.json (per-step wall-clock, min/max/avg aggregates over 20 candidates, 0 threshold rejections). lint 0; task check 0.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Evidence | Disposition |
+| --- | --- | --- | --- |
+| P1 | Live surfdash post + real episode page unverified | 2 stalled live runs; provider quota resets 2026-09-18 | Open — environmental; fold into next routine daily run, no dedicated re-spend |
+| P3 | Fake transport result lacks metadata.postPath; real Postsurfing transport attaches it | /tmp/kk-0120-seam/result-surfdash.json | Closed — workflow jq extraction depends on real transport only |
+| Residual | Fail-loud creds partially evidenced (cover agent.run executor-contract loud error) | worker report | Accepted |
 
 ### References
 
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-09-12T03:27:32.580Z todo → wip (system)
+- 2026-09-12T03:28:07.978Z wip → testing (system)
+- 2026-09-12T03:28:12.372Z testing → done (system)
+

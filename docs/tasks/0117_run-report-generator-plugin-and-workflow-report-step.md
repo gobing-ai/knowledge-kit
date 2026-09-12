@@ -1,7 +1,7 @@
 ---
 schema_version: 1
 name: Run report generator plugin and workflow report step
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.605Z
 updated_at: "2026-09-12T00:09:35.345Z"
@@ -11,6 +11,8 @@ tags:
   - generator
   - report
 
+done_forced: "true"
+done_reason: verifyall PASS verdict .spur/run/0117-verdict.json
 ---
 
 ## 0117. Run report generator plugin and workflow report step
@@ -74,18 +76,42 @@ SCAFFOLD plugin manifest (plugin.json, kind generator) and src/index.ts executor
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+new plugin `plugins/generations/news-report-gen/{plugin.json,src/index.ts}` (kind generator, transport matches apps/cli/src/invoke.ts:127 runInvoke); wf yaml: `run-report` state after publish/publish-partial (yaml:287-318) with QC_MIN_* envs, NEWS_REPORT_REJECTED_FILE, NEWS_REPORT_TIMING_FILE, NEWS_REPORT_DATE; EXIT-trap step-timing stamps in 17 shell steps; no engine change.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1.1 | MET | report path/timing table: kk-daily-ai-voice.yaml:310,318; readTiming news-report-gen/src/index.ts:137-158 |
+| R1.2 | MET | per-candidate 4-dim scores: scoreOf index.ts:43-46 vs episode-plan-gen:378 |
+| R1.3 | MET | aggregates index.ts:58-80; rejected reason grammar :644-645; QC_MIN_* envs :29-35 |
+| R1.4 | MET | no engine change; shell EXIT-trap stamps; missing timing -> omit :99-115 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Given a completed run, report exists wit | MET | mixed | Given a completed run, report exists with per-step+total timing, per-candidate scores, min/max/avg, rejected counts. \| bun run test: 9 news-report-gen tests pass; lint 0; task check 0; workflow validate 0 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Evidence | Disposition |
+| --- | --- | --- | --- |
+| P3 | Timing-file alternative: engine-side ledger deferred by design | .spur/run/0117-verdict.json R1.4 | Closed — documented upgrade path |
+| P4 | Task doc frozen env name NEWS_QC_MIN_*)| differs from implemented QC_MIN_* (workflow real names) | news-report-gen/src/index.ts:29-35 vs yaml QC envs | Closed — real contract wins, doc text superseded |
+| Residual risk | Timing rows same-second steps show 0-耗時; cosmetic | verify worker report | Accepted |
+
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-12T03:15:44.646Z todo → wip (system)
+- 2026-09-12T03:28:01.601Z wip → testing (system)
+- 2026-09-12T03:28:08.414Z testing → done (system)
+

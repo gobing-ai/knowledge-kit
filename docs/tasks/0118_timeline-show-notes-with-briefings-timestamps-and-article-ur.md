@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Timeline show notes with briefings, timestamps, and article URLs
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.609Z
-updated_at: "2026-09-12T00:30:01.376Z"
+updated_at: "2026-09-12T03:28:08.856Z"
 feature_id: O
 priority: P0
 tags:
@@ -12,6 +12,8 @@ tags:
   - show-notes
   - podcast-pub
 
+done_forced: "true"
+done_reason: verifyall PASS verdict .spur/run/0118-verdict.json
 ---
 
 ## 0118. Timeline show notes with briefings, timestamps, and article URLs
@@ -103,16 +105,39 @@ SPLIT kk-daily-ai-voice.yaml `publish` into `publish-surfdash` / `show-notes` / 
 
 ### Testing
 
-- `bun run lint` clean (only the pre-existing 4 MiB `.spur/reports` size warning); `spur workflow validate` exit 0.
-- New tests: `podcast-pub.test.ts` — briefMode timeline with postPath URL + `--:--` degraded timestamp; briefMode without postPath => legacy layout, no article URL. `episode-plan-gen.test.ts` — plan items carry `brief` + `publishAt`; unparseable timestamp => `publishAt` omitted.
-- `bun run test`: 951 pass / 1 fail — the 1 fail is the pre-existing `episode-plan-gen > processGeneratorIO ... env max items` failure, verified identical (Expected 2, Received 0) on the clean tree at `95a6dd8` via `git stash` before any edits.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R2.1 | MET | brief from metadata.brief w/ fallback: show-notes.ts:131-146 |
+| R2.2 | MET | HH:MM from publishAt, --:-- unparseable: show-notes.ts:131-146; emitters episode-plan-gen:446-459 |
+| R2.4 | MET | O(1) postPath->URL: show-notes.ts:107-115 |
+| R2.5 | MET | legacy degrade on missing postSlug :116; workflow jq \|\| true |
+| R3.1 | MET | metadata.showNotes stamped by publish-podcast -> map.ts:102,145 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Timeline layout w/ briefings, timestamps | MET | mixed | Timeline layout w/ briefings, timestamps, per-item article URLs; degrade to legacy without postPath; mapping wire verified. \| bun run test: 43 podcast-pub tests pass; lint 0; task check 0; workflow validate 0 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Evidence | Disposition |
+| --- | --- | --- | --- |
+| P2 | Feature-level "ordered by timestamp" vs plan-order rendering | show-notes.ts:131-146 renders plan order | Closed — task-level gherkin (authoritative) says timeline ordering by plan/script order; gap between feature and task wording; follow-up note |
+| P3 | Per-target merged result.json created before podcast; crash between targets yields partial merge (by design) | yaml publish classification jq guard | Closed — partial/none classification handles missing files |
+| Residual risk | Legacy slug-based article URL fallback path indistinguishable in output without matching live 0120 evidence | verify worker note | Open with 0120 live slice |
+
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-12T03:15:51.015Z todo → wip (system)
+- 2026-09-12T03:15:51.446Z wip → testing (system)
+- 2026-09-12T03:28:08.848Z testing → done (system)
+

@@ -1,7 +1,7 @@
 ---
 schema_version: 1
 name: Stamp ai-news tag on daily AI voice articles
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.610Z
 updated_at: "2026-09-12T00:09:35.874Z"
@@ -11,6 +11,8 @@ tags:
   - generator
   - tagging
 
+done_forced: "true"
+done_reason: verifyall PASS verdict .spur/run/0119-verdict.json
 ---
 
 ## 0119. Stamp ai-news tag on daily AI voice articles
@@ -66,18 +68,41 @@ STAMP `metadata.tags` in daily-article-gen output; VERIFY frontmatter carries th
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+daily-article-gen/src/index.ts:46-56 AI_NEWS_TAG constant + tagsFor(docs): lead position, dedupe merge, non-string filter; stamped in docsToContent metadata (:64). No env knob (frozen name by task intent).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R4.1 | MET | AI_NEWS_TAG + tagsFor(): daily-article-gen/src/index.ts:46-56; stamped in docsToContent :64 |
+| R4.2 | MET | surfdash frontmatter tags mapping pre-existing surfdash-pub/src/index.ts:76-100; single-source verified |
+| R4.3 | MET | no env/CLI knob; no AI_NEWS_TAG env read anywhere |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Article frontmatter tags include ai-news | MET | mixed | Article frontmatter tags include ai-news as lead, deduped merge, non-strings filtered. \| bun run test: 11 daily-article-gen tests pass; lint 0; task check 0 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Finding | Evidence | Disposition |
+| --- | --- | --- | --- |
+| P3 | Tag constant not env-tunable by design (frozen) | daily-article-gen/src/index.ts:46-56 | Closed — matches task intent (frozen name) |
+| P4 | ai-news tag also collides with surfdash tag style? | surfdash-pub/src/index.ts:76-100 | Closed — mapping verified, single source |
+| Residual risk | None outstanding | 11 plugin tests | Accept |
+
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-12T03:15:52.085Z todo → wip (system)
+- 2026-09-12T03:28:02.052Z wip → testing (system)
+- 2026-09-12T03:28:09.288Z testing → done (system)
+
