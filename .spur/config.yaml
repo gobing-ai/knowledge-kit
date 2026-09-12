@@ -60,7 +60,16 @@ bootstrap:
       # the run fails loud like any other stage.
       - name: kk-daily-ai-voice
         cron: "0 6 * * *"
-        command: spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
+        # work_dir is a required var (prepare fails loud without it);
+        # publish_enabled defaults to false, cover_enabled=true currently
+        # fails loud (agy image task is async and never lands the artifact),
+        # and skip_review=true avoids the HITL pause at `review` — a 06:00
+        # cron run must be headless. $(date +%F) is expanded by the job
+        # worker's /bin/sh. Re-enable cover once the image path completes
+        # synchronously.
+        command: >-
+          spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
+          --vars '{"work_dir":".spur/runs/kk-daily-ai-voice/$(date +%F)","publish_enabled":"true","cover_enabled":"false","skip_review":"true"}'
 
       # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
       # page compaction, PRAGMA optimize, and WAL checkpoint truncation).
