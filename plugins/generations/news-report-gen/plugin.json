@@ -1,0 +1,7 @@
+{
+    "name": "news-report-gen",
+    "kind": "generator",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Assembles the per-run report from existing run artifacts: kept-candidate QC scores + per-dimension min/max/avg aggregates + threshold-rejected counts (rejected audit via NEWS_REPORT_REJECTED_FILE) + per-step wall-clock timing (step-timing.jsonl JSONL via NEWS_REPORT_TIMING_FILE). Output-only — no publish side effect (task 0117)."
+}

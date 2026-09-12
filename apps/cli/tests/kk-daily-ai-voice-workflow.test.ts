@@ -39,6 +39,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'publish-prep',
             'publish',
             'publish-partial',
+            'run-report',
             'translate-en',
             'translate-en-agent',
             'translate-ja',
