@@ -68,6 +68,8 @@ bootstrap:
         # worker's /bin/sh. Re-enable cover once the image path completes
         # synchronously.
         command: >-
+          curl -sf -m 2 http://127.0.0.1:17493/health >/dev/null
+          || nohup /Applications/Voicebox.app/Contents/MacOS/voicebox-server --port 17493 >>/tmp/voicebox-server.log 2>&1 &
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
           --vars '{"work_dir":".spur/runs/kk-daily-ai-voice/$(date +%F)","publish_enabled":"true","cover_enabled":"false","skip_review":"true"}'
 
