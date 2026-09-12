@@ -6,6 +6,8 @@ version: "1.2"
 name: knowledge-kit
 
 # ── Portable bootstrap (consumed by @gobing-ai/ts-infra runNodeApplication) ──
+# Scheduler jobs invoke the installed `spur` CLI (0.3.80) — this project has no
+# repo-local spur source, so the global install is the canonical binary.
 bootstrap:
   logging:
     enabled: true
@@ -32,21 +34,30 @@ bootstrap:
       # Incremental refresh, waking hours only (07:00-23:50; the cron hour range
       # keeps 00:00-06:59 quiet). `history daily` = import + analyze; analyze is
       # what refreshes the Board History rollups (token usage included) - import
-      # alone never does. Checkpoint resume + the rollup-freshness short-circuit
-      # keep a no-op tick cheap (I81).
+      # alone never does. Split into explicit commands so a failing import never
+      # masks a skipped analyze. Checkpoint resume + the rollup-freshness
+      # short-circuit keep a no-op tick cheap (I81).
       - name: history-refresh
         cron: "*/10 7-23 * * *"
-        command: spur --no-logo history daily
+        command: spur --no-logo history import && spur --no-logo history analyze
 
       # 05:00 daily: full-corpus import (checkpoint resume self-heals gaps),
       # then the twelve-section history-anatomy diagnostic report headless. On
       # a cache hit the workflow skips the token-expensive model stages and
       # republishes provenance (ADR-079), so a ready report costs no tokens.
+      # Ends with database maintenance (PRAGMA optimize + wal_checkpoint).
       - name: history-daily-report
         cron: "3 5 * * *"
         command: >-
           spur --no-logo history import --source all &&
-          spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet
+          spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet &&
+          spur --no-logo self maintain
+
+      # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
+      # page compaction, PRAGMA optimize, and WAL checkpoint truncation).
+      - name: database-weekly-maintenance
+        cron: "0 4 * * 0"
+        command: spur --no-logo self maintain --vacuum
 
 # ── Teams (feature M) — declarative rosters materialized by `spur team up` ──
 # The sample team below keeps the Teams board tabs (Roster / Messages /
