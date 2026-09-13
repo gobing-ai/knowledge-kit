@@ -75,7 +75,8 @@ describe('bundle-plugins EXCLUDE (0111)', () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
-    });
+        // The subprocess bundles every real product plugin (~6s); default 5s timeout flakes.
+    }, 30_000);
 });
 
 describe('bundle-plugins staging flow (in-process fixtures)', () => {
