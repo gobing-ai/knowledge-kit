@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: VoiceScript parse/merge/validate with warn-ignore"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-13T05:54:10.542Z
-updated_at: "2026-09-13T06:48:14.667Z"
+updated_at: "2026-09-13T20:13:19.088Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -18,16 +18,16 @@ Captured from the creation title: "omni-voice-gen: VoiceScript parse/merge/valid
 
 ### Requirements
 
-- [ ] R1. `voicescript.py` ports `parseDocToVoiceScript` exactly: `{` → JSON (YAML fallback on JSON parse
+- [x] R1. `voicescript.py` ports `parseDocToVoiceScript` exactly: `{` → JSON (YAML fallback on JSON parse
     failure); `[` non-`[-` plain-text fast path; YAML mapping containing any voicescript key →
     VoiceScript; otherwise plain-text single segment with default_profile from env/doc metadata.
-- [ ] R2. `merge_voice_scripts` port: title/default resolution and duplicate-speaker-key error identical
+- [x] R2. `merge_voice_scripts` port: title/default resolution and duplicate-speaker-key error identical
     to voice-gen.
-- [ ] R3. `validate_voice_script` port with identical constants (TEXT_MAX 50000, INSTRUCT_MAX 500,
+- [x] R3. `validate_voice_script` port with identical constants (TEXT_MAX 50000, INSTRUCT_MAX 500,
     chunk 100..5000 default 800, crossfade 0..500 default 50) and identical error semantics; the
     Voicebox engine/language allowlists are NOT ported (OmniVoice language set is a superset).
-- [ ] R4. `resolve_instruct` port: instruct+emotion merge rules identical.
-- [ ] R5. Warn-and-ignore (D5): `engine`, `personality`, `effects_chain`, `effect_preset` at any level are
+- [x] R4. `resolve_instruct` port: instruct+emotion merge rules identical.
+- [x] R5. Warn-and-ignore (D5): `engine`, `personality`, `effects_chain`, `effect_preset` at any level are
     collected during validation and reported in ONE stderr warning per run naming every ignored
     field; validation never fails on them.
 
@@ -125,7 +125,7 @@ Handoff: 0125 imports the five public names above + WarnSink; no other consumer.
 
 - 2026-09-13T06:41:31.970Z backlog → todo (system)
 
-- [ ] (covers: Incompatible VoiceScript fields warn and are ignored) VoiceScript parse/merge/validate parity; incompatible fields warned and dropped
+- [x] (covers: Incompatible VoiceScript fields warn and are ignored) VoiceScript parse/merge/validate parity; incompatible fields warned and dropped
 
 ### Q&A
 
@@ -180,15 +180,64 @@ Handoff: 0125 imports the five public names above + WarnSink; no other consumer.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented the voicescript.ts → voicescript.py port per the frozen Design names.
+
+- `plugins/generations/omni-voice-gen/src/omni_voice_gen/voicescript.py`
+  - Constants (voicescript.py:31-38): TEXT_MAX/INSTRUCT_MAX/chunk/crossfade identical to TS;
+    `WARN_IGNORE_FIELDS` + `VOICESCRIPT_KEYS`.
+  - Dataclasses `VoiceScript`/`VoiceSegment`/`VoiceSpeaker` — unknown YAML keys dropped via
+    `_filter` (unknown fields never fail parse, per Q&A).
+  - `parse_doc_to_voicescript` — branch order preserved: `{` → yaml.safe_load (JSON ⊂ YAML;
+    failure/non-dict raise voice-gen's two "Invalid VoiceScript JSON structure" messages) →
+    `[` non-`[-` tag fast path (unless body contains `segments:`/`speakers:`) → YAML mapping
+    with any VOICESCRIPT_KEYS → plain-text single segment with default_profile env →
+    doc.metadata.voiceProfile.
+  - `merge_voice_scripts` — first-wins scalar defaults, env-profile override semantics,
+    duplicate speaker key error, title fallback "Generated voice"; identical to TS.
+  - `validate_voice_script(script, sink)` — same checks and message text as TS; engine/language
+    allowlists NOT ported (language passes through); engine/personality/effects_chain/
+    effect_preset collected into `WarnSink` at script/speaker/segment level; validate raises,
+    never warns (single stderr emission is pipeline.py's job, 0125).
+  - `resolve_instruct` — instruct/emotion merge rules identical.
+- `plugins/generations/omni-voice-gen/tests/test_voicescript.py` — 53 tests: voice-gen corpus
+  parity (JSON/YAML/plain/tag paths, merge, every validation limit) + warn-ignore collection.
+  The JSON-root-non-object guard is unreachable via real YAML for `{`-prefixed bodies, so it is
+  exercised with a monkeypatched parser (comment in test).
+
+Deviation note: none from the frozen Design. TS error text kept verbatim where the TS produces
+one; non-dict segments/speakers keep their "must be an object" errors.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | src/omni_voice_gen/voicescript.py parseDocToVoiceScript port; tests: test_parse_json_object, test_parse_json_failure_raises_voicegen_message, test_parse_bracket_tag_plain_text_fast_path, test_parse_dash_bracket_is_not_tag_fast_path, test_parse_bracket_with_yaml_structure_goes_to_yaml, test_parse_yaml_mapping_with_voicescript_key, test_parse_yaml_mapping_without_voicescript_key_is_plain_text, test_parse_plain_text_uses_env_default_profile, test_parse_plain_text_env_profile_beats_doc_metadata, test_parse_plain_text_falls_back_to_doc_metadata_profile |
+| R2 | MET | merge_voice_scripts port; tests: test_merge_combines_defaults_speakers_segments, test_merge_duplicate_speaker_key_raises, test_merge_title_falls_back_to_generated_voice, test_merge_script_default_profile_overrides_env, test_merge_env_and_metadata_profile_fallback |
+| R3 | MET | validate_voice_script port with identical constants; tests: test_validate_script_chunk_range, test_validate_script_crossfade_range, test_validate_accepts_boundary_values, test_validate_segment_text_cap, test_validate_segment_instruct_limit, test_validate_speaker_instruct_limit |
+| R4 | MET | resolve_instruct port; tests: test_resolve_instruct_variants |
+| R5 | MET | warn-and-ignore (D5): engine/personality/effects_chain/effect_preset collected at any level, ONE stderr warning per run, validation never fails; tests: test_warn_ignore_collects_all_levels_once, test_warn_sink_empty_emits_none; suite total 74 passed (21 scaffold + 53 voicescript) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Parse paths match voice-gen | MET | test | 13 parse-path tests (JSON/YAML/plain-text/tag fast paths, default_profile env>metadata precedence) in tests/test_voicescript.py |
+| Scenario: Validation limits identical | MET | test | TEXT_MAX 50000 / INSTRUCT_MAX 500 / chunk 100..5000 / crossfade 0..500 boundary + range tests |
+| Scenario: Warn-and-ignore fields | MET | test | test_warn_ignore_collects_all_levels_once asserts single warning naming every ignored field across nesting levels |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 
@@ -199,4 +248,7 @@ Handoff: 0125 imports the five public names above + WarnSink; no other consumer.
 ### History
 
 - 2026-09-13T06:41:31.970Z backlog → todo (system)
+- 2026-09-13T20:13:18.376Z todo → wip (system)
+- 2026-09-13T20:13:18.731Z wip → testing (system)
+- 2026-09-13T20:13:19.088Z testing → done (system)
 
