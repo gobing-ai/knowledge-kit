@@ -27,6 +27,9 @@ rules:
             - "/node_modules/"
             - "/dist/"
             - "vendors/"
+            # Plugin-local Python venvs (gitignored third-party site-packages);
+            # vendored code trips the LOOSE matcher (gradio locale bundles etc.).
+            - ".venv/"
             # Gitignored plugin staging tree (npm-tarball copy of root plugins/);
             # mirrors the canonical tree, which is out of scope by design.
             - "apps/cli/plugins/"

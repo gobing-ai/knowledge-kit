@@ -76,6 +76,10 @@ rules:
       - "plugins/ingestions/**/rules/**"
       - "plugins/generations/**/rules/**"
       - "plugins/publishings/**/rules/**"
+    exclude:
+      # Gitignored plugin-local Python venvs: vendored site-packages ship their
+      # own commands/, SKILL.md, etc.; they are not authored capabilities.
+      - "**/.venv/**"
 
   - id: no-flat-plugins-workspace-glob
     description: >

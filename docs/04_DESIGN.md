@@ -356,7 +356,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `DocSchema`, `ContentSchema`, `ResultSchema`, `DocListSchema` | Zod schemas | Pure data contract schemas |
+| `DocSchema`, `ContentSchema`, `ResultSchema`, `DocListSchema`, `omniVoiceGenContentSchema` | Zod schemas | Pure data contract schemas; `omniVoiceGenContentSchema` pins omni-voice-gen audio output (`format: "audio"`, `metadata.generator: "kk:omni-voice-gen"`, F611/0121) |
 | `BriefSchema`, `GeneratorInputSchema` | Zod schemas | **Specified, not implemented** (ADR-007 R3; feature D) |
 | `Doc`, `Content`, `Result` | types | Inferred TypeScript types |
 | `Brief`, `GeneratorInput` | types | **Specified, not implemented** (ADR-007 R3; feature D) |

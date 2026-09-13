@@ -40,6 +40,8 @@ export {
     type Doc,
     DocListSchema,
     DocSchema,
+    type OmniVoiceGenContent,
+    omniVoiceGenContentSchema,
     type Result,
     ResultSchema,
 } from './schemas';

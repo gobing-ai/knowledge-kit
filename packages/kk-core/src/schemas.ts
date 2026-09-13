@@ -42,9 +42,38 @@ export const ResultSchema = z.object({
 /** List of documents (ingestion output / generator input). */
 export const DocListSchema = z.array(DocSchema);
 
+/**
+ * omni-voice-gen audio output Content (docs/design/omni-voice-gen.md §4): `format: "audio"`
+ * with generator-pinned metadata. Extra metadata keys pass through (QC/segment detail may grow).
+ */
+export const omniVoiceGenContentSchema = ContentSchema.extend({
+    format: z.literal('audio'),
+    metadata: z.looseObject({
+        generator: z.literal('kk:omni-voice-gen'),
+        audioPath: z.string(),
+        duration: z.number(),
+        segments: z.array(
+            z.looseObject({
+                generationId: z.string(),
+                profile: z.string(),
+                speaker: z.string().optional(),
+                emotion: z.string().optional(),
+                duration: z.number(),
+                verifyRetries: z.number(),
+                transcription: z.string().optional(),
+                loudnessDip: z.boolean().optional(),
+            }),
+        ),
+        mp3Path: z.string().optional(),
+        qc: z.record(z.string(), z.unknown()).optional(),
+    }),
+});
+
 /** Inferred document unit from {@link DocSchema}. */
 export type Doc = z.infer<typeof DocSchema>;
 /** Inferred generator content from {@link ContentSchema}. */
 export type Content = z.infer<typeof ContentSchema>;
 /** Inferred publish result from {@link ResultSchema}. */
 export type Result = z.infer<typeof ResultSchema>;
+/** Inferred omni-voice-gen audio content from {@link omniVoiceGenContentSchema}. */
+export type OmniVoiceGenContent = z.infer<typeof omniVoiceGenContentSchema>;
