@@ -758,6 +758,45 @@ describe('surfdash-pub operations (0096)', () => {
         }
     });
 
+    test('pushPostGit treats an already-committed, already-pushed post as success', async () => {
+        const base = join(process.cwd(), `.tmp-sdpush-${Date.now()}`);
+        await mkdir(base, { recursive: true });
+        const origin = join(base, 'origin.git');
+        const work = join(base, 'work');
+        const run = async (cmd: string[], cwd: string): Promise<void> => {
+            const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+            const [code, , err] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            if (code !== 0) throw new Error(`${cmd.join(' ')} exited ${code}: ${err}`);
+        };
+        try {
+            await run(['git', 'init', '--bare', '-b', 'main', origin], base);
+            await run(['git', 'init', '-b', 'main', work], base);
+            await run(['git', 'config', 'user.email', 'test@test'], work);
+            await run(['git', 'config', 'user.name', 'test'], work);
+            const postRel = join('content', 'posts', 'articles', 'zh', '20260912-x');
+            await mkdir(join(work, postRel), { recursive: true });
+            await writeFile(join(work, postRel, 'index.md'), 'post');
+            await run(['git', 'add', '.'], work);
+            await run(['git', 'commit', '-m', 'seed'], work);
+            await run(['git', 'remote', 'add', 'origin', origin], work);
+            await run(['git', 'push', '-u', 'origin', 'main'], work);
+
+            const outcome = await pushPostGit(work, postRel, 'content: retry');
+            expect(outcome.ok).toBe(true);
+            if (outcome.ok) expect(outcome.hash.length).toBeGreaterThan(3);
+            const pushedSubject = await new Response(
+                Bun.spawn(['git', '--git-dir', origin, 'log', '--format=%s', '-1', 'main']).stdout,
+            ).text();
+            expect(pushedSubject.trim()).toBe('seed');
+        } finally {
+            await rm(base, { recursive: true, force: true });
+        }
+    });
+
     test('pushPostGit refuses to push from a non-main branch', async () => {
         const base = join(process.cwd(), `.tmp-sdpush-branch-${Date.now()}`);
         await mkdir(base, { recursive: true });

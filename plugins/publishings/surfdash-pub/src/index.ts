@@ -245,8 +245,22 @@ export async function pushPostGit(surfdashRoot: string, relPostDir: string, mess
     }
     const add = await spawnCli(['git', 'add', '--', relPostDir], surfdashRoot);
     if (add.exitCode !== 0) return { ok: false, error: `surfdash git add failed: ${cliErrorText(add)}` };
-    const commit = await spawnCli(['git', 'commit', '-m', message, '--', relPostDir], surfdashRoot);
-    if (commit.exitCode !== 0) return { ok: false, error: `surfdash git commit failed: ${cliErrorText(commit)}` };
+    // Idempotent retry: post content identical to HEAD stages nothing. Only push when
+    // origin lacks commits touching this post; a clean post means it's already live.
+    const staged = await spawnCli(['git', 'diff', '--cached', '--quiet', '--', relPostDir], surfdashRoot);
+    if (staged.exitCode === 0) {
+        const unpushed = await spawnCli(
+            ['git', 'diff', '--quiet', 'origin/main..HEAD', '--', relPostDir],
+            surfdashRoot,
+        );
+        if (unpushed.exitCode === 0) {
+            const hash = await spawnCli(['git', 'rev-parse', '--short', 'HEAD'], surfdashRoot);
+            return { ok: true, hash: hash.stdout.trim() || 'unknown' };
+        }
+    } else {
+        const commit = await spawnCli(['git', 'commit', '-m', message, '--', relPostDir], surfdashRoot);
+        if (commit.exitCode !== 0) return { ok: false, error: `surfdash git commit failed: ${cliErrorText(commit)}` };
+    }
     const push = await spawnCli(['git', 'push', 'origin', 'main'], surfdashRoot);
     if (push.exitCode !== 0) {
         return {
