@@ -41,6 +41,7 @@ sync: [T3]
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
 | [article-publish-fanout-brief.md](design/article-publish-fanout-brief.md) | Article generator home, podcast show notes, and fan-out shape brief | research (F61) |
+| [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | scaffold (F611, 0121) |
 
 ## 1. CLI commands
 
@@ -262,6 +263,12 @@ preserved, not rejected.
 | `kind` | `ingestion` \| `generator` \| `publish` | yes | shipped | Selects the I/O data contract via `kindContract(kind)` |
 | `entry` | string (min 1) | yes | shipped | Relative path to the executable entry the invoker spawns |
 | `version` | string | no | shipped | Informational |
+
+**Spawn seam (shipped).** `pluginEntryCmd` (`apps/cli/src/invoke.ts:125`) runs `.ts`/`.js` entries under
+`bun`; any other `entry` is spawned **directly as an executable** — a non-TS plugin ships a shebang
+wrapper as its entire integration seam (e.g. `omni-voice-gen`'s `bin/omni-voice-gen`, which execs
+`uv run --project <plugin> python -m omni_voice_gen`). The manifest alone selects the spawn mode; no
+`package.json` or runtime registration is required.
 | `description` | string | no | shipped | Informational |
 | `accepts` | `('brief' \| 'docs')[]` | no | **specified — not implemented** (D) | Generator-only. Declares which input shapes the plugin handles; defaults to both when absent. Lets a mismatch fail at **resolve time** rather than inside the plugin |
 | `operations` | `Record<string, { input: 'doc-list' \| 'markdown', output: 'doc-list' \| 'markdown' }>` | no | shipped (0110 I3) | Named non-Result operations the plugin accepts (e.g. podcast-pub `show-notes`: doc-list → markdown). Only declared operations can receive non-`Content` inputs; undeclared array dispatch is rejected pre-spawn |
@@ -462,6 +469,24 @@ Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-t
 | `concatWavs(wavs, gapsMs?)` | function | Concat RIFF WAV buffers with optional gap silence |
 | `createVoiceboxClient(opts?)` | function | Client factory for local Voicebox REST API |
 | `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
+
+### `omni-voice-gen` (`plugins/generations/omni-voice-gen`, kind `generator`)
+
+Python (make + uv) plugin; not a Bun workspace package — `plugin.json` is the only manifest and the
+executable `bin/omni-voice-gen` shebang wrapper is the whole spawn seam (§1.7). Public surface is the
+`omni_voice_gen` package under `src/`:
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `__main__.main(argv?)` | function | CLI `--in`/`--out` entry; exit 0 success / 1 failure with `omni-voice-gen failed: <msg>` on stderr; empty `Doc[]` writes the notice Content without loading torch/omnivoice (lazy `pipeline` import) |
+| `contract.Doc` / `contract.Content` | pydantic models | Mirror `@gobing-ai/kk-core` Doc/Content (unknown fields stripped, zod parity) |
+| `contract.parse_doc_list(raw)` | function | Parse `Doc[]` JSON; raises `ValueError` with the reason on any violation |
+| `contract.content_to_json(content)` | function | 2-space-indent JSON, nulls dropped (voice-gen `JSON.stringify` parity) |
+| `contract.NOTICE_CONTENT` | constant | Empty-input notice `Content` (`format: "markdown"`, title `Notice`) |
+
+Quality gate: `make coverage` (pytest + per-file line/function >= 90% via `scripts/coverage_gate.py`);
+`make lint` (ruff). Remaining pipeline modules (voicescript/profiles/backend/audio/qc/mp3/pipeline)
+land in tasks 0122–0125 per `docs/design/omni-voice-gen.md`.
 
 ### `@gobing-ai/podcast-pub` (`plugins/publishings/podcast-pub`, kind `publish`)
 

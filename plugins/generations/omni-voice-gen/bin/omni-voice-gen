@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec uv run --project "$(cd "$(dirname "$0")/.." && pwd)" python -m omni_voice_gen "$@"
