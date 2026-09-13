@@ -76,15 +76,20 @@ presets and not an average:
 - `confidence` — capped at `medium` when the set disagrees on any fidelity axis.
 - `source.refImages` — all N absolute paths, in the order given.
 
-## What extraction never writes
+## What extraction writes
 
-**Style only — no format extraction in v1.** A `FormatPreset` carries
-`template`, `variables`, `keywords`, `defaultStyle`, `outputFilename` — none of
-which is recoverable from a picture. Never write a `formats/*.yaml` file. What
-an image *does* yield is arithmetic, not extraction: the extraction report
-**states the observed pixel dimensions and the nearest named aspect ratio** of
-each reference, chosen from `21:9`, `4:3`, `1:1`, `16:9`, `3:4`, `9:16`, as a
-suggestion for which existing format to pair the style with.
+**Style by default; format drafting is opt-in.** A `FormatPreset` carries `template`,
+`variables`, `keywords`, `defaultStyle`, `outputFilename` — none of which is
+*recoverable* from a picture, so extraction alone never writes a `formats/*.yaml`.
+What an image *does* yield is arithmetic: the extraction report **states the observed
+pixel dimensions and the nearest named aspect ratio** of each reference, chosen from
+`21:9`, `4:3`, `1:1`, `16:9`, `3:4`, `9:16`.
+
+When the operator passes `--emit-format <name> --job <job>` alongside `--extract-style`,
+that arithmetic plus the same visual analysis feeds a **draft** format preset — measured
+fields taken, visual defaults authored, structural fields reused from the shipped
+skeleton, operator fine-tuning expected. That procedure lives in
+[format-drafting.md](format-drafting.md); this file stays style-only.
 
 ## Pass-through degradation (visible, never silent)
 

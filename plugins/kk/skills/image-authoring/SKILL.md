@@ -86,8 +86,10 @@ owns the schema-fill rules, the multi-image merge rules, the cap-5 refusal wordi
 where the preset is written (user root, shadowing by design), and the validation step:
 read the images with your own vision, write `~/.config/kk/image-presets/styles/<name>.yaml`
 filling exactly the `StylePreset` fields, then validate with a `KK_IMAGE_DRY_RUN=1` run
-whose `style` is the new preset's name. Extraction never writes a `formats/*.yaml` —
-a format is not recoverable from a picture.
+whose `style` is the new preset's name. Extraction writes `styles/*.yaml`; with
+`--emit-format <name> --job <job>` it additionally **drafts** a `formats/*.yaml` from
+the same references — a different act with its own authoritative procedure:
+[references/format-drafting.md](references/format-drafting.md).
 
 ### list-presets
 
@@ -109,6 +111,7 @@ output is also the text an unknown `--format`/`--style` refusal quotes.
 [prompt] [--format <name>] [--style <name>] [--var KEY=VALUE]... [--content <file>]
          [--ref <path>]... [--count <n>] [--provider <name>] [--model <id>]
          [--out <dir|file>] [--dry-run] [--list-presets] [--extract-style <name>]
+         [--emit-format <name> --job <job>]
 ```
 
 | Token | Meaning | Default |
@@ -126,11 +129,15 @@ output is also the text an unknown `--format`/`--style` refusal quotes.
 | `--dry-run` | compose and price, generate nothing | off |
 | `--list-presets` | → the `list-presets` operation | — |
 | `--extract-style <name>` | → the `extract-style` operation; **requires `--ref`** | — |
+| `--emit-format <name>` | with `--extract-style`: also draft a format preset from the same refs; **requires `--job`** | — |
+| `--job free\|cover\|illustration` | declared job for the drafted format — never inferred from pixels | — |
 
 **Validation is this skill's, before any plugin spawn**, each refusal naming the
 offending argument: unknown `--format` or `--style` (quote what `list-presets` would
 show); `--count` on a non-`illustration` job; more than five `--ref` paths;
-`--extract-style` without `--ref`; a `--content` file that does not exist. Flags the
+`--extract-style` without `--ref`; `--emit-format` without `--extract-style` or
+without `--job`, or a `--job` outside `free|cover|illustration`; a `--content` file
+that does not exist. Flags the
 wt plugin retired are **answered, not ignored** — state the replacement and stop; the
 table lives in
 [references/migrating-from-wt.md](references/migrating-from-wt.md)

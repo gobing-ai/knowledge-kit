@@ -1,7 +1,7 @@
 ---
 name: image-generate
 description: Generate images from a prompt or an article — covers, illustrations, or free-form — using named format and style presets.
-argument-hint: "[--format free|cover|illustration] [--style vibrant|minimalist|photorealistic|technical-diagram|editorial|fresh|warm|cute|sketch|clean-webapp-ui|<custom>] [--content <file>] [--ref <img>…] [--var K=V] [--dry-run] [--list-presets] [prompt]"
+argument-hint: "[prompt] [--format free|cover|illustration] [--style vibrant|minimalist|photorealistic|technical-diagram|editorial|fresh|warm|cute|sketch|clean-webapp-ui|<custom>] [--content <file>] [--ref <img>…] [--var K=V] [--dry-run] [--list-presets]"
 allowed-tools: ["Skill"]
 ---
 
@@ -18,14 +18,15 @@ Skill(skill="kk:image-authoring", args="$ARGUMENTS")
 
 **Formats** (`--format`; default `free`):
 
-| Format         | Job                                               | Aspect | Default style     |
-| -------------- | ------------------------------------------------- | ------ | ----------------- |
-| `free`         | free-form image from the positional prompt        | 1:1    | vibrant           |
-| `cover`        | article cover; requires `--content <file>`        | 21:9   | vibrant           |
-| `illustration` | auto-insert illustrations into `--content <file>` | 4:3    | technical-diagram |
+| Format | Job | Aspect | Default style |
+| ------ | --- | ------ | ------------- |
+| `free` | free-form image from the positional prompt | 1:1 | vibrant |
+| `cover` | article cover; requires `--content <file>` | 21:9 | vibrant |
+| `illustration` | auto-insert illustrations into `--content <file>` | 4:3 | technical-diagram |
 
 **Styles** (`--style`): `vibrant` · `minimalist` · `photorealistic` · `technical-diagram` ·
 `editorial` · `fresh` · `warm` · `cute` · `sketch` · `clean-webapp-ui` — or any custom style
 preset name. Omit to use the preference `image.style` or the format's default.
 
-Run `--list-presets` for the live list with origins and shadows.
+Run `--list-presets` for the live list with origins and shadows. Create new presets from
+reference images with `/kk:image-extract`.
