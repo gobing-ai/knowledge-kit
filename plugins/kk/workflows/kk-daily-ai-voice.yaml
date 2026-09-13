@@ -19,6 +19,7 @@ vars:
   limit: "10"
   language: "zh"
   voice_profile: "robin-news"
+  voice_generator: "voice-gen"
   title: ""
   cursor: ""
   state_file: ""
@@ -197,7 +198,7 @@ states:
             bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "robin-news" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/voicescript-${vars.run_date}.yaml" "${vars.work_dir}/3-audio/docs.json" "${vars.voice_profile}"
 
   - id: generate
-    description: "Invoke voice-gen generator plugin to generate audio"
+    description: "Invoke voice generator plugin (voice_generator var) to generate audio"
     onEnter:
       - kind: shell
         options:
@@ -206,7 +207,7 @@ states:
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             if [ -f "${vars.work_dir}/3-audio/content.json" ] && jq -e '.metadata.qc.passed == true' "${vars.work_dir}/3-audio/content.json" > /dev/null 2>&1; then echo "audio cached: ${vars.work_dir}/3-audio/content.json (QC passed)"; exit 0; fi;
-            VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run voice-gen --in "${vars.work_dir}/3-audio/docs.json" --out "${vars.work_dir}/3-audio/content.json" "$@"
+            VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run ${vars.voice_generator} --in "${vars.work_dir}/3-audio/docs.json" --out "${vars.work_dir}/3-audio/content.json" "$@"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"

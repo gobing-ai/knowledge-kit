@@ -114,7 +114,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('kk executor run episode-plan-gen');
         expect(yaml).toContain('kk executor run daily-article-gen');
         expect(yaml).toContain('kk executor run dailynews-gen');
-        expect(yaml).toContain('kk executor run voice-gen');
+        expect(yaml).toContain('kk executor run $' + '{vars.voice_generator}');
         expect(yaml).toContain('kk executor fan-out');
         expect(yaml).toContain('kk executor run podcast-pub');
         expect(yaml).toContain('kk executor run surfdash-pub');
@@ -133,18 +133,19 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
             return;
         }
-        const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
-        const binDir = join(testRoot, 'bin');
-        const workDir = join(testRoot, 'work dir');
-        const fakeKkPath = join(binDir, 'kk');
-        const callLog = join(testRoot, 'calls.jsonl');
-        const runId = `f6-integration-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        for (const voiceGenerator of [undefined, 'omni-voice-gen'] as const) {
+            const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
+            const binDir = join(testRoot, 'bin');
+            const workDir = join(testRoot, 'work dir');
+            const fakeKkPath = join(binDir, 'kk');
+            const callLog = join(testRoot, 'calls.jsonl');
+            const runId = `f6-integration-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-        try {
-            mkdirSync(binDir);
-            writeFileSync(
-                fakeKkPath,
-                `#!/usr/bin/env bun
+            try {
+                mkdirSync(binDir);
+                writeFileSync(
+                    fakeKkPath,
+                    `#!/usr/bin/env bun
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -255,104 +256,120 @@ if (plugin === 'aihot-ingest') {
         format: 'audio',
         metadata: { audioPath: wavPath },
     }));
+} else if (plugin === 'omni-voice-gen') {
+    readFileSync(inPath, 'utf8');
+    const wavPath = join(dirname(outPath), 'content.wav');
+    writeFileSync(wavPath, 'RIFF-fake-wave');
+    writeFileSync(outPath, JSON.stringify({
+        title: 'Daily AI News',
+        body: wavPath,
+        format: 'audio',
+        metadata: { audioPath: wavPath, generator: 'kk:omni-voice-gen' },
+    }));
 } else {
     process.exit(4);
 }
 `,
-            );
-            chmodSync(fakeKkPath, 0o755);
-            const vars = JSON.stringify({
-                work_dir: workDir,
-                limit: '2',
-                language: 'en',
-                voice_profile: 'Alex',
-                title: 'AI Today',
-                cursor: 'cursor-1',
-                state_file: join(testRoot, 'cursor state.json'),
-                skip_review: 'true',
-                cover_enabled: 'false',
-                plan_translate_enabled: 'false',
-                publish_enabled: 'false',
-                last30days_enabled: 'true',
-                plugins_path: join(testRoot, 'plugin root'),
-            });
-            const result = Bun.spawnSync(
-                ['spur', 'workflow', 'run', workflowPath, '--vars', vars, '--run-id', runId, '--json'],
-                {
-                    cwd: join(import.meta.dir, '../../..'),
-                    env: {
-                        ...process.env,
-                        // The test itself may run inside a pipeline step — never leak the guard
-                        // into the child, or spur refuses to start the workflow under test.
-                        SPUR_WORKFLOW_RUN_ACTIVE: undefined,
-                        KK_TEST_CALL_LOG: callLog,
-                        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+                );
+                chmodSync(fakeKkPath, 0o755);
+                const vars = JSON.stringify({
+                    work_dir: workDir,
+                    limit: '2',
+                    language: 'en',
+                    voice_profile: 'Alex',
+                    title: 'AI Today',
+                    cursor: 'cursor-1',
+                    state_file: join(testRoot, 'cursor state.json'),
+                    skip_review: 'true',
+                    cover_enabled: 'false',
+                    plan_translate_enabled: 'false',
+                    publish_enabled: 'false',
+                    last30days_enabled: 'true',
+                    plugins_path: join(testRoot, 'plugin root'),
+                    voice_generator: voiceGenerator,
+                });
+                const result = Bun.spawnSync(
+                    ['spur', 'workflow', 'run', workflowPath, '--vars', vars, '--run-id', runId, '--json'],
+                    {
+                        cwd: join(import.meta.dir, '../../..'),
+                        env: {
+                            ...process.env,
+                            // The test itself may run inside a pipeline step — never leak the guard
+                            // into the child, or spur refuses to start the workflow under test.
+                            SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+                            KK_TEST_CALL_LOG: callLog,
+                            PATH: `${binDir}:${process.env.PATH ?? ''}`,
+                        },
+                        stdout: 'pipe',
+                        stderr: 'pipe',
                     },
-                    stdout: 'pipe',
-                    stderr: 'pipe',
-                },
-            );
+                );
 
-            expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
-            expect(existsSync(join(workDir, '1-ingest/source.json'))).toBe(true);
-            const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
-            // 0097: per-source docs live in fan-in's internal temp files — only blended.json lands.
-            expect(existsSync(join(workDir, '1-ingest/blended.json'))).toBe(true);
-            expect(existsSync(join(workDir, '1-ingest/docs.json'))).toBe(false);
-            expect(existsSync(join(workDir, '1-ingest/last30days-docs.json'))).toBe(false);
-            expect(existsSync(join(workDir, `1-ingest/horizon-docs-${runDate}.json`))).toBe(false);
-            expect(existsSync(join(workDir, '2-facts/content.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-facts/core-facts.md'))).toBe(true);
-            expect(existsSync(join(workDir, '2-plan/content.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-plan/plan.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-plan/annotated.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-plan/candidates.json'))).toBe(true);
-            expect(existsSync(join(workDir, '2-plan/candidates.rejected.json'))).toBe(true);
-            expect(existsSync(join(workDir, `2-article/content-${runDate}.json`))).toBe(true);
-            expect(existsSync(join(workDir, `2-article/article-${runDate}.md`))).toBe(true);
-            expect(existsSync(join(workDir, `2-script/content-${runDate}.json`))).toBe(true);
-            expect(existsSync(join(workDir, `2-script/voicescript-${runDate}.yaml`))).toBe(true);
-            expect(existsSync(join(workDir, '3-audio/docs.json'))).toBe(true);
-            expect(existsSync(join(workDir, '3-audio/content.json'))).toBe(true);
-            expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
+                expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
+                expect(existsSync(join(workDir, '1-ingest/source.json'))).toBe(true);
+                const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
+                // 0097: per-source docs live in fan-in's internal temp files — only blended.json lands.
+                expect(existsSync(join(workDir, '1-ingest/blended.json'))).toBe(true);
+                expect(existsSync(join(workDir, '1-ingest/docs.json'))).toBe(false);
+                expect(existsSync(join(workDir, '1-ingest/last30days-docs.json'))).toBe(false);
+                expect(existsSync(join(workDir, `1-ingest/horizon-docs-${runDate}.json`))).toBe(false);
+                expect(existsSync(join(workDir, '2-facts/content.json'))).toBe(true);
+                expect(existsSync(join(workDir, '2-facts/core-facts.md'))).toBe(true);
+                expect(existsSync(join(workDir, '2-plan/content.json'))).toBe(true);
+                expect(existsSync(join(workDir, '2-plan/plan.json'))).toBe(true);
+                expect(existsSync(join(workDir, '2-plan/annotated.json'))).toBe(true);
+                expect(existsSync(join(workDir, '2-plan/candidates.json'))).toBe(true);
+                expect(existsSync(join(workDir, '2-plan/candidates.rejected.json'))).toBe(true);
+                expect(existsSync(join(workDir, `2-article/content-${runDate}.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-article/article-${runDate}.md`))).toBe(true);
+                expect(existsSync(join(workDir, `2-script/content-${runDate}.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-script/voicescript-${runDate}.yaml`))).toBe(true);
+                expect(existsSync(join(workDir, '3-audio/docs.json'))).toBe(true);
+                expect(existsSync(join(workDir, '3-audio/content.json'))).toBe(true);
+                expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
+                if (voiceGenerator) {
+                    const swapped = JSON.parse(readFileSync(join(workDir, '3-audio/content.json'), 'utf8'));
+                    expect(swapped.metadata.generator).toBe('kk:omni-voice-gen');
+                }
 
-            const calls = readFileSync(callLog, 'utf8')
-                .trim()
-                .split('\n')
-                .map((line) => JSON.parse(line));
-            expect(calls.map((call) => call.plugin)).toEqual([
-                'aihot-ingest',
-                'last30days-ingest',
-                'horizon-ingest',
-                'fan-in',
-                'core-facts-gen',
-                'episode-plan-gen',
-                'episode-plan-gen',
-                'daily-article-gen',
-                'dailynews-gen',
-                'voice-gen',
-            ]);
-            // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
-            // kk executor run forwards only --in/--out (0092 spawn contract).
-            expect(calls.filter((call) => call.plugin === 'episode-plan-gen').map((call) => call.mode)).toEqual([
-                'plan',
-                'filter',
-            ]);
-            const scriptCall = calls.find((call) => call.plugin === 'dailynews-gen');
-            expect(scriptCall).toMatchObject({ language: 'en', title: 'AI Today', voiceProfile: 'Alex' });
-            expect(scriptCall?.inPath).toContain('plan.json');
-            // fan-in has no --plugins-path flag (0097: collect must not forward one) — only run calls do.
-            expect(calls.find((call) => call.plugin === 'fan-in')?.pluginsPath).toBeUndefined();
-            expect(
-                calls
-                    .filter((call) => call.via === 'run')
-                    .every((call) => call.pluginsPath === join(testRoot, 'plugin root')),
-            ).toBe(true);
+                const calls = readFileSync(callLog, 'utf8')
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line));
+                expect(calls.map((call) => call.plugin)).toEqual([
+                    'aihot-ingest',
+                    'last30days-ingest',
+                    'horizon-ingest',
+                    'fan-in',
+                    'core-facts-gen',
+                    'episode-plan-gen',
+                    'episode-plan-gen',
+                    'daily-article-gen',
+                    'dailynews-gen',
+                    voiceGenerator ?? 'voice-gen',
+                ]);
+                // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
+                // kk executor run forwards only --in/--out (0092 spawn contract).
+                expect(calls.filter((call) => call.plugin === 'episode-plan-gen').map((call) => call.mode)).toEqual([
+                    'plan',
+                    'filter',
+                ]);
+                const scriptCall = calls.find((call) => call.plugin === 'dailynews-gen');
+                expect(scriptCall).toMatchObject({ language: 'en', title: 'AI Today', voiceProfile: 'Alex' });
+                expect(scriptCall?.inPath).toContain('plan.json');
+                // fan-in has no --plugins-path flag (0097: collect must not forward one) — only run calls do.
+                expect(calls.find((call) => call.plugin === 'fan-in')?.pluginsPath).toBeUndefined();
+                expect(
+                    calls
+                        .filter((call) => call.via === 'run')
+                        .every((call) => call.pluginsPath === join(testRoot, 'plugin root')),
+                ).toBe(true);
 
-            const wrappedDocs = JSON.parse(readFileSync(join(workDir, '3-audio/docs.json'), 'utf8'));
-            expect(wrappedDocs[0].metadata.voiceProfile).toBe('Alex');
-        } finally {
-            rmSync(testRoot, { recursive: true, force: true });
+                const wrappedDocs = JSON.parse(readFileSync(join(workDir, '3-audio/docs.json'), 'utf8'));
+                expect(wrappedDocs[0].metadata.voiceProfile).toBe('Alex');
+            } finally {
+                rmSync(testRoot, { recursive: true, force: true });
+            }
         }
-    });
+    }, 30000);
 });

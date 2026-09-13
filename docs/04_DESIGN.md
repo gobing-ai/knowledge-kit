@@ -41,7 +41,7 @@ sync: [T3]
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
 | [article-publish-fanout-brief.md](design/article-publish-fanout-brief.md) | Article generator home, podcast show notes, and fan-out shape brief | research (F61) |
-| [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | scaffold (F611, 0121) |
+| [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | shipped (F611) |
 
 ## 1. CLI commands
 
@@ -486,8 +486,9 @@ executable `bin/omni-voice-gen` shebang wrapper is the whole spawn seam (§1.7).
 | `contract.NOTICE_CONTENT` | constant | Empty-input notice `Content` (`format: "markdown"`, title `Notice`) |
 
 Quality gate: `make coverage` (pytest + per-file line/function >= 90% via `scripts/coverage_gate.py`);
-`make lint` (ruff). Remaining pipeline modules (voicescript/profiles/backend/audio/qc/mp3/pipeline)
-land in tasks 0122–0125 per `docs/design/omni-voice-gen.md`.
+`make lint` (ruff). All pipeline modules shipped (tasks 0121–0125). The `kk-daily-ai-voice` workflow
+selects the generator via `voice_generator` var (default `voice-gen`; swap to `omni-voice-gen` via
+`--vars '{"voice_generator":"omni-voice-gen"}'`); see `docs/design/omni-voice-gen.md`.
 
 ### `@gobing-ai/podcast-pub` (`plugins/publishings/podcast-pub`, kind `publish`)
 
@@ -535,7 +536,7 @@ File: `.spur/config.yaml`
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
-| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + voice-gen -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial) (F61 destination; restructured 2026-09-06 by 0097) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + `${vars.voice_generator}` (default voice-gen; swap to omni-voice-gen via `--vars '{"voice_generator":"omni-voice-gen"}'`) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial) (F61 destination; restructured 2026-09-06 by 0097) |
 | Daily AI voice gap analysis | `docs/design/kk-daily-ai-voice-gap-analysis.md` | Gap analysis vs ideal 3-stage daily pipeline (F61 task 0088) |
 | Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |
 | Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |

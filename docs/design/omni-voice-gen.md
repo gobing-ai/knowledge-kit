@@ -1,6 +1,6 @@
 # omni-voice-gen — OmniVoice-backed voice generator (Python)
 
-Status: proposed (F611). Companion to `voice-gen.md`; only deltas and the ported contract are
+Status: shipped (F611). Companion to `voice-gen.md`; only deltas and the ported contract are
 specified here. Where this doc and `voice-gen.md` disagree, this doc wins for omni-voice-gen.
 
 ## 1. Decisions

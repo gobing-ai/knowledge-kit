@@ -41,7 +41,7 @@
     ├── [done] **F5**: Solo-podcast workflow (voice-gen dogfood) ([F5_solo-podcast-workflow-voice-gen-dogfood.md](./F5_solo-podcast-workflow-voice-gen-dogfood.md))
     ├── [done] **F6**: Daily AI news workflow and plugins ([F6_daily-ai-news-workflow-and-plugins.md](./F6_daily-ai-news-workflow-and-plugins.md))
         └── [active] **F61**: Daily AI news end-to-end pipeline (wayfinder map) ([F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md](./F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md))
-            └── [active] **F611**: OmniVoice voice generator plugin (omni-voice-gen) ([F611_omnivoice-voice-generator-plugin-omni-voice-gen.md](./F611_omnivoice-voice-generator-plugin-omni-voice-gen.md))
+            └── [done] **F611**: OmniVoice voice generator plugin (omni-voice-gen) ([F611_omnivoice-voice-generator-plugin-omni-voice-gen.md](./F611_omnivoice-voice-generator-plugin-omni-voice-gen.md))
     ├── [done] **F7**: Audio-authoring skill extraction (wayfinder map) ([F7_audio-authoring-skill-extraction-wayfinder-map.md](./F7_audio-authoring-skill-extraction-wayfinder-map.md))
     ├── [done] **F8**: Run-anywhere workflow and script resolution ([F8_run-anywhere-workflow-and-script-resolution.md](./F8_run-anywhere-workflow-and-script-resolution.md))
     └── [done] **F9**: Explain-things skill and tell-me command ([F9_explain-things-skill-and-tell-me-command.md](./F9_explain-things-skill-and-tell-me-command.md))
