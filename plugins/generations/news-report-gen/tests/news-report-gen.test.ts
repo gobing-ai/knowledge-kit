@@ -11,6 +11,7 @@ import {
     rejectedCounts,
     renderReportMarkdown,
     scoreAggregates,
+    sourceBreakdown,
 } from '../src/index';
 
 function candidate(
@@ -129,6 +130,35 @@ describe('news-report-gen IO', () => {
         const onDisk = (await Bun.file(outPath).json()) as Content;
         expect(onDisk.body).toBe(content.body);
         await rm(dir, { recursive: true, force: true });
+    });
+
+    test('sourceBreakdown groups kept candidates by ingest source with domain sub-counts', () => {
+        const grouped = sourceBreakdown([
+            candidate({}, { metadata: { source: 'hackernews', sourceName: 'news.ycombinator.com' } }),
+            candidate({}, { metadata: { source: 'hackernews', sourceName: 'news.ycombinator.com' } }),
+            candidate({}, { metadata: { source: 'aihot', sourceName: 'techcrunch.com' } }),
+            candidate({}, { metadata: { source: 'aihot', sourceName: 'arxiv.org' } }),
+            candidate({}, { metadata: {} }),
+        ]);
+        expect(grouped.map((g) => [g.source, g.items])).toEqual([
+            ['aihot', 2],
+            ['hackernews', 2],
+            ['未知', 1],
+        ]);
+        expect(grouped[0]?.domains.map((d) => `${d.domain}(${d.items})`)).toEqual([
+            'arxiv.org(1)',
+            'techcrunch.com(1)',
+        ]);
+        expect(grouped[2]?.domains.map((d) => `${d.domain}(${d.items})`)).toEqual(['example.com(1)']);
+    });
+
+    test('renderReportMarkdown renders the per-source section', () => {
+        const md = renderReportMarkdown(
+            [candidate({}, { metadata: { source: 'rss', sourceName: 'openai.com|blog', scores: {} } })],
+            '2026-09-12',
+        );
+        expect(md).toContain('## 来源分布');
+        expect(md).toContain('| rss | 1 | openai.com\\|blog (1) |');
     });
 
     test('main exits 1 with the standard error shape on missing args', async () => {

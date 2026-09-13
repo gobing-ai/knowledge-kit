@@ -74,6 +74,46 @@ export function scoreAggregates(
     return out;
 }
 
+/** Hostname of a URL-ish value; unparseable/absent → '—'. */
+function domainOf(value: unknown): string {
+    if (typeof value !== 'string' || value.trim() === '') return '—';
+    try {
+        return new URL(value).hostname || '—';
+    } catch {
+        return '—';
+    }
+}
+
+/**
+ * Per-source item counts with domain sub-counts from candidate metadata
+ * (`source`/`sourceName`, falling back to the URL hostname).
+ */
+export function sourceBreakdown(
+    docs: Doc[],
+): { source: string; items: number; domains: { domain: string; items: number }[] }[] {
+    const bySource = new Map<string, Map<string, number>>();
+    for (const doc of docs) {
+        const meta = doc.metadata as Record<string, unknown> | undefined;
+        const source = typeof meta?.source === 'string' && meta.source.trim() !== '' ? meta.source : '未知';
+        const domain =
+            typeof meta?.sourceName === 'string' && meta.sourceName.trim() !== ''
+                ? meta.sourceName
+                : domainOf(meta?.originalUrl ?? doc.sourceUri);
+        const domains = bySource.get(source) ?? new Map<string, number>();
+        domains.set(domain, (domains.get(domain) ?? 0) + 1);
+        bySource.set(source, domains);
+    }
+    return [...bySource.entries()]
+        .map(([source, domains]) => ({
+            source,
+            items: [...domains.values()].reduce((sum, count) => sum + count, 0),
+            domains: [...domains.entries()]
+                .map(([domain, count]) => ({ domain, items: count }))
+                .sort((a, b) => b.items - a.items || a.domain.localeCompare(b.domain)),
+        }))
+        .sort((a, b) => b.items - a.items || a.source.localeCompare(b.source));
+}
+
 /** Rejected-count per threshold dimension from the filter's rejection reasons (`dim:<score><<min>`). */
 export function rejectedCounts(
     rejected: { doc: Doc; reasons: string[] }[],
@@ -159,6 +199,13 @@ export function renderReportMarkdown(
         for (const dim of QC_DIMENSIONS) {
             const a = agg[dim];
             lines.push(`| ${dim} | ${a.min ?? '—'} | ${a.max ?? '—'} | ${a.avg ?? '—'} | ${a.count} |`);
+        }
+        lines.push('');
+        lines.push('## 来源分布', '');
+        lines.push('| 来源 | 条数 | 域名 |', '| --- | --- | --- |');
+        for (const group of sourceBreakdown(docs)) {
+            const domainCell = group.domains.map((d) => `${d.domain.replace(/\|/g, '\\|')} (${d.items})`).join(', ');
+            lines.push(`| ${group.source} | ${group.items} | ${domainCell || '—'} |`);
         }
         lines.push('');
     }
