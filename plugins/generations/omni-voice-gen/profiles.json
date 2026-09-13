@@ -1,0 +1,12 @@
+{
+    "sample-clone": {
+        "ref_audio": "voices/sample-ref.wav",
+        "ref_text": "Replace with the transcript of your reference clip."
+    },
+    "sample-prompt": {
+        "prompt": "voices/sample-prompt.pt"
+    },
+    "sample-narrator": {
+        "instruct": "Speak in a calm, measured narrator voice."
+    }
+}

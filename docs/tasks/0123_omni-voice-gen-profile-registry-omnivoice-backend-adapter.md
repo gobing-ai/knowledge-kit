@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: profile registry + OmniVoice backend adapter"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-13T05:54:10.751Z
-updated_at: "2026-09-13T06:48:14.825Z"
+updated_at: "2026-09-13T20:54:42.902Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -18,23 +18,23 @@ Captured from the creation title: "omni-voice-gen: profile registry + OmniVoice 
 
 ### Requirements
 
-- [ ] R1. `profiles.py` loads the registry JSON (default `<plugin>/profiles.json`, override
+- [x] R1. `profiles.py` loads the registry JSON (default `<plugin>/profiles.json`, override
     `OMNIVOICE_PROFILE_REGISTRY`) mapping name → `{ref_audio, ref_text}` | `{prompt}` | `{instruct}`;
     resolution is case-insensitive by name; unknown profile → error naming the profile and the
     registry path.
-- [ ] R2. `backend.py` defines the `Backend` protocol (`load`, `generate(SegmentSpec) -> (wav_bytes,
+- [x] R2. `backend.py` defines the `Backend` protocol (`load`, `generate(SegmentSpec) -> (wav_bytes,
     duration_sec)`, `transcribe(wav: bytes, language: str) -> str`) and a `FakeBackend` importable
     by any test (lives in backend.py, not conftest, so 0125 reuses it).
-- [ ] R3. Real backend `OmnivoiceBackend`: lazy single `OmniVoice.from_pretrained(OMNIVOICE_MODEL default
+- [x] R3. Real backend `OmnivoiceBackend`: lazy single `OmniVoice.from_pretrained(OMNIVOICE_MODEL default
     k2-fsa/OmniVoice)` per instance; device auto-select cuda→mps→cpu unless `OMNIVOICE_DEVICE`;
     registry entry → ref_audio/ref_text | VoiceClonePrompt.load | instruct; `OMNIVOICE_SPEED`
     default 1.0; explicit seed → `torch.manual_seed` before generate; output normalized to 24kHz
     16-bit mono WAV bytes + duration (float seconds).
-- [ ] R4. `transcribe` uses the model's own ASR: `model.load_asr_model()` lazily on first call, then
+- [x] R4. `transcribe` uses the model's own ASR: `model.load_asr_model()` lazily on first call, then
     `model.transcribe((waveform, 24000))` (public API — verified omnivoice 0.2.1 exposes both;
     default model `openai/whisper-large-v3-turbo`, override via new env `OMNIVOICE_ASR_MODEL`).
     Any ASR failure raises (caller treats transcription as best-effort).
-- [ ] R5. Language strings pass straight to `OmniVoice.generate(language=...)` — OmniVoice validates
+- [x] R5. Language strings pass straight to `OmniVoice.generate(language=...)` — OmniVoice validates
     against its LANG_IDS (600+); we do not pre-validate.
 
 ### Acceptance Criteria
@@ -134,7 +134,7 @@ through backend.transcribe only.
 
 - 2026-09-13T06:41:30.387Z backlog → todo (system)
 
-- [ ] (covers: Profile registry resolution) Registry forms (ref_audio, .pt prompt, instruct) resolve to OmniVoice inputs; unknown profile exits 1
+- [x] (covers: Profile registry resolution) Registry forms (ref_audio, .pt prompt, instruct) resolve to OmniVoice inputs; unknown profile exits 1
 
 ### Q&A
 
@@ -190,15 +190,77 @@ through backend.transcribe only.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Change map:**
+
+- `plugins/generations/omni-voice-gen/src/omni_voice_gen/profiles.py:21` — registry load/resolve
+  (D4): `ProfileKind = Literal["clone","prompt","instruct"]` (`profiles.py:21`), `ProfileEntry`
+  dataclass (`profiles.py:25`), `ProfileRegistry` dict carrying `.path` (`profiles.py:35`),
+  `load_registry(path=None)` (`profiles.py:66`, env `OMNIVOICE_PROFILE_REGISTRY` override, else
+  `<plugin>/profiles.json`), `resolve_profile(name, registry)` case-insensitive
+  (`profiles.py:93`). Fail-loud on unreadable/malformed/non-object registry, invalid entries
+  (`profiles.py:43` — exactly one family; clone requires both ref fields; string values only),
+  and case-insensitive duplicate names (`profiles.py:86`); unknown name errors with profile +
+  registry path (R1).
+- `plugins/generations/omni-voice-gen/src/omni_voice_gen/backend.py:24` — `SegmentSpec` TypedDict
+  (`backend.py:24`), `Backend` Protocol (`backend.py:33`), `FakeBackend(wavs, durations,
+  transcriptions)` canned replay with `calls` record (`backend.py:63`, importable by 0125 — R2),
+  `OmnivoiceBackend` (`backend.py:98`): single `from_pretrained(OMNIVOICE_MODEL default
+  k2-fsa/OmniVoice, device_map=OMNIVOICE_DEVICE || cuda→mps→cpu at backend.py:88)` per instance;
+  clone → ref_audio/ref_text, prompt → `VoiceClonePrompt.load`, instruct → spec.instruct over
+  profile.instruct; explicit seed → `torch.manual_seed`; `OMNIVOICE_SPEED` default 1.0; output
+  normalized to 24kHz 16-bit mono WAV via stdlib `wave` (`backend.py:46`), duration =
+  samples/24000 (R3). `transcribe` (`backend.py:135`): lazy `load_asr_model(model_name=
+  OMNIVOICE_ASR_MODEL)` on first call, then `model.transcribe((waveform, 24000))`; ASR failures
+  raise (R4). Language passes straight to `OmniVoice.generate(language=...)` (R5).
+- `plugins/generations/omni-voice-gen/profiles.json:1` — sample clone/prompt/instruct placeholders.
+- `plugins/generations/omni-voice-gen/tests/test_profiles.py:1` — registry matrix incl.
+  mixed-case resolve, duplicate-case guard, every fail-loud surface (12 tests).
+- `plugins/generations/omni-voice-gen/tests/test_backend.py:1` — Protocol inertness, FakeBackend
+  replay, clone/prompt/instruct mapping, single `from_pretrained` across 10 segments, device
+  precedence, seed pinning, lazy ASR + env override (14 tests). torch/omnivoice are stubbed in
+  `sys.modules` — no real model-stack import, so test_main's notice-path assertion keeps holding.
+
+**Scope note:** the D4 fallback chain (`VOICEBOX_DEFAULT_PROFILE`, doc metadata voiceProfile,
+plain-text clone-path bypass) is pipeline (0125) scope per the refined task design; this module
+owns only load + resolve. Protocol methods carry concrete `raise NotImplementedError` bodies
+instead of `...` because coverage.py excludes ellipsis lines from measurement, which would
+permanently fail the D2 function-coverage gate.
+
+**Verification:** `make lint` clean (ruff); `make coverage` — 99 passed, `coverage_gate: PASS`
+(profiles.py and backend.py each 100% line and function).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | test + command |
+| R2 | MET | test |
+| R3 | MET | test |
+| R4 | MET | test |
+| R5 | MET | test |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Registry resolution | MET | test | `tests/test_profiles.py:28` (all three kinds load), `:99` (exact + mixed-case resolve), `:106` (unknown name errors with profile name and registry path), `:93` (case-insensitive duplicate names fail loud). `make coverage` — 99 passed, `profiles.py` 100% line/function. |
+| Scenario: Backend maps registry forms to OmniVoice calls | MET | test | Unit boundary mocked at `omnivoice.OmniVoice` (sys.modules stub, no FakeBackend): `tests/test_backend.py:161` (clone → ref_audio/ref_text), `:179` (prompt → voice_clone_prompt via `VoiceClonePrompt.load`), `:189` (instruct; spec instruct wins), `:208` (seed → `torch.manual_seed`). WAV shape: `backend.py:46-54` `_float_to_wav` writes 24000 Hz / 16-bit / mono via stdlib `wave` (asserted through the round-trip used by transcribe tests). |
+| Scenario: Single model load | MET | test | `tests/test_backend.py:123` — ten `generate` calls through one `OmnivoiceBackend` instance; `from_pretrained` invoked exactly once (lazy guard at `backend.py:110-114`). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | sha256:0d508483677c31a10faecddbdece4ecf9a29c09ca700bfdd9c2b163adc652c59 |
 
 ### References
 
@@ -209,4 +271,7 @@ through backend.transcribe only.
 ### History
 
 - 2026-09-13T06:41:30.387Z backlog → todo (system)
+- 2026-09-13T20:22:31.800Z todo → wip (system)
+- 2026-09-13T20:50:51.885Z wip → testing (system)
+- 2026-09-13T20:54:42.902Z testing → done (system)
 
