@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.22.0
+version: 1.23.0
 created_at: 2026-05-28
-updated_at: 2026-09-10
+updated_at: 2026-09-13
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -787,6 +787,42 @@ tools running or writing artifacts; healthy sibling sources remain independent.
 **Why.** Killing an adapter alone leaves its external ingestion tool outside the timeout boundary.
 
 **Detail:** `docs/03_ARCHITECTURE.md` → Execution boundary integrity; task 0110 I2.
+
+---
+
+## ADR-020: omni-voice-gen — the plugin tree admits one Python plugin (uv-managed)
+
+**Status:** Accepted · **Date:** 2026-09-13 (feature F611, tasks 0121–0126)
+
+**Decision.** `plugins/generations/omni-voice-gen` is a Python project (uv-managed venv,
+`make` targets, pytest) — the only non-TypeScript plugin in the repo (operator-approved). It
+implements the same executor contract as voice-gen (`--in Doc[] → --out Content`, sibling
+`.wav`/`.mp3`) against the PyPI `omnivoice` backend, and is selected in kk-daily-ai-voice via
+the `voice_generator` workflow var. Its spawn seam is a bash shebang wrapper
+(`bin/omni-voice-gen`) that execs `uv run --project <plugin> python -m omni_voice_gen` — the
+executor spawns it exactly like any other plugin entry. The plugin owns its toolchain: it is
+not a Bun workspace, Biome and `bun:test` do not cover it, and its quality gate is
+`make -C plugins/generations/omni-voice-gen coverage` (per-file line AND function ≥ 90%). The
+vendored `vendors/OmniVoice` checkout is reference-only; the dependency resolves from PyPI.
+
+**Why.** OmniVoice's quality (clone fidelity, voice-design instruct mode) required its native
+torch stack; a TS port or a Voicebox-compatible REST shim would have forked a fast-moving
+upstream model. The plugin contract (`plugin.json` + `--in`/`--out`) is language-agnostic by
+design (ADR-009/ADR-011), so confining the second runtime to one plugin dir keeps the blast
+radius at one make invocation.
+
+**Cost.** A second toolchain in CI and on operator machines (uv, Python 3.13, torch download);
+the Bun gates (`bun run lint`/`test`/`build`) do not see this plugin. Accepted in exchange for
+not reimplementing the model.
+
+**Consequence.** ADR-018 is unaffected — omni-voice-gen ships no `plugins/<name>/scripts/**`.
+Packaging gap: `scripts/bundle-plugins.ts` Bun-bundles every staged entry to `dist/index.js`
+and prunes for a Node-only tree; a Python entry (bash wrapper + `src/*.py` + `profiles.json`
++ `uv.lock`) is not yet handled and is deferred until the npm distribution must carry
+omni-voice-gen.
+
+**Detail:** `docs/design/omni-voice-gen.md` (D1–D8), `plugins/generations/omni-voice-gen/`,
+`docs/04_DESIGN.md` §3/§4.3.
 
 ---
 

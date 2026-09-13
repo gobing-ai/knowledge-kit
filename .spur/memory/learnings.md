@@ -609,3 +609,110 @@ Cross-task: C5 ran as a 3-task batch — 0062 ∥ 0063 parallel, 0064 last; no `
   - Extensibility: adding future publish channels (Zenn, Qiita, EmDash, Surfing) requires only adding repeatable `--target <plugin>` flags without altering workflow state machine structure.
 - **Gotchas:**
   - Microfeed HTML sanitization: `podcast-pub` passes markdown body as `content_html` relying on server-side sanitization; verify rendering compatibility during live deployment.
+Drift repaired and learnings written. Summary:
+
+**Drift findings → repairs (all §7 repair protocol, authority-first):**
+
+| Doc | Drift | Repair |
+|---|---|---|
+| `docs/00_ADR.md` | No ADR for the first non-TypeScript (Python) plugin entering the tree — a T1 architectural choice | Added **ADR-020** (decision, why, cost, consequence incl. the `bundle-plugins.ts` Python packaging gap); version 1.22.0→1.23.0, `updated_at` 2026-09-13 |
+| `docs/03_ARCHITECTURE.md` | omni-voice-gen absent from §1 module tree, §1 module table, runtime-model bullet, and quality-boundary gate table | Added tree line, table row (Python/uv, PyPI `omnivoice`), ADR-020 exception bullet, `make … coverage` gate row; version 2.21.2→2.22.0 |
+| `docs/04_DESIGN.md` | §3 env table missing `VOICE_GEN_MAX_RUN_MS` entirely and all five `OMNIVOICE_*` vars; shared vars tagged voice-gen-only | Added 6 rows; re-scoped `VOICEBOX_DEFAULT_PROFILE`/`VOICE_GEN_FAIL_ON_QC`/`VOICE_GEN_MP3`; version 2.27.1→2.28.0 |
+| `docs/design/*` | `omni-voice-gen.md` already shipped-status and synced by 0126; no drift in `voice-gen.md` / generator spec / kk-daily-ai-voice | No change needed (verified by grep, not reading alone) |
+
+One out-of-scope note (not committed): `scripts/bundle-plugins.ts` Bun-bundles every staged entry — a Python entry isn't handled; recorded as a consequence in ADR-020, deferred until npm distribution must carry omni-voice-gen.
+
+Learnings artifact written to `.spur/run/082d582d-4846-4bca-abf5-8de1196cdc1a-wrapup-learnings.md`. Raw markdown follows:
+
+# Wrapup learnings — F611 omni-voice-gen (tasks 0121–0126)
+
+## 2026-09-13
+
+### 0121 — plugin scaffold + kk contract layer
+
+- Convention: the executor spawns non-`.ts`/`.js` plugin entries as plain executables (verified
+  `invoke.ts`) — so a Python plugin's spawn seam is a bash wrapper
+  (`bin/omni-voice-gen` → `exec uv run --project <plugin> python -m omni_voice_gen`). Keeps venv
+  resolution inside uv; no console_script, no executor change.
+- Error fixed (pre-ship, draft): assumed `Doc` requires `title`/`sourceUri` — only `id` + `body`
+  are mandatory (verified `packages/kk-core/src/schemas.ts`). Check the schema, not the examples.
+- Pattern: "function coverage ≥ 90%" in Python = `scripts/coverage_gate.py` combining coverage.py
+  data with ast def-line analysis — a Bun-style metric has no native pytest equivalent.
+- Pattern: empty `Doc[]` input → notice Content with no model load. Cheap-path before heavyweight
+  resource acquisition.
+- Gotcha: an out-of-band implement-agent scaffold commit was made and reverted the same day —
+  keep implementation inside the pipeline, not side channels.
+
+### 0122 — VoiceScript parse/merge/validate port (warn-and-ignore)
+
+- Pattern: warn-and-ignore for fields the new backend can't honor (`engine`, `personality`,
+  `effects_chain`) — parse into dataclasses so unknown YAML never fails, report via a WarnSink,
+  never forward to the backend.
+- Error fixed (pre-ship, draft): don't port voice-gen's 23-code language allowlist — OmniVoice's
+  own `_resolve_language` validates a superset; porting the list would reject valid languages.
+  Validate at the layer that actually owns the constraint.
+- Gotcha: `yaml.safe_load` covers both JSON and YAML (JSON ⊂ YAML), but keep voice-gen's
+  JSON-then-YAML branch order so error messages and the `[laugh]` fast path match exactly.
+
+### 0123 — profile registry + OmniVoice backend adapter
+
+- Error fixed (pre-ship, draft): don't build a custom transformers Whisper pipeline for the
+  fidelity check — the model ships public `load_asr_model()`/`transcribe` (verified 2026-09-12).
+  `OMNIVOICE_ASR_MODEL` env added as the override knob.
+- Convention: no implicit cross-run voice cache — saved clone prompts are operator-managed `.pt`
+  registry entries only (deterministic over implicit).
+- Convention: profile registry is a committed `profiles.json` with documented placeholders only —
+  no secrets, no operator-private audio paths in git.
+- D4 profile fallback chain (segment → speaker → script default → `VOICEBOX_DEFAULT_PROFILE` →
+  doc `metadata.voiceProfile`); unknown name fails loud with the name in the error.
+
+### 0124 — audio concat, loudness dip, QC audit, MP3
+
+- Pattern: QC parity over innovation — repetition detection, transcription-fidelity floor (0.15),
+  and loudness-dip detection ported with voice-gen's thresholds so both backends are gated by the
+  same bar.
+- Pattern: `VOICE_GEN_MP3` truthy parse and ffmpeg `libmp3lame` transcode ported 1:1; missing
+  ffmpeg or transcode failure → fail loud, no `--out` (never write a partial success artifact).
+
+### 0125 — pipeline orchestration, verify-retry, coverage gate
+
+- Error fixed (pre-ship, port): voice-gen's two nested retry loops collapse to one verify loop in
+  omni-voice-gen — the inner loop was HTTP transport retry, and in-process generation has no
+  transport. One inline exception retry preserves the transient-failure semantics. Port semantics,
+  not structure.
+- Gotcha: OmniVoice `generate()` has no seed kwarg — seed semantics become
+  `torch.manual_seed(explicit)` before attempt 0 only; retries resample (diffusion decoding is
+  stochastic by default). Verify API surface before porting flags.
+- Gotcha: no server history id in-process → `generationId` = `uuid4().hex[:16]` per accepted
+  render; keeps the metadata field shape stable for downstream consumers.
+- Pattern: `VOICE_GEN_MAX_RUN_MS` budget is checked between segments, not per-chunk — a
+  segment-granularity check can't leave a half-rendered segment.
+- Pattern: seed pins attempt 0 only, so verify retries can escape a bad draw.
+
+### 0126 — workflow `voice_generator` var + docs sync
+
+- Convention: backend swap = one workflow var (`voice_generator`, default `voice-gen`); the
+  generate state is otherwise plugin-name-agnostic (cache guard on `metadata.qc.passed`,
+  `VOICE_GEN_MP3` env, error semantics). Defaults preserve production behavior; swap is per-run
+  opt-in via `-v voice_generator=omni-voice-gen`.
+- Scope discipline: `kk-solo-podcast.yaml` deliberately not touched — noted as a follow-up
+  pattern, not drive-by scope.
+- Convention (T3): the workflow var, the `docs/04_DESIGN.md` surface entry, and the design-satellite
+  status flip (proposed → shipped) land in the same commit.
+
+### Cross-cutting (wrapup 2026-09-13)
+
+- Convention: first non-TypeScript plugin in the tree is an architectural decision — ADR-020
+  records it; 03 gains the tree/module-table/stack/gate entries; the Python plugin owns its own
+  quality gate (`make coverage`, per-file line AND function ≥ 90%) outside the Bun gates.
+- Gotcha (deferred, recorded in ADR-020): `scripts/bundle-plugins.ts` Bun-bundles every staged
+  entry to `dist/index.js` for a Node-only tree — a Python entry (bash wrapper + `src/*.py` +
+  `profiles.json` + `uv.lock`) is not yet handled. Fix before the npm distribution must carry
+  omni-voice-gen.
+- Gotcha (doc drift found at wrapup): 04 §3's env table had no `VOICE_GEN_MAX_RUN_MS` row at all
+  (voice-gen read it since D14) and no `OMNIVOICE_*` rows; shared vars
+  (`VOICEBOX_DEFAULT_PROFILE`, `VOICE_GEN_FAIL_ON_QC`, `VOICE_GEN_MP3`) carried voice-gen-only
+  scoping tags. When a second consumer ships, re-tag the shared env rows in the same commit.
+- Pattern across the batch: drop-in replacement works because the contract, not the
+  implementation, is the swap point — identical `--in`/`--out`, identical `metadata` shape
+  (modulo `generator: "kk:omni-voice-gen"`), identical env knobs where semantics allow.
