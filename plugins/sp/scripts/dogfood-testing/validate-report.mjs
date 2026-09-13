@@ -127,8 +127,6 @@ function mainCli(argv = process.argv.slice(2)) {
 `);
     return exitCode;
 }
-{
-    process.exit(mainCli());
-}
+process.exit(mainCli());
 
 export { mainCli, parseValidateCliArgs, runValidateCli, VALIDATE_CLI_USAGE, validateReport };

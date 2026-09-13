@@ -2,9 +2,9 @@
 // @bun
 
 // plugins/sp/scripts/workflow-step-profile.ts
-import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 var DEFAULT_LAST = 20;
 var DEFAULT_WINDOW_SEC = 300;
@@ -296,9 +296,7 @@ function main(argv) {
         );
     return exitCode;
 }
-{
-    process.exit(main(process.argv.slice(2)));
-}
+process.exit(main(process.argv.slice(2)));
 
 export {
     buildRows,

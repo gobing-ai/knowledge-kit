@@ -2,7 +2,7 @@
 // @bun
 
 // plugins/sp/scripts/quality-gate.ts
-import { spawnSync } from 'child_process';
+import { spawnSync } from 'node:child_process';
 import {
     appendFileSync,
     closeSync,
@@ -14,9 +14,9 @@ import {
     rmSync,
     statSync,
     writeFileSync,
-} from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 var MAX_GATE_ATTEMPTS = 5;
 var MAX_FINDINGS = 20;
@@ -159,9 +159,7 @@ function main(argv, env = process.env) {
     runQualityGate(mode, env);
     return 0;
 }
-{
-    process.exit(main(process.argv.slice(2)));
-}
+process.exit(main(process.argv.slice(2)));
 
 export {
     extractFindings,

@@ -17,8 +17,6 @@ async function main(argv, env = process.env) {
     const outcome = await runIdeaHandoffCli(env);
     return outcome.exitCode;
 }
-{
-    process.exit(await main(process.argv.slice(2)));
-}
+process.exit(await main(process.argv.slice(2)));
 
 export { IDEA_HANDOFF_USAGE, loadHandoffLib, main };

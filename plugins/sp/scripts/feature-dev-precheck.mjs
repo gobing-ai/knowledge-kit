@@ -2,9 +2,9 @@
 // @bun
 
 // plugins/sp/scripts/feature-dev-precheck.ts
-import { spawnSync } from 'child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 var BLOCKING_STATUSES = ['backlog', 'wip', 'testing', 'blocked'];
 var KNOWN_STATUSES = ['todo', 'done', 'cancelled', ...BLOCKING_STATUSES];
@@ -153,9 +153,7 @@ function main(argv, env = process.env) {
     runFeatureDevPrecheck(env);
     return 0;
 }
-{
-    process.exit(main(process.argv.slice(2)));
-}
+process.exit(main(process.argv.slice(2)));
 
 export {
     BLOCKING_STATUSES,

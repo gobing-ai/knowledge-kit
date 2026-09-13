@@ -5,9 +5,9 @@ import { createRequire } from 'node:module';
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // plugins/sp/scripts/daily-summary/daily-summary.ts
-import { spawn, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readlinkSync, writeFileSync } from 'fs';
-import { dirname, isAbsolute, join, resolve } from 'path';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readlinkSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 // plugins/sp/scripts/daily-summary/logger.ts
 var state = { console: true, file: false };
@@ -313,7 +313,7 @@ Please provide the following (press Enter to skip):
             pending: pending2.trim(),
         };
     }
-    const readline = await import('readline');
+    const readline = await import('node:readline');
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -590,12 +590,10 @@ ${markdown}
         process.exit(1);
     }
 }
-{
-    main().catch((error) => {
-        logger.error(`Daily summary failed: ${error}`);
-        process.exit(1);
-    });
-}
+main().catch((error) => {
+    logger.error(`Daily summary failed: ${error}`);
+    process.exit(1);
+});
 
 export {
     buildDailySummary,

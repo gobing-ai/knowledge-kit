@@ -2,9 +2,9 @@
 // @bun
 
 // plugins/sp/scripts/pr-reviewing.ts
-import { spawnSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 var spawnRunner = (cmd) => {
     const proc = spawnSync(cmd[0] ?? '', [...cmd.slice(1)], { encoding: 'utf8', env: process.env });
@@ -749,9 +749,7 @@ function main(argv) {
         return 2;
     }
 }
-{
-    process.exit(main(process.argv.slice(2)));
-}
+process.exit(main(process.argv.slice(2)));
 
 export {
     buildRequestBody,

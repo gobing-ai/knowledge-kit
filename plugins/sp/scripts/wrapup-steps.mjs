@@ -2,9 +2,9 @@
 // @bun
 
 // plugins/sp/scripts/wrapup-steps.ts
-import { spawnSync } from 'child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { spawnSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 function jqPick(...values) {
     for (const value of values) {
@@ -357,9 +357,7 @@ function main(argv, env = process.env, options = {}) {
 `);
     return 2;
 }
-{
-    process.exit(main(process.argv.slice(2)));
-}
+process.exit(main(process.argv.slice(2)));
 
 export {
     classifySync,
