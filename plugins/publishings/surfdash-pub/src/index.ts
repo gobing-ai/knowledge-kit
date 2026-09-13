@@ -210,9 +210,10 @@ async function spawnCli(cmd: string[], cwd: string): Promise<CliSpawnResult> {
     return { exitCode, stdout, stderr };
 }
 
-/** Stderr-first error text for a failed CLI spawn (stderr may be empty → fall back to stdout). */
+/** Error text for a failed CLI spawn — both streams concatenated: postsurfing streams the
+ * failing stage's API error (e.g. 401 INVALID_TOKEN) on stdout while bun stacks land on stderr. */
 function cliErrorText(spawned: CliSpawnResult): string {
-    return spawned.stderr.trim() || spawned.stdout.trim() || 'Unknown error';
+    return [spawned.stderr.trim(), spawned.stdout.trim()].filter((part) => part !== '').join('\n') || 'Unknown error';
 }
 
 /** The EmDash CMS token in kk config expires periodically; map the API's 401 to the fix. */

@@ -700,6 +700,15 @@ describe('surfdash-pub operations (0096)', () => {
         expect(withEmdashTokenHint('some other failure')).toBe('some other failure');
     });
 
+    test('cliErrorText concatenates both streams so a stdout-only 401 still triggers the hint', () => {
+        const spawned = {
+            exitCode: 1,
+            stdout: '❌ Orchestrator error: API error 401: INVALID_TOKEN',
+            stderr: '✗ sync_cms/shell exited with 1',
+        };
+        expect(withEmdashTokenHint(spawned.stderr + spawned.stdout)).toContain('regenerate the EmDash token');
+    });
+
     test('pushPostGit commits and pushes only the post path to main', async () => {
         const base = join(process.cwd(), `.tmp-sdpush-${Date.now()}`);
         await mkdir(base, { recursive: true });
