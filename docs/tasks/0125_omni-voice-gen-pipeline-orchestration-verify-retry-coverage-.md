@@ -4,7 +4,7 @@ name: "omni-voice-gen: pipeline orchestration + verify-retry + coverage gate"
 status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:11.173Z
-updated_at: "2026-09-13T06:41:27.212Z"
+updated_at: "2026-09-13T06:48:15.139Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -60,6 +60,86 @@ Feature: Pipeline orchestration and verify-retry
     When make coverage runs
     Then every file reports line >= 90% and function >= 90%
 ```
+
+#### Q&A
+
+<!-- CLOSED decisions from refinement: what was chosen and why, what was deferred and on what
+     condition. Not a parking lot for open questions — an unanswered question here means the task
+     is not ready to hand off. Keep empty if none. -->
+
+#### Q&A entry — 2026-09-13T06:26:35.802Z
+
+- Q: Keep the two nested retry loops from voice-gen? A: collapse to one verify loop — the inner
+  loop was transport retry (HTTP timeouts); in-process generation has no transport, one inline
+  exception retry preserves the transient-failure semantics.
+- Q: Seed semantics without an OmniVoice seed param? A: torch.manual_seed(explicit seed) before
+  attempt 0; retries resample (diffusion decoding is stochastic by default) — verified generate()
+  has no seed kwarg.
+- Q: generationId meaning without a server history id? A: uuid4 hex[:16] per accepted render —
+  keeps the metadata field shape; documented in spec §4.
+
+#### Design
+
+WHAT/WHY: direct port of voice-gen index.ts processGeneratorIO control flow (read 2026-09-12) with
+the HTTP client replaced by backend.Backend (0123) and concat/QC/mp3 from 0124.
+
+WHERE / frozen names:
+- `src/omni_voice_gen/pipeline.py`: `run(in_path: str, out_path: str, backend: Backend|None=None,
+  transcoder: Callable[[str,str],None]|None=None) -> None`. `__main__.py` (0121) lazy-imports this.
+- Profile resolution order (D4, frozen): segment.profile_id ?? segment.profile ??
+  speaker.profile_id ?? speaker.profile ?? script.default_profile_id ?? script.default_profile ??
+  VOICEBOX_DEFAULT_PROFILE ?? doc[0].metadata.voiceProfile — none → error listing every knob
+  (voice-gen message parity).
+- Verify loop (frozen): `for verify_attempt in 0..2`: render (backend exception → one immediate
+  inline retry, voice-gen network-attempt parity) → transcribe best-effort → fidelity < 0.15 →
+  regenerate → dip → regenerate → accept. Seed: explicit spec seed pins attempt 0 via
+  torch.manual_seed; retries pass seed=None (resample — no seed param in OmniVoice.generate,
+  verified 2026-09-12). Surviving dip → segment metadata loudnessDip=True (record, never fail).
+- Budget: VOICE_GEN_MAX_RUN_MS checked before each segment; exceeded → RuntimeError with
+  "render budget <ms>ms exceeded after <i>/<n> segments" (voice-gen shape).
+- Content assembly: body = yaml.safe_dump of the executed VoiceScript; metadata = {generator:
+  "kk:omni-voice-gen", audioPath: abs, duration: Σ(dur+gap/1000), segments: [{generationId: uuid4
+  hex16, profile, speaker?, emotion?, duration, verifyRetries, transcription?, loudnessDip?}], qc:
+  report, mp3Path?}; Content validated through contract.Content before write; failure at any point
+  deletes out_path + sibling .wav/.mp3 (start AND failure cleanup, voice-gen parity).
+
+Anti-patterns: do NOT keep voice-gen's nested network/verify loop structure (no transport layer
+exists); do NOT swallow backend exceptions into QC (render failures fail the run); do NOT write
+partial --out then fix up (single validated write at the end); no stdout output (stderr only).
+
+Handoff: 0126 smoke-tests this via `kk executor run omni-voice-gen`.
+
+#### Plan
+
+1. run() skeleton: IO, cleanup, empty-input delegate to 0121 path.
+2. Segment loop: profile resolution, spec build, progress, budget check.
+3. Verify-retry loop + segment metadata.
+4. Content assembly + QC gate + mp3 hook.
+5. Full FakeBackend test matrix; make coverage green; spur-check wiring for python tests if needed.
+
+#### Solution
+
+<!-- Filled during implementation: file:line change map and concise rationale. -->
+
+#### Testing
+
+<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+
+#### Review
+
+<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+
+#### References
+
+- Spec: docs/design/omni-voice-gen.md (§4, §5, D6–D8)
+- Source of truth: plugins/generations/voice-gen/src/index.ts (processGeneratorIO)
+- Blocked by: 0122, 0123, 0124
+
+#### History
+
+- 2026-09-13T06:41:27.212Z backlog → todo (system)
+
+- [ ] (covers: Verify-retry loop mirrors voice-gen; Coverage and quality gate) Verify-retry with QC gate; per-file line/function coverage >= 90% via make coverage
 
 ### Q&A
 
