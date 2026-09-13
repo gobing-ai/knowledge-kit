@@ -2,10 +2,8 @@
 
 import json
 import sys
-import types
 
 from omni_voice_gen.__main__ import main
-from omni_voice_gen.contract import Content
 
 
 def test_missing_arguments_exit_1(capsys) -> None:
@@ -48,17 +46,15 @@ def test_empty_doc_list_writes_notice_without_torch(tmp_path) -> None:
     assert "omnivoice" not in sys.modules
 
 
-def test_nonempty_input_delegates_to_pipeline(monkeypatch, tmp_path) -> None:
-    calls: list[list] = []
+def test_main_passes_paths_to_run_and_maps_any_failure_to_exit_1(monkeypatch, capsys) -> None:
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr("omni_voice_gen.pipeline.run", lambda in_path, out_path: calls.append((in_path, out_path)))
+    assert main(["--in", "docs.json", "--out", "content.json"]) == 0
+    assert calls == [("docs.json", "content.json")]
 
-    def fake_run(docs):
-        calls.append(docs)
-        return Content(body=f"got {len(docs)}")
+    def explode(in_path: str, out_path: str) -> None:
+        raise RuntimeError("render exploded")
 
-    monkeypatch.setitem(sys.modules, "omni_voice_gen.pipeline", types.SimpleNamespace(run=fake_run))
-    src = tmp_path / "in.json"
-    src.write_text(json.dumps([{"id": "d1", "body": "b"}]), encoding="utf-8")
-    out = tmp_path / "out.json"
-    assert main(["--in", str(src), "--out", str(out)]) == 0
-    assert calls and calls[0][0].id == "d1"
-    assert json.loads(out.read_text(encoding="utf-8"))["body"] == "got 1"
+    monkeypatch.setattr("omni_voice_gen.pipeline.run", explode)
+    assert main(["--in", "docs.json", "--out", "content.json"]) == 1
+    assert "omni-voice-gen failed: render exploded" in capsys.readouterr().err

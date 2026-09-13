@@ -31,7 +31,7 @@ specified here. Where this doc and `voice-gen.md` disagree, this doc wins for om
   1. Gap placement: `gap_ms[i]` is silence inserted **before segment i** (no `gapsMs[0] === 0` special
      case). Deterministic, documented.
   2. Duration accounting: `metadata.duration` and `qc.totalDuration` use the same basis — sum of segment
-     durations plus gap seconds.
+     durations plus the gap seconds concat inserts (D8.1: none before segment 1).
 
 ## 2. Module layout
 
@@ -109,7 +109,7 @@ instruct, speed=..., normalize_text=False)`; `seed` → `torch.manual_seed`. `au
 
 Identical to voice-gen §6 with two exceptions: `metadata.generator` is `"kk:omni-voice-gen"`, and
 `metadata.duration` / `qc.totalDuration` share one basis (D8.2). Per-segment metadata carries
-`{ generationId (uuid), profile, speaker?, emotion?, duration, verifyRetries, transcription?,
+`{ generationId (uuid4 hex[:16]), profile, speaker?, emotion?, duration, verifyRetries, transcription?,
 loudnessDip? }`.
 
 ## 5. Verify-retry loop

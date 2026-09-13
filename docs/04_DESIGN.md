@@ -478,7 +478,8 @@ executable `bin/omni-voice-gen` shebang wrapper is the whole spawn seam (§1.7).
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `__main__.main(argv?)` | function | CLI `--in`/`--out` entry; exit 0 success / 1 failure with `omni-voice-gen failed: <msg>` on stderr; empty `Doc[]` writes the notice Content without loading torch/omnivoice (lazy `pipeline` import) |
+| `__main__.main(argv?)` | function | CLI `--in`/`--out` entry; exit 0 success / 1 failure with `omni-voice-gen failed: <msg>` on stderr (any `pipeline.run` exception); lazy `pipeline` import |
+| `pipeline.run(in_path, out_path, backend?, transcoder?)` | function | voice-gen `processGeneratorIO` port: delete-then-render (stale `--out`/`.wav`/`.mp3` removed at start and on failure); empty `Doc[]` → notice Content with no model load; D4 profile order, ≤2 verify retries (fidelity < 0.15 / loudness dip; seed pins attempt 0 only), `VOICE_GEN_MAX_RUN_MS` between segments, `VOICE_GEN_FAIL_ON_QC`, `VOICE_GEN_MP3`; single validated `--out` write (`metadata.generator: "kk:omni-voice-gen"`, D8.2 duration basis) |
 | `contract.Doc` / `contract.Content` | pydantic models | Mirror `@gobing-ai/kk-core` Doc/Content (unknown fields stripped, zod parity) |
 | `contract.parse_doc_list(raw)` | function | Parse `Doc[]` JSON; raises `ValueError` with the reason on any violation |
 | `contract.content_to_json(content)` | function | 2-space-indent JSON, nulls dropped (voice-gen `JSON.stringify` parity) |
