@@ -215,6 +215,67 @@ function cliErrorText(spawned: CliSpawnResult): string {
     return spawned.stderr.trim() || spawned.stdout.trim() || 'Unknown error';
 }
 
+/** The EmDash CMS token in kk config expires periodically; map the API's 401 to the fix. */
+export function withEmdashTokenHint(errText: string): string {
+    return /INVALID_TOKEN|API error 401/.test(errText)
+        ? `${errText} — hint: regenerate the EmDash token (surfing.salty.vip admin console) and update EMDASH_API_TOKEN in ~/.config/kk/config.yaml`
+        : errText;
+}
+
+/** Outcome of {@link pushPostGit} — the union keeps fail-loud errors typed at the call site. */
+export type GitPushOutcome = { ok: true; hash: string } | { ok: false; error: string };
+
+/**
+ * Commits the published post path and pushes to the remote. Production deploys run
+ * from surfdash's `deploy.yml` on every push to `main` — the publishing FSM itself
+ * never touches git, so without this step the article 404s until a manual commit.
+ * Committing with a pathspec (`git commit -- <path>`) keeps unrelated staged files
+ * out of the publish commit. Fails loud on branch/commit/push errors.
+ */
+export async function pushPostGit(surfdashRoot: string, relPostDir: string, message: string): Promise<GitPushOutcome> {
+    const branch = await spawnCli(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], surfdashRoot);
+    if (branch.exitCode !== 0) return { ok: false, error: `surfdash git branch check failed: ${cliErrorText(branch)}` };
+    const branchName = branch.stdout.trim();
+    if (branchName !== 'main') {
+        return {
+            ok: false,
+            error: `surfdash checkout is on '${branchName}', not 'main' — deploy.yml only builds main; refusing to push from a feature branch`,
+        };
+    }
+    const add = await spawnCli(['git', 'add', '--', relPostDir], surfdashRoot);
+    if (add.exitCode !== 0) return { ok: false, error: `surfdash git add failed: ${cliErrorText(add)}` };
+    const commit = await spawnCli(['git', 'commit', '-m', message, '--', relPostDir], surfdashRoot);
+    if (commit.exitCode !== 0) return { ok: false, error: `surfdash git commit failed: ${cliErrorText(commit)}` };
+    const push = await spawnCli(['git', 'push', 'origin', 'main'], surfdashRoot);
+    if (push.exitCode !== 0) {
+        return {
+            ok: false,
+            error: `surfdash git push failed (deploy.yml deploys on push to main): ${cliErrorText(push)}`,
+        };
+    }
+    const hash = await spawnCli(['git', 'rev-parse', '--short', 'HEAD'], surfdashRoot);
+    return { ok: true, hash: hash.stdout.trim() || 'unknown' };
+}
+
+/**
+ * Polls the article URL until the CDN serves it (deploy.yml build latency). Push
+ * acceptance is the authoritative publish signal, so an unverified URL is reported
+ * in the result message rather than failing the publish.
+ */
+export async function awaitArticleLive(url: string, timeoutMs = 180_000, intervalMs = 10_000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        try {
+            const resp = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(5_000) });
+            if (resp.ok) return true;
+        } catch {
+            // network blips during CI deploy — keep polling until the deadline
+        }
+        await Bun.sleep(intervalMs);
+    }
+    return false;
+}
+
 /**
  * Scaffolds a locale draft for an existing zh post (L1 R7 / 0096): runs the surfdash
  * `sd translate` scaffold CLI inside the surfdash checkout, copies the post's `assets/`
@@ -291,7 +352,9 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
             surfdashRoot,
         );
         if (spawned.exitCode !== 0) {
-            return fail(`publish-orchestrator sync failed (exit ${spawned.exitCode}): ${cliErrorText(spawned)}`);
+            return fail(
+                `publish-orchestrator sync failed (exit ${spawned.exitCode}): ${withEmdashTokenHint(cliErrorText(spawned))}`,
+            );
         }
         return ResultSchema.parse({
             ok: true,
@@ -352,17 +415,39 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         const spawned = await spawnCli([postsurfingBin, 'publish', filePath], surfdashRoot);
 
         if (spawned.exitCode !== 0) {
-            return fail(`postsurfing CLI failed (exit ${spawned.exitCode}): ${cliErrorText(spawned)}`);
+            return fail(
+                `postsurfing CLI failed (exit ${spawned.exitCode}): ${withEmdashTokenHint(cliErrorText(spawned))}`,
+            );
         }
+
+        // Deploy seam: commit + push the post so deploy.yml builds it, then wait for
+        // the live URL — downstream show-notes advertise a real page, not a 404.
+        // Tests (and offline runs) opt out via SURFDASH_AUTO_PUSH=0.
+        const articleUrl = `${(process.env.SURFDASH_URL ?? 'https://surfing.salty.vip').replace(/\/$/, '')}/${locale}/posts/${slug}`;
+        if (process.env.SURFDASH_AUTO_PUSH === '0') {
+            return ResultSchema.parse({
+                ok: true,
+                target: TARGET,
+                url: articleUrl,
+                message: 'Published via postsurfing CLI (auto-push disabled)',
+                // Absolute post path lets downstream steps (locale translation + CMS sync)
+                // derive the surfdash checkout root without extra configuration.
+                metadata: { postPath: filePath },
+            });
+        }
+        const relPostDir = join('content', 'posts', 'articles', locale, slug);
+        const pushed = await pushPostGit(surfdashRoot, relPostDir, `content: daily AI news ${dateStamp} (zh)`);
+        if (!pushed.ok) return fail(pushed.error);
+        const live = await awaitArticleLive(articleUrl);
 
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
-            url: `https://surfdash.local/${locale}/posts/${slug}`,
-            message: 'Published successfully to Surfdash via postsurfing CLI',
-            // Absolute post path lets downstream steps (locale translation + CMS sync)
-            // derive the surfdash checkout root without extra configuration.
-            metadata: { postPath: filePath },
+            url: articleUrl,
+            message: live
+                ? 'Published, committed, pushed, and live on the site'
+                : 'Published and pushed; URL not live within the verify window — check the surfdash deploy workflow',
+            metadata: { postPath: filePath, gitCommit: pushed.hash, live },
         });
     } catch (err: unknown) {
         return fail(`Postsurfing transport error: ${err instanceof Error ? err.message : String(err)}`);

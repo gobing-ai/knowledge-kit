@@ -334,6 +334,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `CONTENT_LANGUAGE` | no (content-gen) | Writing language directive for STORM outline/article/polish (`zh` = Simplified Chinese incl. title); the daily workflow passes `language` through |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
 | `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`) |
+| `SURFDASH_AUTO_PUSH` | no (surfdash-pub) | `0` disables the post-publish deploy seam (git commit/push of the post path + live-URL poll); any other value or unset auto-pushes. Production deploys run from surfdash's `deploy.yml` on every push to `main` — without the seam the article 404s until a manual commit (dogfood 2026-09-12) |
+| `SURFDASH_URL` | no (surfdash-pub) | Base URL for the live-URL poll and `url` in the Result (default `https://surfing.salty.vip`); article derived as `<base>/<locale>/posts/<slug>` |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
 | `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
 | `VOICE_GEN_MP3` | no (voice-gen) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
@@ -372,7 +374,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default, unchanged) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`) / `sync` (publish-orchestrator) — 0096 |
+| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`) / `sync` (publish-orchestrator) — 0096. On publish success the transport commits + pushes only the post path to `main` (pathspec commit; deploy.yml builds the site) and polls the article URL until 2xx (`metadata.live`, `metadata.gitCommit`; push acceptance is authoritative — an unverified URL stays non-fatal). EmDash 401/`INVALID_TOKEN` errors surface with a regenerate-the-token hint |
 | `mapContentToSurfingMarkdown(content)` | function | Renders Surfdash markdown + frontmatter (title, description, tags, date, canonical_url, published) |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; forwards a top-level input `options` object to the transport (operation selection, 0096) |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |

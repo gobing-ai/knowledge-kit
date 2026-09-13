@@ -7,13 +7,19 @@ import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
+    awaitArticleLive,
     getPublishTransport,
     main,
     mapContentToSurfingMarkdown,
     PostsurfingFileCliTransport,
     processPublishIO,
+    pushPostGit,
     slugify,
+    withEmdashTokenHint,
 } from '../src/index';
+
+// Auto-push targets the real surfdash checkout — CLI-path tests run offline with stub binaries.
+process.env.SURFDASH_AUTO_PUSH ??= '0';
 
 describe('surfdash-pub plugin', () => {
     test('slugify converts titles and tags into lowercase hyphenated strings', () => {
@@ -124,7 +130,7 @@ describe('surfdash-pub plugin', () => {
             const result = await transport.publish({ content });
             expect(result.ok).toBe(true);
             expect(result.target).toBe('surfdash');
-            expect(result.message).toContain('Published successfully');
+            expect(result.message).toContain('auto-push disabled');
             // Contract: date-stamped slug under content/posts/articles/<locale>/; markdown at index.md
             const articlesDir = join(tmpDir, 'content', 'posts', 'articles', 'zh');
             const entries = existsSync(articlesDir) ? await readdir(articlesDir) : [];
@@ -684,6 +690,104 @@ describe('surfdash-pub operations (0096)', () => {
         } finally {
             delete process.env.SURFDASH_ROOT;
             await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    test('withEmdashTokenHint maps expired-token errors to the config fix', () => {
+        expect(withEmdashTokenHint('sync failed: API error 401: {"error":{"code":"INVALID_TOKEN"}}')).toContain(
+            '~/.config/kk/config.yaml',
+        );
+        expect(withEmdashTokenHint('some other failure')).toBe('some other failure');
+    });
+
+    test('pushPostGit commits and pushes only the post path to main', async () => {
+        const base = join(process.cwd(), `.tmp-sdpush-${Date.now()}`);
+        await mkdir(base, { recursive: true });
+        const origin = join(base, 'origin.git');
+        const work = join(base, 'work');
+        const run = async (cmd: string[], cwd: string): Promise<void> => {
+            const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+            const [code, , err] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            if (code !== 0) throw new Error(`${cmd.join(' ')} exited ${code}: ${err}`);
+        };
+        try {
+            await run(['git', 'init', '--bare', '-b', 'main', origin], base);
+            await run(['git', 'init', '-b', 'main', work], base);
+            await run(['git', 'config', 'user.email', 'test@test'], work);
+            await run(['git', 'config', 'user.name', 'test'], work);
+            await writeFile(join(work, 'seed.md'), 'seed');
+            await run(['git', 'add', '.'], work);
+            await run(['git', 'commit', '-m', 'seed'], work);
+            await run(['git', 'remote', 'add', 'origin', origin], work);
+            await run(['git', 'push', '-u', 'origin', 'main'], work);
+
+            // A staged decoy must not ride along in the publish commit (pathspec commit).
+            await writeFile(join(work, 'decoy.md'), 'decoy');
+            await run(['git', 'add', 'decoy.md'], work);
+            const postRel = join('content', 'posts', 'articles', 'zh', '20260912-x');
+            await mkdir(join(work, postRel), { recursive: true });
+            await writeFile(join(work, postRel, 'index.md'), 'post');
+
+            const outcome = await pushPostGit(work, postRel, 'content: test');
+            expect(outcome.ok).toBe(true);
+            if (outcome.ok) expect(outcome.hash.length).toBeGreaterThan(3);
+            const pushedSubject = await new Response(
+                Bun.spawn(['git', '--git-dir', origin, 'log', '--format=%s', '-1', 'main']).stdout,
+            ).text();
+            expect(pushedSubject.trim()).toBe('content: test');
+            const pushedTree = await new Response(
+                Bun.spawn(['git', '--git-dir', origin, 'ls-tree', '-r', '--name-only', 'main']).stdout,
+            ).text();
+            expect(pushedTree).toContain('index.md');
+            expect(pushedTree).not.toContain('decoy');
+        } finally {
+            await rm(base, { recursive: true, force: true });
+        }
+    });
+
+    test('pushPostGit refuses to push from a non-main branch', async () => {
+        const base = join(process.cwd(), `.tmp-sdpush-branch-${Date.now()}`);
+        await mkdir(base, { recursive: true });
+        const work = join(base, 'work');
+        const run = async (cmd: string[], cwd: string): Promise<void> => {
+            const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+            const [code, , err] = await Promise.all([
+                proc.exited,
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+            ]);
+            if (code !== 0) throw new Error(`${cmd.join(' ')} exited ${code}: ${err}`);
+        };
+        try {
+            await run(['git', 'init', '-b', 'main', work], base);
+            await run(['git', 'config', 'user.email', 'test@test'], work);
+            await run(['git', 'config', 'user.name', 'test'], work);
+            await writeFile(join(work, 'seed.md'), 'seed');
+            await run(['git', 'add', '.'], work);
+            await run(['git', 'commit', '-m', 'seed'], work);
+            await run(['git', 'checkout', '-b', 'feature'], work);
+
+            const outcome = await pushPostGit(work, 'seed.md', 'msg');
+            expect(outcome.ok).toBe(false);
+            if (!outcome.ok) expect(outcome.error).toContain("not 'main'");
+        } finally {
+            await rm(base, { recursive: true, force: true });
+        }
+    });
+
+    test('awaitArticleLive resolves true once the URL serves 2xx and false on timeout', async () => {
+        const live = Bun.serve({ port: 0, fetch: () => new Response('ok') });
+        const never = Bun.serve({ port: 0, fetch: () => new Response('nope', { status: 404 }) });
+        try {
+            expect(await awaitArticleLive(`http://localhost:${live.port}/`, 2_000, 10)).toBe(true);
+            expect(await awaitArticleLive(`http://localhost:${never.port}/`, 80, 10)).toBe(false);
+        } finally {
+            live.stop(true);
+            never.stop(true);
         }
     });
 });
