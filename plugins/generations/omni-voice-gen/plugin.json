@@ -1,0 +1,6 @@
+{
+    "name": "omni-voice-gen",
+    "kind": "generator",
+    "entry": "./bin/omni-voice-gen",
+    "version": "1.0.0"
+}
