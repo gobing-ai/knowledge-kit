@@ -282,6 +282,9 @@ if (plugin === 'aihot-ingest') {
                     cwd: join(import.meta.dir, '../../..'),
                     env: {
                         ...process.env,
+                        // The test itself may run inside a pipeline step — never leak the guard
+                        // into the child, or spur refuses to start the workflow under test.
+                        SPUR_WORKFLOW_RUN_ACTIVE: undefined,
                         KK_TEST_CALL_LOG: callLog,
                         PATH: `${binDir}:${process.env.PATH ?? ''}`,
                     },

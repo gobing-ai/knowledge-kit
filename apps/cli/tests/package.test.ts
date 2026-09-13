@@ -33,5 +33,5 @@ describe('package publish metadata (R1/R2)', () => {
                 expect(existsSync(join(collectionDir, name, 'node_modules')), `${collection}/${name}`).toBe(false);
             }
         }
-    });
+    }, 120_000); // Runs the real build:bundle — far past the 5s default on a cold checkout.
 });
