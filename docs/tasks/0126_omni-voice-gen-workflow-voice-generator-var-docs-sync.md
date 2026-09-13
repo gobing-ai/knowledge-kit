@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: workflow voice_generator var + docs sync"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:11.384Z
-updated_at: "2026-09-13T06:27:08.540Z"
+updated_at: "2026-09-13T06:41:25.793Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -110,3 +110,6 @@ Handoff: closes F611 — after smoke, feature moves toward verifying.
 - Blocked by: 0125
 
 ### History
+
+- 2026-09-13T06:41:25.793Z backlog → todo (system)
+

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: VoiceScript parse/merge/validate with warn-ignore"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:10.542Z
-updated_at: "2026-09-13T06:27:07.249Z"
+updated_at: "2026-09-13T06:41:31.970Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -122,3 +122,6 @@ Handoff: 0125 imports the five public names above + WarnSink; no other consumer.
 - Blocked by: 0121 (scaffold)
 
 ### History
+
+- 2026-09-13T06:41:31.970Z backlog → todo (system)
+

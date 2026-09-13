@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: plugin scaffold + kk contract layer"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:10.265Z
-updated_at: "2026-09-13T06:27:06.883Z"
+updated_at: "2026-09-13T06:41:33.771Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -134,3 +134,6 @@ Handoff: contract.py + entry + coverage gate are consumed unchanged by 0122–01
 - Executor spawn seam: apps/cli/src/invoke.ts (pluginEntryCmd)
 
 ### History
+
+- 2026-09-13T06:41:33.771Z backlog → todo (system)
+

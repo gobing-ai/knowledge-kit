@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: audio concat, loudness-dip, QC audit, mp3"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:10.949Z
-updated_at: "2026-09-13T06:27:07.898Z"
+updated_at: "2026-09-13T06:41:28.739Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -125,3 +125,6 @@ Handoff: 0125 wires concat/dip/audit/mp3; nothing here reads env except is_mp3_r
 - Blocked by: 0121
 
 ### History
+
+- 2026-09-13T06:41:28.739Z backlog → todo (system)
+

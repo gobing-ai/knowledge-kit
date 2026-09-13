@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: pipeline orchestration + verify-retry + coverage gate"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:11.173Z
-updated_at: "2026-09-13T06:27:08.221Z"
+updated_at: "2026-09-13T06:41:27.212Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -136,3 +136,6 @@ Handoff: 0126 smoke-tests this via `kk executor run omni-voice-gen`.
 - Blocked by: 0122, 0123, 0124
 
 ### History
+
+- 2026-09-13T06:41:27.212Z backlog → todo (system)
+

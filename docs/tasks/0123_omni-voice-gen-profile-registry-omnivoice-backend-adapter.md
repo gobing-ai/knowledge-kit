@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "omni-voice-gen: profile registry + OmniVoice backend adapter"
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-13T05:54:10.751Z
-updated_at: "2026-09-13T06:27:07.569Z"
+updated_at: "2026-09-13T06:41:30.387Z"
 feature_id: F611
 
 ac_altitude: task-local
@@ -131,3 +131,6 @@ through backend.transcribe only.
 - Blocked by: 0121
 
 ### History
+
+- 2026-09-13T06:41:30.387Z backlog → todo (system)
+
