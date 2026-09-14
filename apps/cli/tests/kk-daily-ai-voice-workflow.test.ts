@@ -69,6 +69,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('publish_enabled: "false"');
         expect(yaml).toContain('last30days_enabled: "false"');
         expect(yaml).toContain('run_date: ""');
+        expect(yaml).toContain('agent: "inline"');
         // last30days disable writes an empty last30days input in prepare (fan-in --source tolerates it).
         expect(yaml).toContain('"$' + '{vars.last30days_enabled}" != "true"');
         // Content QC thresholds ride the plugin env channel (0099-calibrated DEFAULT_FILTER_CONFIG).
@@ -78,10 +79,11 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('qc_min_urgency: "2"');
         expect(yaml).toContain('qc_min_impact: "1"');
         expect(yaml).toContain('EPISODE_PLAN_MODE=filter');
-        // Date-stamped caching: article/script/cover outputs carry ${vars.run_date}.
-        expect(yaml).toContain('article-$' + '{vars.run_date}.md');
-        expect(yaml).toContain('voicescript-$' + '{vars.run_date}.yaml');
-        expect(yaml).toContain('cover-$' + '{vars.run_date}.png');
+        // Step-output naming convention: {run_date}_{NN}_{step_name}_{artifact}.{ext} (redo-by-delete;
+        // see docs/design/kk-daily-ai-voice.md section 4).
+        expect(yaml).toContain(`\${vars.run_date}_06_article_article.md`);
+        expect(yaml).toContain(`\${vars.run_date}_08_script_voicescript.yaml`);
+        expect(yaml).toContain(`\${vars.run_date}_07_cover_cover.png`);
         // Audio is cached when the day's content.json exists and QC passed.
         // Publish fan-out shells into postsurfing's own spur workflow — unset the recursion guard.
         expect(yaml).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE');
@@ -94,10 +96,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('--format cover');
         const workDir = '$' + '{vars.work_dir}';
         const runDate = '$' + '{vars.run_date}';
-        expect(yaml).toContain(`--content ${workDir}/2-article/article-${runDate}.md`);
+        expect(yaml).toContain(`--content ${workDir}/2-article/${runDate}_06_article_article.md`);
         expect(yaml).toContain(`--out ${workDir}/2-cover`);
         expect(yaml).toContain(`expectFile: ${workDir}/2-cover/content-cover-01.jpg`);
-        expect(yaml).toContain(`cover-${runDate}.png`); // canonical downstream artifact stays PNG (sips-normalized from jpg)
+        expect(yaml).toContain(`${runDate}_07_cover_cover.png`); // canonical downstream artifact stays PNG (sips-normalized from jpg)
         expect(yaml).not.toContain('wt-image-cover');
     });
 
@@ -311,26 +313,34 @@ if (plugin === 'aihot-ingest') {
                 expect(existsSync(join(workDir, '1-ingest/source.json'))).toBe(true);
                 const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
                 // 0097: per-source docs live in fan-in's internal temp files — only blended.json lands.
-                expect(existsSync(join(workDir, '1-ingest/blended.json'))).toBe(true);
+                expect(existsSync(join(workDir, `1-ingest/${runDate}_02_collect_blended.json`))).toBe(true);
                 expect(existsSync(join(workDir, '1-ingest/docs.json'))).toBe(false);
                 expect(existsSync(join(workDir, '1-ingest/last30days-docs.json'))).toBe(false);
                 expect(existsSync(join(workDir, `1-ingest/horizon-docs-${runDate}.json`))).toBe(false);
-                expect(existsSync(join(workDir, '2-facts/content.json'))).toBe(true);
-                expect(existsSync(join(workDir, '2-facts/core-facts.md'))).toBe(true);
-                expect(existsSync(join(workDir, '2-plan/content.json'))).toBe(true);
-                expect(existsSync(join(workDir, '2-plan/plan.json'))).toBe(true);
-                expect(existsSync(join(workDir, '2-plan/annotated.json'))).toBe(true);
-                expect(existsSync(join(workDir, '2-plan/candidates.json'))).toBe(true);
-                expect(existsSync(join(workDir, '2-plan/candidates.rejected.json'))).toBe(true);
-                expect(existsSync(join(workDir, `2-article/content-${runDate}.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-article/article-${runDate}.md`))).toBe(true);
-                expect(existsSync(join(workDir, `2-script/content-${runDate}.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-script/voicescript-${runDate}.yaml`))).toBe(true);
-                expect(existsSync(join(workDir, '3-audio/docs.json'))).toBe(true);
-                expect(existsSync(join(workDir, '3-audio/content.json'))).toBe(true);
+                expect(existsSync(join(workDir, `2-facts/${runDate}_02_collect_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-facts/${runDate}_02_collect_core-facts.md`))).toBe(true);
+                expect(existsSync(join(workDir, `2-plan/${runDate}_03_plan_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-plan/${runDate}_03_plan_plan.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-plan/${runDate}_04_quality-control-content_annotated.json`))).toBe(
+                    true,
+                );
+                expect(existsSync(join(workDir, `2-plan/${runDate}_04_quality-control-content_candidates.json`))).toBe(
+                    true,
+                );
+                expect(
+                    existsSync(join(workDir, `2-plan/${runDate}_04_quality-control-content_candidates.rejected.json`)),
+                ).toBe(true);
+                expect(existsSync(join(workDir, `2-article/${runDate}_06_article_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-article/${runDate}_06_article_article.md`))).toBe(true);
+                expect(existsSync(join(workDir, `2-script/${runDate}_08_script_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `2-script/${runDate}_08_script_voicescript.yaml`))).toBe(true);
+                expect(existsSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`))).toBe(true);
+                expect(existsSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`))).toBe(true);
                 expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
                 if (voiceGenerator !== 'voice-gen') {
-                    const swapped = JSON.parse(readFileSync(join(workDir, '3-audio/content.json'), 'utf8'));
+                    const swapped = JSON.parse(
+                        readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
+                    );
                     expect(swapped.metadata.generator).toBe('kk:omni-voice-gen');
                 }
 
@@ -367,7 +377,9 @@ if (plugin === 'aihot-ingest') {
                         .every((call) => call.pluginsPath === join(testRoot, 'plugin root')),
                 ).toBe(true);
 
-                const wrappedDocs = JSON.parse(readFileSync(join(workDir, '3-audio/docs.json'), 'utf8'));
+                const wrappedDocs = JSON.parse(
+                    readFileSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`), 'utf8'),
+                );
                 expect(wrappedDocs[0].metadata.voiceProfile).toBe('Alex');
             } finally {
                 rmSync(testRoot, { recursive: true, force: true });

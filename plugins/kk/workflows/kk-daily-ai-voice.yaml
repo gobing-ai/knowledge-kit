@@ -34,7 +34,7 @@ vars:
   publish_enabled: "false"
   last30days_enabled: "false"
   run_date: ""
-  agent: "auto"
+  agent: "inline"
   surfdash_post_path: ""
   surfdash_en_post_path: ""
   surfdash_ja_post_path: ""
@@ -78,17 +78,17 @@ states:
           # 45m leash; aihot/last30days keep the default.
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"collect\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            if [ -f "${vars.work_dir}/1-ingest/blended.json" ]; then echo "collect cached: ${vars.work_dir}/1-ingest/blended.json"; exit 0; fi;
-            kk executor fan-in --source "aihot-ingest:${vars.work_dir}/1-ingest/source.json" --source "last30days-ingest:${vars.work_dir}/1-ingest/last30days.json" --source "horizon-ingest:${vars.work_dir}/1-ingest/horizon.json" --source-timeout-override "horizon-ingest:2700000" --out "${vars.work_dir}/1-ingest/blended.json"
+            if [ -f "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json" ]; then echo "collect cached: ${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json"; exit 0; fi;
+            kk executor fan-in --source "aihot-ingest:${vars.work_dir}/1-ingest/source.json" --source "last30days-ingest:${vars.work_dir}/1-ingest/last30days.json" --source "horizon-ingest:${vars.work_dir}/1-ingest/horizon.json" --source-timeout-override "horizon-ingest:2700000" --out "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json"
       - kind: shell
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"collect\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            if [ -f "${vars.work_dir}/2-facts/content.json" ] && [ -f "${vars.work_dir}/2-facts/core-facts.md" ]; then echo "core facts cached: ${vars.work_dir}/2-facts/core-facts.md"; exit 0; fi;
-            kk executor run core-facts-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "${vars.work_dir}/2-facts/content.json" "$@" &&
-            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-facts/content.json" "${vars.work_dir}/2-facts/core-facts.md"
+            if [ -f "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_content.json" ] && [ -f "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_core-facts.md" ]; then echo "core facts cached: ${vars.work_dir}/2-facts/${vars.run_date}_02_collect_core-facts.md"; exit 0; fi;
+            kk executor run core-facts-gen --in "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json" --out "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_content.json" "$@" &&
+            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_content.json" "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_core-facts.md"
 
   - id: plan
     description: "Score/dedup/select + annotate the blended Doc[] into the episode plan (episode-plan-gen; annotate rides inside planEpisode)"
@@ -99,9 +99,9 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"plan\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            PLAN_CONTENT="${vars.work_dir}/2-plan/content.json"; PLAN_DOCS="${vars.work_dir}/2-plan/plan.json";
+            PLAN_CONTENT="${vars.work_dir}/2-plan/${vars.run_date}_03_plan_content.json"; PLAN_DOCS="${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json";
             if [ -f "$PLAN_DOCS" ]; then echo "plan cached: $PLAN_DOCS"; exit 0; fi;
-            EPISODE_PLAN_MAX_ITEMS="${vars.plan_max_items}" EPISODE_PLAN_DATE="${vars.run_date}" kk executor run episode-plan-gen --in "${vars.work_dir}/1-ingest/blended.json" --out "$PLAN_CONTENT" "$@" &&
+            EPISODE_PLAN_MAX_ITEMS="${vars.plan_max_items}" EPISODE_PLAN_DATE="${vars.run_date}" kk executor run episode-plan-gen --in "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json" --out "$PLAN_CONTENT" "$@" &&
             bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const docs = content.metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("plan: content.metadata.docs missing or empty"); process.exit(1); } await Bun.write(process.argv[2], JSON.stringify(docs, null, 2))' "$PLAN_CONTENT" "$PLAN_DOCS" &&
             test -f "$PLAN_DOCS" || { echo "plan: $PLAN_DOCS not written after episode-plan-gen"; exit 1; }
 
@@ -114,9 +114,9 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"quality-control-content\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            if [ -f "${vars.work_dir}/2-plan/candidates.json" ]; then echo "candidates cached: ${vars.work_dir}/2-plan/candidates.json"; exit 0; fi;
-            jq '.metadata.docs' "${vars.work_dir}/2-plan/content.json" > "${vars.work_dir}/2-plan/annotated.json" &&
-            EPISODE_PLAN_MODE=filter QC_CATEGORIES="${vars.qc_categories}" QC_MIN_QUALITY="${vars.qc_min_quality}" QC_MIN_IMPORTANCE="${vars.qc_min_importance}" QC_MIN_URGENCY="${vars.qc_min_urgency}" QC_MIN_IMPACT="${vars.qc_min_impact}" kk executor run episode-plan-gen --in "${vars.work_dir}/2-plan/annotated.json" --out "${vars.work_dir}/2-plan/candidates.json" "$@"
+            if [ -f "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" ]; then echo "candidates cached: ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json"; exit 0; fi;
+            jq '.metadata.docs' "${vars.work_dir}/2-plan/${vars.run_date}_03_plan_content.json" > "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_annotated.json" &&
+            EPISODE_PLAN_MODE=filter QC_CATEGORIES="${vars.qc_categories}" QC_MIN_QUALITY="${vars.qc_min_quality}" QC_MIN_IMPORTANCE="${vars.qc_min_importance}" QC_MIN_URGENCY="${vars.qc_min_urgency}" QC_MIN_IMPACT="${vars.qc_min_impact}" kk executor run episode-plan-gen --in "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_annotated.json" --out "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" "$@"
 
   - id: plan-translate
     description: "Translate needsTranslation plan items into the output plan.json via agent.run"
@@ -126,14 +126,14 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Read the JSON file at ${vars.work_dir}/2-plan/candidates.json. Its metadata.docs is a JSON array of news items (Doc[]) — this is the episode plan to translate. Do not edit candidates.json.
+            Read the JSON file at ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json. Its metadata.docs is a JSON array of news items (Doc[]) — this is the episode plan to translate. Do not edit candidates.json.
             For every item with needsTranslation: translate its "title" and "body" fields into natural, concise Chinese (simplified).
             Titles must read as a news event, not a bare label: derive the title from the item's body (first sentence carries the event) so "Sora 2" becomes e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型" — subject + action + object. Keep product/model/company names verbatim.
             Keep everything else untouched: metadata (including needsTranslation, planScore, mergedFrom, urls), sourceUri, id, mediaType.
             Preserve any URLs inside the body text. Keep technical terms (product/model/company names) in their original form where that is clearer.
             The output must be strictly valid JSON: escape every double quote inside string values as \", never use raw ASCII double quotes inside Chinese text (use 「」 or \"), and produce no trailing commas or comments.
-            Write the translated array — a valid JSON array of the same length, same item order, same ids — to ${vars.work_dir}/2-plan/plan.json (create the file).
-          expectFile: ${vars.work_dir}/2-plan/plan.json
+            Write the translated array — a valid JSON array of the same length, same item order, same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json (create the file).
+          expectFile: ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json
           allowAppend: false
 
   - id: article
@@ -145,8 +145,8 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"article\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            CONTENT_OUT="${vars.work_dir}/2-article/content-${vars.run_date}.json"; ARTICLE_MD="${vars.work_dir}/2-article/article-${vars.run_date}.md";
-            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else PLAN_IN="${vars.work_dir}/2-plan/plan.json"; PLAN_OK=1; bun -e 'try { JSON.parse(await Bun.file(process.argv[1]).text()); process.exit(0); } catch (e) { console.warn("article: plan.json invalid JSON — replacing with untranslated plan (downstream states read this file): " + e.message); const docs = JSON.parse(await Bun.file(process.argv[2]).text()).metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("article: candidates.json metadata.docs missing"); process.exit(2); } await Bun.write(process.argv[1], JSON.stringify(docs, null, 2)); process.exit(1); }' "$PLAN_IN" "${vars.work_dir}/2-plan/candidates.json"; case $? in 0|1) PLAN_OK=0;; esac; test "$PLAN_OK" -eq 0 || { echo "article: no usable plan input"; exit 1; }; ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "$PLAN_IN" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
+            CONTENT_OUT="${vars.work_dir}/2-article/${vars.run_date}_06_article_content.json"; ARTICLE_MD="${vars.work_dir}/2-article/${vars.run_date}_06_article_article.md";
+            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else PLAN_IN="${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json"; PLAN_OK=1; bun -e 'try { JSON.parse(await Bun.file(process.argv[1]).text()); process.exit(0); } catch (e) { console.warn("article: plan.json invalid JSON — replacing with untranslated plan (downstream states read this file): " + e.message); const docs = JSON.parse(await Bun.file(process.argv[2]).text()).metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("article: candidates.json metadata.docs missing"); process.exit(2); } await Bun.write(process.argv[1], JSON.stringify(docs, null, 2)); process.exit(1); }' "$PLAN_IN" "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json"; case $? in 0|1) PLAN_OK=0;; esac; test "$PLAN_OK" -eq 0 || { echo "article: no usable plan input"; exit 1; }; ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "$PLAN_IN" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
 
   - id: cover
     description: "Generate the article cover image via the kk:image-authoring skill (agent.run)"
@@ -158,7 +158,7 @@ states:
           input: |
             Invoke the kk:image-authoring skill (generate operation).
             This node is a non-interactive workflow step: run every image command with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 in the environment (this workflow approves the image spend via cover_enabled) — never prompt, never open a question.
-            Command: --format cover --content ${vars.work_dir}/2-article/article-${vars.run_date}.md --out ${vars.work_dir}/2-cover
+            Command: --format cover --content ${vars.work_dir}/2-article/${vars.run_date}_06_article_article.md --out ${vars.work_dir}/2-cover
             Derive the cover template variables (title, subtitle, topics) from the article as the skill owns; style is the format's default — do not pass --style.
             The plugin writes ${vars.work_dir}/2-cover/content.json plus the artifact ${vars.work_dir}/2-cover/content-cover-01.<ext>, where <ext> follows the elected provider's native output (payload honesty: minimax returns JPEG, google/ark return PNG). If generation fails, report the error verbatim and stop — no procedural fallback.
             Run 20260911 context: only MINIMAX_API_KEY is credentialed (ARK out of token, google key unset), so the elected provider is minimax and the artifact lands as content-cover-01.jpg.
@@ -176,8 +176,8 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"script\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            SCRIPT_CONTENT_OUT="${vars.work_dir}/2-script/content-${vars.run_date}.json"; VOICESCRIPT_YAML="${vars.work_dir}/2-script/voicescript-${vars.run_date}.yaml";
-            if [ -f "$VOICESCRIPT_YAML" ]; then echo "voicescript capped by plan: $VOICESCRIPT_YAML"; else DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/2-plan/plan.json" --out "$SCRIPT_CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$SCRIPT_CONTENT_OUT" "$VOICESCRIPT_YAML"; fi
+            SCRIPT_CONTENT_OUT="${vars.work_dir}/2-script/${vars.run_date}_08_script_content.json"; VOICESCRIPT_YAML="${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml";
+            if [ -f "$VOICESCRIPT_YAML" ]; then echo "voicescript capped by plan: $VOICESCRIPT_YAML"; else DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json" --out "$SCRIPT_CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$SCRIPT_CONTENT_OUT" "$VOICESCRIPT_YAML"; fi
 
   - id: review
     description: "Operator reviews the generated news script before speech synthesis"
@@ -185,7 +185,7 @@ states:
     onEnter:
       - kind: hitl.confirm
         options:
-          prompt: "Review daily AI news VoiceScript at ${vars.work_dir}/2-script/voicescript-${vars.run_date}.yaml. Proceed to voice generation?"
+          prompt: "Review daily AI news VoiceScript at ${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml. Proceed to voice generation?"
           var: __hitlAnswer
 
   - id: wrap-docs
@@ -195,7 +195,7 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"wrap-docs\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "robin-news" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/voicescript-${vars.run_date}.yaml" "${vars.work_dir}/3-audio/docs.json" "${vars.voice_profile}"
+            bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "robin-news" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml" "${vars.work_dir}/3-audio/${vars.run_date}_10_wrap-docs_docs.json" "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice generator plugin (voice_generator var) to generate audio"
@@ -206,8 +206,8 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"generate\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            if [ -f "${vars.work_dir}/3-audio/content.json" ] && jq -e '.metadata.qc.passed == true' "${vars.work_dir}/3-audio/content.json" > /dev/null 2>&1; then echo "audio cached: ${vars.work_dir}/3-audio/content.json (QC passed)"; exit 0; fi;
-            VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run ${vars.voice_generator} --in "${vars.work_dir}/3-audio/docs.json" --out "${vars.work_dir}/3-audio/content.json" "$@"
+            if [ -f "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" ] && jq -e '.metadata.qc.passed == true' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" > /dev/null 2>&1; then echo "audio cached: ${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json (QC passed)"; exit 0; fi;
+            VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run ${vars.voice_generator} --in "${vars.work_dir}/3-audio/${vars.run_date}_10_wrap-docs_docs.json" --out "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" "$@"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
@@ -216,7 +216,7 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"quality-control\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/content.json"
+            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json"
 
   - id: publish-prep
     description: "Merge article Content with audio (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
@@ -225,7 +225,7 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-prep\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, runDate: process.argv[5] }, options: { audioFile, durationSec: audioMeta.duration, coverPath: existsSync(coverPath) ? coverPath : undefined } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/content-${vars.run_date}.json" "${vars.work_dir}/3-audio/content.json" "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/2-cover/cover-${vars.run_date}.png" "${vars.run_date}"
+            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, runDate: process.argv[5] }, options: { audioFile, durationSec: audioMeta.duration, coverPath: existsSync(coverPath) ? coverPath : undefined } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/${vars.run_date}_06_article_content.json" "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" "${vars.work_dir}/2-cover/${vars.run_date}_07_cover_cover.png" "${vars.run_date}"
 
   - id: publish-surfdash
     description: "Publish the merged Content to surfdash (single target); result lands in result.json — surfdash publishes first so show-notes can link the article (task 0118 seam reorder)"
@@ -236,9 +236,9 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-surfdash\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            RESULT="${vars.work_dir}/3-publish/result-surfdash.json";
+            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_14_publish-surfdash_result.json";
             if jq -e '.targets[]? | select(.target == "surfdash-pub" and .ok == true and .status == "published")' "$RESULT" > /dev/null 2>&1; then echo "publish-surfdash cached: surfdash target ok in $RESULT"; exit 0; fi;
-            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target surfdash-pub --out "$RESULT" "$@" || true;
+            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" --target surfdash-pub --out "$RESULT" "$@" || true;
             echo "publish-surfdash: surfdash target dispatched; classification happens after podcast publish"
 
   - id: show-notes
@@ -251,11 +251,11 @@ states:
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
             TITLE_ARG="${vars.title}";
-            EFFECTIVE_TITLE="$(jq -r '.title // ""' "${vars.work_dir}/2-article/content-${vars.run_date}.json")";
+            EFFECTIVE_TITLE="$(jq -r '.title // ""' "${vars.work_dir}/2-article/${vars.run_date}_06_article_content.json")";
             if [ -z "$TITLE_ARG" ]; then TITLE_ARG="$EFFECTIVE_TITLE"; fi;
-            RESULT="${vars.work_dir}/3-publish/result.json";
+            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json";
             POST_PATH="$(jq -r '[(.targets // [])[] | select(.target == "surfdash-pub" and .ok == true) | .metadata.postPath // empty] | first // ""' "$RESULT" 2>/dev/null || true)";
-            PODCAST_PUB_TITLE="$TITLE_ARG" PODCAST_PUB_RUN_DATE="${vars.run_date}" PODCAST_PUB_BRIEF_MODE=true PODCAST_PUB_ARTICLE_POST_PATH="$POST_PATH" kk executor run podcast-pub --in "${vars.work_dir}/2-plan/plan.json" --out "${vars.work_dir}/3-publish/show-notes.md" "$@"
+            PODCAST_PUB_TITLE="$TITLE_ARG" PODCAST_PUB_RUN_DATE="${vars.run_date}" PODCAST_PUB_BRIEF_MODE=true PODCAST_PUB_ARTICLE_POST_PATH="$POST_PATH" kk executor run podcast-pub --in "${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_15_show-notes_show-notes.md" "$@"
 
   - id: publish-podcast
     description: "Publish the episode to podcast-pub with the rendered show notes (metadata.showNotes carries the brief/timeline markdown; map.ts falls back to content.body when absent — task 0118 R3)"
@@ -266,10 +266,10 @@ states:
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-podcast\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            RESULT="${vars.work_dir}/3-publish/result-podcast.json";
+            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_16_publish-podcast_result.json";
             if jq -e '.targets[]? | select(.target == "podcast-pub" and .ok == true and .status == "published")' "$RESULT" > /dev/null 2>&1; then echo "publish-podcast cached: podcast target ok in $RESULT"; exit 0; fi;
-            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const notes = await Bun.file(process.argv[2]).text(); content.metadata = { ...(content.metadata ?? {}), showNotes: notes }; await Bun.write(process.argv[1], JSON.stringify(content, null, 2))' "${vars.work_dir}/3-publish/content.json" "${vars.work_dir}/3-publish/show-notes.md" &&
-            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/content.json" --target podcast-pub --out "$RESULT" "$@" || true;
+            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const notes = await Bun.file(process.argv[2]).text(); content.metadata = { ...(content.metadata ?? {}), showNotes: notes }; await Bun.write(process.argv[1], JSON.stringify(content, null, 2))' "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" "${vars.work_dir}/3-publish/${vars.run_date}_15_show-notes_show-notes.md" &&
+            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" --target podcast-pub --out "$RESULT" "$@" || true;
             echo "publish-podcast: podcast target dispatched"
 
   - id: publish
@@ -279,8 +279,8 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            RESULT="${vars.work_dir}/3-publish/result.json"; STATUS_FILE="${vars.work_dir}/3-publish/publish-status.txt";
-            TARGETS="$(jq -s '[(.[0].targets // []), (.[1].targets // [])] | add' "${vars.work_dir}/3-publish/result-surfdash.json" "${vars.work_dir}/3-publish/result-podcast.json" 2>/dev/null || echo '[]')";
+            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json"; STATUS_FILE="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt";
+            TARGETS="$(jq -s '[(.[0].targets // []), (.[1].targets // [])] | add' "${vars.work_dir}/3-publish/${vars.run_date}_14_publish-surfdash_result.json" "${vars.work_dir}/3-publish/${vars.run_date}_16_publish-podcast_result.json" 2>/dev/null || echo '[]')";
             OK_COUNT="$(printf '%s' "$TARGETS" | jq '[.[]? | select(.ok == true and .status == "published")] | length')";
             TOTAL="$(printf '%s' "$TARGETS" | jq 'length')";
             if [ "$OK_COUNT" -gt 0 ] && [ "$OK_COUNT" -eq "$TOTAL" ]; then STATUS="full"; elif [ "$OK_COUNT" -gt 0 ]; then STATUS="partial"; else STATUS="none"; fi;
@@ -295,7 +295,7 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-partial\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            FAILED="$(jq -r '[.targets[]? | select(.ok != true or .status != "published") | .target] | join(",")' "${vars.work_dir}/3-publish/result.json")";
+            FAILED="$(jq -r '[.targets[]? | select(.ok != true or .status != "published") | .target] | join(",")' "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json")";
             if [ -z "$FAILED" ]; then FAILED="(unparsed)"; fi;
             echo "WARNING: partial publish — failed targets: $FAILED" >&2;
             mkdir -p .spur/run &&
@@ -308,15 +308,15 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"run-report\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            REPORT_MD="${vars.work_dir}/run-report-${vars.run_date}.md";
+            REPORT_MD="${vars.work_dir}/${vars.run_date}_19_run-report_report.md";
             if [ -f "$REPORT_MD" ]; then echo "run report cached: $REPORT_MD"; exit 0; fi;
-            CANDS="${vars.work_dir}/2-plan/episode-plan.json";
-            test -f "${vars.work_dir}/2-plan/candidates.json" || { echo "run-report: no candidates.json (run ended below plan step) — skip"; exit 0; };
-            jq '.metadata.docs // []' "${vars.work_dir}/2-plan/candidates.json" > "$CANDS";
+            CANDS="${vars.work_dir}/2-plan/${vars.run_date}_19_run-report_episode-plan.json";
+            test -f "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" || { echo "run-report: no candidates.json (run ended below plan step) — skip"; exit 0; };
+            jq '.metadata.docs // []' "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" > "$CANDS";
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            QC_MIN_QUALITY="${vars.qc_min_quality}" QC_MIN_IMPORTANCE="${vars.qc_min_importance}" QC_MIN_URGENCY="${vars.qc_min_urgency}" QC_MIN_IMPACT="${vars.qc_min_impact}" NEWS_REPORT_REJECTED_FILE="${vars.work_dir}/2-plan/candidates.rejected.json" NEWS_REPORT_TIMING_FILE="${vars.work_dir}/step-timing.json" NEWS_REPORT_DATE="${vars.run_date}" kk executor run news-report-gen --in "$CANDS" --out "${vars.work_dir}/run-report.json" "$@" &&
-            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/run-report.json" "$REPORT_MD" &&
+            QC_MIN_QUALITY="${vars.qc_min_quality}" QC_MIN_IMPORTANCE="${vars.qc_min_importance}" QC_MIN_URGENCY="${vars.qc_min_urgency}" QC_MIN_IMPACT="${vars.qc_min_impact}" NEWS_REPORT_REJECTED_FILE="${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.rejected.json" NEWS_REPORT_TIMING_FILE="${vars.work_dir}/step-timing.json" NEWS_REPORT_DATE="${vars.run_date}" kk executor run news-report-gen --in "$CANDS" --out "${vars.work_dir}/${vars.run_date}_19_run-report_report.json" "$@" &&
+            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/${vars.run_date}_19_run-report_report.json" "$REPORT_MD" &&
             echo "run report written: $REPORT_MD"
 
   - id: translate-en
@@ -326,26 +326,26 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"translate-en\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            RESULT="${vars.work_dir}/3-publish/result.json";
+            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json";
             ZH="$(jq -r '[(.targets // [])[] | select(.target == "surfdash-pub" and .ok == true) | .metadata.postPath // empty] | first // ""' "$RESULT")";
             case "$ZH" in *index.md) ;; *) ZH="";; esac;
-            printf '%s' "$ZH" > "${vars.work_dir}/3-publish/zh-post-path.txt";
+            printf '%s' "$ZH" > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt";
             EN="$(printf '%s' "$ZH" | sed 's|/zh/|/en/|')";
-            printf '%s' "$EN" > "${vars.work_dir}/3-publish/en-post-path.txt";
+            printf '%s' "$EN" > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_en-post-path.txt";
             test -n "$ZH" || { echo "no zh post path — skip translate-en"; exit 0; };
             if [ -f "$EN" ]; then echo "en draft cached: $EN"; exit 0; fi;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            jq -n --arg postPath "$ZH" --arg target en '{body: "", options: {operation: "scaffold-locale", postPath: $postPath, target: $target}}' > "${vars.work_dir}/3-publish/scaffold-en.json" &&
-            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/scaffold-en.json" --out "${vars.work_dir}/3-publish/scaffold-en-result.json" "$@" &&
-            jq -r '.metadata.draftPath // ""' "${vars.work_dir}/3-publish/scaffold-en-result.json" > "${vars.work_dir}/3-publish/en-post-path.txt"
+            jq -n --arg postPath "$ZH" --arg target en '{body: "", options: {operation: "scaffold-locale", postPath: $postPath, target: $target}}' > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en.json" &&
+            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en-result.json" "$@" &&
+            jq -r '.metadata.draftPath // ""' "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en-result.json" > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_en-post-path.txt"
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/zh-post-path.txt
+          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt
           var: surfdash_post_path
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/en-post-path.txt
+          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_en-post-path.txt
           var: surfdash_en_post_path
 
   - id: translate-en-agent
@@ -369,20 +369,20 @@ states:
         options:
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"translate-ja\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            ZH="$(cat "${vars.work_dir}/3-publish/zh-post-path.txt" 2>/dev/null || printf '')";
+            ZH="$(cat "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt" 2>/dev/null || printf '')";
             JA="$(printf '%s' "$ZH" | sed 's|/zh/|/ja/|')";
-            printf '%s' "$JA" > "${vars.work_dir}/3-publish/ja-post-path.txt";
+            printf '%s' "$JA" > "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt";
             test -n "$ZH" || { echo "no zh post path — skip translate-ja"; exit 0; };
             if [ -f "$JA" ]; then echo "ja draft cached: $JA"; exit 0; fi;
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            jq -n --arg postPath "$ZH" --arg target ja '{body: "", options: {operation: "scaffold-locale", postPath: $postPath, target: $target}}' > "${vars.work_dir}/3-publish/scaffold-ja.json" &&
-            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/scaffold-ja.json" --out "${vars.work_dir}/3-publish/scaffold-ja-result.json" "$@" &&
-            JA="$(jq -r '.metadata.draftPath // ""' "${vars.work_dir}/3-publish/scaffold-ja-result.json")" &&
-            printf '%s' "$JA" > "${vars.work_dir}/3-publish/ja-post-path.txt"
+            jq -n --arg postPath "$ZH" --arg target ja '{body: "", options: {operation: "scaffold-locale", postPath: $postPath, target: $target}}' > "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja.json" &&
+            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja-result.json" "$@" &&
+            JA="$(jq -r '.metadata.draftPath // ""' "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja-result.json")" &&
+            printf '%s' "$JA" > "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt"
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/ja-post-path.txt
+          path: ${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt
           var: surfdash_ja_post_path
 
   - id: translate-ja-agent
@@ -409,8 +409,8 @@ states:
             test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-sync"; exit 0; };
             set --;
             if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            jq -n --arg postPath "${vars.surfdash_post_path}" '{body: "", options: {operation: "sync", postPath: $postPath}}' > "${vars.work_dir}/3-publish/sync.json" &&
-            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/sync.json" --out "${vars.work_dir}/3-publish/sync-result.json" "$@"
+            jq -n --arg postPath "${vars.surfdash_post_path}" '{body: "", options: {operation: "sync", postPath: $postPath}}' > "${vars.work_dir}/3-publish/${vars.run_date}_24_translate-sync_sync.json" &&
+            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/${vars.run_date}_24_translate-sync_sync.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_24_translate-sync_sync-result.json" "$@"
 
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → QC'd plan → article/cover/script/voice → publish/locales)"
@@ -446,7 +446,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(jq ''.metadata.docs | length == 0'' "${vars.work_dir}/2-plan/candidates.json")" = "true"'
+        command: 'test "$(jq ''.metadata.docs | length == 0'' "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json")" = "true"'
 
   - from: quality-control-content
     to: plan-translate
@@ -476,7 +476,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.cover_enabled}" = "true" && test ! -f "${vars.work_dir}/2-cover/cover-${vars.run_date}.png"'
+        command: 'test "${vars.cover_enabled}" = "true" && test ! -f "${vars.work_dir}/2-cover/${vars.run_date}_07_cover_cover.png"'
 
   - from: article
     to: script
@@ -538,7 +538,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.publish_enabled}" = "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/content.json")" = "true"'
+        command: 'test "${vars.publish_enabled}" = "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json")" = "true"'
 
   - from: quality-control
     to: done
@@ -546,7 +546,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.publish_enabled}" != "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/content.json")" = "true"'
+        command: 'test "${vars.publish_enabled}" != "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json")" = "true"'
 
   - from: quality-control
     to: failed
@@ -584,7 +584,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/publish-status.txt")" = "full"'
+        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "full"'
 
   - from: publish
     to: publish-partial
@@ -592,7 +592,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/publish-status.txt")" = "partial"'
+        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "partial"'
 
   - from: publish
     to: failed
@@ -600,7 +600,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/publish-status.txt")" = "none"'
+        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "none"'
 
   - from: publish-partial
     to: run-report
@@ -614,7 +614,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/publish-status.txt")" = "full"'
+        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "full"'
 
   - from: run-report
     to: done
@@ -622,7 +622,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/publish-status.txt")" = "partial"'
+        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "partial"'
 
   - from: translate-en
     to: translate-en-agent
