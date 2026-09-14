@@ -716,3 +716,33 @@ Learnings artifact written to `.spur/run/082d582d-4846-4bca-abf5-8de1196cdc1a-wr
 - Pattern across the batch: drop-in replacement works because the contract, not the
   implementation, is the swap point — identical `--in`/`--out`, identical `metadata` shape
   (modulo `generator: "kk:omni-voice-gen"`), identical env knobs where semantics allow.
+Wrapup complete: drift audit ran with detection evidence (clean across all four doc areas — the YAML was the drift, 0130 already repaired it to the documented spec); artifact written to `.spur/run/090c7494-ac85-49a1-a588-dd01f9a48e5b-wrapup-learnings.md`.
+
+# Working learnings — wrapup run 090c7494 (batch: F8 kk-solo-podcast schema fix)
+
+## 2026-09-14
+
+### 0130 — Fix kk-solo-podcast.yaml shell-action schema (command: indent + options: null)
+
+**Conventions**
+
+- Spur state-machine shell actions are `{ kind: shell, options: { command: >- … } }` — `command` nests **inside** `options`, never as a sibling of `kind`. Canonical mirror: `plugins/kk/workflows/kk-itc.yaml:33-45`.
+- The authoritative doc for this shape already existed at `docs/design/multi-root-plugin-discovery.md:19-31`; the fix was repairing YAML drift *to* the docs, so 00/03/04/design/* needed no edits. Check the spec before assuming doc repairs — the docs are often already right.
+- Defect-only repairs (no new command/flag/config/schema/DTO) are T3-exempt: no ADR entry, no 04 sync obligation.
+
+**Errors fixed**
+
+- 8 `onEnter` shell actions carried `options:` valueless (→ `null`) plus `command: >-` as an unknown sibling field → 16 JSON-schema violations (8x `options: expected object, got null`, 8x `unknown field "command"`); workflow could not load. Fix: uniform +2-space re-indent of the `command:` line and every block-scalar content line, per action.
+- Pre-existing defect: confirmed reproducing on the untouched main checkout, pre-dating commit `fcf4fda` — not caused by current F8 work. Provenance recorded in R4.
+
+**Patterns**
+
+- YAML re-indent safety: with a folded block scalar (`>-`), a uniform +2-space re-indent leaves the parsed string byte-identical. Safe nesting repairs keep `git diff` purely whitespace; verify via `git diff` line-count symmetry (108/108) plus the string-assertion tests (`kk-solo-podcast-workflow.test.ts`, `workflow-run-command.test.ts`).
+- AC amendment protocol: when an AC asserts an unobservable (here: an `errorCount` field the CLI never emits) or an out-of-scope gate, amend it during the run to the verifiable contract — dated Q&A entry, rationale, and the residual filed as a follow-up task (0131) instead of leaving an unsatisfiable gate red.
+- Task Design "Anti-patterns (do not implement)" block: enumerating forbidden edits (no rewrite/split/reorder/re-wrap, no `>-`→`|` switch, don't touch valid `agent.run`/operator-select actions) keeps a whitespace-only repair surgical through implementation and review.
+
+**Gotchas**
+
+- `spur workflow validate --json` emits `ok` / `valid` / `errors` — it has **no `errorCount` field**, ever. Parse the JSON fields, don't assert fields from memory.
+- Validate's exit code is **not** schema validity: it is `!valid || hasError`, where `hasError` includes ADR-115 *composition* findings (content-measure gate, validate-only; spur-new `apps/cli/src/commands/workflow.ts:455`). "Schema-valid but exits 1" is a legitimate state when only composition debt remains — run/dry-run/continue never see composition findings (`workflow.ts:453`).
+- Composition debt is repo-wide, not file-local: the untouched canonical mirror `kk-itc.yaml` also exits 1 on its own finding. Over-length shell actions (error >10 logical commands; warn >3) and prompts (>1000 chars) are tracked as task 0131, not fixed inside a no-behavior-change repair.

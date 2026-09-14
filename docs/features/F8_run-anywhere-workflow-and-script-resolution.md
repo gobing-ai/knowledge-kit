@@ -109,7 +109,8 @@ Feature: Run-anywhere workflow and script resolution
 | 0127 | Resolve workflows_dir from global installs and default per-workflow workspaces in workflow-run | done |
 | 0128 | Flatten single-file step outputs across itc, solo-podcast, and daily-ai-voice workflows | done |
 | 0129 | Sync docs and help surfaces to the new workflow folder and workspace contract | done |
-| 0130 | Fix kk-solo-podcast.yaml shell-action schema (command: indent + options: null) | todo |
+| 0130 | Fix kk-solo-podcast.yaml shell-action schema (command: indent + options: null) | done |
+| 0131 | Reduce ADR-115 composition findings in kk-solo-podcast.yaml (4 shell actions + 1 agent.run prompt over threshold) | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
