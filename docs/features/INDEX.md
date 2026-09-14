@@ -43,7 +43,7 @@
         └── [active] **F61**: Daily AI news end-to-end pipeline (wayfinder map) ([F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md](./F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md))
             └── [done] **F611**: OmniVoice voice generator plugin (omni-voice-gen) ([F611_omnivoice-voice-generator-plugin-omni-voice-gen.md](./F611_omnivoice-voice-generator-plugin-omni-voice-gen.md))
     ├── [done] **F7**: Audio-authoring skill extraction (wayfinder map) ([F7_audio-authoring-skill-extraction-wayfinder-map.md](./F7_audio-authoring-skill-extraction-wayfinder-map.md))
-    ├── [done] **F8**: Run-anywhere workflow and script resolution ([F8_run-anywhere-workflow-and-script-resolution.md](./F8_run-anywhere-workflow-and-script-resolution.md))
+    ├── [active] **F8**: Run-anywhere workflow and script resolution ([F8_run-anywhere-workflow-and-script-resolution.md](./F8_run-anywhere-workflow-and-script-resolution.md))
     └── [done] **F9**: Explain-things skill and tell-me command ([F9_explain-things-skill-and-tell-me-command.md](./F9_explain-things-skill-and-tell-me-command.md))
 [cancelled] **G**: PublishPlugin rewrite epic ([G_publishplugin-rewrite-epic.md](./G_publishplugin-rewrite-epic.md))
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
@@ -55,4 +55,5 @@
 [backlog] **M**: kk-user-config-roots ([M_kk-user-config-roots.md](./M_kk-user-config-roots.md))
 [done] **N**: daily-ai-voice-cover-image-authoring ([N_daily-ai-voice-cover-image-authoring.md](./N_daily-ai-voice-cover-image-authoring.md))
 [verifying] **O**: kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish ([O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md](./O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md))
+[cancelled] **P**: Workflow folder fallback and per-workflow workspace defaults ([P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md](./P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md))
 <!-- END AUTO-GENERATED -->
