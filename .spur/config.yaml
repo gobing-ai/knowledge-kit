@@ -104,6 +104,10 @@ builder:
     releaseCommitType: chore
     releaseCommitScope: release
     ghRunListLimit: 5
+    # Version carriers beyond the built-ins (workspace package.json; marketplace + entry
+    # plugin.json). None needed here — the built-ins already cover superskill-facing
+    # staleness detection. Registry: apps/cli/src/version-carriers.ts (in spur-new).
+    versionCarriers: []
 
 # ── Planning (design §2.1 / §9) ──
 tasks:
