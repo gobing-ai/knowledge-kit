@@ -338,15 +338,3 @@ def validate_voice_script(script: VoiceScript, sink: WarnSink) -> None:
             raise ValueError("seed must be a non-negative integer")
 
         _collect_ignored(segment, f"segments[{idx}]", sink)
-
-
-def resolve_instruct(instruct: str | None = None, emotion: str | None = None) -> str | None:
-    if instruct and emotion:
-        if emotion.lower() in instruct.lower():
-            return instruct
-        return f"{instruct}. Emotion: {emotion}"
-    if instruct:
-        return instruct
-    if emotion:
-        return f"Speak in a {emotion} tone."
-    return None

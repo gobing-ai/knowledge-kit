@@ -138,13 +138,16 @@ def test_two_segment_render_writes_validated_content_wav_and_spec_metadata(tmp_p
     assert out.with_suffix(".wav").read_bytes()[44:] == CLEAN_A[44:] + bytes(1000) + CLEAN_B[44:]
     assert not stale_mp3.exists()
     assert backend.loaded
-    assert (backend.calls[0]["instruct"], backend.calls[0]["language"]) == ("Speak in a happy tone.", "en")
-    assert (backend.calls[1]["profile"].instruct, backend.calls[1]["instruct"]) == ("calm narrator", None)
+    # Free-text emotion is unrepresentable in OmniVoice's instruct vocabulary: it is dropped
+    # (metadata keeps it) and the resolved profile's instruct carries the voice.
+    assert (backend.calls[0]["instruct"], backend.calls[0]["language"]) == (None, "en")
+    assert (backend.calls[0]["profile"].instruct, backend.calls[1]["profile"].instruct) == ("bright host", "calm narrator")
     assert yaml.safe_load(content.body)["segments"][1] == {"text": BYE, "profile": "narrator", "gap_ms": 500, "engine": "qwen"}
 
     captured = capsys.readouterr()
     assert captured.out == ""  # stdout stays machine-clean
     assert captured.err.count("ignoring VoiceScript fields") == 1
+    assert captured.err.count("ignoring emotion 'happy'") == 1  # once per distinct value
     assert "2 segments queued" in captured.err and "segment 2/2 done" in captured.err
 
 

@@ -1,6 +1,6 @@
 {
     "robin-news": {
-        "instruct": "Professional broadcast news anchor: clear, confident, steady pacing, neutral accent, warm but authoritative tone suitable for a daily AI news podcast."
+        "instruct": "male, middle-aged, moderate pitch"
     },
     "sample-clone": {
         "ref_audio": "voices/sample-ref.wav",
@@ -10,6 +10,6 @@
         "prompt": "voices/sample-prompt.pt"
     },
     "sample-narrator": {
-        "instruct": "Speak in a calm, measured narrator voice."
+        "instruct": "male, middle-aged, low pitch"
     }
 }

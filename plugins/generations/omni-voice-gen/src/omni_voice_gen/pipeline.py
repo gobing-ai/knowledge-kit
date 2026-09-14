@@ -39,7 +39,6 @@ from .voicescript import (
     WarnSink,
     merge_voice_scripts,
     parse_doc_to_voicescript,
-    resolve_instruct,
     validate_voice_script,
 )
 
@@ -49,6 +48,10 @@ MAX_VERIFY_RETRIES = 2  # verify attempts 0..2 (voice-gen parity)
 
 def _log(msg: str) -> None:
     print(f"omni-voice-gen: {msg}", file=sys.stderr)
+
+
+# Emotions already warned about this run (one line per distinct value, not per segment).
+_ignored_emotions: set[str] = set()
 
 
 def _delete(*paths: str) -> None:
@@ -188,11 +191,24 @@ def _render(
         speaker = (script.speakers or {}).get(segment.speaker) if segment.speaker else None
         profile = resolve_profile_target(segment, speaker, script, env_default, docs)
         emotion = _first(segment.emotion, getattr(speaker, "emotion", None), script.default_emotion)
+        # OmniVoice instruct accepts a fixed vocabulary (accent/age/pitch) with no emotion items,
+        # so voicegen-era free-text emotion is unrepresentable: drop it loudly and let the
+        # resolved profile's instruct carry the voice. An explicit segment/speaker instruct is
+        # operator-authored whitelist text and passes through untouched.
+        segment_instruct = _first(segment.instruct, getattr(speaker, "instruct", None))
+        if segment_instruct is None and emotion is not None:
+            key = emotion.strip().lower()
+            if key not in _ignored_emotions:
+                _ignored_emotions.add(key)
+                _log(
+                    f"ignoring emotion {emotion!r}: OmniVoice instruct vocabulary has no emotion items — "
+                    "voice comes from the resolved profile"
+                )
         spec: SegmentSpec = {
             "text": segment.text,
             "language": _first(segment.language, getattr(speaker, "language", None), script.language, "en"),
             "profile": resolve_profile(profile, registry),
-            "instruct": resolve_instruct(_first(segment.instruct, getattr(speaker, "instruct", None)), emotion),
+            "instruct": segment_instruct,
             "seed": None if segment.seed is None else int(segment.seed),
             "speed": None,
         }

@@ -11,7 +11,6 @@ from omni_voice_gen.voicescript import (
     WarnSink,
     merge_voice_scripts,
     parse_doc_to_voicescript,
-    resolve_instruct,
     validate_voice_script,
 )
 
@@ -342,12 +341,4 @@ def test_warn_sink_empty_emits_none() -> None:
     assert sink.emit_once() is None
 
 
-# --- resolve_instruct ---
 
-
-def test_resolve_instruct_variants() -> None:
-    assert resolve_instruct() is None
-    assert resolve_instruct("Speak slowly") == "Speak slowly"
-    assert resolve_instruct(emotion="calm") == "Speak in a calm tone."
-    assert resolve_instruct("Be Calm now", "calm") == "Be Calm now"
-    assert resolve_instruct("Speak slowly", "angry") == "Speak slowly. Emotion: angry"
