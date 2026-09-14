@@ -19,6 +19,15 @@ from .profiles import ProfileEntry
 
 DEFAULT_MODEL = "k2-fsa/OmniVoice"
 SAMPLE_RATE = 24000  # OmniVoice output rate; ASR transcribe is fixed at 24000 (task R4)
+_ASR_CHUNK_SECONDS = 28.0  # ponytail: Whisper errors on >30s inputs; fixed chunks, silence-aware split if boundary words hurt fidelity
+
+
+def _chunk_for_asr(audio: np.ndarray) -> list[np.ndarray]:
+    """Split a waveform into <=30s slices the upstream Whisper pipe accepts."""
+    chunk = int(_ASR_CHUNK_SECONDS * SAMPLE_RATE)
+    if len(audio) <= chunk:
+        return [audio]
+    return [audio[i : i + chunk] for i in range(0, len(audio), chunk)]
 
 
 class SegmentSpec(TypedDict):
@@ -147,4 +156,6 @@ class OmnivoiceBackend:
         if not self._asr_loaded:
             self._model.load_asr_model(model_name=self._asr_model)
             self._asr_loaded = True
-        return str(self._model.transcribe((_wav_to_float(wav), SAMPLE_RATE)))
+        audio = _wav_to_float(wav)
+        parts = [str(self._model.transcribe((part, SAMPLE_RATE))) for part in _chunk_for_asr(audio)]
+        return " ".join(part for part in parts if part)

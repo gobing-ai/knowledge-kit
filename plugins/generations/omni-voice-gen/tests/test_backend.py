@@ -20,6 +20,7 @@ from omni_voice_gen.backend import (
     FakeBackend,
     OmnivoiceBackend,
     SegmentSpec,
+    _chunk_for_asr,
     _default_device,
     _float_to_wav,
 )
@@ -105,6 +106,19 @@ def test_protocol_default_bodies_raise() -> None:
         Backend.generate(object(), _spec(ProfileEntry(kind="instruct", instruct="x")))
     with pytest.raises(NotImplementedError):
         Backend.transcribe(object(), b"wav", "en")
+
+
+def test_chunk_for_asr_keeps_short_audio_whole() -> None:
+    audio = np.zeros(SAMPLE_RATE, dtype=np.float32)  # 1s
+    assert _chunk_for_asr(audio) == [audio]
+
+
+def test_chunk_for_asr_splits_long_audio_into_30s_max_slices() -> None:
+    # 70s -> 28s + 28s + 14s: every slice inside Whisper's 30s single-window limit.
+    audio = np.zeros(int(70.0 * SAMPLE_RATE), dtype=np.float32)
+    chunks = _chunk_for_asr(audio)
+    assert [len(c) for c in chunks] == [int(28.0 * SAMPLE_RATE)] * 2 + [int(14.0 * SAMPLE_RATE)]
+    assert sum(len(c) for c in chunks) == len(audio)
 
 
 def test_fake_backend_replays_canned_data_by_call_order() -> None:
