@@ -106,9 +106,10 @@ Feature: Run-anywhere workflow and script resolution
 | 0080 | Resolve workflow scripts and YAML from the installed kk package root | done |
 | 0081 | Extract VoiceScript template from audio-authoring SKILL.md into templates/ | done |
 | 0082 | Fix cwd-relative paths in storm/itc/template/judge workflows for run-anywhere | done |
-| 0127 | Resolve workflows_dir from global installs and default per-workflow workspaces in workflow-run | todo |
-| 0128 | Flatten single-file step outputs across itc, solo-podcast, and daily-ai-voice workflows | todo |
-| 0129 | Sync docs and help surfaces to the new workflow folder and workspace contract | todo |
+| 0127 | Resolve workflows_dir from global installs and default per-workflow workspaces in workflow-run | done |
+| 0128 | Flatten single-file step outputs across itc, solo-podcast, and daily-ai-voice workflows | done |
+| 0129 | Sync docs and help surfaces to the new workflow folder and workspace contract | done |
+| 0130 | Fix kk-solo-podcast.yaml shell-action schema (command: indent + options: null) | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
