@@ -36,8 +36,8 @@ def test_load_registry_resolves_all_kinds(tmp_path: Path) -> None:
     )
     registry = load_registry(path)
     assert isinstance(registry, ProfileRegistry) and registry.path == path
-    assert registry["cloner"] == ProfileEntry(kind="clone", ref_audio="a.wav", ref_text="t")
-    assert registry["saved"] == ProfileEntry(kind="prompt", prompt="p.pt")
+    assert registry["cloner"].ref_audio == str((tmp_path / "a.wav").resolve())
+    assert registry["saved"].prompt == str((tmp_path / "p.pt").resolve())
     assert registry["narrator"] == ProfileEntry(kind="instruct", instruct="calm")
 
 

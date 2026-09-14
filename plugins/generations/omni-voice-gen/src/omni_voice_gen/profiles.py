@@ -83,6 +83,14 @@ def load_registry(path: Path | None = None) -> ProfileRegistry:
             f"profile registry at {path} must be a JSON object mapping profile names to entries"
         )
     entries = {name: _parse_entry(name, spec) for name, spec in data.items()}
+    # Resolve relative asset paths against the registry's directory so backend passes
+    # absolute paths to the engine regardless of process CWD.
+    base = path.resolve().parent
+    for entry in entries.values():
+        if entry.ref_audio and not Path(entry.ref_audio).is_absolute():
+            entry.ref_audio = str((base / entry.ref_audio).resolve())
+        if entry.prompt and not Path(entry.prompt).is_absolute():
+            entry.prompt = str((base / entry.prompt).resolve())
     lowered = [key.lower() for key in entries]
     if len(set(lowered)) != len(lowered):
         dupes = sorted({key for key in entries if lowered.count(key.lower()) > 1})
