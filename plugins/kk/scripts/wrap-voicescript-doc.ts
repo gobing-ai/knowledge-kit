@@ -2,9 +2,10 @@
 /**
  * Runtime VoiceScript→Doc[] wrapper for kk-solo-podcast.
  *
- * Copied with the workflow YAML into $KK_WORKFLOWS_DIR (default
- * ~/.config/kk/workflows). Node/Bun builtins only — no @gobing-ai/* and no
- * relative imports (those paths do not exist next to the runtime copy).
+ * Resolved from the kk package (`plugins/kk/scripts/`) by `solo-podcast-stages.ts`,
+ * or from an explicit runtime override ($KK_WORKFLOWS_DIR / ~/.config/kk/workflows)
+ * when one exists. Node/Bun builtins only — no @gobing-ai/* and no relative imports
+ * (those paths do not exist outside the package).
  *
  * SYNC: plugins/kk/workflows/kk-solo-podcast.yaml (wrap-docs state shells this
  * script with scriptPath, outPath, voiceProfile argv). The wrap shape must stay

@@ -18,7 +18,8 @@ Two homes (do not mix them up):
 `command -v kk` + symlink walk), repo checkout — and runs it in place; nothing is copied on the happy path. A file under
 `$HOME/.config/kk/workflows` is an **override** you place explicitly (or via `--force`). The
 VoiceScript checker (`validate-voicescript.ts`) and wrapper (`wrap-voicescript-doc.ts`)
-resolve the same way: var → `KK_WORKFLOWS_DIR` → package root → `$HOME/.config/kk/workflows`.
+resolve the same way: var → `KK_WORKFLOWS_DIR` → package root → `$HOME/.config/kk/workflows`
+(the chain lives in `solo-podcast-stages.ts`, which the YAML resolves from the package root).
 Checkout `docs/design/` is **not** on the runtime path and is not in the npm tarball.
 
 ```mermaid
@@ -39,8 +40,9 @@ length is a **word/char budget** at script-write plus a post-generate check on
 | Piece | Design-time (tarball / repo) | Runtime resolution order |
 | --- | --- | --- |
 | Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | override → `KK_WORKFLOWS_SOURCE` → bun/npm global → package root → checkout |
-| Validator | `plugins/kk/scripts/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
-| Wrapper | `plugins/kk/scripts/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
+| Stage runner | `plugins/kk/scripts/solo-podcast-stages.ts` | package root (`command -v kk` + symlink walk) |
+| Validator | `plugins/kk/scripts/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` (via the stage runner) |
+| Wrapper | `plugins/kk/scripts/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` (via the stage runner) |
 | Generator | `plugins/generations/voice-gen/` (npm pack) | `kk executor run voice-gen` (ADR-012 discovery) |
 
 ## Prerequisites
@@ -113,7 +115,9 @@ spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --dry-run --run-id d
   --vars '{"topic":"Why HNSW search degrades at 1B rows","work_dir":"./scratch/solo-dry","outline":"a","script_approved":"true","target_duration_min":"8","voice_profile":"Robin","language":"en","force":"true"}'
 ```
 
-`validate_script` empty → `${KK_WORKFLOWS_DIR:-$HOME/.config/kk/workflows}/validate-voicescript.ts`.
+`validate_script` empty → the stage runner resolves
+`validate-voicescript.ts` via `$KK_WORKFLOWS_DIR` → the package copy →
+`$HOME/.config/kk/workflows`.
 `plugins_path` empty → ADR-012 default discovery (no checkout `./plugins`).
 
 Expect `status: done` (9 transitions). Missing `4-audio/content.json` makes `duration-check`
@@ -144,18 +148,18 @@ Monitor: `spur workflow trace <run-id> --json`.
 
 | State | Action | Writes |
 | --- | --- | --- |
-| `prepare` | `mkdir`; XOR; profile; `brief.md` | `${work_dir}/brief.md` + `2-outline/` + `4-audio/` |
+| `prepare` | stage runner: `mkdir`; XOR; profile; `brief.md` | `${work_dir}/brief.md` + `2-outline/` + `4-audio/` |
 | `understand` | `agent.run` scribe | `1-briefing-briefing.md` |
 | `outline-write` | `agent.run`; require `-b.md` | `2-outline/outline-option-{a,b}.md` (+ optional c) |
 | `outline-select` | `hitl.select` (skip when `outline` set) | — |
 | `outline-commit` | `cp` | `2-outline/outline-approved.md` |
-| `script-write` | `agent.run`; inlined VoiceScript contract | `3-script-voicescript.yaml` |
-| `script-validate` | `bun $HOME/.config/kk/workflows/validate-voicescript.ts --in …` | — |
+| `script-write` | `agent.run`; VoiceScript contract = the skill's `templates/voicescript.solo.yaml` | `3-script-voicescript.yaml` |
+| `script-validate` | stage runner → `validate-voicescript.ts --in …` | — |
 | `script-review` | `hitl.confirm` (skip when `script_approved=true`) | — |
 | `script-revise` | `hitl.input`; cap 3 | `${work_dir}/.revise-count` |
-| `wrap-docs` | `bun …/wrap-voicescript-doc.ts` | `4-audio/docs.json` |
+| `wrap-docs` | stage runner → `wrap-voicescript-doc.ts` | `4-audio/docs.json` |
 | `generate` | `kk executor run voice-gen` | `4-audio/content.json` + `content.wav` |
-| `duration-check` | band check `onEnter`; miss → feedback + retry | `.duration-ok` on pass; `.duration-feedback` + `.revise-count++` on miss |
+| `duration-check` | stage runner: band check; miss → feedback + retry | `.duration-ok` on pass; `.duration-feedback` + `.revise-count++` on miss |
 
 ## Duration policy
 
@@ -199,15 +203,15 @@ shared `work_dir/.revise-count` (cap 3), and routes back to `script-write`; budg
 | `voice_profile` | `""` | else `VOICEBOX_DEFAULT_PROFILE` |
 | `language` | `"en"` | Voicebox language |
 | `plugins_path` | `""` | empty → ADR-012 defaults; checkout may set `./plugins` |
-| `validate_script` | `""` | empty → `$KK_WORKFLOWS_DIR/validate-voicescript.ts` |
+| `validate_script` | `""` | empty → the stage runner resolves `validate-voicescript.ts` ($KK_WORKFLOWS_DIR → package → `$HOME/.config/kk/workflows`) |
 | `agent` | `""` | `agent.run` |
-| `wrap_script` | `""` | empty → `$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts` |
+| `wrap_script` | `""` | empty → the stage runner resolves `wrap-voicescript-doc.ts` (same chain) |
 
 ## Using `voice-gen` / the checker directly
 
 ```bash
 kk executor run voice-gen --in docs.json --out content.json
-bun "${KK_WORKFLOWS_DIR:-$HOME/.config/kk/workflows}/validate-voicescript.ts" --in ./voicescript.yaml
+bun "$HOME/.config/kk/workflows/validate-voicescript.ts" --in ./voicescript.yaml   # an explicit override copy
 ```
 
 `--in` to `voice-gen` is `Doc[]`. `Doc.body` is plain text or VoiceScript YAML/JSON. WAV is
@@ -220,7 +224,8 @@ bun "${KK_WORKFLOWS_DIR:-$HOME/.config/kk/workflows}/validate-voicescript.ts" --
 - **Solo only** — one speaker via `default_profile`.
 - **No publish / judge.** No `kk workflow` noun (ADR-011).
 - **Live TTS is not CI** — static tests + validate + `--dry-run`.
-- **Do not `agent.run` `docs/design/*`** — not in the tarball; contract is inlined.
+- **Do not `agent.run` `docs/design/*`** — not in the tarball; the contract points at the
+  skill's `templates/voicescript.solo.yaml`.
 
 ## Under the hood
 
@@ -242,6 +247,7 @@ flowchart TD
 | File | Role |
 | --- | --- |
 | `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT (resolved in place at run time) |
+| `plugins/kk/scripts/solo-podcast-stages.ts` | `prepare` / `duration` logic + sidecar delegation (ADR-115 composition owner) |
 | `plugins/kk/scripts/validate-voicescript.ts` | design-time checker (resolved via the sidecar fallback chain) |
 | `plugins/kk/scripts/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (resolved via the sidecar fallback chain) |
 | `plugins/generations/voice-gen/` | D5 generator in the npm tarball |
@@ -261,6 +267,7 @@ spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json
 spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --dry-run --run-id dry-solo \
   --vars '{"topic":"duration budget smoke","work_dir":"./scratch/solo-dry","outline":"a","script_approved":"true","target_duration_min":"8","voice_profile":"Robin","force":"true"}' --json
 bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts \
+  apps/cli/tests/solo-podcast-stages.test.ts \
   apps/cli/tests/validate-voicescript.test.ts \
   apps/cli/tests/workflow-run-command.test.ts
 ```

@@ -37,33 +37,16 @@ states:
     onEnter:
       - kind: shell
         options:
+          # ADR-115: the XOR / voice_profile / overwrite / brief logic lives in the
+          # solo-podcast stage runner; this action only resolves the package root and
+          # delegates (one logical call).
           command: >-
-            set -e;
-            if [ -z "${vars.work_dir}" ]; then
-              echo "missing work_dir" >&2; exit 1;
-            fi;
-            mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline" "${vars.work_dir}/4-audio";
-            if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
-              echo "XOR violation: both topic and input_file set" >&2; exit 1;
-            fi;
-            if [ -z "${vars.topic}" ] && [ -z "${vars.input_file}" ]; then
-              echo "XOR violation: neither topic nor input_file set" >&2; exit 1;
-            fi;
-            if [ -z "${vars.voice_profile}" ] && [ -z "$VOICEBOX_DEFAULT_PROFILE" ]; then
-              echo "missing voice_profile (set vars.voice_profile or VOICEBOX_DEFAULT_PROFILE)" >&2; exit 1;
-            fi;
-            if [ -f "${vars.work_dir}/brief.md" ] && [ "${vars.force}" != "true" ]; then
-              echo "initialization target already exists at ${vars.work_dir}/brief.md; pass force=true to replace" >&2; exit 1;
-            fi;
-            if [ -n "${vars.topic}" ]; then
-              printf '%s\n' "${vars.topic}" > "${vars.work_dir}/brief.md";
-            else
-              if [ ! -f "${vars.input_file}" ]; then
-                echo "input file not found: ${vars.input_file}" >&2; exit 1;
-              fi;
-              cp "${vars.input_file}" "${vars.work_dir}/brief.md";
-            fi;
-            echo 0 > "${vars.work_dir}/.revise-count";
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/solo-podcast-stages.ts";
+            [ -f "$st" ] || echo "solo-podcast-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout), or rerun with /workflow-run kk-solo-podcast --force" >&2;
+            bun "$st" prepare "${vars.work_dir}" "${vars.topic}" "${vars.input_file}" "${vars.voice_profile}" "${vars.force}"
 
   - id: understand
     description: "Analyze brief and generate podcast briefing (agent.run)"
@@ -138,24 +121,16 @@ states:
         options:
           role: scribe
           agent: ${vars.agent}
+          # ADR-115 (R3): the VoiceScript field contract is the skill's own
+          # templates/voicescript.solo.yaml (task 0081) — not duplicated here. The prompt
+          # stays a bounded skill invocation: operation + inputs + output path + budget.
           input: |
             Invoke the kk:audio-authoring skill: operation `script`, mode `solo`.
-            Read the approved outline at ${vars.work_dir}/2-outline/outline-approved.md and briefing at ${vars.work_dir}/1-briefing-briefing.md.
-            Target duration is ${vars.target_duration_min} minutes.
-            Spoken budget: if language (${vars.language}) is zh, ja, or ko, target characters = ${vars.target_duration_min} * ${vars.cjk_chars_per_min}; otherwise target words = ${vars.target_duration_min} * ${vars.words_per_min}. Land inside ±20%, spoken prose, one speaker.
-            Author the complete solo-podcast VoiceScript YAML at ${vars.work_dir}/3-script-voicescript.yaml.
-            Emit ONLY valid YAML (no markdown fences, no repo/docs paths). Contract:
-            title: string
-            language: "${vars.language}"
-            default_profile: "${vars.voice_profile}"
-            default_engine: qwen|qwen_custom_voice|luxtts|chatterbox|chatterbox_turbo|tada|kokoro  # optional
-            segments:
-              - text: "spoken sentence"   # required, 1..50000 characters
-                gap_ms: 400               # optional, >= 0, silence before next clip
-                instruct: "warm"          # optional, <= 500 characters
-            Do not invent fields. Revision feedback: ${vars.__hitlInput}
-            Duration retries: if ${vars.work_dir}/.duration-feedback exists, invoke with `--force` (authorized rewrite) and treat its contents as the revision feedback.
-            Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min} --language ${vars.language} --profile ${vars.voice_profile} --revise "${vars.__hitlInput}"
+            Inputs: briefing ${vars.work_dir}/1-briefing-briefing.md; approved outline ${vars.work_dir}/2-outline/outline-approved.md; revision feedback ${vars.__hitlInput}.
+            Contract: the skill's templates/voicescript.solo.yaml — `language: "${vars.language}"`, `segments` of spoken text; no `default_profile`, no `title`, no invented fields.
+            Budget: ${vars.target_duration_min} min — zh/ja/ko ${vars.cjk_chars_per_min} chars/min, else ${vars.words_per_min} words/min; within ±20%, one speaker.
+            Write ONLY the YAML (no fences, no repo paths) to ${vars.work_dir}/3-script-voicescript.yaml.
+            Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min} --language ${vars.language} --profile ${vars.voice_profile} --revise "${vars.__hitlInput}"; add --force when ${vars.work_dir}/.duration-feedback exists (its contents are the revision feedback).
           expectFile: ${vars.work_dir}/3-script-voicescript.yaml
 
   - id: script-validate
@@ -163,26 +138,15 @@ states:
     onEnter:
       - kind: shell
         options:
+          # ADR-115: package-root resolution + delegation to validate-voicescript.ts
+          # (override chain preserved inside the stage runner).
           command: >-
-            set -e;
-            vs="${vars.validate_script}";
-            if [ ! -f "$vs" ]; then
-              kbin="$(command -v kk 2>/dev/null || true)";
-              while [ -L "$kbin" ]; do
-                link="$(readlink "$kbin")";
-                case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac;
-              done;
-              pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
-              vs="";
-              if [ -n "$KK_WORKFLOWS_DIR" ] && [ -f "$KK_WORKFLOWS_DIR/validate-voicescript.ts" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts";
-              elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/scripts/validate-voicescript.ts" ]; then vs="$pkg/plugins/kk/scripts/validate-voicescript.ts";
-              elif [ -f "$HOME/.config/kk/workflows/validate-voicescript.ts" ]; then vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi;
-            fi;
-            if [ -z "$vs" ]; then
-              echo "validate_script not found (searched: \$KK_WORKFLOWS_DIR, kk package root via \`command -v kk\`, \$HOME/.config/kk/workflows) — install the kk package or place an override with /workflow-run kk-solo-podcast --force" >&2;
-              exit 1;
-            fi;
-            bun "$vs" --in "${vars.work_dir}/3-script-voicescript.yaml"
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/solo-podcast-stages.ts";
+            [ -f "$st" ] || echo "solo-podcast-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout), or rerun with /workflow-run kk-solo-podcast --force" >&2;
+            bun "$st" validate "${vars.validate_script}" --in "${vars.work_dir}/3-script-voicescript.yaml"
 
   - id: script-review
     description: "Operator reviews and approves VoiceScript before live TTS generation"
@@ -213,26 +177,15 @@ states:
     onEnter:
       - kind: shell
         options:
+          # ADR-115: package-root resolution + delegation to wrap-voicescript-doc.ts
+          # (override chain preserved inside the stage runner).
           command: >-
-            set -e;
-            ws="${vars.wrap_script}";
-            if [ ! -f "$ws" ]; then
-              kbin="$(command -v kk 2>/dev/null || true)";
-              while [ -L "$kbin" ]; do
-                link="$(readlink "$kbin")";
-                case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac;
-              done;
-              pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
-              ws="";
-              if [ -n "$KK_WORKFLOWS_DIR" ] && [ -f "$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts" ]; then ws="$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts";
-              elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/scripts/wrap-voicescript-doc.ts" ]; then ws="$pkg/plugins/kk/scripts/wrap-voicescript-doc.ts";
-              elif [ -f "$HOME/.config/kk/workflows/wrap-voicescript-doc.ts" ]; then ws="$HOME/.config/kk/workflows/wrap-voicescript-doc.ts"; fi;
-            fi;
-            if [ -z "$ws" ]; then
-              echo "wrap_script not found (searched: \$KK_WORKFLOWS_DIR, kk package root via \`command -v kk\`, \$HOME/.config/kk/workflows) — install the kk package or place an override with /workflow-run kk-solo-podcast --force" >&2;
-              exit 1;
-            fi;
-            bun "$ws" "${vars.work_dir}/3-script-voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/solo-podcast-stages.ts";
+            [ -f "$st" ] || echo "solo-podcast-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout), or rerun with /workflow-run kk-solo-podcast --force" >&2;
+            bun "$st" wrap "${vars.wrap_script}" --in "${vars.work_dir}/3-script-voicescript.yaml" --out "${vars.work_dir}/4-audio/docs.json" --profile "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice-gen generator plugin to generate audio"
@@ -250,28 +203,16 @@ states:
     onEnter:
       - kind: shell
         options:
+          # ADR-115: the band math, .duration-feedback, and .revise-count bump live in
+          # the solo-podcast stage runner; the transition guards below still branch on
+          # .duration-ok.
           command: >-
-            rm -f "${vars.work_dir}/4-audio/.duration-ok";
-            if [ ! -f "${vars.work_dir}/4-audio/content.json" ]; then
-              exit 0;
-            fi;
-            dur=$(jq -r '.metadata.duration // empty' "${vars.work_dir}/4-audio/content.json" 2>/dev/null);
-            if [ -z "$dur" ]; then
-              printf 'Regenerate: audio metadata.duration missing or not a number.\n' > "${vars.work_dir}/.duration-feedback";
-              n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
-              echo $((n+1)) > "${vars.work_dir}/.revise-count";
-              exit 0;
-            fi;
-            target_s=$((${vars.target_duration_min} * 60));
-            min_s=$(awk -v t="$target_s" 'BEGIN {print t * 0.5}');
-            max_s=$(awk -v t="$target_s" 'BEGIN {print t * 2.0}');
-            if awk -v d="$dur" -v min="$min_s" -v max="$max_s" 'BEGIN { exit !(d >= min && d <= max) }'; then
-              touch "${vars.work_dir}/4-audio/.duration-ok";
-            else
-              printf 'Regenerate: last audio duration %ss outside 0.5x–2x of %ss; adjust segment lengths toward the target.\n' "$dur" "$target_s" > "${vars.work_dir}/.duration-feedback";
-              n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
-              echo $((n+1)) > "${vars.work_dir}/.revise-count";
-            fi
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/solo-podcast-stages.ts";
+            [ -f "$st" ] || echo "solo-podcast-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout), or rerun with /workflow-run kk-solo-podcast --force" >&2;
+            bun "$st" duration "${vars.work_dir}" "${vars.target_duration_min}"
 
   - id: done
     description: "Terminal — Solo podcast VoiceScript and audio generated successfully"

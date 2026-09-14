@@ -2,10 +2,10 @@
 /**
  * Runtime VoiceScript checker for kk-solo-podcast.
  *
- * Copied with the workflow YAML into $KK_WORKFLOWS_DIR (default
- * ~/.config/kk/workflows). Node/Bun builtins only — no @gobing-ai/* and no
- * relative imports into generations/voice-gen (those paths do not exist next
- * to the runtime copy).
+ * Resolved from the kk package (`plugins/kk/scripts/`) by `solo-podcast-stages.ts`,
+ * or from an explicit runtime override ($KK_WORKFLOWS_DIR / ~/.config/kk/workflows)
+ * when one exists. Node/Bun builtins only — no @gobing-ai/* and no relative imports
+ * into generations/voice-gen (those paths do not exist outside the package).
  *
  * SYNC: plugins/generations/voice-gen/src/voicescript.ts (validateVoiceScript
  * + engine/language enums + text/instruct/chunk/crossfade caps). Keep error
