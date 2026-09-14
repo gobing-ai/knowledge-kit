@@ -26,6 +26,9 @@ make sync          # runs `uv sync` — creates .venv, installs omnivoice from P
 > (~2–4 GB depending on device). The Whisper ASR model used for transcription-fidelity QC loads
 > lazily on the first QC transcription (`OMNIVOICE_ASR_MODEL` overrides it). Subsequent runs
 > use the HF cache. `OMNIVOICE_MODEL` overrides the model id or points to a local checkout.
+> If the cached-model revalidation hang blocks a run (observed on flaky networks), set
+> `HF_HUB_OFFLINE=1` once the model is cached — the plugin only needs the hub for the
+> first pull.
 > GPU (`cuda`) is auto-selected when available; MPS (Apple Silicon) and CPU are fallbacks.
 > Set `OMNIVOICE_DEVICE` to override (e.g. `cpu` for CI).
 
