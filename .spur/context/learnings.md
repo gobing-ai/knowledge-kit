@@ -101,3 +101,9 @@ Conventions / decisions discovered the hard way. Newest first.
 - 0110 close-out: the capture-session `### Solution` ("Not implemented") survived `task update done`. Replace it with an I/R change map before calling the task shippable — status `done` is not a change-map.
 - 0110 close-out: I3 removed the kind-wide publish `Doc[]` / opaque-output exemption. A shipped Execution-boundary table can still leave the earlier kind-contract row claiming the old gap (`docs/03_ARCHITECTURE.md` plugin-kinds table); grep both.
 - 0111: pruning `node_modules` from the staged copy means `Bun.build` must use the **source** plugin entry (`plugins/<collection>/<name>/…`), not the staged `src/`. Bundling staged src after the prune fails with a bare `Bundle failed` (workspace packages unresolvable).
+
+## 2026-09-14 — F8 batch (0127/0128/0129) runall learnings
+- Proof-window discipline: verify subagents with `--fix none` still need the proof digest re-captured whenever ANY tracked file changes post-capture — even docs. Corpus files (docs/tasks, docs/features) are digest-excluded, so post-verify corpus writes (P tombstone) did NOT invalidate `sha256:c00442ca…`.
+- `task verdict --from-answer` parses ONLY `Verdict: <PASS|PARTIAL|FAIL>` + pipe-table rows `| Rn | MET | … |` with a `| Req | Status | Evidence |` header. Bullet-style answers yield UNKNOWN; reformat mechanically (content verbatim) rather than re-dispatching.
+- Feature tombstones: `feature check --strict` fails `L4.orphan-scenarios` when a cancelled feature keeps gherkin AC while its tasks moved away. Empty the AC section (Notes section accepts the pointer prose; AC section must be empty or valid BDD — blockquotes trip L3.ac-bdd-*).
+- kk-solo-podcast.yaml has a PRE-EXISTING schema defect (8 shell actions, `command:` at 8-space indent, `options: null`) — identical on main; tracked as task 0130. No CI test executes that YAML, which is why it went unnoticed.
