@@ -1,3 +1,68 @@
+## [0.0.14] - 2026-09-14
+
+### Added
+
+- add --emit-format/--job for opt-in format drafting from style extraction (afb70b91)
+- workflow voice_generator var + docs sync (0126) (e4d6557f)
+- pipeline orchestration, verify-retry, coverage gate (0125) (4074c617)
+- audio concat, loudness dip, QC audit, MP3 (0124) (87473793)
+- profile registry + OmniVoice backend adapter (0123) (bdf74ae1)
+- VoiceScript parse/merge/validate port with warn-and-ignore (0122) (c418f3a8)
+- kk-core audio Content schema + doc/rule sync (0121) (e0862f22)
+- scaffold Python generator plugin with kk contract layer (0121) (f2bb7611)
+- per-source breakdown (#news by ingest source + domain counts) in run report (fdcbef7b)
+- commit+push post path after publish and verify the live URL (978ea6f7)
+- per-segment progress, render budget, actionable health error (01a9fc00)
+- timeline show notes and sequenced publish seam (69135e49)
+- run-report generator plugin, step timing seam, run-report state (562b8166)
+- stamp ai-news tag on generated content (e4e5261f)
+- huggingface Inference adapter from wt-image-generate (K/0116) (7e1f186b)
+- port all baoyu provider adapters to wire-speaking factories (K/0115) (ebd8c320)
+- daily-ai-voice cover state re-cut to kk:image-authoring (N/0113) (68969534)
+
+### Fixed
+
+- raise EXCLUDE test timeout to 30s (default 5s flakes) (51e1f731)
+- treat already-committed post as publish success (idempotent retry) (d0d7c605)
+- scan both CLI streams so stdout-only 401s trigger the token hint (93d6b55f)
+- route fs through bytes seam, echoError warning; gate exemptions for codex-cli/google CLI transports (901d60ea)
+- cover contract follows elected provider ext (minimax jpg), sips-normalize to canonical png (8b6549c4)
+
+### Other
+
+- docs: wrapup F611 — ADR-020 Python-plugin decision, arch/design sync, learnings (ebe56fda)
+- test: add profile registry tests (0123 followup) (ddbbec1b)
+- test: stabilize pipeline-hop test infra (03627d1f)
+- chore: rebuild vendored pipeline script bundles (f1744081)
+- chore: vendor pipeline gate/precheck scripts from spur-new plugins/sp (3e32e642)
+- docs: F611 refinement sync + covers declarations (0121-0126) (2e1b685c)
+- chore: drop project executor overrides (native attestation) (69241cc4)
+- docs: update task status after refinement (f70b5bc2)
+- docs: add F611 plan - design, feature, task batch 0121-0126 (c58af589)
+- chore: update history report (3025eed3)
+- chore: ignore .spur/runs + voicebox local data; fix stale ARK-outage comment (b2a0a441)
+- chore: point voicebox guard at the app data-dir (9a6fb584)
+- chore: guard kk-daily-ai-voice job with voicebox health check (69123057)
+- chore: update spur config (5d51a6bd)
+- chore: update spur config (b00f059e)
+- test: de-rot freshness fixture by using a relative publishedAt (74400364)
+- docs: record verifyall verdicts, review tables, and feature ship status (7dafb518)
+- docs: add feature-level BDD declaration for O acceptance criteria (verifyall shippable gate) (bd243d9c)
+- docs: align task ACs with feature O scenarios for DD-09 coverage (b8300e09)
+- docs: plan kk-daily-ai-voice run report, show-notes, surfdash publish (4a6d4079)
+- chore: point latest history report at 2026-09-12 (d9a6885e)
+- chore: split daily history import and analyze, add db maintenance (6997d860)
+- docs: update task status after verification (9bd6b03f)
+- test: bring all baoyu-wired providers to >=90% per-file line+function coverage (31d5b86e)
+- chore: appease biome (literal key + unused param underscore) (0d1c8290)
+- docs: record task 0116 verify PASS (huggingface adapter, 854/0) (5380117e)
+- chore: record 0114 dogfood PASS + feature N verdict-keyed coverage (N done) (39373f46)
+- docs: record task 0115 verify PASS (all baoyu adapters ported, 849/0) (6dfda03f)
+- docs: feature K phase 2 — task 0115 port all baoyu adapters, 0116 wt huggingface backend (517110b6)
+- docs: refine task 0114 to implement-ready (dogfood cover rerun design/plan/Q&A) (06b2956e)
+- docs: idea-pipeline — feature N (daily-ai-voice cover × image-authoring), tasks 0113/0114 (beae269f)
+- Revert "feat(omni-voice-gen): scaffold plugin per 0121 (out-of-band implement agent output)" (341f689e)
+
 ## [0.0.13] - 2026-09-10
 
 ### Added

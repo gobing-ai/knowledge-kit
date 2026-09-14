@@ -119,7 +119,7 @@ subcommands — `kk` owns steps; `spur workflow` owns orchestration, never the r
 | `plugins/ingestions/` | Ingestion-kind plugins (e.g. `karakeep-local`) |
 | `plugins/generations/` | Generator-kind plugins (e.g. `content-gen`, `voice-gen`) |
 | `plugins/publishings/` | Publish-kind plugins (e.g. `surfdash-pub`, `zenn-pub`, `qiita-pub`) |
-| `scripts/` | Release tooling — `release.ts` (`bump-ver`/`drop-tags`), `publish.ts` (npm Trusted Publishing), `bundle-plugins.ts` (tarball staging) |
+| `scripts/` | Release tooling — `publish.ts` (npm Trusted Publishing), `bundle-plugins.ts` (tarball staging); version bumping is delegated to `spur builder bump-ver`/`drop-tags` |
 | `docs/` | Numbered docs: `00_ADR` (decisions), `01_PRD` (scope), `02_ROADMAP`, `03_ARCHITECTURE`, `04_DESIGN` (surface), `05_FEATURES` (status), `99_PROJECT_CONSTITUTION` (process) |
 | `.spur/` | Spur config, rules, workflows, templates; run artifacts under `.spur/run/` |
 
@@ -168,6 +168,12 @@ Release tags follow `@gobing-ai/knowledge-kit-v<version>`; pushing one triggers 
 bun run bump-ver 0.0.4 --push    # bump version → commit → tag → push branch + tag
 bun run drop-tags 0.0.4          # delete the release tag (add --remote for origin)
 ```
+
+`bump-ver`/`drop-tags` delegate to `spur builder` (release-ops in the spur CLI), which also
+syncs `.claude-plugin/marketplace.json` + `plugins/kk/plugin.json` to the release version —
+superskill's update check reads the marketplace version first, so those must move in lockstep
+with `apps/cli/package.json`. Release knobs (tag separator, publish workflow, commit style) can
+be overridden per-project via the `builder.bump-ver` section of `.spur/config.yaml`.
 
 The workflow verifies the tag matches `apps/cli/package.json`, verifies release assets
 (`dist/`, `plugins/kk/`, `.claude-plugin/marketplace.json` in the tarball, no test files), then
