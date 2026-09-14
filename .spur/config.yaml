@@ -91,6 +91,20 @@ rules:
 redaction:
   enabled: false
 
+# ── Release (spur builder bump-ver / drop-tags) ──
+# Release plumbing knobs consumed by `spur builder bump-ver` / `drop-tags`
+# (wired as the bump-ver / drop-tags package scripts). Values match the
+# built-in defaults; adjust here instead of patching release code when
+# conventions change. The tag format @gobing-ai/knowledge-kit-v<version>
+# triggers .github/workflows/publish.yml on push.
+builder:
+  bump-ver:
+    tagVersionSeparator: "-v"
+    publishWorkflow: publish.yml
+    releaseCommitType: chore
+    releaseCommitScope: release
+    ghRunListLimit: 5
+
 # ── Planning (design §2.1 / §9) ──
 tasks:
   active: docs/tasks
