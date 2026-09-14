@@ -165,3 +165,5 @@ dist
 /.spur/reports/history/*/analyze-*.json
 /data/voicebox.db
 /data/backends/cuda
+
+/.works
