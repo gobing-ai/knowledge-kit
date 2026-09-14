@@ -1,3 +1,10 @@
+## [0.0.15] - 2026-09-14
+
+### Other
+
+- chore: declare empty versionCarriers (built-ins cover marketplace staleness) (f8da5015)
+- chore: declare builder.bump-ver release knobs (values = defaults) (3d213140)
+
 ## [0.0.14] - 2026-09-14
 
 ### Added
