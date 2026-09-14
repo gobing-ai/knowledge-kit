@@ -27,7 +27,7 @@ those conventions; two-way door (delete the YAML).
 | D4 | `hitl.select` a\|b\|c for outlines; `hitl.confirm` + bounded `hitl.input` for the script | Outline-only `hitl.confirm`; new `hitl.*` kind | House pattern (kk-itc). TTS is slow/expensive — gate the script before generate. |
 | D5 | Audio is the sibling **WAV** D5 already writes | MP3 / ffmpeg | Voicebox `GET /audio/{id}` is WAV; concat is PCM WAV. Transcode is a later publish concern. |
 | D6 | Target length = script budget + post-check | Duration field on `voice-gen` | D5 §7: output duration is recorded, not requested. |
-| D7 | Self-contained helpers `plugins/kk/workflows/validate-voicescript.ts` + `wrap-voicescript-doc.ts`, resolved via fallback chain (var → `KK_WORKFLOWS_DIR` → kk package root → `~/.config/kk/workflows`) | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime cannot import `../../generations`. Helpers are builtins-only; the package ships them in `plugins/`, so the package root covers any cwd. |
+| D7 | Self-contained helpers `plugins/kk/scripts/validate-voicescript.ts` + `wrap-voicescript-doc.ts`, resolved via fallback chain (var → `KK_WORKFLOWS_DIR` → kk package root → `~/.config/kk/workflows`) | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime cannot import `../../generations`. Helpers are builtins-only; the package ships them in `plugins/`, so the package root covers any cwd. |
 | D8 | `/workflow-run kk-solo-podcast` resolves the YAML **in place** (override → `KK_WORKFLOWS_SOURCE` → package root → checkout); no copy on the happy path | Checkout-only `spur workflow run plugins/kk/workflows/…`; auto-copy into `~/.config/kk/workflows` | Package root via `command -v kk` works under any prefix, so any cwd runs. `~/.config/kk/workflows` is now an explicit user override, not a required install dest. |
 | D9 | Require outline-option-a.md and -b.md; c optional | Always three; only one outline | Matches kk-itc. |
 | D10 | Duration miss → retry script-write (shared `.revise-count`, cap 3) → `failed` | Fail-loud immediately; warn-only | Coarse band absorbs WPM vs Voicebox rate; one bounded regeneration is cheaper than operator re-runs. Auto-regenerate beyond budget is out (GPU cost). |
@@ -39,8 +39,8 @@ those conventions; two-way door (delete the YAML).
 
 ```
 plugins/kk/workflows/kk-solo-podcast.yaml      # design-time SSOT (copied to ~/.config/kk/workflows)
-plugins/kk/workflows/validate-voicescript.ts   # design-time checker (copied beside the YAML)
-plugins/kk/workflows/wrap-voicescript-doc.ts   # VoiceScript → Doc[] wrapper (copied beside the YAML)
+plugins/kk/scripts/validate-voicescript.ts   # design-time checker (copied beside the YAML)
+plugins/kk/scripts/wrap-voicescript-doc.ts   # VoiceScript → Doc[] wrapper (copied beside the YAML)
 apps/cli/tests/kk-solo-podcast-workflow.test.ts
 docs/design/kk-solo-podcast.md                 # maintainer satellite — not loaded at runtime
 ```
@@ -258,7 +258,7 @@ briefing.md, outline-option-a.md, voicescript.yaml.
 
 ```ts
 // Runtime: $HOME/.config/kk/workflows/validate-voicescript.ts
-// Design-time SSOT: plugins/kk/workflows/validate-voicescript.ts
+// Design-time SSOT: plugins/kk/scripts/validate-voicescript.ts
 // bun <this> --in <yaml-or-json>
 // exit 0 — validateVoiceScript passed
 // exit 1 — named error on stderr

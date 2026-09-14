@@ -11,7 +11,7 @@ function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 describe('validate-voicescript CLI helper', () => {
-    const helperPath = join(import.meta.dir, '../../../plugins/kk/workflows/validate-voicescript.ts');
+    const helperPath = join(import.meta.dir, '../../../plugins/kk/scripts/validate-voicescript.ts');
     const helperSource = readFileSync(helperPath, 'utf-8');
 
     it('is builtins-only so a copy under ~/.config/kk/workflows can run', () => {

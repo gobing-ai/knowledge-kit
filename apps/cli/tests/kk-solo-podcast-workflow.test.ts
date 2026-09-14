@@ -105,7 +105,7 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain('.revise-count');
         expect(yaml).not.toContain('__runId');
         expect(yaml).not.toContain('.spur/run');
-        const wrapPath = join(import.meta.dir, '../../../plugins/kk/workflows/wrap-voicescript-doc.ts');
+        const wrapPath = join(import.meta.dir, '../../../plugins/kk/scripts/wrap-voicescript-doc.ts');
         expect(existsSync(wrapPath)).toBe(true);
         const wrap = readFileSync(wrapPath, 'utf-8');
         expect(wrap).toContain('node:crypto');
@@ -121,11 +121,10 @@ describe('kk-solo-podcast workflow (0071)', () => {
     it('runtime paths resolve via package root; no bare checkout-relative trees', () => {
         expect(yaml).not.toContain('docs/design');
         expect(yaml).not.toContain('plugins/kk/lib');
-        expect(yaml).not.toContain('plugins/kk/scripts');
         expect(yaml).not.toContain('plugins/kk/skills');
-        // plugins/kk/workflows is allowed ONLY under the $pkg package-root prefix —
-        // never as a bare cwd-relative path (breaks outside a checkout).
-        const bareRefs = [...yaml.matchAll(/plugins\/kk\/workflows/g)].filter(
+        // plugins/kk/workflows and plugins/kk/scripts are allowed ONLY under the
+        // $pkg package-root prefix — never as a bare cwd-relative path (breaks outside a checkout).
+        const bareRefs = [...[...yaml.matchAll(/plugins\/kk\/(workflows|scripts)/g)]].filter(
             (m) => !yaml.slice(0, m.index).endsWith('$pkg/'),
         );
         expect(bareRefs).toEqual([]);

@@ -39,8 +39,8 @@ length is a **word/char budget** at script-write plus a post-generate check on
 | Piece | Design-time (tarball / repo) | Runtime resolution order |
 | --- | --- | --- |
 | Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | override → `KK_WORKFLOWS_SOURCE` → package root → checkout |
-| Validator | `plugins/kk/workflows/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
-| Wrapper | `plugins/kk/workflows/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
+| Validator | `plugins/kk/scripts/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
+| Wrapper | `plugins/kk/scripts/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
 | Generator | `plugins/generations/voice-gen/` (npm pack) | `kk executor run voice-gen` (ADR-012 discovery) |
 
 ## Prerequisites
@@ -245,8 +245,8 @@ flowchart TD
 | File | Role |
 | --- | --- |
 | `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT (copied to runtime dest) |
-| `plugins/kk/workflows/validate-voicescript.ts` | design-time checker (copied beside the YAML) |
-| `plugins/kk/workflows/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (copied beside the YAML) |
+| `plugins/kk/scripts/validate-voicescript.ts` | design-time checker (copied beside the YAML) |
+| `plugins/kk/scripts/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (copied beside the YAML) |
 | `plugins/generations/voice-gen/` | D5 generator in the npm tarball |
 | `docs/design/kk-solo-podcast.md` | maintainer satellite (not loaded at runtime) |
 

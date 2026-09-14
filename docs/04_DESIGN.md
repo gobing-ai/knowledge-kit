@@ -570,7 +570,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
 - Source missing from all roots → exit 1, stderr lists every searched root.
-- Sidecars the machine executes (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`) are **not** copied — each workflow's own fallback chain resolves them: explicit var → `$KK_WORKFLOWS_DIR` → `$pkg/plugins/kk/workflows/` (package root via `command -v kk`) → `$HOME/.config/kk/workflows`.
+- Sidecars the machine executes (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`) are **not** copied — each workflow's own fallback chain resolves them: explicit var → `$KK_WORKFLOWS_DIR` → `$pkg/plugins/kk/scripts/` (package root via `command -v kk`) → `$HOME/.config/kk/workflows`.
 
 ### 7.2 `/workflow-run` command surface
 

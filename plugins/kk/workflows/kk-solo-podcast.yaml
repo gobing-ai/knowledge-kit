@@ -175,7 +175,7 @@ states:
             pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
             vs="";
             if [ -n "$KK_WORKFLOWS_DIR" ] && [ -f "$KK_WORKFLOWS_DIR/validate-voicescript.ts" ]; then vs="$KK_WORKFLOWS_DIR/validate-voicescript.ts";
-            elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/workflows/validate-voicescript.ts" ]; then vs="$pkg/plugins/kk/workflows/validate-voicescript.ts";
+            elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/scripts/validate-voicescript.ts" ]; then vs="$pkg/plugins/kk/scripts/validate-voicescript.ts";
             elif [ -f "$HOME/.config/kk/workflows/validate-voicescript.ts" ]; then vs="$HOME/.config/kk/workflows/validate-voicescript.ts"; fi;
           fi;
           if [ -z "$vs" ]; then
@@ -225,7 +225,7 @@ states:
             pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
             ws="";
             if [ -n "$KK_WORKFLOWS_DIR" ] && [ -f "$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts" ]; then ws="$KK_WORKFLOWS_DIR/wrap-voicescript-doc.ts";
-            elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/workflows/wrap-voicescript-doc.ts" ]; then ws="$pkg/plugins/kk/workflows/wrap-voicescript-doc.ts";
+            elif [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/scripts/wrap-voicescript-doc.ts" ]; then ws="$pkg/plugins/kk/scripts/wrap-voicescript-doc.ts";
             elif [ -f "$HOME/.config/kk/workflows/wrap-voicescript-doc.ts" ]; then ws="$HOME/.config/kk/workflows/wrap-voicescript-doc.ts"; fi;
           fi;
           if [ -z "$ws" ]; then

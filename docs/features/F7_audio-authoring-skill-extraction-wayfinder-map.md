@@ -38,7 +38,7 @@ Wayfinder map — **destination met**: skill extracted (0077), workflow rewritte
 **Context every session should consult:**
 - `plugins/kk/skills/audio-authoring/SKILL.md` — the extracted fat skill (`create | briefing | outline | script`, mode `solo`).
 - `plugins/kk/workflows/kk-solo-podcast.yaml` — the refined pipeline on the skill.
-- `plugins/kk/workflows/validate-voicescript.ts` + `wrap-voicescript-doc.ts` — runtime sidecars (installed beside the YAML).
+- `plugins/kk/scripts/validate-voicescript.ts` + `wrap-voicescript-doc.ts` — runtime sidecars (installed beside the YAML).
 - `plugins/generations/voice-gen/src/voicescript.ts` — canonical VoiceScript contract (supports multi-speaker `speakers`).
 
 

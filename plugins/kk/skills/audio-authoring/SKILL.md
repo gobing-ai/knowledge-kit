@@ -157,7 +157,7 @@ from any existing approved artifact:
 The authoring template lives at **`templates/voicescript.solo.yaml`** (relative to
 this skill file) — read it first when authoring `3-script/voicescript.yaml`; it is a
 valid-YAML skeleton with per-field constraint comments. The executable authority is
-`plugins/kk/workflows/validate-voicescript.ts` (canonical source
+`plugins/kk/scripts/validate-voicescript.ts` (canonical source
 `plugins/generations/voice-gen/src/voicescript.ts`); the template is its
 authoring-time distillation. No other fields are valid authoring targets — do not
 invent fields (no `default_profile`, no required `title`).
