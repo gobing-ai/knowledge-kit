@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (wt-image-cover) + spoken broadcast script (dailynews-gen) + audio (voice-gen) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`. Article/script/show notes all consume `2-plan/plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in. Article/script/cover/audio outputs are date-stamped (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`) and skipped when the day's file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (wt-image-cover) + spoken broadcast script (dailynews-gen) + audio (voice generator plugin, `voice_generator` var, default `omni-voice-gen`) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`. Article/script/show notes all consume `2-plan/plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in. Article/script/cover/audio outputs are date-stamped (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`) and skipped when the day's file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
 
 ## 2. Architecture & Data Flow
 
@@ -25,7 +25,7 @@ flowchart TD
     I -->|true| K[wrap-docs]
     J -->|Approved| K[wrap-docs: VoiceScript -> Doc]
     J -->|Rejected| L[failed]
-    K -->|3-audio/docs.json| M[generate: voice-gen]
+    K -->|3-audio/docs.json| M[generate: voice generator var]
     M -->|3-audio/content.wav + content.mp3| N[quality-control]
     N -->|publish_enabled| O[publish-prep: article + audio seam]
     O --> P[publish: fan-out surfdash-pub + podcast-pub]
@@ -52,7 +52,7 @@ Within `${vars.work_dir}`:
 - `2-article/content-${run_date}.json` / `2-article/article-${run_date}.md`: Generated article Content and markdown (skipped when the day's `.md` exists).
 - `2-cover/cover-${run_date}.png`: Cover image (cover state skipped when the day's file exists).
 - `2-script/content-${run_date}.json` / `2-script/voicescript-${run_date}.yaml`: Generator `Content` with VoiceScript YAML body and the human-readable VoiceScript (skipped when the day's `.yaml` exists).
-- `3-audio/docs.json`: VoiceScript wrapped as a single `Doc` for `voice-gen`.
+- `3-audio/docs.json`: VoiceScript wrapped as a single `Doc` for the `voice_generator` plugin (default `omni-voice-gen`).
 - `3-audio/content.json`: Synthesized audio `Content` metadata (generate state skipped when the file exists and `metadata.qc.passed` is true).
 - `3-audio/content.wav`: Concatenated audio broadcast.
 - `3-audio/content.mp3`: (Optional) Transcoded MP3 audio when `transcode_mp3: "true"`.

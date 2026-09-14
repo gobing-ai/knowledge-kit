@@ -2,14 +2,17 @@
 
 OmniVoice-backed voice generator plugin for [knowledge-kit](../../../README.md).
 Drop-in replacement for `voice-gen` — same `kk executor run` contract (`--in Doc[] --out Content`),
-same audio metadata shape, same QC pipeline. Swap the backend in `kk-daily-ai-voice` with:
+same audio metadata shape, same QC pipeline. `kk-daily-ai-voice` selects it by default via the
+`voice_generator` var; fall back to the Voicebox backend with:
 
 ```bash
 spur workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml \
-  --vars '{"voice_generator":"omni-voice-gen"}'   # other vars per your kk config
+  --vars '{"voice_generator":"voice-gen"}'   # other vars per your kk config
 ```
 
-The default `voice_generator` is `voice-gen` (production behavior unchanged; swap is operator opt-in).
+> **Voice identity:** the shipped `robin-news` profile is an instruct placeholder. For a real
+> operator voice, record a 3–10 s clip into a private registry (`OMNIVOICE_PROFILE_REGISTRY`)
+> and it supersedes the committed entry.
 
 ## Setup
 

@@ -133,7 +133,9 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
             return;
         }
-        for (const voiceGenerator of [undefined, 'omni-voice-gen'] as const) {
+        // unset -> workflow default omni-voice-gen (ADR-020 amendment 2026-09-13); explicit
+        // 'voice-gen' pins the Voicebox REST fallback path.
+        for (const voiceGenerator of [undefined, 'voice-gen'] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
             const binDir = join(testRoot, 'bin');
             const workDir = join(testRoot, 'work dir');
@@ -327,7 +329,7 @@ if (plugin === 'aihot-ingest') {
                 expect(existsSync(join(workDir, '3-audio/docs.json'))).toBe(true);
                 expect(existsSync(join(workDir, '3-audio/content.json'))).toBe(true);
                 expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
-                if (voiceGenerator) {
+                if (voiceGenerator !== 'voice-gen') {
                     const swapped = JSON.parse(readFileSync(join(workDir, '3-audio/content.json'), 'utf8'));
                     expect(swapped.metadata.generator).toBe('kk:omni-voice-gen');
                 }
@@ -346,7 +348,7 @@ if (plugin === 'aihot-ingest') {
                     'episode-plan-gen',
                     'daily-article-gen',
                     'dailynews-gen',
-                    voiceGenerator ?? 'voice-gen',
+                    voiceGenerator ?? 'omni-voice-gen',
                 ]);
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).

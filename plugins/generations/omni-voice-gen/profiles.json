@@ -1,4 +1,7 @@
 {
+    "robin-news": {
+        "instruct": "Professional broadcast news anchor: clear, confident, steady pacing, neutral accent, warm but authoritative tone suitable for a daily AI news podcast."
+    },
     "sample-clone": {
         "ref_audio": "voices/sample-ref.wav",
         "ref_text": "Replace with the transcript of your reference clip."

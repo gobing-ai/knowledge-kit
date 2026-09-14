@@ -824,6 +824,15 @@ omni-voice-gen.
 **Detail:** `docs/design/omni-voice-gen.md` (D1–D8), `plugins/generations/omni-voice-gen/`,
 `docs/04_DESIGN.md` §3/§4.3.
 
+### Amendment — 2026-09-13 (kk-daily-ai-voice default flips to omni-voice-gen)
+
+> **Status:** Accepted · **Supersedes:** task 0126's "default stays `voice-gen`" decision.
+
+The daily workflow's `voice_generator` var now defaults to `omni-voice-gen`; `voice-gen`
+(Voicebox REST) remains shipped and selectable via `--vars`. The shipped `robin-news` registry
+entry is an instruct placeholder (voice identity changes until a real clone clip lands in an
+operator-private registry via `OMNIVOICE_PROFILE_REGISTRY`).
+
 ---
 
 ## Decisions deliberately deferred
