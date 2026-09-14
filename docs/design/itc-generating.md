@@ -22,7 +22,7 @@ extends those conventions; it does not set a new cross-cutting one.
 | D2 | Skill only — no slash, no `kk` verb | `/itc` wrapper; `kk itc …` | Slash is justified only when it owns a run procedure (`/workflow-run`). CLI needs an ADR-011 amendment. Skill() after `superskill install kk` is the invoke. |
 | D3 | Directory / `name:` is `itc-generating` | Requested `itc-gnerating` | Skill `name` must match the parent directory; a typo freezes `kk:itc-gnerating`. |
 | D4 | Distill the four works-dir studies into `references/` (one level deep) | Vendor full `content.md`; leave studies only in `~/.config/kk/works/` | Progressive disclosure (agent-skill study). Works dirs remain provenance, not installable craft. |
-| D5 | Reuse `topic` artifact paths (`brief.md`, `2-outline/`, `3-draft/`) | New 7-stage workspace | One authoring layout. `itc-generating` does not invent a parallel tree. |
+| D5 | Reuse `topic` artifact paths (`brief.md`, `2-outline/`, `3-draft-draft-article.md`) | New 7-stage workspace | One authoring layout. `itc-generating` does not invent a parallel tree. |
 | D6 | Delegate research → `storm-research`, authoring gates → `topic`, optional quality → `content-judge` | Reimplement outline/draft/research inside this skill | Existing skills already own those contracts (C4 / F2 / F1). This skill owns *when* and *which playbook*. |
 | D7 | Default operation is `create`; no re-export of `topic` init/outline/draft | Duplicate topic's four operations | Users who want a single topic-core step call `topic`. This skill's job is the method + orchestration. |
 
@@ -78,7 +78,7 @@ playbook." That is a real module.
    no overwrite without `--force`).
 4. Apply the loaded method while drafting (one goal, value proposition, POLA, show-don't-tell;
    platform constraints from the playbook).
-5. If `--judge` → invoke `content-judge` on `3-draft/draft-article.md`. A non-`PASS` verdict is
+5. If `--judge` → invoke `content-judge` on `3-draft-draft-article.md`. A non-`PASS` verdict is
    reported; it does not auto-publish or auto-revise past `topic`'s 3-round bound.
 6. Print artifact paths and stop.
 

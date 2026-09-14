@@ -49,8 +49,9 @@ stub `content-gen`.
 ## Daily run — `/workflow-run`
 
 Preferred operator surface. First run creates `~/.config/kk/config.yaml` if missing (never
-overwrites an existing file), copies the workflow YAML into `~/.config/kk/workflows/` if
-dest is missing, computes `topic-id`, and shells `spur workflow run`.
+overwrites an existing file), resolves the workflow YAML **in place** (user override →
+`KK_WORKFLOWS_SOURCE` → bun/npm global installs → installed package root → repo checkout —
+no copy), computes `topic-id`, and shells `spur workflow run`.
 
 ```text
 /workflow-run [name] <topic|--in file> [--fixture] [--force]
@@ -166,7 +167,10 @@ or `config.yaml`.
 1. normalize = trim, collapse whitespace, lowercase
 2. slug = `[^a-z0-9]+` → `-`, squeeze, trim, slice 48; empty → `topic`
 3. hash = `sha256(normalized).hex[0:8]`
-4. id = `slug-hash` → `work_dir = $works_dir/<id>`
+4. id = `slug-hash` → `work_dir = $works_dir/kk-storm-research/<id>`
+
+Existing `.works/`-era trees (flat `$works_dir/<id>` dirs) are **not** migrated; pass
+`--dir` to rerun against one.
 
 ## Workflow vars (all strings)
 
@@ -179,7 +183,7 @@ or `config.yaml`.
 | `input_file` | `""` | file-mode path when non-empty (XOR) |
 | `maxResults` | `"8"` | ingest cap (int in `topic.json`) |
 | `fixture` | `"false"` | `"true"` = web-search stub; CI/dry-run should pass this |
-| `work_dir` | `"./work"` | **resolved** topic dir — invoker sets `$works_dir/<topic-id>` |
+| `work_dir` | `"./work"` | **resolved** topic dir — invoker sets `$works_dir/kk-storm-research/<topic-id>` (`--dir` overrides) |
 | `plugins_path` | `"./plugins"` | `--plugins-path` for `kk executor run` |
 | `ingestion_plugin` | `"web-search"` | |
 | `generator_plugin` | `"content-gen"` | |

@@ -14,8 +14,8 @@ Two homes (do not mix them up):
 | **User override** | `$KK_WORKFLOWS_DIR` (default `$HOME/.config/kk/workflows`) |
 
 **Run in place from any cwd.** `/workflow-run` resolves the YAML in order — user override,
-`KK_WORKFLOWS_SOURCE`, the installed kk package root (via `command -v kk` + symlink walk),
-repo checkout — and runs it in place; nothing is copied on the happy path. A file under
+`KK_WORKFLOWS_SOURCE`, bun/npm global installs, the installed kk package root (via
+`command -v kk` + symlink walk), repo checkout — and runs it in place; nothing is copied on the happy path. A file under
 `$HOME/.config/kk/workflows` is an **override** you place explicitly (or via `--force`). The
 VoiceScript checker (`validate-voicescript.ts`) and wrapper (`wrap-voicescript-doc.ts`)
 resolve the same way: var → `KK_WORKFLOWS_DIR` → package root → `$HOME/.config/kk/workflows`.
@@ -38,7 +38,7 @@ length is a **word/char budget** at script-write plus a post-generate check on
 
 | Piece | Design-time (tarball / repo) | Runtime resolution order |
 | --- | --- | --- |
-| Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | override → `KK_WORKFLOWS_SOURCE` → package root → checkout |
+| Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | override → `KK_WORKFLOWS_SOURCE` → bun/npm global → package root → checkout |
 | Validator | `plugins/kk/scripts/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
 | Wrapper | `plugins/kk/scripts/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` |
 | Generator | `plugins/generations/voice-gen/` (npm pack) | `kk executor run voice-gen` (ADR-012 discovery) |
@@ -63,9 +63,9 @@ length is a **word/char budget** at script-write plus a post-generate check on
 ## Daily run — `/workflow-run kk-solo-podcast`
 
 Preferred operator surface. First run creates `~/.config/kk/config.yaml` if missing,
-resolves `kk-solo-podcast.yaml` **in place** (user override → `KK_WORKFLOWS_SOURCE` → installed
+resolves `kk-solo-podcast.yaml` **in place** (user override → `KK_WORKFLOWS_SOURCE` → bun/npm global installs → installed
 package root → repo checkout; sidecars resolve via the same package-root chain — no copy),
-computes `work_dir` under `$works_dir/<kebab>`, and shells `spur workflow run "$dest"` where
+computes `work_dir` under `$works_dir/kk-solo-podcast/<date>` (existing `.works/`-era trees are not migrated), and shells `spur workflow run "$dest"` where
 `$dest` is the resolved YAML. `--force` instead places a fresh copy into
 `$HOME/.config/kk/workflows/` as a user override and runs that.
 
@@ -78,37 +78,38 @@ computes `work_dir` under `$works_dir/<kebab>`, and shells `spur workflow run "$
 | --- | --- | --- |
 | `<topic>` | episode brief sentence | required unless `--in` |
 | `--in <file>` | markdown file mode (XOR with `<topic>`) | — |
-| `--dir <path>` | episode workspace | `$works_dir/<kebab>` |
+| `--dir <path>` | episode workspace | `$works_dir/kk-solo-podcast/<date>` |
 | `--outline a\|b\|c` | skip outline HITL | HITL |
 | `--duration <min>` | `target_duration_min` | `8` |
 | `--language <code>` | Voicebox language | `en` |
 | `--script-approved` | skip script HITL (`script_approved=true`) | off |
-| `--force` | overwrite dest YAML / sidecar / existing `brief.md` | off |
+| `--force` | refresh the user override from the install source; overwrite existing `brief.md` | off |
 
 `--fixture` with this profile → exit 1 (`fixture is storm-only`).
 
 XOR: exactly one of `<topic>` / `--in`. Both or neither → exit 1, no writes.
 
-## Checkout / CI — still run the **runtime** dest
+## Checkout / CI — validate and dry-run a resolved YAML
 
-After a copy (or `/workflow-run` once), validate and dry-run the file under
-`$HOME/.config/kk/workflows`, not `plugins/kk/workflows/`.
+`/workflow-run` resolves the YAML **in place** (no copy). To validate or hand-run, point
+at the copy you mean: the checkout SSOT in CI, or the user override under
+`$HOME/.config/kk/workflows` when one exists.
 
 ### Validate
 
 ```bash
-spur workflow validate "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" --json
+spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json
 ```
 
-Design-time check of the SSOT (CI against the repo) may still validate
-`plugins/kk/workflows/kk-solo-podcast.yaml`. Operators do not.
+CI against the repo validates the checkout SSOT directly; runtime operators let
+`/workflow-run` resolve the copy.
 
 ### Dry-run — no Voicebox, no LLM, no writes
 
 `--dry-run` does not execute actions, but `pause: true` still pauses. Skip both HITL states:
 
 ```bash
-spur workflow run "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" --dry-run --run-id dry-solo \
+spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --dry-run --run-id dry-solo \
   --vars '{"topic":"Why HNSW search degrades at 1B rows","work_dir":"./scratch/solo-dry","outline":"a","script_approved":"true","target_duration_min":"8","voice_profile":"Robin","language":"en","force":"true"}'
 ```
 
@@ -121,8 +122,8 @@ succeed (dry-run passes). Do not switch success edges to `action-ok`.
 ### Real run — sentence
 
 ```bash
-spur workflow run "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" \
-  --vars '{"topic":"Why HNSW search degrades at 1B rows","work_dir":"$HOME/.config/kk/works/solo-hnsw","target_duration_min":"8","voice_profile":"Robin","language":"en"}'
+spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml \
+  --vars '{"topic":"Why HNSW search degrades at 1B rows","work_dir":"$HOME/.config/kk/works/kk-solo-podcast/solo-hnsw","target_duration_min":"8","voice_profile":"Robin","language":"en"}'
 ```
 
 Pauses at `hitl.select` (outline) then `hitl.confirm` (script) before TTS. Rejecting the script
@@ -131,8 +132,8 @@ opens `hitl.input` (cap 3, then `failed`).
 ### Real run — file (XOR)
 
 ```bash
-spur workflow run "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" \
-  --vars '{"input_file":"./notes/episode-brief.md","work_dir":"$HOME/.config/kk/works/solo-file","target_duration_min":"8","voice_profile":"Robin"}'
+spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml \
+  --vars '{"input_file":"./notes/episode-brief.md","work_dir":"$HOME/.config/kk/works/kk-solo-podcast/solo-file","target_duration_min":"8","voice_profile":"Robin"}'
 ```
 
 Existing `${work_dir}/brief.md` without `"force":"true"` → exit 1.
@@ -143,12 +144,12 @@ Monitor: `spur workflow trace <run-id> --json`.
 
 | State | Action | Writes |
 | --- | --- | --- |
-| `prepare` | `mkdir`; XOR; profile; `brief.md` | `${work_dir}/brief.md` + four subdirs |
-| `understand` | `agent.run` scribe | `1-briefing/briefing.md` |
+| `prepare` | `mkdir`; XOR; profile; `brief.md` | `${work_dir}/brief.md` + `2-outline/` + `4-audio/` |
+| `understand` | `agent.run` scribe | `1-briefing-briefing.md` |
 | `outline-write` | `agent.run`; require `-b.md` | `2-outline/outline-option-{a,b}.md` (+ optional c) |
 | `outline-select` | `hitl.select` (skip when `outline` set) | — |
 | `outline-commit` | `cp` | `2-outline/outline-approved.md` |
-| `script-write` | `agent.run`; inlined VoiceScript contract | `3-script/voicescript.yaml` |
+| `script-write` | `agent.run`; inlined VoiceScript contract | `3-script-voicescript.yaml` |
 | `script-validate` | `bun $HOME/.config/kk/workflows/validate-voicescript.ts --in …` | — |
 | `script-review` | `hitl.confirm` (skip when `script_approved=true`) | — |
 | `script-revise` | `hitl.input`; cap 3 | `${work_dir}/.revise-count` |
@@ -225,18 +226,14 @@ bun "${KK_WORKFLOWS_DIR:-$HOME/.config/kk/workflows}/validate-voicescript.ts" --
 
 ```mermaid
 flowchart TD
-    subgraph DT["design-time SSOT — plugins/kk/workflows/"]
+    subgraph DT["resolved in place — user override → KK_WORKFLOWS_SOURCE → bun/npm global → package root → checkout"]
         Y["kk-solo-podcast.yaml"]
+    end
+    subgraph SC["sidecar fallback — explicit var → KK_WORKFLOWS_DIR → $pkg/plugins/kk/scripts → ~/.config/kk/workflows"]
         H["validate-voicescript.ts"]
     end
-    subgraph RT["runtime — $HOME/.config/kk/workflows"]
-        Y2["kk-solo-podcast.yaml"]
-        H2["validate-voicescript.ts"]
-    end
-    Y -->|/workflow-run copy| Y2
-    H -->|/workflow-run copy| H2
-    Y2 -->|"spur workflow run $dest"| P["prepare … generate"]
-    H2 -->|"bun helper --in voicescript.yaml"| P
+    Y -->|"spur workflow run $dest"| P["prepare … generate"]
+    H -->|"bun helper --in 3-script-voicescript.yaml"| P
     P -->|"kk executor run voice-gen"| VG["package plugins/generations/voice-gen"]
 ```
 
@@ -244,9 +241,9 @@ flowchart TD
 
 | File | Role |
 | --- | --- |
-| `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT (copied to runtime dest) |
-| `plugins/kk/scripts/validate-voicescript.ts` | design-time checker (copied beside the YAML) |
-| `plugins/kk/scripts/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (copied beside the YAML) |
+| `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT (resolved in place at run time) |
+| `plugins/kk/scripts/validate-voicescript.ts` | design-time checker (resolved via the sidecar fallback chain) |
+| `plugins/kk/scripts/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (resolved via the sidecar fallback chain) |
 | `plugins/generations/voice-gen/` | D5 generator in the npm tarball |
 | `docs/design/kk-solo-podcast.md` | maintainer satellite (not loaded at runtime) |
 
@@ -261,7 +258,7 @@ flowchart TD
 
 ```bash
 spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json
-spur workflow run "$HOME/.config/kk/workflows/kk-solo-podcast.yaml" --dry-run --run-id dry-solo \
+spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --dry-run --run-id dry-solo \
   --vars '{"topic":"duration budget smoke","work_dir":"./scratch/solo-dry","outline":"a","script_approved":"true","target_duration_min":"8","voice_profile":"Robin","force":"true"}' --json
 bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts \
   apps/cli/tests/validate-voicescript.test.ts \

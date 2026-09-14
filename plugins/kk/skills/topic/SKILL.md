@@ -64,9 +64,9 @@ All paths are relative to the workspace `--dir`. Every operation uses these exac
 | Brief | `brief.md` | `init` — topic line, or verbatim copy of the supplied brief |
 | Outline options | `2-outline/outline-option-a.md`, `outline-option-b.md`, `outline-option-c.md` | `outline` — always two or three (a and b required; c optional) |
 | Approved outline | `2-outline/outline-approved.md` | `outline` — after explicit operator selection |
-| Draft | `3-draft/draft-article.md` | `draft` — from the approved outline only |
+| Draft | `3-draft-draft-article.md` | `draft` — from the approved outline only |
 
-`init` creates `brief.md`, `2-outline/`, and `3-draft/`. No other files are created — no
+`init` creates `brief.md` and `2-outline/`; `draft` writes `3-draft-draft-article.md` at the workspace root. No other files are created — no
 metadata, no JSON manifests, no templates, no placeholders.
 
 ## Operations
@@ -79,7 +79,7 @@ existing approved artifact (R3):
 1. **Resolve the brief** — topic phrase or `--brief` file; run the `init` semantics.
 2. **Outline** — if `2-outline/outline-approved.md` is missing, run the `outline`
    semantics (write options, selection gate). If it exists, reuse it — do not regenerate.
-3. **Draft** — if `3-draft/draft-article.md` is missing, run the `draft` semantics (write
+3. **Draft** — if `3-draft-draft-article.md` is missing, run the `draft` semantics (write
    + review gate). If it exists and is approved, report it as final — do not rewrite.
 4. **Report** the final artifact paths and stop. Never re-run a completed step; never
    overwrite an existing approved artifact without `--force`.
@@ -94,7 +94,7 @@ existing approved artifact (R3):
    after explicit operator confirmation to replace, or choose a new `--dir`). Never delete
    or overwrite existing content without `--force`.
 3. **Create** `brief.md` (the topic line, or a verbatim copy of the supplied brief),
-   `2-outline/`, and `3-draft/`.
+   `2-outline/`, and the flattened `3-draft-draft-article.md`.
 4. **Print** the workspace layout and the next step (`outline` or `create`).
 
 ### outline
@@ -117,16 +117,16 @@ existing approved artifact (R3):
 
 1. **Prerequisite** (fail loud, R5): `2-outline/outline-approved.md` missing → stop with
    recovery ("run `outline` or `create` first — never draft before outline approval").
-2. **Resume** (R3): `3-draft/draft-article.md` exists → without `--force` or `--revise`,
+2. **Resume** (R3): `3-draft-draft-article.md` exists → without `--force` or `--revise`,
    stop before replacing ("draft exists at `<path>`; to revise pass `--revise <feedback>`,
    to replace pass `--force` after explicit operator approval").
-3. **Write** `3-draft/draft-article.md` from the approved outline only.
+3. **Write** `3-draft-draft-article.md` from the approved outline only.
 4. **Review gate** (R1): present the draft; offer **approve** or **revision**. Bounded
    revision: at most **3 revision rounds**; each round takes `--revise <feedback>`,
    rewrites the draft from the approved outline plus the feedback, and re-presents it.
    After 3 rounds, stop and require an explicit operator decision (approve, restart from
    the outline, or abandon) — never loop past the bound.
-5. **On approval**, the existing `3-draft/draft-article.md` is the approved artifact;
+5. **On approval**, the existing `3-draft-draft-article.md` is the approved artifact;
    record the approval and stop. Print the final draft path.
 
 ## Fail-loud table (R5)

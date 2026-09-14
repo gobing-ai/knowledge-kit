@@ -38,9 +38,9 @@ those conventions; two-way door (delete the YAML).
 ## 2. Module layout
 
 ```
-plugins/kk/workflows/kk-solo-podcast.yaml      # design-time SSOT (copied to ~/.config/kk/workflows)
-plugins/kk/scripts/validate-voicescript.ts   # design-time checker (copied beside the YAML)
-plugins/kk/scripts/wrap-voicescript-doc.ts   # VoiceScript → Doc[] wrapper (copied beside the YAML)
+plugins/kk/workflows/kk-solo-podcast.yaml      # design-time SSOT (resolved in place at run time)
+plugins/kk/scripts/validate-voicescript.ts   # design-time checker (sidecar fallback chain)
+plugins/kk/scripts/wrap-voicescript-doc.ts   # VoiceScript → Doc[] wrapper (sidecar fallback chain)
 apps/cli/tests/kk-solo-podcast-workflow.test.ts
 docs/design/kk-solo-podcast.md                 # maintainer satellite — not loaded at runtime
 ```
@@ -63,11 +63,11 @@ Frozen state ids:
 
 ```
 prepare
-  → understand            # agent.run → 1-briefing/briefing.md
+  → understand            # agent.run → 1-briefing-briefing.md
   → outline-write         # agent.run → 2-outline/outline-option-{a,b}.md (+ optional c)
   → outline-select        # pause, hitl.select a|b|c   (skip when vars.outline set)
   → outline-commit        # cp selected → outline-approved.md
-  → script-write          # agent.run → 3-script/voicescript.yaml
+  → script-write          # agent.run → 3-script-voicescript.yaml
   → script-validate       # bun ${validate_script} --in voicescript.yaml
   → script-review         # pause, hitl.confirm
   → script-revise         # pause, hitl.input; cap 3 via ${work_dir}/.revise-count
@@ -132,12 +132,12 @@ naming `work_dir`. `voice_profile` empty AND `VOICEBOX_DEFAULT_PROFILE` unset
 ```
 ${work_dir}/
   brief.md
-  1-briefing/briefing.md
+  1-briefing-briefing.md
   2-outline/outline-option-a.md
   2-outline/outline-option-b.md
   2-outline/outline-option-c.md      # optional
   2-outline/outline-approved.md
-  3-script/voicescript.yaml
+  3-script-voicescript.yaml
   4-audio/docs.json
   4-audio/content.json
   4-audio/content.wav                # sibling of --out stem
@@ -196,7 +196,7 @@ vs="${vars.validate_script}"
 if [ ! -f "$vs" ]; then
   # fallback chain: $KK_WORKFLOWS_DIR → kk package root (command -v kk + symlink walk) → ~/.config/kk/workflows
 fi
-bun "$vs" --in "${vars.work_dir}/3-script/voicescript.yaml"
+bun "$vs" --in "${vars.work_dir}/3-script-voicescript.yaml"
 ```
 
 Helper is **builtins-only** (no `@gobing-ai/*`, no relative import into `voice-gen` —
@@ -209,7 +209,7 @@ message; no generate.
 ```
 ws="${vars.wrap_script}"
 # same fallback chain: $KK_WORKFLOWS_DIR → kk package root → ~/.config/kk/workflows
-bun "$ws" "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
+bun "$ws" "${vars.work_dir}/3-script-voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
 ```
 
 `wrap-docs` writes `DocListSchema` JSON (`id` + `body` required):
@@ -218,7 +218,7 @@ bun "$ws" "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio
 [{
   "id": "<sha256(sourceUri) hex 16>",
   "title": "<VoiceScript title or briefing H1>",
-  "sourceUri": "file://<abs>/3-script/voicescript.yaml",
+  "sourceUri": "file://<abs>/3-script-voicescript.yaml",
   "body": "<file contents>",
   "mediaType": "application/yaml",
   "metadata": { "voiceProfile": "<resolved profile>" }
@@ -245,7 +245,7 @@ No `skill:` / `prompt:` keys (F4 test). Each `agent.run` has `role: scribe` and
 `briefing|outline|script`, mode `solo`) and names paths. `expectFile` on
 briefing.md, outline-option-a.md, voicescript.yaml.
 
-- **understand** — operation `briefing`: read `brief.md`; write `1-briefing/briefing.md`.
+- **understand** — operation `briefing`: read `brief.md`; write `1-briefing-briefing.md`.
 - **outline-write** — operation `outline`: two structural options (narrative vs
   explainer); optional c. Spoken-podcast outlines. Load briefing.
 - **script-write** — operation `script`: VoiceScript contract inlined in `input:`;

@@ -71,9 +71,9 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).toContain('operation `briefing`');
         expect(yaml).toContain('operation `outline`');
         expect(yaml).toContain('operation `script`');
-        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/1-briefing/briefing.md'].join('$'));
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/1-briefing-briefing.md'].join('$'));
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/2-outline/outline-option-a.md'].join('$'));
-        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-script/voicescript.yaml'].join('$'));
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-script-voicescript.yaml'].join('$'));
     });
 
     it('R1/R3 — success edges avoid action-ok (dry-run walkable) and $schema is quoted', () => {
@@ -156,5 +156,18 @@ describe('kk-solo-podcast workflow (0071)', () => {
 
     it('R8 — no fat solo-podcast skill; /workflow-run may install this YAML', () => {
         expect(existsSync(join(import.meta.dir, '../../../plugins/kk/skills/solo-podcast'))).toBe(false);
+    });
+
+    // --- 0128: single-file stage flattening -------------------------------------
+
+    it('R2 (0128) — single-file briefing/script stages flatten; multi-file stages keep their dirs', () => {
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/1-briefing-briefing.md'].join('$'));
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-script-voicescript.yaml'].join('$'));
+        expect(yaml).not.toContain('/1-briefing"');
+        expect(yaml).not.toContain('/3-script"');
+        expect(yaml).not.toContain(['', '{vars.work_dir}/1-briefing/'].join('$'));
+        expect(yaml).not.toContain(['', '{vars.work_dir}/3-script/'].join('$'));
+        expect(yaml).toContain('/2-outline"');
+        expect(yaml).toContain('/4-audio"');
     });
 });

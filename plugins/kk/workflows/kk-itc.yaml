@@ -29,7 +29,7 @@ vars:
 
 states:
   - id: prepare
-    description: "mkdir work_dir, 2-outline, 3-draft; validate XOR topic/input_file; write brief.md"
+    description: "mkdir work_dir, 2-outline; validate XOR topic/input_file; write brief.md"
     onEnter:
       - kind: shell
         options:
@@ -38,7 +38,7 @@ states:
             if [ -z "${vars.work_dir}" ]; then
               echo "missing work_dir" >&2; exit 1;
             fi;
-            mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline" "${vars.work_dir}/3-draft";
+            mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline";
             echo 0 > "${vars.work_dir}/.revise-count";
             if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
               echo "XOR violation: both topic and input_file set" >&2; exit 1;
@@ -123,9 +123,9 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:${vars.writer} skill.
-            Author the technical draft at ${vars.work_dir}/3-draft/draft-article.md based on approved outline ${vars.work_dir}/2-outline/outline-approved.md and brief ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            Author the technical draft at ${vars.work_dir}/3-draft-draft-article.md based on approved outline ${vars.work_dir}/2-outline/outline-approved.md and brief ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
             Revision feedback: ${vars.__hitlInput}
-          expectFile: ${vars.work_dir}/3-draft/draft-article.md
+          expectFile: ${vars.work_dir}/3-draft-draft-article.md
 
   - id: draft-review
     description: "Operator reviews and approves or requests revision on draft-article.md"
@@ -133,7 +133,7 @@ states:
     onEnter:
       - kind: hitl.confirm
         options:
-          prompt: "Review draft at ${vars.work_dir}/3-draft/draft-article.md. Approve?"
+          prompt: "Review draft at ${vars.work_dir}/3-draft-draft-article.md. Approve?"
           var: __hitlAnswer
 
   - id: draft-revise
@@ -147,7 +147,7 @@ states:
             echo $((n + 1)) > "${vars.work_dir}/.revise-count";
       - kind: hitl.input
         options:
-          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-draft/draft-article.md:"
+          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-draft-draft-article.md:"
           var: __hitlInput
 
   - id: judge
@@ -159,7 +159,7 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:content-judge skill.
-            Evaluate the draft at ${vars.work_dir}/3-draft/draft-article.md against the ${vars.rubric} rubric.
+            Evaluate the draft at ${vars.work_dir}/3-draft-draft-article.md against the ${vars.rubric} rubric.
             Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json per the skill's verdict contract.
             Print the verdict path as the last line of stdout.
           expectFile: ${vars.work_dir}/.itc-verdict.json

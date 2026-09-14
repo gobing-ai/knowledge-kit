@@ -68,7 +68,7 @@ skill is also callable directly as `Skill(skill="storm-research", args="<topic|-
    A question constrains the search and the report; a noun phrase invites scope creep.
 2. **Choose input**: topic sentence, or a markdown file via `--in` (XOR). File mode derives the
    query from the first ATX H1 (`/^#\s+(.+)$/m`), else the basename without extension.
-3. **`work_dir` is the resolved topic directory** `$works_dir/<topic-id>`, computed by the
+3. **`work_dir` is the resolved topic directory** `$works_dir/kk-storm-research/<topic-id>`, computed by the
    invoker (the command or the operator) via the 0056 `topicId()` algorithm — never by the
    workflow. `prepare` only `mkdir` + materializes files into `${vars.work_dir}`.
 4. **Pick fixture vs live** (see below). Default is live (`fixture: "false"`); pass
@@ -95,7 +95,7 @@ skill is also callable directly as `Skill(skill="storm-research", args="<topic|-
 
 ## Works layout (0056, frozen; ADR-013 adds `references/`)
 
-Per-topic workspace at `$works_dir/<topic-id>/`:
+Per-topic workspace at `$works_dir/kk-storm-research/<topic-id>/`:
 
 | File | Written by | Contents |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ Per-topic workspace at `$works_dir/<topic-id>/`:
 | `references/<doc-id>.md` | ingest (live path only) | normalized full content per source (`/v2/scrape` → markitdown); file name = Doc id; audit trail and the citation-resolution target for the report tail (ADR-013) |
 
 Contrast: `topic`'s authoring workspace is `./<kebab-case(topic)>` with `brief.md` /
-`2-outline/` / `3-draft/` and explicitly excludes research. C4 works live under `$works_dir`,
+`2-outline/` / `3-draft-draft-article.md` and explicitly excludes research. C4 works live under `$works_dir`,
 outside any repo.
 
 ## Live vs fixture
@@ -130,8 +130,8 @@ outside any repo.
 | Both `<topic>` and `--in` set, or neither | exit 1, stderr states the XOR rule; no writes | pass exactly one of `topic` / `--in` |
 | `--in` file unreadable (missing / I/O) | exit 1, stderr names the path | fix the path / permissions |
 | Derived query / topic-id empty (no H1 and empty basename) | exit 1, stderr shows the derived value | add an H1 or give the file a real name |
-| Dest `$workflows_dir/<name>.yaml` exists with different bytes | warning, **no overwrite**; run proceeds with the user's copy | re-run with `--force` to replace from the install source |
-| Workflow YAML cannot be resolved from any install source | exit 1, stderr lists the roots searched (`KK_WORKFLOWS_SOURCE`, `plugins/kk/workflows`) | reinstall the package / set `KK_WORKFLOWS_SOURCE` |
+| Resolved YAML is the user override while an installed copy differs | run proceeds with the override (no drift warning) | re-run with `--force` to refresh the override from the install source |
+| Workflow YAML cannot be resolved from any install source | exit 1, stderr lists the roots searched (user override, `KK_WORKFLOWS_SOURCE`, bun/npm global installs, kk package root, `plugins/kk/workflows`) | reinstall the package / set `KK_WORKFLOWS_SOURCE` |
 | `KK_CONFIG` set but unreadable, or config unparseable / invalid types | exit 1, stderr names the key + expected vs actual type | fix the file, or delete it (recreated with defaults next run) |
 | Missing config at `KK_CONFIG` | **not a failure** — create-on-first-run with compiled defaults; an existing file is never overwritten | — |
 | `markitdown` missing from `PATH` (live mode) | ingest exit 1, stderr `web-search failed: markitdown is not on PATH`; probed before any network call, so no `docs.json` write | install markitdown / put it on `PATH`, re-run ingest |

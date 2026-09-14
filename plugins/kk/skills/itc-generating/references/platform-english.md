@@ -69,4 +69,4 @@ for the draft — never reimplements publishing.
 
 Load this reference when `--playbook english`. It informs the draft's framing (audience, voice,
 platform-native format) and the distribution plan, but the deliverable stays `topic`'s
-`3-draft/draft-article.md` — this playbook never publishes and never writes a parallel artifact.
+`3-draft-draft-article.md` — this playbook never publishes and never writes a parallel artifact.

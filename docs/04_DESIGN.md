@@ -306,7 +306,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | Key | Type | Default | Description |
 | ----- | ------ | --------- | ------------- |
 | `works_dir` | string | `$HOME/.config/kk/works` | C4 topic workspace root (`KK_WORKS_DIR` wins) |
-| `workflows_dir` | string | `$HOME/.config/kk/workflows` | Installed workflow YAML dest (`KK_WORKFLOWS_DIR` wins) |
+| `workflows_dir` | string | `$HOME/.config/kk/workflows` | User-override root for workflow YAMLs (`KK_WORKFLOWS_DIR` wins); resolution falls back: this → `KK_WORKFLOWS_SOURCE` → bun global → npm global → kk package root → repo checkout |
 | `defaults.maxResults` | int | `8` | STORM ingest cap |
 | `defaults.fixture` | bool | `false` | STORM live vs fixture |
 | `plugins.<collection>.<name>.env` | map of scalars | — | Injected into that plugin's process env at `spawnPluginEntry`. Real env vars win (`flag > env > config > compiled default`). Collection names: `ingestions` / `generations` / `publishings`. Missing file or missing key → no extra env. Empty-string values are skipped. |
@@ -561,8 +561,10 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 | -------- | ---- | ----- |
 | 1 | `$workflows_dir/$NAME.yaml` (default `~/.config/kk/workflows/`) | User override — wins when present; nothing is copied |
 | 2 | `$KK_WORKFLOWS_SOURCE/$NAME.yaml` | Environment override root |
-| 3 | `$pkg/plugins/kk/workflows/$NAME.yaml` | Installed package copy (versioned with the CLI) |
-| 4 | `plugins/kk/workflows/$NAME.yaml` | Repo checkout (development) |
+| 3 | `$(dirname $(bun pm bin -g))/install/global/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows/$NAME.yaml` | bun global install (guarded probe) |
+| 4 | `$(dirname $(npm root -g))/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows/$NAME.yaml` | npm global install (guarded probe) |
+| 5 | `$pkg/plugins/kk/workflows/$NAME.yaml` | Installed package copy (resolved from the `kk` binary) |
+| 6 | `plugins/kk/workflows/$NAME.yaml` | Repo checkout (development) |
 
 **Semantics:**
 
@@ -583,9 +585,11 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 
 | Profile | Target workflow | Workspace layout | Report artifacts |
 | ------- | --------------- | ---------------- | ---------------- |
-| `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
-| `kk-itc` | `kk-itc.yaml` | `./<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft/draft-article.md` |
-| `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` + `wrap-voicescript-doc.ts` | `$works_dir/<kebab>` | `$work_dir/3-script/voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
+| `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/kk-storm-research/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
+| `kk-itc` | `kk-itc.yaml` | `$works_dir/kk-itc/<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft-draft-article.md` |
+| `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` + `wrap-voicescript-doc.ts` | `$works_dir/kk-solo-podcast/<date>` | `$work_dir/1-briefing-briefing.md`, `$work_dir/3-script-voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
+
+Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir` overrides). Existing `.works/`-era trees (flat `<kebab>`/`<topic-id>` dirs under `$works_dir`) are **not** migrated — rerunning against an old workspace requires an explicit `--dir`.
 
 ### 7.3 `/tell-me` command + `explain-things` skill surface
 

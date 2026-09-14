@@ -1,3 +1,8 @@
+# kk operator config. `works_dir` is the run-workspace root — each workflow run defaults
+# to <works_dir>/<workflow-name>/<run-id> unless --dir is given (existing `.works/`-era
+# trees are not migrated). `workflows_dir` is the user-override root for workflow YAMLs;
+# when a workflow is not found there, /workflow-run falls back to KK_WORKFLOWS_SOURCE,
+# bun/npm global installs, the kk package root, then the repo checkout.
 works_dir: "~/.config/kk/works"
 workflows_dir: "~/.config/kk/workflows"
 defaults:

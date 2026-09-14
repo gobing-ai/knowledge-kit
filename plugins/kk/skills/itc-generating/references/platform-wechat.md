@@ -56,5 +56,5 @@ compliance constraints — never reimplements registration, publishing, or the A
 
 Load this reference when `--playbook wechat`. It informs the draft's structure (mobile-first
 formatting, Chinese-language expectations, title/abstract limits, review rigor) but the deliverable
-stays `topic`'s `3-draft/draft-article.md` — this playbook never registers an account, never
+stays `topic`'s `3-draft-draft-article.md` — this playbook never registers an account, never
 publishes, and never touches the WeChat API.

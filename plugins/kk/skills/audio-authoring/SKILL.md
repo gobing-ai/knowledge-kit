@@ -65,13 +65,12 @@ directly.
 | Artifact | Path | Written by |
 | --- | --- | --- |
 | Brief (input) | `brief.md` | supplied before invocation — topic phrase or Markdown brief |
-| Briefing | `1-briefing/briefing.md` | `briefing` — thesis, takeaways, audience, duration, tone |
+| Briefing | `1-briefing-briefing.md` | `briefing` — thesis, takeaways, audience, duration, tone |
 | Outline options | `2-outline/outline-option-a.md`, `outline-option-b.md`, `outline-option-c.md` | `outline` — always two or three (a and b required; c optional) |
 | Approved outline | `2-outline/outline-approved.md` | `outline` — after explicit operator selection |
-| VoiceScript | `3-script/voicescript.yaml` | `script` — from the approved outline only |
+| VoiceScript | `3-script-voicescript.yaml` | `script` — from the approved outline only |
 
-Each operation creates the directory it writes into (`1-briefing/`, `2-outline/`,
-`3-script/`) when absent. No other files are created — no metadata, no JSON
+Each operation creates the directory it writes into (`2-outline/`) when absent; single-file stages write `<step>-<name>` at the workspace root. No other files are created — no metadata, no JSON
 manifests, no templates, no placeholders.
 
 ## Modes
@@ -101,7 +100,7 @@ from any existing approved artifact:
 2. **Outline** — if `2-outline/outline-approved.md` is missing, run the `outline`
    semantics (write options, selection gate). If it exists, reuse it — do not
    regenerate.
-3. **Script** — if `3-script/voicescript.yaml` is missing, run the `script` semantics
+3. **Script** — if `3-script-voicescript.yaml` is missing, run the `script` semantics
    (write + review gate). If it exists and is approved, report it as final — do not
    rewrite.
 4. **Report** the final artifact paths and stop. Never re-run a completed step; never
@@ -110,15 +109,15 @@ from any existing approved artifact:
 ### briefing
 
 1. **Prerequisite** (fail loud): `brief.md` missing → stop with recovery ("supply a
-   brief at `<dir>/brief.md` first"). `1-briefing/briefing.md` exists without
+   brief at `<dir>/brief.md` first"). `1-briefing-briefing.md` exists without
    `--force` → stop before replacing.
-2. **Read** `brief.md` and write `1-briefing/briefing.md`: core thesis, key listener
+2. **Read** `brief.md` and write `1-briefing-briefing.md`: core thesis, key listener
    takeaways, audience profile, target spoken duration (`--duration` minutes), tone,
    and what material from the brief to emphasize or cut.
 
 ### outline
 
-1. **Prerequisite** (fail loud): `1-briefing/briefing.md` missing → stop with
+1. **Prerequisite** (fail loud): `1-briefing-briefing.md` missing → stop with
    recovery ("run `briefing` or `create` first").
 2. **Resume**: `2-outline/outline-approved.md` exists → reuse it; without `--force`,
    stop before replacing.
@@ -135,10 +134,10 @@ from any existing approved artifact:
 1. **Prerequisite** (fail loud): `2-outline/outline-approved.md` missing → stop with
    recovery ("run `outline` or `create` first — never script before outline
    approval").
-2. **Resume**: `3-script/voicescript.yaml` exists → without `--force` or `--revise`,
+2. **Resume**: `3-script-voicescript.yaml` exists → without `--force` or `--revise`,
    stop before replacing ("script exists at `<path>`; to revise pass `--revise
    <feedback>`, to replace pass `--force`").
-3. **Write** `3-script/voicescript.yaml` from the approved outline only, obeying the
+3. **Write** `3-script-voicescript.yaml` from the approved outline only, obeying the
    VoiceScript contract and the spoken-budget rule below. Solo mode shape: one
    speaker, **no** `speakers` map, per-segment `profile` omitted. Emit only valid
    YAML — no markdown fences, no repo or docs paths in the file body.
@@ -155,7 +154,7 @@ from any existing approved artifact:
 ## VoiceScript contract
 
 The authoring template lives at **`templates/voicescript.solo.yaml`** (relative to
-this skill file) — read it first when authoring `3-script/voicescript.yaml`; it is a
+this skill file) — read it first when authoring `3-script-voicescript.yaml`; it is a
 valid-YAML skeleton with per-field constraint comments. The executable authority is
 `plugins/kk/scripts/validate-voicescript.ts` (canonical source
 `plugins/generations/voice-gen/src/voicescript.ts`); the template is its

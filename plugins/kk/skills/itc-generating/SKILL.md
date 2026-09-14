@@ -82,7 +82,7 @@ workspace — it delegates to `topic`, which writes exactly these paths:
 | Brief | `brief.md` | `topic` `init` |
 | Outline options | `2-outline/outline-option-{a,b,c}.md` | `topic` `outline` |
 | Approved outline | `2-outline/outline-approved.md` | `topic` `outline` (after selection gate) |
-| Draft | `3-draft/draft-article.md` | `topic` `draft` (from approved outline, review gate) |
+| Draft | `3-draft-draft-article.md` | `topic` `draft` (from approved outline, review gate) |
 
 ## create sequence
 
@@ -104,7 +104,7 @@ workspace — it delegates to `topic`, which writes exactly these paths:
    show-don't-tell with diagrams/examples, accessibility) plus the platform playbook's constraints
    (e.g. WeChat mobile formatting or English-platform framing). The draft is written by `topic`
    from the approved outline; the method shapes it.
-6. **Optional judge gate** — if `--judge` and `3-draft/draft-article.md` is approved, invoke
+6. **Optional judge gate** — if `--judge` and `3-draft-draft-article.md` is approved, invoke
    `content-judge` with the `tech-accuracy` rubric. A non-`PASS` verdict is reported to the operator; it
    does **not** auto-publish and does not auto-revise past `topic`'s 3-round bound.
 7. **Print** the final artifact paths and stop.

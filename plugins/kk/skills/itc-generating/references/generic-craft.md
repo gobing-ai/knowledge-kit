@@ -74,7 +74,7 @@ all five disciplines while authoring the draft.
 
 ## Applying this in `create`
 
-While drafting `3-draft/draft-article.md` (after `topic`'s outline gate), apply: one goal per
+While drafting `3-draft-draft-article.md` (after `topic`'s outline gate), apply: one goal per
 document enforced at the draft-review gate; the Value Proposition as a scope firewall; explicit
 prerequisites and POLA; show-don't-tell with diagrams/examples; and accessibility. The `--judge`
 gate then verifies technical accuracy against the rubric.

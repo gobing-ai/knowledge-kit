@@ -386,4 +386,23 @@ if (plugin === 'aihot-ingest') {
             }
         }
     }, 30000);
+
+    // --- 0128 R3: the flattening enumeration ---------------------------------
+
+    it('R3 (0128) — every daily stage emits >= 2 files, so no stage is flattened', () => {
+        const stages = ['1-ingest', '2-facts', '2-plan', '2-article', '2-cover', '2-script', '3-audio', '3-publish'];
+        for (const stage of stages) {
+            const files = new Set(
+                [...yaml.matchAll(new RegExp(`\\$\\{vars\\.work_dir\\}/${stage}/([A-Za-z0-9_.{}$-]+)`, 'g'))].map(
+                    (m) => m[1],
+                ),
+            );
+            // A stage emitting exactly one file would be flattened to <step>-<name>; enumerate
+            // rather than assume, so a future single-file stage fails here instead of drifting.
+            expect(files.size, `${stage} file count`).toBeGreaterThanOrEqual(2);
+        }
+        // No flattened <step>-<name> reference exists in this YAML. The name part is any
+        // non-slash shape — including a ${...} template — so [a-z] classes would miss it.
+        expect(yaml).not.toMatch(/\$\{vars\.work_dir\}\/[0-9]-[^/\s]+-[^/\s]*\.[A-Za-z]/);
+    });
 });

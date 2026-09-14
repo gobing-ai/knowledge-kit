@@ -56,7 +56,7 @@ describe('kk-itc workflow (0069)', () => {
             expect(block).toContain('input:');
         }
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/2-outline/outline-option-a.md'].join('$'));
-        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-draft/draft-article.md'].join('$'));
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.md'].join('$'));
         expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/.itc-verdict.json'].join('$'));
     });
 
@@ -69,5 +69,14 @@ describe('kk-itc workflow (0069)', () => {
         expect(yaml).toContain('XOR violation: both topic and input_file set');
         expect(yaml).toContain('XOR violation: neither topic nor input_file set');
         expect(yaml).toContain(['initialization target already exists at ', '{vars.work_dir}/brief.md'].join('$'));
+    });
+
+    // --- 0128: single-file stage flattening -------------------------------------
+
+    it('R1 (0128) — the single-file 3-draft stage is flattened and its stage dir is not created', () => {
+        expect(yaml).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.md'].join('$'));
+        expect(yaml).not.toContain('/3-draft"'); // the 3-draft mkdir segment is gone
+        expect(yaml).not.toContain(['', '{vars.work_dir}/3-draft/'].join('$')); // no stage-dir refs remain
+        expect(yaml).toContain('/2-outline";'); // the multi-file stage keeps its dir
     });
 });

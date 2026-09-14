@@ -42,7 +42,7 @@ states:
           if [ -z "${vars.work_dir}" ]; then
             echo "missing work_dir" >&2; exit 1;
           fi;
-          mkdir -p "${vars.work_dir}" "${vars.work_dir}/1-briefing" "${vars.work_dir}/2-outline" "${vars.work_dir}/3-script" "${vars.work_dir}/4-audio";
+          mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline" "${vars.work_dir}/4-audio";
           if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
             echo "XOR violation: both topic and input_file set" >&2; exit 1;
           fi;
@@ -75,10 +75,10 @@ states:
           input: |
             Invoke the kk:audio-authoring skill: operation `briefing`, mode `solo`.
             Read the source brief at ${vars.work_dir}/brief.md.
-            Write a concise podcast briefing at ${vars.work_dir}/1-briefing/briefing.md.
+            Write a concise podcast briefing at ${vars.work_dir}/1-briefing-briefing.md.
             Identify core thesis, key listener takeaways, audience profile, target spoken duration (${vars.target_duration_min} minutes), tone, and what material from the brief to emphasize or cut.
             Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min}
-          expectFile: ${vars.work_dir}/1-briefing/briefing.md
+          expectFile: ${vars.work_dir}/1-briefing-briefing.md
 
   - id: outline-write
     description: "Generate spoken podcast outline options (agent.run)"
@@ -89,7 +89,7 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:audio-authoring skill: operation `outline`, mode `solo`.
-            Read the briefing at ${vars.work_dir}/1-briefing/briefing.md and brief at ${vars.work_dir}/brief.md.
+            Read the briefing at ${vars.work_dir}/1-briefing-briefing.md and brief at ${vars.work_dir}/brief.md.
             Generate spoken podcast outline options in ${vars.work_dir}/2-outline/:
             - outline-option-a.md (e.g. narrative / storytelling arc)
             - outline-option-b.md (e.g. analytical / explainer breakdown)
@@ -140,10 +140,10 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:audio-authoring skill: operation `script`, mode `solo`.
-            Read the approved outline at ${vars.work_dir}/2-outline/outline-approved.md and briefing at ${vars.work_dir}/1-briefing/briefing.md.
+            Read the approved outline at ${vars.work_dir}/2-outline/outline-approved.md and briefing at ${vars.work_dir}/1-briefing-briefing.md.
             Target duration is ${vars.target_duration_min} minutes.
             Spoken budget: if language (${vars.language}) is zh, ja, or ko, target characters = ${vars.target_duration_min} * ${vars.cjk_chars_per_min}; otherwise target words = ${vars.target_duration_min} * ${vars.words_per_min}. Land inside ±20%, spoken prose, one speaker.
-            Author the complete solo-podcast VoiceScript YAML at ${vars.work_dir}/3-script/voicescript.yaml.
+            Author the complete solo-podcast VoiceScript YAML at ${vars.work_dir}/3-script-voicescript.yaml.
             Emit ONLY valid YAML (no markdown fences, no repo/docs paths). Contract:
             title: string
             language: "${vars.language}"
@@ -156,7 +156,7 @@ states:
             Do not invent fields. Revision feedback: ${vars.__hitlInput}
             Duration retries: if ${vars.work_dir}/.duration-feedback exists, invoke with `--force` (authorized rewrite) and treat its contents as the revision feedback.
             Flags: --dir ${vars.work_dir} --duration ${vars.target_duration_min} --language ${vars.language} --profile ${vars.voice_profile} --revise "${vars.__hitlInput}"
-          expectFile: ${vars.work_dir}/3-script/voicescript.yaml
+          expectFile: ${vars.work_dir}/3-script-voicescript.yaml
 
   - id: script-validate
     description: "Validate authored VoiceScript YAML structure and constraints"
@@ -182,7 +182,7 @@ states:
             echo "validate_script not found (searched: \$KK_WORKFLOWS_DIR, kk package root via \`command -v kk\`, \$HOME/.config/kk/workflows) — install the kk package or place an override with /workflow-run kk-solo-podcast --force" >&2;
             exit 1;
           fi;
-          bun "$vs" --in "${vars.work_dir}/3-script/voicescript.yaml"
+          bun "$vs" --in "${vars.work_dir}/3-script-voicescript.yaml"
 
   - id: script-review
     description: "Operator reviews and approves VoiceScript before live TTS generation"
@@ -190,7 +190,7 @@ states:
     onEnter:
       - kind: hitl.confirm
         options:
-          prompt: "Review VoiceScript at ${vars.work_dir}/3-script/voicescript.yaml. Approve for voice generation?"
+          prompt: "Review VoiceScript at ${vars.work_dir}/3-script-voicescript.yaml. Approve for voice generation?"
           var: __hitlAnswer
 
   - id: script-revise
@@ -205,7 +205,7 @@ states:
           echo $((n + 1)) > "${vars.work_dir}/.revise-count";
       - kind: hitl.input
         options:
-          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-script/voicescript.yaml:"
+          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-script-voicescript.yaml:"
           var: __hitlInput
 
   - id: wrap-docs
@@ -232,7 +232,7 @@ states:
             echo "wrap_script not found (searched: \$KK_WORKFLOWS_DIR, kk package root via \`command -v kk\`, \$HOME/.config/kk/workflows) — install the kk package or place an override with /workflow-run kk-solo-podcast --force" >&2;
             exit 1;
           fi;
-          bun "$ws" "${vars.work_dir}/3-script/voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
+          bun "$ws" "${vars.work_dir}/3-script-voicescript.yaml" "${vars.work_dir}/4-audio/docs.json" "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice-gen generator plugin to generate audio"

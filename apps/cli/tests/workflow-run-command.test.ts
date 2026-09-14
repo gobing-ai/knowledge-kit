@@ -139,4 +139,57 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toContain('\\"wrap_script\\"');
         expect(cmd).toContain('spur workflow run "$dest"');
     });
+
+    // --- 0127: global-install fallback + per-workflow workspace defaults ----------
+
+    /** The §3 candidate-dir loop lines (plain run + --force copy): the resolution chain, in evaluation order. */
+    function candidateLoops(): string[] {
+        const lines = cmd.split('\n').filter((l) => l.includes('for d in "$KK_WORKFLOWS_SOURCE"'));
+        if (lines.length === 0) throw new Error('§3 candidate-dir loop not found in workflow-run.md');
+        return lines;
+    }
+
+    it('R1 — global installs are probed after KK_WORKFLOWS_SOURCE and before the package root (both §3 loops)', () => {
+        const expected = [
+            '$KK_WORKFLOWS_SOURCE',
+            '$bun_global_workflows',
+            '$npm_global_workflows',
+            '$pkg/plugins/kk/workflows',
+            'plugins/kk/workflows',
+        ];
+        for (const chain of candidateLoops()) {
+            const order = expected.map((entry) => chain.indexOf(entry));
+            expect(order.every((i) => i >= 0)).toBe(true);
+            expect(order).toEqual([...order].sort((a, b) => a - b));
+        }
+    });
+
+    it('R1/R2 — each global-install probe is guarded by command -v and a directory test', () => {
+        expect(cmd).toContain('command -v bun >/dev/null 2>&1');
+        expect(cmd).toContain('command -v npm >/dev/null 2>&1');
+        expect(cmd).toContain('bun pm bin -g');
+        expect(cmd).toContain('npm root -g');
+        expect(cmd).toContain('install/global/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows');
+        expect(cmd).toContain('node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows');
+        // Guarded probe, not a bare expansion: a missing manager leaves the candidate empty.
+        expect(cmd).toMatch(/\[ -d "\$bg" \] && bun_global_workflows="\$bg"/);
+        expect(cmd).toMatch(/\[ -d "\$ng" \] && npm_global_workflows="\$ng"/);
+    });
+
+    it('R3 — the prose keeps the config failure ahead of every fallback probe', () => {
+        expect(cmd).toMatch(/corrupt `config\.yaml` already exited 1 in step 2/);
+        expect(cmd).toMatch(/no fallback masks a config error/);
+    });
+
+    it('R4 — every profile defaults its work_dir under works_dir/<workflow-name>/', () => {
+        for (const profile of ['kk-storm-research', 'kk-itc', 'kk-solo-podcast', 'kk-daily-ai-voice']) {
+            // The ${DIR:-<default>} form is what makes an explicit --dir win over the default.
+            expect(cmd).toMatch(new RegExp(`work_dir="\\$\\{DIR:-\\$works_dir/${profile}/`));
+        }
+    });
+
+    it('R4 — --dir wins over the defaults and no default is cwd-relative', () => {
+        expect(cmd).not.toMatch(/\$\{DIR:-\.\//);
+        expect(cmd).toMatch(/explicit `--dir`\s+overrides all four defaults/);
+    });
 });
