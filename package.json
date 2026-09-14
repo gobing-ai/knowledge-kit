@@ -33,7 +33,7 @@
         "typecheck": "bun run --filter './apps/*' --filter './packages/*' --filter './plugins/ingestions/*' --filter './plugins/generations/*' --filter './plugins/publishings/*' typecheck",
         "lint": "biome check . && bun run typecheck",
         "format": "biome check . --write",
-        "gate": "bun run autofix && bun run spur-check",
+        "gate": "bun run format && bun run build && bun run spur-check",
         "autofix": "bun run format && bun run typecheck",
         "bump-ver": "spur builder bump-ver",
         "drop-tags": "spur builder drop-tags",

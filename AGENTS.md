@@ -170,7 +170,7 @@ feature status → `05`.
 ## Build & verification
 
 ```bash
-bun run autofix && bun run spur-check   # final quality gate
+bun run gate            # final quality gate: format + build + lint + rules + tests
 bun run lint            # biome 2.5.5 check + typecheck  (the gate)
 bun run format          # biome check --write
 bun run autofix         # format then typecheck
