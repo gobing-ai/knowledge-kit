@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Reduce ADR-115 composition findings in the remaining kk workflows (kk-daily-ai-voice 21, kk-storm-research 2, kk-itc 1)
-status: testing
+status: done
 template: issue
 created_at: 2026-09-14T22:38:03.257Z
-updated_at: "2026-09-15T02:41:19.746Z"
+updated_at: "2026-09-15T07:27:24.224Z"
 feature_id: F8
 
 ac_altitude: task-local
@@ -476,4 +476,5 @@ R4 records; (d) `kk-daily-ai-voice.yaml` remains at 21 findings by design (R5).
 
 - 2026-09-15T00:38:22.685Z todo → wip (system)
 - 2026-09-15T02:39:35.596Z wip → testing (system)
+- 2026-09-15T07:27:24.224Z testing → done (system)
 

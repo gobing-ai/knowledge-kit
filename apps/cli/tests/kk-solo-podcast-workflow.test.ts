@@ -128,11 +128,17 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).not.toContain('docs/design');
         expect(yaml).not.toContain('plugins/kk/lib');
         expect(yaml).not.toContain('plugins/kk/skills');
-        // plugins/kk/workflows and plugins/kk/scripts are allowed ONLY under the
-        // $pkg package-root prefix — never as a bare cwd-relative path (breaks outside a checkout).
-        const bareRefs = [...[...yaml.matchAll(/plugins\/kk\/(workflows|scripts)/g)]].filter(
-            (m) => !yaml.slice(0, m.index).endsWith('$pkg/'),
-        );
+        // plugins/kk/workflows and plugins/kk/scripts are allowed ONLY under the $pkg
+        // package-root prefix or the explicit checkout fallback tier 0133 added to the prelude
+        // (`[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts"`). Any other bare,
+        // cwd-relative reference would break outside a checkout.
+        const bareRefs = [...[...yaml.matchAll(/plugins\/kk\/(workflows|scripts)/g)]].filter((m) => {
+            const before = yaml.slice(0, m.index);
+            if (before.endsWith('$pkg/')) return false;
+            const lineStart = before.lastIndexOf('\n') + 1;
+            const line = yaml.slice(lineStart, yaml.indexOf('\n', m.index));
+            return !line.includes('|| st="plugins/kk/scripts/kk-workflow-stages.ts"');
+        });
         expect(bareRefs).toEqual([]);
         expect(yaml).toContain('command -v kk');
         // 0131 (ADR-115): the override chain + sidecar names now live in the stage runner;
@@ -167,9 +173,9 @@ describe('kk-solo-podcast workflow (0071)', () => {
         // divergence stays invisible unless the four blocks are asserted identical.
         for (const line of [
             'kbin="$(command -v kk 2>/dev/null)";',
-            'while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;',
-            'pkg="$(dirname "$(dirname "$kbin")")";',
+            'pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";',
             'st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";',
+            '[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";',
             '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
         ]) {
             expect(yaml.split(line).length - 1).toBe(4);

@@ -18,6 +18,11 @@ import { join } from 'node:path';
 describe('kk-daily-ai-voice workflow (0074)', () => {
     const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice.yaml');
     const yaml = readFileSync(workflowPath, 'utf-8');
+    // 0133: the stage bodies (paths, cache predicates, plugin argv) live in the shared runner.
+    const runnerSource = readFileSync(
+        join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'),
+        'utf-8',
+    );
 
     const stateIds = [...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1]);
 
@@ -71,22 +76,27 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('run_date: ""');
         expect(yaml).toContain('agent: "inline"');
         // last30days disable writes an empty last30days input in prepare (fan-in --source tolerates it).
-        expect(yaml).toContain('"$' + '{vars.last30days_enabled}" != "true"');
+        // 0133: the parameter validation + source-config writes live in the stage runner.
+        expect(yaml).toContain('bun "$st" daily-prepare');
+        expect(runnerSource).toContain("last30daysEnabled !== 'true'");
+        expect(runnerSource).toContain("'1-ingest/last30days-docs.json'");
         // Content QC thresholds ride the plugin env channel (0099-calibrated DEFAULT_FILTER_CONFIG).
         expect(yaml).toContain('qc_categories: "ai-news,ai-industry"');
         expect(yaml).toContain('qc_min_quality: "2"');
         expect(yaml).toContain('qc_min_importance: "3"');
         expect(yaml).toContain('qc_min_urgency: "2"');
         expect(yaml).toContain('qc_min_impact: "1"');
-        expect(yaml).toContain('EPISODE_PLAN_MODE=filter');
+        // 0133: the QC filter mode rides the plugin env the runner's daily-qc-content stage sets.
+        expect(runnerSource).toContain("EPISODE_PLAN_MODE: 'filter'");
         // Step-output naming convention: {run_date}_{NN}_{step_name}_{artifact}.{ext} (redo-by-delete;
         // see docs/design/kk-daily-ai-voice.md section 4).
         expect(yaml).toContain(`\${vars.run_date}_06_article_article.md`);
         expect(yaml).toContain(`\${vars.run_date}_08_script_voicescript.yaml`);
         expect(yaml).toContain(`\${vars.run_date}_07_cover_cover.png`);
-        // Audio is cached when the day's content.json exists and QC passed.
-        // Publish fan-out shells into postsurfing's own spur workflow — unset the recursion guard.
-        expect(yaml).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE');
+        // Audio is cached when the day's content.json exists and QC passed (daily-generate).
+        expect(runnerSource).toContain('qc?.passed === true');
+        // Publish fan-out shells into postsurfing's own spur workflow — the runner unsets the guard.
+        expect(runnerSource).toContain("unset: ['SPUR_WORKFLOW_RUN_ACTIVE']");
     });
 
     it('R1/R2 (N) — cover state invokes kk:image-authoring under the non-interactive contract and normalizes the artifact', () => {
@@ -103,6 +113,29 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).not.toContain('wt-image-cover');
     });
 
+    it('R2/R3 (0133) — the twenty delegated actions share one prelude and the prompts stay under the cap', () => {
+        // Byte-identity is the frozen contract: a drifted prelude would still pass validate (each
+        // action is measured on its own), so the block is asserted identical here.
+        for (const line of [
+            'kbin="$(command -v kk 2>/dev/null)";',
+            'pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";',
+            'st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";',
+            '[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";',
+            '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
+        ]) {
+            expect(yaml.split(line).length - 1, `${line.slice(0, 24)} count`).toBe(20);
+        }
+        // ADR-115 R3: the two trimmed prompts stay under the 1000-char error tier.
+        for (const [step, cap] of [
+            ['plan-translate', 1000],
+            ['cover', 1000],
+        ] as const) {
+            const block = yaml.match(new RegExp(`- id: ${step}\\n[\\s\\S]*?(?=\\n  - id: )`))?.[0] ?? '';
+            const input = block.split('input: |')[1]?.split('expectFile:')[0] ?? '';
+            expect(input.length, `${step} prompt chars`).toBeLessThanOrEqual(cap);
+        }
+    });
+
     it('R3 & R5 — invokes the pipeline plugins through kk executor (incl. fan-in/fan-out)', () => {
         // 0097: the ingest plugins spawn inside kk executor fan-in --source (concurrent collect).
         expect(yaml).toContain('--source "aihot-ingest:');
@@ -112,14 +145,42 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('--source-timeout-override "horizon-ingest:2700000"');
         expect(yaml).toContain('--source "horizon-ingest:');
         expect(yaml).toContain('kk executor fan-in --source');
-        expect(yaml).toContain('kk executor run core-facts-gen');
-        expect(yaml).toContain('kk executor run episode-plan-gen');
-        expect(yaml).toContain('kk executor run daily-article-gen');
-        expect(yaml).toContain('kk executor run dailynews-gen');
-        expect(yaml).toContain('kk executor run $' + '{vars.voice_generator}');
-        expect(yaml).toContain('kk executor fan-out');
-        expect(yaml).toContain('kk executor run podcast-pub');
-        expect(yaml).toContain('kk executor run surfdash-pub');
+        // 0133: every kk invocation moved into the runner; the YAML keeps the delegation calls.
+        // Every delegated action's call line, with the argv it must carry: a swapped argument order
+        // at any of the twenty sites would otherwise pass this suite.
+        for (const call of [
+            `bun "$st" daily-prepare "\${vars.work_dir}" "\${vars.limit}" "\${vars.cursor}" "\${vars.state_file}" "\${vars.last30days_enabled}" "\${vars.last30days_topic}" "\${vars.horizon_hours}"`,
+            `bun "$st" daily-collect-facts "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-plan "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.plan_max_items}"`,
+            `bun "$st" daily-qc-content "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_categories}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
+            `bun "$st" daily-article "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
+            `bun "$st" daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,
+            `bun "$st" daily-wrap-docs "\${vars.work_dir}" "\${vars.run_date}" "\${vars.voice_profile}"`,
+            `bun "$st" daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.voice_generator}"`,
+            `bun "$st" daily-quality-report "\${vars.work_dir}" "\${vars.run_date}"`,
+            `bun "$st" daily-publish-prep "\${vars.work_dir}" "\${vars.run_date}"`,
+            `bun "$st" daily-publish-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-show-notes "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.title}"`,
+            `bun "$st" daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
+            `bun "$st" daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
+            `bun "$st" daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
+            `bun "$st" daily-translate-en "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-translate-ja "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.surfdash_post_path}"`,
+        ]) {
+            expect(yaml, call.slice(12, 40)).toContain(call);
+        }
+        expect(runnerSource).toContain("'core-facts-gen'");
+        expect(runnerSource).toContain("'episode-plan-gen'");
+        expect(runnerSource).toContain("'daily-article-gen'");
+        expect(runnerSource).toContain("'dailynews-gen'");
+        expect(runnerSource).toContain('voiceGenerator');
+        expect(runnerSource).toContain("'fan-out',");
+        expect(runnerSource).toContain("'--target',");
+        expect(runnerSource).toContain("'podcast-pub'");
+        expect(runnerSource).toContain("'surfdash-pub'");
         expect(yaml).toContain('kind: hitl.confirm');
 
         expect(yaml).toContain('pause: true');
@@ -133,7 +194,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
 
     it('R5 — executes all plugin commands and creates pipeline artifacts', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
-            return;
+            // Fail loud: a silent return made a green suite indistinguishable from a skipped run.
+            throw new Error(
+                'kk-daily-ai-voice integration test requires `spur` on PATH (the repo quality gate installs it); refusing to skip silently',
+            );
         }
         // unset -> workflow default omni-voice-gen (ADR-020 amendment 2026-09-13); explicit
         // 'voice-gen' pins the Voicebox REST fallback path.
@@ -390,19 +454,24 @@ if (plugin === 'aihot-ingest') {
     // --- 0128 R3: the flattening enumeration ---------------------------------
 
     it('R3 (0128) — every daily stage emits >= 2 files, so no stage is flattened', () => {
+        // 0133: the stage directories are created and addressed by the runner, so the enumeration
+        // reads the runner's `join(workDir, '<stage>', `${runDate}_NN_step_name`)` calls.
         const stages = ['1-ingest', '2-facts', '2-plan', '2-article', '2-cover', '2-script', '3-audio', '3-publish'];
         for (const stage of stages) {
-            const files = new Set(
-                [...yaml.matchAll(new RegExp(`\\$\\{vars\\.work_dir\\}/${stage}/([A-Za-z0-9_.{}$-]+)`, 'g'))].map(
-                    (m) => m[1],
-                ),
-            );
+            // Count distinct artifact references the runner builds for this stage: either the
+            // `'<stage>/<file>'` literal form or a `join(workDir, '<stage>', …)` call.
+            const files = new Set([
+                ...[...runnerSource.matchAll(new RegExp(`'${stage}/[^']+'`, 'g'))].map((m) => m[0]),
+                ...[...runnerSource.matchAll(new RegExp(`join\\(workDir, '${stage}', [^)]+\\)`, 'g'))].map((m) => m[0]),
+            ]);
             // A stage emitting exactly one file would be flattened to <step>-<name>; enumerate
             // rather than assume, so a future single-file stage fails here instead of drifting.
             expect(files.size, `${stage} file count`).toBeGreaterThanOrEqual(2);
         }
-        // No flattened <step>-<name> reference exists in this YAML. The name part is any
-        // non-slash shape — including a ${...} template — so [a-z] classes would miss it.
+        // The YAML keeps no flattened <step>-<name> reference. The runner is checked by the
+        // file-count enumeration above instead of by a name pattern: legitimate step names carry
+        // dashes (`translate-sync`, `publish-prep`, `run-report`), so a `[a-z-]+-[^.]+` pattern
+        // matches healthy names and cannot distinguish a flattening.
         expect(yaml).not.toMatch(/\$\{vars\.work_dir\}\/[0-9]-[^/\s]+-[^/\s]*\.[A-Za-z]/);
     });
 });

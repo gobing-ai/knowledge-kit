@@ -19,7 +19,7 @@ Two homes (do not mix them up):
 `$HOME/.config/kk/workflows` is an **override** you place explicitly (or via `--force`). The
 VoiceScript checker (`validate-voicescript.ts`) and wrapper (`wrap-voicescript-doc.ts`)
 resolve the same way: var → `KK_WORKFLOWS_DIR` → package root → `$HOME/.config/kk/workflows`
-(the chain lives in `kk-workflow-stages.ts`, which the YAML resolves from the package root).
+(the chain lives in `kk-workflow-stages.ts`, which the YAML resolves from the installed package root, falling back to the checkout copy).
 Checkout `docs/design/` is **not** on the runtime path and is not in the npm tarball.
 
 ```mermaid

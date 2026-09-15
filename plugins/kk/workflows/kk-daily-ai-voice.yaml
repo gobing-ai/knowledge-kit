@@ -55,14 +55,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"prepare\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            test -n "${vars.work_dir}" || { echo "missing required variable: work_dir" >&2 && exit 1; };
-            mkdir -p "${vars.work_dir}/1-ingest" "${vars.work_dir}/2-facts" "${vars.work_dir}/2-plan" "${vars.work_dir}/2-article" "${vars.work_dir}/2-cover" "${vars.work_dir}/2-script" "${vars.work_dir}/3-audio" "${vars.work_dir}/3-publish";
-            date +%Y%m%d > "${vars.work_dir}/run-date.txt" &&
-            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ limit: Number(process.argv[2]), cursor: process.argv[3] || undefined, stateFile: process.argv[4] || undefined }, null, 2))' "${vars.work_dir}/1-ingest/source.json" "${vars.limit}" "${vars.cursor}" "${vars.state_file}" &&
-            if [ "${vars.last30days_enabled}" != "true" ]; then printf '[]' > "${vars.work_dir}/1-ingest/last30days-docs.json"; fi &&
-            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ topic: process.argv[2] }, null, 2))' "${vars.work_dir}/1-ingest/last30days.json" "${vars.last30days_topic}" &&
-            bun -e 'await Bun.write(process.argv[1], JSON.stringify({ hours: Number(process.argv[2]) }, null, 2))' "${vars.work_dir}/1-ingest/horizon.json" "${vars.horizon_hours}"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-prepare "${vars.work_dir}" "${vars.limit}" "${vars.cursor}" "${vars.state_file}" "${vars.last30days_enabled}" "${vars.last30days_topic}" "${vars.horizon_hours}"
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/run-date.txt
@@ -83,12 +81,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"collect\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            if [ -f "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_content.json" ] && [ -f "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_core-facts.md" ]; then echo "core facts cached: ${vars.work_dir}/2-facts/${vars.run_date}_02_collect_core-facts.md"; exit 0; fi;
-            kk executor run core-facts-gen --in "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json" --out "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_content.json" "$@" &&
-            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_content.json" "${vars.work_dir}/2-facts/${vars.run_date}_02_collect_core-facts.md"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-collect-facts "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: plan
     description: "Score/dedup/select + annotate the blended Doc[] into the episode plan (episode-plan-gen; annotate rides inside planEpisode)"
@@ -96,14 +94,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"plan\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            PLAN_CONTENT="${vars.work_dir}/2-plan/${vars.run_date}_03_plan_content.json"; PLAN_DOCS="${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json";
-            if [ -f "$PLAN_DOCS" ]; then echo "plan cached: $PLAN_DOCS"; exit 0; fi;
-            EPISODE_PLAN_MAX_ITEMS="${vars.plan_max_items}" EPISODE_PLAN_DATE="${vars.run_date}" kk executor run episode-plan-gen --in "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json" --out "$PLAN_CONTENT" "$@" &&
-            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const docs = content.metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("plan: content.metadata.docs missing or empty"); process.exit(1); } await Bun.write(process.argv[2], JSON.stringify(docs, null, 2))' "$PLAN_CONTENT" "$PLAN_DOCS" &&
-            test -f "$PLAN_DOCS" || { echo "plan: $PLAN_DOCS not written after episode-plan-gen"; exit 1; }
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}"
 
   - id: quality-control-content
     description: "Content QC: filter the plan's annotated candidates by category allowlist + score thresholds (episode-plan-gen --mode filter); zero candidates route to done-no-content"
@@ -111,12 +107,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"quality-control-content\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            if [ -f "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" ]; then echo "candidates cached: ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json"; exit 0; fi;
-            jq '.metadata.docs' "${vars.work_dir}/2-plan/${vars.run_date}_03_plan_content.json" > "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_annotated.json" &&
-            EPISODE_PLAN_MODE=filter QC_CATEGORIES="${vars.qc_categories}" QC_MIN_QUALITY="${vars.qc_min_quality}" QC_MIN_IMPORTANCE="${vars.qc_min_importance}" QC_MIN_URGENCY="${vars.qc_min_urgency}" QC_MIN_IMPACT="${vars.qc_min_impact}" kk executor run episode-plan-gen --in "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_annotated.json" --out "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" "$@"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
 
   - id: plan-translate
     description: "Translate needsTranslation plan items into the output plan.json via agent.run"
@@ -126,13 +122,11 @@ states:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Read the JSON file at ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json. Its metadata.docs is a JSON array of news items (Doc[]) — this is the episode plan to translate. Do not edit candidates.json.
-            For every item with needsTranslation: translate its "title" and "body" fields into natural, concise Chinese (simplified).
-            Titles must read as a news event, not a bare label: derive the title from the item's body (first sentence carries the event) so "Sora 2" becomes e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型" — subject + action + object. Keep product/model/company names verbatim.
-            Keep everything else untouched: metadata (including needsTranslation, planScore, mergedFrom, urls), sourceUri, id, mediaType.
-            Preserve any URLs inside the body text. Keep technical terms (product/model/company names) in their original form where that is clearer.
-            The output must be strictly valid JSON: escape every double quote inside string values as \", never use raw ASCII double quotes inside Chinese text (use 「」 or \"), and produce no trailing commas or comments.
-            Write the translated array — a valid JSON array of the same length, same item order, same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json (create the file).
+            Read ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json — its metadata.docs (Doc[]) is the episode plan to translate. Do not edit candidates.json.
+            For every item with needsTranslation, translate "title" and "body" into natural, concise simplified Chinese.
+            Titles must read as a news event (subject + action + object), derived from the body — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve URLs inside the body, and use 「」 instead of raw ASCII double quotes inside Chinese text.
+            Keep every other field untouched (id, sourceUri, mediaType, metadata), keep technical terms in their original form where that is clearer, and produce no trailing commas or comments.
+            Output strictly valid JSON — a same-length, same-order array carrying the same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json.
           expectFile: ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json
           allowAppend: false
 
@@ -142,11 +136,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"article\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            CONTENT_OUT="${vars.work_dir}/2-article/${vars.run_date}_06_article_content.json"; ARTICLE_MD="${vars.work_dir}/2-article/${vars.run_date}_06_article_article.md";
-            if [ -f "$ARTICLE_MD" ]; then echo "article cached: $ARTICLE_MD"; else PLAN_IN="${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json"; PLAN_OK=1; bun -e 'try { JSON.parse(await Bun.file(process.argv[1]).text()); process.exit(0); } catch (e) { console.warn("article: plan.json invalid JSON — replacing with untranslated plan (downstream states read this file): " + e.message); const docs = JSON.parse(await Bun.file(process.argv[2]).text()).metadata?.docs; if (!Array.isArray(docs) || docs.length === 0) { console.error("article: candidates.json metadata.docs missing"); process.exit(2); } await Bun.write(process.argv[1], JSON.stringify(docs, null, 2)); process.exit(1); }' "$PLAN_IN" "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json"; case $? in 0|1) PLAN_OK=0;; esac; test "$PLAN_OK" -eq 0 || { echo "article: no usable plan input"; exit 1; }; ARTICLE_DATE="${vars.run_date}" kk executor run daily-article-gen --in "$PLAN_IN" --out "$CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$CONTENT_OUT" "$ARTICLE_MD"; fi
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: cover
     description: "Generate the article cover image via the kk:image-authoring skill (agent.run)"
@@ -157,15 +152,20 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:image-authoring skill (generate operation).
-            This node is a non-interactive workflow step: run every image command with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 in the environment (this workflow approves the image spend via cover_enabled) — never prompt, never open a question.
+            Non-interactive step: run every image command with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 — never prompt (cover_enabled is the spend approval).
             Command: --format cover --content ${vars.work_dir}/2-article/${vars.run_date}_06_article_article.md --out ${vars.work_dir}/2-cover
-            Derive the cover template variables (title, subtitle, topics) from the article as the skill owns; style is the format's default — do not pass --style.
-            The plugin writes ${vars.work_dir}/2-cover/content.json plus the artifact ${vars.work_dir}/2-cover/content-cover-01.<ext>, where <ext> follows the elected provider's native output (payload honesty: minimax returns JPEG, google/ark return PNG). If generation fails, report the error verbatim and stop — no procedural fallback.
-            Run 20260911 context: only MINIMAX_API_KEY is credentialed (ARK out of token, google key unset), so the elected provider is minimax and the artifact lands as content-cover-01.jpg.
+            Template variables (title, subtitle, topics) come from the article as the skill owns; do not pass --style.
+            The plugin writes ${vars.work_dir}/2-cover/content.json plus ${vars.work_dir}/2-cover/content-cover-01.<ext> (ext follows the elected provider: minimax → .jpg, google/ark → .png). On failure report the error verbatim and stop — no procedural fallback.
           expectFile: ${vars.work_dir}/2-cover/content-cover-01.jpg
       - kind: shell
         options:
-          command: 'cd "${vars.work_dir}/2-cover" && src="content-cover-01.png"; test -f "$src" || src="content-cover-01.jpg"; test -f "$src" || { echo "cover normalize: no content-cover-01.{png,jpg} artifact" >&2; exit 1; }; case "$src" in *.jpg) command -v sips >/dev/null 2>&1 || { echo "cover normalize: sips not found; cannot transcode jpg -> png" >&2; exit 1; }; sips -s format png "$src" --out "cover-${vars.run_date}.png" >/dev/null;; *) mv "$src" "cover-${vars.run_date}.png";; esac; rm -f content-cover-01.jpg content-cover-01.png; echo "cover normalized: cover-${vars.run_date}.png"'
+          command: >-
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
 
   - id: script
     description: "Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content"
@@ -173,11 +173,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"script\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            SCRIPT_CONTENT_OUT="${vars.work_dir}/2-script/${vars.run_date}_08_script_content.json"; VOICESCRIPT_YAML="${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml";
-            if [ -f "$VOICESCRIPT_YAML" ]; then echo "voicescript capped by plan: $VOICESCRIPT_YAML"; else DAILYNEWS_LANGUAGE="${vars.language}" DAILYNEWS_TITLE="${vars.title}" VOICEBOX_DEFAULT_PROFILE="${vars.voice_profile}" kk executor run dailynews-gen --in "${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json" --out "$SCRIPT_CONTENT_OUT" "$@" && bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "$SCRIPT_CONTENT_OUT" "$VOICESCRIPT_YAML"; fi
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}"
 
   - id: review
     description: "Operator reviews the generated news script before speech synthesis"
@@ -194,8 +195,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"wrap-docs\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const scriptUrl = new URL(process.argv[1], "file://" + process.cwd() + "/"); const scriptPath = decodeURIComponent(scriptUrl.pathname); const doc = { id: new Bun.CryptoHasher("sha256").update(scriptUrl.href).digest("hex").slice(0, 16), title: "Daily AI News VoiceScript", sourceUri: scriptUrl.href, body: await Bun.file(scriptPath).text(), mediaType: "application/yaml", metadata: { voiceProfile: process.argv[3] || process.env.VOICEBOX_DEFAULT_PROFILE || "robin-news" } }; await Bun.write(process.argv[2], JSON.stringify([doc], null, 2))' "${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml" "${vars.work_dir}/3-audio/${vars.run_date}_10_wrap-docs_docs.json" "${vars.voice_profile}"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice generator plugin (voice_generator var) to generate audio"
@@ -203,11 +208,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"generate\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            if [ -f "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" ] && jq -e '.metadata.qc.passed == true' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" > /dev/null 2>&1; then echo "audio cached: ${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json (QC passed)"; exit 0; fi;
-            VOICE_GEN_MP3="${vars.transcode_mp3}" kk executor run ${vars.voice_generator} --in "${vars.work_dir}/3-audio/${vars.run_date}_10_wrap-docs_docs.json" --out "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" "$@"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.voice_generator}"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
@@ -215,8 +221,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"quality-control\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const qc = content.metadata?.qc; console.log("=== Voice Quality Control Report ==="); console.log("Overall Score: " + (qc ? qc.overallScore : 100) + "/100 | Passed: " + (qc ? qc.passed : true)); if (qc && qc.criticalIssues && qc.criticalIssues.length) { console.warn("QC Issues:\n" + qc.criticalIssues.map(function(i) { return "  - " + i; }).join("\n")); } else { console.log("All audio segments passed quality control checks cleanly."); }' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-quality-report "${vars.work_dir}" "${vars.run_date}"
 
   - id: publish-prep
     description: "Merge article Content with audio (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
@@ -224,8 +234,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-prep\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            bun -e 'const article = JSON.parse(await Bun.file(process.argv[1]).text()); const audio = JSON.parse(await Bun.file(process.argv[2]).text()); const audioMeta = audio.metadata ?? {}; const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath; if (!rawFile) { console.error("publish-prep: voice content carries no mp3Path/audioPath"); process.exit(1); } const { resolve } = await import("node:path"); const { existsSync } = await import("node:fs"); const audioFile = resolve(rawFile); const coverPath = resolve(process.argv[4]); const merged = { ...article, metadata: { ...(article.metadata ?? {}), audioFile, runDate: process.argv[5] }, options: { audioFile, durationSec: audioMeta.duration, coverPath: existsSync(coverPath) ? coverPath : undefined } }; await Bun.write(process.argv[3], JSON.stringify(merged, null, 2))' "${vars.work_dir}/2-article/${vars.run_date}_06_article_content.json" "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json" "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" "${vars.work_dir}/2-cover/${vars.run_date}_07_cover_cover.png" "${vars.run_date}"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-publish-prep "${vars.work_dir}" "${vars.run_date}"
 
   - id: publish-surfdash
     description: "Publish the merged Content to surfdash (single target); result lands in result.json — surfdash publishes first so show-notes can link the article (task 0118 seam reorder)"
@@ -233,13 +247,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-surfdash\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_14_publish-surfdash_result.json";
-            if jq -e '.targets[]? | select(.target == "surfdash-pub" and .ok == true and .status == "published")' "$RESULT" > /dev/null 2>&1; then echo "publish-surfdash cached: surfdash target ok in $RESULT"; exit 0; fi;
-            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" --target surfdash-pub --out "$RESULT" "$@" || true;
-            echo "publish-surfdash: surfdash target dispatched; classification happens after podcast publish"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-publish-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: show-notes
     description: "Render timeline show notes from the episode plan (podcast-pub show-notes op, briefMode; article URL from the surfdash result postPath — surfdash failure degrades to legacy full-body layout)"
@@ -247,15 +260,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"show-notes\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            TITLE_ARG="${vars.title}";
-            EFFECTIVE_TITLE="$(jq -r '.title // ""' "${vars.work_dir}/2-article/${vars.run_date}_06_article_content.json")";
-            if [ -z "$TITLE_ARG" ]; then TITLE_ARG="$EFFECTIVE_TITLE"; fi;
-            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json";
-            POST_PATH="$(jq -r '[(.targets // [])[] | select(.target == "surfdash-pub" and .ok == true) | .metadata.postPath // empty] | first // ""' "$RESULT" 2>/dev/null || true)";
-            PODCAST_PUB_TITLE="$TITLE_ARG" PODCAST_PUB_RUN_DATE="${vars.run_date}" PODCAST_PUB_BRIEF_MODE=true PODCAST_PUB_ARTICLE_POST_PATH="$POST_PATH" kk executor run podcast-pub --in "${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_15_show-notes_show-notes.md" "$@"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-show-notes "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.title}"
 
   - id: publish-podcast
     description: "Publish the episode to podcast-pub with the rendered show notes (metadata.showNotes carries the brief/timeline markdown; map.ts falls back to content.body when absent — task 0118 R3)"
@@ -263,14 +273,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-podcast\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_16_publish-podcast_result.json";
-            if jq -e '.targets[]? | select(.target == "podcast-pub" and .ok == true and .status == "published")' "$RESULT" > /dev/null 2>&1; then echo "publish-podcast cached: podcast target ok in $RESULT"; exit 0; fi;
-            bun -e 'const content = JSON.parse(await Bun.file(process.argv[1]).text()); const notes = await Bun.file(process.argv[2]).text(); content.metadata = { ...(content.metadata ?? {}), showNotes: notes }; await Bun.write(process.argv[1], JSON.stringify(content, null, 2))' "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" "${vars.work_dir}/3-publish/${vars.run_date}_15_show-notes_show-notes.md" &&
-            env -u SPUR_WORKFLOW_RUN_ACTIVE kk executor fan-out --content "${vars.work_dir}/3-publish/${vars.run_date}_13_publish-prep_content.json" --target podcast-pub --out "$RESULT" "$@" || true;
-            echo "publish-podcast: podcast target dispatched"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: publish
     description: "Classify the sequenced surfdash → podcast outcomes full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned; task 0118: per-target classification over the merged result.json)"
@@ -278,15 +286,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json"; STATUS_FILE="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt";
-            TARGETS="$(jq -s '[(.[0].targets // []), (.[1].targets // [])] | add' "${vars.work_dir}/3-publish/${vars.run_date}_14_publish-surfdash_result.json" "${vars.work_dir}/3-publish/${vars.run_date}_16_publish-podcast_result.json" 2>/dev/null || echo '[]')";
-            OK_COUNT="$(printf '%s' "$TARGETS" | jq '[.[]? | select(.ok == true and .status == "published")] | length')";
-            TOTAL="$(printf '%s' "$TARGETS" | jq 'length')";
-            if [ "$OK_COUNT" -gt 0 ] && [ "$OK_COUNT" -eq "$TOTAL" ]; then STATUS="full"; elif [ "$OK_COUNT" -gt 0 ]; then STATUS="partial"; else STATUS="none"; fi;
-            jq -n --argjson targets "$TARGETS" --argjson ok "$OK_COUNT" --argjson total "$TOTAL" '{ok: ($ok == $total and $total > 0), targets: $targets}' > "$RESULT";
-            printf '%s' "$STATUS" > "$STATUS_FILE";
-            echo "publish: status=$STATUS ($OK_COUNT/$TOTAL targets published); routing is transition-owned"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-publish-classify "${vars.work_dir}" "${vars.run_date}"
 
   - id: publish-partial
     description: "Partial publish — at least one target published, at least one failed; echo warning, write a .spur/run marker, preserve result.json for --retry-from, continue to done (task 0118: surfdash failure = no-URL fallback notes; podcast failure = its own partial)"
@@ -294,12 +299,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"publish-partial\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            FAILED="$(jq -r '[.targets[]? | select(.ok != true or .status != "published") | .target] | join(",")' "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json")";
-            if [ -z "$FAILED" ]; then FAILED="(unparsed)"; fi;
-            echo "WARNING: partial publish — failed targets: $FAILED" >&2;
-            mkdir -p .spur/run &&
-            printf '%s partial publish: failed targets: %s (result.json preserved for kk executor fan-out --retry-from)\n' "${vars.run_date}" "$FAILED" > ".spur/run/publish-partial-${vars.run_date}.txt"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-publish-partial "${vars.work_dir}" "${vars.run_date}"
 
   - id: run-report
     description: "Assemble the per-run report (scores+aggregates+rejected counts+step timing) from existing artifacts — news-report-gen; output-only, never throws; 0117"
@@ -307,17 +312,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"run-report\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            REPORT_MD="${vars.work_dir}/${vars.run_date}_19_run-report_report.md";
-            if [ -f "$REPORT_MD" ]; then echo "run report cached: $REPORT_MD"; exit 0; fi;
-            CANDS="${vars.work_dir}/2-plan/${vars.run_date}_19_run-report_episode-plan.json";
-            test -f "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" || { echo "run-report: no candidates.json (run ended below plan step) — skip"; exit 0; };
-            jq '.metadata.docs // []' "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json" > "$CANDS";
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            QC_MIN_QUALITY="${vars.qc_min_quality}" QC_MIN_IMPORTANCE="${vars.qc_min_importance}" QC_MIN_URGENCY="${vars.qc_min_urgency}" QC_MIN_IMPACT="${vars.qc_min_impact}" NEWS_REPORT_REJECTED_FILE="${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.rejected.json" NEWS_REPORT_TIMING_FILE="${vars.work_dir}/step-timing.json" NEWS_REPORT_DATE="${vars.run_date}" kk executor run news-report-gen --in "$CANDS" --out "${vars.work_dir}/${vars.run_date}_19_run-report_report.json" "$@" &&
-            bun -e 'await Bun.write(process.argv[2], (await Bun.file(process.argv[1]).json()).body)' "${vars.work_dir}/${vars.run_date}_19_run-report_report.json" "$REPORT_MD" &&
-            echo "run report written: $REPORT_MD"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-run-report "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
 
   - id: translate-en
     description: "Scaffold en draft from the zh article via surfdash-pub scaffold-locale (postPath from publish result; done-no-content/none-publish runs carry no zh path and skip)"
@@ -325,20 +325,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"translate-en\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            RESULT="${vars.work_dir}/3-publish/${vars.run_date}_17_publish_result.json";
-            ZH="$(jq -r '[(.targets // [])[] | select(.target == "surfdash-pub" and .ok == true) | .metadata.postPath // empty] | first // ""' "$RESULT")";
-            case "$ZH" in *index.md) ;; *) ZH="";; esac;
-            printf '%s' "$ZH" > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt";
-            EN="$(printf '%s' "$ZH" | sed 's|/zh/|/en/|')";
-            printf '%s' "$EN" > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_en-post-path.txt";
-            test -n "$ZH" || { echo "no zh post path — skip translate-en"; exit 0; };
-            if [ -f "$EN" ]; then echo "en draft cached: $EN"; exit 0; fi;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            jq -n --arg postPath "$ZH" --arg target en '{body: "", options: {operation: "scaffold-locale", postPath: $postPath, target: $target}}' > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en.json" &&
-            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en-result.json" "$@" &&
-            jq -r '.metadata.draftPath // ""' "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_scaffold-en-result.json" > "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_en-post-path.txt"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-translate-en "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt
@@ -368,18 +360,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"translate-ja\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            ZH="$(cat "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt" 2>/dev/null || printf '')";
-            JA="$(printf '%s' "$ZH" | sed 's|/zh/|/ja/|')";
-            printf '%s' "$JA" > "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt";
-            test -n "$ZH" || { echo "no zh post path — skip translate-ja"; exit 0; };
-            if [ -f "$JA" ]; then echo "ja draft cached: $JA"; exit 0; fi;
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            jq -n --arg postPath "$ZH" --arg target ja '{body: "", options: {operation: "scaffold-locale", postPath: $postPath, target: $target}}' > "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja.json" &&
-            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja-result.json" "$@" &&
-            JA="$(jq -r '.metadata.draftPath // ""' "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_scaffold-ja-result.json")" &&
-            printf '%s' "$JA" > "${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-translate-ja "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt
@@ -405,12 +391,12 @@ states:
       - kind: shell
         options:
           command: >-
-            __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"translate-sync\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            test -n "${vars.surfdash_post_path}" || { echo "no zh post path — skip translate-sync"; exit 0; };
-            set --;
-            if [ -n "${vars.plugins_path}" ]; then set -- --plugins-path "${vars.plugins_path}"; fi;
-            jq -n --arg postPath "${vars.surfdash_post_path}" '{body: "", options: {operation: "sync", postPath: $postPath}}' > "${vars.work_dir}/3-publish/${vars.run_date}_24_translate-sync_sync.json" &&
-            kk executor run surfdash-pub --in "${vars.work_dir}/3-publish/${vars.run_date}_24_translate-sync_sync.json" --out "${vars.work_dir}/3-publish/${vars.run_date}_24_translate-sync_sync-result.json" "$@"
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.surfdash_post_path}"
 
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → QC'd plan → article/cover/script/voice → publish/locales)"

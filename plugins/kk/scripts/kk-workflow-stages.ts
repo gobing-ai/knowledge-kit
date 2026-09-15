@@ -21,18 +21,28 @@
  * installed package or from a checkout).
  *
  * The YAML prelude resolves this file as `$pkg/plugins/kk/scripts/kk-workflow-stages.ts` where `pkg`
- * comes from the `command -v kk` symlink walk. When `kk` is absent from PATH that walk yields an empty
- * `kbin`, `dirname(dirname(""))` is `.`, and the prelude therefore probes
- * `./plugins/kk/scripts/kk-workflow-stages.ts` — that cwd-relative path is the deliberate checkout
- * tier kk-storm-research's render has always relied on, not an accident.
+ * comes from `realpath "$(command -v kk)"` (the installed package root), and falls back to the
+ * cwd-relative `plugins/kk/scripts/kk-workflow-stages.ts` when that copy is absent — the checkout
+ * tier kk-storm-research's render has always relied on, preserved on purpose.
  *
- * SYNC: plugins/kk/workflows/{kk-solo-podcast,kk-itc,kk-storm-research}.yaml shell this script. Keep
- * message substrings stable — apps/cli/tests/kk-workflow-stages.test.ts and the three workflow
- * static tests match them.
+ * SYNC: plugins/kk/workflows/{kk-solo-podcast,kk-itc,kk-storm-research,kk-daily-ai-voice}.yaml shell
+ * this script. Keep message substrings stable — apps/cli/tests/kk-workflow-stages.test.ts and the
+ * four workflow static tests match them.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+    appendFileSync,
+    copyFileSync,
+    existsSync,
+    mkdirSync,
+    readFileSync,
+    realpathSync,
+    renameSync,
+    statSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 const SCRIPTS_DIR = import.meta.dir;
@@ -361,6 +371,748 @@ function parseStage(
     return { override, values };
 }
 
+// ─── kk-daily-ai-voice stages (0133) ─────────────────────────────────────────────────────────────
+// Ported one-for-one from plugins/kk/workflows/kk-daily-ai-voice.yaml. Every ported stage keeps its
+// step-timing append (success AND failure), its cache predicate and message, the plugins-path argv,
+// and the plugin argv/env it used. `kk` is resolved from PATH, exactly as the shell did. Stages whose
+// inline body already fits the ADR-115 budget (`collect:onEnter:0`'s fan-in at 7 commands, the HITL/prompt states)
+// deliberately stay in the YAML.
+
+const DAILY_DIRS = [
+    '1-ingest',
+    '2-facts',
+    '2-plan',
+    '2-article',
+    '2-cover',
+    '2-script',
+    '3-audio',
+    '3-publish',
+] as const;
+
+/** `date -u +%FT%TZ` — the timestamp grammar the step-timing lines have always used. */
+function utcStamp(): string {
+    return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * The pre-0133 shell wrapped every daily step in `trap … EXIT`, so the timing line lands on failure
+ * too. The body signals failure by throwing `failWith`, never by calling `process.exit` directly.
+ */
+class StageFailure extends Error {
+    constructor(
+        readonly status: number,
+        readonly named: boolean,
+        message: string,
+    ) {
+        super(message);
+    }
+}
+
+function failWith(status: number, message?: string): never {
+    throw new StageFailure(status, message !== undefined, message ?? `stage failed (status ${status})`);
+}
+
+function appendTiming(workDir: string, step: string, startedAt: string): void {
+    if (!workDir) return;
+    try {
+        appendFileSync(
+            join(workDir, 'step-timing.json'),
+            `${JSON.stringify({ step, startedAt, endedAt: utcStamp() })}\n`,
+        );
+    } catch {
+        // The shell trap was best-effort too: a missing/unwritable work_dir never failed the step.
+    }
+}
+
+function timed(workDir: string, step: string, body: () => void): void {
+    const startedAt = utcStamp();
+    let status = 0;
+    try {
+        body();
+    } catch (error) {
+        if (error instanceof StageFailure) {
+            if (error.named) console.error(error.message);
+            status = error.status;
+        } else {
+            console.error((error as Error).message);
+            status = 1;
+        }
+    } finally {
+        appendTiming(workDir, step, startedAt);
+    }
+    if (status !== 0) process.exit(status);
+}
+
+function pluginsArgs(pluginsPath: string): string[] {
+    return pluginsPath === '' ? [] : ['--plugins-path', pluginsPath];
+}
+
+/** `kk <args>` with the caller's env overrides; `soft` mirrors the shell's `|| true`. */
+function kk(
+    args: string[],
+    options: { env?: Record<string, string>; unset?: readonly string[]; soft?: boolean } = {},
+): number {
+    const env = { ...process.env, ...(options.env ?? {}) };
+    for (const name of options.unset ?? []) delete env[name];
+    const runner = spawnSync('kk', args, { stdio: 'inherit', env });
+    if (runner.error !== undefined) {
+        // A missing/un-launchable `kk` is not a plugin failure: the pre-0133 shell reported
+        // `kk: command not found` and exited 127. `soft` callers tolerate a *plugin* failure, not
+        // an unusable environment — the operator must still see why nothing ran.
+        console.error(`kk: ${runner.error.message}`);
+        failWith(127);
+    }
+    const status = runner.status ?? 1;
+    if (status !== 0 && options.soft !== true) failWith(status);
+    return status;
+}
+
+function writeJsonText(path: string, value: unknown): void {
+    // `Bun.write(path, JSON.stringify(value, null, 2))` — no trailing newline.
+    writeFileSync(path, JSON.stringify(value, null, 2));
+}
+
+function writeJqText(path: string, value: unknown): void {
+    // `jq … > path` — pretty output WITH the trailing newline jq always prints.
+    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeRaw(path: string, value: string): void {
+    // `printf '%s' … > path` / `bun -e 'Bun.write'` — no trailing newline.
+    writeFileSync(path, value);
+}
+
+function readJson(path: string): Record<string, unknown> | null {
+    if (!isFile(path)) return null;
+    try {
+        return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    } catch {
+        return null;
+    }
+}
+
+function metadataOf(value: Record<string, unknown> | null): Record<string, unknown> {
+    const metadata = value?.metadata;
+    return metadata !== null && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
+}
+
+/** `jq -e '.targets[]? | select(.target == t and .ok == true and .status == "published")'`. */
+function targetPublished(path: string, target: string): boolean {
+    const parsed = readJson(path);
+    const targets = parsed?.targets;
+    if (!Array.isArray(targets)) return false;
+    return targets.some(
+        (entry) =>
+            entry !== null &&
+            typeof entry === 'object' &&
+            (entry as Record<string, unknown>).target === target &&
+            (entry as Record<string, unknown>).ok === true &&
+            (entry as Record<string, unknown>).status === 'published',
+    );
+}
+
+function dailyPrepare(args: string[]): void {
+    const [
+        workDirArg = '',
+        limit = '',
+        cursor = '',
+        stateFile = '',
+        last30daysEnabled = '',
+        topic = '',
+        horizonHours = '',
+    ] = args;
+    const workDir = resolve(workDirArg);
+    timed(workDirArg, 'prepare', () => {
+        if (!workDirArg) failWith(1, 'missing required variable: work_dir');
+        for (const dir of DAILY_DIRS)
+            sted('mkdir', join(workDir, dir), () => mkdirSync(join(workDir, dir), { recursive: true }));
+        sted('write', join(workDir, 'run-date.txt'), () =>
+            writeFileSync(join(workDir, 'run-date.txt'), `${formatRunDate()}\n`),
+        );
+        sted('write', join(workDir, '1-ingest/source.json'), () =>
+            writeJsonText(join(workDir, '1-ingest/source.json'), {
+                limit: Number(limit),
+                cursor: cursor === '' ? undefined : cursor,
+                stateFile: stateFile === '' ? undefined : stateFile,
+            }),
+        );
+        if (last30daysEnabled !== 'true') {
+            sted('write', join(workDir, '1-ingest/last30days-docs.json'), () =>
+                writeFileSync(join(workDir, '1-ingest/last30days-docs.json'), '[]'),
+            );
+        }
+        sted('write', join(workDir, '1-ingest/last30days.json'), () =>
+            writeJsonText(join(workDir, '1-ingest/last30days.json'), { topic }),
+        );
+        sted('write', join(workDir, '1-ingest/horizon.json'), () =>
+            writeJsonText(join(workDir, '1-ingest/horizon.json'), { hours: Number(horizonHours) }),
+        );
+    });
+}
+
+/** `date +%Y%m%d` — the run-date stamp the artifact names carry. */
+function formatRunDate(): string {
+    const now = new Date();
+    const month = `${now.getMonth() + 1}`.padStart(2, '0');
+    const day = `${now.getDate()}`.padStart(2, '0');
+    return `${now.getFullYear()}${month}${day}`;
+}
+
+function dailyCollectFacts(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const content = join(workDir, '2-facts', `${runDate}_02_collect_content.json`);
+    const facts = join(workDir, '2-facts', `${runDate}_02_collect_core-facts.md`);
+    const blended = join(workDir, '1-ingest', `${runDate}_02_collect_blended.json`);
+    timed(workDir, 'collect', () => {
+        if (isFile(content) && isFile(facts)) {
+            console.log(`core facts cached: ${facts}`);
+            return;
+        }
+        kk(['executor', 'run', 'core-facts-gen', '--in', blended, '--out', content, ...pluginsArgs(pluginsPath)]);
+        const body = readJson(content)?.body;
+        if (typeof body !== 'string') failWith(1, `collect: ${content} has no string body`);
+        sted('write', facts, () => writeRaw(facts, body));
+    });
+}
+
+function dailyPlan(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', planMaxItems = ''] = args;
+    const planContent = join(workDir, '2-plan', `${runDate}_03_plan_content.json`);
+    const planDocs = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    const blended = join(workDir, '1-ingest', `${runDate}_02_collect_blended.json`);
+    timed(workDir, 'plan', () => {
+        if (isFile(planDocs)) {
+            console.log(`plan cached: ${planDocs}`);
+            return;
+        }
+        kk(
+            ['executor', 'run', 'episode-plan-gen', '--in', blended, '--out', planContent, ...pluginsArgs(pluginsPath)],
+            {
+                env: { EPISODE_PLAN_MAX_ITEMS: planMaxItems, EPISODE_PLAN_DATE: runDate },
+            },
+        );
+        const docs = metadataOf(readJson(planContent)).docs;
+        if (!Array.isArray(docs) || docs.length === 0) failWith(1, 'plan: content.metadata.docs missing or empty');
+        sted('write', planDocs, () => writeJsonText(planDocs, docs));
+        if (!isFile(planDocs)) failWith(1, `plan: ${planDocs} not written after episode-plan-gen`);
+    });
+}
+
+function dailyQcContent(args: string[]): void {
+    const [
+        workDir = '',
+        runDate = '',
+        pluginsPath = '',
+        qcCategories = '',
+        minQuality = '',
+        minImportance = '',
+        minUrgency = '',
+        minImpact = '',
+    ] = args;
+    const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const annotated = join(workDir, '2-plan', `${runDate}_04_quality-control-content_annotated.json`);
+    const planContent = join(workDir, '2-plan', `${runDate}_03_plan_content.json`);
+    timed(workDir, 'quality-control-content', () => {
+        if (isFile(candidates)) {
+            console.log(`candidates cached: ${candidates}`);
+            return;
+        }
+        sted('write', annotated, () => writeJqText(annotated, metadataOf(readJson(planContent)).docs ?? null));
+        kk(
+            [
+                'executor',
+                'run',
+                'episode-plan-gen',
+                '--in',
+                annotated,
+                '--out',
+                candidates,
+                ...pluginsArgs(pluginsPath),
+            ],
+            {
+                env: {
+                    EPISODE_PLAN_MODE: 'filter',
+                    QC_CATEGORIES: qcCategories,
+                    QC_MIN_QUALITY: minQuality,
+                    QC_MIN_IMPORTANCE: minImportance,
+                    QC_MIN_URGENCY: minUrgency,
+                    QC_MIN_IMPACT: minImpact,
+                },
+            },
+        );
+    });
+}
+
+function dailyArticle(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const articleMd = join(workDir, '2-article', `${runDate}_06_article_article.md`);
+    const articleContent = join(workDir, '2-article', `${runDate}_06_article_content.json`);
+    const planIn = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    timed(workDir, 'article', () => {
+        if (isFile(articleMd)) {
+            console.log(`article cached: ${articleMd}`);
+            return;
+        }
+        let planUsable = true;
+        const raw = isFile(planIn) ? readFileSync(planIn, 'utf-8') : '';
+        try {
+            JSON.parse(raw);
+        } catch (error) {
+            console.error(
+                `article: plan.json invalid JSON — replacing with untranslated plan (downstream states read this file): ${(error as Error).message}`,
+            );
+            const docs = metadataOf(readJson(candidates)).docs;
+            if (!Array.isArray(docs) || docs.length === 0) {
+                console.error('article: candidates.json metadata.docs missing');
+                planUsable = false;
+            } else {
+                sted('write', planIn, () => writeJsonText(planIn, docs));
+            }
+        }
+        if (!planUsable) failWith(1, 'article: no usable plan input');
+        kk(
+            [
+                'executor',
+                'run',
+                'daily-article-gen',
+                '--in',
+                planIn,
+                '--out',
+                articleContent,
+                ...pluginsArgs(pluginsPath),
+            ],
+            {
+                env: { ARTICLE_DATE: runDate },
+            },
+        );
+        const body = readJson(articleContent)?.body;
+        if (typeof body !== 'string') failWith(1, `article: ${articleContent} has no string body`);
+        sted('write', articleMd, () => writeRaw(articleMd, body));
+    });
+}
+
+function dailyCoverNormalize(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    // The pre-0133 shell had no timing trap, so this stage is not `timed`; it still fails through
+    // `failWith`, which needs the named-failure handling `timed` gives the other stages.
+    try {
+        coverNormalizeBody(workDir, runDate);
+    } catch (error) {
+        if (error instanceof StageFailure) {
+            if (error.named) console.error(error.message);
+            process.exit(error.status);
+        }
+        console.error((error as Error).message);
+        process.exit(1);
+    }
+}
+
+function coverNormalizeBody(workDir: string, runDate: string): void {
+    const png = join(workDir, '2-cover', 'content-cover-01.png');
+    const jpg = join(workDir, '2-cover', 'content-cover-01.jpg');
+    const out = join(workDir, '2-cover', `cover-${runDate}.png`);
+    const source = isFile(png) ? png : isFile(jpg) ? jpg : '';
+    if (source === '') failWith(1, 'cover normalize: no content-cover-01.{png,jpg} artifact');
+    if (source === jpg) {
+        const sips = spawnSync('sips', ['-s', 'format', 'png', source, '--out', out], { stdio: 'ignore' });
+        // Bun reports a missing binary as `status: undefined` (older versions: `null`) plus an
+        // `error` object — the pre-0133 shell's `command -v sips` failed the same way.
+        if (sips.error !== undefined || typeof sips.status !== 'number') {
+            failWith(1, 'cover normalize: sips not found; cannot transcode jpg -> png');
+        }
+        if (sips.status !== 0) {
+            failWith(1, `cover normalize: sips failed (status ${sips.status}); jpg -> png did not run`);
+        }
+    } else {
+        sted('mv', source, () => renameSync(source, out));
+    }
+    for (const stale of [jpg, png]) {
+        try {
+            unlinkSync(stale);
+        } catch {
+            // `rm -f` is silent when the file is already gone.
+        }
+    }
+    console.log(`cover normalized: cover-${runDate}.png`);
+}
+
+function dailyScript(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', language = '', title = '', voiceProfile = ''] = args;
+    const yamlOut = join(workDir, '2-script', `${runDate}_08_script_voicescript.yaml`);
+    const contentOut = join(workDir, '2-script', `${runDate}_08_script_content.json`);
+    const planIn = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    timed(workDir, 'script', () => {
+        if (isFile(yamlOut)) {
+            console.log(`voicescript capped by plan: ${yamlOut}`);
+            return;
+        }
+        kk(['executor', 'run', 'dailynews-gen', '--in', planIn, '--out', contentOut, ...pluginsArgs(pluginsPath)], {
+            env: { DAILYNEWS_LANGUAGE: language, DAILYNEWS_TITLE: title, VOICEBOX_DEFAULT_PROFILE: voiceProfile },
+        });
+        const body = readJson(contentOut)?.body;
+        if (typeof body !== 'string') failWith(1, `script: ${contentOut} has no string body`);
+        sted('write', yamlOut, () => writeRaw(yamlOut, body));
+    });
+}
+
+function dailyWrapDocs(args: string[]): void {
+    const [workDir = '', runDate = '', voiceProfile = ''] = args;
+    const scriptPath = join(workDir, '2-script', `${runDate}_08_script_voicescript.yaml`);
+    const docsPath = join(workDir, '3-audio', `${runDate}_10_wrap-docs_docs.json`);
+    timed(workDir, 'wrap-docs', () => {
+        const url = new URL(scriptPath, `file://${process.cwd()}/`);
+        const body = readFileSync(decodeURIComponent(url.pathname), 'utf-8');
+        const profile = voiceProfile || process.env.VOICEBOX_DEFAULT_PROFILE || 'robin-news';
+        const doc = {
+            id: createHash('sha256').update(url.href).digest('hex').slice(0, 16),
+            title: 'Daily AI News VoiceScript',
+            sourceUri: url.href,
+            body,
+            mediaType: 'application/yaml',
+            metadata: { voiceProfile: profile },
+        };
+        sted('write', docsPath, () => writeJsonText(docsPath, [doc]));
+    });
+}
+
+function dailyGenerate(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', voiceGenerator = ''] = args;
+    const docs = join(workDir, '3-audio', `${runDate}_10_wrap-docs_docs.json`);
+    const content = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    timed(workDir, 'generate', () => {
+        if (isFile(content) && metadataOf(readJson(content)).qc !== undefined) {
+            const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
+            if (qc?.passed === true) {
+                console.log(`audio cached: ${content} (QC passed)`);
+                return;
+            }
+        }
+        kk(['executor', 'run', voiceGenerator, '--in', docs, '--out', content, ...pluginsArgs(pluginsPath)], {
+            env: { VOICE_GEN_MP3: transcodeMp3 },
+        });
+    });
+}
+
+function dailyQualityReport(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const content = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    timed(workDir, 'quality-control', () => {
+        const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
+        console.log('=== Voice Quality Control Report ===');
+        console.log(`Overall Score: ${qc ? qc.overallScore : 100}/100 | Passed: ${qc ? qc.passed : true}`);
+        const issues = qc?.criticalIssues;
+        if (Array.isArray(issues) && issues.length > 0) {
+            console.warn(`QC Issues:\n${issues.map((issue) => `  - ${issue}`).join('\n')}`);
+        } else {
+            console.log('All audio segments passed quality control checks cleanly.');
+        }
+    });
+}
+
+function dailyPublishPrep(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const articlePath = join(workDir, '2-article', `${runDate}_06_article_content.json`);
+    const audioPath = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    const prepPath = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
+    const coverPath = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
+    timed(workDir, 'publish-prep', () => {
+        const article = readJson(articlePath) ?? {};
+        const audioMeta = metadataOf(readJson(audioPath));
+        const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath;
+        if (typeof rawFile !== 'string' || rawFile === '') {
+            failWith(1, 'publish-prep: voice content carries no mp3Path/audioPath');
+        }
+        const audioFile = resolve(rawFile);
+        const resolvedCover = resolve(coverPath);
+        const merged = {
+            ...article,
+            metadata: { ...metadataOf(article), audioFile, runDate },
+            options: {
+                audioFile,
+                durationSec: audioMeta.duration,
+                coverPath: existsSync(resolvedCover) ? resolvedCover : undefined,
+            },
+        };
+        sted('write', prepPath, () => writeJsonText(prepPath, merged));
+    });
+}
+
+function dailyPublishSurfdash(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const prep = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
+    const result = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
+    timed(workDir, 'publish-surfdash', () => {
+        if (targetPublished(result, 'surfdash-pub')) {
+            console.log(`publish-surfdash cached: surfdash target ok in ${result}`);
+            return;
+        }
+        kk(
+            [
+                'executor',
+                'fan-out',
+                '--content',
+                prep,
+                '--target',
+                'surfdash-pub',
+                '--out',
+                result,
+                ...pluginsArgs(pluginsPath),
+            ],
+            {
+                unset: ['SPUR_WORKFLOW_RUN_ACTIVE'],
+                soft: true,
+            },
+        );
+        console.log('publish-surfdash: surfdash target dispatched; classification happens after podcast publish');
+    });
+}
+
+function dailyShowNotes(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', title = ''] = args;
+    const article = join(workDir, '2-article', `${runDate}_06_article_content.json`);
+    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
+    const out = join(workDir, '3-publish', `${runDate}_15_show-notes_show-notes.md`);
+    const plan = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    timed(workDir, 'show-notes', () => {
+        const effective = readJson(article)?.title;
+        const titleArg = title !== '' ? title : typeof effective === 'string' ? effective : '';
+        const postPath = firstPostPath(readJson(result), 'surfdash-pub');
+        kk(['executor', 'run', 'podcast-pub', '--in', plan, '--out', out, ...pluginsArgs(pluginsPath)], {
+            env: {
+                PODCAST_PUB_TITLE: titleArg,
+                PODCAST_PUB_RUN_DATE: runDate,
+                PODCAST_PUB_BRIEF_MODE: 'true',
+                PODCAST_PUB_ARTICLE_POST_PATH: postPath,
+            },
+        });
+    });
+}
+
+/** `jq -r '[…select(.target == t and .ok == true) | .metadata.postPath // empty] | first // ""'`. */
+function firstPostPath(parsed: Record<string, unknown> | null, target: string): string {
+    const targets = parsed?.targets;
+    if (!Array.isArray(targets)) return '';
+    for (const entry of targets) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        if (record.target !== target || record.ok !== true) continue;
+        const postPath = metadataOf(record).postPath;
+        if (typeof postPath === 'string' && postPath !== '') return postPath;
+    }
+    return '';
+}
+
+function dailyPublishPodcast(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const prep = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
+    const notes = join(workDir, '3-publish', `${runDate}_15_show-notes_show-notes.md`);
+    const result = join(workDir, '3-publish', `${runDate}_16_publish-podcast_result.json`);
+    timed(workDir, 'publish-podcast', () => {
+        if (targetPublished(result, 'podcast-pub')) {
+            console.log(`publish-podcast cached: podcast target ok in ${result}`);
+            return;
+        }
+        try {
+            const content = readJson(prep) ?? {};
+            const showNotes = readFileSync(notes, 'utf-8');
+            const merged = { ...content, metadata: { ...metadataOf(content), showNotes } };
+            sted('write', prep, () => writeJsonText(prep, merged));
+            kk(
+                [
+                    'executor',
+                    'fan-out',
+                    '--content',
+                    prep,
+                    '--target',
+                    'podcast-pub',
+                    '--out',
+                    result,
+                    ...pluginsArgs(pluginsPath),
+                ],
+                {
+                    unset: ['SPUR_WORKFLOW_RUN_ACTIVE'],
+                    soft: true,
+                },
+            );
+        } catch (error) {
+            // The shell's `… && … || true` swallowed both steps' failures — but an unusable `kk`
+            // (exit 127) is an environment failure, not a tolerated plugin failure.
+            if (error instanceof StageFailure && error.status === 127) throw error;
+            console.error((error as Error).message);
+        }
+        console.log('publish-podcast: podcast target dispatched');
+    });
+}
+
+function dailyPublishClassify(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
+    const statusFile = join(workDir, '3-publish', `${runDate}_17_publish_publish-status.txt`);
+    const surfdash = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
+    const podcast = join(workDir, '3-publish', `${runDate}_16_publish-podcast_result.json`);
+    timed(workDir, 'publish', () => {
+        // Both per-target files must exist: the pre-0133 `jq -s … || echo '[]'` chain could not read
+        // a missing one (jq exits 2 after printing the slurped partial), which drove status to `none`.
+        // Classifying over whichever file happens to exist would report `full` for a publish that
+        // never dispatched — the failure masking this rule exists to prevent.
+        const bothWritten = isFile(surfdash) && isFile(podcast);
+        const targets = bothWritten ? [...targetsOf(surfdash), ...targetsOf(podcast)] : [];
+        const okCount = targets.filter((entry) => entry.ok === true && entry.status === 'published').length;
+        const total = targets.length;
+        const status = okCount > 0 && okCount === total ? 'full' : okCount > 0 ? 'partial' : 'none';
+        sted('write', result, () => writeJqText(result, { ok: okCount === total && total > 0, targets }));
+        sted('write', statusFile, () => writeRaw(statusFile, status));
+        console.log(`publish: status=${status} (${okCount}/${total} targets published); routing is transition-owned`);
+    });
+}
+
+function targetsOf(path: string): Record<string, unknown>[] {
+    const targets = readJson(path)?.targets;
+    return Array.isArray(targets)
+        ? (targets.filter((entry) => entry !== null && typeof entry === 'object') as Record<string, unknown>[])
+        : [];
+}
+
+function dailyPublishPartial(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
+    timed(workDir, 'publish-partial', () => {
+        const failed = targetsOf(result)
+            .filter((entry) => entry.ok !== true || entry.status !== 'published')
+            .map((entry) => `${entry.target ?? ''}`)
+            .join(',');
+        const list = failed === '' ? '(unparsed)' : failed;
+        console.error(`WARNING: partial publish — failed targets: ${list}`);
+        sted('mkdir', '.spur/run', () => mkdirSync('.spur/run', { recursive: true }));
+        sted('write', `.spur/run/publish-partial-${runDate}.txt`, () =>
+            writeFileSync(
+                `.spur/run/publish-partial-${runDate}.txt`,
+                `${runDate} partial publish: failed targets: ${list} (result.json preserved for kk executor fan-out --retry-from)\n`,
+            ),
+        );
+    });
+}
+
+function dailyRunReport(args: string[]): void {
+    const [
+        workDir = '',
+        runDate = '',
+        pluginsPath = '',
+        minQuality = '',
+        minImportance = '',
+        minUrgency = '',
+        minImpact = '',
+    ] = args;
+    const reportMd = join(workDir, `${runDate}_19_run-report_report.md`);
+    const reportJson = join(workDir, `${runDate}_19_run-report_report.json`);
+    const cands = join(workDir, '2-plan', `${runDate}_19_run-report_episode-plan.json`);
+    const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    timed(workDir, 'run-report', () => {
+        if (isFile(reportMd)) {
+            console.log(`run report cached: ${reportMd}`);
+            return;
+        }
+        if (!isFile(candidates)) {
+            console.log('run-report: no candidates.json (run ended below plan step) — skip');
+            return;
+        }
+        sted('write', cands, () => writeJqText(cands, metadataOf(readJson(candidates)).docs ?? []));
+        kk(['executor', 'run', 'news-report-gen', '--in', cands, '--out', reportJson, ...pluginsArgs(pluginsPath)], {
+            env: {
+                QC_MIN_QUALITY: minQuality,
+                QC_MIN_IMPORTANCE: minImportance,
+                QC_MIN_URGENCY: minUrgency,
+                QC_MIN_IMPACT: minImpact,
+                NEWS_REPORT_REJECTED_FILE: join(
+                    workDir,
+                    '2-plan',
+                    `${runDate}_04_quality-control-content_candidates.rejected.json`,
+                ),
+                NEWS_REPORT_TIMING_FILE: join(workDir, 'step-timing.json'),
+                NEWS_REPORT_DATE: runDate,
+            },
+        });
+        const body = readJson(reportJson)?.body;
+        if (typeof body !== 'string') failWith(1, `run-report: ${reportJson} has no string body`);
+        sted('write', reportMd, () => writeRaw(reportMd, body));
+        console.log(`run report written: ${reportMd}`);
+    });
+}
+
+function dailyTranslateEn(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
+    const zhFile = join(workDir, '3-publish', `${runDate}_20_translate-en_zh-post-path.txt`);
+    const enFile = join(workDir, '3-publish', `${runDate}_20_translate-en_en-post-path.txt`);
+    const scaffold = join(workDir, '3-publish', `${runDate}_20_translate-en_scaffold-en.json`);
+    const scaffoldResult = join(workDir, '3-publish', `${runDate}_20_translate-en_scaffold-en-result.json`);
+    timed(workDir, 'translate-en', () => {
+        const postPath = firstPostPath(readJson(result), 'surfdash-pub');
+        const zh = postPath.endsWith('index.md') ? postPath : '';
+        sted('write', zhFile, () => writeRaw(zhFile, zh));
+        const en = zh.replace('/zh/', '/en/');
+        sted('write', enFile, () => writeRaw(enFile, en));
+        if (zh === '') {
+            console.log('no zh post path — skip translate-en');
+            return;
+        }
+        if (isFile(en)) {
+            console.log(`en draft cached: ${en}`);
+            return;
+        }
+        sted('write', scaffold, () =>
+            writeJqText(scaffold, { body: '', options: { operation: 'scaffold-locale', postPath: zh, target: 'en' } }),
+        );
+        kk(['executor', 'run', 'surfdash-pub', '--in', scaffold, '--out', scaffoldResult, ...pluginsArgs(pluginsPath)]);
+        const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
+        sted('write', enFile, () => writeRaw(enFile, typeof draftPath === 'string' ? draftPath : ''));
+    });
+}
+
+function dailyTranslateJa(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = ''] = args;
+    const zhFile = join(workDir, '3-publish', `${runDate}_20_translate-en_zh-post-path.txt`);
+    const jaFile = join(workDir, '3-publish', `${runDate}_22_translate-ja_ja-post-path.txt`);
+    const scaffold = join(workDir, '3-publish', `${runDate}_22_translate-ja_scaffold-ja.json`);
+    const scaffoldResult = join(workDir, '3-publish', `${runDate}_22_translate-ja_scaffold-ja-result.json`);
+    timed(workDir, 'translate-ja', () => {
+        const zh = isFile(zhFile) ? readFileSync(zhFile, 'utf-8') : '';
+        const ja = zh.replace('/zh/', '/ja/');
+        sted('write', jaFile, () => writeRaw(jaFile, ja));
+        if (zh === '') {
+            console.log('no zh post path — skip translate-ja');
+            return;
+        }
+        if (isFile(ja)) {
+            console.log(`ja draft cached: ${ja}`);
+            return;
+        }
+        sted('write', scaffold, () =>
+            writeJqText(scaffold, { body: '', options: { operation: 'scaffold-locale', postPath: zh, target: 'ja' } }),
+        );
+        kk(['executor', 'run', 'surfdash-pub', '--in', scaffold, '--out', scaffoldResult, ...pluginsArgs(pluginsPath)]);
+        const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
+        sted('write', jaFile, () => writeRaw(jaFile, typeof draftPath === 'string' ? draftPath : ''));
+    });
+}
+
+function dailyTranslateSync(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', zhPostPath = ''] = args;
+    const sync = join(workDir, '3-publish', `${runDate}_24_translate-sync_sync.json`);
+    const syncResult = join(workDir, '3-publish', `${runDate}_24_translate-sync_sync-result.json`);
+    timed(workDir, 'translate-sync', () => {
+        if (zhPostPath === '') {
+            console.log('no zh post path — skip translate-sync');
+            return;
+        }
+        sted('write', sync, () =>
+            writeJqText(sync, { body: '', options: { operation: 'sync', postPath: zhPostPath } }),
+        );
+        kk(['executor', 'run', 'surfdash-pub', '--in', sync, '--out', syncResult, ...pluginsArgs(pluginsPath)]);
+    });
+}
+
 const [stage, ...rest] = process.argv.slice(2);
 
 switch (stage) {
@@ -404,8 +1156,68 @@ switch (stage) {
         delegate(requireSidecar(override, RENDER_SIDECAR, 'render_script'), ['--in', values.in, '--out', values.out]);
         break;
     }
+    case 'daily-prepare':
+        dailyPrepare(rest);
+        break;
+    case 'daily-collect-facts':
+        dailyCollectFacts(rest);
+        break;
+    case 'daily-plan':
+        dailyPlan(rest);
+        break;
+    case 'daily-qc-content':
+        dailyQcContent(rest);
+        break;
+    case 'daily-article':
+        dailyArticle(rest);
+        break;
+    case 'daily-cover-normalize':
+        dailyCoverNormalize(rest);
+        break;
+    case 'daily-script':
+        dailyScript(rest);
+        break;
+    case 'daily-wrap-docs':
+        dailyWrapDocs(rest);
+        break;
+    case 'daily-generate':
+        dailyGenerate(rest);
+        break;
+    case 'daily-quality-report':
+        dailyQualityReport(rest);
+        break;
+    case 'daily-publish-prep':
+        dailyPublishPrep(rest);
+        break;
+    case 'daily-publish-surfdash':
+        dailyPublishSurfdash(rest);
+        break;
+    case 'daily-show-notes':
+        dailyShowNotes(rest);
+        break;
+    case 'daily-publish-podcast':
+        dailyPublishPodcast(rest);
+        break;
+    case 'daily-publish-classify':
+        dailyPublishClassify(rest);
+        break;
+    case 'daily-publish-partial':
+        dailyPublishPartial(rest);
+        break;
+    case 'daily-run-report':
+        dailyRunReport(rest);
+        break;
+    case 'daily-translate-en':
+        dailyTranslateEn(rest);
+        break;
+    case 'daily-translate-ja':
+        dailyTranslateJa(rest);
+        break;
+    case 'daily-translate-sync':
+        dailyTranslateSync(rest);
+        break;
     default:
         fail(
-            `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm)`,
+            `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|daily-*)`,
         );
 }

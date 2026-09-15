@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "kk-daily-ai-voice ADR-115 group 2: authoring/audio shells (article, cover, script, wrap-docs, generate, quality-control)"
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-09-14T23:36:56.195Z
-updated_at: "2026-09-15T01:13:49.370Z"
+updated_at: "2026-09-15T06:20:45.840Z"
 feature_id: F8
 parent_wbs: "0132"
 
@@ -14,30 +14,14 @@ parent_wbs: "0132"
 
 ### Background
 
-Sub-task of **0132** (parent). Group 2 of 4 from the kk-daily-ai-voice decomposition.
+Superseded by task 0133 (recorded 2026-09-14). The four-group staging in 0132 assumed the
+kk-daily-ai-voice port would land group by group; the 0133 run ported all 21 findings in one pass
+instead (the whole file validates error-clean, the fake-kk integration test drives the full chain,
+and the runner suite covers the derivations). This task's scope is therefore delivered under 0133 —
+its per-action inventory is preserved in 0133's Background.
 
-See 0133 for the full context: `plugins/kk/workflows/kk-daily-ai-voice.yaml` is the live 06:00
-scheduled pipeline with 21 error-level ADR-115 composition findings, split into four ordered groups.
-
-| Action | Measure |
-| --- | --- |
-| `article:onEnter:0` | 28 logical commands (largest in the file) |
-| `cover:onEnter:0` | `agent.run` input 1086 chars |
-| `cover:onEnter:1` | 15 logical commands |
-| `script:onEnter:0` | 12 logical commands |
-| `wrap-docs:onEnter:0` | 935 chars (over the 800-char shell cap) |
-| `generate:onEnter:0` | 11 logical commands |
-| `quality-control:onEnter:0` | 13 logical commands |
-
-Scope: the authoring/audio half (article → cover → script → wrap → generate → quality control).
-`cover:onEnter:0` is an `agent.run` prompt (needs the bounded-prompt treatment task 0131 applied to
-`kk-solo-podcast`, i.e. point at the owning skill's template instead of restating a contract), and
-`wrap-docs` already resolves the `wrap-voicescript-doc.ts` sidecar the shared runner knows how to
-delegate to.
-
-**Before starting:** Requirements/AC for this task are authored by its own `refine` pass — the group
-inventory above is the scope, not a frozen requirement set. Do not inherit the superseded
-per-workflow-script shape from the parent's seeding text (see 0132's Design amendment and Q&A entry).
+Cancellation reopens cleanly if 0133's port is reverted or partially backed out: the inventory in
+0133 lists exactly the actions that group covered.
 
 ### Requirements
 
@@ -80,3 +64,6 @@ per-workflow-script shape from the parent's seeding text (see 0132's Design amen
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-09-15T06:20:45.840Z todo → cancelled (system)
+

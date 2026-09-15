@@ -53,9 +53,9 @@ describe('kk-storm-research workflow (0059/0069)', () => {
     it('R3 (0132) — both delegated actions carry the shared resolution prelude', () => {
         for (const line of [
             'kbin="$(command -v kk 2>/dev/null)";',
-            'while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;',
-            'pkg="$(dirname "$(dirname "$kbin")")";',
+            'pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";',
             'st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";',
+            '[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";',
             '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
         ]) {
             expect(ssot.split(line).length - 1).toBe(2);

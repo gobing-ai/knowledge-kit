@@ -51,7 +51,7 @@ To redo a specific step, delete its output file(s) and re-run the workflow — t
 and later steps stay cached until their own outputs are deleted.
 
 Fixed-name exceptions (outside the convention):
-- `run-date.txt` — its content defines `${vars.run_date}`, so it cannot embed the value it defines; `prepare`'s shell also runs while `${vars.run_date}` is still empty.
+- `run-date.txt` — its content defines `${vars.run_date}`, so it cannot embed the value it defines; the `prepare` stage also runs while `${vars.run_date}` is still empty (it mints the stamp).
 - `step-timing.json` — shared append-across-states timing log.
 - The `prepare`-written executor configs (`1-ingest/source.json`, `1-ingest/last30days.json`, `1-ingest/horizon.json`, `1-ingest/last30days-docs.json`) — written before `${vars.run_date}` is captured.
 - Plugin-fixed intermediates: `2-cover/content.json` + `content-cover-01.{png,jpg}` (kk:image-authoring contract), `3-audio/content.wav` / `content.mp3` (voice generator siblings of the `--out` file).
@@ -72,3 +72,18 @@ Convention-named artifacts:
 - `${run_date}_20_translate-en_*` / `${run_date}_22_translate-ja_*` / `${run_date}_24_translate-sync_*`: locale scaffolds, post-path markers, and sync results in `3-publish/`.
 
 The workflow passes only the generic executor flags (`--in`, `--out`, optional `--plugins-path`).
+
+## 5. Stage ownership (0133, ADR-115)
+
+Every over-cap stage body lives in `plugins/kk/scripts/kk-workflow-stages.ts` (the `daily-*` verbs,
+shared with the kk-solo-podcast / kk-itc / kk-storm-research stages); each delegated YAML action keeps
+the five-statement package-root resolution prelude (six YAML lines) plus one `bun "$st" daily-<stage> …` call, the two
+`agent.run` prompts stay in the YAML, and the bodies that already fit the ADR-115 budget
+willingly stayed inline (`collect:onEnter:0`'s `kk executor fan-in --source` at 7 commands, the HITL/guard
+states) — `publish-partial:onEnter:0` was in budget at 9 commands but moved with its siblings. The step-timing append, the per-step cache predicate and its
+message, the plugins-path argv and every plugin invocation moved verbatim — the fake-`kk`
+integration test (`apps/cli/tests/kk-daily-ai-voice-workflow.test.ts`) still drives the deterministic
+half of the chain — `prepare → collect → plan → quality-control-content → article → script →
+wrap-docs → generate`, `publish_enabled=false` — end to end and asserts the call order, the env
+channels and every artifact path it reaches; the publish/locale tail is covered by the runner
+suite's per-verb tests plus review, not by that run.

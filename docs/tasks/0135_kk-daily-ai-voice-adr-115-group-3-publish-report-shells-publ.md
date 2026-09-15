@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "kk-daily-ai-voice ADR-115 group 3: publish/report shells (publish-prep, surfdash, show-notes, podcast, publish, run-report)"
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-09-14T23:36:56.423Z
-updated_at: "2026-09-15T01:13:49.540Z"
+updated_at: "2026-09-15T06:20:46.244Z"
 feature_id: F8
 parent_wbs: "0132"
 
@@ -14,29 +14,14 @@ parent_wbs: "0132"
 
 ### Background
 
-Sub-task of **0132** (parent). Group 3 of 4 from the kk-daily-ai-voice decomposition.
+Superseded by task 0133 (recorded 2026-09-14). The four-group staging in 0132 assumed the
+kk-daily-ai-voice port would land group by group; the 0133 run ported all 21 findings in one pass
+instead (the whole file validates error-clean, the fake-kk integration test drives the full chain,
+and the runner suite covers the derivations). This task's scope is therefore delivered under 0133 —
+its per-action inventory is preserved in 0133's Background.
 
-See 0133 for the full context: `plugins/kk/workflows/kk-daily-ai-voice.yaml` is the live 06:00
-scheduled pipeline with 21 error-level ADR-115 composition findings, split into four ordered groups.
-
-| Action | Measure |
-| --- | --- |
-| `publish-prep:onEnter:0` | 15 logical commands |
-| `publish-surfdash:onEnter:0` | 14 logical commands |
-| `show-notes:onEnter:0` | 14 logical commands |
-| `publish-podcast:onEnter:0` | 17 logical commands |
-| `publish:onEnter:0` | 19 logical commands |
-| `run-report:onEnter:0` | 18 logical commands |
-
-Scope: the publish/report half (prep → surfdash → show notes → podcast → fan-out publish → run
-report). These actions are the ones that actually reach the network and the four publishing
-plugins, so they carry the highest blast radius in the group set: port them one action per review
-pass, keep the `kk executor run <plugin>` argv byte-identical, and treat any credential or endpoint
-resolution as out of scope.
-
-**Before starting:** Requirements/AC for this task are authored by its own `refine` pass — the group
-inventory above is the scope, not a frozen requirement set. Do not inherit the superseded
-per-workflow-script shape from the parent's seeding text (see 0132's Design amendment and Q&A entry).
+Cancellation reopens cleanly if 0133's port is reverted or partially backed out: the inventory in
+0133 lists exactly the actions that group covered.
 
 ### Requirements
 
@@ -79,3 +64,6 @@ per-workflow-script shape from the parent's seeding text (see 0132's Design amen
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-09-15T06:20:46.244Z todo → cancelled (system)
+
