@@ -720,4 +720,86 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             rmSync(join('.spur/run', `publish-partial-${stamp}.txt`), { force: true });
         });
     });
+
+    /** Fake `kk` that dumps the podcast-pub env channels and writes the `--out` artifact. */
+    function showNotesKk(dir: string): Record<string, string> {
+        const dump = join(dir, 'show-notes-env.json');
+        const env = fakeKk(
+            dir,
+            [
+                "const fs = require('node:fs');",
+                'const args = process.argv.slice(2);',
+                "const out = args[args.indexOf('--out') + 1];",
+                'fs.writeFileSync(process.env.SHOW_NOTES_DUMP, JSON.stringify({ ...process.env }));',
+                "fs.writeFileSync(out, '# show notes');",
+            ].join('\n'),
+        );
+        return { ...env, SHOW_NOTES_DUMP: dump };
+    }
+
+    function showNotesEnv(dir: string): Record<string, string> {
+        return JSON.parse(readFileSync(join(dir, 'show-notes-env.json'), 'utf-8')) as Record<string, string>;
+    }
+
+    it('daily-show-notes forwards the published surfdash post path so the timeline layout engages', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            const stamp = '20260101';
+            const postPath = '/posts/zh/daily-ai-20260101/index.md';
+            writeFileSync(
+                join(dir, `3-publish/${stamp}_14_publish-surfdash_result.json`),
+                JSON.stringify({
+                    targets: [{ target: 'surfdash-pub', ok: true, status: 'published', metadata: { postPath } }],
+                }),
+            );
+            expect(run(['daily-show-notes', dir, stamp, '', 'Daily AI'], showNotesKk(dir)).status).toBe(0);
+            expect(showNotesEnv(dir)).toMatchObject({
+                PODCAST_PUB_ARTICLE_POST_PATH: postPath,
+                PODCAST_PUB_RUN_DATE: stamp,
+                PODCAST_PUB_BRIEF_MODE: 'true',
+                PODCAST_PUB_TITLE: 'Daily AI',
+            });
+        });
+    });
+
+    it('daily-show-notes degrades to an empty article post path when the surfdash result is absent or failed', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            const stamp = '20260101';
+            // Absent file — the surfdash state never ran or published nothing.
+            expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
+            expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
+            // Present file with a failed target — the legacy full-body layout must survive.
+            writeFileSync(
+                join(dir, `3-publish/${stamp}_14_publish-surfdash_result.json`),
+                JSON.stringify({
+                    targets: [{ target: 'surfdash-pub', ok: false, status: 'failed', metadata: { postPath: null } }],
+                }),
+            );
+            expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
+            expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
+        });
+    });
+
+    it('daily-show-notes never depends on _17_publish_result.json, which the later publish state writes', () => {
+        withTempDir((dir) => {
+            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            const stamp = '20260101';
+            writeFileSync(
+                join(dir, `3-publish/${stamp}_17_publish_result.json`),
+                JSON.stringify({
+                    targets: [
+                        {
+                            target: 'surfdash-pub',
+                            ok: true,
+                            status: 'published',
+                            metadata: { postPath: '/posts/zh/published-later/index.md' },
+                        },
+                    ],
+                }),
+            );
+            expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
+            expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
+        });
+    });
 });

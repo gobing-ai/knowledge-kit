@@ -77,7 +77,8 @@ The workflow passes only the generic executor flags (`--in`, `--out`, optional `
 
 Every over-cap stage body lives in `plugins/kk/scripts/kk-workflow-stages.ts` (the `daily-*` verbs,
 shared with the kk-solo-podcast / kk-itc / kk-storm-research stages); each delegated YAML action keeps
-the five-statement package-root resolution prelude (six YAML lines) plus one `bun "$st" daily-<stage> …` call, the two
+the five-line package-root resolution prelude plus one `bun "$st" daily-<stage> …` call line — six YAML lines per
+delegated action; the two
 `agent.run` prompts stay in the YAML, and the bodies that already fit the ADR-115 budget
 willingly stayed inline (`collect:onEnter:0`'s `kk executor fan-in --source` at 7 commands, the HITL/guard
 states) — `publish-partial:onEnter:0` was in budget at 9 commands but moved with its siblings. The step-timing append, the per-step cache predicate and its
@@ -85,5 +86,7 @@ message, the plugins-path argv and every plugin invocation moved verbatim — th
 integration test (`apps/cli/tests/kk-daily-ai-voice-workflow.test.ts`) still drives the deterministic
 half of the chain — `prepare → collect → plan → quality-control-content → article → script →
 wrap-docs → generate`, `publish_enabled=false` — end to end and asserts the call order, the env
-channels and every artifact path it reaches; the publish/locale tail is covered by the runner
-suite's per-verb tests plus review, not by that run.
+channels and every artifact path it reaches; the publish/locale tail is not covered by that run —
+the runner suite's per-verb tests cover `classify` / `publish-prep` / `publish-partial` /
+`translate-en`, and `show-notes` (task 0137), while the remaining tail verbs
+(`publish-surfdash`, `publish-podcast`, `run-report`) stay tracked from task 0137.

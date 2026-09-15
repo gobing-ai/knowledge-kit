@@ -871,7 +871,10 @@ function dailyPublishSurfdash(args: string[]): void {
 function dailyShowNotes(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', title = ''] = args;
     const article = join(workDir, '2-article', `${runDate}_06_article_content.json`);
-    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
+    // The preceding `publish-surfdash` state writes this artifact; `_17_publish_result.json` does
+    // not exist yet at `show-notes` time (the later `publish` state merges it), so reading it left
+    // PODCAST_PUB_ARTICLE_POST_PATH permanently empty (task 0137).
+    const result = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
     const out = join(workDir, '3-publish', `${runDate}_15_show-notes_show-notes.md`);
     const plan = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
     timed(workDir, 'show-notes', () => {
