@@ -25,6 +25,14 @@ jobs:
         # on runners. CI never commits, so hooks are not needed here.
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Install spur
+        # The kk workflow integration tests drive the real engine (`spur workflow run`),
+        # and refuse to skip silently when the binary is missing. Pinned so a spur release
+        # cannot silently redefine the engine under test.
+        run: |
+          bun install --global @gobing-ai/spur@0.3.81
+          echo "$(bun pm bin -g)" >> "$GITHUB_PATH"
+
       # Build first so cross-package type imports resolve during typecheck.
       # A clean CI checkout has no prebuilt dist/.
       - name: Build
