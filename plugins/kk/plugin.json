@@ -1,5 +1,5 @@
 {
     "name": "kk",
-    "version": "0.0.14",
+    "version": "0.0.15",
     "description": "knowledge-kit Claude Code plugin: skills, commands, subagents, hooks, and rules"
 }
