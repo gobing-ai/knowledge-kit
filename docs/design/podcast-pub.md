@@ -104,7 +104,13 @@ client, no credentials, no API call:
   before spawn.
 - Options come from `PODCAST_PUB_TITLE` and `PODCAST_PUB_RUN_DATE` env (or
   `options.title` / `options.runDate` on the transport payload); both are
-  required — missing either fails loud.
+  required — missing either fails loud. Optional: `PODCAST_PUB_ARTICLE_BASE_URL`,
+  `PODCAST_PUB_BRIEF_MODE` (`true`/`1`), and `PODCAST_PUB_ARTICLE_POST_PATH`
+  (0118 timeline layout; a non-empty postPath switches the footer to the
+  published `<base>/<locale>/posts/<postSlug>` URL, empty ⇒ legacy fallback).
+  The daily workflow passes the postPath from the surfdash publish result
+  (`_14_publish-surfdash_result.json`, task 0137) — not the later merged
+  `_17_publish_result.json`, which does not exist yet at show-notes time.
 - `--out`: the rendered markdown file itself (not a `Result` JSON).
 - Render failure: fail-loud `Result { ok: false, error }` written to `--out`,
   then reject (non-zero exit), matching the Content path.

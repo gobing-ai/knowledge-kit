@@ -5,7 +5,7 @@ owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var
 authority: derived
 version: 2.28.0
 created_at: 2026-07-22
-updated_at: 2026-09-13
+updated_at: 2026-09-15
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -504,8 +504,8 @@ selects the generator via `voice_generator` var (default `voice-gen`; swap to `o
 | `mapContentToEpisode(content)` | function | Maps Content to episode fields: `title`, `contentHtml` (sanitized HTML — markdown showNotes/body rendered via the closed-dialect renderer in `show-notes.ts`; `format: 'html'` bodies pass through), `status`, `audio` (`metadata.audioUrl` or `metadata.audioPath`/`audioFile`), `durationSeconds`, `imagePath` (non-http `coverImage`), `imageUrl` (http cover) |
 | `resolveAudioMimeType(ref, mimeType?)` | function | Extension → audio MIME mapping with override |
 | `getPublishTransport()` | function | Returns `FakeFileCliTransport` when `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else `PodcastPubTransport` |
-| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `show-notes`, `list`, `get`, `update`, `delete`, `validate`); a bare Doc[] `--in` selects `show-notes` and writes the markdown file to `--out` (render options via `PODCAST_PUB_TITLE` / `PODCAST_PUB_RUN_DATE` / `PODCAST_PUB_ARTICLE_BASE_URL`) |
-| `renderShowNotesMarkdown(docs, opts)` | function | Renders plan Doc[] → show-notes markdown (L1 R6 port of the workflow's inline renderer): `# title`, per-item `## N.` sections capped at two 。！？ sentences, `[来源：…]` links, full-article footer `<base>/zh/posts/<runDate>-<slug>` (default base `https://surfing.salty.vip`); golden-fixture byte-pinned in the plugin tests |
+| `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; supports `options.operation` (`publish`, `show-notes`, `list`, `get`, `update`, `delete`, `validate`); a bare Doc[] `--in` selects `show-notes` and writes the markdown file to `--out` (render options via `PODCAST_PUB_TITLE` / `PODCAST_PUB_RUN_DATE` / `PODCAST_PUB_ARTICLE_BASE_URL` / `PODCAST_PUB_BRIEF_MODE` / `PODCAST_PUB_ARTICLE_POST_PATH`) |
+| `renderShowNotesMarkdown(docs, opts)` | function | Renders plan Doc[] → show-notes markdown (L1 R6 port of the workflow's inline renderer): `# title`, per-item `## N.` sections capped at two 。！？ sentences, `[来源：…]` links, full-article footer (default base `https://surfing.salty.vip`); with `articlePostPath` (0118) the footer is `<base>/<locale>/posts/<postSlug>` derived O(1) from the published path, else the legacy fallback `<base>/zh/posts/<runDate>-<slug>`; `briefMode: true` + a postPath renders the timeline layout (`HH:MM` briefs, per-item `[文章]` link); golden-fixture byte-pinned in the plugin tests |
 | `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
 
 ### `@gobing-ai/knowledge-kit` (`apps/cli`)
