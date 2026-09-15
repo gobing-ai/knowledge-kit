@@ -4,7 +4,7 @@ name: Fix the dead surfdash link in kk-daily-ai-voice show-notes (reads the not-
 status: todo
 template: issue
 created_at: 2026-09-15T07:20:16.383Z
-updated_at: "2026-09-15T16:11:33.956Z"
+updated_at: "2026-09-15T17:25:13.253Z"
 feature_id: F8
 
 ac_altitude: task-local
@@ -31,7 +31,7 @@ const postPath = firstPostPath(readJson(result), 'surfdash-pub');   // → '' wh
 but `${runDate}_17_publish_result.json` is written by the **later** `publish` state
 (`dailyPublishClassify`, `:948-975`, which merges `_14_` + `_16_`). The state order is
 `publish-surfdash → show-notes → publish-podcast → publish → run-report → translate-en → …`
-(`plugins/kk/workflows/kk-daily-ai-voice.yaml:140-232`), so at `show-notes` time that file does not
+(`plugins/kk/workflows/kk-daily-ai-voice.yaml:244-337`), so at `show-notes` time that file does not
 exist and `PODCAST_PUB_ARTICLE_POST_PATH` is **always empty** — including on days when surfdash
 published successfully. The state description promises "article URL from the surfdash result postPath
 — surfdash failure degrades to legacy full-body layout", so the feature is silently dead, not
@@ -45,10 +45,10 @@ per-item `[文章](${articleUrl})` links). With an empty postPath the show notes
 than the authoritative published post path.
 
 **What is available at that point.** The preceding state writes
-`3-publish/${runDate}_14_publish-surfdash_result.json` (`dailyPublishSurfdash`, runner `:849-869`) with
+`3-publish/${runDate}_14_publish-surfdash_result.json` (`dailyPublishSurfdash`, runner `:841-869`) with
 the same `.targets[] | select(.target == "surfdash-pub" and .ok == true) | .metadata.postPath` shape,
 so the fix is a one-line source change plus tests. `firstPostPath` (`:893-905`) is already shared with
-`dailyTranslateEn` (`:1040-1055`), whose read of `_17_` **is** legitimate (translate-en runs after
+`dailyTranslateEn` (`:1043-1071`), whose read of `_17_` **is** legitimate (translate-en runs after
 `publish`) and must not change.
 
 **Repro.** Drive `daily-show-notes` with a fake `kk` that dumps `PODCAST_PUB_ARTICLE_POST_PATH`:
@@ -59,8 +59,8 @@ so the fix is a one-line source change plus tests. `firstPostPath` (`:893-905`) 
   full-body layout must remain, i.e. the degradation contract survives.
 
 `bun test apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` pins all twenty delegated call lines
-(`:176-197`) — the `daily-show-notes … "${vars.title}"` argv among them — so any argv change in this
-task must update that pin in the same commit.
+(`:152-171`) — the `daily-show-notes … "${vars.title}"` argv among them (`:164`) — so any argv change
+in this task must update that pin in the same commit.
 
 **Evidence caveat.** `.spur/runs/kk-daily-ai-voice/2026-09-12/3-publish/` is *not* a success-case
 repro: its `result-surfdash.json` reads `{ok:false, status:"failed", postPath:null}`, so that day's
@@ -79,7 +79,7 @@ six YAML lines per delegated action").
 - [ ] R1. `dailyShowNotes` resolves the surfdash article URL from the artifact that exists at that point in the state order (`3-publish/${runDate}_14_publish-surfdash_result.json`, written by the preceding `publish-surfdash` state) instead of `_17_publish_result.json`, which the later `publish` state writes; the `firstPostPath` selection rule (`target == "surfdash-pub"` AND `ok == true`) and the empty-string fallback stay unchanged.
 - [ ] R2. On the success path the timeline layout engages: with a published surfdash target, `PODCAST_PUB_ARTICLE_POST_PATH` reaches `podcast-pub` non-empty, so `briefMode` is true (`plugins/publishings/podcast-pub/src/show-notes.ts:129`) and the show notes carry `HH:MM` briefs and per-item `[文章](…postPath…)` links instead of the title-slug fallback (`:128`, `:170`).
 - [ ] R3. The degradation contract survives: when the surfdash result file is absent or its target failed, the env var is empty, `podcast-pub` keeps the legacy full-body layout, and the run still reaches `done` exactly as today.
-- [ ] R4. Regression coverage exists in the runner suite: a `daily-show-notes` test drives a fake `kk` that dumps `PODCAST_PUB_ARTICLE_POST_PATH` for both cases (published surfdash result → the real post path; missing/failed → empty), and the twenty pinned call lines in `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:176-197` are updated in the same commit if this task changes the verb's argv.
+- [ ] R4. Regression coverage exists in the runner suite: a `daily-show-notes` test drives a fake `kk` that dumps `PODCAST_PUB_ARTICLE_POST_PATH` for both cases (published surfdash result → the real post path; missing/failed → empty), and the twenty pinned call lines in `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:152-171` are updated in the same commit if this task changes the verb's argv.
 - [ ] R5. No other behaviour changes: `dailyTranslateEn`'s read of `_17_publish_result.json` (legitimate — it runs after `publish`), the `publish` classification, the state order, the transition guards, the artifact names and `docs/design/kk-daily-ai-voice.md` §4 stay as they are; the two §5 doc-precision nits listed in Background are corrected.
 
 ### Acceptance Criteria
@@ -111,6 +111,15 @@ Scenario: the fixed lookup reads the artifact that exists at that point
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
+#### Q&A entry — 2026-09-15T17:25:13.253Z
+
+- 2026-09-15 ready-depth refine (`--depth ready --auto`, inline): premise-verified every load-bearing
+  claim against the current tree — defect mechanism, state order, plugin gates, pre-port proof,
+  degradation contract, and both `docs/design/kk-daily-ai-voice.md` §5 nits all confirmed still live;
+  re-pointed four drifted citations to ground truth (`dailyPublishSurfdash` `:841-869`, state order
+  `kk-daily-ai-voice.yaml:244-337`, the twenty-line call pin `kk-daily-ai-voice-workflow.test.ts:152-171`
+  with `daily-show-notes` at `:164`, `dailyTranslateEn` `:1043-1071`). No design change.
+
 ### Design
 
 **Fix.** In `dailyShowNotes` (`plugins/kk/scripts/kk-workflow-stages.ts:871-891`) change the result
@@ -141,12 +150,12 @@ the degradation path is untouched by construction.
 
 **Boundaries (do not touch).**
 
-- `dailyTranslateEn` (`:1040-1055`) keeps reading `_17_publish_result.json`: `translate-en` runs after
+- `dailyTranslateEn` (`:1043-1071`) keeps reading `_17_publish_result.json`: `translate-en` runs after
   `publish` in the state order, so that read is correct.
 - `dailyPublishClassify` keeps merging `_14_` + `_16_` into `_17_`; `publish-partial` keeps reading it.
 - No transition, state id, artifact name, env-var name or `docs/design/kk-daily-ai-voice.md` §4 entry
   changes. If the verb's argv changes at all, update the twenty-line pin in
-  `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:176-197` in the same commit.
+  `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:152-171` in the same commit.
 - Keep the delegated action inside the ADR-115 composition budget (10 logical commands / 800 chars)
   and the prelude byte-identical across the kk workflows: the daily suite asserts that block 20× and
   the prompt caps, so a drift fails the suite rather than validate.
@@ -157,7 +166,7 @@ the degradation path is untouched by construction.
    empty fallback.
 2. Add the runner-suite regression test: fake `kk` dumps `PODCAST_PUB_ARTICLE_POST_PATH` for (a) a
    published surfdash result and (b) a missing/failed one, asserting the path and the empty string.
-3. Re-check the twenty pinned call lines (`kk-daily-ai-voice-workflow.test.ts:176-197`) and update them
+3. Re-check the twenty pinned call lines (`kk-daily-ai-voice-workflow.test.ts:152-171`) and update them
    only if the argv changed; keep the prelude identity assertion green.
 4. Correct the two `docs/design/kk-daily-ai-voice.md` §5 wording nits listed in Background.
 5. Verify: the daily workflow suite + the runner suite green, the fake-`kk` integration test still
@@ -183,11 +192,11 @@ the degradation path is untouched by construction.
 ### References
 
 - Runner seams: `plugins/kk/scripts/kk-workflow-stages.ts:871-891` (`dailyShowNotes` + today's `_17_`
-  read), `:893-905` (`firstPostPath`), `:849-869` (`dailyPublishSurfdash`, writes `_14_`), `:948-975`
-  (`dailyPublishClassify`, writes `_17_`), `:1040-1055` (`dailyTranslateEn`, legitimate `_17_` read).
+  read), `:893-905` (`firstPostPath`), `:841-869` (`dailyPublishSurfdash`, writes `_14_`), `:948-975`
+  (`dailyPublishClassify`, writes `_17_`), `:1043-1071` (`dailyTranslateEn`, legitimate `_17_` read).
 - Workflow: `plugins/kk/workflows/kk-daily-ai-voice.yaml` — `show-notes` state (description promises the
   surfdash postPath), the `publish-surfdash → show-notes → publish-podcast → publish → run-report →
-  translate-en` order (`:140-232`).
+  translate-en` order (`:244-337`).
 - Plugin: `plugins/publishings/podcast-pub/src/show-notes.ts:128` (title-slug fallback URL), `:129`
   (`briefMode` gate on a non-empty `postSlug`), `:170` (per-item `[文章](…)` link);
   `plugins/publishings/podcast-pub/src/index.ts:115` (`PODCAST_PUB_ARTICLE_POST_PATH` → `articlePostPath`).
