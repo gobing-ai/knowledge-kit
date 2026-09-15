@@ -746,3 +746,53 @@ Wrapup complete: drift audit ran with detection evidence (clean across all four 
 - `spur workflow validate --json` emits `ok` / `valid` / `errors` — it has **no `errorCount` field**, ever. Parse the JSON fields, don't assert fields from memory.
 - Validate's exit code is **not** schema validity: it is `!valid || hasError`, where `hasError` includes ADR-115 *composition* findings (content-measure gate, validate-only; spur-new `apps/cli/src/commands/workflow.ts:455`). "Schema-valid but exits 1" is a legitimate state when only composition debt remains — run/dry-run/continue never see composition findings (`workflow.ts:453`).
 - Composition debt is repo-wide, not file-local: the untouched canonical mirror `kk-itc.yaml` also exits 1 on its own finding. Over-length shell actions (error >10 logical commands; warn >3) and prompts (>1000 chars) are tracked as task 0131, not fixed inside a no-behavior-change repair.
+Wrapup complete. Drift report: two findings repaired in `docs/04_DESIGN.md` (§7 podcast-pub rows missing 0118's `PODCAST_PUB_BRIEF_MODE`/`PODCAST_PUB_ARTICLE_POST_PATH` env knobs and the briefMode timeline render) and `docs/design/podcast-pub.md` (§4.1 options bullet extended, postPath source pinned to `_14_publish-surfdash_result.json` per 0137) — committed as `61eb97a`. `docs/00_ADR.md` and `docs/03_ARCHITECTURE.md` audited clean (00 claims nothing about the show-notes flow; 03:205's deliverable claim still holds); `docs/design/kk-daily-ai-voice.md` was already synced in the fix commit. No task/feature corpus writes. Artifact written to `.spur/run/fc8fd3d4-3138-4444-8b10-9efd010acd6a-wrapup-learnings.md`.
+
+## 2026-09-15 — task 0137 (fix the dead surfdash link in kk-daily-ai-voice show-notes)
+
+**Gotcha — workflow states may only read artifacts from *preceding* states (time-travel bug).**
+`dailyShowNotes` read `_17_publish_result.json`, but that artifact is written by the later
+`publish` state (`plugins/kk/scripts/kk-workflow-stages.ts:877`, post-fix). At show-notes time it
+never exists, so `PODCAST_PUB_ARTICLE_POST_PATH` was permanently empty. Fix: read the immediately
+preceding `publish-surfdash` state's own artifact `_14_publish-surfdash_result.json` via
+`firstPostPath(parsed, 'surfdash-pub')` (`kk-workflow-stages.ts:895`). Conventions: per-target
+fan-out results land as `<runDate>_<seq>_<state>_result.json`; the merged result is `<seq 17>`
+and is only for the publish/locales transition guards (`docs/design/kk-daily-ai-voice.md:70`).
+
+**Error fixed — silent degradation masked the defect.** An empty `PODCAST_PUB_ARTICLE_POST_PATH`
+degrades to the legacy title-slug footer by design (`show-notes.ts:128`, 0118's fallback), so the
+pipeline stayed green while every episode carried a dead article link. Lesson: when a feature has
+an engage-path/fallback pair, a regression test must pin the *engaged* path, not just the
+fallback — green CI proves nothing about which layout ran.
+
+**Pattern — regression tests assert the artifact source, not just the output.** Three runner-suite
+tests in `apps/cli/tests/kk-workflow-stages.test.ts` (+82): (1) published surfdash target ⇒
+timeline layout engages (`briefMode && postSlug` at `show-notes.ts:129`); (2) absent-or-failed
+target ⇒ empty-string legacy fallback, never throws; (3) negative assertion — `show-notes` never
+reads `_17_`. The "never reads X" test guards against re-introducing the time-travel on refactor.
+
+**Convention — T3 same-commit docs and budget discipline held.** The fix commit updated
+`docs/design/kk-daily-ai-voice.md` §5 in the same commit (two wording nits at :80, :89-92) and
+kept the delegated `show-notes` action within the ADR-115 composition budget; the env-forwarding
+shape (`PODCAST_PUB_TITLE/RUN_DATE/BRIEF_MODE/ARTICLE_POST_PATH`) was unchanged, so no ADR entry —
+bugfixes restoring an existing contract don't justify one (T1).
+
+## 2026-09-15 — wrapup doc-evolve repair (drift audit over 00/03/04/design)
+
+**Drift found and repaired — SURFACE doc lagged the 0118 env surface.** `docs/04_DESIGN.md` §7
+podcast-pub rows listed only `PODCAST_PUB_TITLE / RUN_DATE / ARTICLE_BASE_URL` and described the
+legacy render only; the consumer has five env knobs
+(`plugins/publishings/podcast-pub/src/index.ts:113-115`). Repaired both rows (+ `updated_at`) and
+extended `docs/design/podcast-pub.md` §4.1 options bullet with
+`PODCAST_PUB_BRIEF_MODE`/`PODCAST_PUB_ARTICLE_POST_PATH` and the `_14_` (not `_17_`) postPath
+source. Committed as `docs(kk)` `61eb97a`.
+
+**Clean — no drift elsewhere.** `docs/00_ADR.md` makes no claim about the show-notes artifact
+flow (`rg` for show-notes/_17_/PODCAST_PUB → zero hits); `docs/03_ARCHITECTURE.md:205`'s "the
+daily workflow artifact is unchanged" refers to the markdown deliverable through the declared
+`operations["show-notes"]` path (0110 I3), which 0137 did not touch. `docs/design/kk-daily-ai-voice.md`
+§4/§5 were already synced by the 0137 fix commit.
+
+**Pattern — project convention: 04 content edits bump `updated_at` but not `version`** (matches
+`53ce3e51`); satellite `docs/design/*.md` specs carry no frontmatter but are T3 surface — the
+audit sweep must grep them, not just `04` (constitution lesson 2026-08-12).
