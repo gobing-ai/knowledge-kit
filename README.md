@@ -165,19 +165,32 @@ Release tags follow `@gobing-ai/knowledge-kit-v<version>`; pushing one triggers 
 `Publish` GitHub Actions workflow (npm Trusted Publishing via OIDC — no registry token needed).
 
 ```bash
-bun run bump-ver 0.0.4 --push    # bump version → commit → tag → push branch + tag
-bun run drop-tags 0.0.4          # delete the release tag (add --remote for origin)
+bun run bump-ver 0.0.15 --push   # apps/cli version → commit → tag → push branch + tag
+bun run drop-tags 0.0.15          # delete the release tag (add --remote for origin)
 ```
+
+Both scripts pin the release target to `knowledge-kit`, the unscoped id of the published
+`@gobing-ai/knowledge-kit` package, so the per-package tag `@gobing-ai/knowledge-kit-v<version>`
+is the one pushed.
+
+**Do not run a bare `spur builder bump-ver <version> --push`.** With no target, spur bumps the
+packages that another workspace pins via `workspace:` — the private `kk-core` and
+`publish-harness`, never `apps/cli` — and pushes the *aggregate* tag
+`<root package.json name>-v<version>`, i.e. `knowledge-kit-v<version>`, which no workflow
+consumes (the publish filter is scoped). 0.0.15 was first released that way: the carriers below
+moved to 0.0.15, `apps/cli` stayed at 0.0.14, and Publish never fired.
 
 `bump-ver`/`drop-tags` delegate to `spur builder` (release-ops in the spur CLI), which also
 syncs `.claude-plugin/marketplace.json` + `plugins/kk/plugin.json` to the release version —
 superskill's update check reads the marketplace version first, so those must move in lockstep
-with `apps/cli/package.json`. Release knobs (tag separator, publish workflow, commit style) can
-be overridden per-project via the `builder.bump-ver` section of `.spur/config.yaml`.
+with `apps/cli/package.json` (`apps/cli/tests/release-version-lockstep.test.ts` asserts it).
+Release knobs (tag separator, publish workflow, commit style) can be overridden per-project via
+the `builder.bump-ver` section of `.spur/config.yaml`.
 
 The workflow verifies the tag matches `apps/cli/package.json`, verifies release assets
 (`dist/`, `plugins/kk/`, `.claude-plugin/marketplace.json` in the tarball, no test files), then
-publishes.
+publishes. npm exits 0 into a *processing* state before the version is visible — confirm it
+with `npm view @gobing-ai/knowledge-kit version`, which can lag the green run by several minutes.
 
 ---
 

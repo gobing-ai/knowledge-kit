@@ -35,8 +35,8 @@
         "format": "biome check . --write",
         "gate": "bun run format && bun run build && bun run spur-check",
         "autofix": "bun run format && bun run typecheck",
-        "bump-ver": "spur builder bump-ver",
-        "drop-tags": "spur builder drop-tags",
+        "bump-ver": "spur builder bump-ver knowledge-kit",
+        "drop-tags": "spur builder drop-tags knowledge-kit",
         "check": "bun run lint && bun run test",
         "check:full": "bun run lint && bun run test:full",
         "load-history": "DATABASE_URL='.spur/spur.db' spur history import && DATABASE_URL='.spur/spur.db' spur history analyze"
