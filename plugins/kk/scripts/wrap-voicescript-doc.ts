@@ -2,14 +2,14 @@
 /**
  * Runtime VoiceScript→Doc[] wrapper for kk-solo-podcast.
  *
- * Resolved from the kk package (`plugins/kk/scripts/`) by `solo-podcast-stages.ts`,
+ * Resolved from the kk package (`plugins/kk/scripts/`) by `kk-workflow-stages.ts`,
  * or from an explicit runtime override ($KK_WORKFLOWS_DIR / ~/.config/kk/workflows)
  * when one exists. Node/Bun builtins only — no @gobing-ai/* and no relative imports
  * (those paths do not exist outside the package).
  *
- * SYNC: plugins/kk/workflows/kk-solo-podcast.yaml (wrap-docs state shells this
- * script with scriptPath, outPath, voiceProfile argv). The wrap shape must stay
- * a single-Doc array with sha256(file://scriptPath)[0:16] id — voice-gen and
+ * SYNC: plugins/kk/scripts/kk-workflow-stages.ts (its `wrap` verb delegates here with the
+ * scriptPath, outPath, voiceProfile argv the kk-solo-podcast wrap-docs state passes). The wrap
+ * shape must stay a single-Doc array with sha256(file://scriptPath)[0:16] id — voice-gen and
  * tests depend on it.
  */
 import { createHash } from 'node:crypto';

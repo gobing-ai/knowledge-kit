@@ -19,7 +19,7 @@ Two homes (do not mix them up):
 `$HOME/.config/kk/workflows` is an **override** you place explicitly (or via `--force`). The
 VoiceScript checker (`validate-voicescript.ts`) and wrapper (`wrap-voicescript-doc.ts`)
 resolve the same way: var → `KK_WORKFLOWS_DIR` → package root → `$HOME/.config/kk/workflows`
-(the chain lives in `solo-podcast-stages.ts`, which the YAML resolves from the package root).
+(the chain lives in `kk-workflow-stages.ts`, which the YAML resolves from the package root).
 Checkout `docs/design/` is **not** on the runtime path and is not in the npm tarball.
 
 ```mermaid
@@ -40,7 +40,7 @@ length is a **word/char budget** at script-write plus a post-generate check on
 | Piece | Design-time (tarball / repo) | Runtime resolution order |
 | --- | --- | --- |
 | Workflow YAML | `plugins/kk/workflows/kk-solo-podcast.yaml` | override → `KK_WORKFLOWS_SOURCE` → bun/npm global → package root → checkout |
-| Stage runner | `plugins/kk/scripts/solo-podcast-stages.ts` | package root (`command -v kk` + symlink walk) |
+| Stage runner | `plugins/kk/scripts/kk-workflow-stages.ts` (shared by solo-podcast / itc / storm-research) | package root (`command -v kk` + symlink walk) |
 | Validator | `plugins/kk/scripts/validate-voicescript.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` (via the stage runner) |
 | Wrapper | `plugins/kk/scripts/wrap-voicescript-doc.ts` | var → `KK_WORKFLOWS_DIR` → package root → `~/.config/kk/workflows` (via the stage runner) |
 | Generator | `plugins/generations/voice-gen/` (npm pack) | `kk executor run voice-gen` (ADR-012 discovery) |
@@ -247,7 +247,7 @@ flowchart TD
 | File | Role |
 | --- | --- |
 | `plugins/kk/workflows/kk-solo-podcast.yaml` | design-time SSOT (resolved in place at run time) |
-| `plugins/kk/scripts/solo-podcast-stages.ts` | `prepare` / `duration` logic + sidecar delegation (ADR-115 composition owner) |
+| `plugins/kk/scripts/kk-workflow-stages.ts` | shared stage runner: `prepare-solo` / `duration` logic + sidecar delegation, plus `prepare-itc` / `prepare-storm` / `render-storm` for the other kk workflows (ADR-115 composition owner) |
 | `plugins/kk/scripts/validate-voicescript.ts` | design-time checker (resolved via the sidecar fallback chain) |
 | `plugins/kk/scripts/wrap-voicescript-doc.ts` | VoiceScript → `Doc[]` wrapper (resolved via the sidecar fallback chain) |
 | `plugins/generations/voice-gen/` | D5 generator in the npm tarball |
@@ -267,7 +267,7 @@ spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json
 spur workflow run plugins/kk/workflows/kk-solo-podcast.yaml --dry-run --run-id dry-solo \
   --vars '{"topic":"duration budget smoke","work_dir":"./scratch/solo-dry","outline":"a","script_approved":"true","target_duration_min":"8","voice_profile":"Robin","force":"true"}' --json
 bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts \
-  apps/cli/tests/solo-podcast-stages.test.ts \
+  apps/cli/tests/kk-workflow-stages.test.ts \
   apps/cli/tests/validate-voicescript.test.ts \
   apps/cli/tests/workflow-run-command.test.ts
 ```

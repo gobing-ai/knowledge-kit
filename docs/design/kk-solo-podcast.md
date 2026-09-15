@@ -27,7 +27,7 @@ those conventions; two-way door (delete the YAML).
 | D4 | `hitl.select` a\|b\|c for outlines; `hitl.confirm` + bounded `hitl.input` for the script | Outline-only `hitl.confirm`; new `hitl.*` kind | House pattern (kk-itc). TTS is slow/expensive — gate the script before generate. |
 | D5 | Audio is the sibling **WAV** D5 already writes | MP3 / ffmpeg | Voicebox `GET /audio/{id}` is WAV; concat is PCM WAV. Transcode is a later publish concern. |
 | D6 | Target length = script budget + post-check | Duration field on `voice-gen` | D5 §7: output duration is recorded, not requested. |
-| D7 | Self-contained helpers `plugins/kk/scripts/validate-voicescript.ts` + `wrap-voicescript-doc.ts` (plus the `solo-podcast-stages.ts` runner that owns prepare/duration and delegates to them), resolved via fallback chain (var → `KK_WORKFLOWS_DIR` → kk package root → `~/.config/kk/workflows`) | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime cannot import `../../generations`. Helpers are builtins-only; the package ships them in `plugins/`, so the package root covers any cwd. |
+| D7 | Self-contained helpers `plugins/kk/scripts/validate-voicescript.ts` + `wrap-voicescript-doc.ts` (plus the `kk-workflow-stages.ts` runner that owns prepare/duration and delegates to them), resolved via fallback chain (var → `KK_WORKFLOWS_DIR` → kk package root → `~/.config/kk/workflows`) | `plugins/kk/lib/` importing voice-gen; `plugins/kk/scripts/` | Runtime cannot import `../../generations`. Helpers are builtins-only; the package ships them in `plugins/`, so the package root covers any cwd. |
 | D8 | `/workflow-run kk-solo-podcast` resolves the YAML **in place** (override → `KK_WORKFLOWS_SOURCE` → package root → checkout); no copy on the happy path | Checkout-only `spur workflow run plugins/kk/workflows/…`; auto-copy into `~/.config/kk/workflows` | Package root via `command -v kk` works under any prefix, so any cwd runs. `~/.config/kk/workflows` is now an explicit user override, not a required install dest. |
 | D9 | Require outline-option-a.md and -b.md; c optional | Always three; only one outline | Matches kk-itc. |
 | D10 | Duration miss → retry script-write (shared `.revise-count`, cap 3) → `failed` | Fail-loud immediately; warn-only | Coarse band absorbs WPM vs Voicebox rate; one bounded regeneration is cheaper than operator re-runs. Auto-regenerate beyond budget is out (GPU cost). |
@@ -39,7 +39,7 @@ those conventions; two-way door (delete the YAML).
 
 ```
 plugins/kk/workflows/kk-solo-podcast.yaml      # design-time SSOT (resolved in place at run time)
-plugins/kk/scripts/solo-podcast-stages.ts   # prepare/duration logic + sidecar delegation (ADR-115 owner)
+plugins/kk/scripts/kk-workflow-stages.ts   # shared stage runner: solo-podcast prepare/duration + itc/storm verbs (ADR-115 owner)
 plugins/kk/scripts/validate-voicescript.ts   # design-time checker (sidecar fallback chain)
 plugins/kk/scripts/wrap-voicescript-doc.ts   # VoiceScript → Doc[] wrapper (sidecar fallback chain)
 apps/cli/tests/kk-solo-podcast-workflow.test.ts
@@ -186,11 +186,13 @@ revision brief), else `failed`. Missing `content.json` (dry-run) passes.
 ## 7. VoiceScript + Doc wrapping
 
 Script-write emits YAML matching D5 §3 (`segments` required; `language` from the
-skill's template; optional `title`, `gap_ms`, `instruct`). Solo v1: one speaker — the
-profile travels as `voice_profile` into the `wrap-docs` step, which writes it to
-`Doc.metadata.voiceProfile`; the VoiceScript itself carries no `default_profile` (the
-skill's template and `validate-voicescript.ts` both reject it). A `wrap_script`
-resolution chain mirrors `validate_script`. Multi-host interview is out.
+skill's template; optional `gap_ms`, `instruct`). Solo v1: one speaker — the profile
+travels as `voice_profile` into the `wrap-docs` step, which writes it to
+`Doc.metadata.voiceProfile`; the VoiceScript itself carries no `default_profile` and no
+`title` (the skill's `templates/voicescript.solo.yaml` is the authority that says so —
+`validate-voicescript.ts` checks the documented fields' constraints, it has no
+unknown-key rejection). A `wrap_script` resolution chain mirrors `validate_script`.
+Multi-host interview is out.
 
 `script-validate` — the stage runner (ADR-115) resolves the sidecar and delegates; the YAML
 action itself is one resolution block plus one `bun` call:
@@ -198,13 +200,14 @@ action itself is one resolution block plus one `bun` call:
 ```
 kbin="$(command -v kk 2>/dev/null)"
 # symlink walk → pkg
-st="$pkg/plugins/kk/scripts/solo-podcast-stages.ts"
+st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts"
 bun "$st" validate "${vars.validate_script}" --in "${vars.work_dir}/3-script-voicescript.yaml"
 ```
 
 Inside the runner the chain is `var` → `$KK_WORKFLOWS_DIR` → shipped package copy →
-`~/.config/kk/workflows`; a miss fails loud with the `/workflow-run kk-solo-podcast`
-remediation. Helper is **builtins-only** (no `@gobing-ai/*`, no relative import into
+`~/.config/kk/workflows`; a miss fails loud naming the remaining remedy (`install or refresh the
+kk package`, `bun link` in a checkout — `/workflow-run … --force` copies only the YAML, never the
+runner). Helper is **builtins-only** (no `@gobing-ai/*`, no relative import into
 `voice-gen` — those paths do not exist outside the repo). A SYNC comment points maintainers
 at `plugins/generations/voice-gen/src/voicescript.ts`. Exit 1 prints the validator's
 message; no generate.
@@ -274,18 +277,23 @@ briefing.md, outline-option-a.md, voicescript.yaml.
 `apps/cli/tests/validate-voicescript.test.ts` using invalid/valid fixtures; no
 Voicebox.
 
-The stage runner that shells it is `plugins/kk/scripts/solo-podcast-stages.ts`:
+The stage runner that shells it is `plugins/kk/scripts/kk-workflow-stages.ts` — shared with
+`kk-itc` and `kk-storm-research` (0132):
 
 ```ts
-// bun <this> prepare  <work_dir> <topic> <input_file> <voice_profile> <force>
-// bun <this> validate [<override>] --in <voicescript.yaml>
-// bun <this> wrap     [<override>] --in <voicescript.yaml> --out <docs.json> [--profile <name>]
-// bun <this> duration <work_dir> <target_duration_min>
+// bun <this> prepare-solo  <work_dir> <topic> <input_file> <voice_profile> <force>
+// bun <this> validate      [<override>] --in <voicescript.yaml>
+// bun <this> wrap          [<override>] --in <voicescript.yaml> --out <docs.json> [--profile <name>]
+// bun <this> duration      <work_dir> <target_duration_min>
+// bun <this> prepare-itc   <work_dir> <topic> <input_file> <force>
+// bun <this> prepare-storm <work_dir> <topic> <input_file> <max_results> <fixture>
+// bun <this> render-storm  [<override>] --in <content.json> --out <content.md>
 ```
 
 Builtins-only like the sidecars it delegates to (`spawnSync(process.execPath, …)` keeps the
-same bun runtime, so no PATH dependency). `apps/cli/tests/solo-podcast-stages.test.ts`
-covers the XOR/profile/force/band behaviour and the override chain.
+same bun runtime, so no PATH dependency). `apps/cli/tests/kk-workflow-stages.test.ts`
+covers the XOR/profile/force/band behaviour, the derived storm `topic.json`/`local-doc.json`,
+the render delegation and the override chain.
 
 ---
 
@@ -297,7 +305,7 @@ covers the XOR/profile/force/band behaviour and the override chain.
 | Engine | `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml` |
 | Dry-run | `spur workflow run … --dry-run` reaches `done` |
 | Static | `apps/cli/tests/kk-solo-podcast-workflow.test.ts`: frozen ids, HITL kinds, no `docs/design` in YAML, runtime `$HOME/.config/kk/workflows`, kk:audio-authoring invoked in every agent.run block, `.revise-count` cap file, `.duration-ok`/`.duration-feedback` markers, wrap helper builtins-only, the four delegated actions share one resolution prelude |
-| Runner | `apps/cli/tests/solo-podcast-stages.test.ts`: prepare XOR/profile/force/brief, duration band + feedback + revise count, sidecar override precedence, loud failure on a missing sidecar |
+| Runner | `apps/cli/tests/kk-workflow-stages.test.ts`: prepare XOR/profile/force/brief, duration band + feedback + revise count, sidecar override precedence, loud failure on a missing sidecar |
 
 ---
 
@@ -326,8 +334,8 @@ File mode: `input_file` set, `topic` empty.
 - No fat skill. No MP3. No publish. `/workflow-run kk-solo-podcast` resolves the YAML and its
   sidecars from the package root (an explicit `$HOME/.config/kk/workflows` copy is an override,
   never a required install dest).
-- ADR-115: each delegated shell action stays one resolution block + one `bun` call (8 logical
-  commands, error tier above 10); the `script-write` prompt stays under the 1000-char cap and
+- ADR-115: each delegated shell action stays one resolution block + one `bun` call (10 logical
+  commands, error tier above 10 — the guard line is the last slot); the `script-write` prompt stays under the 1000-char cap and
   points at the skill's template instead of restating the schema.
 - `agent.run` never loads `docs/design/*` (not in the npm tarball).
 - No `@gobing-ai/kk-core` schema change. No `apps/cli` noun change.

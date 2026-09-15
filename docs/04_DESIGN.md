@@ -572,7 +572,8 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
 - Source missing from all roots → exit 1, stderr lists every searched root.
-- Sidecars the machine executes (`solo-podcast-stages.ts` plus the `validate-voicescript.ts` / `wrap-voicescript-doc.ts` it delegates to) are **not** copied — the workflow's action resolves the runner from the package root, and the runner then resolves each sidecar: explicit var → `$KK_WORKFLOWS_DIR` → `$pkg/plugins/kk/scripts/` (package root via `command -v kk`) → `$HOME/.config/kk/workflows`.
+- Sidecars the machine executes are **not** copied. Each workflow action resolves the shared stage runner `plugins/kk/scripts/kk-workflow-stages.ts` from the package root (kk-solo-podcast, kk-itc, kk-storm-research); the runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir (`$pkg/plugins/kk/scripts/`, reached via `command -v kk`) → `$HOME/.config/kk/workflows`.
+- When `kk` is absent from PATH the prelude's symlink walk yields an empty bin, `pkg` becomes `.`, and the action probes `./plugins/kk/scripts/kk-workflow-stages.ts` — the deliberate checkout tier kk-storm-research's render has always used, preserved on purpose.
 
 ### 7.2 `/workflow-run` command surface
 

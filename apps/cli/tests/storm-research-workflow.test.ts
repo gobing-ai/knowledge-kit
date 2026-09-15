@@ -50,14 +50,34 @@ describe('kk-storm-research workflow (0059/0069)', () => {
         expect(guards.length).toBeGreaterThanOrEqual(4);
     });
 
-    it('R1 — render resolves render_script via fallback chain, then buns it', () => {
+    it('R3 (0132) — both delegated actions carry the shared resolution prelude', () => {
+        for (const line of [
+            'kbin="$(command -v kk 2>/dev/null)";',
+            'while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;',
+            'pkg="$(dirname "$(dirname "$kbin")")";',
+            'st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";',
+            '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
+        ]) {
+            expect(ssot.split(line).length - 1).toBe(2);
+        }
+    });
+
+    it('R1/0132 — render delegates to the shared stage runner, which resolves render-md.ts', () => {
         // Template literal with escaped placeholders so the string contains literal ${vars.*}.
         // Whitespace-normalize: the YAML folds long commands across physical lines.
         const flat = ssot.replace(/\s+/g, ' ');
-        expect(flat).toContain(`rs="\${vars.render_script}"`);
         expect(flat).toContain('command -v kk');
-        expect(flat).toContain('$pkg/plugins/kk/scripts/render-md.ts');
-        expect(flat).toContain(`bun "$rs" --in "\${vars.work_dir}/content.json" --out "\${vars.work_dir}/content.md"`);
+        expect(flat).toContain('$pkg/plugins/kk/scripts/kk-workflow-stages.ts');
+        expect(flat).toContain(
+            `bun "$st" render-storm "\${vars.render_script}" --in "\${vars.work_dir}/content.json" --out "\${vars.work_dir}/content.md"`,
+        );
+        // The override chain + the render-md sidecar name now live in the runner (ADR-115).
+        const runner = readFileSync(
+            join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'),
+            'utf-8',
+        );
+        expect(runner).toContain("RENDER_SIDECAR = 'render-md.ts'");
+        expect(runner).toContain('resolveSidecar');
     });
 
     it('R3 — fixture defaults to "false" and is never hardcoded true in the YAML', () => {
@@ -65,10 +85,18 @@ describe('kk-storm-research workflow (0059/0069)', () => {
         expect(ssot).not.toContain('fixture: true');
     });
 
-    it('R1 — prepare guards the XOR input (both or neither set → fail)', () => {
-        const prepareCommand = ssot.match(/command: >-\n\s+set -e;[\s\S]*?^$/m)?.[0] ?? '';
-        expect(prepareCommand).toContain('XOR violation: both topic and input_file set');
-        expect(prepareCommand).toContain('XOR violation: neither topic nor input_file set');
+    it('R1/0132 — prepare delegates to the stage runner, which guards the XOR input', () => {
+        const flat = ssot.replace(/\s+/g, ' ');
+        expect(flat).toContain(
+            `bun "$st" prepare-storm "\${vars.work_dir}" "\${vars.topic}" "\${vars.input_file}" "\${vars.maxResults}" "\${vars.fixture}"`,
+        );
+        const runner = readFileSync(
+            join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'),
+            'utf-8',
+        );
+        expect(runner).toContain('XOR violation: both topic and input_file set');
+        expect(runner).toContain('XOR violation: neither topic nor input_file set');
+        expect(runner).toContain('no query derivable (no H1 and empty basename)');
     });
 
     it('R4 — help doc documents the four-state machine, XOR input, and content.md sidecar', () => {

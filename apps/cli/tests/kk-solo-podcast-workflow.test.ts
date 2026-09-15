@@ -16,10 +16,10 @@ import { join } from 'node:path';
 describe('kk-solo-podcast workflow (0071)', () => {
     const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-solo-podcast.yaml');
     const helpPath = join(import.meta.dir, '../../../docs/help/solo-podcast-workflow.md');
-    const stagesPath = join(import.meta.dir, '../../../plugins/kk/scripts/solo-podcast-stages.ts');
+    const stagesPath = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
     const yaml = readFileSync(workflowPath, 'utf-8');
     const help = readFileSync(helpPath, 'utf-8');
-    // 0131 (ADR-115): prepare / duration-check logic and the sidecar override chain moved
+    // 0131/0132 (ADR-115): prepare / duration-check logic and the sidecar override chain moved
     // from inline shell into this runner. The behaviour assertions below read the owner.
     const stages = readFileSync(stagesPath, 'utf-8');
 
@@ -90,7 +90,7 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(stages).toContain('XOR violation: neither topic nor input_file set');
         expect(stages).toContain(`initialization target already exists at \${workDirArg}/brief.md`);
         expect(stages).toContain('missing voice_profile (set vars.voice_profile or VOICEBOX_DEFAULT_PROFILE)');
-        expect(yaml).toContain('bun "$st" prepare');
+        expect(yaml).toContain('bun "$st" prepare-solo');
     });
 
     it('R6/R7 — generate line carries no duration flag; duration-check gates via .duration-ok', () => {
@@ -117,7 +117,7 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(wrap).toContain('Podcast VoiceScript');
         expect(wrap).not.toMatch(/from\s+['"]@gobing-ai\//);
         expect(stages).toContain('wrap-voicescript-doc.ts');
-        expect(stages).toContain('usage: solo-podcast-stages.ts wrap');
+        expect(stages).toContain('usage: kk-workflow-stages.ts wrap');
         expect(yaml).toContain('bun "$st" wrap');
         expect(yaml).toContain(['test -f "', '{vars.work_dir}/4-audio/.duration-ok"'].join('$'));
         expect(yaml).toContain('to: script-write');
@@ -140,8 +140,7 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(stages).toContain('KK_WORKFLOWS_DIR');
         expect(stages).toContain('.config/kk/workflows');
         expect(stages).toContain('validate-voicescript.ts');
-        expect(yaml).toContain('$pkg/plugins/kk/scripts/solo-podcast-stages.ts');
-        expect(stages).toContain('/workflow-run kk-solo-podcast');
+        expect(yaml).toContain('$pkg/plugins/kk/scripts/kk-workflow-stages.ts');
     });
 
     it('R3 (0131) — the script-write prompt is bounded and points at the skill template', () => {
@@ -170,11 +169,31 @@ describe('kk-solo-podcast workflow (0071)', () => {
             'kbin="$(command -v kk 2>/dev/null)";',
             'while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;',
             'pkg="$(dirname "$(dirname "$kbin")")";',
-            'st="$pkg/plugins/kk/scripts/solo-podcast-stages.ts";',
-            '[ -f "$st" ] || echo "solo-podcast-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout), or rerun with /workflow-run kk-solo-podcast --force" >&2;',
+            'st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";',
+            '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
         ]) {
             expect(yaml.split(line).length - 1).toBe(4);
         }
+    });
+
+    it('R2/R3 (0132) — every delegated action calls the runner with its declared argv', () => {
+        for (const call of [
+            `bun "$st" prepare-solo "\${vars.work_dir}" "\${vars.topic}" "\${vars.input_file}" "\${vars.voice_profile}" "\${vars.force}"`,
+            `bun "$st" validate "\${vars.validate_script}" --in "\${vars.work_dir}/3-script-voicescript.yaml"`,
+            `bun "$st" wrap "\${vars.wrap_script}" --in "\${vars.work_dir}/3-script-voicescript.yaml" --out "\${vars.work_dir}/4-audio/docs.json" --profile "\${vars.voice_profile}"`,
+            `bun "$st" duration "\${vars.work_dir}" "\${vars.target_duration_min}"`,
+        ]) {
+            expect(yaml).toContain(call);
+        }
+    });
+
+    it('R3 (0132) — the script-write prompt keeps the skill Flags line the trimmed prompt needs', () => {
+        const scriptBlock = [...yaml.matchAll(/- kind: agent\.run\n([\s\S]*?)(?=\n\s*- kind:|\n\s*- id:|$)/g)]
+            .map((m) => m[1] ?? '')
+            .find((b) => b.includes('operation `script`'));
+        expect(scriptBlock).toContain(
+            `Flags: --dir \${vars.work_dir} --duration \${vars.target_duration_min} --language \${vars.language} --profile \${vars.voice_profile} --revise "\${vars.__hitlInput}"`,
+        );
     });
 
     it('R5 — script_approved skips script-review the same way outline skips outline-select', () => {
@@ -209,7 +228,6 @@ describe('kk-solo-podcast workflow (0071)', () => {
         expect(yaml).not.toContain('/3-script"');
         expect(yaml).not.toContain(['', '{vars.work_dir}/1-briefing/'].join('$'));
         expect(yaml).not.toContain(['', '{vars.work_dir}/3-script/'].join('$'));
-        expect(stages).toContain("join(workDir, '2-outline')");
-        expect(stages).toContain("join(workDir, '4-audio')");
+        expect(stages).toContain("dirs: ['2-outline', '4-audio']");
     });
 });

@@ -24,7 +24,7 @@ stub `content-gen`.
 | --- | --- |
 | Repo SSOT | `plugins/kk/workflows/kk-storm-research.yaml` |
 | Ingest plugin | `plugins/ingestions/web-search/` |
-| Render runner | `plugins/kk/scripts/render-md.ts` |
+| Render runner | `plugins/kk/scripts/render-md.ts` (resolved and run by `plugins/kk/scripts/kk-workflow-stages.ts`) |
 | Skill / command | `plugins/kk/skills/storm-research/` · `plugins/kk/commands/workflow-run.md` |
 | Ingest contract | `docs/tasks/0054_specify-the-firecrawl-topic-to-doc-ingest-contract.md` |
 | Works / XOR / install | `docs/tasks/0056_specify-the-kk-config-works-workspace-and-workflow-install-c.md` |
@@ -130,10 +130,10 @@ Monitor: `spur workflow trace <run-id> --json`.
 
 | State | Action | Writes |
 | --- | --- | --- |
-| `prepare` | `mkdir`; XOR guard; sentence → `topic.json`; file → `input.md` + `local-doc.json` + `topic.json` | `${work_dir}/topic.json` (+ `input.md`, `local-doc.json` in file mode) |
+| `prepare` | stage runner (`prepare-storm`): `mkdir`; XOR guard; sentence → `topic.json`; file → `input.md` + `local-doc.json` + `topic.json` | `${work_dir}/topic.json` (+ `input.md`, `local-doc.json` in file mode) |
 | `ingest` | `kk executor run web-search --in topic.json --out docs.json` | `${work_dir}/docs.json` |
 | `generate` | if `local-doc.json` exists, `jq -s '[.[0]] + .[1]'` onto `docs.json`; then `kk executor run content-gen` | `${work_dir}/content.json` |
-| `render` | `bun plugins/kk/scripts/render-md.ts --in content.json --out content.md` | `${work_dir}/content.md` |
+| `render` | stage runner (`render-storm`) → `bun render-md.ts --in content.json --out content.md` | `${work_dir}/content.md` |
 
 Same `raw` (topic string, or file H1 / basename) maps to the same `topic-id` workspace.
 Last write wins. Sentence-mode `prepare` does **not** delete a leftover `local-doc.json`
@@ -245,6 +245,7 @@ flowchart TD
 | File | Role |
 | --- | --- |
 | `plugins/kk/workflows/kk-storm-research.yaml` | orchestration SSOT |
+| `plugins/kk/scripts/kk-workflow-stages.ts` | stage runner: `prepare-storm` (topic/local-doc derivation) + `render-storm` (ADR-115 owner, shared with kk-itc / kk-solo-podcast) |
 | `plugins/ingestions/web-search/src/index.ts` | fixture + live Firecrawl (`searchFirecrawl`) |
 | `plugins/kk/scripts/render-md.ts` | shipped `--in` / `--out` runner (no `@gobing-ai/kk-core` import) |
 | `packages/kk-core/src/render-md.ts` | `renderContentMarkdown` (in-repo SSOT; keep in sync) |

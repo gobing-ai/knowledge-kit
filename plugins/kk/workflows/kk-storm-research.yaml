@@ -52,49 +52,12 @@ states:
       - kind: shell
         options:
           command: >-
-            set -e;
-            mkdir -p "${vars.work_dir}";
-            if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
-            echo "XOR violation: both topic and input_file set" >&2; exit 1;
-            fi;
-            if [ -z "${vars.topic}" ] && [ -z "${vars.input_file}" ]; then
-            echo "XOR violation: neither topic nor input_file set" >&2;
-            exit 1;
-            fi;
-            if [ -n "${vars.topic}" ]; then
-            jq -n --arg topic "${vars.topic}" --arg maxResults
-            "${vars.maxResults}" --arg fixture "${vars.fixture}"
-            '{topic: $topic, maxResults: ($maxResults | tonumber),
-            fixture: ($fixture == "true")}' > "${vars.work_dir}/topic.json";
-            exit 0;
-            fi;
-            if [ -f "${vars.input_file}" ]; then
-            cp "${vars.input_file}" "${vars.work_dir}/input.md";
-            ABS=$(cd "$(dirname "${vars.input_file}")" && pwd)/$(basename
-            "${vars.input_file}");
-            QUERY=$(grep -m1 '^# ' "${vars.input_file}" | sed 's/^# *//'
-            || true);
-            if [ -z "$QUERY" ]; then
-            QUERY=$(basename "${vars.input_file}" | sed 's/\.[^.]*$//');
-            fi;
-            if [ -z "$QUERY" ]; then
-            echo "no query derivable (no H1 and empty basename)" >&2;
-            exit 1;
-            fi;
-            ID=$(printf 'file://%s' "$ABS" | shasum -a 256 | cut -c1-16);
-            jq -n --arg id "$ID" --arg body "$(cat "${vars.input_file}")"
-            --arg title "$QUERY" --arg sourceUri "file://$ABS" --arg query
-            "$QUERY" '{id: $id, body: $body, title: $title, sourceUri:
-            $sourceUri, mediaType: "text/markdown",
-            metadata: {query: $query, rank: -1, position: 0}}'
-            > "${vars.work_dir}/local-doc.json";
-            jq -n --arg topic "$QUERY" --arg maxResults
-            "${vars.maxResults}" --arg fixture "${vars.fixture}"
-            '{topic: $topic, maxResults: ($maxResults | tonumber),
-            fixture: ($fixture == "true")}' > "${vars.work_dir}/topic.json";
-            else
-            echo "input_file not readable: ${vars.input_file}" >&2; exit 1;
-            fi
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" prepare-storm "${vars.work_dir}" "${vars.topic}" "${vars.input_file}" "${vars.maxResults}" "${vars.fixture}"
 
   - id: ingest
     description: >-
@@ -139,25 +102,12 @@ states:
       - kind: shell
         options:
           command: >-
-            set -e;
-            rs="${vars.render_script}";
-            if [ ! -f "$rs" ]; then
-              kbin="$(command -v kk 2>/dev/null || true)";
-              while [ -L "$kbin" ]; do
-                link="$(readlink "$kbin")";
-                case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac;
-              done;
-              pkg=""; [ -n "$kbin" ] && pkg="$(cd "$(dirname "$kbin")/.." 2>/dev/null && pwd || true)";
-              rs="";
-              if [ -n "$pkg" ] && [ -f "$pkg/plugins/kk/scripts/render-md.ts" ]; then rs="$pkg/plugins/kk/scripts/render-md.ts";
-              elif [ -f "plugins/kk/scripts/render-md.ts" ]; then rs="plugins/kk/scripts/render-md.ts"; fi;
-            fi;
-            if [ -z "$rs" ]; then
-              echo "render_script not found (searched: var, kk package root via \`command -v kk\`, ./plugins/kk/scripts)" >&2;
-              exit 1;
-            fi;
-            bun "$rs" --in "${vars.work_dir}/content.json"
-            --out "${vars.work_dir}/content.md"
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" render-storm "${vars.render_script}" --in "${vars.work_dir}/content.json" --out "${vars.work_dir}/content.md"
 
   - id: done
     description: >-

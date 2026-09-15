@@ -34,29 +34,12 @@ states:
       - kind: shell
         options:
           command: >-
-            set -e;
-            if [ -z "${vars.work_dir}" ]; then
-              echo "missing work_dir" >&2; exit 1;
-            fi;
-            mkdir -p "${vars.work_dir}" "${vars.work_dir}/2-outline";
-            echo 0 > "${vars.work_dir}/.revise-count";
-            if [ -n "${vars.topic}" ] && [ -n "${vars.input_file}" ]; then
-              echo "XOR violation: both topic and input_file set" >&2; exit 1;
-            fi;
-            if [ -z "${vars.topic}" ] && [ -z "${vars.input_file}" ]; then
-              echo "XOR violation: neither topic nor input_file set" >&2; exit 1;
-            fi;
-            if [ -f "${vars.work_dir}/brief.md" ] && [ "${vars.force}" != "true" ]; then
-              echo "initialization target already exists at ${vars.work_dir}/brief.md; pass force=true to replace" >&2; exit 1;
-            fi;
-            if [ -n "${vars.topic}" ]; then
-              printf '%s\n' "${vars.topic}" > "${vars.work_dir}/brief.md";
-            else
-              if [ ! -f "${vars.input_file}" ]; then
-                echo "input file not found: ${vars.input_file}" >&2; exit 1;
-              fi;
-              cp "${vars.input_file}" "${vars.work_dir}/brief.md";
-            fi;
+            kbin="$(command -v kk 2>/dev/null)";
+            while [ -L "$kbin" ]; do link="$(readlink "$kbin")"; case "$link" in /*) kbin="$link";; *) kbin="$(dirname "$kbin")/$link";; esac; done;
+            pkg="$(dirname "$(dirname "$kbin")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" prepare-itc "${vars.work_dir}" "${vars.topic}" "${vars.input_file}" "${vars.force}"
 
   - id: research
     description: "Conduct preliminary topic research via storm-research (agent.run)"

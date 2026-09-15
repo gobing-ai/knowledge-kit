@@ -2,7 +2,7 @@
 /**
  * Runtime VoiceScript checker for kk-solo-podcast.
  *
- * Resolved from the kk package (`plugins/kk/scripts/`) by `solo-podcast-stages.ts`,
+ * Resolved from the kk package (`plugins/kk/scripts/`) by `kk-workflow-stages.ts`,
  * or from an explicit runtime override ($KK_WORKFLOWS_DIR / ~/.config/kk/workflows)
  * when one exists. Node/Bun builtins only — no @gobing-ai/* and no relative imports
  * into generations/voice-gen (those paths do not exist outside the package).

@@ -146,7 +146,7 @@ fi
   `--force` to place a fresh copy there) — that override wins on every later run.
 - No auto-copy, no drift warnings: the package copy is versioned with the CLI and
   never goes stale; overrides are explicit.
-- Sidecars (`plugins/kk/scripts/solo-podcast-stages.ts`, plus the
+- Sidecars (`plugins/kk/scripts/kk-workflow-stages.ts`, plus the
   `validate-voicescript.ts` / `wrap-voicescript-doc.ts` it delegates to) are **not copied** —
   the workflow resolves the stage runner from the package root, and the runner resolves each
   sidecar via the explicit var, `$KK_WORKFLOWS_DIR`, the package copy, then
