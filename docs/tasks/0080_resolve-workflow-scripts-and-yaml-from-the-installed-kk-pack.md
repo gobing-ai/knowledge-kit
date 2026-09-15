@@ -4,7 +4,7 @@ name: "Resolve workflow scripts and YAML from the installed kk package root"
 status: done
 template: feature-impl
 created_at: 2026-08-24T06:31:42.639Z
-updated_at: "2026-08-25T23:29:21.060Z"
+updated_at: "2026-09-15T18:32:32.562Z"
 feature_id: F8
 ---
 
@@ -58,22 +58,24 @@ Feature: Run-anywhere workflow and script resolution
 - `apps/cli/tests/workflow-run-command.test.ts:93` + `apps/cli/tests/kk-solo-podcast-workflow.test.ts:121` — invariants updated to the new semantics.
 - `docs/04_DESIGN.md:409` §7, `docs/help/solo-podcast-workflow.md:13`, `docs/design/kk-solo-podcast.md:30` — R3 doc sync.
 ### Testing
+
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 (package-root resolution in YAML sidecar chains) | MET | `plugins/kk/workflows/kk-solo-podcast.yaml` — both `validate_script` and `wrap_script` chains: explicit var → `$KK_WORKFLOWS_DIR` → `$pkg/plugins/kk/workflows/` (via `command -v kk` + symlink walk) → `$HOME/.config/kk/workflows`, each step existence-checked, fail-loud names all roots |
-| R2 (workflow YAML runs in place from any cwd) | MET | `plugins/kk/commands/workflow-run.md` §3 — resolution order: user override → `KK_WORKFLOWS_SOURCE` → `$pkg` package root → repo checkout; no auto-copy; `--force` refreshes the override; sidecar copy loop removed |
-| R3 (docs synced same commit) | MET | `docs/04_DESIGN.md` §7 rewritten (run-anywhere resolution); `docs/help/solo-podcast-workflow.md` two-homes + tables; `docs/design/kk-solo-podcast.md` D7/D8 + shell snippets |
-| R4 (gates green) | MET | command: `bun run lint` → all workspaces exit 0; `bun run test` → 470 pass / 0 fail; `yamllint plugins/` → clean with new repo `.yamllint` |
+| R1 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:96-121` — sidecar fallback chain (explicit var → `$KK_WORKFLOWS_DIR` → package copy via `command -v kk` walk → `$HOME/.config/kk/workflows`), fail-loud naming every root at :121. Chain relocated from the YAML into the stage runner by 0130/0131 — documented at `plugins/kk/workflows/kk-solo-podcast.yaml:142` ("override chain preserved inside the stage runner"); goal-equivalent CHANGED anchor, re-read this run |
+| R2 | MET | `plugins/kk/commands/workflow-run.md:85` — "runs **in place** — no copy on the happy path"; resolution order override → `KK_WORKFLOWS_SOURCE` → bun/npm global → package root → checkout at :114-139; fail-loud naming roots at :131/:139 |
+| R3 | MET | `docs/04_DESIGN.md:309,:562-573` run-anywhere resolution; `docs/help/solo-podcast-workflow.md`; `docs/design/kk-solo-podcast.md` (kept current by 0129) |
+| R4 | MET | command (this run): `bun run lint` exit 0 all workspaces; `bun run test` 1024 pass / 0 fail / 65 files; all 6 workflow YAMLs `spur workflow validate` exit 0 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Sidecars resolve from the installed package root | MET | test | `kk-solo-podcast-workflow.test.ts` — runtime-paths invariant updated: bare `plugins/kk/workflows` refs forbidden except under `$pkg/`; `command -v kk` asserted in YAML |
-| Workflow YAML runs in place from any cwd | MET | test | `workflow-run-command.test.ts` — asserts `$pkg/plugins/kk/workflows/$NAME.yaml`, `command -v kk`, `in place`, absence of `cp "$src" "$dest"` |
+| Scenario: Sidecars resolve from the installed package root | MET | command | `command -v kk` → `/Users/robin/.bun/bin/kk`; chain + fail-loud at `plugins/kk/scripts/kk-workflow-stages.ts:96-121` (re-read this run) |
+| Scenario: Workflow YAML runs in place from any cwd | MET | test | `apps/cli/tests/workflow-run-command.test.ts` green in this run's suite (1024 pass / 0 fail); in-place contract `plugins/kk/commands/workflow-run.md:85` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
 ### Review
 | Priority | Finding | Severity | Disposition |
 | --- | --- | --- | --- |

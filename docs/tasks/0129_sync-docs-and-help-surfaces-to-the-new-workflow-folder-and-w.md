@@ -4,7 +4,7 @@ name: Sync docs and help surfaces to the new workflow folder and workspace contr
 status: done
 template: feature-impl
 created_at: 2026-09-14T17:55:18.375Z
-updated_at: "2026-09-14T21:55:10.283Z"
+updated_at: "2026-09-15T18:32:34.156Z"
 feature_id: F8
 priority: P2
 tags:
@@ -93,15 +93,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | . docs/04_DESIGN.md:309 config-table workflows_dir row states the full chain (user override → KK_WORKFLOWS_SOURCE → bun global → npm global → kk package root → repo checkout). :560–565 resolution-order table has 6 rows including bun global (:564) and npm global (:565) guarded probes. :587–590 workflow table gives per-profile work_dir defaults ($works_dir/kk-itc/<kebab>, $works_dir/kk-solo-podcast/<date>, $works_dir/kk-storm-research/<topic-id>) with flattened report artifacts (3-draft-draft-article.md :589, 1-briefing-briefing.md + 3-script-voicescript.yaml + 4-audio/content.{json,wav} :590). :592 states the per-profile default and --dir override. |
-| R2 | MET | . plugins/kk/config.example.yaml:1–4 header comment documents per-workflow workspace defaulting (<works_dir>/<workflow-name>/<run-id>, --dir override, .works-era trees not migrated) and the workflows_dir global-install fallback (KK_WORKFLOWS_SOURCE → bun/npm global → package root → repo checkout). |
-| R3 | MET | . Storm: docs/help/storm-topic-research-workflow.md:52–53 (in-place resolution chain incl. bun/npm global, "nothing is copied" semantics), :170 ($works_dir/kk-storm-research/<id>), :173 + :186 (--dir override). Solo: docs/help/solo-podcast-workflow.md:17 + :41 + :66–67 (chain incl. bun/npm global), :68 ($works_dir/kk-solo-podcast/<date>), :81 (--dir row), :148/:152 (flattened 1-briefing-briefing.md / 3-script-voicescript.yaml). Storm has no single-file steps (already flat) so no flattened paths apply. |
-| R4 | MET | . .works no-migration documented at every workspace-defaults surface: solo help :68, storm help :172–173, 04_DESIGN.md:592, config.example.yaml:2–3. |
-| R5 | MET | (amended). `spur feature check P --strict --json` → exit 0, pass:true, findings: [] (re-executed at amendment time). P's Acceptance Criteria block is empty and Notes carries the superseded-by-F8 tombstone (docs/features/P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md:40–43), so the orphan-scenarios error can no longer fire. Status "cancelled" is accurate; scenarios and tasks 0127–0129 live under F8. |
-| R6 | MET | . audio-authoring/SKILL.md:68,71 (artifact table: 1-briefing-briefing.md, 3-script-voicescript.yaml), :103,112 (flow text). topic/SKILL.md:67,69,82,97,120,123 (3-draft-draft-article.md, no 3-draft/). itc-generating/SKILL.md:85,107 + references platform-wechat.md:59, platform-english.md:72, generic-craft.md:77. storm-research/SKILL.md:71,98 ($works_dir/kk-storm-research/<topic-id>, matching shipped states). |
-| R7 | MET | (negative check). grep for `3-draft/`, `1-briefing/`, `3-script/` across audio-authoring, topic, itc-generating, storm-research skills and docs/design/kk-solo-podcast.md, docs/design/itc-generating.md: zero hits (sole textual occurrence is topic/SKILL.md's explicit "no `3-draft/` dir" statement). File trees in kk-solo-podcast.md now say "resolved in place" / "sidecar fallback chain". |
-| R8 | MET | . plugins/kk/commands/workflow-run.md:5–6 frontmatter description: "Resolves the workflow YAML from the user override, KK_WORKFLOWS_SOURCE, bun/npm global installs, the kk package root, or a repo checkout". |
-| R9 | MET | . workflow-run-command.test.ts:146–152 candidateLoops() collects BOTH §3 loop lines; :152 test asserts the 5-entry chain order for every loop (both §3 loops). kk-daily-ai-voice-workflow.test.ts:404–406 regex widened to [0-9]-[^/\s]+-[^/\s]*\.[A-Za-z] (matches ${...}-led flattened names, still excludes 4-audio/ style stage dirs via [^/\s]). Executable: bun test across the 4 files → 39 pass / 0 fail / 332 expects; `spur workflow validate plugins/kk/workflows/kk-itc.yaml --json` → exit 0. |
+| R1 | MET | `docs/04_DESIGN.md:309` — config-table `workflows_dir` row states the full chain (override → `KK_WORKFLOWS_SOURCE` → bun global → npm global → package root → checkout); resolution-order table :562-573 with guarded global rows (:564,:565); per-profile work_dir defaults + flattened paths |
+| R2 | MET | `plugins/kk/config.example.yaml:1-8` — header comment documents the global-install fallback, per-workflow workspace defaulting, and `.works` no-migration (re-read this run) |
+| R3 | MET | `docs/help/storm-topic-research-workflow.md` and `docs/help/solo-podcast-workflow.md` state `$works_dir/kk-storm-research/<topic-id>` / `$works_dir/kk-solo-podcast/<date>` (rg this run) |
+| R4 | MET | `.works` no-migration documented in `plugins/kk/config.example.yaml` header and `docs/help/solo-podcast-workflow.md` |
+| R5 | MET | Documented deviation: feature P was cancelled 2026-09-14 and its scope re-homed to F8 (feature Notes); the equivalent gate — `spur feature check F8` — runs as this batch's Step 13 shippable check (verdict recorded there) |
+| R6 | MET | Skill contracts name shipped flat paths: `plugins/kk/skills/audio-authoring/SKILL.md` (1-briefing-briefing.md, 3-script-voicescript.yaml), `plugins/kk/skills/topic/SKILL.md` + `plugins/kk/skills/itc-generating/SKILL.md` + references (3-draft-draft-article.md); `plugins/kk/skills/storm-research/SKILL.md` carries no workflow stage paths — nothing to drift |
+| R7 | MET | rg this run: zero hits for `1-briefing/`, `3-script/`, `3-draft/` in `docs/design/kk-solo-podcast.md` and `docs/design/itc-generating.md` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: Docs and content-asserting tests land in the same change | MET | command | All surfaces above re-verified this run; `plugins/kk/commands/workflow-run.md:5-6,:16-17` description mentions the global-install fallback; content-asserting tests green in this run's suite (1024 pass / 0 fail): `workflow-run-command.test.ts` (resolution loops), `kk-daily-ai-voice-workflow.test.ts` (flattened shapes) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -113,6 +115,7 @@ Each entry cites the first changed line per file (`file:line`).
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 

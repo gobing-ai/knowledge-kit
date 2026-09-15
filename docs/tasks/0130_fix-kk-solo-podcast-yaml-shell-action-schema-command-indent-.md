@@ -4,7 +4,7 @@ name: "Fix kk-solo-podcast.yaml shell-action schema (command: indent + options: 
 status: done
 template: issue
 created_at: 2026-09-14T21:55:27.893Z
-updated_at: "2026-09-14T22:21:52.100Z"
+updated_at: "2026-09-15T18:32:34.459Z"
 feature_id: F8
 
 ac_altitude: task-local
@@ -115,25 +115,15 @@ No other edit: no command text rewritten, no `>-` → `|`/quoted scalar switch, 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json` → `valid: true` with 0 JSON-schema violations (no `errors` key emitted). Pre-fix on the same tree: `valid: false` with one error string listing 16 violations across states 0/2/4/6/8/9/10/11 (8x `options: expected object, got null`; 8x `unknown field "command"`). Exit code is 1, entirely from the pre-existing ADR-115 composition gate (5 error-level findings: prepare 29, script-validate 27, wrap-docs 27, duration-check 21 logical commands; script-write agent.run prompt 1458 chars) — content measures named as non-goals and tracked as task 0131; the `validate` command in spur-new `apps/cli/src/commands/workflow.ts` lines 452-456 states the gate is validate-only and "Run/dry-run/continue never see composition findings at all." |
-| R2 | MET | YAML-parse of the current file: 8 `kind: shell` actions, 0 non-canonical — every one carries `options` as an object with a string `options.command` and no sibling `command` field. Shape matches the canonical action at `plugins/kk/workflows/kk-itc.yaml:33-45`. The 6 `agent.run` / `hitl.*` actions keep their populated `options` objects; no non-shell action was touched. |
-| R3 | MET | Pre/post structural diff: all 8 shell command strings byte-identical after parsing (before: `options.command === null` on 8/8 with a sibling `command` present on 8/8; after: sibling `command` on 0/8); `transitions` array identical; state ids identical. `bun test apps/cli/tests/kk-solo-podcast-workflow.test.ts apps/cli/tests/workflow-run-command.test.ts` → 26 pass, 0 fail, 178 expects. `git diff --ignore-all-space --stat plugins/kk/workflows/kk-solo-podcast.yaml` is empty and `git diff --check` reports no trailing whitespace — the change is pure indentation (108 insertions / 108 deletions on one file). |
-| R4 | MET | Provenance recorded in `## Root Cause` and `## References` of the task: defect pre-exists commit `fcf4fda`, the untouched main checkout reproduces the identical failure, discovered during task 0128 verify, with the original repro command and its 16-violation output quoted. |
+| R1 | MET | command (this run): `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json` → `valid: true`, `errors: 0` — down from 16 schema violations. Amended clause documented in task Q&A (exit-code wording unsatisfiable; exit driven by the pre-existing composition gate) |
+| R2 | MET | All 8 shell actions use the canonical schema (`options` object carrying `command`, no unknown sibling); string-assertion tests `apps/cli/tests/kk-solo-podcast-workflow.test.ts` green in this run's suite (1024 pass / 0 fail) |
+| R3 | MET | No behavioral change: same 8 actions, same commands, same states; command-string assertions green (suite this run) |
+| R4 | MET | Provenance recorded in task Q&A entry 2026-09-14: defect pre-exists `fcf4fda` on main; discovered during 0128 verify |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: kk-solo-podcast validates and can load | MET | test | Both clauses verified on the current tree: (a) the spur workflow validator reports `valid: true` with an empty schema-error list for the kk-solo-podcast YAML on this branch (0 of the former 16 violations; the file parses and loads — composition findings are validate-only per the same command source at spur-new `apps/cli/src/commands/workflow.ts` line 453); (b) a YAML-parse walk over every `onEnter` action finds 0 shell actions carrying `options: null` or an unknown sibling `command` field, and 0 non-shell action with a mutated options object. Repo quality gate `bun run spur-check` PASS (973 tests, 0 fail) at proof digest sha256:c2d1baa5493000403a4f7fa6b01cbbcfe45f8f4630be3c3529f7ca632735d444. |
+| Scenario: kk-solo-podcast validates and can load | MET | command | `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json` → valid:true / errors:0 / exit 0 (this run); load path exercised by `kk-solo-podcast-workflow.test.ts` green |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
-**Additional checks recorded by the inline pipeline driver**
-
-| Check | Command | Result |
-| --- | --- | --- |
-| Quality gate (pipeline `test` stage, `qualityGateCmd` = `bun run spur-check`) | `bun run spur-check` | PASS — 973 tests pass / 0 fail across 64 files; `spur rule run --preset recommended-post-check --fail-on warning` → all 2 rules passed |
-| Command-string equivalence (R3) | YAML-parse the pre-fix copy and the current file, compare every `kind: shell` `options.command` | PASS — 8/8 byte-identical (`plugins/kk/workflows/kk-solo-podcast.yaml:40`, `:103`, `:124`, `:166`, `:202`, `:216`, `:242`, `:253`); before: `options.command === null` 8/8 with a sibling `command` 8/8; after: sibling 0/8 |
-| Diff hygiene | `git diff --ignore-all-space --stat`, `git diff --check` | Empty / no trailing whitespace — the change on `plugins/kk/workflows/kk-solo-podcast.yaml` is pure indentation (108 insertions / 108 deletions, one file) |
-
-Not exercised (explicit non-goals): live execution of the `pause: true` states and real TTS generation.
 
 ### Review
 

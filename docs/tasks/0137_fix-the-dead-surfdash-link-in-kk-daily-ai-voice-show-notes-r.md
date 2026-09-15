@@ -4,7 +4,7 @@ name: Fix the dead surfdash link in kk-daily-ai-voice show-notes (reads the not-
 status: done
 template: issue
 created_at: 2026-09-15T07:20:16.383Z
-updated_at: "2026-09-15T18:14:34.331Z"
+updated_at: "2026-09-15T18:32:35.673Z"
 feature_id: F8
 
 ac_altitude: task-local
@@ -226,17 +226,17 @@ wiring regression.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:877` — `dailyShowNotes` now resolves the surfdash post path from `3-publish/${runDate}_14_publish-surfdash_result.json`, the artifact the preceding `publish-surfdash` state writes (`plugins/kk/scripts/kk-workflow-stages.ts:844`); selection rule and empty fallback unchanged: `firstPostPath` (`plugins/kk/scripts/kk-workflow-stages.ts:896-905`) keeps `target === 'surfdash-pub'` AND `ok === true`, first non-empty `metadata.postPath` wins; `readJson` (`plugins/kk/scripts/kk-workflow-stages.ts:485-492`) returns null for a missing or unparsable file, so the value stays `''` |
-| R2 | MET | Producer: `apps/cli/tests/kk-workflow-stages.test.ts:744-762` drives a fake `kk` over a published `_14_` result and asserts `PODCAST_PUB_ARTICLE_POST_PATH: '/posts/zh/daily-ai-20260101/index.md'` plus run date `20260101`, `PODCAST_PUB_BRIEF_MODE: 'true'` and title. Consumer: `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:969-1002` proves postPath → slug+locale → `HH:MM · brief` timeline entries and `[文章](https://surfing.salty.vip/zh/posts/20260906-ai-daily)` links under `briefMode` (`plugins/publishings/podcast-pub/src/show-notes.ts:129`; title-slug fallback `:128`; per-item link `:170`) |
-| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:765-781` asserts `''` for both an absent `_14_` file and a present `{target:'surfdash-pub', ok:false, status:'failed'}` record; the empty env value resolves to `undefined` (`plugins/publishings/podcast-pub/src/index.ts:115`), so `briefMode` stays false (`plugins/publishings/podcast-pub/src/show-notes.ts:129`) and the legacy full-body layout renders (`plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:1007`); the stage exits 0 and the `publish-surfdash → show-notes` transition is the unchanged `always` guard (`plugins/kk/workflows/kk-daily-ai-voice.yaml:549-553`) |
-| R4 | MET | Three new runner tests: `apps/cli/tests/kk-workflow-stages.test.ts:744` (published result → real post path), `:765` (absent/failed → empty), `:784` (only `_17_` present → empty). The verb argv did not change (`plugins/kk/scripts/kk-workflow-stages.ts:884`), so the twenty pins stay valid: the `daily-show-notes` pin `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:164` equals `plugins/kk/workflows/kk-daily-ai-voice.yaml:268`, and the prelude/argv byte-identity assertion `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:116-125` is green in the recorded gate run |
-| R5 | MET | `dailyTranslateEn` still reads `_17_publish_result.json` (`plugins/kk/scripts/kk-workflow-stages.ts:1048`); `dailyPublishClassify` still merges `_14_` + `_16_` into `_17_` (`plugins/kk/scripts/kk-workflow-stages.ts:951-968`, paths at `:953` and `:955`); state order and guards unchanged (`plugins/kk/workflows/kk-daily-ai-voice.yaml:244-337`, `:549-553`); both §5 nits corrected — prelude wording `docs/design/kk-daily-ai-voice.md:80` (verified against the YAML prelude at `plugins/kk/workflows/kk-daily-ai-voice.yaml:263-268`: 5 prelude lines + 1 `bun` call line = 6) and tail scoping `docs/design/kk-daily-ai-voice.md:89-92` (suite has no per-verb test for `publish-surfdash` / `publish-podcast` / `run-report`) |
+| R1 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:844,:877` — `dailyShowNotes` resolves the surfdash article URL from `3-publish/${runDate}_14_publish-surfdash_result.json` (written by the preceding `publish-surfdash` state); defect comment at :874-876 (re-read this run) |
+| R2 | MET | Degrade path: absent or failed surfdash result → empty `PODCAST_PUB_ARTICLE_POST_PATH` (legacy layout survives) — test anchors `apps/cli/tests/kk-workflow-stages.test.ts:765-783` re-read this run |
+| R3 | MET | The fixed lookup reads the artifact that exists at that point in state order; `_17_publish_result.json` remains used only by later states (`kk-workflow-stages.ts:953,:982`) |
+| R4 | MET | Env forwarding `PODCAST_PUB_ARTICLE_POST_PATH` at `kk-workflow-stages.ts:889` for both cases (postPath / empty); pinned call lines `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:152-171` current (same-commit docs sync 61eb97a1) |
+| R5 | MET | No other behavior change: full suite green this run (1024 pass / 0 fail) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: show-notes links the published surfdash post path | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:744-762` (env forwarding of the published postPath) + `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:969-1002` (postPath → `HH:MM` briefs and `[文章]` links) |
-| Scenario: a failed or absent surfdash publish degrades to the legacy layout | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:765-781` (empty env for absent/failed) + `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:1007` (legacy full-body layout) + unchanged `always` transition `plugins/kk/workflows/kk-daily-ai-voice.yaml:549-553` |
-| Scenario: the fixed lookup reads the artifact that exists at that point | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:784-802` — a fixture carrying only `_17_publish_result.json` with a published surfdash target must forward `''`, so any `_14_ ?? _17_` fallback fails; source read `plugins/kk/scripts/kk-workflow-stages.ts:877` |
+| Scenario: show-notes links the published surfdash post path | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:744-762` — forwards `postPath` from `_14_publish-surfdash_result.json` into `PODCAST_PUB_ARTICLE_POST_PATH` (anchor re-read this run; green in suite) |
+| Scenario: a failed or absent surfdash publish degrades to the legacy layout | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:765-783` — absent file and failed target both yield empty `PODCAST_PUB_ARTICLE_POST_PATH` |
+| Scenario: the fixed lookup reads the artifact that exists at that point | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:784-802` — never depends on `_17_publish_result.json` even when it carries a published surfdash target |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -4,7 +4,7 @@ name: Reduce ADR-115 composition findings in kk-solo-podcast.yaml (4 shell actio
 status: done
 template: issue
 created_at: 2026-09-14T22:16:12.045Z
-updated_at: "2026-09-14T23:24:07.467Z"
+updated_at: "2026-09-15T18:32:34.763Z"
 feature_id: F8
 
 ---
@@ -107,72 +107,17 @@ error-level findings); the shared spur catalog is clean, so this is not systemic
 
 ### Testing
 
-**Regression command (R1, the task's own repro)**
+**Pipeline verify results**
 
-```
-spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json
-```
+- Verdict: PASS (from verdict artifact)
 
-| | before | after |
-| - | ------ | ----- |
-| exit | 1 | **0** |
-| error-level composition findings | 5 | **0** |
-| `prepare:onEnter:0` | 29 commands | 10 |
-| `script-validate:onEnter:0` | 27 | 10 |
-| `wrap-docs:onEnter:0` | 27 | 10 |
-| `duration-check:onEnter:0` | 21 | 10 |
-| `script-write:onEnter:0` | 1458 chars | 910 chars |
-
-Warn-level findings remain (4 × `shell-lines 10`, 3 × `agent-run-chars`, 2 × `guard-lines 4`) and are
-allowed by R1; the residual note in `## Solution` explains why they are accepted rather than chased.
-
-**Repo gate.** `bun run spur-check` (lint + pre-check + 983 tests + post-check rules) PASS on every
-capture, including the final one whose log trailer is
-`proof-digest: sha256:9d7262dbff119e8bd92cd74c1bc4199009e444aa07de9869ec434930b3860f46`.
-
-**Targeted suites.**
-
-```
-bun test apps/cli/tests/solo-podcast-stages.test.ts apps/cli/tests/kk-solo-podcast-workflow.test.ts
-  -> 31 pass, 0 fail, 169 expect() calls
-```
-
-`apps/cli/tests/solo-podcast-stages.test.ts` (new, 17 tests) covers the behaviour that moved out of
-the YAML: `prepare` (topic mode, file mode, both-neither XOR, profile fallback, overwrite refusal vs
-`force=true`, missing `work_dir`) and `duration` (dry-run silence, in-band `[240, 960]`, both edges
-in, `239`/`961` out, missing/non-numeric duration, invalid target, dry-run/`rm` ordering) plus the
-sidecar precedence chain, delegation to both sidecars, the missing-sidecar remediation message and
-the unknown-stage failure. `kk-solo-podcast-workflow.test.ts` keeps every pre-existing static
-assertion — retargeted at the owner script where the string moved — and gains three: the four
-resolution preludes are byte-identical, the `script-write` prompt is bounded and names the skill
-template, and the four stage-dir/`Flags:` contracts still exist.
-
-**Equivalence method (R4).** Each moved action was compared against `git show HEAD:…` text rather
-than re-derived: same check order and messages for `prepare`, same sidecar argv for
-`validate`/`wrap`, same `rm -f .duration-ok` → band → feedback → `.revise-count` sequence for
-`duration`, and a parser-level check that stage ids, transitions, vars and artifact paths are
-untouched. Two deltas are intended and tested (non-numeric duration takes the "not a number" branch;
-an unusable `target_duration_min` fails loud instead of the old `$(( ))` error).
-
-**Resolution smoke test (driver, end-to-end).** A synthetic package root
-(`bin/kk` → relative symlink → `pkg/dist/kk`, runner copied to `pkg/plugins/kk/scripts/`) was driven
-through the YAML's own six-line prelude: the symlink walk resolved `pkg`, the guard passed, and
-`bun "$st" prepare <dir> "Smoke topic" "" Robin false` wrote `brief.md`, `.revise-count` (`0`) and
-both stage dirs. The same prelude against the machine's real (stale) global install produced the new
-named guard message instead of an anonymous module error — which is the failure mode the guard exists
-for.
-
-**Coverage.** The runner is a `plugins/kk/scripts/` sidecar outside every workspace `tsconfig.include`
-(same as the three existing sidecars), so `bun run lint` typechecks its test callers rather than the
-file itself; behaviour coverage is the 17-test suite above. No test was skipped, `.skip`'d or
-removed, and no suppression was added.
-
-**Artifacts.** `.spur/run/0131-verdict.json` (verdict PASS, R1-R4 MET, proof block on the digest above),
-`.spur/run/0131-verify-answer.txt` (lint PASS — 4 requirement rows, 0 AC rows),
-`.spur/run/6c94b677-…-review-answer.txt` + `-review-proof.digest`, `.spur/run/0131-test-gate.log`
-(digest trailer), and `.spur/run/0131-test-fix-attempt` = 2 (two review-driven repair passes; the
-quality gate itself was green on all three captures — the pipeline counter is otherwise reserved for
-red-gate `fixall` hops).
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | command (this run): `spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml --json` exits 0 — zero error-level composition findings |
+| R2 | MET | The 4 over-threshold shell actions delegate to the named stage runner `plugins/kk/scripts/kk-workflow-stages.ts` (e.g. validate at `plugins/kk/workflows/kk-solo-podcast.yaml:149`, wrap at the wrap state; prepare/wrap-docs/duration-check likewise delegated) — logic moved to an owner, not compressed |
+| R3 | MET | `plugins/kk/workflows/kk-solo-podcast.yaml:117-120` — `script-write` agent.run prompt bounded; validator reports zero error-level findings (this run) |
+| R4 | MET | Equivalence: same stages/artifacts — `apps/cli/tests/kk-solo-podcast-workflow.test.ts` string assertions + stage tests green in this run's suite (1024 pass / 0 fail) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

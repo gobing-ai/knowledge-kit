@@ -4,7 +4,7 @@ name: Resolve workflows_dir from global installs and default per-workflow worksp
 status: done
 template: feature-impl
 created_at: 2026-09-14T17:55:18.370Z
-updated_at: "2026-09-14T18:19:08.120Z"
+updated_at: "2026-09-15T18:32:57.703Z"
 feature_id: F8
 priority: P2
 tags:
@@ -135,49 +135,30 @@ invoker yet) and a TS resolver (no TS consumer).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Requirement — §3 chain tries `$(dirname $(bun pm bin -g))/install/global/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows` then the npm twin, between `$KK_WORKFLOWS_SOURCE` and the `command -v kk` package-root walk, first hit wins. Evidence (`command`) — executed the shipped §3 blocks extracted verbatim from `plugins/kk/commands/workflow-run.md` in a sandbox with fake `bun`/`npm` and planted workflows dirs. A bun-global only gives the bun path; B npm-global only gives the npm path; C both present gives the bun path (first hit); D npm-global beats the package root; E `KK_WORKFLOWS_SOURCE` still beats both globals; the user override still wins. Real-path check on this host: `bun pm bin -g` = `/Users/robin/.bun/bin`, so the probe path `/Users/robin/.bun/install/global/node_modules/@gobing-ai/knowledge-kit/plugins/kk/workflows` matches the real `@gobing-ai` install root, and `npm root -g` = `/opt/homebrew/lib/node_modules` matches npm's global root. |
-| R2 | MET | Requirement — each new probe is guarded by `command -v bun` / `command -v npm` plus a directory test. Evidence (`command`) — same sandbox: F a PATH without `bun` still resolves npm-global; G a PATH without `npm` still resolves bun-global; H neither manager present gives rc=1 with `no source workflow for demo (searched …, bun/npm global installs, …)` and stderr contains no `not found` / `No such file`; I a `bun pm bin -g` pointing at a nonexistent root leaves the candidate empty and npm-global resolves. |
-| R3 | MET | Requirement — a corrupt (unparseable) `config.yaml` still exits 1 and no fallback masks it. Evidence (`command`) — ordering proof: `plugins/kk/commands/workflow-run.md:69` is the §2 unparseable-exits-1 rule and the new probes are at `:98` and `:103`, strictly downstream; `git diff -U0 HEAD` emits zero hunks in §2's line range (49–77), and the only added line mentioning `config.yaml` is the explanatory note, not a handler. A fallback therefore cannot observe or bypass the config error. SCOPE NOTE — the §2 exit-1 branch is prose with no executable surface anywhere in the repo (no TS/JS reader of these keys exists under `apps packages plugins`, and no test covers it), so this row certifies the invariant this change could have broken rather than an observed exit code. |
-| R4 | MET | Requirement — per-workflow default work_dir: storm `kk-storm-research/<topic-id>`, itc `kk-itc/<kebab>`, solo-podcast `kk-solo-podcast/<date>`, daily-ai-voice `kk-daily-ai-voice/<date>`; the shared §4 formula splits per profile; §1's `--dir` prose is corrected; explicit `--dir` still wins; itc never writes into the caller's cwd. Evidence (`command`) — executed the shipped §4 blocks/expressions from `cwd=/tmp`: storm gives `/tmp/kkv/sb/works/kk-storm-research/vector-databases-67d8eee1`, itc gives `<works_dir>/kk-itc/my-topic`, solo-podcast gives `<works_dir>/kk-solo-podcast/2026-09-14`, daily-ai-voice gives `<works_dir>/kk-daily-ai-voice/2026-09-14`; with `DIR=/tmp/explicit-x` all four returned `/tmp/explicit-x`. The itc default is absolute under `works_dir` from `/tmp`, never `./<kebab>`. |
-| R5 | MET | Requirement — `apps/cli/tests/workflow-run-command.test.ts` asserts the new chain entries and all four per-profile defaults. Evidence (`command`) — `NODE_ENV=test bun test apps/cli/tests/workflow-run-command.test.ts` gives 14 pass / 0 fail including the five new tests. Non-vacuity checked by mutation against a `/tmp` copy of the doc (tree untouched): reverting the chain order, dropping `command -v bun`, reverting itc to `./$kebab`, and deleting the config-ordering note each made the matching assertion fail (4 fail / 0 pass). |
+| R1 | MET | `plugins/kk/commands/workflow-run.md:128` — candidate loop order: `$KK_WORKFLOWS_SOURCE` → bun global → npm global → `${pkg}/plugins/kk/workflows` → checkout, first readable hit wins; entries documented at :115-116 |
+| R2 | MET | `plugins/kk/commands/workflow-run.md:99-105` — probes guarded by `command -v bun` / `command -v npm` (+ `[ -f ]` hit tests in the loop); a missing package manager leaves the variable empty and never breaks the chain |
+| R3 | MET | `plugins/kk/commands/workflow-run.md:121-123` — "A corrupt `config.yaml` already exited 1 in step 2; none of these probes runs before that check, so no fallback masks a config error"; exit-1 contract at :68-69 |
+| R4 | MET | Per-profile defaults `plugins/kk/commands/workflow-run.md:34,:36,:40` and formulas at :168 (storm `<topic-id>`), :182 (itc `<kebab>`), :190 (solo `<date>`), :195 (daily `<date>`); explicit `--dir` wins via `${DIR:-…}`; itc never defaults to `./<kebab>` |
+| R5 | MET | test (this run's suite, 1024 pass / 0 fail): `apps/cli/tests/workflow-run-command.test.ts:152-189` — chain order by index, guarded probes, corrupt-config precedence, all four per-profile defaults, `--dir` wins, no cwd-relative default |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: Empty or missing workflows_dir falls back to global-install locations | MET | command | Sandbox cases A–E: the bun global path is tried, then the npm global path, then the package-root walk, with `KK_WORKFLOWS_SOURCE` and the user override still winning. Additionally `workflows_dir` set to the literal unexpanded `$HOME/.config/kk/workflows` and to the empty string both fell through to the bun global install at rc=0. |
-| Scenario: A corrupt config.yaml still fails loud | MET | command | The R3 ordering proof above: `plugins/kk/commands/workflow-run.md:69` versus the probes at `:98`/`:103`, with zero diff hunks in §2's line range. Evidence-class limitation is stated in the R3 row — the exit-1 branch has no runnable surface, so this is certified structurally rather than by observing an exit code. |
-| Scenario: Each workflow defaults its work_dir under works_dir/<workflow-name>/ | MET | command | All four profiles executed from `cwd=/tmp`, each landing in its own `$works_dir/<workflow-name>/` namespace and each yielding to an explicit `DIR`. |
-| Scenario: kk-itc no longer writes into the caller's cwd | MET | command | itc evaluated with cwd `/tmp` and no `DIR` produced `<works_dir>/kk-itc/my-topic`, and the string `${DIR:-./` no longer occurs anywhere in the document. |
+| Scenario: Empty or missing workflows_dir falls back to global-install locations | MET | command | `plugins/kk/commands/workflow-run.md:128` loop order (bun → npm → package-root walk) + tests `workflow-run-command.test.ts:152-165` green |
+| Scenario: A corrupt config.yaml still fails loud | MET | command | `sed -n '118,135p' plugins/kk/commands/workflow-run.md` (this run): "A corrupt `config.yaml` already exited 1 in step 2; none of these probes runs before that check" — config gate precedes every probe; exit 1 contract at :68-69 |
+| Scenario: Each workflow defaults its work_dir under works_dir/<workflow-name>/ | MET | test | `workflow-run-command.test.ts:177-189` green; md anchors :168/:182/:190/:195 |
+| Scenario: kk-itc no longer writes into the caller's cwd | MET | test | `workflow-run-command.test.ts` (`not.toMatch(/\$\{DIR:-\.\//)`) green; `workflow-run.md:182` `$works_dir/kk-itc/$kebab` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**Reviewer findings** — fresh-context review in the `review` stage of run `runall-0127-3aafb2cd`.
-Verdict PASS; no P1/P2.
+**SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
-|----------|-----------|----------|---------|
-| P3 | correctness / traceability | `plugins/kk/skills/storm-research/SKILL.md:71` | The storm skill still documents the pre-0127 workspace (`$works_dir/<topic-id>`), so an agent following the skill computes a path the command no longer defaults to. Re-homed to **0129** (surface-sync task, same feature and batch) rather than fixed here: a docs-only edit after proof capture would invalidate the certified digest and force a full re-certification. |
-| P3 | architecture / tests | `apps/cli/tests/workflow-run-command.test.ts:145` | The chain is now duplicated in both §3 loops, but the test pins only the first (`candidateLoop()` returns the first match), so the `--force` `src` loop's order is unasserted and a one-loop edit would diverge silently. Folded into 0129 with the other surface-sync items. |
-| P4 | usability | `plugins/kk/commands/workflow-run.md:4` | The frontmatter `description` still enumerates four sources and omits the bun/npm global installs the body now names; the description is what an agent reads first. Folded into 0129. |
-| P4 | efficiency | `plugins/kk/commands/workflow-run.md:96` | Both probes run on every invocation, ahead of the user-override short-circuit, so `bun pm bin -g` / `npm root -g` spawn even when the override wins. No correctness impact — recorded, not actioned. |
-| P4 | correctness (pre-existing) | `plugins/kk/commands/workflow-run.md:190` | §4 documents a first-class `kk-daily-ai-voice` default while §1's supported-name list (`:31`) and §5 have no daily entry, so the default is unreachable through the documented dispatch. The diff made the gap explicit rather than creating it; R4 fixes the default, not the profile roster. Out of scope — recorded. |
-
-**SECU and checks** (pipeline verify step — verdict PASS)
-
-| Priority | Dimension | Location | Finding |
-|----------|-----------|----------|---------|
+|----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
-| P4 | evidence-rule-pass | — | Every behavior-bearing AC row has executable evidence or is explicitly non-behavioral. |
-| P4 | proof-input-digest | — | sha256:db0bc52e742624f8a42600cee7b7e485b06d56b97399b5536de87f77c00a4955 |
-
-**Residual risk**
-
-- The "corrupt `config.yaml` still fails loud" AC is certified **structurally**, not behaviorally: §2's exit-1 branch is prose with no executable surface in this repo (no TS/JS reader of `workflows_dir`/`works_dir`), so no test can observe that exit code. The change cannot mask it — §3's probes are strictly downstream at `:98`/`:103` and the diff has zero hunks in §2's range — but the row rests on ordering, not on a red/green run.
-- Moving itc off `./<kebab>` and giving storm its own namespace orphans pre-existing `$works_dir/<topic-id>` workspaces. Accepted by feature F8 R6 (no migration) and assigned to 0129 R4 for documentation.
-
-**Disposition:** PASS. No repairs in this change; the three surface-drift findings are assigned to 0129 and the two advisory items are recorded here and in the batch report.
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 

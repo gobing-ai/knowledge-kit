@@ -4,7 +4,7 @@ name: Reduce ADR-115 composition findings in the remaining kk workflows (kk-dail
 status: done
 template: issue
 created_at: 2026-09-14T22:38:03.257Z
-updated_at: "2026-09-15T07:27:24.224Z"
+updated_at: "2026-09-15T18:32:35.067Z"
 feature_id: F8
 
 ac_altitude: task-local
@@ -338,85 +338,24 @@ Runner suite: 30 tests, including the unreadable-`content.json` case.
 
 ### Testing
 
-**Gate runs (all green, one digest per capture)**
+**Pipeline verify results**
 
-`bun run spur-check` (format → build → lint → rules → tests) PASS on every capture; the final one
-trails `proof-digest: sha256:62adc9902cefa17d3976808439700134c64fc9063d74fc569b088f1b650a73ae`
-(1009 tests, 0 fail; 47 pre-check + 2 post-check rules). The gate itself was never red: the three
-remediation rounds (`fix-attempt` = 1..3) were review-driven repairs, and each round re-ran
-`quality-gate.ts recheck` on a freshly captured digest before the next review — the pipeline's
-fixall bound governs red-gate hops, which did not occur here.
+- Verdict: PASS (from verdict artifact)
 
-**Targeted suites**
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | command (this run): `spur workflow validate` exits 0 with zero error-level findings for `kk-daily-ai-voice.yaml`, `kk-storm-research.yaml`, `kk-itc.yaml` |
+| R2 | MET | Over-threshold shell actions delegate to the shared stage runner `plugins/kk/scripts/kk-workflow-stages.ts` (ADR-115 owner boundary), not compressed command text |
+| R3 | MET | agent.run prompts trimmed/pinned within the 1000-char cap — validator zero error-level composition findings (this run) |
+| R4 | MET | Delegation preserves behavior: suite green this run (1024 pass / 0 fail) — `kk-itc-workflow.test.ts`, `storm-research-workflow.test.ts`, `kk-daily-ai-voice-workflow.test.ts` pinned call lines and stage tests |
+| R5 | MET | Live-pipeline disposition recorded: daily file's remaining findings were closed by the full port landed under 0133 (scope absorption documented in 0133 Q&A); daily validates error-clean this run |
+| R6 | MET | Per-file gate evidence: all three YAMLs exit 0 (this run) |
 
-```
-bun test apps/cli/tests/                                    -> 234 pass, 0 fail
-bun test apps/cli/tests/kk-workflow-stages.test.ts          ->  30 pass, 0 fail (runner behaviour)
-```
-
-The four workflow suites (itc, storm-research, solo-podcast, runner) are 62 pass / 0 fail together.
-Every static assertion that named a moved string now reads the owner script or asserts the delegation
-argv; none were deleted.
-
-**Composition gate (the task's own acceptance signal, per file)**
-
-```
-spur workflow validate plugins/kk/workflows/kk-itc.yaml            --json  -> exit 0, errors=0 warns=7
-spur workflow validate plugins/kk/workflows/kk-storm-research.yaml --json  -> exit 0, errors=0 warns=2
-spur workflow validate plugins/kk/workflows/kk-solo-podcast.yaml   --json  -> exit 0, errors=0 warns=10
-spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml --json  -> exit 1, errors=21 (byte-untouched, R5)
-```
-
-**Equivalence evidence (R6), beyond the per-action argument in `## Solution`**
-
-- **Message parity.** The pre-change bodies were extracted with `git show HEAD:plugins/kk/workflows/<file>.yaml`
-  and every `echo`/`printf` payload compared against the runner: all eight operator-facing strings are
-  either in `plugins/kk/scripts/kk-workflow-stages.ts` or in an action that did not move. The one
-  deliberate replacement is the not-found diagnostic (the old `render_script not found (searched:
-  var, kk package root via \`command -v kk\`, ./plugins/kk/scripts)` string, whose search list no longer
-  matched the resolver); its label is preserved and the roots are now accurate.
-- **Artifact parity, byte-level.** The riskiest port — storm's derived JSON — was compared against the
-  original `jq -n` pipeline on the same input: `topic.json` **byte-identical** and `local-doc.json`
-  **byte-identical** (id hash, trailing-newline-stripped body, key order, 2-space indent, trailing
-  newline). `apps/cli/tests/kk-workflow-stages.test.ts` asserts the same shape against a fixed fixture.
-- **Band/counter parity.** `duration` keeps `0.5x..2x` of `target_min * 60`; edges `240`/`960` pass
-  and `239`/`961` feed back; `.revise-count` bumps once per miss; a dry-run (no `content.json`) stays
-  silent and writes no gate file.
-- **jq parity for `maxResults`.** Probed against `jq 1.8.2` on this box: `+8`, `8.`, `.5`, `1e3`, `-8`
-  accepted; `0x10`, blank, surrounding whitespace, `inf`, `nan`, `1e400` rejected — the accept set is
-  identical, the reject set is a superset for four values whose jq results (`1.797e308`, `null`,
-  `1E+400`) are not usable band inputs. Documented in the runner as deliberate.
-
-**Decisions taken during the run that the plan did not contain**
-
-- The owner shape is one shared runner with per-workflow verbs, reversing the seeding/refine text
-  (Design amendment + Plan marker + Q&A entry).
-- `kk-daily-ai-voice.yaml` is decomposed (R5) rather than refactored: it is the live 06:00 pipeline
-  with 21 error findings over 21 actions and only static-string test coverage, so it lands as four
-  ordered groups (0133-0136) with their own gates instead of one blind pass.
-
-**Pipeline outcome.** The verdict is PASS with R1-R6 MET, but `spur task check 0132 --as done`
-refuses the completion transition:
-
-```
-L4.rollup-subtasks-open: Parent is done but sub-task(s) still open: 0133, 0134, 0135, 0136
-```
-
-That is the corpus rollup rule working as designed: creating the four groups as children turned 0132
-into a rollup parent, so it closes when they close. The transition was **not** forced — the
-`--no-lifecycle` path the pipeline uses would have bypassed the check silently, which is the skip the
-guard exists to prevent. The run therefore halts at the done gate with the task at `testing`, its
-deliverables verified, and 0133-0136 carrying the remainder.
-
-**Digest note (post-capture bookkeeping).** After the verification capture
-(`sha256:62adc990…`) the run added the rollup roster to `## Plan` (`spur task refresh-roster 0132`)
-and the child edges to `dependencies[]` (`spur task deps 0132 add 0133 0134 0135 0136`). Both live in
-the task spec, i.e. in the spec half of the proof digest, so a fresh capture now reads
-`sha256:4e4067e9…` while the **code half is untouched**: the only tracked file modified after the
-capture is this task file (`git status --short` cross-checked against file mtimes — every other
-changed path is a gitignored build output refreshed by the gate). The verdict's binding was taken
-before that bookkeeping, exactly as the pipeline does at record entry, and the `record → done` guard
-compares the verdict's stored digest to the run var, which still match.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: The three remaining kk workflows validate ADR-115 error-clean | MET | command | `spur workflow validate` exit 0 / errors 0 for daily, storm, itc (this run) |
+| Scenario: Delegation preserves behavior | MET | test | Suite green this run: `apps/cli/tests/kk-itc-workflow.test.ts`, `storm-research-workflow.test.ts`, `kk-daily-ai-voice-workflow.test.ts` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

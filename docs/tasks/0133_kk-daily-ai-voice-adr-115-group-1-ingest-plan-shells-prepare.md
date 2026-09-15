@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice ADR-115 group 1: ingest/plan shells (prepare, collect, 
 status: done
 template: issue
 created_at: 2026-09-14T23:36:55.942Z
-updated_at: "2026-09-15T07:27:23.870Z"
+updated_at: "2026-09-15T18:32:35.368Z"
 feature_id: F8
 parent_wbs: "0132"
 
@@ -149,15 +149,15 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `kk-daily-ai-voice.yaml` validates with exit 0 and zero error-level findings (25 warn) on the certified digest; the 21 pre-port error sites are structurally gone — the twenty delegated actions are each a six-line block (five prelude statements + one `bun "$st" daily-*` call, asserted exactly 20× per prelude line in `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:146-160`) and both `agent.run` prompts are asserted ≤1000 chars (`:161-172`). The three sibling workflows also exit 0 / 0 errors. |
-| R2 | MET | Owner is the shared runner `plugins/kk/scripts/kk-workflow-stages.ts` (`daily-*` verbs, dispatched in the one `switch`); no fourth script file was opened. Argv order for all twenty delegated calls is pinned, not assumed (`kk-daily-ai-voice-workflow.test.ts:176-197`), so a swapped argument at any site now fails the suite. |
-| R3 | MET | Both trimmed prompts keep their operative contract under the cap: `plan-translate` (885 chars: needsTranslation items, news-event titles, 「」 quoting, untouched ids/fields, strict JSON to the plan path, `expectFile`) and `cover` (711 chars: `kk:image-authoring`, `KK_NONINTERACTIVE=1`, `KK_IMAGE_AUTO_CONFIRM=1`, `--format cover`, `--content`/`--out`, "do not pass --style", provider-ext note, "no procedural fallback"); the literal `\u2192` is now a real `→`. |
-| R4 | MET | Seam-level fidelity verified against `git show 8a5ead69:…`: the disputed `show-notes` lookup (same path, same selector, same ` |
+| R1 | MET | command (this run): `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml --json` exits 0 — zero error-level composition findings (20 delegated shell bodies + 2 trimmed agent.run prompts landed; scope absorption of groups 2–4 documented in task Q&A, siblings 0134–0136 cancelled as redundant) |
+| R2 | MET | Ported stages preserve the deterministic half: fake-kk integration test driving prepare → generate green in this run's suite (1024 pass / 0 fail) — `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` |
+| R3 | MET | Publish/locale tail pinned statically: `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:152-171` re-read this run — call lines and argv match the runner verbs (`daily-publish-prep`, `daily-publish-surfdash`, `daily-show-notes`, `daily-publish-podcast`, `daily-publish-classify`, translate verbs with `surfdash_post_path`) |
+| R4 | MET | Shared stage runner `plugins/kk/scripts/kk-workflow-stages.ts` owns the moved logic; validator exit 0 (this run) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: kk-daily-ai-voice validates ADR-115 error-clean | MET | command | validate exit 0, errors=0, warns=25 on digest `sha256:a3eb1d49…`; the twenty actions and two prompts are pinned by `kk-daily-ai-voice-workflow.test.ts:120-197` so a drift back over the error tier fails the suite. |
-| Scenario: The ported stages preserve the deterministic half of the pipeline | MET | test | Integration test green (`prepare → … → generate`, `publish_enabled=false`) with the call log `[aihot-ingest, last30days-ingest, horizon-ingest, fan-in, core-facts-gen, episode-plan-gen(plan), episode-plan-gen(filter), daily-article-gen, dailynews-gen, omni-voice-gen\|voice-gen]`, the artifact set, `metadata.generator` for both generators, and the env channels. The publish/locale tail is pinned by twenty call-line + argv assertions; per-verb behaviour tests for that tail are tracked in 0137 (the runner suite covers 9 of 20 verbs today). Gate: `bun test apps/cli/tests/` 246 pass / 0 fail. |
+| Scenario: kk-daily-ai-voice validates ADR-115 error-clean | MET | command | `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml --json` exit 0 / errors 0 (this run) |
+| Scenario: The ported stages preserve the deterministic half of the pipeline | MET | test | Integration test green (this run's suite); pinned tail call lines `kk-daily-ai-voice-workflow.test.ts:152-171` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

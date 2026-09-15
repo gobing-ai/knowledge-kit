@@ -4,7 +4,7 @@ name: "Extract VoiceScript template from audio-authoring SKILL.md into templates
 status: done
 template: feature-impl
 created_at: 2026-08-24T06:31:42.818Z
-updated_at: "2026-08-25T23:29:21.339Z"
+updated_at: "2026-09-15T18:32:56.991Z"
 feature_id: F8
 ---
 
@@ -51,21 +51,23 @@ Feature: VoiceScript template extraction
 - `plugins/kk/skills/audio-authoring/templates/voicescript.solo.yaml:1` — NEW (R1): valid-YAML solo starter with constraint comments; full contract field set.
 - `plugins/kk/skills/audio-authoring/SKILL.md:155` — R2: VoiceScript contract section now references the template; summary table retained; embedded schema block removed.
 ### Testing
+
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 (template file exists under templates/) | MET | `plugins/kk/skills/audio-authoring/templates/voicescript.solo.yaml` — valid-YAML solo skeleton with per-field constraint comments; `yamllint` clean |
-| R2 (SKILL.md references, no longer embeds) | MET | `plugins/kk/skills/audio-authoring/SKILL.md` VoiceScript contract section — points to `templates/voicescript.solo.yaml`, keeps a compact field-summary table and the no-invented-fields guard; the old fenced schema block is removed |
-| R3 (contract completeness preserved) | MET | Template carries every field of the validator contract: `language`, `default_engine`, `speakers` (commented, multi-speaker), `segments` with `text`/`instruct`/`gap_ms`/`engine`/`max_chunk_chars`/`crossfade_ms`/`speaker`; drift guard (`default_profile`, `title` banned) stated in both files |
+| R1 | MET | `plugins/kk/skills/audio-authoring/templates/voicescript.solo.yaml` — exists (ls this run) and parses as valid YAML (parse this run: top-level keys `language`,`segments`; remaining contract fields carried as comments) |
+| R2 | MET | `plugins/kk/skills/audio-authoring/SKILL.md:156` — VoiceScript contract section points to `templates/voicescript.solo.yaml`; compact field-summary table retained; no-invented-fields guard present (no `default_profile`, no required `title`); old embedded schema block absent |
+| R3 | MET | Template carries every validator field as authored/commented entries — `templates/voicescript.solo.yaml:7` (default_engine), :10 (speakers), :19 (gap_ms), :20 (instruct), :23 (max_chunk_chars), :24 (crossfade_ms), :25 (speaker); validator contract `plugins/kk/scripts/validate-voicescript.ts:66-88` (re-read this run) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Template is a separate file | MET | command | `test -f plugins/kk/skills/audio-authoring/templates/voicescript.solo.yaml` + `yamllint` clean |
-| SKILL.md references the template | MET | command | `rg -c 'templates/voicescript.solo.yaml' plugins/kk/skills/audio-authoring/SKILL.md` → ≥1; old `default_engine?:` schema block absent |
+| Scenario: Template is a separate file | MET | command | `ls plugins/kk/skills/audio-authoring/templates/` → `voicescript.solo.yaml`; YAML parse OK (this run) |
+| Scenario: SKILL.md references the template | MET | command | `rg -n "templates/voicescript" plugins/kk/skills/audio-authoring/SKILL.md` → :156 (exit 0, this run); `sed -n '150,175p'` section read — embedded schema block absent |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
 ### Review
 | Priority | Finding | Severity | Disposition |
 | --- | --- | --- | --- |

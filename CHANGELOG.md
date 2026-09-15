@@ -1,9 +1,43 @@
-## [0.0.15] - 2026-09-14
+## [0.0.15] - 2026-09-15
+
+### Added
+
+- per-step artifact naming, redo-by-delete, inline agent default (6a4e8705)
+- wire robin-news as clone profile extracted from Voicebox (24b36a3a)
+- default kk-daily-ai-voice to omni-voice-gen (ADR-020 amendment) (09b9c860)
+
+### Fixed
+
+- resolve show-notes article URL from the surfdash publish result (d727efcd)
+- delegate kk-solo-podcast stages to an owned runner so ADR-115 validate exits 0 (c1fa6393)
+- repair solo-podcast shell-action schema (0130) and refresh F8 table (446fa71e)
+- chunk >30s audio for ASR verification (5b370dad)
+- reject free-text emotion instructs, pin profiles to OmniVoice whitelist (23bcc0dd)
+
+### Changed
+
+- port kk-daily-ai-voice stages to the shared ADR-115 runner (53ce3e51)
+- share one ADR-115 stage runner across the kk workflows (8a5ead69)
+- move voicescript sidecar scripts out of workflows dir (01cb3665)
 
 ### Other
 
-- chore: declare empty versionCarriers (built-ins cover marketplace staleness) (f8da5015)
-- chore: declare builder.bump-ver release knobs (values = defaults) (3d213140)
+- docs(project): capture 0137 wrap learnings (ea83b210)
+- docs(kk): sync podcast-pub show-notes surface in wrapup of 0137 (61eb97a1)
+- docs(tasks): update task status after refinement (ae451abc)
+- docs(kk): specify task 0137 with the show-notes defect evidence and fix design (ef28e070)
+- chore(project): refresh the history report snapshot (171868f8)
+- docs(tasks): add new tasks (530b5e54)
+- chore(project): update memory (49053c90)
+- chore(sp): refresh F8 task table after batch completion (ef35f1ae)
+- docs(kk): sync F8 workflow-folder surfaces and tighten resolution tests (9167f500)
+- docs(sp): reopen F8 for workflow-folder and workspace-default extension (fcf4fdab)
+- chore(project): add .work folder as the default output folder (9bc97f3d)
+- docs: note HF_HUB_OFFLINE workaround for hub revalidation hang (4fde9eac)
+- docs(CHANGELOG.md): add change log (6bfcd09e)
+- chore(gate): dedupe typecheck and add build to bun run gate (95cae5ed)
+- chore(config): declare empty versionCarriers (built-ins cover marketplace staleness) (f8da5015)
+- chore(config): declare builder.bump-ver release knobs (values = defaults) (3d213140)
 
 ## [0.0.14] - 2026-09-14
 

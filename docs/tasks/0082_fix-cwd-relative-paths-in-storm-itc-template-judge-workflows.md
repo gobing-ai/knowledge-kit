@@ -4,7 +4,7 @@ name: "Fix cwd-relative paths in storm/itc/template/judge workflows for run-anyw
 status: done
 template: feature-impl
 created_at: 2026-08-24T16:56:20.888Z
-updated_at: "2026-08-25T23:29:21.601Z"
+updated_at: "2026-09-15T18:32:57.362Z"
 feature_id: F8
 ---
 
@@ -59,25 +59,27 @@ Feature: Run-anywhere paths across all kk workflows
 - `plugins/kk/commands/workflow-run.md:188` — R5: itc binding without `verdictFile`.
 - Tests: `apps/cli/tests/storm-research-workflow.test.ts:53`, `workflow-template.test.ts:15`, `kk-itc-workflow.test.ts:60`, `workflow-run-command.test.ts:120`.
 ### Testing
+
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/workflows/kk-storm-research.yaml:40` — `plugins_path: ""` + conditional `--plugins-path` in both executor calls; render fallback chain at `:137-153` (`command -v kk` walk → `$pkg/plugins/kk/scripts/render-md.ts` → checkout) |
-| R2 | MET | `plugins/kk/workflows/kk-ingest-generate-publish.yaml:17` — `plugins_path: ""`; conditional flag in all 3 executor commands |
-| R3 | MET | `plugins/kk/workflows/kk-itc.yaml:69,:80,:125,:165` — prompts invoke `kk:storm-research`/`kk:${vars.writer}`/`kk:content-judge`; `.revise-count` work_dir-scoped with prepare reset; `__runId`/`verdictFile` vars removed |
-| R4 | MET | `plugins/kk/workflows/judge-gated-publish-example.yaml:42` — `kk:content-judge` invocation |
-| R5 | MET | `plugins/kk/commands/workflow-run.md:188` — itc binding without verdictFile |
-| R6 | MET | tests updated: `storm-research-workflow.test.ts:53`, `workflow-template.test.ts:15`, `kk-itc-workflow.test.ts:60`, `workflow-run-command.test.ts:120` |
-| R7 | MET | command: `bun run lint` all workspaces exit 0; `bun run test` 470 pass / 0 fail; all 5 workflow YAMLs parse via Bun.YAML |
+| R1 | MET | `plugins/kk/workflows/kk-storm-research.yaml:40` — `plugins_path: ""` with conditional `--plugins-path` at :70,:92; stage-runner fallback chain at :58 (pkg-first, `[ -f ]`-guarded checkout fallback) |
+| R2 | MET | `plugins/kk/workflows/kk-ingest-generate-publish.yaml:17` — `plugins_path: ""`; conditional flag in all three executor commands (:27,:37,:47) |
+| R3 | MET | `plugins/kk/workflows/kk-itc.yaml:52,:63,:108,:144` — prompts invoke `kk:storm-research` / `kk:${vars.writer}` / `kk:content-judge` by skill name; `.revise-count` work_dir-scoped with prepare reset (:129-130); verdict fixed at `${vars.work_dir}/.itc-verdict.json` (:146,:148). Note: `verdictFile: ""` remains at :25 as an empty-override defaulting to the fixed path — the R3 behavioral goal (no `__runId`, fixed verdict location) is met; literal "var removed" drift recorded, not behavior-affecting |
+| R4 | MET | `plugins/kk/workflows/judge-gated-publish-example.yaml:40` — `kk:content-judge` invocation |
+| R5 | MET | `plugins/kk/commands/workflow-run.md:219` — itc var binding without `verdictFile` |
+| R6 | MET | test (this run's suite, 1024 pass / 0 fail): `storm-research-workflow.test.ts`, `workflow-template.test.ts`, `kk-itc-workflow.test.ts`, `workflow-run-command.test.ts` |
+| R7 | MET | command (this run): `bun run lint` exit 0; `bun run test` 1024 pass / 0 fail; all workflow YAMLs `spur workflow validate` exit 0 |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| No repo-relative skill or script loads remain in workflow prompts | MET | command | `rg 'Load plugins/kk/skills' plugins/kk/workflows/*.yaml` → 0 matches outside comments; skill invocations are `kk:`-named |
-| Executor calls use conditional plugins_path | MET | command | `rg 'plugins_path: ""'` present in storm+template; every `--plugins-path` sits behind `if [ -n "${vars.plugins_path}" ]` |
+| Scenario: No repo-relative skill or script loads remain in workflow prompts | MET | command | rg scan this run: no agent.run prompt loads `plugins/kk/skills |
+| Scenario: Executor calls use conditional plugins_path | MET | command | `rg -n 'plugins_path' plugins/kk/workflows/kk-storm-research.yaml plugins/kk/workflows/kk-ingest-generate-publish.yaml` (this run): `plugins_path: ""` at storm:40 / template:17; conditional `set -- --plugins-path` guards at storm:70,:92 and template:27,:37,:47 — empty value omits the flag (ADR-012 discovery) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
 ### Review
 | Priority | Finding | Severity | Disposition |
 | --- | --- | --- | --- |
