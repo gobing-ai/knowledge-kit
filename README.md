@@ -173,12 +173,22 @@ Both scripts pin the release target to `knowledge-kit`, the unscoped id of the p
 `@gobing-ai/knowledge-kit` package, so the per-package tag `@gobing-ai/knowledge-kit-v<version>`
 is the one pushed.
 
-**Do not run a bare `spur builder bump-ver <version> --push`.** With no target, spur bumps the
-packages that another workspace pins via `workspace:` — the private `kk-core` and
-`publish-harness`, never `apps/cli` — and pushes the *aggregate* tag
-`<root package.json name>-v<version>`, i.e. `knowledge-kit-v<version>`, which no workflow
-consumes (the publish filter is scoped). 0.0.15 was first released that way: the carriers below
-moved to 0.0.15, `apps/cli` stayed at 0.0.14, and Publish never fired.
+`.spur/config.yaml` declares the same target for every aggregate (`--all`) release:
+
+```yaml
+builder:
+  bump-ver:
+    aggregatePackage: knowledge-kit   # tag that triggers publish.yml (spur >= 0.3.83)
+```
+
+With it, a bare `spur builder bump-ver <version> --push` also bumps `apps/cli` and pushes the
+scoped tag. Without it, an aggregate bump touches only the packages another workspace pins via
+`workspace:` — the private `kk-core` and `publish-harness`, never `apps/cli` — and pushes the
+*aggregate* tag `<root package.json name>-v<version>`, i.e. `knowledge-kit-v<version>`, which no
+workflow consumes (the publish filter is scoped). 0.0.15 was first released that way: the carriers
+below moved to 0.0.15, `apps/cli` stayed at 0.0.14, and Publish never fired. Spur older than
+0.3.83 silently ignores `aggregatePackage`, so the pinned scripts above stay the portable path
+there.
 
 `bump-ver`/`drop-tags` delegate to `spur builder` (release-ops in the spur CLI), which also
 syncs `.claude-plugin/marketplace.json` + `plugins/kk/plugin.json` to the release version —

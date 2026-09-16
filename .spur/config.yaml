@@ -94,15 +94,18 @@ redaction:
 # ── Release (spur builder bump-ver / drop-tags) ──
 # Release plumbing knobs consumed by `spur builder bump-ver` / `drop-tags`
 # (wired as the bump-ver / drop-tags package scripts). `bun run bump-ver <version> --push`
-# releases the CLI — the scripts pass the `knowledge-kit` target (the unscoped id of
-# @gobing-ai/knowledge-kit), whose tag @gobing-ai/knowledge-kit-v<version> triggers
-# .github/workflows/publish.yml. A targetless `spur builder bump-ver <version>` bumps only the
-# `workspace:`-pinned private packages and tags the aggregate `knowledge-kit-v<version>`
-# (the root package name), which no workflow consumes — see README §Releasing.
+# releases the CLI. `aggregatePackage` below names the published package, so the *bare*
+# `spur builder bump-ver <version> --push` form also pushes the scoped trigger tag
+# @gobing-ai/knowledge-kit-v<version> that .github/workflows/publish.yml consumes.
+# Without it (spur < 0.3.83 ignores the key — the pinned scripts still work) a targetless bump
+# would touch only the `workspace:`-pinned private packages and tag the aggregate
+# `knowledge-kit-v<version>` (the root package name), which no workflow consumes.
 # Values match the built-in defaults; adjust here instead of patching release code when
 # conventions change.
 builder:
   bump-ver:
+    # Needs spur >= 0.3.83 (released 2026-09-16); older spur silently ignores the key.
+    aggregatePackage: knowledge-kit
     tagVersionSeparator: "-v"
     publishWorkflow: publish.yml
     releaseCommitType: chore
