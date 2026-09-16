@@ -24,13 +24,6 @@ MAX_RATE_ZH = 15.0
 MAX_RATE_EN = 30.0
 MAX_RATE_OTHER = 25.0
 
-MAX_DURATION_ZH = 15.0
-MAX_DURATION_EN = 30.0
-MAX_DURATION_OTHER = 20.0
-
-MAX_DURATION_ZH_DIVISOR = 15.0
-MAX_DURATION_EN_DIVISOR = 20.0
-MAX_DURATION_OTHER_DIVISOR = 15.0
 
 RE_CHAR_RUN = re.compile(r"(.)\1{2,}", re.DOTALL)
 RE_WORD_RUN = re.compile(r"(.{2,3}?)\1{2,}", re.DOTALL)
@@ -185,21 +178,10 @@ def audit_voice_segments(
         abs_anomaly = duration > max_sec + MAX_ABS_DIFF_SEC if max_sec > 0 else False
         max_rate = MAX_RATE_ZH if language.startswith("zh") else MAX_RATE_EN if language.startswith("en") else MAX_RATE_OTHER
         rate_anomaly = duration > 0 and (len(text) / duration) > max_rate
-        max_possible = (
-            MAX_DURATION_ZH
-            if language.startswith("zh")
-            else MAX_DURATION_EN
-            if language.startswith("en")
-            else MAX_DURATION_OTHER
-        ) + len(text) / (
-            MAX_DURATION_ZH_DIVISOR
-            if language.startswith("zh")
-            else MAX_DURATION_EN_DIVISOR
-            if language.startswith("en")
-            else MAX_DURATION_OTHER_DIVISOR
-        )
-        abs_ceiling_anomaly = duration > max_possible
-        duration_anomaly = ratio_anomaly or abs_anomaly or rate_anomaly or abs_ceiling_anomaly
+        # The former abs-ceiling term (duration > MAX_DURATION_<lang> + len(text)/<divisor>)
+        # compared against a fastest-speech floor, so any segment over ~39 chars flagged even
+        # when inside its expected range; genuinely overlong audio stays covered by ratio/abs/rate.
+        duration_anomaly = ratio_anomaly or abs_anomaly or rate_anomaly
         if duration_anomaly:
             issues.append(
                 f"duration_anomaly: expected {min_sec:.2f}s-{max_sec:.2f}s, got {duration:.2f}s"

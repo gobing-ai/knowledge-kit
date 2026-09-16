@@ -223,6 +223,18 @@ def test_audit_duration_anomaly_flagged() -> None:
     assert any(issue.startswith("duration_anomaly: expected") for issue in audit.issues)
 
 
+def test_audit_duration_in_range_not_flagged() -> None:
+    # Regression: an in-range duration must not flag even when it exceeds the old
+    # fastest-speech floor (len(text)/15 + 15s) that the removed ceiling term used.
+    text = "这段文字长度超过三十九个字符的阈值，用来验证正常语速不会被误报为时长异常。" * 3
+    duration = len(text) * 0.25  # comfortably inside [0.15L, 0.45L], above the old floor
+    script = script_with(VoiceSegment(text=text, language="zh"))
+    report = audit_voice_segments(script, [CLEAN_WAV], [{"duration": duration}])
+    audit = report.segment_audits[0]
+    assert audit.duration_anomaly is False
+    assert not any(issue.startswith("duration_anomaly:") for issue in audit.issues)
+
+
 def test_audit_loudness_dip_from_meta_verify_phase() -> None:
     script = script_with(VoiceSegment(text="你好世界", language="zh"))
     report = audit_voice_segments(script, [CLEAN_WAV], [{"duration": 1.0, "loudness_dip": True}])
