@@ -4,7 +4,7 @@ name: Timeline show notes with briefings, timestamps, and article URLs
 status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.609Z
-updated_at: "2026-09-12T03:28:08.856Z"
+updated_at: "2026-09-16T19:16:42.350Z"
 feature_id: O
 priority: P0
 tags:
@@ -111,15 +111,21 @@ SPLIT kk-daily-ai-voice.yaml `publish` into `publish-surfdash` / `show-notes` / 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R2.1 | MET | brief from metadata.brief w/ fallback: show-notes.ts:131-146 |
-| R2.2 | MET | HH:MM from publishAt, --:-- unparseable: show-notes.ts:131-146; emitters episode-plan-gen:446-459 |
-| R2.4 | MET | O(1) postPath->URL: show-notes.ts:107-115 |
-| R2.5 | MET | legacy degrade on missing postSlug :116; workflow jq \|\| true |
-| R3.1 | MET | metadata.showNotes stamped by publish-podcast -> map.ts:102,145 |
+| R2.1 | MET | Live `3-publish/20260916_15_show-notes_show-notes.md` inspected this turn: each item opens with a 1–2-sentence briefing (item 1: "AI isn't some new form of \"alien mind,\" according to Jensen Huang. …"); 43 podcast-pub tests pass this turn |
+| R2.2 | MET | Same artifact: items carry `HH:MM` timestamps (`17:20 · We don't need AI regulation …`); `--:--` fallback unit-covered in `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` — 43 pass / 0 fail this turn |
+| R2.3 | MET | Same artifact: items render in timeline order and each ends with its surfdash article URL (`[文章](https://surfing.salty.vip/zh/posts/20260916-ai-2026-09-16)`); footer link shape unit-covered — 43/43 this turn |
+| R2.4 | MET | Article URL derives from the real publish result (`20260916_14_publish-surfdash_result.json` targets[0].url = the same `surfing.salty.vip/zh/posts/20260916-ai-2026-09-16`) — inspected this turn; O(1) derivation unit-covered — 43/43 this turn |
+| R2.5 | MET | Legacy degrade path (no `postPath` → no URLs, legacy full-body layout, run continues) unit-covered in podcast-pub tests — 43 pass / 0 fail this turn |
+| R3.1 | MET | Live `20260916_16_publish-podcast_result.json` inspected this turn: `{"name":"podcast-pub","ok":true,"url":"https://podcast.salty.vip/items/736FPAQ85xV"}` — the episode published carrying the timeline notes; `content.body` fallback mapping unit-covered — 43/43 this turn |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Timeline layout w/ briefings, timestamps | MET | mixed | Timeline layout w/ briefings, timestamps, per-item article URLs; degrade to legacy without postPath; mapping wire verified. \| bun run test: 43 podcast-pub tests pass; lint 0; task check 0; workflow validate 0 |
+| Show notes render one briefing line per news item | MET | test | `head -25 .works/kk-daily-ai-voice/2026-09-16/3-publish/20260916_15_show-notes_show-notes.md` this turn: per-item briefing lines present; `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` 43 pass / 0 fail this turn |
+| Show notes carry a timestamp per item | MET | test | Same artifact: `17:20 ·` per-item HH:MM timestamps and timeline order; `--:--` fallback unit-covered — 43/43 this turn |
+| Show notes link each item's surfdash article | MET | test | Same artifact: `[文章](https://surfing.salty.vip/zh/posts/20260916-ai-2026-09-16)` per item, derived from `20260916_14_publish-surfdash_result.json` (inspected this turn) — 43/43 this turn |
+| Surfdash publish failed -> show notes degrade without URLs | MET | test | Degrade branch (no `postPath` → legacy full-body layout, no URLs) unit-covered in `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` — 43 pass / 0 fail this turn (the 2026-09-16 live run published successfully, so the degrade path is test-evidenced) |
+| Fallback keeps the legacy episode notes on degraded runs | MET | test | Episode-notes `content.body` fallback mapping unit-covered in podcast-pub tests — 43 pass / 0 fail this turn |
+| Podcast episode publishes with the timeline show notes | MET | test | `jq .targets .works/…/20260916_16_publish-podcast_result.json` this turn → `{"name":"podcast-pub","ok":true,"url":"https://podcast.salty.vip/items/736FPAQ85xV"}` with the timeline notes rendered in `20260916_15_show-notes_show-notes.md`; 43/43 tests this turn |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

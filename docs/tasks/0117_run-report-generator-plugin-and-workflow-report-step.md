@@ -4,7 +4,7 @@ name: Run report generator plugin and workflow report step
 status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.605Z
-updated_at: "2026-09-12T00:09:35.345Z"
+updated_at: "2026-09-16T19:16:42.127Z"
 feature_id: O
 tags:
   - workflow
@@ -86,14 +86,15 @@ new plugin `plugins/generations/news-report-gen/{plugin.json,src/index.ts}` (kin
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1.1 | MET | report path/timing table: kk-daily-ai-voice.yaml:310,318; readTiming news-report-gen/src/index.ts:137-158 |
-| R1.2 | MET | per-candidate 4-dim scores: scoreOf index.ts:43-46 vs episode-plan-gen:378 |
-| R1.3 | MET | aggregates index.ts:58-80; rejected reason grammar :644-645; QC_MIN_* envs :29-35 |
-| R1.4 | MET | no engine change; shell EXIT-trap stamps; missing timing -> omit :99-115 |
+| R1.1 | MET | Re-ran the executor this turn over the real 2026-09-16 run artifacts (`NEWS_REPORT_TIMING_FILE=<run>/step-timing.json bun apps/cli/src/index.ts executor run news-report-gen`): exit 0, body renders `## 步耗时` (line 42) and `**总耗时**: 7055000 ms（各步相加）` (line 65); timing render unit-covered in `plugins/generations/news-report-gen/tests/news-report-gen.test.ts` — 14 pass / 0 fail this turn |
+| R1.2 | MET | Live `20260916_19_run-report_report.md` 选稿评分（保留候选）table inspected this turn: per-candidate `quality/importance/urgency/impact` columns for all 7 kept candidates |
+| R1.3 | MET | Live report 维度聚合 table (min/max/avg/count per dimension) inspected this turn; 阈值拒绝计数 section present, and the same repro run with the 0138 dual-shape reader counts the real 13-entry audit (13 `category:not-in-allowlist`, 6 `importance:2<3`); 14/14 tests pass this turn |
+| R1.4 | MET | The repro report was assembled from existing run artifacts only (candidates.json + rejected.json + step-timing.json); no engine-side ledger involved — same inputs the `run-report` state consumes |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Given a completed run, report exists wit | MET | mixed | Given a completed run, report exists with per-step+total timing, per-candidate scores, min/max/avg, rejected counts. \| bun run test: 9 news-report-gen tests pass; lint 0; task check 0; workflow validate 0 |
+| A completed daily-voice run emits a run report | MET | test | `QC_MIN_QUALITY=2 QC_MIN_IMPORTANCE=3 QC_MIN_URGENCY=2 QC_MIN_IMPACT=1 NEWS_REPORT_REJECTED_FILE=… NEWS_REPORT_TIMING_FILE=… NEWS_REPORT_DATE=20260916 bun apps/cli/src/index.ts executor run news-report-gen --in /tmp/0138-repro-cands.json --out /tmp/0138-repro-report.json` → exit 0; body contains per-step timing table (`## 步耗时`) and total (`**总耗时**: 7055000 ms`); `plugins/generations/news-report-gen/tests/news-report-gen.test.ts` 14 pass / 0 fail this turn |
+| The report carries the scoring breakdown of plan candidates | MET | test | Live `.works/kk-daily-ai-voice/2026-09-16/20260916_19_run-report_report.md` inspected this turn: 选稿评分 per-candidate score table, 维度聚合 min/max/avg/count, 阈值拒绝计数 per-threshold rejected counts; 14/14 plugin tests pass this turn |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

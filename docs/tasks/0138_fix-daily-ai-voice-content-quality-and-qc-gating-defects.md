@@ -4,7 +4,7 @@ name: Fix daily-ai-voice content quality and QC gating defects
 status: done
 template: issue
 created_at: 2026-09-16T15:11:20.813Z
-updated_at: "2026-09-16T18:30:34.773Z"
+updated_at: "2026-09-16T19:08:29.789Z"
 
 ac_altitude: task-local
 feature_id: O
@@ -188,23 +188,23 @@ Change map: one `file:line` per changed file, as emitted by `spur task record --
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/generations/news-report-gen/src/index.ts:250-260` accepts both writer shapes; the real-shaped 13-entry envelope yields `category:not-in-allowlist` = 13 and `importance:2<3` = 6 and renders the `category allowlist` row as 13 — `plugins/generations/news-report-gen/tests/news-report-gen.test.ts:120,132,144` |
-| R2 | MET | `plugins/generations/episode-plan-gen/src/index.ts:42,314-319` — `STUB_BODY_FLOOR = 300` forces quality 1 below the floor and short-circuits the `sourceUri` bonus: 255 → 1, 299 → 1, 300 → 2, 348 → 2 (unchanged) — `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:408,651` |
-| R3 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:56,655-696,725-732` — post-translation title-only bigram Jaccard at 0.4, run before the article cache early-return; the 0.4225 pair merges onto its first occurrence while the 0.1017 distinct pair survives — `apps/cli/tests/kk-workflow-stages.test.ts:841,851,860` |
-| R4 | MET | `plugins/generations/daily-article-gen/src/index.ts:35-90,102` strips scaffold labels and hedging on the `renderDoc` path, and the plan-translate prompt carries the copy-discipline contract at `plugins/kk/workflows/kk-daily-ai-voice.yaml:124-131` — `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:28,36,40,45,52,57` and `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:139` |
-| R5 | MET | `git diff plugins/kk/workflows/kk-daily-ai-voice.yaml` changes no `qc_*` pin (pins intact at `:41-48`), adds no state id and no CLI flag; the plan.json rewrite is same-path, same-schema — `plugins/kk/scripts/kk-workflow-stages.ts:729` |
+| R1 | MET | `plugins/generations/news-report-gen/src/index.ts:250-260` accepts both writer shapes (re-read this run: array fast-path, `parsed.rejected` envelope, else `[]`); the 13-entry envelope test yields 13 category / 6 importance — `plugins/generations/news-report-gen/tests/news-report-gen.test.ts:120,132,144`; fresh run: 145/145 pass across the six cited test files |
+| R2 | MET | `plugins/generations/episode-plan-gen/src/index.ts:42,314-319` — `STUB_BODY_FLOOR = 300` forces quality 1 below the floor and short-circuits the `sourceUri` bonus (re-read: `bodyLen < STUB_BODY_FLOOR ? 1`, bonus gated on `bodyLen >= STUB_BODY_FLOOR`); 255→1, 299→1, 300→2, 348→2 — `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:408,651` |
+| R3 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:56,655-696,725-732` — post-translation title-only bigram Jaccard at `DEDUP_TITLE_THRESHOLD = 0.4`, run before the article cache early-return with conditional same-path rewrite; recomputed this run with the implementation's own normalization: the real Gemini pair scores 0.4225 (≥0.4, merges), a distinct pair 0.0128 (stays) — `apps/cli/tests/kk-workflow-stages.test.ts:841,851,860`; calibration comment (0.417 vs 0.1) at `:808-812` |
+| R4 | MET | `plugins/generations/daily-article-gen/src/index.ts:35-90,102` — `stripScaffold` drops label headings, collapses the doubled 「可做角度」 label, removes hedging sentences, clean bodies byte-identical; the plan-translate prompt carries the copy-discipline contract (re-read at `plugins/kk/workflows/kk-daily-ai-voice.yaml:124-131`) — `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:28,36,40,45,52,57` and `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:139` |
+| R5 | MET | `git show 031e6537 -- plugins/kk/workflows/kk-daily-ai-voice.yaml` filtered for `qc_min`/`qc_categories`/`- id:`/`.option(` lines → no output this run; pins intact at `plugins/kk/workflows/kk-daily-ai-voice.yaml:41-48`; plan.json rewrite is same-path, same-schema (`plugins/kk/scripts/kk-workflow-stages.ts:729`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `plugins/generations/news-report-gen/tests/news-report-gen.test.ts:120` covers the bare array and the `{rejected, config, total}` envelope; `:132` covers malformed, non-array, and envelope-without-rejected; `:144` asserts 13 category and 6 importance on a real-shaped 13-entry audit and the rendered count row |
-| AC2 | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:408` — a 255-char sourced body scores quality 1, a 348-char sourced body scores 2 |
-| AC3 | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:651` — 234/243/255-char aihot stubs are all rejected with `quality:1<2` under `filterConfigFromEnv({})`, and the 348-char control is kept |
-| AC4 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:841` — the real Gemini 3.8 Live pair merges to one survivor with the FIRST in plan order kept and the distinct item retained; the 0.417-versus-0.1 calibration is recorded at `:808-812` |
-| AC5 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:860` — the `daily-article` stage rewrites plan.json to one Gemini item on the first run and leaves it deduped on the cached second run |
-| AC6 | MET | test | `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:28,36,40` drop label headings and collapse the doubled label; `:45` removes hedging sentences while keeping the factual ones; `:52` proves a clean body passes through byte-identical |
-| AC7 | MET | test | `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:139` asserts the plan-translate prompt carries the copy-discipline contract — reader-facing news copy, no duplicated labels, and each named scaffold label and hedging marker — against `plugins/kk/workflows/kk-daily-ai-voice.yaml:124-131`; the same block stays under the ADR-115 1000-char error tier at 986 chars (`:129-136`) |
-| AC8 | MET | command | Ran `git diff -U0 plugins/kk/workflows/kk-daily-ai-voice.yaml` filtered for `qc_min`/`qc_categories` lines and for `- id:` lines, and `git diff` filtered for new `\.option(` calls — all three produced no output; the pins remain at `plugins/kk/workflows/kk-daily-ai-voice.yaml:41-48` |
-| AC9 | MET | test | `apps/cli/tests/kk-daily-ai-voice-content-quality.test.ts:104` drives the real plan, filter, dedup and article stages over the 2026-09-16-shaped fixture: the three stubs are rejected on the body floor, exactly one Gemini item is rendered, and the markdown carries no `**「label」**` heading and no hedging. Gate commands this run: `bun run lint` exit 0, `bun run test` 1042 pass and 0 fail, `bun run build` exit 0 |
+| AC1 | MET | test | `plugins/generations/news-report-gen/tests/news-report-gen.test.ts:120` (bare array + envelope), `:132` (malformed/non-array/envelope-without-rejected → `[]`), `:144` (13-entry real-shaped audit → 13 category / 6 importance into the report); passed in this run's 145-test sweep |
+| AC2 | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:408` — 255-char sourced body → quality 1; 348-char sourced body → 2 (unchanged) |
+| AC3 | MET | test | `plugins/generations/episode-plan-gen/tests/episode-plan-gen.test.ts:651` — 234/243/255-char stubs rejected with `quality:1<2` under `filterConfigFromEnv({})`; 348-char control kept |
+| AC4 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:841` — real Gemini 3.8 Live pair merges to one survivor, FIRST in plan order kept, distinct item retained; 0.417-vs-0.1 calibration recorded at `:808-812` |
+| AC5 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:860` — `daily-article` stage rewrites plan.json to one Gemini item on first run; cached second run leaves it deduped |
+| AC6 | MET | test | `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:28,36,40` (label headings + doubled label), `:45` (hedging removed, factual kept), `:52` (clean body byte-identical) |
+| AC7 | MET | test | `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:139` asserts each scaffold label, no-duplicated-labels, and hedging markers against the prompt block at `plugins/kk/workflows/kk-daily-ai-voice.yaml:124-131` |
+| AC8 | MET | command | Re-ran this turn: `git show 031e6537 -- plugins/kk/workflows/kk-daily-ai-voice.yaml` filtered for `qc_min`/`qc_categories`/`- id:`/`.option(` → `NO_THRESHOLD_OR_STATE_CHANGES`; pins at `plugins/kk/workflows/kk-daily-ai-voice.yaml:41-48` |
+| AC9 | MET | test | `apps/cli/tests/kk-daily-ai-voice-content-quality.test.ts:104` (stubs rejected, one Gemini item, no scaffolding/hedging in rendered markdown) — passed. Gate commands this run: `bun run lint` exit 0, `bun run build` exit 0, `bun run test` exit 0 (1042 pass, 0 fail, 67 files) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

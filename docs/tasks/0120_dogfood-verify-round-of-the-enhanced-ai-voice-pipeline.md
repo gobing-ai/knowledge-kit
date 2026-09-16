@@ -4,7 +4,7 @@ name: Dogfood verify round of the enhanced AI-voice pipeline
 status: done
 template: issue
 created_at: 2026-09-11T23:55:04.611Z
-updated_at: "2026-09-12T00:09:36.118Z"
+updated_at: "2026-09-16T19:16:42.673Z"
 feature_id: O
 priority: P1
 tags:
@@ -72,7 +72,20 @@ Two live end-to-end attempts run from this worktree (spur workflow run kk-daily-
 
 ### Testing
 
-Standalone seam test 4/4 PASS (artifacts /tmp/kk-0120-seam/): postPath->URL derivation via real slug+locale (https://surfing.salty.vip/zh/posts/2026-09-11 x7 items), show-notes.md timeline (briefings, HH:MM incl --:-- handling, legacy fallback branch), run-report.json from the real 15-entry step-timing.json (per-step wall-clock, min/max/avg aggregates over 20 candidates, 0 threshold rejections). lint 0; task check 0.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R5 | MET | Live 2026-09-16 run published via the real transport — `jq .targets` this turn: surfdash `{"name":"surfdash-pub","ok":true,"url":"https://surfing.salty.vip/zh/posts/20260916-ai-2026-09-16"}`, podcast `{"name":"podcast-pub","ok":true,"url":"https://podcast.salty.vip/items/736FPAQ85xV"}`; fail-loud on missing credentials confirmed at `plugins/publishings/surfdash-pub/src/index.ts:308,359,397` (`fail('SURFDASH_ROOT is required …')`, rg this turn) and covered by `plugins/publishings/surfdash-pub/tests/surfdash-pub.test.ts` — 30 pass / 0 fail this turn |
+| R6 | MET | The 2026-09-16 dogfood run exercises every enhancement, all inspected this turn: run report exists (`20260916_19_run-report_report.md` — scoring table, aggregates, rejected counts; timing table reproduced live from the run's own `step-timing.json` via the executor, `## 步耗时` + `**总耗时**: 7055000 ms`), timeline show notes (`20260916_15_show-notes_show-notes.md` — briefings, HH:MM, per-item article URLs), and `ai-news` tag (`20260916_06_article_content.json:47`, `20260916_13_publish-prep_content.json:47`) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Publish path is the real transport with no simulated residue | MET | command | `jq .targets .works/kk-daily-ai-voice/2026-09-16/3-publish/20260916_14_publish-surfdash_result.json` → `ok:true`, real post `https://surfing.salty.vip/zh/posts/20260916-ai-2026-09-16`; same for `20260916_16_publish-podcast_result.json` → `ok:true`, real episode `https://podcast.salty.vip/items/736FPAQ85xV` — no dummy/dry-run artifacts; 30 surfdash-pub tests pass this turn |
+| Next dogfood run exercises all enhancements | MET | command | All visible in the 2026-09-16 artifacts this turn: report (`20260916_19_run-report_report.md`; timing table reproduced with `NEWS_REPORT_TIMING_FILE=… bun apps/cli/src/index.ts executor run news-report-gen` → `## 步耗时`, `**总耗时**: 7055000 ms`, exit 0), timeline show notes (`20260916_15_show-notes_show-notes.md` — briefing + `17:20` + `[文章]` URL per item), `ai-news` frontmatter tag (content.json + publish-prep content, both line 47) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

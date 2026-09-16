@@ -4,7 +4,7 @@ name: Stamp ai-news tag on daily AI voice articles
 status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.610Z
-updated_at: "2026-09-12T00:09:35.874Z"
+updated_at: "2026-09-16T19:16:42.514Z"
 feature_id: O
 priority: P1
 tags:
@@ -78,13 +78,13 @@ daily-article-gen/src/index.ts:46-56 AI_NEWS_TAG constant + tagsFor(docs): lead 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R4.1 | MET | AI_NEWS_TAG + tagsFor(): daily-article-gen/src/index.ts:46-56; stamped in docsToContent :64 |
-| R4.2 | MET | surfdash frontmatter tags mapping pre-existing surfdash-pub/src/index.ts:76-100; single-source verified |
-| R4.3 | MET | no env/CLI knob; no AI_NEWS_TAG env read anywhere |
+| R4.1 | MET | `grep -n 'ai-news' .works/kk-daily-ai-voice/2026-09-16/2-article/20260916_06_article_content.json` this turn → line 47 carries `"ai-news"` — stamped at generation time by daily-article-gen (`AI_NEWS_TAG` constant, `plugins/generations/daily-article-gen/src/index.ts:112`); 17 daily-article-gen tests pass this turn |
+| R4.2 | MET | `grep -n 'ai-news' .works/…/3-publish/20260916_13_publish-prep_content.json` this turn → line 47: the tag survives into the publish-prep content that produces the surfdash frontmatter; mapping coverage in `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts` — 17 pass / 0 fail this turn |
+| R4.3 | MET | `rg 'AI_NEWS_TAG' plugins/ apps/ packages/` this turn: the only hits are the module constant and its use (`daily-article-gen/src/index.ts:112,120`) — no `process.env` read, no CLI flag; 17/17 tests this turn |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Article frontmatter tags include ai-news | MET | mixed | Article frontmatter tags include ai-news as lead, deduped merge, non-strings filtered. \| bun run test: 11 daily-article-gen tests pass; lint 0; task check 0 |
+| Article publish stamps the tag | MET | test | Live 2026-09-16 run artifacts inspected this turn: `2-article/20260916_06_article_content.json:47` and `3-publish/20260916_13_publish-prep_content.json:47` both carry `"ai-news"`; `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts` 17 pass / 0 fail this turn |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
