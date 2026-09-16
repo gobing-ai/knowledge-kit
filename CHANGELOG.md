@@ -1,3 +1,14 @@
+## [0.0.16] - 2026-09-16
+
+### Fixed
+
+- target the CLI package in bump-ver and guard version lockstep (816e8c62)
+
+### Other
+
+- chore(release): declare builder.bump-ver.aggregatePackage (cb2b20d8)
+- chore(project): refresh the history report snapshot (aa0bd411)
+
 ## [0.0.15] - 2026-09-15
 
 ### Added
