@@ -695,6 +695,24 @@ export function dedupPlanByTitle<T extends { id?: unknown; title?: unknown }>(
     return { kept, dropped };
 }
 
+/**
+ * Run the VoiceScript content validator over a written script and fail the stage when it rejects
+ * (task 0139 R3). `spawnSync` rather than `delegate` on purpose: `delegate` exits the process
+ * directly, which would skip `timed`'s `finally` and lose the step-timing entry the run report
+ * reads. The sidecar's own stderr carries `content check failed: segment <idx> …`; this adds the
+ * stage-level naming so the operator sees which artifact was rejected.
+ */
+function assertScriptContent(scriptPath: string): void {
+    // `spawnSync` + `failWith`, deliberately NOT `delegate`: delegate is `never`-returning (it calls
+    // process.exit), so using it mid-function would abort the calling stage on SUCCESS — dailyWrapDocs
+    // would exit before packaging its docs. A clean exit here falls through to the rest of the stage.
+    const sidecar = requireSidecar('', VALIDATE_SIDECAR, 'validate_script');
+    const runner = spawnSync(process.execPath, [sidecar, '--in', scriptPath], { stdio: 'inherit' });
+    if (runner.status !== 0) {
+        failWith(runner.status ?? 1, `script content check failed: ${scriptPath} was rejected (see above)`);
+    }
+}
+
 function dailyArticle(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const articleMd = join(workDir, '2-article', `${runDate}_06_article_article.md`);
@@ -816,6 +834,9 @@ function dailyScript(args: string[]): void {
         const body = readJson(contentOut)?.body;
         if (typeof body !== 'string') failWith(1, `script: ${contentOut} has no string body`);
         sted('write', yamlOut, () => writeRaw(yamlOut, body));
+        // R3 (task 0139): fresh writes are validated here; the script cache path is covered by
+        // wrap-docs, which runs on every path that reaches audio.
+        assertScriptContent(yamlOut);
     });
 }
 
@@ -824,6 +845,9 @@ function dailyWrapDocs(args: string[]): void {
     const scriptPath = join(workDir, '2-script', `${runDate}_08_script_voicescript.yaml`);
     const docsPath = join(workDir, '3-audio', `${runDate}_10_wrap-docs_docs.json`);
     timed(workDir, 'wrap-docs', () => {
+        // R3 (task 0139): the second validator placement — covers a HITL-edited YAML and the
+        // script-stage cache path, neither of which re-enters dailyScript's fresh-write branch.
+        assertScriptContent(scriptPath);
         const url = new URL(scriptPath, `file://${process.cwd()}/`);
         const body = readFileSync(decodeURIComponent(url.pathname), 'utf-8');
         const profile = voiceProfile || process.env.VOICEBOX_DEFAULT_PROFILE || 'robin-news';
@@ -1096,6 +1120,8 @@ function dailyRunReport(args: string[]): void {
                     `${runDate}_04_quality-control-content_candidates.rejected.json`,
                 ),
                 NEWS_REPORT_TIMING_FILE: join(workDir, 'step-timing.json'),
+                // 0139 R5b: the generate stage's QC audit, read best-effort (absent -> section omitted).
+                NEWS_REPORT_QC_FILE: join(workDir, '3-audio', `${runDate}_11_generate_content.json`),
                 NEWS_REPORT_DATE: runDate,
             },
         });

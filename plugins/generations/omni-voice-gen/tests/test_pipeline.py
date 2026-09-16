@@ -324,3 +324,40 @@ def test_profile_target_follows_frozen_d4_order() -> None:
     assert pipeline.resolve_profile_target(segment, speaker, script, None, docs) == "doc"
     with pytest.raises(ValueError, match="VOICEBOX_DEFAULT_PROFILE, or doc metadata.voiceProfile"):
         pipeline.resolve_profile_target(segment, None, script, None, [Doc(id="d", body="b")])
+
+
+def test_repetition_detected_fails_run_but_keeps_content_for_inspection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """0139 R5a: repetition is the one QC issue the verify loop cannot fix and the one that damages
+    credibility on air, so it fails the run — after writing content.json (outside the
+    delete-on-failure path) so the operator can inspect the audit that condemned it."""
+    # The repetition lives in the segment TEXT and the transcription matches it, so fidelity passes
+    # and the verify loop never retries — the only failing signal is repetition itself.
+    backend = FakeBackend([CLEAN_A], [2.0], {0: "ababab"})
+    monkeypatch.setattr(pipeline, "OmnivoiceBackend", lambda: backend)
+    out = tmp_path / "episode.json"
+
+    rc = main(["--in", write_docs(tmp_path, {"text": "ababab", "profile": "host"}), "--out", str(out)])
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "omni-voice-gen failed:" in err  # the plugin's single fail-loud stderr contract
+    assert "segment(s) 0" in err  # the audit's own 0-based segmentIndex
+    assert "repetition_detected" in err
+    assert out.exists()  # content.json kept for inspection
+    assert out.with_suffix(".wav").exists()  # audio kept too: a review stop, not a corrupt artifact
+    audits = read_meta(out)["qc"]["segmentAudits"]
+    assert [a["segmentIndex"] for a in audits if "repetition_detected" in a["issues"]] == [0]
+
+
+def test_clean_audit_exits_zero_without_the_repetition_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """0139 R5a counter-case: no repetition in the audit means the post-audit gate stays silent."""
+    backend = FakeBackend([CLEAN_A], [2.0], {0: HELLO})
+    monkeypatch.setattr(pipeline, "OmnivoiceBackend", lambda: backend)
+    out = tmp_path / "episode.json"
+
+    assert main(["--in", write_docs(tmp_path, {"text": HELLO, "profile": "host"}), "--out", str(out)]) == 0
+    assert out.exists()

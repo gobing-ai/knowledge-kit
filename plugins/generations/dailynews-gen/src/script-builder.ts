@@ -144,37 +144,129 @@ export function normalizeBroadcastText(raw: string, isZh: boolean): string {
 /**
  * Synthesizes a natural, concise spoken perspective / takeaway based on the story facts.
  * Gives the monologue a demonstrative tech podcast talk feel rather than mechanical news reading.
+ *
+ * `used` is the per-episode set of lines already spoken (task 0139 R2). A colliding item gets
+ * `null` — no commentary segment at all — because a repeated line is worse than none and a
+ * second-choice line would be a different topic misfire (Q&A item 5).
  */
-export function synthesizePersonalUnderstanding(title: string, body: string, isZh: boolean): string {
+export function synthesizePersonalUnderstanding(
+    title: string,
+    body: string,
+    isZh: boolean,
+    used: Set<string>,
+): string | null {
     const combined = `${title} ${body}`.toLowerCase();
+    const line = isZh ? zhInsightFor(combined) : enInsightFor(combined);
+    if (used.has(line)) return null;
+    used.add(line);
+    return line;
+}
 
-    if (isZh) {
-        if (/jakub|szymon|首席科学家|创始团队|技术领袖|黄金搭档/i.test(combined)) {
-            return '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者，为今天整个大模型生态奠定了最坚实的技术基石。';
-        }
-        if (/算力|吉瓦|工厂|电力|芯片|基础设施|基建|硬件|能源/i.test(combined)) {
-            return '这其实释放了一个非常明确的信号：AI竞争的下半场，已经不再只是单纯拼模型参数，更是电力、能源和全栈工业基础设施的硬核较量。';
-        }
-        if (/sora|视频|生成|cameo|chatgpt/i.test(combined)) {
-            return '我个人觉得，这次最大的看点是内容创作门槛的再次降低。不过正如团队提到的，如何平衡创作自由与防止低质内容泛滥，会是整个行业接下来最值得观察的关键考题。';
-        }
-        if (/融资|投资|市场|商业|估值|合作/i.test(combined)) {
-            return '这项进展反映出资本与产业界正在加速形成合力，后续实际业务场景的落地效果非常值得我们持续跟进。';
-        }
-        return '这项新动态反映出技术演进正在进一步提速，对相关领域的实际影响也非常值得我们持续关注。';
+/**
+ * Bucket order is first-match-wins, and the buckets are deliberately disjoint (task 0139 R2).
+ * The energy line requires energy-side keywords: the pre-fix bucket matched bare
+ * `芯片|硬件|工厂`, so it fired after the Nvidia-regulation and Apple Secure-Enclave items on the
+ * 2026-09-16 run. Hardware/chip content now has its own line instead.
+ */
+function zhInsightFor(combined: string): string {
+    if (/jakub|szymon|首席科学家|创始团队|技术领袖|黄金搭档/i.test(combined)) {
+        return '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者，为今天整个大模型生态奠定了最坚实的技术基石。';
     }
+    if (/算力|吉瓦|电力|能源|数据中心|基础设施|基建/.test(combined)) {
+        return '这其实释放了一个非常明确的信号：AI竞争的下半场，已经不再只是单纯拼模型参数，更是电力、能源和全栈工业基础设施的硬核较量。';
+    }
+    if (/芯片|硬件|处理器|enclave/i.test(combined)) {
+        return '真正被重新定义的，是硬件层承担的安全与算力责任：把能力做进硅片层更可靠、也更难绕过，但生态锁定的代价需要一起算进去。';
+    }
+    // Video/creation only — bare `生成` matched every generative-AI body (Meta and both Gemini
+    // items on the 2026-09-16 run) and bare `chatgpt` matched the Meta item, which is what made
+    // this line a topic misfire. A product name is not a creation-barrier story.
+    if (/sora|视频|生成视频|视频生成|文生视频|内容创作|cameo/i.test(combined)) {
+        return '我个人觉得，这次最大的看点是内容创作门槛的再次降低。不过正如团队提到的，如何平衡创作自由与防止低质内容泛滥，会是整个行业接下来最值得观察的关键考题。';
+    }
+    if (/融资|投资|市场|商业|估值|合作/.test(combined)) {
+        return '这项进展反映出资本与产业界正在加速形成合力，后续实际业务场景的落地效果非常值得我们持续跟进。';
+    }
+    return '这项新动态反映出技术演进正在进一步提速，对相关领域的实际影响也非常值得我们持续关注。';
+}
 
-    // English spoken insights
+/** English mirror of {@link zhInsightFor} — same bucket order, same disjointness rule. */
+function enInsightFor(combined: string): string {
     if (/jakub|szymon|chief scientist|founding team|technical leader|partnership/i.test(combined)) {
         return 'Behind the headlines, it is relentless technical leadership and deep engineering rigor that continue to drive these foundational milestones.';
     }
-    if (/compute|gigawatt|factory|power|chip|infrastructure|datacenter/i.test(combined)) {
+    if (/compute|gigawatt|power|energy|datacenter|infrastructure/.test(combined)) {
         return 'This signals clearly that the AI frontier is no longer just about algorithms, but a massive contest of power, energy, and full-stack industrial engineering.';
     }
-    if (/sora|video|generation|cameo|chatgpt/i.test(combined)) {
+    if (/chip|hardware|processor|enclave/i.test(combined)) {
+        return 'What stands out is the hardware layer quietly taking on the security and compute burden: putting the guarantee in silicon is harder to bypass, and it carries its own lock-in cost.';
+    }
+    if (/sora|video|video generation|content creation|cameo/i.test(combined)) {
         return 'In my view, the biggest takeaway here is the dramatic lowering of creation barriers, while content quality governance will be the key test ahead.';
     }
     return 'This development highlights how rapidly the ecosystem is moving from experimental proofs of concept into large-scale execution.';
+}
+
+/**
+ * Longest fact segment the script emits (task 0139 R4).
+ * ponytail: observed zh speech rates 3.4–6.1 chars/s put 300 chars at 49–88s per chunk; raise only
+ * with measured evidence. 400 would reach ~117s at the slowest observed rate, where whisper
+ * transcription fidelity collapsed to 0.25–0.41 on the 2026-09-16 run.
+ */
+export const MAX_FACT_SEGMENT_CHARS = 300;
+
+/** Punctuation and space the translator drifts between a title and its body restatement. */
+const TITLE_ECHO_NOISE_RE = /[，。、：:；;!！?？…\s「」『』【】]/g;
+
+/**
+ * Drop a leading restatement of the item title from its body (task 0139 R1).
+ *
+ * `plan-translate` derives each title from the body's first sentence, so the echo is always a
+ * prefix with at most punctuation drift (`：` → `，`) — the rule is a deterministic significant-
+ * character prefix compare, never a fuzzy/LLM similarity match (anti-pattern list). The body is
+ * returned untouched whenever the normalized prefix does not equal the normalized title, and a
+ * body that is *only* the restatement collapses to the empty string (the lead alone carries it).
+ */
+export function stripLeadingTitleEcho(body: string, title: string): string {
+    const wanted = title.replace(TITLE_ECHO_NOISE_RE, '');
+    if (wanted.length < 4) return body; // a short title would match too much of the body
+    let matched = '';
+    let end = -1;
+    for (let i = 0; i < body.length && matched.length < wanted.length; i++) {
+        const kept = (body[i] ?? '').replace(TITLE_ECHO_NOISE_RE, '');
+        if (kept === '') continue; // drift punctuation between title and echo
+        matched += kept;
+        if (matched.length >= wanted.length) end = i + 1;
+    }
+    if (end === -1 || matched !== wanted) return body;
+    return body.slice(end).replace(/^[，。、：:；;!！?？…\s「」『』【】]+/, '');
+}
+
+/**
+ * Split a fact text into chunks of at most `maxChars` (task 0139 R4).
+ *
+ * Greedy packing at clause boundaries: a chunk closes when the next clause would push it past the
+ * cap, so `chunks.join('') === text` always holds — the `[\s\S]` alternative is what keeps leading
+ * or stray punctuation from being dropped by the match. `；` is a boundary too: a clause-joined
+ * sentence would otherwise stay whole and blow past the ~90s budget the cap exists to protect. A
+ * single clause longer than the cap is emitted whole — splitting mid-thought is worse than a long
+ * segment — and is left to the QC duration audit.
+ */
+export function splitFactText(text: string, maxChars: number = MAX_FACT_SEGMENT_CHARS): string[] {
+    if (text.length <= maxChars) return [text];
+    const clauses = text.match(/[^。！？…；]+[。！？…；]*|[\s\S]/g) ?? [text];
+    const chunks: string[] = [];
+    let current = '';
+    for (const clause of clauses) {
+        if (current !== '' && current.length + clause.length > maxChars) {
+            chunks.push(current);
+            current = clause;
+            continue;
+        }
+        current += clause;
+    }
+    if (current !== '') chunks.push(current);
+    return chunks.length > 0 ? chunks : [text];
 }
 
 export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions): VoiceScript {
@@ -259,10 +351,13 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     });
 
     // 2. Story segments: demonstrative talk with facts + conversational insight
+    const usedInsights = new Set<string>(); // one per episode (task 0139 R2)
     docs.forEach((doc, idx) => {
         const isLast = idx === docs.length - 1 && docs.length > 1;
         const cleanTitle = (doc.title ?? '').trim();
-        const cleanBody = (doc.body ?? '').trim();
+        // R1: drop the title restatement plan-translate prepends to the body, so the lead's
+        // 【title】 is the only place the title is spoken for this item.
+        const cleanBody = stripLeadingTitleEcho((doc.body ?? '').trim(), cleanTitle);
 
         // Conversational lead
         const lead = isZh
@@ -278,23 +373,28 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
                 : `Next, turning our attention to ${cleanTitle}.`;
 
         const normalizedLead = normalizeBroadcastText(lead, isZh);
-        const normalizedBody = normalizeBroadcastText(cleanBody, isZh);
-        const insight = synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh);
-        const normalizedInsight = normalizeBroadcastText(insight, isZh);
+        const normalizedBody = cleanBody === '' ? '' : normalizeBroadcastText(cleanBody, isZh);
+        const insight = synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh, usedInsights);
+        const normalizedInsight = insight === null ? null : normalizeBroadcastText(insight, isZh);
 
         const factText = isZh ? `${normalizedLead}${normalizedBody}` : `${normalizedLead} ${normalizedBody}`;
 
-        // Emit facts followed by personal insight commentary
-        segments.push({
-            text: factText,
-            gap_ms: 500, // Natural breathing pause before giving personal perspective
-            emotion: 'professional, clear',
-        });
-        segments.push({
-            text: normalizedInsight,
-            gap_ms: 800, // Distinct 800ms pause before the next story
-            emotion: 'thoughtful, personal',
-        });
+        // R4: facts first, chunked so no single segment runs past ~90s of speech; then the insight
+        // only when this episode has not already spoken that line (R2 collision ⇒ no segment).
+        for (const chunk of splitFactText(factText)) {
+            segments.push({
+                text: chunk,
+                gap_ms: 500, // Natural breathing pause before giving personal perspective
+                emotion: 'professional, clear',
+            });
+        }
+        if (normalizedInsight !== null) {
+            segments.push({
+                text: normalizedInsight,
+                gap_ms: 800, // Distinct 800ms pause before the next story
+                emotion: 'thoughtful, personal',
+            });
+        }
     });
 
     // 3. Outro segment: Warm, conversational wrap-up

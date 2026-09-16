@@ -17,7 +17,9 @@ import { echoError } from '@gobing-ai/ts-utils';
  *   workflow from the filter Content's metadata.docs). Scores live in
  *   `metadata.scores` (quality/importance/urgency/impact 0-5).
  * - `NEWS_REPORT_REJECTED_FILE` — the filter's rejected audit path
- *   (`2-plan/candidates.rejected.json`, RejectedDoc[] of {doc, reasons});
+ *   (`2-plan/candidates.rejected.json`, RejectedDoc[] of {doc, reasons})
+ * - `NEWS_REPORT_QC_FILE` — the generate stage's QC audit path
+ *   (`3-audio/<date>_11_generate_content.json`); absent -> the 音频 QC block is omitted;
  *   absent or unreadable -> reject counts render as 0, never throw.
  * - `NEWS_REPORT_TIMING_FILE` — `<work_dir>/step-timing.json` JSONL of
  *   {step, startedAt, endedAt} appended by the workflow shell steps; missing
@@ -144,6 +146,51 @@ interface RejectedAudit {
     reasons: string[];
 }
 
+/** Generate-stage audio QC summary rendered into the run report (task 0139 R5b). */
+export interface QcSummary {
+    passed: boolean;
+    overallScore: number;
+    /** Per-issue-type counts, most frequent first; `duration_anomaly: <detail>` counts as its type. */
+    issues: { type: string; count: number }[];
+}
+
+/**
+ * Read the generate stage's QC audit (`<run_date>_11_generate_content.json`) (task 0139 R5b).
+ *
+ * Best-effort by contract: an absent, unreadable, or malformed file returns `null` and the report
+ * omits the section — a run report must never fail a run. Issue types are the text before the first
+ * `:` so a detailed `duration_anomaly: expected …` rolls up under one row.
+ */
+export async function readQcSummary(path: string | undefined): Promise<QcSummary | null> {
+    if (!path || path.trim() === '') return null;
+    try {
+        const parsed = JSON.parse(await Bun.file(path).text()) as { metadata?: { qc?: unknown } } | null;
+        const qc = parsed?.metadata?.qc;
+        if (qc === null || typeof qc !== 'object') return null;
+        const record = qc as { passed?: unknown; overallScore?: unknown; segmentAudits?: unknown };
+        const counts = new Map<string, number>();
+        const audits = Array.isArray(record.segmentAudits) ? record.segmentAudits : [];
+        for (const audit of audits) {
+            const issues = (audit as { issues?: unknown } | null)?.issues;
+            if (!Array.isArray(issues)) continue;
+            for (const issue of issues) {
+                if (typeof issue !== 'string') continue;
+                const type = issue.split(':')[0]?.trim() || issue;
+                counts.set(type, (counts.get(type) ?? 0) + 1);
+            }
+        }
+        return {
+            passed: record.passed === true,
+            overallScore: typeof record.overallScore === 'number' ? record.overallScore : 0,
+            issues: [...counts.entries()]
+                .map(([type, count]) => ({ type, count }))
+                .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)),
+        };
+    } catch {
+        return null;
+    }
+}
+
 /** Parse the timing JSONL; unreadable/missing -> [] (never throw). Last entry per step wins. */
 export async function readTiming(path: string | undefined): Promise<TimingEntry[]> {
     if (!path || path.trim() === '') return [];
@@ -180,7 +227,11 @@ function durationMs(entry: TimingEntry): number | null {
 export function renderReportMarkdown(
     docs: Doc[],
     date: string,
-    options: { rejected?: { doc: Doc; reasons: string[] }[]; timing?: TimingEntry[] } = {},
+    options: {
+        rejected?: { doc: Doc; reasons: string[] }[];
+        timing?: TimingEntry[];
+        qc?: QcSummary | null;
+    } = {},
 ): string {
     const lines: string[] = [`# 每日 AI 语音运行报告 — ${date}`, ''];
     lines.push('## 选稿评分（保留候选）', '');
@@ -220,6 +271,18 @@ export function renderReportMarkdown(
     }
     lines.push(`| category allowlist | — | ${counts.category} |`);
     lines.push('');
+
+    const qc = options.qc ?? null;
+    if (qc !== null) {
+        // 0139 R5b: the audio QC verdict is otherwise invisible in the report — this run published
+        // an episode whose audit said `passed:false`, and nothing but the artifact recorded it.
+        lines.push('## 音频 QC', '');
+        lines.push('| 指标 | 值 |', '| --- | --- |');
+        lines.push(`| 综合评分 | ${qc.overallScore} |`);
+        lines.push(`| 通过 | ${qc.passed ? '是' : '否'} |`);
+        for (const issue of qc.issues) lines.push(`| ${issue.type} | ${issue.count} |`);
+        lines.push('');
+    }
 
     const timing = options.timing ?? [];
     if (timing.length > 0) {
@@ -263,7 +326,11 @@ export async function readRejectedAudit(path: string | undefined): Promise<Rejec
 export function docsToContent(
     docs: Doc[],
     date: string,
-    options: { rejected?: { doc: Doc; reasons: string[] }[]; timing?: TimingEntry[] },
+    options: {
+        rejected?: { doc: Doc; reasons: string[] }[];
+        timing?: TimingEntry[];
+        qc?: QcSummary | null;
+    },
 ): Content {
     return ContentSchema.parse({
         title: `每日 AI 语音运行报告 — ${date}`,
@@ -282,7 +349,8 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
     const docs = DocListSchema.parse(await readJsonFile(inputPath));
     const rejected = await readRejectedAudit(process.env.NEWS_REPORT_REJECTED_FILE);
     const timing = await readTiming(process.env.NEWS_REPORT_TIMING_FILE);
-    const content = docsToContent(docs, dateFromEnv(), { rejected, timing });
+    const qc = await readQcSummary(process.env.NEWS_REPORT_QC_FILE);
+    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc });
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);

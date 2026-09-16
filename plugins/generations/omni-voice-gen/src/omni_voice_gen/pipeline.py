@@ -303,3 +303,19 @@ def run(
     except BaseException:
         _delete(out_path, audio_path, mp3_path)
         raise
+
+    # R5a (task 0139): repetition is the one QC issue the verify loop cannot fix and the one that
+    # damages credibility on air, so it fails the run — but only AFTER content.json is on disk, and
+    # outside the delete-on-failure try above, so the operator can inspect the audit that condemned
+    # it. The audio and MP3 stay too: this is a review stop, not a corrupt-artifact cleanup. Recovery
+    # is HITL YAML inspection plus a re-run; Q&A item 3 ships this with no override knob.
+    repeated = [
+        audit.get("segmentIndex")
+        for audit in content.metadata.get("qc", {}).get("segmentAudits", [])
+        if "repetition_detected" in audit.get("issues", [])
+    ]
+    if repeated:
+        indexes = ", ".join(str(index) for index in repeated)
+        raise RuntimeError(
+            f"segment(s) {indexes} carry repetition_detected — content.json written for inspection"
+        )

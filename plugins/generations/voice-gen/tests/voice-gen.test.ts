@@ -1303,3 +1303,53 @@ segments:
         expect(existsSync(outputPath)).toBe(false);
     });
 });
+
+describe('voice-gen validateVoiceScript content checks (0139 R3 SYNC twin)', () => {
+    const script = (...segments: string[]) =>
+        ({
+            title: 'Episode',
+            language: 'en',
+            segments: segments.map((text) => ({ text })),
+        }) as Parameters<typeof validateVoiceScript>[0];
+
+    // The messages must stay byte-identical to plugins/kk/scripts/validate-voicescript.ts: the daily
+    // workflow runs whichever copy the package resolves, and both must reject the same defects.
+    it('rejects a title echo naming the segment', () => {
+        expect(() =>
+            validateVoiceScript(
+                script(
+                    '首先来聊聊【Nvidia 黄仁勋表示，AI 不需要监管】。Nvidia 黄仁勋表示，AI 不需要监管 黄仁勋认为安全可自行设计。',
+                ),
+            ),
+        ).toThrow(
+            'content check failed: segment 0 repeats its 【Nvidia 黄仁勋表示，AI 不需要监管】 title in the body text',
+        );
+    });
+
+    it('rejects duplicate segment text', () => {
+        expect(() => validateVoiceScript(script('Hello there.', 'Hello there.'))).toThrow(
+            'content check failed: segment 1 duplicates segment 0 verbatim',
+        );
+    });
+
+    it('rejects each scaffold-label pattern and the 标签 tail', () => {
+        for (const label of ['背景', '潜在影响', '可做角度', '为什么现在值得注意', '社区讨论']) {
+            expect(() => validateVoiceScript(script(`${label}：正文。`))).toThrow(
+                'content check failed: segment 0 opens with a research scaffold label',
+            );
+            expect(() => validateVoiceScript(script(`**「${label}」** 正文。`))).toThrow(
+                'content check failed: segment 0 opens with a research scaffold label',
+            );
+        }
+        expect(() => validateVoiceScript(script('正文。标签，ai'))).toThrow(
+            'content check failed: segment 0 carries a 标签 metadata tail',
+        );
+    });
+
+    it('rejects a colon-mangled URL and accepts clean copy', () => {
+        expect(() => validateVoiceScript(script('见 wss，//example.com/ws'))).toThrow(
+            'content check failed: segment 0 has a colon-mangled URL',
+        );
+        expect(() => validateVoiceScript(script('A clean spoken sentence.', 'Another clean one.'))).not.toThrow();
+    });
+});

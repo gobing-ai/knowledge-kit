@@ -326,15 +326,22 @@ if (plugin === 'aihot-ingest') {
     writeFileSync(outPath, JSON.stringify({ title: 'Daily AI News', body: '# Daily article\\n\\n' + docs.length + ' items', format: 'markdown' }));
 } else if (plugin === 'dailynews-gen') {
     const docs = JSON.parse(readFileSync(inPath, 'utf8'));
-    const script = {
-        title: process.env.DAILYNEWS_TITLE,
-        language: process.env.DAILYNEWS_LANGUAGE,
-        default_profile: process.env.VOICEBOX_DEFAULT_PROFILE,
-        segments: [{ text: docs[0].body, gap_ms: 100 }],
-    };
+    const title = process.env.DAILYNEWS_TITLE;
+    // Block-style YAML, mirroring dailynews-gen's own formatVoiceScriptToYaml. Bun.YAML.stringify
+    // emits a flow mapping like {title: x, segments: [...]}, which is valid YAML but is neither
+    // JSON nor the shape the real plugin writes — and the 0139 validator now runs over this file.
+    const body = [
+        'title: "' + title + '"',
+        'language: "' + process.env.DAILYNEWS_LANGUAGE + '"',
+        'default_profile: "' + process.env.VOICEBOX_DEFAULT_PROFILE + '"',
+        'segments:',
+        '  - text: "' + String(docs[0].body).replace(/"/g, '\\"') + '"',
+        '    gap_ms: 100',
+        '',
+    ].join('\\n');
     writeFileSync(outPath, JSON.stringify({
-        title: script.title,
-        body: Bun.YAML.stringify(script),
+        title,
+        body,
         format: 'markdown',
     }));
 } else if (plugin === 'voice-gen') {

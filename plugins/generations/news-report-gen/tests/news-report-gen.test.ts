@@ -6,6 +6,7 @@ import type { Content, Doc } from '@gobing-ai/kk-core';
 import {
     main,
     processGeneratorIO,
+    readQcSummary,
     readRejectedAudit,
     readTiming,
     rejectedCounts,
@@ -210,5 +211,91 @@ describe('news-report-gen IO', () => {
     test('main exits 1 with the standard error shape on missing args', async () => {
         const code = await main();
         expect(code).toBe(1);
+    });
+});
+
+describe('news-report-gen QC block (0139 R5b)', () => {
+    // Fixture mirrors the 2026-09-16 audit: passed:false with per-type issue counts, including the
+    // detailed `duration_anomaly: expected …` form that must roll up under one row.
+    const audit = {
+        metadata: {
+            qc: {
+                passed: false,
+                overallScore: 50,
+                totalDuration: 879.33,
+                segmentAudits: [
+                    {
+                        segmentIndex: 0,
+                        issues: [
+                            'repetition_detected',
+                            'loudness_dip:unknown',
+                            'duration_anomaly: expected 1.0s, got 2.0s',
+                        ],
+                    },
+                    { segmentIndex: 1, issues: ['loudness_dip:unknown'] },
+                ],
+            },
+        },
+    };
+
+    async function withQcFile<T>(text: string, fn: (path: string) => Promise<T>): Promise<T> {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-qc-'));
+        const path = join(dir, '20260916_11_generate_content.json');
+        await writeFile(path, text);
+        try {
+            return await fn(path);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    }
+
+    test('reads the generate audit and rolls detailed issues up under their type', async () => {
+        const summary = await withQcFile(JSON.stringify(audit), (path) => readQcSummary(path));
+        expect(summary).toEqual({
+            passed: false,
+            overallScore: 50,
+            issues: [
+                { type: 'loudness_dip', count: 2 },
+                { type: 'duration_anomaly', count: 1 },
+                { type: 'repetition_detected', count: 1 },
+            ],
+        });
+    });
+
+    test('renders the QC block into the report markdown', async () => {
+        const summary = await withQcFile(JSON.stringify(audit), (path) => readQcSummary(path));
+        const md = renderReportMarkdown([candidate({})], '2026-09-16', { qc: summary });
+        expect(md).toContain('## 音频 QC');
+        expect(md).toContain('| 综合评分 | 50 |');
+        expect(md).toContain('| 通过 | 否 |');
+        expect(md).toContain('| repetition_detected | 1 |');
+        expect(md).toContain('| loudness_dip | 2 |');
+        expect(md).toContain('| duration_anomaly | 1 |');
+    });
+
+    test('omits the block when the audit is absent, unreadable, or malformed', async () => {
+        expect(await readQcSummary(undefined)).toBeNull();
+        expect(await readQcSummary('/nonexistent/generate.json')).toBeNull();
+        expect(await withQcFile('{ truncated', (path) => readQcSummary(path))).toBeNull();
+        expect(await withQcFile(JSON.stringify({ metadata: {} }), (path) => readQcSummary(path))).toBeNull();
+        expect(renderReportMarkdown([candidate({})], '2026-09-16', { qc: null })).not.toContain('## 音频 QC');
+    });
+
+    test('processGeneratorIO reads the audit through NEWS_REPORT_QC_FILE', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-qc-io-'));
+        const inPath = join(dir, 'episode-plan.json');
+        const outPath = join(dir, 'run-report-content.json');
+        const qcPath = join(dir, 'generate.json');
+        await writeFile(inPath, JSON.stringify([candidate({})]));
+        await writeFile(qcPath, JSON.stringify(audit));
+        process.env.NEWS_REPORT_QC_FILE = qcPath;
+        try {
+            const content = (await processGeneratorIO(inPath, outPath)) as Content;
+            expect(content.body).toContain('## 音频 QC');
+            expect(content.body).toContain('| 通过 | 否 |');
+        } finally {
+            delete process.env.NEWS_REPORT_QC_FILE;
+            await rm(dir, { recursive: true, force: true });
+        }
     });
 });

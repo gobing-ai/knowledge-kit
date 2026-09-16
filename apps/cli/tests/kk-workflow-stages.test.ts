@@ -618,7 +618,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             for (const sub of ['2-script', '3-audio']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
             const scriptPath = join(dir, `2-script/${stamp}_08_script_voicescript.yaml`);
-            writeFileSync(scriptPath, 'language: en\n');
+            // A minimal *valid* VoiceScript: the wrap-docs stage now runs the R3 content validator,
+            // so a schema-invalid stub no longer reaches the doc packaging it is here to exercise.
+            writeFileSync(scriptPath, 'language: en\nsegments:\n  - text: "Hello and welcome to the episode."\n');
             expect(run(['daily-wrap-docs', dir, stamp, 'Alex']).status).toBe(0);
             const docs = JSON.parse(readFileSync(join(dir, `3-audio/${stamp}_10_wrap-docs_docs.json`), 'utf-8')) as {
                 id: string;
@@ -626,7 +628,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 body: string;
                 metadata: { voiceProfile: string };
             }[];
-            expect(docs[0]?.body).toBe('language: en\n');
+            expect(docs[0]?.body).toBe('language: en\nsegments:\n  - text: "Hello and welcome to the episode."\n');
             expect(docs[0]?.sourceUri).toBe(`file://${scriptPath}`);
             expect(docs[0]?.id).toBe(createHash('sha256').update(`file://${scriptPath}`).digest('hex').slice(0, 16));
             expect(docs[0]?.metadata.voiceProfile).toBe('Alex');
@@ -897,3 +899,96 @@ describe('kk workflow stage runner — post-translation plan dedup (0138 R3)', (
 function planIds(path: string): unknown[] {
     return (JSON.parse(readFileSync(path, 'utf-8')) as { id: unknown }[]).map((entry) => entry.id);
 }
+
+describe('0139 R3 — voicescript content gate wiring', () => {
+    /** Writes a `kk` stub that copies a prepared voicescript body into the stage's `--out`. */
+    function fakeKkEchoingBody(dir: string, bodyPath: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                'const args = process.argv.slice(2);',
+                "const out = args[args.indexOf('--out') + 1];",
+                `fs.writeFileSync(out, JSON.stringify({ title: 'T', body: fs.readFileSync(${JSON.stringify(bodyPath)}, 'utf8') }));`,
+                '',
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    const validScript = (extra = '') =>
+        ['language: en', 'segments:', '  - text: "Hello and welcome to the episode."', extra, ''].join('\n');
+
+    it('daily-script exits non-zero when the generated voicescript carries a 标签 metadata tail', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260916';
+            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            const bodyPath = join(dir, 'body.yaml');
+            writeFileSync(
+                bodyPath,
+                ['language: en', 'segments:', '  - text: "正文。标签，ai"', '  - text: "Second."', ''].join('\n'),
+            );
+            const result = run(['daily-script', dir, stamp, '', 'en', 'T', 'Robin'], fakeKkEchoingBody(dir, bodyPath));
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('content check failed');
+            expect(result.stderr).toContain('segment 0');
+            expect(result.stderr).toContain('标签 metadata tail');
+        });
+    });
+
+    it('daily-script passes a clean voicescript through to the file', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260916';
+            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            const bodyPath = join(dir, 'body.yaml');
+            writeFileSync(bodyPath, validScript());
+            const result = run(['daily-script', dir, stamp, '', 'en', 'T', 'Robin'], fakeKkEchoingBody(dir, bodyPath));
+            expect(result.status).toBe(0);
+            expect(readFileSync(join(dir, `2-script/${stamp}_08_script_voicescript.yaml`), 'utf-8')).toBe(
+                validScript(),
+            );
+        });
+    });
+
+    it('daily-wrap-docs rejects a HITL-edited duplicate segment, then proceeds once repaired', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-script', '3-audio']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260916';
+            const scriptPath = join(dir, `2-script/${stamp}_08_script_voicescript.yaml`);
+            const duplicated = [
+                'language: en',
+                'segments:',
+                '  - text: "Hello and welcome to the episode."',
+                '  - text: "Hello and welcome to the episode."',
+                '',
+            ].join('\n');
+            writeFileSync(scriptPath, duplicated);
+
+            const rejected = run(['daily-wrap-docs', dir, stamp, 'Robin']);
+            expect(rejected.status).toBe(1);
+            expect(rejected.stderr).toContain('content check failed');
+            expect(rejected.stderr).toContain('segment 1');
+            expect(rejected.stderr).toContain('duplicates segment 0');
+            // Nothing packaged while the gate is red.
+            expect(existsSync(join(dir, `3-audio/${stamp}_10_wrap-docs_docs.json`))).toBe(false);
+
+            // Recovery is an operator edit + re-run: the repaired YAML packages normally, so generate
+            // consumes it.
+            writeFileSync(scriptPath, validScript('  - text: "Second segment."'));
+            const repaired = run(['daily-wrap-docs', dir, stamp, 'Robin']);
+            expect(repaired.status).toBe(0);
+            const docs = JSON.parse(readFileSync(join(dir, `3-audio/${stamp}_10_wrap-docs_docs.json`), 'utf-8')) as {
+                body: string;
+            }[];
+            expect(docs[0]?.body).toContain('Hello and welcome to the episode.');
+            expect(docs[0]?.body).toContain('Second segment.');
+        });
+    });
+});

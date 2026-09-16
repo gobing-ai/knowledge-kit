@@ -118,6 +118,59 @@ function assertCrossfade(value: number | undefined): void {
     }
 }
 
+// ─── Content checks (task 0139 R3) ───────────────────────────────────────────
+// Deterministic spoken-copy gates. The workflow wires this validator at the end of the script
+// stage's fresh write and again in wrap-docs (which covers a HITL-edited YAML and the script cache
+// path), so a voicescript that reaches audio carries no title echo, no duplicated segment, no
+// research scaffolding and no colon-mangled URL. Every failure names the segment index and reason.
+
+/** Punctuation/space the translator drifts between a title and its body restatement. */
+const CONTENT_ECHO_NOISE_RE = /[，。、：:；;!！?？…\s「」『』【】]/g;
+/** Research scaffold labels the plan-translate stage must not emit as spoken copy. */
+const CONTENT_SCAFFOLD_LABEL_RE =
+    /^(?:\*\*)?[「『]?(?:背景|潜在影响|可做角度|为什么现在值得注意|社区讨论)[」』]?(?:\*\*)?(?:[：:，,]|\s|$)/;
+/** `标签，` metadata tails — the plan item's tag line spoken aloud. */
+const CONTENT_TAG_TAIL_RE = /标签[：:，,]/;
+/** `wss，//` / `https。//` — the translator replacing a URL colon with a Chinese comma. */
+const CONTENT_URL_MANGLE_RE = /[，。]\/\//;
+
+function assertSegmentContent(script: VoiceScript): void {
+    const seen = new Map<string, number>();
+    for (let idx = 0; idx < script.segments.length; idx++) {
+        const text = (script.segments[idx]?.text ?? '').trim();
+        if (text === '') continue;
+
+        const previous = seen.get(text);
+        if (previous !== undefined) {
+            throw new Error(`content check failed: segment ${idx} duplicates segment ${previous} verbatim`);
+        }
+        seen.set(text, idx);
+
+        // Title echo: the 【lead】 content reappearing immediately after the lead, punctuation-drift
+        // tolerant — the same comparison `stripLeadingTitleEcho` uses on the producer side.
+        const lead = text.match(/^[^【]*【([^】]{4,80})】[，。、\s]*/);
+        if (lead !== null) {
+            const bracketed = (lead[1] ?? '').replace(CONTENT_ECHO_NOISE_RE, '');
+            const rest = text.slice(lead[0].length).replace(CONTENT_ECHO_NOISE_RE, '');
+            if (bracketed.length >= 4 && rest.startsWith(bracketed)) {
+                throw new Error(
+                    `content check failed: segment ${idx} repeats its 【${lead[1]}】 title in the body text`,
+                );
+            }
+        }
+
+        if (CONTENT_SCAFFOLD_LABEL_RE.test(text)) {
+            throw new Error(`content check failed: segment ${idx} opens with a research scaffold label`);
+        }
+        if (CONTENT_TAG_TAIL_RE.test(text)) {
+            throw new Error(`content check failed: segment ${idx} carries a 标签 metadata tail`);
+        }
+        if (CONTENT_URL_MANGLE_RE.test(text)) {
+            throw new Error(`content check failed: segment ${idx} has a colon-mangled URL`);
+        }
+    }
+}
+
 function validateVoiceScript(script: VoiceScript): void {
     if (!script || typeof script !== 'object') {
         throw new Error('VoiceScript must be an object');
@@ -173,6 +226,8 @@ function validateVoiceScript(script: VoiceScript): void {
         assertEngine(segment.engine, `Segment at index ${idx}`);
         assertLanguage(segment.language, `Segment at index ${idx}`);
     }
+
+    assertSegmentContent(script);
 }
 
 function main(): void {
