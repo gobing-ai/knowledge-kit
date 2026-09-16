@@ -28,8 +28,8 @@ Parse per the frozen rule:
 
 - First token is the workflow **name** when it matches `^[a-z0-9][a-z0-9-]*$` and is not `--in`;
   otherwise `name=kk-storm-research` and that token is the topic. Supported profile names:
-  `kk-storm-research` (default), `kk-itc`, `kk-solo-podcast`. Any other name after successful copy → exit 1 listing
-  `kk-storm-research`, `kk-itc`, `kk-solo-podcast`.
+  `kk-storm-research` (default), `kk-itc`, `kk-solo-podcast`, `kk-daily-ai-voice`. Any other name after successful copy → exit 1 listing
+  `kk-storm-research`, `kk-itc`, `kk-solo-podcast`, `kk-daily-ai-voice`.
 - `--in <file>` → file mode. `--force` → overwrite an existing dest YAML / existing `brief.md`.
 - Profile `kk-storm-research`: `--dir <path>` (default `$works_dir/kk-storm-research/<topic-id>`),
   `--fixture` → force `fixture: "true"`.
@@ -40,6 +40,9 @@ Parse per the frozen rule:
 - Profile `kk-solo-podcast`: `--dir <path>` (default `$works_dir/kk-solo-podcast/<date>`), `--outline <a|b|c>`
   (default empty), `--duration <min>` (default `8`), `--language <code>` (default `en`),
   `--script-approved` (sets `script_approved=true`; default off). `--fixture` is storm-only.
+- Profile `kk-daily-ai-voice`: `--dir <path>` (default `$works_dir/kk-daily-ai-voice/<date>`),
+  `--publish <true|false>` (default `false`), `--last30days <true|false>` (default `false`),
+  `--skip-review` (sets `skip_review=true`; default off). `--fixture` is storm-only.
 - **XOR:** exactly one of `<topic>` / `--in <file>`. Both set or both empty → exit 1, stderr
   states the XOR rule, no writes.
 
@@ -241,6 +244,19 @@ spur workflow run "$dest" --vars \
   "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"outline\":\"$OUTLINE\",\"script_approved\":\"$SCRIPT_APPROVED\",\"force\":\"$FORCE\",\"target_duration_min\":\"$DURATION\",\"language\":\"$LANGUAGE\",\"voice_profile\":\"$VOICE_PROFILE\",\"validate_script\":\"$vs_arg\",\"wrap_script\":\"$ws_arg\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
 ```
 
+### Profile `kk-daily-ai-voice`
+
+Bind vars: `work_dir`, `publish_enabled`, `last30days_enabled`, `skip_review`, `plugins_path`
+(empty → ADR-012 default discovery), `agent`. `$dest` resolves like solo-podcast. The run is
+topicless — no `topic`/`input_file`/`fixture` vars. `run_date` is computed by the `prepare`
+state and written to `$work_dir/run-date.txt`. The `review` state pauses the run for operator
+approval of the VoiceScript; resume with `spur workflow continue [run-id]`.
+
+```bash
+spur workflow run "$dest" --vars \
+  "{\"work_dir\":\"$work_dir\",\"publish_enabled\":\"$PUBLISH\",\"last30days_enabled\":\"$L30D\",\"skip_review\":\"$SKIP_REVIEW\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
+```
+
 ## 6. Report
 
 - **`kk-storm-research`**: print resolved `work_dir`, then `$work_dir/content.md` (report sidecar)
@@ -251,6 +267,13 @@ spur workflow run "$dest" --vars \
 - **`kk-solo-podcast`**: print resolved `work_dir`, then `$work_dir/1-briefing-briefing.md`,
   `$work_dir/3-script-voicescript.yaml`, `$work_dir/4-audio/content.json`, and
   `$work_dir/4-audio/content.wav`.
+- **`kk-daily-ai-voice`**: print resolved `work_dir` (read the date from `$work_dir/run-date.txt`),
+  then `$work_dir/2-article/<date>_06_article_article.md`,
+  `$work_dir/2-script/<date>_08_script_voicescript.yaml`,
+  `$work_dir/3-audio/<date>_11_generate_content.json` (carries the audio path and QC metrics),
+  and `$work_dir/<date>_19_run-report_report.md`. With `publish_enabled=true` also print
+  `$work_dir/3-publish/<date>_17_publish_publish-status.txt` and the
+  `<date>_14_publish-surfdash_result.json` / `<date>_16_publish-podcast_result.json` outcomes.
 
 If the run ended `failed`, show the failing state (`spur workflow trace <run-id> --json`) and the
 fail-loud recovery line.

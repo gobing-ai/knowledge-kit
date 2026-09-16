@@ -580,6 +580,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 /workflow-run [name] <topic|--in file> [--dir <path>] [--playbook generic|english|wechat]
              [--research] [--judge] [--outline <a|b|c>] [--writer itc-generating|topic]
              [--duration <min>] [--language <code>] [--script-approved]
+             [--publish <true|false>] [--last30days <true|false>] [--skip-review]
              [--fixture] [--force]
 ```
 
@@ -588,6 +589,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 | `kk-storm-research` (default) | `kk-storm-research.yaml` | `$works_dir/kk-storm-research/<topic-id>` (0056 hash) | `$work_dir/content.md`, `$work_dir/content.json` |
 | `kk-itc` | `kk-itc.yaml` | `$works_dir/kk-itc/<kebab>` (topic authoring) | `$work_dir/brief.md`, `$work_dir/2-outline/outline-approved.md`, `$work_dir/3-draft-draft-article.md` |
 | `kk-solo-podcast` | `kk-solo-podcast.yaml` + `validate-voicescript.ts` + `wrap-voicescript-doc.ts` | `$works_dir/kk-solo-podcast/<date>` | `$work_dir/1-briefing-briefing.md`, `$work_dir/3-script-voicescript.yaml`, `$work_dir/4-audio/content.json`, `$work_dir/4-audio/content.wav` |
+| `kk-daily-ai-voice` | `kk-daily-ai-voice.yaml` | `$works_dir/kk-daily-ai-voice/<date>` | `$work_dir/2-article/<date>_06_article_article.md`, `$work_dir/2-script/<date>_08_script_voicescript.yaml`, `$work_dir/3-audio/<date>_11_generate_content.json`, `$work_dir/<date>_19_run-report_report.md` |
 
 Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir` overrides). Existing `.works/`-era trees (flat `<kebab>`/`<topic-id>` dirs under `$works_dir`) are **not** migrated — rerunning against an old workspace requires an explicit `--dir`.
 
