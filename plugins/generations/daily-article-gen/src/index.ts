@@ -8,7 +8,8 @@ import { echoError } from '@gobing-ai/ts-utils';
  * daily-article-gen: render a merged `Doc[]` into one readable daily AI-news
  * article. Mechanical template fill — no LLM, no STORM. Every news item keeps
  * a human-clickable source link (`[来源](sourceUri)`) so readers can trace
- * claims to their origin.
+ * claims to their origin. Research scaffolding is stripped before render
+ * (task 0138 R4b — see `stripScaffold`).
  *
  * Run date: `ARTICLE_DATE` env var (YYYYMMDD or ISO), else today (UTC).
  * Language-neutral: the Doc bodies already carry the summary language.
@@ -26,6 +27,71 @@ function sourceLabelOf(doc: Doc): string {
     }
 }
 
+/**
+ * Research-scaffold labels that must never reach reader copy (task 0138 R4b). The last30days
+ * research style emits them as `**「label」**` prefixes; the plan-translate prompt forbids them,
+ * but this deterministic pass catches what the agent misses. Grows with sources.
+ */
+const SCAFFOLD_LABELS = ['可做角度', '为什么现在值得注意', '社区讨论', '背景', '潜在影响', '影响'];
+
+/** Self-referential hedging markers — research voice, not news copy (task 0138 R4b). */
+const HEDGING_MARKERS = ['读者宜另行核实', '读者最好', '仍待验证', '尚待验证', '需另行核实'];
+
+/**
+ * Length of a leading scaffold label in any shape the research bodies use — `**「背景」**`,
+ * `「背景」`, `**背景**`, `### 背景`, `背景：` — or 0 when the line does not open with a known label.
+ * The capture is greedy and unbounded on purpose: it must reach the whole label (so `可做` cannot
+ * satisfy it where `可做角度` is the real one) and must not impose a length the label list outgrows.
+ * The `SCAFFOLD_LABELS` membership check, not the regex, decides.
+ */
+function scaffoldPrefixLength(text: string): number {
+    const match = text.match(
+        /^(?:#{1,6}\s*)?(?:\*\*)?\s*[「『]?\s*([^」』*：:\n]{2,})\s*[」』]?\s*(?:\*\*)?\s*[：:]?\s*/,
+    );
+    if (match === null || !SCAFFOLD_LABELS.includes((match[1] ?? '').trim())) return 0;
+    return match[0].length;
+}
+
+/** Drop every leading scaffold label, keeping the prose after it (`**「可做角度」** 可做角度：X` -> `X`). */
+function collapseScaffoldLabels(text: string): string {
+    let rest = text;
+    for (;;) {
+        const next = rest.slice(scaffoldPrefixLength(rest));
+        if (next === rest) return rest;
+        rest = next;
+    }
+}
+
+/** Drop the sentences carrying a hedging marker; a line that is only hedging collapses to ''. */
+function stripHedging(text: string): string {
+    if (!HEDGING_MARKERS.some((marker) => text.includes(marker))) return text;
+    return text
+        .split(/(?<=。)/)
+        .filter((sentence) => !HEDGING_MARKERS.some((marker) => sentence.includes(marker)))
+        .join('')
+        .trim();
+}
+
+/**
+ * Strip research scaffolding from a Doc body before it reaches reader copy (task 0138 R4b):
+ * standalone label lines are dropped, inline label prefixes collapse to their prose, and hedging
+ * sentences are removed. A clean body passes through byte-identical.
+ */
+export function stripScaffold(body: string): string {
+    const kept: string[] = [];
+    for (const line of body.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed === '') {
+            kept.push(line); // paragraph breaks survive untouched
+            continue;
+        }
+        const collapsed = stripHedging(collapseScaffoldLabels(trimmed));
+        if (collapsed === '') continue;
+        kept.push(collapsed === trimmed ? line : collapsed);
+    }
+    return kept.join('\n');
+}
+
 /** Render one news item section: heading, source link, and summary body. */
 function renderDoc(doc: Doc, index: number): string {
     const heading = doc.title?.trim() || `新闻 ${index + 1}`;
@@ -33,7 +99,7 @@ function renderDoc(doc: Doc, index: number): string {
     const meta = doc.metadata as Record<string, unknown> | undefined;
     const publishedAt = typeof meta?.publishedAt === 'string' ? meta.publishedAt.slice(0, 10) : '';
     const metaLine = [link, publishedAt].filter(Boolean).join(' · ');
-    return `## ${index + 1}. ${heading}\n\n${metaLine ? `${metaLine}\n\n` : ''}${(doc.body ?? '').trim()}`;
+    return `## ${index + 1}. ${heading}\n\n${metaLine ? `${metaLine}\n\n` : ''}${stripScaffold(doc.body ?? '').trim()}`;
 }
 
 /** Render the article markdown for a merged Doc[] (pure — exported for tests). */

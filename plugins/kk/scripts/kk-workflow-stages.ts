@@ -50,6 +50,10 @@ const VALIDATE_SIDECAR = 'validate-voicescript.ts';
 const WRAP_SIDECAR = 'wrap-voicescript-doc.ts';
 const RENDER_SIDECAR = 'render-md.ts';
 const REVISE_COUNT = '.revise-count';
+// Post-translation title-dedup threshold (task 0138 R3). ponytail: the 2026-09-16 Gemini 3.8 Live
+// pair measures 0.417 zh title-only Jaccard, the nearest distinct pair 0.1 (4x margin). Character
+// bigrams need same-language input — pre-translate dedup over the mixed-language blend cannot work.
+const DEDUP_TITLE_THRESHOLD = 0.4;
 
 function fail(message: string): never {
     console.error(message);
@@ -643,6 +647,54 @@ function dailyQcContent(args: string[]): void {
     });
 }
 
+/**
+ * Character-bigram Jaccard over whitespace-normalized, lowercased titles — the twin of
+ * episode-plan-gen's `titleSimilarity`. Duplicated on purpose: this file is node-builtins-only
+ * (no workspace imports), so it cannot reach that module.
+ */
+function titleSimilarity(a: string, b: string): number {
+    const bigrams = (text: string): Set<string> => {
+        const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase();
+        const out = new Set<string>();
+        for (let i = 0; i < normalized.length - 1; i++) out.add(normalized.slice(i, i + 2));
+        return out;
+    };
+    const aGrams = bigrams(a);
+    const bGrams = bigrams(b);
+    if (aGrams.size === 0 || bGrams.size === 0) return 0;
+    let intersection = 0;
+    for (const gram of aGrams) if (bGrams.has(gram)) intersection++;
+    return intersection / (aGrams.size + bGrams.size - intersection);
+}
+
+/**
+ * Post-translation near-duplicate dedup (task 0138 R3): drop any plan item whose title is a
+ * >=DEDUP_TITLE_THRESHOLD bigram match for an EARLIER item, so curated plan order decides the
+ * survivor. It runs on the translated plan because cross-language near-dups are invisible before
+ * plan-translate (the 2026-09-16 Gemini pair measures 0.208 mixed-language, 0.417 all-zh).
+ */
+export function dedupPlanByTitle<T extends { id?: unknown; title?: unknown }>(
+    docs: T[],
+): { kept: T[]; dropped: string[] } {
+    const kept: T[] = [];
+    const dropped: string[] = [];
+    for (const doc of docs) {
+        const title = typeof doc.title === 'string' ? doc.title : '';
+        const duplicate =
+            title !== '' &&
+            kept.some((earlier) => {
+                const earlierTitle = typeof earlier.title === 'string' ? earlier.title : '';
+                return titleSimilarity(earlierTitle, title) >= DEDUP_TITLE_THRESHOLD;
+            });
+        if (duplicate) {
+            dropped.push(typeof doc.id === 'string' && doc.id !== '' ? doc.id : title);
+            continue;
+        }
+        kept.push(doc);
+    }
+    return { kept, dropped };
+}
+
 function dailyArticle(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const articleMd = join(workDir, '2-article', `${runDate}_06_article_article.md`);
@@ -650,10 +702,6 @@ function dailyArticle(args: string[]): void {
     const planIn = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
     const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
     timed(workDir, 'article', () => {
-        if (isFile(articleMd)) {
-            console.log(`article cached: ${articleMd}`);
-            return;
-        }
         let planUsable = true;
         const raw = isFile(planIn) ? readFileSync(planIn, 'utf-8') : '';
         try {
@@ -671,6 +719,21 @@ function dailyArticle(args: string[]): void {
             }
         }
         if (!planUsable) failWith(1, 'article: no usable plan input');
+        // R3 (task 0138): dedup runs BEFORE the cache early-return — the script stage reads this same
+        // plan.json and must see one survivor even when the article is already cached. Idempotent:
+        // a no-op once the plan is deduped.
+        const planParsed: unknown = readJson(planIn);
+        if (Array.isArray(planParsed)) {
+            const { kept, dropped } = dedupPlanByTitle(planParsed as Record<string, unknown>[]);
+            if (dropped.length > 0) {
+                sted('write', planIn, () => writeJsonText(planIn, kept));
+                console.error(`article: dropped ${dropped.length} near-duplicate plan item(s): ${dropped.join(', ')}`);
+            }
+        }
+        if (isFile(articleMd)) {
+            console.log(`article cached: ${articleMd}`);
+            return;
+        }
         kk(
             [
                 'executor',
@@ -1118,109 +1181,121 @@ function dailyTranslateSync(args: string[]): void {
 
 const [stage, ...rest] = process.argv.slice(2);
 
-switch (stage) {
-    case 'prepare-itc':
-        prepareItc(rest);
-        break;
-    case 'prepare-solo':
-        prepareSolo(rest);
-        break;
-    case 'prepare-storm':
-        prepareStorm(rest);
-        break;
-    case 'duration':
-        duration(rest);
-        break;
-    case 'validate': {
-        const { override, values } = parseStage(rest, { in: { type: 'string' } });
-        if (!values.in) fail('usage: kk-workflow-stages.ts validate [<override>] --in <voicescript.yaml>');
-        delegate(requireSidecar(override, VALIDATE_SIDECAR, 'validate_script'), ['--in', values.in]);
-        break;
-    }
-    case 'wrap': {
-        const { override, values } = parseStage(rest, {
-            in: { type: 'string' },
-            out: { type: 'string' },
-            profile: { type: 'string' },
-        });
-        if (!values.in || !values.out) {
+// Imported as a module (unit tests reach `dedupPlanByTitle`) → exports only, never a stage run;
+// executed as the entrypoint → dispatch.
+if (import.meta.main)
+    switch (stage) {
+        case 'prepare-itc':
+            prepareItc(rest);
+            break;
+        case 'prepare-solo':
+            prepareSolo(rest);
+            break;
+        case 'prepare-storm':
+            prepareStorm(rest);
+            break;
+        case 'duration':
+            duration(rest);
+            break;
+        case 'validate': {
+            const { override, values } = parseStage(rest, { in: { type: 'string' } });
+            if (!values.in) fail('usage: kk-workflow-stages.ts validate [<override>] --in <voicescript.yaml>');
+            delegate(requireSidecar(override, VALIDATE_SIDECAR, 'validate_script'), ['--in', values.in]);
+            break;
+        }
+        case 'wrap': {
+            const { override, values } = parseStage(rest, {
+                in: { type: 'string' },
+                out: { type: 'string' },
+                profile: { type: 'string' },
+            });
+            if (!values.in || !values.out) {
+                fail(
+                    'usage: kk-workflow-stages.ts wrap [<override>] --in <voicescript.yaml> --out <docs.json> [--profile <name>]',
+                );
+            }
+            delegate(requireSidecar(override, WRAP_SIDECAR, 'wrap_script'), [
+                values.in,
+                values.out,
+                values.profile ?? '',
+            ]);
+            break;
+        }
+        case 'render-storm': {
+            const { override, values } = parseStage(rest, { in: { type: 'string' }, out: { type: 'string' } });
+            if (!values.in || !values.out) {
+                fail('usage: kk-workflow-stages.ts render-storm [<override>] --in <content.json> --out <content.md>');
+            }
+            delegate(requireSidecar(override, RENDER_SIDECAR, 'render_script'), [
+                '--in',
+                values.in,
+                '--out',
+                values.out,
+            ]);
+            break;
+        }
+        case 'daily-prepare':
+            dailyPrepare(rest);
+            break;
+        case 'daily-collect-facts':
+            dailyCollectFacts(rest);
+            break;
+        case 'daily-plan':
+            dailyPlan(rest);
+            break;
+        case 'daily-qc-content':
+            dailyQcContent(rest);
+            break;
+        case 'daily-article':
+            dailyArticle(rest);
+            break;
+        case 'daily-cover-normalize':
+            dailyCoverNormalize(rest);
+            break;
+        case 'daily-script':
+            dailyScript(rest);
+            break;
+        case 'daily-wrap-docs':
+            dailyWrapDocs(rest);
+            break;
+        case 'daily-generate':
+            dailyGenerate(rest);
+            break;
+        case 'daily-quality-report':
+            dailyQualityReport(rest);
+            break;
+        case 'daily-publish-prep':
+            dailyPublishPrep(rest);
+            break;
+        case 'daily-publish-surfdash':
+            dailyPublishSurfdash(rest);
+            break;
+        case 'daily-show-notes':
+            dailyShowNotes(rest);
+            break;
+        case 'daily-publish-podcast':
+            dailyPublishPodcast(rest);
+            break;
+        case 'daily-publish-classify':
+            dailyPublishClassify(rest);
+            break;
+        case 'daily-publish-partial':
+            dailyPublishPartial(rest);
+            break;
+        case 'daily-run-report':
+            dailyRunReport(rest);
+            break;
+        case 'daily-translate-en':
+            dailyTranslateEn(rest);
+            break;
+        case 'daily-translate-ja':
+            dailyTranslateJa(rest);
+            break;
+        case 'daily-translate-sync':
+            dailyTranslateSync(rest);
+            break;
+        default:
             fail(
-                'usage: kk-workflow-stages.ts wrap [<override>] --in <voicescript.yaml> --out <docs.json> [--profile <name>]',
+                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|daily-*)`,
             );
-        }
-        delegate(requireSidecar(override, WRAP_SIDECAR, 'wrap_script'), [values.in, values.out, values.profile ?? '']);
-        break;
     }
-    case 'render-storm': {
-        const { override, values } = parseStage(rest, { in: { type: 'string' }, out: { type: 'string' } });
-        if (!values.in || !values.out) {
-            fail('usage: kk-workflow-stages.ts render-storm [<override>] --in <content.json> --out <content.md>');
-        }
-        delegate(requireSidecar(override, RENDER_SIDECAR, 'render_script'), ['--in', values.in, '--out', values.out]);
-        break;
-    }
-    case 'daily-prepare':
-        dailyPrepare(rest);
-        break;
-    case 'daily-collect-facts':
-        dailyCollectFacts(rest);
-        break;
-    case 'daily-plan':
-        dailyPlan(rest);
-        break;
-    case 'daily-qc-content':
-        dailyQcContent(rest);
-        break;
-    case 'daily-article':
-        dailyArticle(rest);
-        break;
-    case 'daily-cover-normalize':
-        dailyCoverNormalize(rest);
-        break;
-    case 'daily-script':
-        dailyScript(rest);
-        break;
-    case 'daily-wrap-docs':
-        dailyWrapDocs(rest);
-        break;
-    case 'daily-generate':
-        dailyGenerate(rest);
-        break;
-    case 'daily-quality-report':
-        dailyQualityReport(rest);
-        break;
-    case 'daily-publish-prep':
-        dailyPublishPrep(rest);
-        break;
-    case 'daily-publish-surfdash':
-        dailyPublishSurfdash(rest);
-        break;
-    case 'daily-show-notes':
-        dailyShowNotes(rest);
-        break;
-    case 'daily-publish-podcast':
-        dailyPublishPodcast(rest);
-        break;
-    case 'daily-publish-classify':
-        dailyPublishClassify(rest);
-        break;
-    case 'daily-publish-partial':
-        dailyPublishPartial(rest);
-        break;
-    case 'daily-run-report':
-        dailyRunReport(rest);
-        break;
-    case 'daily-translate-en':
-        dailyTranslateEn(rest);
-        break;
-    case 'daily-translate-ja':
-        dailyTranslateJa(rest);
-        break;
-    case 'daily-translate-sync':
-        dailyTranslateSync(rest);
-        break;
-    default:
-        fail(
-            `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|daily-*)`,
-        );
-}

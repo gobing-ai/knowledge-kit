@@ -803,3 +803,97 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 });
+
+describe('kk workflow stage runner — post-translation plan dedup (0138 R3)', () => {
+    // Threshold calibration evidence, measured on 20260916_03_plan_plan.json: the Gemini 3.8 Live
+    // pair (plan items 5 and 7) scores 0.417 zh title-only bigram Jaccard; the nearest distinct
+    // pair (items 3 and 4) scores 0.1. DEDUP_TITLE_THRESHOLD = 0.4 sits between them with a 4x
+    // margin. Mixed-language pre-translate titles measure 0.208 for the same pair — unusable, which
+    // is why dedup runs after plan-translate.
+    const geminiFirst = 'Google 发布 Gemini 3.8 Live 实时语音模型，Simon Willison 推出浏览器零依赖实现';
+    const geminiSecond = 'Google 发布 Gemini 3.8 Live 与 3.8 Live Extended Thinking 实时语音模型';
+    const distinct = 'OpenAI 据报道考虑以约 1.2 万亿美元估值融资';
+
+    /**
+     * `dedupPlanByTitle` is called out of process on purpose: importing the runner into the test
+     * process registers its ~1300-line CLI body with coverage (7%), which the per-file threshold in
+     * `bunfig.toml` then fails. The stage runner is a spawned script, not an in-process library.
+     */
+    function dedup(docs: unknown[]): { kept: { id?: unknown }[]; dropped: string[] } {
+        const script = [
+            `import { dedupPlanByTitle } from ${JSON.stringify(runner)};`,
+            `console.log(JSON.stringify(dedupPlanByTitle(${JSON.stringify(docs)})));`,
+        ].join('\n');
+        const result = spawnSync('bun', ['-e', script], { encoding: 'utf-8' });
+        if (result.status !== 0) throw new Error(`dedupPlanByTitle failed: ${result.stderr}`);
+        return JSON.parse(result.stdout) as { kept: { id?: unknown }[]; dropped: string[] };
+    }
+
+    function fakeKk(dir: string, script: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(path, `#!/usr/bin/env bun\n${script}\n`);
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    it('merges the real Gemini 3.8 Live pair onto its first plan-order occurrence', () => {
+        const { kept, dropped } = dedup([
+            { id: 'a', title: distinct },
+            { id: 'b', title: geminiFirst },
+            { id: 'c', title: geminiSecond },
+        ]);
+        expect(kept.map((entry) => entry.id)).toEqual(['a', 'b']);
+        expect(dropped).toEqual(['c']);
+    });
+
+    it('is a no-op on an already-deduped plan and on items without a title', () => {
+        const plan = [
+            { id: 'a', title: distinct },
+            { id: 'b', title: geminiFirst },
+        ];
+        expect(dedup(plan)).toEqual({ kept: plan, dropped: [] });
+        expect(dedup([{ id: 'x' }, { id: 'y' }])).toEqual({ kept: [{ id: 'x' }, { id: 'y' }], dropped: [] });
+    });
+
+    it('daily-article dedups plan.json before the cache early-return (AC5)', () => {
+        withTempDir((dir) => {
+            const env = fakeKk(
+                dir,
+                [
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    "require('node:fs').writeFileSync(out, JSON.stringify({ body: '# article' }));",
+                ].join('\n'),
+            );
+            for (const sub of ['2-plan', '2-article']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260916';
+            const planPath = join(dir, `2-plan/${stamp}_03_plan_plan.json`);
+            writeFileSync(
+                planPath,
+                JSON.stringify([
+                    { id: 'a', title: distinct },
+                    { id: 'b', title: geminiFirst },
+                    { id: 'c', title: geminiSecond },
+                ]),
+            );
+
+            const first = run(['daily-article', dir, stamp, ''], env);
+            expect(first.status).toBe(0);
+            expect(first.stderr).toContain('near-duplicate plan item(s)');
+            expect(planIds(planPath)).toEqual(['a', 'b']);
+
+            // Second run takes the article cache path — the dedup must still have run first, or the
+            // script stage would read a plan.json that still carries the duplicate.
+            const second = run(['daily-article', dir, stamp, ''], env);
+            expect(second.status).toBe(0);
+            expect(second.stdout).toContain('article cached:');
+            expect(planIds(planPath)).toEqual(['a', 'b']);
+        });
+    });
+});
+
+function planIds(path: string): unknown[] {
+    return (JSON.parse(readFileSync(path, 'utf-8')) as { id: unknown }[]).map((entry) => entry.id);
+}

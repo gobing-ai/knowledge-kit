@@ -114,6 +114,52 @@ describe('news-report-gen rejected audit', () => {
         expect(await readRejectedAudit(undefined)).toEqual([]);
         expect(await readRejectedAudit('/nonexistent/rejected.json')).toEqual([]);
     });
+
+    // AC1 (0138 R1): both writer shapes. episode-plan-gen's `processFilterIO` writes the
+    // `{rejected, config, total}` envelope; the array-only reader silently reported 0 rejections.
+    test('accepts a bare RejectedAudit[] and the {rejected, config, total} envelope', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-audit-'));
+        const bare = join(dir, 'bare.json');
+        const enveloped = join(dir, 'enveloped.json');
+        const entries = [{ doc: candidate({}), reasons: ['category:not-in-allowlist'] }];
+        await writeFile(bare, JSON.stringify(entries));
+        await writeFile(enveloped, JSON.stringify({ rejected: entries, config: { minQuality: 2 }, total: 20 }));
+        expect(await readRejectedAudit(bare)).toEqual(entries);
+        expect(await readRejectedAudit(enveloped)).toEqual(entries);
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    test('malformed, non-array, and an envelope without `rejected` -> [], never throws', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-audit-bad-'));
+        const notJson = join(dir, 'not-json.json');
+        const object = join(dir, 'object.json');
+        await writeFile(notJson, '{ truncated');
+        await writeFile(object, JSON.stringify({ config: {}, total: 0 }));
+        expect(await readRejectedAudit(notJson)).toEqual([]);
+        expect(await readRejectedAudit(object)).toEqual([]);
+        expect(await readRejectedAudit(join(dir, 'absent.json'))).toEqual([]);
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    test('the 2026-09-16 envelope counts 13 category / 6 importance rejections into the report', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-audit-real-'));
+        const path = join(dir, 'candidates.rejected.json');
+        // Measured shape of 20260916_04_quality-control-content_candidates.rejected.json:
+        // 13 entries, all `category:not-in-allowlist`, 6 of them also `importance:2<3`.
+        const rejected = Array.from({ length: 13 }, (_, i) => ({
+            doc: candidate({}, { id: `r${i}` }),
+            reasons: i < 6 ? ['category:not-in-allowlist', 'importance:2<3'] : ['category:not-in-allowlist'],
+        }));
+        await writeFile(path, JSON.stringify({ rejected, config: {}, total: 20 }));
+        const audit = await readRejectedAudit(path);
+        const counts = rejectedCounts(audit);
+        expect(counts.category).toBe(13);
+        expect(counts.importance).toBe(6);
+        expect(renderReportMarkdown([candidate({})], '2026-09-16', { rejected: audit })).toContain(
+            '| category allowlist | — | 13 |',
+        );
+        await rm(dir, { recursive: true, force: true });
+    });
 });
 
 describe('news-report-gen IO', () => {

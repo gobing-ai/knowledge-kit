@@ -54,6 +54,6 @@
     └── [done] **L1**: Redesign kk-daily-ai-voice workflow: kk-owned concurrent collect, explicit content QC seam, plugin-owned publish mechanics ([L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md](./L1_redesign-kk-daily-ai-voice-workflow-kk-owned-concurrent-collect-explicit-content-qc-seam-plugin-owned-publish-mechanics.md))
 [backlog] **M**: kk-user-config-roots ([M_kk-user-config-roots.md](./M_kk-user-config-roots.md))
 [done] **N**: daily-ai-voice-cover-image-authoring ([N_daily-ai-voice-cover-image-authoring.md](./N_daily-ai-voice-cover-image-authoring.md))
-[verifying] **O**: kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish ([O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md](./O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md))
+[active] **O**: kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish ([O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md](./O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md))
 [cancelled] **P**: Workflow folder fallback and per-workflow workspace defaults ([P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md](./P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md))
 <!-- END AUTO-GENERATED -->

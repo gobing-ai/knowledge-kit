@@ -240,12 +240,20 @@ export function renderReportMarkdown(
     return lines.join('\n');
 }
 
-/** Read the rejected audit; absent/unreadable/malformed -> [] (never throw). */
+/**
+ * Read the rejected audit; absent/unreadable/malformed -> [] (never throw).
+ *
+ * Two writer shapes: a bare `RejectedAudit[]` (older producers) and episode-plan-gen's
+ * `{ rejected, config, total }` envelope (`processFilterIO` — the live one). Reading only the
+ * array shape reported 0 rejections for every real run (task 0138 D1).
+ */
 export async function readRejectedAudit(path: string | undefined): Promise<RejectedAudit[]> {
     if (!path || path.trim() === '') return [];
     try {
-        const parsed = JSON.parse(await Bun.file(path).text());
-        return Array.isArray(parsed) ? (parsed as RejectedAudit[]) : [];
+        const parsed: unknown = JSON.parse(await Bun.file(path).text());
+        if (Array.isArray(parsed)) return parsed as RejectedAudit[];
+        const rejected = (parsed as { rejected?: unknown } | null)?.rejected;
+        return Array.isArray(rejected) ? (rejected as RejectedAudit[]) : [];
     } catch {
         return [];
     }

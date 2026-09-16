@@ -403,6 +403,15 @@ describe('scoreDimensions (v1 rubric)', () => {
         expect(scoreDimensions(doc({ body: 'x'.repeat(30000) }), '2026-09-06').quality).toBe(5); // capped
     });
 
+    // AC2 (0138 R2): the stub floor must short-circuit the sourcedness bonus, not sit below it —
+    // the pre-fix formula left a 255-char stub at quality 2 and would not have fixed the defect.
+    test('quality: STUB_BODY_FLOOR (300) overrides the sourcedness bonus', () => {
+        expect(scoreDimensions(doc({ body: 'x'.repeat(255) }), '2026-09-16').quality).toBe(1); // stub, sourced
+        expect(scoreDimensions(doc({ body: 'x'.repeat(299) }), '2026-09-16').quality).toBe(1); // just under
+        expect(scoreDimensions(doc({ body: 'x'.repeat(300) }), '2026-09-16').quality).toBe(2); // floor is inclusive
+        expect(scoreDimensions(doc({ body: 'x'.repeat(348) }), '2026-09-16').quality).toBe(2); // control, unchanged
+    });
+
     test('importance: source tier + relevance ≥ 0.8 bonus, capped at 5', () => {
         const importanceAt = (metadata: Record<string, unknown>) =>
             scoreDimensions(doc({ metadata }), '2026-09-06').importance;
@@ -638,6 +647,29 @@ describe('filter mode (--mode filter, 0094)', () => {
             process.argv = prev;
         }
     }
+
+    test('the 2026-09-16 stub bodies are rejected under the default QC env (0138 AC3)', () => {
+        // Blend-time body lengths from 20260916_02_collect_blended.json: the three admitted aihot
+        // stubs are 234/243/255 EN chars; the substantive rss control is 348. All carry a sourceUri.
+        const annotated = (id: string, len: number, source: string): Doc => {
+            const entry = doc({
+                id,
+                body: 'x'.repeat(len),
+                metadata: { source, category: 'ai-news', publishedAt: '2026-09-16T00:20:39.000Z' },
+            });
+            return { ...entry, metadata: { ...entry.metadata, scores: scoreDimensions(entry, '2026-09-16') } };
+        };
+        const docs = [
+            annotated('stub-234', 234, 'aihot'),
+            annotated('stub-243', 243, 'aihot'),
+            annotated('stub-255', 255, 'aihot'),
+            annotated('control-348', 348, 'rss'),
+        ];
+        const { kept, rejected } = filterAnnotated(docs, filterConfigFromEnv({}));
+        expect(kept.map((entry) => entry.id)).toEqual(['control-348']);
+        expect(rejected.map((entry) => entry.doc.id)).toEqual(['stub-234', 'stub-243', 'stub-255']);
+        for (const entry of rejected) expect(entry.reasons).toContain('quality:1<2');
+    });
 
     test('DEFAULT_FILTER_CONFIG + filterConfigFromEnv defaults — categories ai-news,ai-industry; mins 2/3/2/1 (0099 calibration)', () => {
         expect(DEFAULT_FILTER_CONFIG as unknown as Record<string, unknown>).toEqual(defaultConfigShape);

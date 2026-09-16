@@ -121,12 +121,14 @@ states:
         options:
           role: scribe
           agent: ${vars.agent}
+          # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a adds the copy discipline).
           input: |
-            Read ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json — its metadata.docs (Doc[]) is the episode plan to translate. Do not edit candidates.json.
-            For every item with needsTranslation, translate "title" and "body" into natural, concise simplified Chinese.
-            Titles must read as a news event (subject + action + object), derived from the body — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve URLs inside the body, and use 「」 instead of raw ASCII double quotes inside Chinese text.
-            Keep every other field untouched (id, sourceUri, mediaType, metadata), keep technical terms in their original form where that is clearer, and produce no trailing commas or comments.
-            Output strictly valid JSON — a same-length, same-order array carrying the same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json.
+            Read ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
+            For items with needsTranslation, translate "title" and "body" into natural, concise simplified Chinese.
+            Titles read as a news event (subject + action + object) from the body — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
+            Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
+            Keep other fields (id, sourceUri, mediaType, metadata), technical terms as-is; no trailing commas or comments.
+            Output strictly valid JSON — a same-length, same-order array with the same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json.
           expectFile: ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json
           allowAppend: false
 

@@ -2,11 +2,11 @@
 schema_version: 1
 id: "O"
 name: "kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish"
-status: verifying
+status: active
 priority: P2
 tags: []
 created_at: "2026-09-11T23:50:41.670Z"
-updated_at: "2026-09-12T03:28:22.396Z"
+updated_at: "2026-09-16T18:30:34.493Z"
 ---
 
 # O: kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish
@@ -178,6 +178,7 @@ Feature: kk-daily-ai-voice run report, timeline show notes, real surfdash publis
 | 0118 | Timeline show notes with briefings, timestamps, and article URLs | done |
 | 0119 | Stamp ai-news tag on daily AI voice articles | done |
 | 0120 | Dogfood verify round of the enhanced AI-voice pipeline | done |
+| 0138 | Fix daily-ai-voice content quality and QC gating defects | testing |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -186,4 +187,5 @@ Feature: kk-daily-ai-voice run report, timeline show notes, real surfdash publis
 
 - 2026-09-12T03:28:22.174Z backlog → active (system)
 - 2026-09-12T03:28:22.396Z active → verifying (system)
+- 2026-09-16T18:30:34.493Z verifying → active (system)
 

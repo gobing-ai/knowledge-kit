@@ -35,6 +35,11 @@ const SOURCE_BASE: Record<string, number> = {
 };
 const DEFAULT_SOURCE_BASE = 5;
 const TITLE_SIMILARITY_THRESHOLD = 0.6; // character-bigram Jaccard
+// Minimum body length for any substance credit (task 0138 D2). Scoring runs on blend-time bodies:
+// the 2026-09-16 aihot stubs are 234-255 EN chars, substantive items are >=348 — a headline-echo
+// stub must not reach `qc_min_quality=2` on its sourceUri bonus alone.
+// ponytail: re-calibrate with evidence if a source ships legitimate 256-347-char items.
+const STUB_BODY_FLOOR = 300;
 const FRESHNESS_DAYS = 7; // a daily episode drops items published before this window (dogfood 20260906: aihot served a 2020-2025 blog archive as "selected")
 const PER_SOURCE_CAP = 5; // one feed can't flood the episode even when all its items score high
 const NON_NEWS_TAGS = new Set(['geopolitics', 'military-conflict', 'war']); // horizon finance-news tags (dogfood 20260906: Iran oil tankers in an AI episode)
@@ -308,8 +313,10 @@ export function classifyCategory(doc: Doc): Category {
  */
 export function scoreDimensions(doc: Doc, planDate: string): DimensionScores {
     const meta = asRecord(doc.metadata);
-    let quality = 1 + Math.min(4, Math.round((doc.body ?? '').length / 1500));
-    if (doc.sourceUri) quality = Math.min(5, quality + 1);
+    // The floor short-circuits the sourcedness bonus: "quality 1 regardless of sourceUri" (R2).
+    const bodyLen = (doc.body ?? '').length;
+    let quality = bodyLen < STUB_BODY_FLOOR ? 1 : 1 + Math.min(4, Math.round(bodyLen / 1500));
+    if (doc.sourceUri && bodyLen >= STUB_BODY_FLOOR) quality = Math.min(5, quality + 1);
 
     const source = typeof meta.source === 'string' ? meta.source : '';
     let importance = IMPORTANCE_BASE[source] ?? DEFAULT_IMPORTANCE;

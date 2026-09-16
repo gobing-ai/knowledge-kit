@@ -136,6 +136,29 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         }
     });
 
+    it('R4 (0138) — the plan-translate prompt carries the copy-discipline contract', () => {
+        // The prompt is the primary defence against research scaffolding reaching published copy;
+        // the deterministic strip in daily-article-gen is the fallback. Naming each scaffold label
+        // and hedging marker here is what keeps the prompt from silently losing the contract.
+        const block = yaml.match(/- id: plan-translate\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        expect(block).not.toBe('');
+        for (const marker of [
+            'Copy discipline',
+            'reader-facing news copy',
+            'duplicated labels',
+            '可做角度',
+            '为什么现在值得注意',
+            '社区讨论',
+            '背景',
+            '潜在影响',
+            '影响',
+            '读者宜另行核实',
+            '仍待验证',
+        ]) {
+            expect(block, `${marker} in the plan-translate prompt`).toContain(marker);
+        }
+    });
+
     it('R3 & R5 — invokes the pipeline plugins through kk executor (incl. fan-in/fan-out)', () => {
         // 0097: the ingest plugins spawn inside kk executor fan-in --source (concurrent collect).
         expect(yaml).toContain('--source "aihot-ingest:');
