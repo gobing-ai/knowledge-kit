@@ -1,0 +1,6 @@
+# Project override for the user-layer rule (~/.config/spur/rules/boundary/env-var-hygiene.yaml).
+# That rule funnels env access through packages/config (spur-new layout, ADR-027/task 0902).
+# knowledge-kit has no packages/config gateway; apps/cli legitimately reads process.env
+# (ADR-010 executor surface). Until this project grows its own env gateway, the
+# user-layer rule must not fire here. Revisit when task 0902 lands in this repo.
+rules: []

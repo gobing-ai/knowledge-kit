@@ -387,7 +387,7 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
         const normalized = normalizeLocaleFrontmatter(readFileSync(sibling, 'utf-8'));
         if (normalized !== readFileSync(sibling, 'utf-8')) {
             await writeFile(sibling, normalized);
-            console.error(`sync: normalized frontmatter for ${locale} sibling: ${sibling}`);
+            echoError(`sync: normalized frontmatter for ${locale} sibling: ${sibling}`);
         }
     }
 
