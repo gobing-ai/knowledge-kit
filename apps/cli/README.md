@@ -27,7 +27,7 @@ coding agents. Install it globally via [superskill](https://www.npmjs.com/packag
 
 ```bash
 bun add -g @gobing-ai/superskill
-superskill install kk --marketplace https://github.com/gobing-ai/knowledge-kit
+superskill install kk --marketplace gobing-ai/knowledge-kit
 ```
 
 The repo is private, so superskill needs a GitHub token in the environment
@@ -36,14 +36,14 @@ The repo is private, so superskill needs a GitHub token in the environment
 
 ## Commands
 
-| Command | What it does |
-| --- | --- |
-| `kk executor run <plugin> --in <path> --out <path>` | Invoke a plugin with input/output files and contract validation |
-| `kk executor fan-in` | Merge N `Doc[]` JSON inputs into one deduplicated `Doc[]` output |
-| `kk executor fan-out` | Publish one `Content` JSON to N targets, aggregating per-target results |
-| `kk plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind`, `--json`) |
-| `kk -v, --verbose` | Enable verbose diagnostics |
-| `kk --help` / `kk <command> --help` | Full flag reference |
+| Command                                             | What it does                                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `kk executor run <plugin> --in <path> --out <path>` | Invoke a plugin with input/output files and contract validation                     |
+| `kk executor fan-in`                                | Merge N `Doc[]` JSON inputs into one deduplicated `Doc[]` output                    |
+| `kk executor fan-out`                               | Publish one `Content` JSON to N targets, aggregating per-target results             |
+| `kk plugin status`                                  | List discovered plugins grouped by kind with per-plugin health (`--kind`, `--json`) |
+| `kk -v, --verbose`                                  | Enable verbose diagnostics                                                          |
+| `kk --help` / `kk <command> --help`                 | Full flag reference                                                                 |
 
 Hidden one-release aliases (`invoke`, `fanin`, `fanout`, `plugins list`, `plugins doctor`)
 still work but are not listed in `kk --help`.
@@ -53,11 +53,11 @@ still work but are not listed in `kk --help`.
 Plugins are directories with a `plugin.json` manifest, discovered by a registry scan across
 built-in, user, project, and `KK_PLUGIN_PATH` roots. Three kinds:
 
-| Kind | Contract | Shipped examples |
-| --- | --- | --- |
-| `ingestion` | `source → Doc[]` | `karakeep-local`, `web-search`, `last30days-ingest` |
+| Kind        | Contract                   | Shipped examples                                                 |
+| ----------- | -------------------------- | ---------------------------------------------------------------- |
+| `ingestion` | `source → Doc[]`           | `karakeep-local`, `web-search`, `last30days-ingest`              |
 | `generator` | `Doc[] \| Brief → Content` | `content-gen` (owned STORM pipeline), `voice-gen` (Voicebox TTS) |
-| `publish` | `Content → Result` | `surfdash-pub`, `zenn-pub`, `qiita-pub` |
+| `publish`   | `Content → Result`         | `surfdash-pub`, `zenn-pub`, `qiita-pub`                          |
 
 Core contracts (`Doc`, `Brief`, `Content`, `Result`) and per-kind validation live in
 `@gobing-ai/kk-core`. **LLM-as-judge is not a plugin kind** — quality gating is delivered as
