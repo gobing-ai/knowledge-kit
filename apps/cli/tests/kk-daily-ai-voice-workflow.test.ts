@@ -215,6 +215,20 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('test "$' + '{vars.skip_review}" = "true"');
     });
 
+    it('R3 (0140) — the quality-control edges carry no qc.passed gate and no failed fallthrough', () => {
+        // Branch A (operator-ratified 2026-09-17): warn-only. The old conjunct could never fail —
+        // jq's `//` treats false as empty, so `.metadata.qc.passed // true` printed "true" for a
+        // failing audit — so the gate is deleted rather than left reading as a live safety check.
+        // Assert on guard COMMAND text, not the whole file: the yaml carries an explanatory comment
+        // naming qc.passed so a future reader does not restore the broken expression.
+        const guardCommands = [...yaml.matchAll(/^ {8}command: '([^']*)'$/gm)].map((m) => m[1] ?? '');
+        expect(guardCommands.filter((c) => c.includes('qc.passed'))).toEqual([]);
+        const qcState = yaml.slice(yaml.indexOf('  - from: generate'), yaml.indexOf('  - from: publish-prep'));
+        expect(qcState).toContain('  - from: quality-control\n    to: publish-prep');
+        expect(qcState).toContain('  - from: quality-control\n    to: done');
+        expect(qcState).not.toContain('  - from: quality-control\n    to: failed');
+    });
+
     it('R5 — executes all plugin commands and creates pipeline artifacts', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
             // Fail loud: a silent return made a green suite indistinguishable from a skipped run.
@@ -224,7 +238,13 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         }
         // unset -> workflow default omni-voice-gen (ADR-020 amendment 2026-09-13); explicit
         // 'voice-gen' pins the Voicebox REST fallback path.
-        for (const voiceGenerator of [undefined, 'voice-gen'] as const) {
+        // 0140: the third case drives a degradation-class audit (`passed:false`, no
+        // `repetition_detected`) through the real engine — Branch A publishes it warn-only.
+        for (const [voiceGenerator, qcPassed] of [
+            [undefined, true],
+            ['voice-gen', true],
+            [undefined, false],
+        ] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
             const binDir = join(testRoot, 'bin');
             const workDir = join(testRoot, 'work dir');
@@ -287,6 +307,11 @@ if (args[1] === 'fan-in') {
 
 const plugin = args[2];
 if (args[1] !== 'run' || !plugin || !inPath || !outPath) process.exit(2);
+// 0140: a degradation-class audit (passed:false, no repetition) — the input the removed
+// qc.passed guard was meant to gate. KK_TEST_QC_PASSED=false makes the stub emit it.
+const qc = process.env.KK_TEST_QC_PASSED === 'false'
+    ? { passed: false, overallScore: 50, totalDuration: 1, segmentAudits: [{ segmentIndex: 0, issues: ['loudness_dip:unknown'] }] }
+    : { passed: true, overallScore: 100, totalDuration: 1, segmentAudits: [] };
 mkdirSync(dirname(outPath), { recursive: true });
 appendFileSync(process.env.KK_TEST_CALL_LOG, JSON.stringify({
     plugin,
@@ -352,7 +377,7 @@ if (plugin === 'aihot-ingest') {
         title: 'Daily AI News',
         body: wavPath,
         format: 'audio',
-        metadata: { audioPath: wavPath },
+        metadata: { audioPath: wavPath, qc },
     }));
 } else if (plugin === 'omni-voice-gen') {
     readFileSync(inPath, 'utf8');
@@ -362,7 +387,7 @@ if (plugin === 'aihot-ingest') {
         title: 'Daily AI News',
         body: wavPath,
         format: 'audio',
-        metadata: { audioPath: wavPath, generator: 'kk:omni-voice-gen' },
+        metadata: { audioPath: wavPath, generator: 'kk:omni-voice-gen', qc },
     }));
 } else {
     process.exit(4);
@@ -396,6 +421,7 @@ if (plugin === 'aihot-ingest') {
                             // into the child, or spur refuses to start the workflow under test.
                             SPUR_WORKFLOW_RUN_ACTIVE: undefined,
                             KK_TEST_CALL_LOG: callLog,
+                            KK_TEST_QC_PASSED: qcPassed ? 'true' : 'false',
                             PATH: `${binDir}:${process.env.PATH ?? ''}`,
                         },
                         stdout: 'pipe',
@@ -437,6 +463,10 @@ if (plugin === 'aihot-ingest') {
                     );
                     expect(swapped.metadata.generator).toBe('kk:omni-voice-gen');
                 }
+                const generated = JSON.parse(
+                    readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
+                );
+                expect(generated.metadata.qc.passed).toBe(qcPassed);
 
                 const calls = readFileSync(callLog, 'utf8')
                     .trim()
@@ -460,6 +490,15 @@ if (plugin === 'aihot-ingest') {
                     'plan',
                     'filter',
                 ]);
+                // 0140 Branch A: with `passed:false` on disk the run must still reach its normal
+                // terminal. publish_enabled=false leaves exactly two non-failed edges, so a clean
+                // exit plus no publish-plugin call proves the `done` terminal was taken, warn-only.
+                if (!qcPassed) {
+                    expect(generated.metadata.qc.passed).toBe(false);
+                    expect(result.exitCode).toBe(0);
+                    expect(calls.map((call) => call.plugin)).not.toContain('surfdash-pub');
+                    expect(calls.map((call) => call.plugin)).not.toContain('podcast-pub');
+                }
                 const scriptCall = calls.find((call) => call.plugin === 'dailynews-gen');
                 expect(scriptCall).toMatchObject({ language: 'en', title: 'AI Today', voiceProfile: 'Alex' });
                 expect(scriptCall?.inPath).toContain('plan.json');

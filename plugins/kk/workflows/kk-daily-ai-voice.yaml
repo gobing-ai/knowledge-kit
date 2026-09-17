@@ -520,27 +520,30 @@ transitions:
     guard:
       kind: always
 
+  # 0140: intentionally NO `qc.passed` conjunct on these two edges (operator decision, ratified
+  # 2026-09-17, see the 0140 Q&A). The gate that used to sit here read
+  # `jq -r '.metadata.qc.passed // true' <generate content>` — and jq's `//` treats `false` as empty,
+  # so it printed "true" for a failing audit and the conjunct passed for every input. It never gated
+  # (trace `dogfood-daily-031816` fired quality-control → publish-prep with `passed:false` on disk),
+  # so removing it is behaviour-neutral. Policy: degradation-class audits (loudness dips,
+  # transcription fidelity) publish warn-only and surface in the run report's ## 音频 QC block;
+  # the credibility-damaging class (`repetition_detected`) is hard-failed upstream by 0139 R5a.
+  # Do not restore a `qc.passed` guard here without also fixing the `// false`-swallowing expression.
   - from: quality-control
     to: publish-prep
-    description: "publish enabled AND QC passed -> merge article + audio for the publish seam"
+    description: "publish enabled -> merge article + audio for the publish seam"
     guard:
       kind: shell
       options:
-        command: 'test "${vars.publish_enabled}" = "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json")" = "true"'
+        command: 'test "${vars.publish_enabled}" = "true"'
 
   - from: quality-control
     to: done
-    description: "publish disabled AND QC passed -> audio episode complete (no publish)"
+    description: "publish disabled -> audio episode complete (no publish)"
     guard:
       kind: shell
       options:
-        command: 'test "${vars.publish_enabled}" != "true" && test "$(jq -r ''.metadata.qc.passed // true'' "${vars.work_dir}/3-audio/${vars.run_date}_11_generate_content.json")" = "true"'
-
-  - from: quality-control
-    to: failed
-    description: "Audio QC failed -> pipeline failed"
-    guard:
-      kind: always
+        command: 'test "${vars.publish_enabled}" != "true"'
 
   - from: publish-prep
     to: publish-surfdash
