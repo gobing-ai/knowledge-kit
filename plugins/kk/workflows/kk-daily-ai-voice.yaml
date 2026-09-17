@@ -28,6 +28,7 @@ vars:
   cover_enabled: "true"
   plan_max_items: "20"
   plan_translate_enabled: "true"
+  article_write_enabled: "true"
   plugins_path: ""
   last30days_topic: "AI news"
   horizon_hours: "24"
@@ -35,7 +36,6 @@ vars:
   last30days_enabled: "false"
   run_date: ""
   agent: "inline"
-  surfdash_post_path: ""
   surfdash_en_post_path: ""
   surfdash_ja_post_path: ""
   qc_categories: "ai-news,ai-industry"
@@ -124,12 +124,28 @@ states:
           # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a adds the copy discipline).
           input: |
             Read ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
-            For items with needsTranslation, translate "title" and "body" into natural, concise simplified Chinese.
-            Titles read as a news event (subject + action + object) from the body — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
+            For items with needsTranslation, translate "title", "body", and "metadata.brief" (when present) into natural simplified Chinese.
+            Titles read as a news event (subject + action + object) — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
             Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
             Keep other fields (id, sourceUri, mediaType, metadata), technical terms as-is; no trailing commas or comments.
             Output strictly valid JSON — a same-length, same-order array with the same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json.
           expectFile: ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json
+          allowAppend: false
+
+  - id: article-write
+    description: "Write the morning-news prose article from the translated plan via agent.run (3-format split: surfdash gets prose, not a news list)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3).
+          input: |
+            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
+            Write a morning-news prose article in natural simplified Chinese: title line "# 每日 AI 资讯 — ${vars.run_date}", an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together.
+            Narrative register — smooth transitions between items, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). Keep facts/URLs from the plan verbatim; product/model names as-is; 「」 quotes.
+            Output the markdown to ${vars.work_dir}/2-article/${vars.run_date}_06_article-write_body.md.
+          expectFile: ${vars.work_dir}/2-article/${vars.run_date}_06_article-write_body.md
           allowAppend: false
 
   - id: article
@@ -215,7 +231,7 @@ states:
             st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.voice_generator}"
+            OMNIVOICE_SPEED=1.06 bun "$st" daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.voice_generator}"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
@@ -321,8 +337,8 @@ states:
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
             bun "$st" daily-run-report "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
 
-  - id: translate-en
-    description: "Scaffold en draft from the zh article via surfdash-pub scaffold-locale (postPath from publish result; done-no-content/none-publish runs carry no zh path and skip)"
+  - id: translate
+    description: "Locales — surfdash-pub scaffolds en/ja drafts (deterministic, plugin-owned), agent translates both, sync into the surfdash CMS"
     onEnter:
       - kind: shell
         options:
@@ -332,64 +348,26 @@ states:
             st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-translate-en "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+            bun "$st" daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_zh-post-path.txt
-          var: surfdash_post_path
-      - kind: file.read.into-var
-        options:
-          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-en_en-post-path.txt
+          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
           var: surfdash_en_post_path
-
-  - id: translate-en-agent
-    description: "Translate the en draft in place via agent.run"
-    onEnter:
-      - kind: agent.run
-        options:
-          role: scribe
-          agent: ${vars.agent}
-          input: |
-            Translate the English draft post at ${vars.surfdash_en_post_path} from Chinese to English.
-            Edit the file in place: translate the title in frontmatter and the whole markdown body to natural English. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Keep the draft: true flag.
-            Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
-            Do not wait for operator confirmation. The file must end fully in English.
-          expectFile: ${vars.surfdash_en_post_path}
-
-  - id: translate-ja
-    description: "Scaffold ja draft from the zh article via surfdash-pub scaffold-locale (sed-derived path as cache pre-check; plugin's draftPath is authoritative once scaffolded)"
-    onEnter:
-      - kind: shell
-        options:
-          command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-translate-ja "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/${vars.run_date}_22_translate-ja_ja-post-path.txt
+          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
           var: surfdash_ja_post_path
-
-  - id: translate-ja-agent
-    description: "Translate the ja draft in place via agent.run"
-    onEnter:
       - kind: agent.run
         options:
           role: scribe
           agent: ${vars.agent}
           input: |
-            Translate the Japanese draft post at ${vars.surfdash_ja_post_path} from Chinese to Japanese.
-            Edit the file in place: translate the title in frontmatter and the whole markdown body to natural Japanese. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Keep the draft: true flag.
-            Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
-            Do not wait for operator confirmation. The file must end fully in Japanese.
-          expectFile: ${vars.surfdash_ja_post_path}
-
-  - id: translate-sync
-    description: "Sync the zh post and its en/ja locale variants into the surfdash CMS (surfdash-pub sync operation)"
-    onEnter:
+            Translate en/ja draft posts of the zh article — two independent files:
+            English draft: ${vars.surfdash_en_post_path}
+            Japanese draft: ${vars.surfdash_ja_post_path}
+            For each: if its path above is empty, skip that locale. Otherwise edit the file in place — translate the frontmatter title and the whole markdown body to natural English/Japanese respectively. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Set draft: false (the translated post publishes to the site) and remove any canonical: frontmatter line pointing at a different locale's URL.
+            Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
+            Do not wait for operator confirmation. Each edited file must end fully in its target language.
       - kind: shell
         options:
           command: >-
@@ -398,7 +376,7 @@ states:
             st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.surfdash_post_path}"
+            bun "$st" daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
 
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → QC'd plan → article/cover/script/voice → publish/locales)"
@@ -445,16 +423,40 @@ transitions:
         command: 'test "${vars.plan_translate_enabled}" = "true"'
 
   - from: quality-control-content
-    to: article
-    description: "Candidates passed QC, plan-translate disabled -> straight to article"
+    to: article-write
+    description: "Candidates passed QC, plan-translate disabled, prose enabled -> straight to article-write"
     guard:
       kind: shell
       options:
-        command: 'test "${vars.plan_translate_enabled}" != "true"'
+        command: 'test "${vars.plan_translate_enabled}" != "true" && test "${vars.article_write_enabled}" = "true"'
+
+  - from: quality-control-content
+    to: article
+    description: "Prose disabled -> package the template article directly"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.article_write_enabled}" != "true"'
+
+  - from: plan-translate
+    to: article-write
+    description: "Plan translated and prose enabled -> write prose article from plan"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.article_write_enabled}" = "true"'
 
   - from: plan-translate
     to: article
-    description: "Plan translated -> generate article from plan"
+    description: "Plan translated, prose disabled -> package the template article"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.article_write_enabled}" != "true"'
+
+  - from: article-write
+    to: article
+    description: "Prose body written -> package article content"
     guard:
       kind: always
 
@@ -600,8 +602,8 @@ transitions:
       kind: always
 
   - from: run-report
-    to: translate-en
-    description: "Run report assembled after full publish -> scaffold + translate en locale"
+    to: translate
+    description: "Run report assembled after full publish -> scaffold + translate en/ja locales + sync"
     guard:
       kind: shell
       options:
@@ -615,48 +617,8 @@ transitions:
       options:
         command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "partial"'
 
-  - from: translate-en
-    to: translate-en-agent
-    description: "zh post published and en draft scaffolded -> agent translates en draft in place"
-    guard:
-      kind: shell
-      options:
-        command: 'test -n "${vars.surfdash_post_path}" && test -f "${vars.surfdash_en_post_path}"'
-
-  - from: translate-en
-    to: translate-ja
-    description: "no zh post path -> skip en locale"
-    guard:
-      kind: always
-
-  - from: translate-en-agent
-    to: translate-ja
-    description: "en draft translated -> scaffold ja locale"
-    guard:
-      kind: always
-
-  - from: translate-ja
-    to: translate-ja-agent
-    description: "zh post published and ja draft scaffolded -> agent translates ja draft in place"
-    guard:
-      kind: shell
-      options:
-        command: 'test -n "${vars.surfdash_post_path}" && test -f "${vars.surfdash_ja_post_path}"'
-
-  - from: translate-ja
-    to: translate-sync
-    description: "no zh post path -> skip ja locale"
-    guard:
-      kind: always
-
-  - from: translate-ja-agent
-    to: translate-sync
-    description: "ja draft translated -> sync all locales into the CMS"
-    guard:
-      kind: always
-
-  - from: translate-sync
+  - from: translate
     to: done
-    description: "zh post + locales synced into surfdash CMS -> episode complete"
+    description: "zh post + en/ja locales scaffolded, translated, and synced into the surfdash CMS -> episode complete"
     guard:
       kind: always

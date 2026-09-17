@@ -592,7 +592,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             writeFileSync(join(cover, 'content-cover-01.png'), 'png');
             writeFileSync(join(cover, 'content-cover-01.jpg'), 'jpg');
             expect(run(['daily-cover-normalize', dir, '20260101']).status).toBe(0);
-            expect(readFileSync(join(cover, 'cover-20260101.png'), 'utf-8')).toBe('png');
+            expect(readFileSync(join(cover, '20260101_07_cover_cover.png'), 'utf-8')).toBe('png');
             expect(existsSync(join(cover, 'content-cover-01.png'))).toBe(false);
             expect(existsSync(join(cover, 'content-cover-01.jpg'))).toBe(false);
         });
@@ -609,7 +609,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const result = run(['daily-cover-normalize', dir, '20260101'], { PATH: bin });
             expect(result.status).toBe(1);
             expect(result.stderr).toContain('cover normalize: sips not found; cannot transcode jpg -> png');
-            expect(existsSync(join(dir, '2-cover/cover-20260101.png'))).toBe(false);
+            expect(existsSync(join(dir, '2-cover/20260101_07_cover_cover.png'))).toBe(false);
         });
     });
 
@@ -660,18 +660,18 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
-    it('daily-translate-en writes both path files, skips without a zh path, and scaffolds otherwise', () => {
+    it('daily-translate-localize writes zh/en/ja markers, skips without a zh path, scaffolds otherwise', () => {
         withTempDir((dir) => {
             const publish = join(dir, '3-publish');
             mkdirSync(publish, { recursive: true });
             const stamp = '20260101';
-            // No result.json → no post path → both path files are written empty and the stage skips.
-            expect(run(['daily-translate-en', dir, stamp, '']).status).toBe(0);
-            expect(readFileSync(join(publish, `${stamp}_20_translate-en_zh-post-path.txt`), 'utf-8')).toBe('');
-            expect(readFileSync(join(publish, `${stamp}_20_translate-en_en-post-path.txt`), 'utf-8')).toBe('');
-            expect(existsSync(join(publish, `${stamp}_20_translate-en_scaffold-en.json`))).toBe(false);
+            // No result.json → no post path → all markers written empty and no scaffolding runs.
+            expect(run(['daily-translate-localize', dir, stamp, '']).status).toBe(0);
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`), 'utf-8')).toBe('');
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), 'utf-8')).toBe('');
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), 'utf-8')).toBe('');
 
-            // With a published zh path and no draft on disk, the scaffold carries the rewrite.
+            // With a published zh path and no draft on disk, each locale scaffolds via surfdash-pub.
             const zhPath = join(dir, 'posts/zh/index.md');
             writeFileSync(
                 join(publish, `${stamp}_17_publish_result.json`),
@@ -687,17 +687,60 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     "const fs = require('node:fs');",
                     'const args = process.argv.slice(2);',
                     "const out = args[args.indexOf('--out') + 1];",
-                    "fs.writeFileSync(out, JSON.stringify({ metadata: { draftPath: 'posts/en/index.md' } }));",
+                    "const target = out.includes('-ja-') ? 'ja' : 'en';",
+                    "fs.writeFileSync(out, JSON.stringify({ metadata: { draftPath: 'posts/' + target + '/index.md' } }));",
                 ].join('\n'),
             );
-            expect(run(['daily-translate-en', dir, stamp, ''], env).status).toBe(0);
+            expect(run(['daily-translate-localize', dir, stamp, ''], env).status).toBe(0);
             const scaffold = JSON.parse(
-                readFileSync(join(publish, `${stamp}_20_translate-en_scaffold-en.json`), 'utf-8'),
+                readFileSync(join(publish, `${stamp}_20_translate-localize_scaffold-en.json`), 'utf-8'),
             ) as { options: Record<string, string> };
             expect(scaffold.options).toEqual({ operation: 'scaffold-locale', postPath: zhPath, target: 'en' });
-            expect(readFileSync(join(publish, `${stamp}_20_translate-en_en-post-path.txt`), 'utf-8')).toBe(
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), 'utf-8')).toBe(
                 'posts/en/index.md',
             );
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_ja-post-path.txt`), 'utf-8')).toBe(
+                'posts/ja/index.md',
+            );
+
+            // An on-disk draft is the retry cache: reused without re-scaffolding (re-scaffolding
+            // would erase the agent's translation).
+            rmSync(join(publish, `${stamp}_20_translate-localize_scaffold-en.json`), { force: true });
+            mkdirSync(join(dir, 'posts/en'), { recursive: true });
+            writeFileSync(join(dir, 'posts/en/index.md'), 'translated');
+            expect(run(['daily-translate-localize', dir, stamp, ''], env).status).toBe(0);
+            expect(existsSync(join(publish, `${stamp}_20_translate-localize_scaffold-en.json`))).toBe(false);
+            expect(readFileSync(join(publish, `${stamp}_20_translate-localize_en-post-path.txt`), 'utf-8')).toBe(
+                join(dir, 'posts/en/index.md'),
+            );
+        });
+    });
+
+    it('daily-translate-sync skips without a zh path file and syncs through the zh marker', () => {
+        withTempDir((dir) => {
+            const publish = join(dir, '3-publish');
+            mkdirSync(publish, { recursive: true });
+            const stamp = '20260101';
+            // No marker file at all → loud skip without invoking kk.
+            expect(run(['daily-translate-sync', dir, stamp, '', '']).status).toBe(0);
+            expect(existsSync(join(publish, `${stamp}_24_translate-sync_sync.json`))).toBe(false);
+
+            const marker = join(publish, `${stamp}_20_translate-localize_zh-post-path.txt`);
+            writeFileSync(marker, 'posts/zh/index.md');
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    'fs.writeFileSync(out, JSON.stringify({ ok: true }));',
+                ].join('\n'),
+            );
+            expect(run(['daily-translate-sync', dir, stamp, '', marker], env).status).toBe(0);
+            const sync = JSON.parse(readFileSync(join(publish, `${stamp}_24_translate-sync_sync.json`), 'utf-8')) as {
+                options: Record<string, string>;
+            };
+            expect(sync.options).toEqual({ operation: 'sync', postPath: 'posts/zh/index.md' });
         });
     });
 

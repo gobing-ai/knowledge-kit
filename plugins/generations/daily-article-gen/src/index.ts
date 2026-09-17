@@ -120,11 +120,11 @@ function tagsFor(docs: Doc[]): string[] {
     return [AI_NEWS_TAG, ...existing.filter((t) => t !== AI_NEWS_TAG)];
 }
 
-/** Build the article Content from a merged Doc[]. */
-export function docsToContent(docs: Doc[], date: string): Content {
+/** Build the article Content from a merged Doc[]; `bodyOverride` replaces the mechanical render (agent-written prose), still scaffold-stripped as a safety net. */
+export function docsToContent(docs: Doc[], date: string, bodyOverride?: string): Content {
     return ContentSchema.parse({
         title: `每日 AI 资讯 — ${date}`,
-        body: renderDailyArticle(docs, date),
+        body: bodyOverride ? stripScaffold(bodyOverride).trim() : renderDailyArticle(docs, date),
         format: 'markdown',
         references: docs.filter((d) => d.sourceUri).map((d) => ({ url: d.sourceUri, title: d.title, cite: d.id })),
         metadata: { generator: 'kk:daily-article', date, doc_count: docs.length, tags: tagsFor(docs) },
@@ -135,7 +135,15 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
     const docs = DocListSchema.parse(await readJsonFile(inputPath));
     const raw = process.env.ARTICLE_DATE ?? new Date().toISOString().slice(0, 10);
     const date = raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}` : raw;
-    const content = docsToContent(docs, date);
+    // Agent-written prose body (workflow `article-write` state) replaces the mechanical
+    // per-item render; missing/empty env ⇒ mechanical render as before.
+    let bodyOverride: string | undefined;
+    const bodyFile = process.env.ARTICLE_BODY_FILE;
+    if (bodyFile && bodyFile.length > 0) {
+        bodyOverride = await Bun.file(bodyFile).text();
+        if (bodyOverride.trim() === '') bodyOverride = undefined;
+    }
+    const content = docsToContent(docs, date, bodyOverride);
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);

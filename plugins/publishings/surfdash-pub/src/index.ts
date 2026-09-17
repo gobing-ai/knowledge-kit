@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { copyFile, cp } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { copyFile, cp, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
@@ -350,6 +350,25 @@ async function scaffoldLocale(options: SurfdashPubOptions): Promise<Result> {
  * `bun scripts/publish-orchestrator.ts sync <postPath>` inside the surfdash checkout
  * and returns ok/fail with stderr on failure.
  */
+/**
+ * Deterministic frontmatter normalization for locale siblings before CMS sync
+ * (2026-09-16 hreflang feedback): the site's alternates builder reads published
+ * disk siblings, so each non-primary locale must end `draft: false` and must not
+ * carry a stale cross-locale `canonical` (the translation agent sometimes copies
+ * zh frontmatter verbatim). Line-based — no YAML lib in this plugin. Backstop
+ * for the agent prompt; safe because sync always runs after the agent's edit.
+ */
+export function normalizeLocaleFrontmatter(markdown: string): string {
+    const lines = markdown.split('\n');
+    const inFrontmatter = lines[0]?.trim() === '---';
+    for (let i = 1; inFrontmatter && i < lines.length; i++) {
+        if (lines[i]?.trim() === '---') break;
+        if (/^canonical\s*:/.test(lines[i] ?? '')) lines[i] = '';
+        else if (/^draft\s*:/.test(lines[i] ?? '')) lines[i] = 'draft: false';
+    }
+    return lines.filter((line) => line !== '').join('\n');
+}
+
 async function syncPost(options: SurfdashPubOptions): Promise<Result> {
     const postPath = resolvePostPath(options);
     if ('error' in postPath) return fail(postPath.error);
@@ -360,6 +379,17 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
     }
     const outsideRoot = postPathOutsideRoot(postPath.postPath, surfdashRoot);
     if (outsideRoot) return fail(outsideRoot);
+
+    // Normalize en/ja siblings (draft flag + stale canonical) before the orchestrator syncs them.
+    for (const locale of ['en', 'ja'] as const) {
+        const sibling = deriveLocaleDraftPath(postPath.postPath, locale);
+        if (!sibling || !existsSync(sibling)) continue;
+        const normalized = normalizeLocaleFrontmatter(readFileSync(sibling, 'utf-8'));
+        if (normalized !== readFileSync(sibling, 'utf-8')) {
+            await writeFile(sibling, normalized);
+            console.error(`sync: normalized frontmatter for ${locale} sibling: ${sibling}`);
+        }
+    }
 
     try {
         const spawned = await spawnCli(

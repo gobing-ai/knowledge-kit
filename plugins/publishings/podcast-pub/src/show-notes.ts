@@ -31,6 +31,106 @@ function renderInline(escaped: string): string {
 }
 
 /**
+ * Normalizes text for title↔transcription matching: lowercase, strip everything
+ * that is not a CJK char, letter, or digit. ASR drops punctuation and case, and the
+ * intro segment enumerates every title, so matching must be punctuation-blind and
+ * monotonic (each item searches forward from the previous match).
+ */
+function normalizeForMatch(text: string): string {
+    return text.toLowerCase().replace(/[^\p{Script=Han}\p{L}\p{N}]+/gu, '');
+}
+
+/** `m:ss` audio offset, or `--:--` when unknown. */
+function formatOffset(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return s === 60 ? `${m + 1}:00` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * Per-item audio offsets (seconds) from the generated segments. Exact mode: walk
+ * segments after the intro (index 0), matching each item title inside a segment
+ * transcription, monotonic forward. Proportional fallback (any title unmatched or no
+ * segments): distribute total duration by body length — monotonic and close enough
+ * for jump navigation. `ponytail`: no word-level alignment; segment starts are
+ * accurate to one segment (~10–30s), fine for chapter jumps.
+ */
+export function computeAudioOffsets(
+    docs: Doc[],
+    segments: Array<{ duration?: number; transcription?: string }> | undefined,
+): number[] {
+    const fallback = (): number[] => {
+        const chars = docs.map((d) => Math.max((d.body ?? '').trim().length, 1));
+        const total = chars.reduce((a, b) => a + b, 0);
+        const sumDuration = (segments ?? []).reduce((a, s) => a + (s.duration ?? 0), 0);
+        let acc = 0;
+        return chars.map((c) => {
+            const at = acc;
+            acc += (c / total) * sumDuration;
+            return at;
+        });
+    };
+    if (!segments || segments.length < 2) return fallback();
+    const starts: number[] = [];
+    let elapsed = 0;
+    const marks = segments.map((s) => {
+        const at = elapsed;
+        elapsed += s.duration ?? 0;
+        return { at, text: normalizeForMatch(s.transcription ?? '') };
+    });
+    let cursor = 1; // segment 0 is the intro, which recites every title
+    for (const d of docs) {
+        const title = normalizeForMatch(d.title ?? '');
+        const needle = title.slice(0, 12);
+        const hit = needle.length >= 4 ? marks.findIndex((m, i) => i >= cursor && m.text.includes(needle)) : -1;
+        if (hit >= 0) {
+            starts.push(marks[hit]?.at ?? 0);
+            cursor = hit + 1;
+        } else {
+            starts.push(Number.NaN); // any miss degrades the whole run to proportional
+        }
+    }
+    if (starts.some((v) => !Number.isFinite(v))) return fallback();
+    return starts;
+}
+
+/**
+ * Brief-mode timeline block: two-column HTML (offset left, title + briefing right),
+ * marked `<!--kk:timeline-->` so {@link renderShowNotesHtml} passes it through
+ * verbatim — everything inside is built here from escaped doc values, never user
+ * input. `ponytail`: no JS — timestamp deep-linking depends on the theme's player
+ * API; add when microfeed exposes one.
+ */
+function renderTimelineHtml(docs: Doc[], offsets: number[], articleUrl: string): string {
+    const rows = docs
+        .map((d, i) => {
+            const title = escapeHtml(d.title ?? `条目 ${i + 1}`);
+            const brief = escapeHtml(itemBrief(d));
+            const at = formatOffset(offsets[i] ?? Number.NaN);
+            const link = d.sourceUri
+                ? ` <a href="${escapeHtml(d.sourceUri)}" target="_blank" rel="noopener">来源</a>`
+                : '';
+            return `
+    <div class="kk-tl-row"><div class="kk-tl-t">${at}</div><div class="kk-tl-body"><div class="kk-tl-title">${i + 1}. ${title}${link}</div><p class="kk-tl-brief">${brief}</p></div></div>`;
+        })
+        .join('');
+    return `<!--kk:timeline-->
+<style>
+.kk-tl{margin:1em 0}
+.kk-tl-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(128,128,128,.25)}
+.kk-tl-t{flex:0 0 56px;font-variant-numeric:tabular-nums;font-weight:700;color:#0969da}
+.kk-tl-body{flex:1;min-width:0}
+.kk-tl-title{font-weight:600}
+.kk-tl-brief{margin:4px 0 0;color:#666;font-size:.95em}
+</style>
+<div class="kk-tl">${rows}
+</div>
+<p>完整图文版：<a href="${escapeHtml(articleUrl)}" target="_blank" rel="noopener">${escapeHtml('本期完整文章')}</a></p>
+<!--/kk:timeline-->`;
+}
+
+/**
  * Renders show-notes markdown to sanitized HTML.
  * The leading `# ` heading is dropped: the episode `title` is rendered
  * separately by the page theme, so keeping it would duplicate the H1.
@@ -39,6 +139,8 @@ function renderInline(escaped: string): string {
  */
 export function renderShowNotesHtml(markdown: string): string {
     const blocks: string[] = [];
+    const timeline: string[] = [];
+    let inTimeline = false;
     let paragraph: string[] = [];
 
     const flush = () => {
@@ -50,6 +152,19 @@ export function renderShowNotesHtml(markdown: string): string {
 
     for (const rawLine of markdown.split('\n')) {
         const line = rawLine.trim();
+        if (line === '<!--kk:timeline-->') {
+            flush();
+            inTimeline = true;
+            continue;
+        }
+        if (inTimeline) {
+            if (line === '<!--/kk:timeline-->') {
+                inTimeline = false;
+                continue;
+            }
+            timeline.push(rawLine);
+            continue;
+        }
         if (line.length === 0) {
             flush();
             continue;
@@ -67,6 +182,7 @@ export function renderShowNotesHtml(markdown: string): string {
         paragraph.push(line);
     }
     flush();
+    if (timeline.length > 0) blocks.push(timeline.join('\n'));
     return blocks.join('\n');
 }
 
@@ -96,6 +212,24 @@ export interface ShowNotesRenderOptions {
      * slug construction, which stays the fallback.
      */
     articlePostPath?: string;
+    /**
+     * Audio segment metadata from the generated episode content
+     * (`metadata.segments[]`: per-segment `duration` seconds + ASR `transcription`).
+     * When present, per-item timestamps are real audio offsets (listener jump-to-item),
+     * matched monotonically against segment transcriptions; otherwise `--:--`.
+     */
+    audioSegments?: Array<{ duration?: number; transcription?: string }>;
+}
+
+/** Per-item 1–2-sentence briefing: `metadata.brief` first, body sentences as fallback. */
+function itemBrief(d: Doc): string {
+    const meta = d.metadata ?? {};
+    if (typeof meta.brief === 'string' && meta.brief.trim().length > 0) return meta.brief.trim();
+    return (d.body ?? '')
+        .trim()
+        .split(/(?<=[。！？])\s*/)
+        .slice(0, 2)
+        .join('');
 }
 
 /**
@@ -136,44 +270,29 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
             return '来源';
         }
     };
-    const itemBrief = (d: Doc): string => {
-        const meta = d.metadata ?? {};
-        if (typeof meta.brief === 'string' && meta.brief.trim().length > 0) return meta.brief.trim();
-        return (d.body ?? '')
-            .trim()
-            .split(/(?<=[。！？])\s*/)
-            .slice(0, 2)
-            .join('');
-    };
-    const itemTimestamp = (d: Doc): string => {
-        const meta = d.metadata ?? {};
-        const raw = meta.publishAt;
-        const t = typeof raw === 'string' ? Date.parse(raw) : typeof raw === 'number' ? raw : Number.NaN;
-        if (!Number.isFinite(t)) return '--:--';
-        const at = new Date(t);
-        return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
-    };
+    const offsets = computeAudioOffsets(docs, opts.audioSegments);
     const lines: string[] = [`# ${opts.title}`, ''];
-    docs.forEach((d, i) => {
-        const body = (d.body ?? '').trim();
-        const sentences = body
-            .split(/(?<=[。！？])\s*/)
-            .slice(0, 2)
-            .join('');
-        lines.push(`## ${i + 1}. ${d.title ?? `条目 ${i + 1}`}`, '');
-        if (briefMode) {
-            // Timeline entry: HH:MM + 1–2-sentence briefing; the trailing link pair
-            // ends with the surfdash article URL (task 0118 R2.1–R2.4).
+    if (briefMode) {
+        // Timeline layout (2026-09-16 feedback): real audio offsets left, title + briefing
+        // right, article link last — the whole brief body is one pre-built HTML block.
+        lines.push(renderTimelineHtml(docs, offsets, articleUrl), '');
+    } else {
+        docs.forEach((d, i) => {
+            const body = (d.body ?? '').trim();
+            const sentences = body
+                .split(/(?<=[。！？])\s*/)
+                .slice(0, 2)
+                .join('');
             lines.push(
-                `${itemTimestamp(d)} · ${itemBrief(d)}`,
+                `## ${i + 1}. ${d.title ?? `条目 ${i + 1}`}`,
                 '',
-                `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''}) · [文章](${articleUrl})`,
+                sentences,
+                '',
+                `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''})`,
                 '',
             );
-        } else {
-            lines.push(sentences, '', `[来源：${sourceLabel(d)}](${d.sourceUri ?? ''})`, '');
-        }
-    });
-    lines.push(`详情见本期完整文章：[ ${opts.title} ](${articleUrl})`, '');
+        });
+        lines.push(`详情见本期完整文章：[ ${opts.title} ](${articleUrl})`, '');
+    }
     return lines.join('\n');
 }

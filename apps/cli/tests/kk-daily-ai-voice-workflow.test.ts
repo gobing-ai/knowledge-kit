@@ -33,6 +33,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'plan',
             'quality-control-content',
             'plan-translate',
+            'article-write',
             'article',
             'cover',
             'script',
@@ -47,11 +48,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'publish',
             'publish-partial',
             'run-report',
-            'translate-en',
-            'translate-en-agent',
-            'translate-ja',
-            'translate-ja-agent',
-            'translate-sync',
+            'translate',
             'done',
             'done-no-content',
             'failed',
@@ -113,9 +110,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).not.toContain('wt-image-cover');
     });
 
-    it('R2/R3 (0133) — the twenty delegated actions share one prelude and the prompts stay under the cap', () => {
+    it('R2/R3 (0133) — the delegated shell actions share one prelude and the prompts stay under the cap', () => {
         // Byte-identity is the frozen contract: a drifted prelude would still pass validate (each
-        // action is measured on its own), so the block is asserted identical here.
+        // action is measured on its own), so the block is asserted identical here. 0143: the two
+        // per-locale translate shells collapsed into daily-translate-localize (19 sites).
         for (const line of [
             'kbin="$(command -v kk 2>/dev/null)";',
             'pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";',
@@ -123,7 +121,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             '[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";',
             '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
         ]) {
-            expect(yaml.split(line).length - 1, `${line.slice(0, 24)} count`).toBe(20);
+            expect(yaml.split(line).length - 1, `${line.slice(0, 24)} count`).toBe(19);
         }
         // ADR-115 R3: the two trimmed prompts stay under the 1000-char error tier.
         for (const [step, cap] of [
@@ -189,9 +187,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `bun "$st" daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
             `bun "$st" daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
             `bun "$st" daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
-            `bun "$st" daily-translate-en "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-translate-ja "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.surfdash_post_path}"`,
+            `bun "$st" daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `bun "$st" daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.work_dir}/3-publish/\${vars.run_date}_20_translate-localize_zh-post-path.txt"`,
         ]) {
             expect(yaml, call.slice(12, 40)).toContain(call);
         }
@@ -406,6 +403,7 @@ if (plugin === 'aihot-ingest') {
                     skip_review: 'true',
                     cover_enabled: 'false',
                     plan_translate_enabled: 'false',
+                    article_write_enabled: 'false',
                     publish_enabled: 'false',
                     last30days_enabled: 'true',
                     plugins_path: join(testRoot, 'plugin root'),

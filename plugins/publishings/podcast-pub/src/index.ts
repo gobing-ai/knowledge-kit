@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -113,6 +114,24 @@ function resolveShowNotesRenderOptions(
     const briefModeRaw = options.briefMode ?? process.env.PODCAST_PUB_BRIEF_MODE;
     const briefMode = briefModeRaw === true || briefModeRaw === 'true' || briefModeRaw === '1';
     const articlePostPath = resolveOptionString(options.articlePostPath, 'PODCAST_PUB_ARTICLE_POST_PATH');
+    // Audio segment metadata for real timeline offsets: the generated episode content's
+    // `metadata.segments[]` (duration + ASR transcription). Absent ⇒ `--:--` offsets.
+    let audioSegments: ShowNotesRenderOptions['audioSegments'];
+    const audioContentPath = resolveOptionString(undefined, 'PODCAST_PUB_AUDIO_CONTENT');
+    if (audioContentPath !== undefined) {
+        try {
+            const parsed: unknown = JSON.parse(readFileSync(audioContentPath, 'utf-8'));
+            const meta = (parsed as { metadata?: unknown })?.metadata as Record<string, unknown> | undefined;
+            if (Array.isArray(meta?.segments)) {
+                audioSegments = (meta.segments as Array<Record<string, unknown>>).map((s) => ({
+                    duration: typeof s.duration === 'number' ? s.duration : undefined,
+                    transcription: typeof s.transcription === 'string' ? s.transcription : undefined,
+                }));
+            }
+        } catch {
+            // Timeline offsets degrade to proportional — never block show-notes on audio metadata.
+        }
+    }
     return {
         renderOptions: {
             title,
@@ -120,6 +139,7 @@ function resolveShowNotesRenderOptions(
             ...(articleBaseUrl !== undefined ? { articleBaseUrl } : {}),
             ...(briefMode ? { briefMode: true } : {}),
             ...(articlePostPath !== undefined ? { articlePostPath } : {}),
+            ...(audioSegments !== undefined ? { audioSegments } : {}),
         },
     };
 }

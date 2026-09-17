@@ -752,6 +752,10 @@ function dailyArticle(args: string[]): void {
             console.log(`article cached: ${articleMd}`);
             return;
         }
+        // Agent-written prose body (workflow `article-write` state) replaces the mechanical
+        // per-item render when present — the 3-format split: surfdash gets an article,
+        // not a news list (2026-09-16 feedback).
+        const proseBody = join(workDir, '2-article', `${runDate}_06_article-write_body.md`);
         kk(
             [
                 'executor',
@@ -764,7 +768,10 @@ function dailyArticle(args: string[]): void {
                 ...pluginsArgs(pluginsPath),
             ],
             {
-                env: { ARTICLE_DATE: runDate },
+                env: {
+                    ARTICLE_DATE: runDate,
+                    ...(isFile(proseBody) ? { ARTICLE_BODY_FILE: proseBody } : {}),
+                },
             },
         );
         const body = readJson(articleContent)?.body;
@@ -792,7 +799,10 @@ function dailyCoverNormalize(args: string[]): void {
 function coverNormalizeBody(workDir: string, runDate: string): void {
     const png = join(workDir, '2-cover', 'content-cover-01.png');
     const jpg = join(workDir, '2-cover', 'content-cover-01.jpg');
-    const out = join(workDir, '2-cover', `cover-${runDate}.png`);
+    // Must match the name dailyPublishPrep and the article->cover workflow guard read:
+    // `${runDate}_07_cover_cover.png` (a plain `cover-${runDate}.png` left options.coverPath
+    // undefined and silently dropped the cover from both podcast and surfdash — 2026-09-16 run).
+    const out = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
     const source = isFile(png) ? png : isFile(jpg) ? jpg : '';
     if (source === '') failWith(1, 'cover normalize: no content-cover-01.{png,jpg} artifact');
     if (source === jpg) {
@@ -815,7 +825,7 @@ function coverNormalizeBody(workDir: string, runDate: string): void {
             // `rm -f` is silent when the file is already gone.
         }
     }
-    console.log(`cover normalized: cover-${runDate}.png`);
+    console.log(`cover normalized: ${runDate}_07_cover_cover.png`);
 }
 
 function dailyScript(args: string[]): void {
@@ -912,13 +922,21 @@ function dailyPublishPrep(args: string[]): void {
         }
         const audioFile = resolve(rawFile);
         const resolvedCover = resolve(coverPath);
+        const hasCover = existsSync(resolvedCover);
+        // podcast-pub's documented contract reads metadata.coverImage (map.ts); options.coverPath
+        // alone was silently dropped by the mapper — episodes published without a cover.
         const merged = {
             ...article,
-            metadata: { ...metadataOf(article), audioFile, runDate },
+            metadata: {
+                ...metadataOf(article),
+                audioFile,
+                runDate,
+                ...(hasCover ? { coverImage: resolvedCover } : {}),
+            },
             options: {
                 audioFile,
                 durationSec: audioMeta.duration,
-                coverPath: existsSync(resolvedCover) ? resolvedCover : undefined,
+                coverPath: hasCover ? resolvedCover : undefined,
             },
         };
         sted('write', prepPath, () => writeJsonText(prepPath, merged));
@@ -964,6 +982,9 @@ function dailyShowNotes(args: string[]): void {
     const result = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
     const out = join(workDir, '3-publish', `${runDate}_15_show-notes_show-notes.md`);
     const plan = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    // Generated-episode content carries `metadata.segments[]` — the source of real
+    // audio offsets for the show-notes timeline (jump-to-item timestamps).
+    const audioContent = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
     timed(workDir, 'show-notes', () => {
         const effective = readJson(article)?.title;
         const titleArg = title !== '' ? title : typeof effective === 'string' ? effective : '';
@@ -974,6 +995,7 @@ function dailyShowNotes(args: string[]): void {
                 PODCAST_PUB_RUN_DATE: runDate,
                 PODCAST_PUB_BRIEF_MODE: 'true',
                 PODCAST_PUB_ARTICLE_POST_PATH: postPath,
+                ...(isFile(audioContent) ? { PODCAST_PUB_AUDIO_CONTENT: audioContent } : {}),
             },
         });
     });
@@ -1132,68 +1154,78 @@ function dailyRunReport(args: string[]): void {
     });
 }
 
-function dailyTranslateEn(args: string[]): void {
+/**
+ * Collapsed translate scaffolding (2026-09-16 feedback): surfdash-pub owns the
+ * deterministic mechanics — `scaffold-locale` for both target locales — while the
+ * workflow `translate` state's agent step owns the LLM translation of the drafts.
+ * Writes one marker file per locale (zh post path + en/ja draft paths); empty
+ * marker = locale absent (callers skip). Reuses an existing on-disk draft as the
+ * cache across run retries — re-scaffolding would erase the agent's translation.
+ */
+function dailyTranslateLocalize(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
-    const zhFile = join(workDir, '3-publish', `${runDate}_20_translate-en_zh-post-path.txt`);
-    const enFile = join(workDir, '3-publish', `${runDate}_20_translate-en_en-post-path.txt`);
-    const scaffold = join(workDir, '3-publish', `${runDate}_20_translate-en_scaffold-en.json`);
-    const scaffoldResult = join(workDir, '3-publish', `${runDate}_20_translate-en_scaffold-en-result.json`);
-    timed(workDir, 'translate-en', () => {
+    const zhFile = join(workDir, '3-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
+    timed(workDir, 'translate-localize', () => {
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
         const zh = postPath.endsWith('index.md') ? postPath : '';
         sted('write', zhFile, () => writeRaw(zhFile, zh));
-        const en = zh.replace('/zh/', '/en/');
-        sted('write', enFile, () => writeRaw(enFile, en));
         if (zh === '') {
-            console.log('no zh post path — skip translate-en');
+            for (const target of ['en', 'ja'] as const) {
+                sted(
+                    'write',
+                    join(workDir, '3-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
+                    () =>
+                        writeRaw(
+                            join(workDir, '3-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
+                            '',
+                        ),
+                );
+            }
+            console.log('no zh post path — skip localize');
             return;
         }
-        if (isFile(en)) {
-            console.log(`en draft cached: ${en}`);
-            return;
+        for (const target of ['en', 'ja'] as const) {
+            const markerFile = join(workDir, '3-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`);
+            const existing = zh.replace('/zh/', `/${target}/`);
+            if (isFile(existing)) {
+                sted('write', markerFile, () => writeRaw(markerFile, existing));
+                console.log(`${target} draft cached: ${existing}`);
+                continue;
+            }
+            const scaffold = join(workDir, '3-publish', `${runDate}_20_translate-localize_scaffold-${target}.json`);
+            const scaffoldResult = join(
+                workDir,
+                '3-publish',
+                `${runDate}_20_translate-localize_scaffold-${target}-result.json`,
+            );
+            sted('write', scaffold, () =>
+                writeJqText(scaffold, { body: '', options: { operation: 'scaffold-locale', postPath: zh, target } }),
+            );
+            kk([
+                'executor',
+                'run',
+                'surfdash-pub',
+                '--in',
+                scaffold,
+                '--out',
+                scaffoldResult,
+                ...pluginsArgs(pluginsPath),
+            ]);
+            const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
+            sted('write', markerFile, () => writeRaw(markerFile, typeof draftPath === 'string' ? draftPath : ''));
         }
-        sted('write', scaffold, () =>
-            writeJqText(scaffold, { body: '', options: { operation: 'scaffold-locale', postPath: zh, target: 'en' } }),
-        );
-        kk(['executor', 'run', 'surfdash-pub', '--in', scaffold, '--out', scaffoldResult, ...pluginsArgs(pluginsPath)]);
-        const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
-        sted('write', enFile, () => writeRaw(enFile, typeof draftPath === 'string' ? draftPath : ''));
-    });
-}
-
-function dailyTranslateJa(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const zhFile = join(workDir, '3-publish', `${runDate}_20_translate-en_zh-post-path.txt`);
-    const jaFile = join(workDir, '3-publish', `${runDate}_22_translate-ja_ja-post-path.txt`);
-    const scaffold = join(workDir, '3-publish', `${runDate}_22_translate-ja_scaffold-ja.json`);
-    const scaffoldResult = join(workDir, '3-publish', `${runDate}_22_translate-ja_scaffold-ja-result.json`);
-    timed(workDir, 'translate-ja', () => {
-        const zh = isFile(zhFile) ? readFileSync(zhFile, 'utf-8') : '';
-        const ja = zh.replace('/zh/', '/ja/');
-        sted('write', jaFile, () => writeRaw(jaFile, ja));
-        if (zh === '') {
-            console.log('no zh post path — skip translate-ja');
-            return;
-        }
-        if (isFile(ja)) {
-            console.log(`ja draft cached: ${ja}`);
-            return;
-        }
-        sted('write', scaffold, () =>
-            writeJqText(scaffold, { body: '', options: { operation: 'scaffold-locale', postPath: zh, target: 'ja' } }),
-        );
-        kk(['executor', 'run', 'surfdash-pub', '--in', scaffold, '--out', scaffoldResult, ...pluginsArgs(pluginsPath)]);
-        const draftPath = metadataOf(readJson(scaffoldResult)).draftPath;
-        sted('write', jaFile, () => writeRaw(jaFile, typeof draftPath === 'string' ? draftPath : ''));
     });
 }
 
 function dailyTranslateSync(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', zhPostPath = ''] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', zhPathFile = ''] = args;
     const sync = join(workDir, '3-publish', `${runDate}_24_translate-sync_sync.json`);
     const syncResult = join(workDir, '3-publish', `${runDate}_24_translate-sync_sync-result.json`);
     timed(workDir, 'translate-sync', () => {
+        // Reads the marker file itself — the collapsed `translate` state has no
+        // cross-state var to hand the path through.
+        const zhPostPath = isFile(zhPathFile) ? readFileSync(zhPathFile, 'utf-8') : '';
         if (zhPostPath === '') {
             console.log('no zh post path — skip translate-sync');
             return;
@@ -1311,11 +1343,8 @@ if (import.meta.main)
         case 'daily-run-report':
             dailyRunReport(rest);
             break;
-        case 'daily-translate-en':
-            dailyTranslateEn(rest);
-            break;
-        case 'daily-translate-ja':
-            dailyTranslateJa(rest);
+        case 'daily-translate-localize':
+            dailyTranslateLocalize(rest);
             break;
         case 'daily-translate-sync':
             dailyTranslateSync(rest);

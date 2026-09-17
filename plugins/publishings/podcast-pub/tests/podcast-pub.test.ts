@@ -991,17 +991,63 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
             briefMode: true,
             articlePostPath: '/srv/surfdash/content/posts/articles/zh/20260906-ai-daily/index.md',
         });
-        // HH:MM local render of the publish timestamp; missing timestamp degrades to --:--.
-        expect(rendered).toMatch(/\d{2}:\d{2} · OpenAI 发布 Sora 应用，集成 Sora 2 模型。/);
-        expect(rendered).toContain('--:-- · 没有时间戳的条目。');
-        // O(1) URL from the real published slug + locale, not re-slugged from the title.
-        expect(rendered).toContain('[文章](https://surfing.salty.vip/zh/posts/20260906-ai-daily)');
-        // Footer reuses the full-article template with the postPath-derived URL.
-        expect(rendered).toContain(
-            '详情见本期完整文章：[ 每日 AI 要闻 ](https://surfing.salty.vip/zh/posts/20260906-ai-daily)',
+        // Audio-offset timeline (2026-09-16 feedback): offsets left, brief + title right,
+        // per-item source links; article URL from the real published slug + locale.
+        expect(rendered).toContain('<!--kk:timeline-->');
+        expect(rendered).toMatch(
+            /<div class="kk-tl-t">0:00<\/div><div class="kk-tl-body"><div class="kk-tl-title">1\. Sora 2 发布/,
         );
+        expect(rendered).toContain('OpenAI 发布 Sora 应用，集成 Sora 2 模型。');
+        expect(rendered).toContain('href="https://blog.samaltman.com/sora-2"');
+        expect(rendered).toContain('href="https://surfing.salty.vip/zh/posts/20260906-ai-daily"');
         // Full body text is replaced by the briefing.
         expect(rendered).not.toContain('这是第二句。');
+    });
+
+    test('briefMode with audioSegments renders real monotonic offsets and skips the intro segment', () => {
+        const docs = [
+            {
+                id: 'a',
+                title: 'Sora 2 发布',
+                body: 'OpenAI 发布 Sora 应用。',
+                sourceUri: 'https://blog.samaltman.com/sora-2',
+                mediaType: 'text/markdown',
+                metadata: { brief: 'OpenAI 发布 Sora 应用。' },
+            },
+            {
+                id: 'b',
+                title: '充裕的智能',
+                body: '关于智能充裕的讨论。',
+                sourceUri: 'https://example.com/b',
+                mediaType: 'text/markdown',
+                metadata: { brief: '关于智能充裕的讨论。' },
+            },
+        ] as Doc[];
+        const segments = [
+            { duration: 10, transcription: '大家好，欢迎收听每日 AI 资讯。今天聊 Sora 2 发布 和 充裕的智能。' },
+            { duration: 20, transcription: '先看第一条。OpenAI 发布 Sora 2 发布。' },
+            { duration: 30, transcription: '接着我们看充裕的智能。' },
+        ];
+        const rendered = renderShowNotesMarkdown(docs, {
+            title: '每日 AI 要闻',
+            runDate: '2026-09-06',
+            briefMode: true,
+            articlePostPath: '/srv/surfdash/content/posts/articles/zh/20260906-ai-daily/index.md',
+            audioSegments: segments,
+        });
+        // Item 1 starts at the first post-intro segment (10s → 0:10); item 2 at 30s → 0:30.
+        expect(rendered).toMatch(/<div class="kk-tl-t">0:10<\/div>/);
+        expect(rendered).toMatch(/<div class="kk-tl-t">0:30<\/div>/);
+        // Any unmatched title degrades the whole run to proportional-by-body-length (monotonic, non-negative).
+        const degraded = renderShowNotesMarkdown(docs, {
+            title: '每日 AI 要闻',
+            runDate: '2026-09-06',
+            briefMode: true,
+            articlePostPath: '/srv/surfdash/content/posts/articles/zh/20260906-ai-daily/index.md',
+            audioSegments: [{ duration: 60, transcription: '完全无关的转写文本' }],
+        });
+        expect(degraded).toMatch(/<div class="kk-tl-t">0:00<\/div>/);
+        expect(degraded).toMatch(/<div class="kk-tl-t">0:39<\/div>/);
     });
 
     test('briefMode without a postPath degrades to the legacy full-body layout without URLs (task 0118 R2.5)', () => {

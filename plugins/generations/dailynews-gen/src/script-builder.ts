@@ -391,7 +391,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         if (normalizedInsight !== null) {
             segments.push({
                 text: normalizedInsight,
-                gap_ms: 800, // Distinct 800ms pause before the next story
+                gap_ms: 1200, // Clear breath between news items (listener complaint: items ran together)
                 emotion: 'thoughtful, personal',
             });
         }
