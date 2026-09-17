@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.23.0
+version: 1.24.0
 created_at: 2026-05-28
-updated_at: 2026-09-13
+updated_at: 2026-09-17
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -362,6 +362,25 @@ transport kind is never needed.
 
 **Detail:** `docs/design/publish-plugin-specification.md` §2, `docs/03_ARCHITECTURE.md` (module
 boundaries), `docs/04_DESIGN.md` §3–§4, feature E4.
+
+### Amendment — 2026-09-17 (browser drivers; E7)
+
+> **Status:** Accepted (design) · **Amends:** this entry's deferred-browser clause.
+
+- **Browser is no longer deferred.** Leftover wt channels that have no official write API
+  (`juejin-pub`, `substack-pub`, `infoq-pub`, `xhs-pub`, `x-pub` `article`) implement
+  `kind: 'browser'`.
+- **Drivers, not a third kind.** A browser transport declares `driver: 'script' | 'agent'`.
+  `script` is Playwright (or equivalent) run inside the plugin process. `agent` means a
+  `plugins/kk` skill / workflow `agent.run` drives the page using harness session helpers;
+  the plugin process still owns mapping and `Result` and never embeds an LLM. `kind`
+  remains `'file-cli' | 'browser'` — a third kind is still forbidden.
+- **API/CLI stays `file-cli`.** Medium token API, WeChat `draft/add`, and X `POST /2/tweets`
+  are `file-cli` even though they use the network (same rule as Qiita).
+- **Why.** Selector-fragile CMS editors need an agent driver for compatibility; official
+  APIs stay offline-testable on `FakeFileCliTransport`. Classifying agent as a new kind
+  would split the harness and contradict this entry's "third kind is never needed" reason.
+- **Detail:** `docs/design/remaining-wt-publish-harvest.md`, `docs/design/publish-plugin-specification.md` §2.2, feature E7.
 
 ---
 

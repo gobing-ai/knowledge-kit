@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.28.0
+version: 2.29.0
 created_at: 2026-07-22
-updated_at: 2026-09-15
+updated_at: 2026-09-17
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -37,6 +37,7 @@ sync: [T3]
 | [episode-plan-gen.md](design/episode-plan-gen.md) | Episode plan generator: score, dedup, select, translate flag — single upstream for article/script/show notes | shipped (F61, 2026-09-05) |
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
 | [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | shipped (E6) |
+| [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | accepted design (E7) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
@@ -379,9 +380,11 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PublishTransport` | interface | `{ kind: 'file-cli' \| 'browser', publish(payload): Promise<Result> }` (ADR-008) |
+| `PublishTransport` | interface | `{ kind: 'file-cli' \| 'browser', driver?: 'script' \| 'agent', publish(payload): Promise<Result> }` (ADR-008 amdt 2026-09-17) |
 | `PublishTransportPayload` | interface | `{ content: Content, options?: Record<string, unknown> }` |
 | `FakeFileCliTransport` | class | Offline fake for unit tests; `setNextResult`, records call log |
+| `FakeBrowserTransport` | class | Offline fake for `kind: 'browser'` (E7 accepted design; not yet built) |
+| `BrowserDriver` | type | `'script' \| 'agent'` — required when `kind` is `browser` |
 
 ### `@gobing-ai/surfdash-pub` (`plugins/publishings/surfdash-pub`, kind `publish`)
 

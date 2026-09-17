@@ -37,6 +37,8 @@ export interface PublishTransportPayload {
 
 export interface PublishTransport {
     kind: 'file-cli' | 'browser';
+    /** Required when `kind` is `browser`. Omitted for `file-cli`. */
+    driver?: 'script' | 'agent';
     publish(payload: PublishTransportPayload): Promise<Result>;
 }
 ```
@@ -46,8 +48,12 @@ export interface PublishTransport {
   calls made by the plugin (Qiita API v2 via `fetch` with a bearer token). Classification is by
   **execution mechanism, not network usage**: a token-API channel is still `file-cli` as long as
   the plugin runs it without browser automation (ADR-008).
-- **Browser Transports (`browser`)**: Automated browser automation (Playwright) operating against
-  authenticated sessions/profiles. **Deferred — no shipped channel uses it yet.**
+- **Browser Transports (`browser`)**: A real browser session against an authenticated
+  profile. Declares `driver: 'script' | 'agent'` (ADR-008 amdt 2026-09-17, E7). `script`
+  is Playwright (or equivalent) run inside the plugin process. `agent` is a `plugins/kk`
+  skill / workflow `agent.run` driving the same session helpers; the plugin does not
+  embed an LLM. Offline tests use `FakeBrowserTransport`. Profile dir defaults to
+  `~/.config/kk/browser-profiles/<channel>`.
 
 ### 2.3 Content → Frontmatter Mapping Conventions
 
@@ -79,6 +85,8 @@ For targets expecting frontmatter (e.g. static site generators like Surfing/Astr
 - **Core Verification**: Tested against `kindContract('publish')` in `@gobing-ai/kk-core` (`packages/kk-core/src/kinds.ts:65`) and `runInvoke` execution in `apps/cli/src/invoke.ts`.
 - **Schema Impact**: The kind contract is `Content → Result`. Auxiliary `Doc[]` → markdown (show-notes) is a manifest-declared `operations` entry, not a kind-level union (0100/0101 were superseded by 0110 I3). `ContentSchema` / `ResultSchema` / `DocListSchema` themselves are unchanged.
 - **Shipped reference instances**: `plugins/publishings/surfdash-pub` (E3), `plugins/publishings/zenn-pub` and
-  `plugins/publishings/qiita-pub` (E4), `plugins/publishings/emdash-pub` (E5) — each implements `PublishTransport`
-  with `kind: 'file-cli'`, its own target mapper, and env-only secrets; all are offline-tested via
-  `FakeFileCliTransport`.
+  `plugins/publishings/qiita-pub` (E4), `plugins/publishings/emdash-pub` (E5), `plugins/publishings/podcast-pub` (E6)
+  — each implements `PublishTransport` with `kind: 'file-cli'`, its own target mapper, and env-only secrets;
+  all are offline-tested via `FakeFileCliTransport`.
+- **Accepted design (E7, not yet built)**: leftover wt channels plus `FakeBrowserTransport` and
+  `driver: 'script' | 'agent'` — `docs/design/remaining-wt-publish-harvest.md`.

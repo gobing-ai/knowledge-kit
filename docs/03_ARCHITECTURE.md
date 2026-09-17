@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.22.0
+version: 2.23.0
 created_at: 2026-07-22
-updated_at: 2026-09-13
+updated_at: 2026-09-17
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -299,7 +299,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
-| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2) | `@gobing-ai/kk-core` |
+| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2); E7 accepted design adds `FakeBrowserTransport` + browser session helpers (ADR-008 amdt 2026-09-17) | `@gobing-ai/kk-core` |
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
 | `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
@@ -324,6 +324,17 @@ Full spec: `docs/design/storm-evidence-cache.md`.
    duplicate-name first-wins and list ordering are platform-independent (ADR-008 fan-out
    depends on stable target resolution). Across roots, ADR-012 priority (later wins) plus a
    `shadowed` diagnostic replaces silent first-wins.
+
+## Remaining wt-publish harvest (accepted design — ADR-008 amdt 2026-09-17; not yet built)
+
+E7 extends the E2 harness instead of adding a package. Browser transports stay `kind: 'browser'`
+and declare `driver: 'script' | 'agent'`. Plugin processes do not embed an LLM: `agent` drivers
+are `plugins/kk` skills / workflow `agent.run` using harness session helpers. `kk fanout` stays
+the sequencer for `file-cli` and `script`; agent-default channels sequence as workflow steps.
+Channel plugins (`medium-pub`, `wechatmp-pub`, `x-pub`, `juejin-pub`, `substack-pub`,
+`infoq-pub`, `xhs-pub`) land under `plugins/publishings/` like the shipped E3–E6 instances.
+
+Full design: `docs/design/remaining-wt-publish-harvest.md`.
 
 ## Multi-root discovery (ADR-012)
 
