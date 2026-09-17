@@ -100,6 +100,16 @@ function writeFakePublishPlugin(pluginsRoot: string, script: string, kind: Plugi
 }
 
 describe('fanout', () => {
+    it('leftover file-cli channels each contribute one aggregate Result entry', async () => {
+        const { dispatch, called } = makeDispatch();
+        const result = await fanout(CONTENT, ['medium-pub', 'wechatmp-pub'], dispatch);
+        expect(called).toEqual(['medium-pub', 'wechatmp-pub']);
+        expect(result.ok).toBe(true);
+        expect(result.summary).toEqual({ total: 2, succeeded: 2, failed: 0, skipped: 0 });
+        expect(result.targets.map((t) => t.target)).toEqual(['medium-pub', 'wechatmp-pub']);
+        expect(result.targets.every((t) => t.ok && t.status === 'published')).toBe(true);
+    });
+
     it('R1 — aggregates one outcome per target, marking failures, in dispatch order', async () => {
         const { dispatch } = makeDispatch(['qiita', 'devto']);
         const targets = ['surfdash', 'medium', 'juejin', 'qiita', 'devto'];

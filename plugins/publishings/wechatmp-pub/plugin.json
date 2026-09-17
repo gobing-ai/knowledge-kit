@@ -1,0 +1,7 @@
+{
+    "name": "wechatmp-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for WeChat Official Account drafts via official draft/add"
+}

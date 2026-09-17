@@ -383,8 +383,11 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `PublishTransport` | interface | `{ kind: 'file-cli' \| 'browser', driver?: 'script' \| 'agent', publish(payload): Promise<Result> }` (ADR-008 amdt 2026-09-17) |
 | `PublishTransportPayload` | interface | `{ content: Content, options?: Record<string, unknown> }` |
 | `FakeFileCliTransport` | class | Offline fake for unit tests; `setNextResult`, records call log |
-| `FakeBrowserTransport` | class | Offline fake for `kind: 'browser'` (E7 accepted design; not yet built) |
+| `FakeBrowserTransport` | class | Offline fake for `kind: 'browser'`; records calls, `setNextResult`, `reset` |
 | `BrowserDriver` | type | `'script' \| 'agent'` — required when `kind` is `browser` |
+| `resolveBrowserProfileDir` | function | `~/.config/kk/browser-profiles/<channel>`; optional override (env/flag) |
+| `trySelectors` | function | First attached (optionally visible) selector; structural page type, no Playwright import |
+| `launchPersistentBrowser` | function | Dynamic-imports Playwright; callers must have it on their own tree |
 
 ### `@gobing-ai/surfdash-pub` (`plugins/publishings/surfdash-pub`, kind `publish`)
 
@@ -412,6 +415,35 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `mapContentToQiitaMarkdown(content)` | function | Renders Qiita frontmatter (title, block-style tags, private) + body |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; writes fail-loud `Result` |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
+
+### `@gobing-ai/medium-pub` (`plugins/publishings/medium-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `MediumApiTransport` | class | `file-cli`: GET `/v1/me` then POST `/v1/users/{id}/posts`; `MEDIUM_INTEGRATION_TOKEN`; default `publishStatus: draft` |
+| `mapContentToMediumPost(content, options?)` | function | Medium create envelope (title, markdown/html, tags≤5, draft default) |
+| `processPublishIO` / `main()` | function | `--in`/`--out` IO; fail-loud Result |
+
+### `@gobing-ai/wechatmp-pub` (`plugins/publishings/wechatmp-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `WechatDraftApiTransport` | class | `file-cli`: token + `POST /cgi-bin/draft/add`; `WECHAT_APP_ID` / `WECHAT_APP_SECRET`; live/freepublish fails loud |
+| `mapContentToWechatDraft` / `markdownToWechatHtml` | function | News article + harvested markdown→HTML |
+| `processPublishIO` / `main()` | function | `--in`/`--out`; default operation `draft` |
+
+### `@gobing-ai/x-pub` (`plugins/publishings/x-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `XPostApiTransport` | class | `file-cli`: OAuth 1.0a `POST /2/tweets`; no browser fallback |
+| `XArticleBrowserTransport` | class | `browser` / `driver: agent`; login timeout fail-loud |
+| `oauth1Header` | function | User-context OAuth 1.0a Authorization header |
+| `processPublishIO` / `main()` | function | `--in`/`--out`; `options.operation` `post` (default) or `article` |
+
+### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
+
+Each is `kind: publish`, `PublishTransport.kind: 'browser'`, default `driver: 'agent'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout. Optional `script` driver returns the same `ok`/`target`/`id` for the same Content.
 
 ### `@gobing-ai/web-search` (`plugins/ingestions/web-search`, kind `ingestion`)
 

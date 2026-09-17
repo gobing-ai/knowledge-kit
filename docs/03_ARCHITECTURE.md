@@ -299,7 +299,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
-| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` test harness (E2); E7 accepted design adds `FakeBrowserTransport` + browser session helpers (ADR-008 amdt 2026-09-17) | `@gobing-ai/kk-core` |
+| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` / `FakeBrowserTransport`; browser session helpers (`resolveBrowserProfileDir`, `trySelectors`, `launchPersistentBrowser`) | `@gobing-ai/kk-core` |
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
 | `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
@@ -312,6 +312,13 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/emdash-pub` | `@gobing-ai/emdash-pub` | Publish channel: EmDash CMS REST token transport, Portable Text mapping (E5) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/podcast-pub` | `@gobing-ai/podcast-pub` | Publish channel: microfeed REST Bearer transport + upload flow, episode mapping (E6) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/medium-pub` | `@gobing-ai/medium-pub` | Publish channel: Medium integration-token REST (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/wechatmp-pub` | `@gobing-ai/wechatmp-pub` | Publish channel: WeChat `draft/add` (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/x-pub` | `@gobing-ai/x-pub` | Publish channel: X `POST /2/tweets` + article browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/juejin-pub` | `@gobing-ai/juejin-pub` | Publish channel: Juejin browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/infoq-pub` | `@gobing-ai/infoq-pub` | Publish channel: InfoQ CN browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/substack-pub` | `@gobing-ai/substack-pub` | Publish channel: Substack browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/xhs-pub` | `@gobing-ai/xhs-pub` | Publish channel: Xiaohongshu browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**
@@ -325,14 +332,17 @@ Full spec: `docs/design/storm-evidence-cache.md`.
    depends on stable target resolution). Across roots, ADR-012 priority (later wins) plus a
    `shadowed` diagnostic replaces silent first-wins.
 
-## Remaining wt-publish harvest (accepted design — ADR-008 amdt 2026-09-17; not yet built)
+## Remaining wt-publish harvest (ADR-008 amdt 2026-09-17)
 
-E7 extends the E2 harness instead of adding a package. Browser transports stay `kind: 'browser'`
-and declare `driver: 'script' | 'agent'`. Plugin processes do not embed an LLM: `agent` drivers
-are `plugins/kk` skills / workflow `agent.run` using harness session helpers. `kk fanout` stays
-the sequencer for `file-cli` and `script`; agent-default channels sequence as workflow steps.
-Channel plugins (`medium-pub`, `wechatmp-pub`, `x-pub`, `juejin-pub`, `substack-pub`,
-`infoq-pub`, `xhs-pub`) land under `plugins/publishings/` like the shipped E3–E6 instances.
+E7 extends the E2 harness instead of adding a package. The harness driver field,
+`FakeBrowserTransport` / session helpers, leftover channel plugins, and the thin
+`plugins/kk/skills/publish` skill are shipped.
+Browser transports stay `kind: 'browser'` and declare `driver: 'script' | 'agent'`. Plugin
+processes do not embed an LLM: `agent` drivers are `plugins/kk` skills / workflow `agent.run`
+using harness session helpers. `kk fanout` stays the sequencer for `file-cli` and `script`;
+agent-default channels sequence as workflow steps. Channel plugins (`medium-pub`,
+`wechatmp-pub`, `x-pub`, `juejin-pub`, `substack-pub`, `infoq-pub`, `xhs-pub`) land under
+`plugins/publishings/` like the shipped E3–E6 instances.
 
 Full design: `docs/design/remaining-wt-publish-harvest.md`.
 

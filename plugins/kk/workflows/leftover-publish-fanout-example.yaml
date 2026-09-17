@@ -1,0 +1,53 @@
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+kind: state-machine
+name: leftover-publish-fanout-example
+description: >-
+  Example: fan out two leftover file-cli channels (medium-pub, wechatmp-pub),
+  then sequence one agent-default CMS channel (juejin-pub) as agent.run.
+  kk fanout does not spawn an LLM.
+initialState: fanout-file-cli
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+vars:
+  contentFile: ".spur/run/content.json"
+  fanoutFile: ".spur/run/fanout-result.json"
+  juejinFile: ".spur/run/juejin-result.json"
+  spurBin: "spur"
+states:
+  - id: fanout-file-cli
+    description: "kk fanout over leftover file-cli channels (medium + wechatmp draft)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk fanout --in ${vars.contentFile}
+            --targets medium-pub,wechatmp-pub
+            --out ${vars.fanoutFile}
+  - id: agent-juejin
+    description: "Agent-default CMS channel — workflow agent.run, not kk fanout"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: coder
+          input: |
+            Invoke the kk:publish skill for juejin.
+            Drive ~/.config/kk/browser-profiles/juejin as driver=agent.
+            Then `kk executor run juejin-pub --in ${vars.contentFile} --out ${vars.juejinFile}`.
+            Do not embed an LLM in the plugin process. Do not call kk fanout for this channel.
+          expectFile: ${vars.juejinFile}
+  - id: done
+    description: "Fan-out aggregate plus agent CMS Result written"
+  - id: failed
+    description: "A file-cli target or the agent CMS step failed loud"
+transitions:
+  - from: fanout-file-cli
+    to: agent-juejin
+    guard:
+      kind: always
+  - from: agent-juejin
+    to: done
+    guard:
+      kind: always
