@@ -23,11 +23,13 @@
  * The YAML prelude resolves this file as `$pkg/plugins/kk/scripts/kk-workflow-stages.ts` where `pkg`
  * comes from `realpath "$(command -v kk)"` (the installed package root), and falls back to the
  * cwd-relative `plugins/kk/scripts/kk-workflow-stages.ts` when that copy is absent — the checkout
- * tier kk-storm-research's render has always relied on, preserved on purpose.
+ * tier kk-storm-research's render has always relied on, preserved on purpose. The daily-voice
+ * workflow reaches the same script through `kk stage` (apps/cli/src/stage.ts), which applies the
+ * same two resolution tiers in TypeScript.
  *
- * SYNC: plugins/kk/workflows/{kk-solo-podcast,kk-itc,kk-storm-research,kk-daily-ai-voice}.yaml shell
- * this script. Keep message substrings stable — apps/cli/tests/kk-workflow-stages.test.ts and the
- * four workflow static tests match them.
+ * SYNC: plugins/kk/workflows/{kk-solo-podcast,kk-itc,kk-storm-research}.yaml shell this script
+ * (kk-daily-ai-voice goes through `kk stage`). Keep message substrings stable —
+ * apps/cli/tests/kk-workflow-stages.test.ts and the four workflow static tests match them.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -43,6 +45,7 @@ import {
     unlinkSync,
     writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
 const SCRIPTS_DIR = import.meta.dir;
@@ -534,15 +537,29 @@ function dailyPrepare(args: string[]): void {
         last30daysEnabled = '',
         topic = '',
         horizonHours = '',
+        runDateArg = '',
     ] = args;
-    const workDir = resolve(workDirArg);
-    timed(workDirArg, 'prepare', () => {
-        if (!workDirArg) failWith(1, 'missing required variable: work_dir');
+    // Empty work_dir composes the real workspace from the operator's works_dir
+    // (workflow-run.md §2 precedence: KK_WORKS_DIR > config works_dir > ~/.config/kk/works):
+    //   $works_dir/kk-daily-ai-voice/<stamp>
+    // The stamp is digits-only (dashes stripped from the caller's run_date, else today) so a
+    // resumed/retried run whose persisted run_date var already carries the digits-only
+    // run-date.txt value re-derives the same directory.
+    const dirDate = runDateArg ? runDateArg.replaceAll('-', '') : formatRunDate();
+    const workDir = resolve(workDirArg || join(resolveWorksDir(), 'kk-daily-ai-voice', dirDate));
+    timed(workDir, 'prepare', () => {
         for (const dir of DAILY_DIRS)
             sted('mkdir', join(workDir, dir), () => mkdirSync(join(workDir, dir), { recursive: true }));
         sted('write', join(workDir, 'run-date.txt'), () =>
-            writeFileSync(join(workDir, 'run-date.txt'), `${formatRunDate()}\n`),
+            writeFileSync(join(workDir, 'run-date.txt'), `${dirDate}\n`),
         );
+        // Anchor for the workflow: shell actions cannot set vars, so the YAML reads the
+        // effective work_dir back into vars.work_dir from this cwd-relative file.
+        const anchorDir = join('.spur', 'runs', 'kk-daily-ai-voice');
+        sted('write', join(anchorDir, 'work-dir.txt'), () => {
+            mkdirSync(anchorDir, { recursive: true });
+            writeFileSync(join(anchorDir, 'work-dir.txt'), `${workDir}\n`);
+        });
         sted('write', join(workDir, '1-ingest/source.json'), () =>
             writeJsonText(join(workDir, '1-ingest/source.json'), {
                 limit: Number(limit),
@@ -570,6 +587,35 @@ function formatRunDate(): string {
     const month = `${now.getMonth() + 1}`.padStart(2, '0');
     const day = `${now.getDate()}`.padStart(2, '0');
     return `${now.getFullYear()}${month}${day}`;
+}
+
+/** Expand the `~/` and `$HOME/` prefixes the config examples use. */
+function expandHome(p: string): string {
+    if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+    if (p.startsWith('$HOME/')) return join(homedir(), p.slice('$HOME/'.length));
+    return p;
+}
+
+/**
+ * works_dir for composed daily workspaces — workflow-run.md §2 precedence:
+ * KK_WORKS_DIR env > config works_dir > compiled default ~/.config/kk/works.
+ * Unreadable/unparseable config falls through to the default (pluginEnvFromConfig
+ * tolerates the same), never fails the run.
+ */
+function resolveWorksDir(): string {
+    const fromEnv = process.env.KK_WORKS_DIR;
+    if (fromEnv) return fromEnv;
+    const configPath = process.env.KK_CONFIG || join(homedir(), '.config/kk/config.yaml');
+    if (existsSync(configPath)) {
+        try {
+            const parsed = Bun.YAML.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown> | null;
+            const worksDir = parsed !== null && typeof parsed === 'object' ? parsed.works_dir : undefined;
+            if (typeof worksDir === 'string' && worksDir !== '') return expandHome(worksDir);
+        } catch {
+            // fall through to the compiled default
+        }
+    }
+    return join(homedir(), '.config/kk/works');
 }
 
 function dailyCollectFacts(args: string[]): void {

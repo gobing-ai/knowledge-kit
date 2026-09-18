@@ -55,28 +55,31 @@ bootstrap:
 
       # 06:00 daily: kk-daily-ai-voice end-to-end (ingest → article → plan →
       # publish surfdash + podcast → run report). Morning results (episode
-      # audio, show notes, run report) land in the run's work_dir. Voice-gen runs
-      # against local voicebox (no TTS quota); the ARK 429 quota reset (2026-09-18)
-      # affects only LLM agent stages — the E2E run of 2026-09-12 completed with ARK
-      # still exhausted. The run fails loud like any other stage.
+      # audio, show notes, run report) land in the run's workspace. Voice-gen
+      # runs against local voicebox (no TTS quota); the ARK 429 quota reset
+      # (2026-09-18) affects only LLM agent stages — the E2E run of 2026-09-12
+      # completed with ARK still exhausted. The run fails loud like any other
+      # stage. Voicebox is NOT probed here: the default vdriver=ominivoice
+      # needs no server, and vdriver=voicebox makes the voice-gen plugin
+      # auto-start it (VOICEBOX_SERVER_BIN / VOICEBOX_DATA_DIR).
       - name: kk-daily-ai-voice
         cron: "0 6 * * *"
-        # work_dir is a required var (prepare fails loud without it) and must
-        # be fully resolved before it becomes a var: var values reach non-shell
-        # steps (file.read) verbatim, so "$(date +%F)" inside a var value only
+        # run_date only names the workspace: with work_dir unset, daily-prepare
+        # composes the real dir as works_dir/kk-daily-ai-voice/<stamp> from
+        # ~/.config/kk/config.yaml and writes the effective path to the
+        # .spur/runs/kk-daily-ai-voice/work-dir.txt anchor, which the workflow
+        # reads back into vars. The date must still be resolved here: var values
+        # reach non-shell steps verbatim, so "$(date +%F)" inside a var value only
         # works for shell steps — that mismatch is the 06:00:01 file.read
-        # failure of 2026-09-13..18. Resolve the date here instead: double
-        # quotes let the job worker's /bin/sh expand $(date +%F) before spur
-        # sees it. publish_enabled defaults to false, cover_enabled=true
-        # currently fails loud (agy image task is async and never lands the
-        # artifact), and skip_review=true avoids the HITL pause at `review` — a
-        # 06:00 cron run must be headless. Re-enable cover once the image path
-        # completes synchronously.
+        # failure of 2026-09-13..18 (double quotes let the job worker's /bin/sh
+        # expand it before spur sees it). publish_enabled defaults to false,
+        # cover_enabled=true currently fails loud (agy image task is async and
+        # never lands the artifact), and skip_review=true avoids the HITL pause
+        # at `review` — a 06:00 cron run must be headless. Re-enable cover once
+        # the image path completes synchronously.
         command: >-
-          curl -sf -m 2 http://127.0.0.1:17493/health >/dev/null
-          || nohup /Applications/Voicebox.app/Contents/MacOS/voicebox-server --port 17493 --data-dir "$HOME/Library/Application Support/sh.voicebox.app" >>/tmp/voicebox-server.log 2>&1 &
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
-          --vars "{\"work_dir\":\".spur/runs/kk-daily-ai-voice/$(date +%F)\",\"publish_enabled\":\"true\",\"cover_enabled\":\"false\",\"skip_review\":\"true\"}"
+          --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"cover_enabled\":\"false\",\"skip_review\":\"true\"}"
 
       # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
       # page compaction, PRAGMA optimize, and WAL checkpoint truncation).

@@ -1046,3 +1046,60 @@ describe('0139 R3 — voicescript content gate wiring', () => {
         });
     });
 });
+
+describe('kk workflow stage runner — daily-prepare work_dir composition (0139)', () => {
+    // The anchor and composed paths are cwd-relative, so these tests run the stages
+    // script with the temp dir as cwd instead of the repo root.
+    function runIn(cwd: string, args: string[], env: Record<string, string> = {}) {
+        const result = spawnSync('bun', [runner, ...args], {
+            encoding: 'utf-8',
+            cwd,
+            env: { ...process.env, VOICEBOX_DEFAULT_PROFILE: 'tester', ...env },
+        });
+        return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+    }
+
+    const dprep = (stamp: string) => ['daily-prepare', '', '', '', '', '', '', '', stamp];
+    const anchor = (dir: string) => readFileSync(join(dir, '.spur/runs/kk-daily-ai-voice/work-dir.txt'), 'utf-8');
+
+    it('composes $KK_WORKS_DIR/kk-daily-ai-voice/<digits> from a dashed run_date and anchors it', () => {
+        withTempDir((dir) => {
+            const res = runIn(dir, dprep('2026-09-18'), { KK_WORKS_DIR: dir });
+            expect(res.status).toBe(0);
+            const work = join(dir, 'kk-daily-ai-voice/20260918');
+            expect(readFileSync(join(work, 'run-date.txt'), 'utf-8')).toBe('20260918\n');
+            expect(existsSync(join(work, '1-ingest/source.json'))).toBe(true);
+            expect(anchor(dir)).toBe(`${work}\n`);
+        });
+    });
+
+    it('a digits-only run_date (persisted var read-back) re-derives the same directory', () => {
+        withTempDir((dir) => {
+            const res = runIn(dir, dprep('20260918'), { KK_WORKS_DIR: dir });
+            expect(res.status).toBe(0);
+            expect(existsSync(join(dir, 'kk-daily-ai-voice/20260918/run-date.txt'))).toBe(true);
+        });
+    });
+
+    it('explicit work_dir wins over composition but the anchor still records it', () => {
+        withTempDir((dir) => {
+            const work = join(dir, 'explicit');
+            const res = runIn(dir, ['daily-prepare', work, '', '', '', '', '', '', '2026-09-18'], {
+                KK_WORKS_DIR: dir,
+            });
+            expect(res.status).toBe(0);
+            expect(existsSync(join(work, 'run-date.txt'))).toBe(true);
+            expect(anchor(dir)).toBe(`${work}\n`);
+        });
+    });
+
+    it('KK_CONFIG works_dir drives composition when KK_WORKS_DIR is unset', () => {
+        withTempDir((home) => {
+            const works = join(home, 'custom-works');
+            writeFileSync(join(home, 'config.yaml'), `works_dir: ${works}\n`);
+            const res = runIn(home, dprep('2026-09-18'), { KK_CONFIG: join(home, 'config.yaml') });
+            expect(res.status).toBe(0);
+            expect(readFileSync(join(works, 'kk-daily-ai-voice/20260918/run-date.txt'), 'utf-8')).toBe('20260918\n');
+        });
+    });
+});
