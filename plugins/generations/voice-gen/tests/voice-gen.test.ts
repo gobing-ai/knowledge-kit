@@ -871,9 +871,15 @@ segments:
         await expect(transErrClient.transcribe(new Uint8Array(50))).rejects.toThrow(/HTTP 500/);
     });
 
-    it('Concat — applySpeed: 1.0 is a pass-through; 2.0 halves the duration via ffmpeg atempo', () => {
+    it('Concat — applySpeed: 1.0 is a pass-through', () => {
         const wav = createTestWav(4800, 24000); // 0.2s sine-ish tone
         expect(applySpeed(wav, 1)).toBe(wav);
+    });
+
+    // Real ffmpeg integration: CI runners have no ffmpeg on PATH, so the atempo assertion
+    // is binary-gated; the speed=1 identity above stays unconditional.
+    it.skipIf(!Bun.which('ffmpeg'))('Concat — applySpeed: 2.0 halves the duration via ffmpeg atempo', () => {
+        const wav = createTestWav(4800, 24000); // 0.2s sine-ish tone
 
         const spedUp = applySpeed(wav, 2);
         const parsed = parseWav(spedUp);
