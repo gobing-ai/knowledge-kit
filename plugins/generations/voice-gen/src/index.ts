@@ -7,6 +7,7 @@ import { applySpeed, concatWavs } from './concat';
 import { isMp3Requested, type Mp3Transcoder, transcodeWavToMp3 } from './mp3';
 import { auditVoiceSegments, detectLoudnessDip, TRANSCRIPTION_FIDELITY_FLOOR, transcriptionFidelity } from './qc';
 import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } from './voicebox-client';
+import { ensureVoiceboxRunning } from './voicebox-server';
 import {
     mergeVoiceScripts,
     parseDocToVoiceScript,
@@ -25,6 +26,7 @@ export * from './concat';
 export * from './mp3';
 export * from './qc';
 export * from './voicebox-client';
+export * from './voicebox-server';
 export * from './voicescript';
 
 const EMPTY_CONTENT: Content = {
@@ -70,6 +72,13 @@ export async function processGeneratorIO(
     }
 
     const client = clientOverride ?? createVoiceboxClient();
+
+    // Auto-start the local server when it is down — only on the default client path;
+    // tests inject clientOverride and skip the spawn entirely. With vdriver=ominivoice
+    // (the default) this plugin never runs, so no server is needed at all.
+    if (!clientOverride) {
+        await ensureVoiceboxRunning();
+    }
 
     try {
         // 1. Health check
