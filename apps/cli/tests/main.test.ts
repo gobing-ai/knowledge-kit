@@ -49,17 +49,18 @@ function visibleCommandNames(out: string): string[] {
 }
 
 describe('kk main exit seam', () => {
-    it('R1 — bare invocation and --help/-h exit 0 and list only executor and plugin as visible commands', async () => {
+    it('R1 — bare invocation and --help/-h exit 0 and list executor, plugin, and stage as visible commands', async () => {
         for (const args of [[], ['--help'], ['-h']]) {
             const { code, out } = await run(args);
             expect(code).toBe(0);
             expect(out).toContain('executor');
             expect(out).toContain('plugin');
-            // Exact visible command list: the two kk nouns plus Commander's built-in
+            expect(out).toContain('stage');
+            // Exact visible command list: the three kk nouns plus Commander's built-in
             // `help` command (`kk help executor` is a shipped path). No legacy names
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
             // `plugin|plugins` — the loose line-start regex could not see that.
-            expect(visibleCommandNames(out).sort()).toEqual(['executor', 'help', 'plugin']);
+            expect(visibleCommandNames(out).sort()).toEqual(['executor', 'help', 'plugin', 'stage']);
         }
     });
 

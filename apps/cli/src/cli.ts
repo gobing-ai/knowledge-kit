@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { registerExecutorCommand } from './commands/executor';
 import { registerPluginCommand } from './commands/plugin';
+import { registerStageCommand } from './commands/stage';
 import { CLI_CONFIG } from './config';
 
 /**
@@ -19,6 +20,7 @@ export function createProgram(): Command {
 
     registerExecutorCommand(program);
     registerPluginCommand(program);
+    registerStageCommand(program);
 
     return program;
 }
