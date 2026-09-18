@@ -13,6 +13,8 @@ pre-commit:
 pre-push:
   commands:
     cog:
-      run: cog check
+      # Verify only what's being pushed; bare `cog check` falls back to repo root
+      # because the @scope/pkg-vX.Y.Z tags aren't cocogitto-parseable.
+      run: cog check origin/main..HEAD
     lint:
       run: bun run lint
