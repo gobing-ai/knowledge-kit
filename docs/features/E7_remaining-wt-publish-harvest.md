@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E7"
 name: "Remaining wt-publish harvest"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-17T22:45:42.508Z"
-updated_at: "2026-09-17T23:52:10.763Z"
+updated_at: "2026-09-18T03:16:45.216Z"
 ---
 
 # E7: Remaining wt-publish harvest
@@ -194,8 +194,11 @@ Feature: Remaining wt-publish harvest
 
 ## Notes
 
+- 2026-09-17 verifyall: 7/7 tasks PASS (0141–0147). Gates: `bun run test` 1142 pass/0 fail, `bun run lint` clean, `spur feature check E7` PASS. One flake observed on first full-suite run (`0110 I2` invoke timeout tree-kill, timing-sensitive, non-E7) — passes isolated and on re-run; watch during future runs. E7 shipped in commits 89a08cf3 + 470ce94c; TCC remainder deferred to F41.
+
 ## History
 
 - 2026-09-17T23:52:10.607Z backlog → active (system)
 - 2026-09-17T23:52:10.763Z active → verifying (system)
+- 2026-09-18T03:16:45.216Z verifying → done (system)
 
