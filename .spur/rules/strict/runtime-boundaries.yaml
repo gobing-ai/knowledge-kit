@@ -64,6 +64,9 @@ rules:
             - "plugins/ingestions/web-search/src/index.ts"
             # Optional WAV to MP3 transcode shells out to local ffmpeg binary.
             - "plugins/generations/voice-gen/src/mp3.ts"
+            # Per-segment atempo speed-up shells out to local ffmpeg binary
+            # (in-memory stdin/stdout) — same vendor-CLI class as mp3.ts above.
+            - "plugins/generations/voice-gen/src/concat.ts"
             # image-gen providers whose transport is a local CLI by contract
             # (same class as file-cli transports + mp3.ts): codex-cli IS a wrapper
             # around the `codex` CLI (NEVER_AUTO, login-gated) and stages temp
