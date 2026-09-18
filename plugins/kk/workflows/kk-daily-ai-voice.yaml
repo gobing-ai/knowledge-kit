@@ -35,6 +35,9 @@ vars:
   plan_translate_enabled: "true"
   article_write_enabled: "true"
   plugins_path: ""
+  # Projected by the publish state from 3-publish/<run_date>_17_publish_publish-status.txt;
+  # guards test this var instead of cat-ing the file (state at decision time).
+  publish_status: ""
   last30days_topic: "AI news"
   horizon_hours: "24"
   publish_enabled: "false"
@@ -62,13 +65,18 @@ states:
     onEnter:
       - kind: shell
         options:
+          # run_date (dashed or digits; the job worker expands $(date +%F) before spur sees the
+          # JSON — var values reach non-shell steps verbatim) only names the workspace:
+          # daily-prepare composes the real dir as works_dir/kk-daily-ai-voice/<stamp> when
+          # work_dir is empty and always writes the effective work_dir to the cwd-relative
+          # anchor below. Shell actions cannot set vars, so the reads project it (then the
+          # digits-only stamp) into vars before any later state interpolates them.
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-prepare "${vars.work_dir}" "${vars.limit}" "${vars.cursor}" "${vars.state_file}" "${vars.last30days_enabled}" "${vars.last30days_topic}" "${vars.horizon_hours}"
+            kk stage daily-prepare "${vars.work_dir}" "${vars.limit}" "${vars.cursor}" "${vars.state_file}" "${vars.last30days_enabled}" "${vars.last30days_topic}" "${vars.horizon_hours}" "${vars.run_date}"
+      - kind: file.read.into-var
+        options:
+          path: .spur/runs/kk-daily-ai-voice/work-dir.txt
+          var: work_dir
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/run-date.txt
@@ -89,12 +97,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-collect-facts "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+            kk stage daily-collect-facts "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: plan
     description: "Score/dedup/select + annotate the blended Doc[] into the episode plan (episode-plan-gen; annotate rides inside planEpisode)"
@@ -102,12 +105,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}"
+            kk stage daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}"
 
   - id: quality-control-content
     description: "Content QC: filter the plan's annotated candidates by category allowlist + score thresholds (episode-plan-gen --mode filter); zero candidates route to done-no-content"
@@ -115,12 +113,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
+            kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
 
   - id: plan-translate
     description: "Translate needsTranslation plan items into the output plan.json via agent.run"
@@ -162,12 +155,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+            kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: cover
     description: "Generate the article cover image via the kk:image-authoring skill (agent.run)"
@@ -186,12 +174,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
+            kk stage daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
 
   - id: script
     description: "Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content"
@@ -199,12 +182,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}"
+            kk stage daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}"
 
   - id: review
     description: "Operator reviews the generated news script before speech synthesis"
@@ -221,12 +199,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
+            kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
     description: "Invoke voice driver plugin (vdriver var: ominivoice -> omni-voice-gen, voicebox -> voice-gen) to generate audio"
@@ -234,12 +207,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            OMNIVOICE_SPEED=1.06 bun "$st" daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}"
+            OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}"
 
   - id: intro-music
     description: "Prepend the 8s intro sting (intro_music var; empty = skip) to the generated wav, update duration/audioPath"
@@ -247,12 +215,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
+            kk stage daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
@@ -260,12 +223,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-quality-report "${vars.work_dir}" "${vars.run_date}"
+            kk stage daily-quality-report "${vars.work_dir}" "${vars.run_date}"
 
   - id: publish-prep
     description: "Merge article Content with audio (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
@@ -273,12 +231,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-publish-prep "${vars.work_dir}" "${vars.run_date}"
+            kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}"
 
   - id: publish-surfdash
     description: "Publish the merged Content to surfdash (single target); result lands in result.json — surfdash publishes first so show-notes can link the article (task 0118 seam reorder)"
@@ -286,12 +239,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-publish-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+            kk stage daily-publish-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: show-notes
     description: "Render timeline show notes from the episode plan (podcast-pub show-notes op, briefMode; article URL from the surfdash result postPath — surfdash failure degrades to legacy full-body layout)"
@@ -299,12 +247,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-show-notes "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.title}"
+            kk stage daily-show-notes "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.title}"
 
   - id: publish-podcast
     description: "Publish the episode to podcast-pub with the rendered show notes (metadata.showNotes carries the brief/timeline markdown; map.ts falls back to content.body when absent — task 0118 R3)"
@@ -312,12 +255,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+            kk stage daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: publish
     description: "Classify the sequenced surfdash → podcast outcomes full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned; task 0118: per-target classification over the merged result.json)"
@@ -325,12 +263,11 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-publish-classify "${vars.work_dir}" "${vars.run_date}"
+            kk stage daily-publish-classify "${vars.work_dir}" "${vars.run_date}"
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt
+          var: publish_status
 
   - id: patch-surfdash
     description: "20260917 #4/#6 — patch published surfdash posts: podcast cover URL into image/og_image frontmatter + podcast cross-link (zh/en/ja), commit+push"
@@ -338,12 +275,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.surfdash_root}"
+            kk stage daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.surfdash_root}"
 
   - id: publish-partial
     description: "Partial publish — at least one target published, at least one failed; echo warning, write a .spur/run marker, preserve result.json for --retry-from, continue to done (task 0118: surfdash failure = no-URL fallback notes; podcast failure = its own partial)"
@@ -351,12 +283,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-publish-partial "${vars.work_dir}" "${vars.run_date}"
+            kk stage daily-publish-partial "${vars.work_dir}" "${vars.run_date}"
 
   - id: run-report
     description: "Assemble the per-run report (scores+aggregates+rejected counts+step timing) from existing artifacts — news-report-gen; output-only, never throws; 0117"
@@ -364,12 +291,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-run-report "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
+            kk stage daily-run-report "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
 
   - id: translate
     description: "Locales — surfdash-pub scaffolds en/ja drafts (deterministic, plugin-owned), agent translates both, sync into the surfdash CMS"
@@ -377,12 +299,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+            kk stage daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
@@ -405,12 +322,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kbin="$(command -v kk 2>/dev/null)";
-            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
-            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
-            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
+            kk stage daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
 
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → QC'd plan → article/cover/script/voice → publish/locales)"
@@ -623,7 +535,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "partial"'
+        command: 'test "${vars.publish_status}" = "partial"'
 
   - from: publish
     to: failed
@@ -631,7 +543,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "none"'
+        command: 'test "${vars.publish_status}" = "none"'
 
   - from: publish-partial
     to: run-report
@@ -645,7 +557,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "full"'
+        command: 'test "${vars.publish_status}" = "full"'
 
   - from: run-report
     to: done
@@ -653,7 +565,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "partial"'
+        command: 'test "${vars.publish_status}" = "partial"'
 
   - from: translate
     to: done

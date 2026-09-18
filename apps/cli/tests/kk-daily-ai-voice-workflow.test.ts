@@ -23,6 +23,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'),
         'utf-8',
     );
+    // 0144: absolute path injected into the integration fake kk's `stage` delegation.
+    const stagesAbs = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
 
     const stateIds = [...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1]);
 
@@ -75,8 +77,9 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('run_date: ""');
         expect(yaml).toContain('agent: "inline"');
         // last30days disable writes an empty last30days input in prepare (fan-in --source tolerates it).
-        // 0133: the parameter validation + source-config writes live in the stage runner.
-        expect(yaml).toContain('bun "$st" daily-prepare');
+        // 0133: the parameter validation + source-config writes live in the stage runner;
+        // 0144: the YAML delegates through `kk stage` (the kbin/pkg/st prelude is gone).
+        expect(yaml).toContain('kk stage daily-prepare');
         expect(runnerSource).toContain("last30daysEnabled !== 'true'");
         expect(runnerSource).toContain("'1-ingest/last30days-docs.json'");
         expect(yaml).toContain('vdriver: "ominivoice"');
@@ -115,20 +118,14 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).not.toContain('wt-image-cover');
     });
 
-    it('R2/R3 (0133) — the delegated shell actions share one prelude and the prompts stay under the cap', () => {
-        // Byte-identity is the frozen contract: a drifted prelude would still pass validate (each
-        // action is measured on its own), so the block is asserted identical here. 0143: the two
-        // per-locale translate shells collapsed into daily-translate-localize (19 sites); the
-        // intro-music and patch-surfdash stages bring the shared-prelude count to 21.
-        for (const line of [
-            'kbin="$(command -v kk 2>/dev/null)";',
-            'pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";',
-            'st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";',
-            '[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";',
-            '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
-        ]) {
-            expect(yaml.split(line).length - 1, `${line.slice(0, 24)} count`).toBe(21);
+    it('R2/R3 (0144) — every delegated action is a one-line `kk stage` call and the prompts stay under the cap', () => {
+        // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
+        // which resolves the shipped stages script from the installed package. The YAML must carry no
+        // prelude remnants and exactly one delegation call per stage (21 sites).
+        for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
+            expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
+        expect(yaml.split('kk stage daily-').length - 1).toBe(21);
         // ADR-115 R3: the two trimmed prompts stay under the 1000-char error tier.
         for (const [step, cap] of [
             ['plan-translate', 1000],
@@ -172,31 +169,32 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('--source-timeout-override "horizon-ingest:2700000"');
         expect(yaml).toContain('--source "horizon-ingest:');
         expect(yaml).toContain('kk executor fan-in --source');
-        // 0133: every kk invocation moved into the runner; the YAML keeps the delegation calls.
-        // Every delegated action's call line, with the argv it must carry: a swapped argument order
-        // at any of the twenty sites would otherwise pass this suite.
+        // 0133: every kk invocation moved into the runner; 0144: the YAML keeps one-line
+        // `kk stage` delegation calls. Every delegated action's call line, with the argv it
+        // must carry: a swapped argument order at any of the twenty sites would otherwise
+        // pass this suite.
         for (const call of [
-            `bun "$st" daily-prepare "\${vars.work_dir}" "\${vars.limit}" "\${vars.cursor}" "\${vars.state_file}" "\${vars.last30days_enabled}" "\${vars.last30days_topic}" "\${vars.horizon_hours}"`,
-            `bun "$st" daily-collect-facts "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-plan "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.plan_max_items}"`,
-            `bun "$st" daily-qc-content "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_categories}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
-            `bun "$st" daily-article "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
-            `bun "$st" daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,
-            `bun "$st" daily-wrap-docs "\${vars.work_dir}" "\${vars.run_date}" "\${vars.voice_profile}"`,
-            `OMNIVOICE_SPEED=1.06 bun "$st" daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.vdriver}"`,
-            `bun "$st" daily-intro "\${vars.work_dir}" "\${vars.run_date}" "\${vars.intro_music}"`,
-            `bun "$st" daily-quality-report "\${vars.work_dir}" "\${vars.run_date}"`,
-            `bun "$st" daily-publish-prep "\${vars.work_dir}" "\${vars.run_date}"`,
-            `bun "$st" daily-publish-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-show-notes "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.title}"`,
-            `bun "$st" daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
-            `bun "$st" daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}"`,
-            `bun "$st" daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
-            `bun "$st" daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
-            `bun "$st" daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `bun "$st" daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.work_dir}/3-publish/\${vars.run_date}_20_translate-localize_zh-post-path.txt"`,
+            `kk stage daily-prepare "\${vars.work_dir}" "\${vars.limit}" "\${vars.cursor}" "\${vars.state_file}" "\${vars.last30days_enabled}" "\${vars.last30days_topic}" "\${vars.horizon_hours}" "\${vars.run_date}"`,
+            `kk stage daily-collect-facts "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-plan "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.plan_max_items}"`,
+            `kk stage daily-qc-content "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_categories}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
+            `kk stage daily-article "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,
+            `kk stage daily-wrap-docs "\${vars.work_dir}" "\${vars.run_date}" "\${vars.voice_profile}"`,
+            `OMNIVOICE_SPEED=1.06 kk stage daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.vdriver}"`,
+            `kk stage daily-intro "\${vars.work_dir}" "\${vars.run_date}" "\${vars.intro_music}"`,
+            `kk stage daily-quality-report "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-publish-prep "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-publish-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-show-notes "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.title}"`,
+            `kk stage daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}"`,
+            `kk stage daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
+            `kk stage daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.work_dir}/3-publish/\${vars.run_date}_20_translate-localize_zh-post-path.txt"`,
         ]) {
             expect(yaml, call.slice(12, 40)).toContain(call);
         }
@@ -280,6 +278,13 @@ const DOC = (id) => [{ id, title: 'AI News ' + id, sourceUri: 'https://example.c
 
 const inPath = flag('--in');
 const outPath = flag('--out');
+if (args[0] === 'stage') {
+    // 0144: kk stage <daily-*> delegates to the real shipped runner — the integration
+    // exercises the actual stages logic, not a stub of it.
+    const stages = '${stagesAbs}';
+    const res = Bun.spawnSync(['bun', stages, ...args.slice(1)], { stdio: ['inherit', 'inherit', 'inherit'] });
+    process.exit(res.exitCode ?? 1);
+}
 if (args[0] !== 'executor') process.exit(2);
 
 if (args[1] === 'fan-in') {
