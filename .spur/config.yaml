@@ -61,18 +61,22 @@ bootstrap:
       # still exhausted. The run fails loud like any other stage.
       - name: kk-daily-ai-voice
         cron: "0 6 * * *"
-        # work_dir is a required var (prepare fails loud without it);
-        # publish_enabled defaults to false, cover_enabled=true currently
-        # fails loud (agy image task is async and never lands the artifact),
-        # and skip_review=true avoids the HITL pause at `review` — a 06:00
-        # cron run must be headless. $(date +%F) is expanded by the job
-        # worker's /bin/sh. Re-enable cover once the image path completes
-        # synchronously.
+        # work_dir is a required var (prepare fails loud without it) and must
+        # be fully resolved before it becomes a var: var values reach non-shell
+        # steps (file.read) verbatim, so "$(date +%F)" inside a var value only
+        # works for shell steps — that mismatch is the 06:00:01 file.read
+        # failure of 2026-09-13..18. Resolve the date here instead: double
+        # quotes let the job worker's /bin/sh expand $(date +%F) before spur
+        # sees it. publish_enabled defaults to false, cover_enabled=true
+        # currently fails loud (agy image task is async and never lands the
+        # artifact), and skip_review=true avoids the HITL pause at `review` — a
+        # 06:00 cron run must be headless. Re-enable cover once the image path
+        # completes synchronously.
         command: >-
           curl -sf -m 2 http://127.0.0.1:17493/health >/dev/null
           || nohup /Applications/Voicebox.app/Contents/MacOS/voicebox-server --port 17493 --data-dir "$HOME/Library/Application Support/sh.voicebox.app" >>/tmp/voicebox-server.log 2>&1 &
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
-          --vars '{"work_dir":".spur/runs/kk-daily-ai-voice/$(date +%F)","publish_enabled":"true","cover_enabled":"false","skip_review":"true"}'
+          --vars "{\"work_dir\":\".spur/runs/kk-daily-ai-voice/$(date +%F)\",\"publish_enabled\":\"true\",\"cover_enabled\":\"false\",\"skip_review\":\"true\"}"
 
       # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
       # page compaction, PRAGMA optimize, and WAL checkpoint truncation).
