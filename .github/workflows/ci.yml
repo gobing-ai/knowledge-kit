@@ -25,6 +25,11 @@ jobs:
         # on runners. CI never commits, so hooks are not needed here.
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Install ffmpeg
+        # ubuntu-26 runner images dropped ffmpeg from the preinstalled set;
+        # voice-gen tests (applySpeed/transcode) and the coverage gate need it.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+
       - name: Install spur
         # The kk workflow integration tests drive the real engine (`spur workflow run`),
         # and refuse to skip silently when the binary is missing. Pinned so a spur release
