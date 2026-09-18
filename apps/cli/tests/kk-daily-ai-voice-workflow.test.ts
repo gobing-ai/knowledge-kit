@@ -529,7 +529,9 @@ if (plugin === 'aihot-ingest') {
                 rmSync(testRoot, { recursive: true, force: true });
             }
         }
-    }, 30000);
+        // 3 real workflow executions (spur engine + bun subprocesses per state): the old 30s
+        // budget tripped under load (30985ms timeout flake). 120s leaves headroom.
+    }, 120_000);
 
     // --- 0128 R3: the flattening enumeration ---------------------------------
 

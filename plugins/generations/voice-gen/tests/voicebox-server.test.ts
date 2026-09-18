@@ -86,7 +86,11 @@ describe('ensureVoiceboxRunning', () => {
         try {
             await expect(
                 ensureVoiceboxRunning({
+                    // sleep omitted on purpose: drives the module-default macrotask sleep
+                    // so the injected-vs-default seam stays honest (coverage: 5/5 functions).
                     ...opts,
+                    sleep: undefined,
+                    pollMs: 1,
                     url: 'http://127.0.0.1:17599',
                     serverBin: bin,
                     fetch: healthFetch(false),

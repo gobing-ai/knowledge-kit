@@ -26,7 +26,6 @@ export * from './concat';
 export * from './mp3';
 export * from './qc';
 export * from './voicebox-client';
-export * from './voicebox-server';
 export * from './voicescript';
 
 const EMPTY_CONTENT: Content = {
