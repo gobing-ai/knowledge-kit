@@ -780,7 +780,9 @@ function dailyArticle(args: string[]): void {
             {
                 env: {
                     ARTICLE_DATE: runDate,
-                    ...(isFile(proseBody) ? { ARTICLE_BODY_FILE: proseBody } : {}),
+                    // Plugin entries run with cwd = plugin dir (invoke.ts), so relative
+                    // paths in env must be resolved or the plugin sees ENOENT.
+                    ...(isFile(proseBody) ? { ARTICLE_BODY_FILE: resolve(proseBody) } : {}),
                 },
             },
         );
