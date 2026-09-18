@@ -1361,6 +1361,9 @@ function dailyRunReport(args: string[]): void {
                 // 20260917 funnel: the plan stage's full selection trail (every fetched title +
                 // scores + disposition), rendered as the 选稿漏斗 section (absent -> omitted).
                 NEWS_REPORT_PLAN_AUDIT_FILE: join(workDir, '2-plan', `${runDate}_03_plan_plan.json.audit.json`),
+                // 20260917 funnel: the blended fan-in input, rendered as the 语料构成
+                // source/category composition (absent -> omitted).
+                NEWS_REPORT_BLENDED_FILE: join(workDir, '1-ingest', `${runDate}_02_collect_blended.json`),
                 NEWS_REPORT_DATE: runDate,
             },
         });

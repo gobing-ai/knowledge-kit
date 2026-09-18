@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Content, Doc } from '@gobing-ai/kk-core';
 import {
+    corpusComposition,
     main,
     processGeneratorIO,
+    readBlendedCorpus,
     readQcSummary,
     readRejectedAudit,
     readTiming,
@@ -211,6 +213,57 @@ describe('news-report-gen IO', () => {
     test('main exits 1 with the standard error shape on missing args', async () => {
         const code = await main();
         expect(code).toBe(1);
+    });
+});
+
+describe('news-report-gen corpus composition (20260917 funnel)', () => {
+    // Mirrors the 2026-09-17 blended input: 3 sourced docs, one missing both fields — the
+    // uncategorized mass is exactly what the section exists to expose.
+    const blended = [
+        { title: 'a', metadata: { source: 'aihot', category: 'AI' } },
+        { title: 'b', metadata: { source: 'aihot', category: 'AI' } },
+        { title: 'c', metadata: { source: 'hackernews' } },
+        { title: 'd', source: 'rss' },
+    ];
+
+    test('tallies sources and categories, bucketing missing fields as （无）', () => {
+        expect(corpusComposition(blended)).toEqual({
+            total: 4,
+            sources: [
+                { key: 'aihot', count: 2 },
+                { key: 'hackernews', count: 1 },
+                { key: 'rss', count: 1 },
+            ],
+            categories: [
+                { key: 'AI', count: 2 },
+                { key: '（无）', count: 2 },
+            ],
+        });
+    });
+
+    test('readBlendedCorpus: absent/malformed/non-array -> null (never throw)', async () => {
+        expect(await readBlendedCorpus(undefined)).toEqual(null);
+        expect(await readBlendedCorpus('/nonexistent/blended.json')).toEqual(null);
+        const dir = await mkdtemp(join(tmpdir(), 'nr-blended-'));
+        try {
+            const bad = join(dir, 'bad.json');
+            await writeFile(bad, '{not json');
+            expect(await readBlendedCorpus(bad)).toEqual(null);
+            await writeFile(bad, '{"docs": []}');
+            expect(await readBlendedCorpus(bad)).toEqual([]);
+            await writeFile(bad, JSON.stringify(blended));
+            expect(await readBlendedCorpus(bad)).toHaveLength(4);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('renderReportMarkdown: section present with blended, absent without', () => {
+        const withSection = renderReportMarkdown([], '2026-09-17', { blended });
+        expect(withSection).toContain('## 语料构成（fan-in 输入，共 4 条）');
+        expect(withSection).toContain('| aihot | 2 |');
+        expect(withSection).toContain('| AI | 2 |');
+        expect(renderReportMarkdown([], '2026-09-17', {})).not.toContain('语料构成');
     });
 });
 

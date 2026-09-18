@@ -18,6 +18,9 @@ import { echoError } from '@gobing-ai/ts-utils';
  *   `metadata.scores` (quality/importance/urgency/impact 0-5).
  * - `NEWS_REPORT_REJECTED_FILE` — the filter's rejected audit path
  *   (`2-plan/candidates.rejected.json`, RejectedDoc[] of {doc, reasons})
+ * - `NEWS_REPORT_BLENDED_FILE` — the collect stage's blended fan-in output
+ *   (`1-ingest/<date>_02_collect_blended.json`); absent or unreadable -> the
+ *   语料构成 section is omitted, never throw.
  * - `NEWS_REPORT_QC_FILE` — the generate stage's QC audit path
  *   (`3-audio/<date>_11_generate_content.json`); absent -> the 音频 QC block is omitted;
  *   absent or unreadable -> reject counts render as 0, never throw.
@@ -232,6 +235,7 @@ export function renderReportMarkdown(
         timing?: TimingEntry[];
         qc?: QcSummary | null;
         planAudit?: PlanAuditRow[] | null;
+        blended?: BlendedDoc[] | null;
     } = {},
 ): string {
     const lines: string[] = [`# 每日 AI 语音运行报告 — ${date}`, ''];
@@ -272,6 +276,21 @@ export function renderReportMarkdown(
     }
     lines.push(`| category allowlist | — | ${counts.category} |`);
     lines.push('');
+
+    const blended = options.blended ?? null;
+    if (blended !== null && blended.length > 0) {
+        // 20260917 funnel: selection can only be judged against what arrived — the blended
+        // input's source/category composition exposes the uncategorized mass that plan
+        // under-ranks (e.g. 47 of 52 docs with no category -> 2 selected).
+        const comp = corpusComposition(blended);
+        lines.push(`## 语料构成（fan-in 输入，共 ${comp.total} 条）`, '');
+        lines.push('| 来源 | 条数 |', '| --- | --- |');
+        for (const g of comp.sources) lines.push(`| ${g.key} | ${g.count} |`);
+        lines.push('');
+        lines.push('| 类别 | 条数 |', '| --- | --- |');
+        for (const g of comp.categories) lines.push(`| ${g.key} | ${g.count} |`);
+        lines.push('');
+    }
 
     const planAudit = options.planAudit ?? null;
     if (planAudit !== null && planAudit.length > 0) {
@@ -365,6 +384,56 @@ export async function readPlanAudit(path: string | undefined): Promise<PlanAudit
     }
 }
 
+/** Minimal shape the 语料构成 section needs from a blended fan-in doc (tolerant on purpose). */
+export interface BlendedDoc {
+    title?: unknown;
+    id?: unknown;
+    source?: unknown;
+    category?: unknown;
+    metadata?: { source?: unknown; category?: unknown };
+}
+
+export interface CorpusCount {
+    key: string;
+    count: number;
+}
+
+/** Read the blended fan-in input; absent/unreadable/malformed/not-an-array -> null (never throw). */
+export async function readBlendedCorpus(path: string | undefined): Promise<BlendedDoc[] | null> {
+    if (!path || path.trim() === '') return null;
+    try {
+        const parsed: unknown = JSON.parse(await Bun.file(path).text());
+        const docs = Array.isArray(parsed) ? parsed : (parsed as { docs?: unknown } | null)?.docs;
+        return Array.isArray(docs) ? (docs as BlendedDoc[]) : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Tally blended docs by source and by category (missing fields bucket as （无）), most frequent first. */
+export function corpusComposition(docs: BlendedDoc[]): {
+    total: number;
+    sources: CorpusCount[];
+    categories: CorpusCount[];
+} {
+    const tally = (pick: (d: BlendedDoc) => unknown): CorpusCount[] => {
+        const counts = new Map<string, number>();
+        for (const d of docs) {
+            const raw = pick(d);
+            const key = typeof raw === 'string' && raw.trim() !== '' ? raw : '（无）';
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        return [...counts.entries()]
+            .map(([key, count]) => ({ key, count }))
+            .sort((a, b) => b.count - a.count || (a.key < b.key ? -1 : 1));
+    };
+    return {
+        total: docs.length,
+        sources: tally((d) => d.metadata?.source ?? d.source),
+        categories: tally((d) => d.metadata?.category ?? d.category),
+    };
+}
+
 /** Build the report Content from a kept-candidate Doc[]. */
 export function docsToContent(
     docs: Doc[],
@@ -374,6 +443,7 @@ export function docsToContent(
         timing?: TimingEntry[];
         qc?: QcSummary | null;
         planAudit?: PlanAuditRow[] | null;
+        blended?: BlendedDoc[] | null;
     },
 ): Content {
     return ContentSchema.parse({
@@ -395,7 +465,8 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
     const timing = await readTiming(process.env.NEWS_REPORT_TIMING_FILE);
     const qc = await readQcSummary(process.env.NEWS_REPORT_QC_FILE);
     const planAudit = await readPlanAudit(process.env.NEWS_REPORT_PLAN_AUDIT_FILE);
-    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc, planAudit });
+    const blended = await readBlendedCorpus(process.env.NEWS_REPORT_BLENDED_FILE);
+    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc, planAudit, blended });
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);
