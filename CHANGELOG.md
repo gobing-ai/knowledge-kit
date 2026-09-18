@@ -20,7 +20,24 @@
 
 - docs(kk): sync kk stage verb, work_dir anchor protocol, voicebox auto-start (eeeebdf9)
 
-## [0.0.17] - 2026-09-18
+## [0.0.17] - 2026-09-16
+
+### Added
+
+- feat(kk): gate voicescript content and split long fact segments (5f0b40e3)
+- feat(kk): fix daily-ai-voice content quality and QC gating defects (031e6537)
+- feat(kk): add kk-daily-ai-voice profile to workflow-run command (3b2174e1)
+
+### Fixed
+
+- fix(kk): reconcile the daily-voice qc.passed gate with the warn-only policy (bdd7bb59)
+- fix(omni-voice-gen): drop inverted duration ceiling that false-flagged in-range segments (f650fd9c)
+
+### Other
+
+- docs(tasks): update task status after verification (968ad23c)
+
+## [0.0.18] - 2026-09-18
 
 ### Added
 
@@ -45,6 +62,7 @@
 - docs(planning): add E7 remaining-wt-publish-harvest spec (78aed387)
 - chore(project): upgrade dependencies (4de0ace5)
 - chore(project): update the project memory (677bb0c3)
+
 ## [0.0.16] - 2026-09-16
 
 ### Fixed
