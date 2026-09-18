@@ -1,3 +1,25 @@
+## [0.0.19] - 2026-09-18
+
+### Added
+
+- feat(kk): add kk stage verb for the workflow stages runner (1eb6c8d6)
+- feat(kk): compose daily work_dir from works_dir + run_date (8f3ab6f1)
+- feat(voice-gen): auto-start the local Voicebox server (75e5b2ff)
+
+### Changed
+
+- refactor(kk): rewrite kk-daily-ai-voice workflow onto kk stage (ceba9eba)
+
+### Fixed
+
+- fix(kk): hand ARTICLE_BODY_FILE to plugin entry as an absolute path (2d7b6d92)
+- fix(scheduler): resolve work_dir date before it becomes a workflow var (95bdc59f)
+- fix(kk): satisfy strict null check on prevArgv1 capture in stage test (c86337e6)
+
+### Other
+
+- docs(kk): sync kk stage verb, work_dir anchor protocol, voicebox auto-start (eeeebdf9)
+
 ## [0.0.17] - 2026-09-18
 
 ### Added
