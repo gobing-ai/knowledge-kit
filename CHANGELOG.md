@@ -1,3 +1,28 @@
+## [0.0.17] - 2026-09-18
+
+### Added
+
+- feat: news funnel audit + per-segment speech pacing (kk-daily-ai-voice review 1/2) (fa91c101)
+- feat: vdriver switch, intro music, surfdash patch stage (kk-daily-ai-voice review 2/2) (91ef8bc9)
+- feat: corpus composition section in run report (blended source/category funnel) (a05a852b)
+- feat(publish): merge E7 leftover wt-publish harvest (470ce94c)
+- feat(publish): harvest leftover wt channels as E7 plugins (89a08cf3)
+
+### Fixed
+
+- fix: absolutize run-report plugin env paths (plugin cwd breaks relative workDir) (e861f952)
+- fix(rules): allowlist voice-gen concat.ts ffmpeg spawn (a5356bc6)
+- fix(podcast-pub,stages): canonical episode URLs; fail loud on missing required inputs (7c09b306)
+- fix(rules): scope user-layer env-var-hygiene out of knowledge-kit; surfdash-pub stderr via echoError (3d184b6e)
+- fix(kk-daily-ai-voice): ship 2026-09-16 prod-feedback fixes (b9dd0b64)
+- fix(README): add apps/cli/README.md (e85bcc0b, 0798f509, f77843db)
+
+### Changed
+
+- docs(tasks): update task status after verification (20c9490b)
+- docs(planning): add E7 remaining-wt-publish-harvest spec (78aed387)
+- chore(project): upgrade dependencies (4de0ace5)
+- chore(project): update the project memory (677bb0c3)
 ## [0.0.16] - 2026-09-16
 
 ### Fixed
