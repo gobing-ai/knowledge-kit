@@ -1344,6 +1344,9 @@ function dailyRunReport(args: string[]): void {
             return;
         }
         sted('write', cands, () => writeJqText(cands, metadataOf(readJson(candidates)).docs ?? []));
+        // Plugin env paths must be absolute: spawnPluginEntry runs plugins with cwd = the
+        // plugin package dir, so a relative workDir silently misses every best-effort read.
+        const absWorkDir = resolve(workDir);
         kk(['executor', 'run', 'news-report-gen', '--in', cands, '--out', reportJson, ...pluginsArgs(pluginsPath)], {
             env: {
                 QC_MIN_QUALITY: minQuality,
@@ -1351,19 +1354,19 @@ function dailyRunReport(args: string[]): void {
                 QC_MIN_URGENCY: minUrgency,
                 QC_MIN_IMPACT: minImpact,
                 NEWS_REPORT_REJECTED_FILE: join(
-                    workDir,
+                    absWorkDir,
                     '2-plan',
                     `${runDate}_04_quality-control-content_candidates.rejected.json`,
                 ),
-                NEWS_REPORT_TIMING_FILE: join(workDir, 'step-timing.json'),
+                NEWS_REPORT_TIMING_FILE: join(absWorkDir, 'step-timing.json'),
                 // 0139 R5b: the generate stage's QC audit, read best-effort (absent -> section omitted).
-                NEWS_REPORT_QC_FILE: join(workDir, '3-audio', `${runDate}_11_generate_content.json`),
+                NEWS_REPORT_QC_FILE: join(absWorkDir, '3-audio', `${runDate}_11_generate_content.json`),
                 // 20260917 funnel: the plan stage's full selection trail (every fetched title +
                 // scores + disposition), rendered as the 选稿漏斗 section (absent -> omitted).
-                NEWS_REPORT_PLAN_AUDIT_FILE: join(workDir, '2-plan', `${runDate}_03_plan_plan.json.audit.json`),
+                NEWS_REPORT_PLAN_AUDIT_FILE: join(absWorkDir, '2-plan', `${runDate}_03_plan_plan.json.audit.json`),
                 // 20260917 funnel: the blended fan-in input, rendered as the 语料构成
                 // source/category composition (absent -> omitted).
-                NEWS_REPORT_BLENDED_FILE: join(workDir, '1-ingest', `${runDate}_02_collect_blended.json`),
+                NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '1-ingest', `${runDate}_02_collect_blended.json`),
                 NEWS_REPORT_DATE: runDate,
             },
         });
