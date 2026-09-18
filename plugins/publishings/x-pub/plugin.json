@@ -1,0 +1,7 @@
+{
+    "name": "x-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for X: post via official tweets API; article via browser/agent"
+}

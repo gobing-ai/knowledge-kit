@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
 
 /**
@@ -11,17 +13,28 @@ export interface PublishTransportPayload {
 }
 
 /**
+ * Who drives a `browser` transport. Omitted for `file-cli`.
+ *
+ * `script` — Playwright (or equivalent) runs inside the plugin process.
+ * `agent` — a kk skill / workflow `agent.run` drives the page; the plugin still
+ * owns mapping and Result and never embeds an LLM (ADR-008 amdt 2026-09-17).
+ */
+export type BrowserDriver = 'script' | 'agent';
+
+/**
  * Common interface for publish transports (`file-cli` vs `browser`).
  */
 export interface PublishTransport {
     /** Transport mechanism classification. */
     kind: 'file-cli' | 'browser';
+    /** Required when `kind` is `browser`. Omitted for `file-cli`. */
+    driver?: BrowserDriver;
     /** Executes a publish operation given a transport payload. */
     publish(payload: PublishTransportPayload): Promise<Result>;
 }
 
 /**
- * In-memory recorded call log entry captured by {@link FakeFileCliTransport}.
+ * In-memory recorded call log entry captured by fake transports.
  */
 export interface FakeCallLogEntry {
     /** Timestamp when the call was captured. */
@@ -88,4 +101,200 @@ export class FakeFileCliTransport implements PublishTransport {
         this.callLogs = [];
         this.nextResult = undefined;
     }
+}
+
+/**
+ * Fake browser publish transport for offline unit testing without a live browser.
+ */
+export class FakeBrowserTransport implements PublishTransport {
+    public readonly kind = 'browser';
+    public readonly driver: BrowserDriver;
+    private callLogs: FakeCallLogEntry[];
+    private nextResult?: Result;
+
+    /**
+     * @param driver - Who would drive the real browser (`script` or `agent`).
+     */
+    constructor(driver: BrowserDriver = 'agent') {
+        this.driver = driver;
+        this.callLogs = [];
+    }
+
+    /**
+     * Configures the result to return on the next publish invocation.
+     * @param result - Overridden result object.
+     */
+    public setNextResult(result: Result): void {
+        this.nextResult = result;
+    }
+
+    /**
+     * Executes a simulated browser publish call, recording the payload offline.
+     * @param payload - Target content and options.
+     * @returns A promise resolving to a valid `Result` object.
+     */
+    public async publish(payload: PublishTransportPayload): Promise<Result> {
+        this.callLogs.push({
+            timestamp: new Date().toISOString(),
+            payload,
+        });
+
+        if (this.nextResult) {
+            return this.nextResult;
+        }
+
+        return {
+            ok: true,
+            target: 'fake-browser',
+            url: 'https://example.com/browser-draft',
+            id: 'fake-browser-id-123',
+            message: 'Published offline via FakeBrowserTransport',
+            metadata: { driver: this.driver },
+        };
+    }
+
+    /**
+     * Returns all in-memory recorded call log entries.
+     */
+    public getCallLogs(): readonly FakeCallLogEntry[] {
+        return this.callLogs;
+    }
+
+    /**
+     * Clears all in-memory recorded call logs and custom result overrides.
+     */
+    public reset(): void {
+        this.callLogs = [];
+        this.nextResult = undefined;
+    }
+}
+
+/**
+ * Options for launching a persistent browser profile.
+ */
+export interface BrowserSessionOptions {
+    /** Absolute profile directory. */
+    profileDir: string;
+    /** Headless Chromium when true. Default false (operator can complete login). */
+    headless?: boolean;
+    /** How long a caller should wait for login, in milliseconds. */
+    loginTimeoutMs?: number;
+}
+
+/**
+ * Minimal locator surface `trySelectors` needs — structural so the harness
+ * does not depend on Playwright at import time.
+ */
+export interface SelectorLocator {
+    count(): Promise<number>;
+    isVisible(options?: { timeout?: number }): Promise<boolean>;
+}
+
+/**
+ * Minimal page surface `trySelectors` needs.
+ */
+export interface SelectorPage {
+    locator(selector: string): { first(): SelectorLocator };
+}
+
+/**
+ * Result of trying a list of selectors against a page.
+ */
+export interface TrySelectorsResult {
+    found: boolean;
+    selector: string | null;
+}
+
+/**
+ * Resolves the persistent profile directory for a publish channel.
+ *
+ * Default: `~/.config/kk/browser-profiles/<channel>`. An explicit override
+ * (env or flag) wins. Does not create the directory.
+ *
+ * @param channel - Channel slug (`juejin`, `x`, …).
+ * @param override - Optional absolute or `~/`-prefixed path.
+ */
+export function resolveBrowserProfileDir(channel: string, override?: string): string {
+    if (override && override.trim().length > 0) {
+        const trimmed = override.trim();
+        if (trimmed.startsWith('~/')) {
+            return join(homedir(), trimmed.slice(2));
+        }
+        return trimmed;
+    }
+    return join(homedir(), '.config', 'kk', 'browser-profiles', channel);
+}
+
+/**
+ * Try selectors in order and return the first attached (and optionally visible) match.
+ * Harvested from `@wt/web-automation` trySelectors; no Playwright import.
+ *
+ * @param page - Page exposing `locator(sel).first()`.
+ * @param selectors - CSS/text selectors to try.
+ * @param options - `timeout` per visibility check; `visible` defaults true.
+ */
+export async function trySelectors(
+    page: SelectorPage,
+    selectors: readonly string[],
+    options: { timeout?: number; visible?: boolean } = {},
+): Promise<TrySelectorsResult> {
+    const timeout = options.timeout ?? 5000;
+    const visible = options.visible ?? true;
+
+    for (const selector of selectors) {
+        try {
+            const locator = page.locator(selector).first();
+            const attached = (await locator.count()) > 0;
+            if (!attached) {
+                continue;
+            }
+            if (visible) {
+                const isVisible = await locator.isVisible({ timeout: Math.min(timeout, 2000) }).catch(() => false);
+                if (!isVisible) {
+                    continue;
+                }
+            }
+            return { found: true, selector };
+        } catch {
+            // try next
+        }
+    }
+
+    return { found: false, selector: null };
+}
+
+/**
+ * Launch Chromium with a persistent user-data dir.
+ *
+ * Dynamically imports `playwright` so `@gobing-ai/publish-harness` stays
+ * importable in offline tests without a Playwright install. Callers that
+ * actually launch a browser must have `playwright` on their own dependency
+ * tree. The plugin process never embeds an LLM.
+ *
+ * @param opts - Profile directory and launch flags.
+ * @returns The Playwright persistent context (typed as unknown at this seam).
+ */
+export async function launchPersistentBrowser(opts: BrowserSessionOptions): Promise<unknown> {
+    let chromium: {
+        launchPersistentContext: (userDataDir: string, options: Record<string, unknown>) => Promise<unknown>;
+    };
+    try {
+        const playwright = await import('playwright');
+        chromium = playwright.chromium;
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+            `launchPersistentBrowser requires the playwright package on the caller's dependency tree: ${reason}`,
+        );
+    }
+
+    if (typeof chromium?.launchPersistentContext !== 'function') {
+        throw new Error(
+            "launchPersistentBrowser requires the playwright package on the caller's dependency tree: chromium.launchPersistentContext is missing",
+        );
+    }
+
+    return chromium.launchPersistentContext(opts.profileDir, {
+        headless: opts.headless ?? false,
+    });
 }

@@ -1,0 +1,7 @@
+{
+    "name": "juejin-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for Juejin (juejin.cn) via browser/agent transport"
+}

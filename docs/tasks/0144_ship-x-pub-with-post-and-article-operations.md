@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Ship x-pub with post and article operations
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-17T23:03:26.221Z
-updated_at: "2026-09-17T23:04:59.948Z"
+updated_at: "2026-09-17T23:49:42.862Z"
 feature_id: E7
 priority: P2
 estimate_hours: 8
@@ -26,18 +26,18 @@ Rubric: E8 D1 L1 C1 R2 = 13 → decompose (ToS-sensitive post path; same plugin 
 
 ### Requirements
 
-- [ ] R1. plugins/publishings/x-pub is a single kind-publish plugin with operations post and article; no second X plugin exists.
-- [ ] R2. post calls POST /2/tweets as file-cli and returns ok true with a post id.
-- [ ] R3. post with X credentials unset exits non-zero, names the missing env vars, and does not drive the X website.
-- [ ] R4. article uses kind browser (driver agent by default) and writes a ResultSchema-valid Result.
-- [ ] R5. Unit tests use FakeFileCliTransport for post and FakeBrowserTransport for article; no live x.com I/O.
+- [x] R1. plugins/publishings/x-pub is a single kind-publish plugin with operations post and article; no second X plugin exists.
+- [x] R2. post calls POST /2/tweets as file-cli and returns ok true with a post id.
+- [x] R3. post with X credentials unset exits non-zero, names the missing env vars, and does not drive the X website.
+- [x] R4. article uses kind browser (driver agent by default) and writes a ResultSchema-valid Result.
+- [x] R5. Unit tests use FakeFileCliTransport for post and FakeBrowserTransport for article; no live x.com I/O.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — x-pub post operation uses the official X API
-- [ ] AC2 — x-pub article operation uses a browser transport on the same plugin
-- [ ] AC3 — x-pub post without developer tokens fails loud
-- [ ] AC4 — Unit tests for harvested channels run offline via harness fakes
+- [x] AC1 — x-pub post operation uses the official X API
+- [x] AC2 — x-pub article operation uses a browser transport on the same plugin
+- [x] AC3 — x-pub post without developer tokens fails loud
+- [x] AC4 — Unit tests for harvested channels run offline via harness fakes
 
 ### Q&A
 
@@ -66,18 +66,58 @@ Signatures:
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | What | Why |
+| --- | --- | --- |
+| `plugins/publishings/x-pub/src/index.ts:68` | `XPostApiTransport` OAuth 1.0a POST /2/tweets | R2 |
+| `plugins/publishings/x-pub/src/index.ts:126` | `XArticleBrowserTransport` browser/agent | R4 |
+| `plugins/publishings/x-pub/tests/x-pub.test.ts` | FakeFileCli + FakeBrowser; no second X package | R1 R3 R5 |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/publishings/x-pub/plugin.json:2` one plugin; `tests/x-pub.test.ts` no second X package |
+| R2 | MET | `plugins/publishings/x-pub/src/index.ts:68` XPostApiTransport POST /2/tweets |
+| R3 | MET | `plugins/publishings/x-pub/tests/x-pub.test.ts` unset tokens fail, no browser fallback |
+| R4 | MET | `plugins/publishings/x-pub/src/index.ts:126` XArticleBrowserTransport kind browser driver agent |
+| R5 | MET | `plugins/publishings/x-pub/tests/x-pub.test.ts` FakeFileCliTransport + FakeBrowserTransport |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — x-pub post operation uses the official X API | MET | test | `plugins/publishings/x-pub/tests/x-pub.test.ts` POST /2/tweets mocked fetch |
+| AC2 — x-pub article operation uses a browser transport on the same plugin | MET | test | `plugins/publishings/x-pub/tests/x-pub.test.ts` XArticleBrowserTransport |
+| AC3 — x-pub post without developer tokens fails loud | MET | test | `plugins/publishings/x-pub/tests/x-pub.test.ts` missing tokens |
+| AC4 — Unit tests for harvested channels run offline via harness fakes | MET | test | `plugins/publishings/x-pub/tests/x-pub.test.ts` FakeFileCli + FakeBrowser |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P4 | Architecture | `plugins/publishings/x-pub/plugin.json` | Manifest operations stay Content→Result (`options.operation`); schema only allows doc-list/markdown auxiliaries. |
+| P4 | — | — | No P1–P3 findings; functional verdict PASS |
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | single x-pub package; test no second X plugin |
+| R2 | MET | XPostApiTransport mocked POST /2/tweets |
+| R3 | MET | missing tokens fail; no browser fallback message |
+| R4 | MET | XArticleBrowserTransport kind browser driver agent |
+| R5 | MET | FakeFileCli + FakeBrowser |
+
+Disposition: approve.
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-17T23:49:41.180Z todo → wip (system)
+- 2026-09-17T23:49:42.574Z wip → testing (system)
+- 2026-09-17T23:49:42.862Z testing → done (system)
+

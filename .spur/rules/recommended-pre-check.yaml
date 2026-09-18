@@ -12,6 +12,12 @@ $schema: "@gobing-ai/spur/schemas/preset.schema.json"
 #
 # UI / happy-dom rules exist under .spur/rules but are disabled (enabled: false)
 # until those surfaces exist, so `ui` stays out of the gate.
+#
+# `env-var-hygiene` is a spur-new / global-layer rule (task 0902). Layered rule
+# roots still pull it into this preset via `extends: boundary`. knowledge-kit
+# omits `no-direct-process-env` on purpose — config-from-env is by design
+# (`.spur/rules/strict/runtime-boundaries.yaml`). Disable the leaked rule so
+# the project gate stays the local catalog.
 name: recommended-pre-check
 extends:
   - typescript
@@ -19,3 +25,5 @@ extends:
   - boundary
   - surface
   - strict
+disable:
+  - env-var-hygiene

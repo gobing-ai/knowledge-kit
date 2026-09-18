@@ -1,0 +1,7 @@
+{
+    "name": "medium-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish plugin for Medium (medium.com) via the integration-token REST API"
+}

@@ -218,6 +218,42 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/publishings/infoq-pub": {
+      "name": "@gobing-ai/infoq-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/publishings/juejin-pub": {
+      "name": "@gobing-ai/juejin-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/publishings/medium-pub": {
+      "name": "@gobing-ai/medium-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/publishings/podcast-pub": {
       "name": "@gobing-ai/podcast-pub",
       "dependencies": {
@@ -242,8 +278,56 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/publishings/substack-pub": {
+      "name": "@gobing-ai/substack-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/publishings/surfdash-pub": {
       "name": "@gobing-ai/surfdash-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/publishings/wechatmp-pub": {
+      "name": "@gobing-ai/wechatmp-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/publishings/x-pub": {
+      "name": "@gobing-ai/x-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/publishings/xhs-pub": {
+      "name": "@gobing-ai/xhs-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
@@ -310,6 +394,10 @@
 
     "@gobing-ai/image-gen": ["@gobing-ai/image-gen@workspace:plugins/generations/image-gen"],
 
+    "@gobing-ai/infoq-pub": ["@gobing-ai/infoq-pub@workspace:plugins/publishings/infoq-pub"],
+
+    "@gobing-ai/juejin-pub": ["@gobing-ai/juejin-pub@workspace:plugins/publishings/juejin-pub"],
+
     "@gobing-ai/karakeep-local": ["@gobing-ai/karakeep-local@workspace:plugins/ingestions/karakeep-local"],
 
     "@gobing-ai/kk-core": ["@gobing-ai/kk-core@workspace:packages/kk-core"],
@@ -318,6 +406,8 @@
 
     "@gobing-ai/last30days-ingest": ["@gobing-ai/last30days-ingest@workspace:plugins/ingestions/last30days-ingest"],
 
+    "@gobing-ai/medium-pub": ["@gobing-ai/medium-pub@workspace:plugins/publishings/medium-pub"],
+
     "@gobing-ai/news-report-gen": ["@gobing-ai/news-report-gen@workspace:plugins/generations/news-report-gen"],
 
     "@gobing-ai/podcast-pub": ["@gobing-ai/podcast-pub@workspace:plugins/publishings/podcast-pub"],
@@ -325,6 +415,8 @@
     "@gobing-ai/publish-harness": ["@gobing-ai/publish-harness@workspace:packages/publish-harness"],
 
     "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/publishings/qiita-pub"],
+
+    "@gobing-ai/substack-pub": ["@gobing-ai/substack-pub@workspace:plugins/publishings/substack-pub"],
 
     "@gobing-ai/surfdash-pub": ["@gobing-ai/surfdash-pub@workspace:plugins/publishings/surfdash-pub"],
 
@@ -337,6 +429,12 @@
     "@gobing-ai/voice-gen": ["@gobing-ai/voice-gen@workspace:plugins/generations/voice-gen"],
 
     "@gobing-ai/web-search": ["@gobing-ai/web-search@workspace:plugins/ingestions/web-search"],
+
+    "@gobing-ai/wechatmp-pub": ["@gobing-ai/wechatmp-pub@workspace:plugins/publishings/wechatmp-pub"],
+
+    "@gobing-ai/x-pub": ["@gobing-ai/x-pub@workspace:plugins/publishings/x-pub"],
+
+    "@gobing-ai/xhs-pub": ["@gobing-ai/xhs-pub@workspace:plugins/publishings/xhs-pub"],
 
     "@gobing-ai/zenn-pub": ["@gobing-ai/zenn-pub@workspace:plugins/publishings/zenn-pub"],
 
