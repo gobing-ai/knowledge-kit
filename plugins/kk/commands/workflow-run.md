@@ -246,15 +246,19 @@ spur workflow run "$dest" --vars \
 
 ### Profile `kk-daily-ai-voice`
 
-Bind vars: `work_dir`, `publish_enabled`, `last30days_enabled`, `skip_review`, `plugins_path`
-(empty → ADR-012 default discovery), `agent`. `$dest` resolves like solo-podcast. The run is
-topicless — no `topic`/`input_file`/`fixture` vars. `run_date` is computed by the `prepare`
-state and written to `$work_dir/run-date.txt`. The `review` state pauses the run for operator
-approval of the VoiceScript; resume with `spur workflow continue [run-id]`.
+Bind vars: `work_dir`, `run_date`, `publish_enabled`, `last30days_enabled`, `skip_review`,
+`plugins_path` (empty → ADR-012 default discovery), `agent`. `$dest` resolves like solo-podcast.
+The run is topicless — no `topic`/`input_file`/`fixture` vars. `run_date` is optional: empty →
+today (manual path), or a dashed/digits date for backfills (headless cron path). `daily-prepare`
+derives the digits-only stamp from it and composes `work_dir` when empty:
+`$works_dir/kk-daily-ai-voice/<yyyymmdd>`; an explicit `work_dir` wins. Either way the effective
+workspace lands in the anchor `.spur/runs/kk-daily-ai-voice/work-dir.txt` and the stamp in
+`$work_dir/run-date.txt`. The `review` state pauses the run for operator approval of the
+VoiceScript; resume with `spur workflow continue [run-id]`.
 
 ```bash
 spur workflow run "$dest" --vars \
-  "{\"work_dir\":\"$work_dir\",\"publish_enabled\":\"$PUBLISH\",\"last30days_enabled\":\"$L30D\",\"skip_review\":\"$SKIP_REVIEW\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
+  "{\"work_dir\":\"$work_dir\",\"run_date\":\"\",\"publish_enabled\":\"$PUBLISH\",\"last30days_enabled\":\"$L30D\",\"skip_review\":\"$SKIP_REVIEW\",\"plugins_path\":\"\",\"agent\":\"$AGENT\"}"
 ```
 
 ## 6. Report

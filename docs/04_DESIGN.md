@@ -325,7 +325,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `KK_PLUGIN_PATH` | no | Colon-separated extra plugin roots to union with the default discovery roots (ADR-012); overridden by `--plugins-root` |
 | `KK_CONFIG` | no | Path to the operator YAML (`works_dir`, workflow defaults, `plugins.<collection>.<name>.env`). Default: `~/.config/kk/config.yaml` |
 | `FIRECRAWL_API_KEY` | yes (web-search live) | Bearer token for the live Firecrawl client (task 0057; selected when `fixture` is absent/false) — unset → exit 1, no `--out` (fail loud) |
-| `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`) |
+| `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`). Local origins (`127.0.0.1`/`localhost`/`::1`) are **auto-started** when not already healthy (0146): voice-gen spawns the server binary detached, polls `/health` for 30s (500ms interval, fixed defaults), logs stderr to `/tmp/voicebox-server.log`. Non-local URLs and a missing binary (`VOICEBOX_SERVER_BIN`, default `/Applications/Voicebox.app/Contents/MacOS/voicebox-server`; data dir `VOICEBOX_DATA_DIR`) are configuration errors — fail loud, never spawn |
 | `DAILYNEWS_LANGUAGE` | no (dailynews-gen) | Broadcast language passed through `kk executor run`; `zh` (default) or `en` |
 | `DAILYNEWS_TITLE` | no (dailynews-gen) | Optional broadcast title passed through `kk executor run` |
 | `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen) | Default profile name/ID when the news workflow or segment/doc omits profile |
@@ -607,7 +607,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
 - Source missing from all roots → exit 1, stderr lists every searched root.
-- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty delegated actions) resolves it `plugins/kk/scripts/kk-workflow-stages.ts` with one six-line prelude: `pkg` from `realpath $(command -v kk)` (the installed package root), then the explicit checkout fallback `plugins/kk/scripts/kk-workflow-stages.ts` when that copy is absent. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
+- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty delegated actions) runs `kk stage <stage> [args…]` (0144): the `stage` verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` from the installed package (two levels up from the running `kk` entry) with the explicit checkout fallback `plugins/kk/scripts/kk-workflow-stages.ts`, then spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
 
 ### 7.2 `/workflow-run` command surface
 
@@ -627,6 +627,8 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 | `kk-daily-ai-voice` | `kk-daily-ai-voice.yaml` | `$works_dir/kk-daily-ai-voice/<date>` | `$work_dir/2-article/<date>_06_article_article.md`, `$work_dir/2-script/<date>_08_script_voicescript.yaml`, `$work_dir/3-audio/<date>_11_generate_content.json`, `$work_dir/<date>_19_run-report_report.md` |
 
 Workspaces default to `$works_dir/<workflow-name>/<run-id>` per profile (`--dir` overrides). Existing `.works/`-era trees (flat `<kebab>`/`<topic-id>` dirs under `$works_dir`) are **not** migrated — rerunning against an old workspace requires an explicit `--dir`.
+
+**`kk-daily-ai-voice` work_dir composition (0146):** headless callers (the 06:00 cron) pass only `run_date`; the daily-prepare stage composes the workspace as `$works_dir/kk-daily-ai-voice/<yyyymmdd>` (digits-only stamp — retried/resumed runs re-derive the same directory) and writes the effective path to the anchor file `.spur/runs/kk-daily-ai-voice/work-dir.txt`, which the workflow reads back into `vars.work_dir`. An explicit `--dir` still wins (manual profile), and `run_date.txt` mirrors the digits-only stamp so later stages glob artifacts deterministically. Composition roots at `works_dir` resolution: `$KK_WORKS_DIR` → config `works_dir` → `$HOME/.config/kk/works`.
 
 ### 7.3 `/tell-me` command + `explain-things` skill surface
 
