@@ -7,10 +7,23 @@ import { FakeFileCliTransport, type PublishTransport, type PublishTransportPaylo
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { type EpisodeMapping, mapContentToEpisode } from './map';
-import { MicrofeedClient, type MicrofeedItemInput, resolveTimeoutMs } from './microfeed-client';
+import { MicrofeedClient, type MicrofeedItem, type MicrofeedItemInput, resolveTimeoutMs } from './microfeed-client';
 import { renderShowNotesMarkdown, type ShowNotesRenderOptions } from './show-notes';
 
 /** Result target name for this plugin. */
+/**
+ * Canonical public page URL from a microfeed item: `_microfeed.web_url` (`/i/{slug}-{id}/` — the
+ * deployment's real page shape) wins, then the JSON Feed `url`, then the client's `/items/{id}`
+ * fallback (which 404s on some deployments but is the only shape derivable from the id alone).
+ */
+export function publicItemUrl(item: MicrofeedItem | undefined, itemId: string, client: MicrofeedClient): string {
+    const microfeed = item?._microfeed as Record<string, unknown> | undefined;
+    const webUrl = typeof microfeed?.web_url === 'string' ? microfeed.web_url : '';
+    if (webUrl !== '') return webUrl;
+    const feedUrl = typeof item?.url === 'string' ? item.url : '';
+    return feedUrl !== '' ? feedUrl : client.itemUrl(itemId);
+}
+
 const TARGET = 'podcast-pub';
 
 /** Management operations routed via `options.operation` (design D5). */
@@ -282,10 +295,18 @@ async function publishEpisode(
             },
             idempotencyKey,
         );
+        // Best-effort canonical-URL enrichment: the episode is already published, so a failed
+        // follow-up GET (or an unparsable response) falls back to publicItemUrl's own chain.
+        let hostedItem: MicrofeedItem | undefined;
+        try {
+            hostedItem = (await client.getItem(itemId)).items?.[0];
+        } catch {
+            hostedItem = undefined;
+        }
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
-            url: client.itemUrl(itemId),
+            url: publicItemUrl(hostedItem, itemId, client),
             id: itemId,
             message: 'Published successfully to microfeed (hosted audio, single-call create)',
         });
@@ -339,7 +360,7 @@ async function publishEpisode(
     return ResultSchema.parse({
         ok: true,
         target: TARGET,
-        url: typeof item.url === 'string' && item.url.length > 0 ? item.url : client.itemUrl(itemId),
+        url: publicItemUrl(item, itemId, client),
         id: itemId,
         message: 'Published successfully to microfeed (two-phase upload + publish)',
     });

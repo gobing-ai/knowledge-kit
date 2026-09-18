@@ -585,6 +585,17 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-publish-prep fails loud naming the path when the article content file is missing (date-shape mismatch)', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const result = run(['daily-publish-prep', dir, '2026-01-01']);
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain(
+                `required input not found or unparsable: ${join(dir, '2-article/2026-01-01_06_article_content.json')}`,
+            );
+        });
+    });
+
     it('daily-cover-normalize renames a png cover and clears the stale artifacts', () => {
         withTempDir((dir) => {
             const cover = join(dir, '2-cover');

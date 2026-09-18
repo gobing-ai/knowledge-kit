@@ -472,6 +472,42 @@ describe('podcast-pub publish (R1/R3)', () => {
             }
         });
     });
+
+    test('hosted publish reports the canonical /i/{slug}-{id}/ page URL when the item GET exposes web_url', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const api = installFakeApi([
+                {
+                    match: (r) => r.method === 'POST' && r.url.endsWith('/api/v1/items'),
+                    respond: () => new Response(JSON.stringify({ id: 'HOSTED1' }), { status: 201 }),
+                },
+                {
+                    match: (r) => r.method === 'GET' && r.url.endsWith('/api/v1/items/HOSTED1'),
+                    respond: () =>
+                        new Response(
+                            JSON.stringify({
+                                version: '1.1',
+                                items: [
+                                    {
+                                        id: 'HOSTED1',
+                                        _microfeed: { web_url: 'https://feed.example.com/i/ep-hosted1/' },
+                                    },
+                                ],
+                            }),
+                            { status: 200 },
+                        ),
+                },
+            ]);
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioUrl: 'https://cdn.example.com/ep1.mp3' }),
+                });
+                expect(result.ok).toBe(true);
+                expect(result.url).toBe('https://feed.example.com/i/ep-hosted1/');
+            } finally {
+                api.restore();
+            }
+        });
+    });
 });
 
 describe('podcast-pub management operations (R2/R3)', () => {

@@ -500,6 +500,16 @@ function metadataOf(value: Record<string, unknown> | null): Record<string, unkno
     return metadata !== null && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
 }
 
+/**
+ * Required stage input: a missing or unparsable file fails the stage naming the path, so a
+ * run-date/path mismatch surfaces as its real cause instead of a downstream "field missing" error.
+ */
+function requireJson(path: string, label: string): Record<string, unknown> {
+    const parsed = readJson(path);
+    if (parsed === null) failWith(1, `${label}: required input not found or unparsable: ${path}`);
+    return parsed;
+}
+
 /** `jq -e '.targets[]? | select(.target == t and .ok == true and .status == "published")'`. */
 function targetPublished(path: string, target: string): boolean {
     const parsed = readJson(path);
@@ -914,7 +924,7 @@ function dailyPublishPrep(args: string[]): void {
     const prepPath = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
     const coverPath = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
     timed(workDir, 'publish-prep', () => {
-        const article = readJson(articlePath) ?? {};
+        const article = requireJson(articlePath, 'publish-prep');
         const audioMeta = metadataOf(readJson(audioPath));
         const rawFile = audioMeta.mp3Path ?? audioMeta.audioPath;
         if (typeof rawFile !== 'string' || rawFile === '') {
@@ -1026,7 +1036,7 @@ function dailyPublishPodcast(args: string[]): void {
             return;
         }
         try {
-            const content = readJson(prep) ?? {};
+            const content = requireJson(prep, 'publish-podcast');
             const showNotes = readFileSync(notes, 'utf-8');
             const merged = { ...content, metadata: { ...metadataOf(content), showNotes } };
             sted('write', prep, () => writeJsonText(prep, merged));
