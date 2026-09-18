@@ -210,7 +210,7 @@ def _render(
             "profile": resolve_profile(profile, registry),
             "instruct": segment_instruct,
             "seed": None if segment.seed is None else int(segment.seed),
-            "speed": None,
+            "speed": None if segment.speed is None else float(segment.speed),
         }
         wav, duration, retries, transcription, dip = _render_verified(backend, spec)
 

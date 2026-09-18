@@ -97,26 +97,29 @@ const TAG_CATEGORY: Record<string, Category> = {
 const NON_AI_SOURCES = new Set(['polymarket']);
 
 /**
- * Title/body keyword signals, scanned in array order (junk → technical → news → industry);
- * first hit wins. The junk group is the 0099 audit: ingest template artifacts — error logs,
- * checklist boilerplate — used to absorb AI keywords riding along in the boilerplate (0098
- * dogfood r7: a yt-dlp HTTP-403 error post classified INTO ai-industry via the word "policy"
- * in its "NO AI / NO LLM POLICY" checklist), so they now land `non-ai` instead.
+ * Curated AI sources: after the junk-phrase deny, everything from them defaults to `ai-news`
+ * even when the title carries no keyword signal (20260917 dogfood: aihot items with clean but
+ * signal-free titles fell to `non-ai`). Junk still wins — the deny is checked first.
+ */
+const AI_DEFAULT_SOURCES = new Set(['aihot']);
+
+/** Ingest junk phrases (error logs, template checklists) — deny before any AI default or signal. */
+const JUNK_KEYWORDS = ['error:', 'http error', 'unable to download'];
+
+/**
+ * Title/body keyword signals, scanned in array order (technical → news → industry);
+ * first hit wins (after the junk deny and the AI_DEFAULT_SOURCES fallback).
  */
 const CATEGORY_KEYWORDS: ReadonlyArray<{ category: Category; words: string[] }> = [
-    {
-        // Ingest junk: error-log titles and template checklists. Phrases are tight enough
-        // to never fire on genuine coverage (verified against the r6/r7 blended corpora).
-        category: 'non-ai',
-        words: ['error:', 'http error', 'unable to download'],
-    },
     {
         // Technical vocabulary: APIs, tutorials, benchmarks, architecture, inference.
         category: 'ai-technical',
         words: ['api', 'tutorial', 'benchmark', 'architecture', 'sdk', 'cli', 'quantization', 'inference', 'fine-tun'],
     },
     {
-        // Launch/release/announce verbs + product names.
+        // Launch/release/announce verbs + product names + the generic "ai" token and CJK
+        // equivalents + the vendor/lab tokens the 20260917 funnel showed dying uncategorized
+        // (vllm/glm/deepseek/qwen/mistral, 华为/英伟达 chip stories).
         category: 'ai-news',
         words: [
             'launch',
@@ -129,13 +132,28 @@ const CATEGORY_KEYWORDS: ReadonlyArray<{ category: Category; words: string[] }> 
             '上线',
             '推出',
             '开源',
+            'ai',
+            '人工智能',
+            '大模型',
             'sora',
             'gpt',
+            'chatgpt',
             'claude',
             'gemini',
             'llama',
             'grok',
             'copilot',
+            'openai',
+            'anthropic',
+            'deepseek',
+            'qwen',
+            'vllm',
+            'glm',
+            'mistral',
+            'nvidia',
+            '英伟达',
+            'huawei',
+            '华为',
         ],
     },
     {
@@ -166,6 +184,29 @@ const DEFAULT_IMPORTANCE = 2;
 export interface PlanOptions {
     maxItems: number;
     date?: string; // episode date (YYYY-MM-DD); freshness is judged against it, default today
+    /** Out-collector: when provided, receives one audit row per input doc (input order via rowsOf). */
+    audit?: PlanAuditRow[];
+}
+
+/** Per-doc selection trail (20260917 funnel: why did only 2 of 57 survive?). Disposition is the
+ * LAST pipeline stage that touched the doc: gate (rejected) → url-merge (lost a URL collision)
+ * → title-merge (absorbed by title similarity) → cap (per-source cap) → topN (rank beyond max)
+ * → selected. */
+export interface PlanAuditRow {
+    id: string;
+    source: string;
+    title: string;
+    category: Category;
+    scores: DimensionScores;
+    planScore: number | null;
+    disposition: 'gate' | 'url-merge' | 'title-merge' | 'cap' | 'topN' | 'selected';
+}
+
+/** Sibling plan-audit path: `<out>.json` → `<out>.audit.json`. */
+export function planAuditOutPath(outputPath: string): string {
+    return outputPath.endsWith('.json')
+        ? `${outputPath.slice(0, -'.json'.length)}.audit.json`
+        : `${outputPath}.audit.json`;
 }
 
 /** Best-effort publication timestamp from mixed source metadata (aihot: publishedAt/discoveredAt; horizon: date). */
@@ -283,8 +324,8 @@ function matchesKeyword(haystack: string, word: string): boolean {
 
 /**
  * MECE category of a doc (v1 — tune later), first match wins: tag map →
- * non-AI source deny → title + body-head keyword scan → `non-ai`.
- * Deterministic, no LLM.
+ * non-AI source deny → junk-phrase deny → AI_DEFAULT_SOURCES fallback →
+ * title + body-head keyword scan → `non-ai`. Deterministic, no LLM.
  */
 export function classifyCategory(doc: Doc): Category {
     const meta = asRecord(doc.metadata);
@@ -293,9 +334,12 @@ export function classifyCategory(doc: Doc): Category {
         const hit = TAG_CATEGORY[tag.toLowerCase()];
         if (hit) return hit;
     }
-    if (NON_AI_SOURCES.has(typeof meta.source === 'string' ? meta.source : '')) return 'non-ai';
+    const source = typeof meta.source === 'string' ? meta.source : '';
+    if (NON_AI_SOURCES.has(source)) return 'non-ai';
     const title = (doc.title ?? '').toLowerCase();
     const bodyHead = (doc.body ?? '').slice(0, 200).toLowerCase();
+    if (JUNK_KEYWORDS.some((w) => matchesKeyword(title, w) || matchesKeyword(bodyHead, w))) return 'non-ai';
+    if (AI_DEFAULT_SOURCES.has(source)) return 'ai-news';
     for (const { category, words } of CATEGORY_KEYWORDS) {
         if (words.some((w) => matchesKeyword(title, w) || matchesKeyword(bodyHead, w))) return category;
     }
@@ -370,6 +414,7 @@ interface ScoredDoc {
 /** Full plan pipeline: clean → annotate (category + 4-dim QC scores) → gate (freshness/non-news) → score → URL-dedup → title-dedup → per-source cap → top N. */
 export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
     const planDate = options.date ?? new Date().toISOString().slice(0, 10);
+    const rows = options.audit ? new Map<Doc, PlanAuditRow>() : null;
     // URL dedup happens on the original sourceUri (first occurrence wins ties,
     // resolved below by score after the map).
     const byUrl = new Map<string, ScoredDoc>();
@@ -385,8 +430,26 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
                 scores: scoreDimensions(doc, planDate),
             },
         };
+        const meta = asRecord(cleaned.metadata);
+        // Keyed by the `cleaned` object — later stages hold cleaned docs. Map insertion order
+        // == input order, so [...rows.values()] is the audit table layout.
+        rows?.set(cleaned, {
+            id: doc.id,
+            source: sourceOf(doc),
+            title: doc.title ?? '',
+            category: meta.category as Category,
+            scores: meta.scores as DimensionScores,
+            planScore: null,
+            disposition: 'gate',
+        });
         if (!passesGates(cleaned, planDate)) continue;
-        const record = { doc: cleaned, score: planScore(cleaned), mergedFrom: [] as MergedFrom[] };
+        const score = planScore(cleaned);
+        const row = rows?.get(cleaned);
+        if (row) {
+            row.planScore = score;
+            row.disposition = 'topN'; // provisional: overwritten by every later stage
+        }
+        const record = { doc: cleaned, score, mergedFrom: [] as MergedFrom[] };
         const urlKey = normalizeUrl(doc.sourceUri);
         if (urlKey) {
             const existing = byUrl.get(urlKey);
@@ -399,6 +462,8 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
                     title: loser.doc.title ?? '',
                     url: loser.doc.sourceUri ?? null,
                 });
+                const loserRow = rows?.get(loser.doc);
+                if (loserRow) loserRow.disposition = 'url-merge';
                 if (winner !== existing) {
                     existing.doc = winner.doc;
                     existing.score = winner.score;
@@ -429,6 +494,8 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
                 title: loser.doc.title ?? '',
                 url: loser.doc.sourceUri ?? null,
             });
+            const loserRow = rows?.get(loser.doc);
+            if (loserRow) loserRow.disposition = 'title-merge';
             absorbed.add(loser);
         }
     }
@@ -440,12 +507,19 @@ export function planEpisode(docs: Doc[], options: PlanOptions): Doc[] {
     for (const record of candidates) {
         const source = sourceOf(record.doc);
         const count = perSource.get(source) ?? 0;
-        if (count >= PER_SOURCE_CAP) continue;
+        if (count >= PER_SOURCE_CAP) {
+            const row = rows?.get(record.doc);
+            if (row) row.disposition = 'cap';
+            continue;
+        }
         perSource.set(source, count + 1);
         selected.push(record);
+        const row = rows?.get(record.doc);
+        if (row) row.disposition = 'selected';
         if (selected.length >= Math.max(1, options.maxItems)) break;
     }
 
+    if (rows) options.audit?.push(...rows.values());
     return selected.map((r) => {
         const meta = asRecord(r.doc.metadata);
         const ascii = asciiRatio(r.doc.title ?? '');
@@ -493,8 +567,8 @@ export function renderPlanMarkdown(docs: Doc[], date: string): string {
 }
 
 /** Build the plan Content; `metadata.docs` is the contract with the workflow. */
-export function docsToContent(docs: Doc[], date: string): Content {
-    const planned = planEpisode(docs, { maxItems: maxItemsFromEnv(), date });
+export function docsToContent(docs: Doc[], date: string, audit?: PlanAuditRow[]): Content {
+    const planned = planEpisode(docs, { maxItems: maxItemsFromEnv(), date, audit });
     return planContent(planned, date);
 }
 
@@ -559,7 +633,11 @@ export interface RejectedDoc {
 
 /** Single source of filter defaults — standalone CLI and workflow stay in lockstep (no divergence). */
 export const DEFAULT_FILTER_CONFIG: FilterConfig = {
-    categories: ['ai-news', 'ai-industry'],
+    // 20260917 funnel: genuine AI stories died on `category:not-in-allowlist` while carrying
+    // technical/research annotations — widen the default allowlist to the whole AI taxonomy;
+    // `non-ai` stays excluded (that is the point of the gate). Moves in lockstep with the
+    // workflow's qc_categories pin (kk-daily-ai-voice.yaml).
+    categories: ['ai-news', 'ai-technical', 'ai-research', 'ai-industry'],
     // 0098 dogfood calibration (r7, owner-approved 0099): the shipped 3/3/2/2 rejected 20/20
     // live candidates — the two strongest ai-news items died solely on `impact:1<2`, and
     // discussion-tier last30days content scores quality 2. quality 3→2, impact 2→1
@@ -682,11 +760,13 @@ export async function processGeneratorIO(
     return mode === 'filter' ? processFilterIO(inputPath, outputPath) : processPlanIO(inputPath, outputPath);
 }
 
-/** Plan mode (default, behavior unchanged): blended `Doc[]` → gated/annotated plan Content. */
+/** Plan mode (default, behavior unchanged): blended `Doc[]` → gated/annotated plan Content + `<out>.audit.json` selection trail. */
 async function processPlanIO(inputPath: string, outputPath: string): Promise<Content> {
     const docs = DocListSchema.parse(await readJsonFile(inputPath));
-    const content = docsToContent(docs, resolvePlanDate());
+    const audit: PlanAuditRow[] = [];
+    const content = docsToContent(docs, resolvePlanDate(), audit);
     await atomicWrite(outputPath, content);
+    await atomicWrite(planAuditOutPath(outputPath), { date: resolvePlanDate(), total: docs.length, rows: audit });
     return content;
 }
 

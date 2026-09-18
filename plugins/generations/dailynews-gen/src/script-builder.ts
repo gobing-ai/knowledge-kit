@@ -35,6 +35,9 @@ export const VoiceScriptSegmentSchema = z.object({
     engine: z.string().min(1).optional(),
     language: z.string().min(1).optional(),
     gap_ms: z.number().int().nonnegative().optional(),
+    // Per-segment playback rate (0.5–2.0). Facts read at 1.0 (precise), insights at 1.12
+    // (conversational); omitted -> the generator's global default (workflow OMNIVOICE_SPEED).
+    speed: z.number().min(0.5).max(2.0).optional(),
     max_chunk_chars: z.number().int().optional(),
     crossfade_ms: z.number().int().optional(),
     personality: z.boolean().optional(),
@@ -386,6 +389,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
                 text: chunk,
                 gap_ms: 500, // Natural breathing pause before giving personal perspective
                 emotion: 'professional, clear',
+                speed: 1.0, // 20260917 pacing: facts/data read slower than the global 1.06 default
             });
         }
         if (normalizedInsight !== null) {
@@ -393,6 +397,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
                 text: normalizedInsight,
                 gap_ms: 1200, // Clear breath between news items (listener complaint: items ran together)
                 emotion: 'thoughtful, personal',
+                speed: 1.12, // 20260917 pacing: conversational asides read faster than facts
             });
         }
     });
@@ -502,6 +507,9 @@ export function formatVoiceScriptToYaml(script: VoiceScript): string {
         }
         if (segment.gap_ms !== undefined) {
             lines.push(`    gap_ms: ${segment.gap_ms}`);
+        }
+        if (segment.speed !== undefined) {
+            lines.push(`    speed: ${segment.speed}`);
         }
         if (segment.seed !== undefined) {
             lines.push(`    seed: ${segment.seed}`);

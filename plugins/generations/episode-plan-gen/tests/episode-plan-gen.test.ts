@@ -295,7 +295,7 @@ describe('classifyCategory (MECE v1)', () => {
         expect(
             classifyCategory(
                 doc({
-                    title: 'Anthropic raises at a $350B valuation',
+                    title: 'Startup raises at a $350B valuation',
                     body: '公司报道正文。',
                     metadata: { source: 'hackernews' },
                 }),
@@ -611,7 +611,8 @@ describe('annotate on the real r6 blended fixture (R3 determinism at scale)', ()
 describe('filter mode (--mode filter, 0094)', () => {
     const atMins = { quality: 2, importance: 3, urgency: 2, impact: 1 }; // exactly at DEFAULT_FILTER_CONFIG minimums (0099 calibration)
     const defaultConfigShape: Record<string, unknown> = {
-        categories: ['ai-news', 'ai-industry'],
+        // 20260917 funnel: allowlist widened to the whole AI taxonomy (non-ai stays out).
+        categories: ['ai-news', 'ai-technical', 'ai-research', 'ai-industry'],
         minQuality: 2,
         minImportance: 3,
         minUrgency: 2,
@@ -687,7 +688,7 @@ describe('filter mode (--mode filter, 0094)', () => {
         expect(() => filterConfigFromEnv({ QC_CATEGORIES: 'ai-news,' })).toThrow(/QC_CATEGORIES/);
         // 0 and 5 are valid bounds.
         expect(filterConfigFromEnv({ QC_MIN_QUALITY: '0', QC_MIN_IMPACT: '5' })).toEqual({
-            categories: ['ai-news', 'ai-industry'],
+            categories: ['ai-news', 'ai-technical', 'ai-research', 'ai-industry'],
             minQuality: 0,
             minImportance: 3,
             minUrgency: 2,
@@ -726,7 +727,8 @@ describe('filter mode (--mode filter, 0094)', () => {
 
     test('reasons accumulate every failed check, in category → quality → importance → urgency → impact order', () => {
         const { rejected } = filterAnnotated(
-            [annotated('ai-research', { quality: 1, importance: 1, urgency: 1, impact: 0 }, { id: 'bad' })],
+            // non-ai: still outside the widened default allowlist — keeps the category reason first.
+            [annotated('non-ai', { quality: 1, importance: 1, urgency: 1, impact: 0 }, { id: 'bad' })],
             filterConfigFromEnv({}),
         );
         expect(rejected).toHaveLength(1);
@@ -960,19 +962,14 @@ describe('filter replay on the real r6 plan output (0094 verify)', () => {
         const blended = (await Bun.file(fixturePath).json()) as Doc[];
         const plan = planEpisode(blended, { maxItems: 20, date: '2026-09-06' });
         const { kept, rejected } = filterAnnotated(plan, DEFAULT_FILTER_CONFIG);
-        // 0099 calibration: the GPT-6 doc (3/3/5/1) clears impact 1 ≥ 1 and is admitted; the three
-        // remaining survivors fail category (tech-news-2 also importance 2 < 3), with per-doc reasons.
-        expect(kept.map((d) => d.id)).toEqual(['horizon:2026-09-06-ai-creator-2']);
+        // 0099 calibration + 20260917 allowlist widening: both ai-creator docs now clear category
+        // and score through; tech-news-1 dies `non-ai`, tech-news-2 (ai-research) on importance only.
+        expect(kept.map((d) => d.id)).toEqual(['horizon:2026-09-06-ai-creator-1', 'horizon:2026-09-06-ai-creator-2']);
         expect(rejected.map((r) => r.doc.id)).toEqual([
-            'horizon:2026-09-06-ai-creator-1',
             'horizon:2026-09-06-tech-news-1',
             'horizon:2026-09-06-tech-news-2',
         ]);
-        expect(rejected.map((r) => r.reasons)).toEqual([
-            ['category:not-in-allowlist'],
-            ['category:not-in-allowlist'],
-            ['category:not-in-allowlist', 'importance:2<3'],
-        ]);
+        expect(rejected.map((r) => r.reasons)).toEqual([['category:not-in-allowlist'], ['importance:2<3']]);
         const minimums = {
             quality: DEFAULT_FILTER_CONFIG.minQuality,
             importance: DEFAULT_FILTER_CONFIG.minImportance,

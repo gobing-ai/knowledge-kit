@@ -218,3 +218,37 @@ export function concatWavs(wavBuffers: Uint8Array[], gapsMs: number[] = []): Uin
 
     return output;
 }
+
+/**
+ * Resample a segment's playback rate with ffmpeg `atempo` (in-memory stdin/stdout).
+ * Voicebox has no rate parameter, so per-segment `speed` is a local post-step; 1.0 skips.
+ */
+export function applySpeed(wav: Uint8Array, speed: number): Uint8Array {
+    if (speed === 1) return wav;
+    const proc = Bun.spawnSync(
+        [
+            'ffmpeg',
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-f',
+            'wav',
+            '-i',
+            'pipe:0',
+            '-filter:a',
+            `atempo=${speed}`,
+            '-f',
+            'wav',
+            'pipe:1',
+        ],
+        {
+            stdin: Buffer.from(wav),
+            stdout: 'pipe',
+            stderr: 'pipe',
+        },
+    );
+    if (proc.exitCode !== 0 || !proc.stdout) {
+        throw new Error(`ffmpeg atempo failed (exit ${proc.exitCode}): ${proc.stderr?.toString().trim()}`);
+    }
+    return new Uint8Array(proc.stdout);
+}

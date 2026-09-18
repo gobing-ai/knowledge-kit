@@ -153,6 +153,8 @@ export interface VoiceSegment {
     engine?: string;
     language?: string;
     gap_ms?: number;
+    /** Playback rate multiplier (0.5–2.0); undefined/1 = generator default (VOICEBOX envs don't carry speed — local atempo). */
+    speed?: number;
     max_chunk_chars?: number;
     crossfade_ms?: number;
     personality?: boolean;
@@ -538,6 +540,12 @@ export function validateVoiceScript(script: VoiceScript): void {
         if (segment.gap_ms !== undefined) {
             if (typeof segment.gap_ms !== 'number' || segment.gap_ms < 0) {
                 throw new Error('gap_ms must be non-negative');
+            }
+        }
+
+        if (segment.speed !== undefined) {
+            if (typeof segment.speed !== 'number' || segment.speed < 0.5 || segment.speed > 2.0) {
+                throw new Error('speed must be between 0.5 and 2.0');
             }
         }
 

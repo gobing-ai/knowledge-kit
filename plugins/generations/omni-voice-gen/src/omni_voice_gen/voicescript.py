@@ -70,6 +70,7 @@ class VoiceSegment:
     engine: Any = None
     language: Any = None
     gap_ms: Any = None
+    speed: Any = None
     max_chunk_chars: Any = None
     crossfade_ms: Any = None
     personality: Any = None
@@ -333,6 +334,13 @@ def validate_voice_script(script: VoiceScript, sink: WarnSink) -> None:
             isinstance(segment.gap_ms, bool) or not isinstance(segment.gap_ms, (int, float)) or segment.gap_ms < 0
         ):
             raise ValueError("gap_ms must be non-negative")
+
+        if segment.speed is not None and (
+            isinstance(segment.speed, bool)
+            or not isinstance(segment.speed, (int, float))
+            or not 0.5 <= float(segment.speed) <= 2.0
+        ):
+            raise ValueError("speed must be between 0.5 and 2.0")
 
         if segment.seed is not None and (not _is_int(segment.seed) or segment.seed < 0):
             raise ValueError("seed must be a non-negative integer")

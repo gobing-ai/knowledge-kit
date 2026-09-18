@@ -6,6 +6,7 @@ import { ContentSchema, type Doc, discoverPlugins } from '@gobing-ai/kk-core';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
+    applySpeed,
     concatWavs,
     createVoiceboxClient,
     isMp3Requested,
@@ -868,6 +869,19 @@ segments:
             fetch: async () => new Response('Internal error', { status: 500 }),
         });
         await expect(transErrClient.transcribe(new Uint8Array(50))).rejects.toThrow(/HTTP 500/);
+    });
+
+    it('Concat — applySpeed: 1.0 is a pass-through; 2.0 halves the duration via ffmpeg atempo', () => {
+        const wav = createTestWav(4800, 24000); // 0.2s sine-ish tone
+        expect(applySpeed(wav, 1)).toBe(wav);
+
+        const spedUp = applySpeed(wav, 2);
+        const parsed = parseWav(spedUp);
+        expect(parsed.sampleRate).toBe(24000);
+        // atempo halves the duration; boundary trimming makes it sample-inexact (±10%).
+        const samples = parsed.dataBytes.length / 2;
+        expect(samples).toBeGreaterThan(2400 * 0.9);
+        expect(samples).toBeLessThan(2401);
     });
 
     it('Concat — concatWavs edge cases and validation', () => {

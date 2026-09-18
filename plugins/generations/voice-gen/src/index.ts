@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import { concatWavs } from './concat';
+import { applySpeed, concatWavs } from './concat';
 import { isMp3Requested, type Mp3Transcoder, transcodeWavToMp3 } from './mp3';
 import { auditVoiceSegments, detectLoudnessDip, TRANSCRIPTION_FIDELITY_FLOOR, transcriptionFidelity } from './qc';
 import { createVoiceboxClient, type VoiceboxClient, type VoiceboxGenerateBody } from './voicebox-client';
@@ -281,20 +281,22 @@ export async function processGeneratorIO(
             }
 
             const gap = segment.gap_ms ?? 0;
+            const speed = segment.speed ?? 1;
 
-            segmentWavs.push(wavBytes);
+            segmentWavs.push(applySpeed(wavBytes, speed));
             segmentGaps.push(gap);
 
-            totalDuration += segDuration + gap / 1000;
+            totalDuration += segDuration / speed + gap / 1000;
             segmentMetadata.push({
                 generationId,
                 profile: resolvedProfile.name,
                 speaker: segment.speaker,
                 emotion: rawEmotion,
-                duration: segDuration,
+                duration: segDuration / speed,
                 verifyRetries,
                 transcription,
                 loudnessDip,
+                ...(speed !== 1 ? { speed } : {}),
             });
             echoError(
                 `voice-gen: segment ${segIndex + 1}/${combinedScript.segments.length} done in ${((Date.now() - segStartedAt) / 1000).toFixed(1)}s${verifyRetries ? ` (${verifyRetries} verify ${verifyRetries === 1 ? 'retry' : 'retries'})` : ''}`,

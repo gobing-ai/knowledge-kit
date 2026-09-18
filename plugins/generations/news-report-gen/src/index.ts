@@ -231,6 +231,7 @@ export function renderReportMarkdown(
         rejected?: { doc: Doc; reasons: string[] }[];
         timing?: TimingEntry[];
         qc?: QcSummary | null;
+        planAudit?: PlanAuditRow[] | null;
     } = {},
 ): string {
     const lines: string[] = [`# 每日 AI 语音运行报告 — ${date}`, ''];
@@ -271,6 +272,25 @@ export function renderReportMarkdown(
     }
     lines.push(`| category allowlist | — | ${counts.category} |`);
     lines.push('');
+
+    const planAudit = options.planAudit ?? null;
+    if (planAudit !== null && planAudit.length > 0) {
+        // 20260917 funnel: the report only showed the 2 survivors — every fetched title, its
+        // scores and its elimination reason now render here (selection is auditable end to end).
+        lines.push(`## 选稿漏斗（全量审计，共 ${planAudit.length} 条）`, '');
+        lines.push(
+            '| 来源 | 标题 | 类别 | q | i | u | im | score | 去向 |',
+            '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        );
+        for (const row of planAudit) {
+            const s = row.scores ?? {};
+            const title = (row.title || row.id).replace(/\|/g, '\\|').slice(0, 60);
+            lines.push(
+                `| ${row.source} | ${title} | ${row.category} | ${s.quality ?? '—'} | ${s.importance ?? '—'} | ${s.urgency ?? '—'} | ${s.impact ?? '—'} | ${row.planScore ?? '—'} | ${row.disposition} |`,
+            );
+        }
+        lines.push('');
+    }
 
     const qc = options.qc ?? null;
     if (qc !== null) {
@@ -322,6 +342,29 @@ export async function readRejectedAudit(path: string | undefined): Promise<Rejec
     }
 }
 
+/** One row of episode-plan-gen's `<out>.audit.json` selection trail (plan mode). */
+export interface PlanAuditRow {
+    id: string;
+    source: string;
+    title: string;
+    category: string;
+    scores: Record<string, number>;
+    planScore: number | null;
+    disposition: 'gate' | 'url-merge' | 'title-merge' | 'cap' | 'topN' | 'selected';
+}
+
+/** Read the plan-mode audit envelope `{ total, rows }`; absent/unreadable/malformed -> null (never throw). */
+export async function readPlanAudit(path: string | undefined): Promise<PlanAuditRow[] | null> {
+    if (!path || path.trim() === '') return null;
+    try {
+        const parsed: unknown = JSON.parse(await Bun.file(path).text());
+        const rows = (parsed as { rows?: unknown } | null)?.rows;
+        return Array.isArray(rows) ? (rows as PlanAuditRow[]) : null;
+    } catch {
+        return null;
+    }
+}
+
 /** Build the report Content from a kept-candidate Doc[]. */
 export function docsToContent(
     docs: Doc[],
@@ -330,6 +373,7 @@ export function docsToContent(
         rejected?: { doc: Doc; reasons: string[] }[];
         timing?: TimingEntry[];
         qc?: QcSummary | null;
+        planAudit?: PlanAuditRow[] | null;
     },
 ): Content {
     return ContentSchema.parse({
@@ -350,7 +394,8 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
     const rejected = await readRejectedAudit(process.env.NEWS_REPORT_REJECTED_FILE);
     const timing = await readTiming(process.env.NEWS_REPORT_TIMING_FILE);
     const qc = await readQcSummary(process.env.NEWS_REPORT_QC_FILE);
-    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc });
+    const planAudit = await readPlanAudit(process.env.NEWS_REPORT_PLAN_AUDIT_FILE);
+    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc, planAudit });
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);
