@@ -435,6 +435,43 @@ describe('runInvoke', () => {
         });
     });
 
+    it('0110 I2b — timeout reaps a grandchild whose spawn was in flight at kill time', async () => {
+        await withTempDir(async (root) => {
+            const scriptsDir = join(root, 'scripts');
+            mkdirSync(scriptsDir, { recursive: true });
+            // The entry delays its grandchild spawn to ~250ms — inside the 300ms kill
+            // window. A single-snapshot walk misses the in-flight spawn, kills the
+            // root, and the grandchild registers under launchd as an unreachable
+            // orphan that writes the marker at +2s. The two-sweep kill (settle, then
+            // sweep again while the root is still alive) must reap it.
+            const marker = join(root, 'grandchild-lived.txt');
+            const grandchild = `setTimeout(() => { const { writeFileSync } = require('node:fs'); writeFileSync(${JSON.stringify(marker)}, 'x'); }, 2000); setInterval(() => {}, 1000);`;
+            writeFileSync(
+                join(scriptsDir, 'run.ts'),
+                `import { spawn } from 'node:child_process';
+setTimeout(() => {
+    spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });
+}, 250);
+setInterval(() => {}, 1000);
+`,
+            );
+
+            const res = await spawnPluginEntryAsync({
+                entryPath: join(scriptsDir, 'run.ts'),
+                cwd: root,
+                inPath: join(root, 'in.json'),
+                outPath: join(root, 'out.json'),
+                timeoutMs: 300,
+            });
+            expect(res.timedOut).toBe(true);
+
+            // Grace past the grandchild's 2s write deadline (marker deadline is
+            // ~250ms spawn + 2000ms = 2.25s from entry start).
+            await Bun.sleep(2600);
+            expect(existsSync(marker)).toBe(false);
+        });
+    });
+
     it('handles ingestion kind with source path and output validation', async () => {
         await withTempDir(async (root) => {
             const pluginDir = pluginDirOf(root, 'ingestion', 'ingest-plugin');

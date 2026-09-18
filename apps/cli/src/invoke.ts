@@ -177,22 +177,51 @@ export interface PluginEntryAsyncSpawnOptions extends PluginEntrySpawnOptions {
  * it spawned (e.g. a `spur agent run` stage) would survive and keep writing
  * artifacts. Depth-first pgrep walk; SIGKILL throughout.
  *
+ * Two sweeps with a settle window: a spawn that was in flight during sweep 1
+ * registers under the — still alive — root pid within microseconds; sweep 2
+ * reaps it. Killing the root before that window turns late registrations into
+ * orphans reparented to launchd, unreachable by any pgrep -P walk (0110 I2b).
+ *
  * ponytail: POSIX only (`pgrep -P` walk). A Windows kk executor would use
  * `taskkill /T /F /PID <pid>` — add when one exists.
  */
-function killProcessTree(pid: number): void {
+const KILL_TREE_SETTLE_MS = 100;
+
+function listChildren(pid: number): number[] {
     let stdout: string;
     try {
         stdout = Bun.spawnSync(['pgrep', '-P', String(pid)]).stdout.toString();
     } catch {
         stdout = '';
     }
-    for (const line of stdout.trim().split('\n')) {
-        const child = Number(line);
-        if (Number.isInteger(child) && child > 0) {
-            killProcessTree(child);
-        }
+    return stdout
+        .trim()
+        .split('\n')
+        .map(Number)
+        .filter((child) => Number.isInteger(child) && child > 0);
+}
+
+/** Kill `pid` and everything below it, children first so nothing respawns it. Synchronous sweep unit. */
+function killSubtree(pid: number): void {
+    for (const child of listChildren(pid)) {
+        killSubtree(child);
     }
+    try {
+        process.kill(pid, 'SIGKILL');
+    } catch {
+        // Already gone — the end state we want.
+    }
+}
+
+async function killProcessTree(pid: number): Promise<void> {
+    const sweep = () => {
+        for (const child of listChildren(pid)) {
+            killSubtree(child);
+        }
+    };
+    sweep();
+    await Bun.sleep(KILL_TREE_SETTLE_MS);
+    sweep();
     try {
         process.kill(pid, 'SIGKILL');
     } catch {
@@ -228,7 +257,11 @@ export async function spawnPluginEntryAsync(opts: PluginEntryAsyncSpawnOptions):
     if (opts.timeoutMs !== undefined) {
         timer = setTimeout(() => {
             timedOut = true;
-            killProcessTree(proc.pid);
+            // Fire-and-forget: killProcessTree cannot reject (all kill/spawn calls are
+            // guarded), and the caller's `await proc.exited` plus pipe drains already
+            // bound the observable completion. The root dies last, after the settle
+            // sweep, so this keeps running slightly past exit — by design (0110 I2b).
+            void killProcessTree(proc.pid);
         }, opts.timeoutMs);
     }
 
