@@ -94,7 +94,7 @@ describe('kk stage verb (0144)', () => {
             const argv1 = fakePkg(dir, 'process.exit(3);\n');
             const stages = join(dir, 'plugins/kk/scripts/kk-workflow-stages.ts');
             // The action resolves the runner from process.argv[1]; point it at the fake package.
-            const prevArgv1 = process.argv[1];
+            const prevArgv1 = process.argv[1] ?? '';
             process.argv[1] = argv1;
             const prevCwd = process.cwd();
             process.chdir(dir); // cwd fallback must not mask the package tier
