@@ -363,6 +363,9 @@ async function publishEpisode(
         url: publicItemUrl(item, itemId, client),
         id: itemId,
         message: 'Published successfully to microfeed (two-phase upload + publish)',
+        // 20260917 review #6: downstream surfdash patch reuses the podcast-hosted cover URL
+        // (no re-upload); null when the episode carried no local cover.
+        metadata: { itemId, imageUrl: imageUrl ?? null },
     });
 }
 

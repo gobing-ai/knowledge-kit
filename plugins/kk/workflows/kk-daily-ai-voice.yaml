@@ -19,7 +19,12 @@ vars:
   limit: "10"
   language: "zh"
   voice_profile: "robin-news"
-  voice_generator: "omni-voice-gen"
+  # 20260917: voice driver switch — ominivoice (default, omni-voice-gen) | voicebox (voice-gen).
+  vdriver: "ominivoice"
+  # 20260917 review #7: 8s intro sting prepended to every daily output; empty = skip.
+  intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
+  # 20260917 review #4/#6: surfdash checkout the patch stage commits to.
+  surfdash_root: "/Users/robin/xprojects/surfdash"
   title: ""
   cursor: ""
   state_file: ""
@@ -38,7 +43,10 @@ vars:
   agent: "inline"
   surfdash_en_post_path: ""
   surfdash_ja_post_path: ""
-  qc_categories: "ai-news,ai-industry"
+  # 20260917 funnel: allowlist widened to the whole AI taxonomy in lockstep with
+  # episode-plan-gen's DEFAULT_FILTER_CONFIG — genuine technical/research stories died on
+  # category:not-in-allowlist. `non-ai` stays excluded (that is the point of the gate).
+  qc_categories: "ai-news,ai-technical,ai-research,ai-industry"
   # 0098 dogfood calibration (r7, owner-approved 0099): quality 3→2, impact 2→1 — the shipped
   # defaults rejected 20/20 live candidates (strongest ai-news items died solely on impact:1<2).
   # These pins must move in lockstep with episode-plan-gen's DEFAULT_FILTER_CONFIG (env wins).
@@ -221,7 +229,7 @@ states:
             bun "$st" daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
-    description: "Invoke voice generator plugin (voice_generator var) to generate audio"
+    description: "Invoke voice driver plugin (vdriver var: ominivoice -> omni-voice-gen, voicebox -> voice-gen) to generate audio"
     onEnter:
       - kind: shell
         options:
@@ -231,7 +239,20 @@ states:
             st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            OMNIVOICE_SPEED=1.06 bun "$st" daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.voice_generator}"
+            OMNIVOICE_SPEED=1.06 bun "$st" daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}"
+
+  - id: intro-music
+    description: "Prepend the 8s intro sting (intro_music var; empty = skip) to the generated wav, update duration/audioPath"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
@@ -310,6 +331,19 @@ states:
             [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
             bun "$st" daily-publish-classify "${vars.work_dir}" "${vars.run_date}"
+
+  - id: patch-surfdash
+    description: "20260917 #4/#6 — patch published surfdash posts: podcast cover URL into image/og_image frontmatter + podcast cross-link (zh/en/ja), commit+push"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kbin="$(command -v kk 2>/dev/null)";
+            pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";
+            st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
+            [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
+            bun "$st" daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.surfdash_root}"
 
   - id: publish-partial
     description: "Partial publish — at least one target published, at least one failed; echo warning, write a .spur/run marker, preserve result.json for --retry-from, continue to done (task 0118: surfdash failure = no-URL fallback notes; podcast failure = its own partial)"
@@ -572,12 +606,16 @@ transitions:
       kind: always
 
   - from: publish
-    to: run-report
-    description: "Publish full (all targets published) -> assemble run report first"
+    to: patch-surfdash
+    description: "Publish classified -> patch surfdash posts with cover + podcast cross-link"
     guard:
-      kind: shell
-      options:
-        command: 'test "$(cat "${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt")" = "full"'
+      kind: always
+
+  - from: patch-surfdash
+    to: run-report
+    description: "Posts patched -> assemble run report"
+    guard:
+      kind: always
 
   - from: publish
     to: publish-partial

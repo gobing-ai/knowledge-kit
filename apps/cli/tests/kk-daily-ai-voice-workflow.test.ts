@@ -40,12 +40,14 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'review',
             'wrap-docs',
             'generate',
+            'intro-music',
             'quality-control',
             'publish-prep',
             'publish-surfdash',
             'show-notes',
             'publish-podcast',
             'publish',
+            'patch-surfdash',
             'publish-partial',
             'run-report',
             'translate',
@@ -77,8 +79,11 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('bun "$st" daily-prepare');
         expect(runnerSource).toContain("last30daysEnabled !== 'true'");
         expect(runnerSource).toContain("'1-ingest/last30days-docs.json'");
+        expect(yaml).toContain('vdriver: "ominivoice"');
+        expect(yaml).toContain('intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"');
+        expect(yaml).toContain('surfdash_root: "/Users/robin/xprojects/surfdash"');
         // Content QC thresholds ride the plugin env channel (0099-calibrated DEFAULT_FILTER_CONFIG).
-        expect(yaml).toContain('qc_categories: "ai-news,ai-industry"');
+        expect(yaml).toContain('qc_categories: "ai-news,ai-technical,ai-research,ai-industry"');
         expect(yaml).toContain('qc_min_quality: "2"');
         expect(yaml).toContain('qc_min_importance: "3"');
         expect(yaml).toContain('qc_min_urgency: "2"');
@@ -113,7 +118,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
     it('R2/R3 (0133) — the delegated shell actions share one prelude and the prompts stay under the cap', () => {
         // Byte-identity is the frozen contract: a drifted prelude would still pass validate (each
         // action is measured on its own), so the block is asserted identical here. 0143: the two
-        // per-locale translate shells collapsed into daily-translate-localize (19 sites).
+        // per-locale translate shells collapsed into daily-translate-localize (19 sites); the
+        // intro-music and patch-surfdash stages bring the shared-prelude count to 21.
         for (const line of [
             'kbin="$(command -v kk 2>/dev/null)";',
             'pkg="$(dirname "$(dirname "$(realpath "$kbin" 2>/dev/null)")")";',
@@ -121,7 +127,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             '[ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";',
             '[ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;',
         ]) {
-            expect(yaml.split(line).length - 1, `${line.slice(0, 24)} count`).toBe(19);
+            expect(yaml.split(line).length - 1, `${line.slice(0, 24)} count`).toBe(21);
         }
         // ADR-115 R3: the two trimmed prompts stay under the 1000-char error tier.
         for (const [step, cap] of [
@@ -178,13 +184,15 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `bun "$st" daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
             `bun "$st" daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,
             `bun "$st" daily-wrap-docs "\${vars.work_dir}" "\${vars.run_date}" "\${vars.voice_profile}"`,
-            `bun "$st" daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.voice_generator}"`,
+            `OMNIVOICE_SPEED=1.06 bun "$st" daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.vdriver}"`,
+            `bun "$st" daily-intro "\${vars.work_dir}" "\${vars.run_date}" "\${vars.intro_music}"`,
             `bun "$st" daily-quality-report "\${vars.work_dir}" "\${vars.run_date}"`,
             `bun "$st" daily-publish-prep "\${vars.work_dir}" "\${vars.run_date}"`,
             `bun "$st" daily-publish-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `bun "$st" daily-show-notes "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.title}"`,
             `bun "$st" daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `bun "$st" daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
+            `bun "$st" daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}"`,
             `bun "$st" daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
             `bun "$st" daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `bun "$st" daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
@@ -233,13 +241,13 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
                 'kk-daily-ai-voice integration test requires `spur` on PATH (the repo quality gate installs it); refusing to skip silently',
             );
         }
-        // unset -> workflow default omni-voice-gen (ADR-020 amendment 2026-09-13); explicit
-        // 'voice-gen' pins the Voicebox REST fallback path.
+        // unset -> workflow default vdriver 'ominivoice' (omni-voice-gen, ADR-020 amendment
+        // 2026-09-13); explicit 'voicebox' pins the Voicebox REST fallback path.
         // 0140: the third case drives a degradation-class audit (`passed:false`, no
         // `repetition_detected`) through the real engine — Branch A publishes it warn-only.
-        for (const [voiceGenerator, qcPassed] of [
+        for (const [vdriver, qcPassed] of [
             [undefined, true],
-            ['voice-gen', true],
+            ['voicebox', true],
             [undefined, false],
         ] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
@@ -407,7 +415,7 @@ if (plugin === 'aihot-ingest') {
                     publish_enabled: 'false',
                     last30days_enabled: 'true',
                     plugins_path: join(testRoot, 'plugin root'),
-                    voice_generator: voiceGenerator,
+                    vdriver,
                 });
                 const result = Bun.spawnSync(
                     ['spur', 'workflow', 'run', workflowPath, '--vars', vars, '--run-id', runId, '--json'],
@@ -455,7 +463,7 @@ if (plugin === 'aihot-ingest') {
                 expect(existsSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`))).toBe(true);
                 expect(existsSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`))).toBe(true);
                 expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
-                if (voiceGenerator !== 'voice-gen') {
+                if (vdriver !== 'voicebox') {
                     const swapped = JSON.parse(
                         readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
                     );
@@ -480,7 +488,7 @@ if (plugin === 'aihot-ingest') {
                     'episode-plan-gen',
                     'daily-article-gen',
                     'dailynews-gen',
-                    voiceGenerator ?? 'omni-voice-gen',
+                    vdriver === 'voicebox' ? 'voice-gen' : 'omni-voice-gen',
                 ]);
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).

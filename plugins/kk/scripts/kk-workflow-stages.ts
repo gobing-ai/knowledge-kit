@@ -884,7 +884,17 @@ function dailyWrapDocs(args: string[]): void {
 }
 
 function dailyGenerate(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', voiceGenerator = ''] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', vdriver = ''] = args;
+    // 20260917 review: the workflow picks a voice driver by short name; both drivers' envs are
+    // passed unconditionally so switching `vdriver` needs no shell changes. Unknown -> fail loud.
+    const VOICE_DRIVERS: Record<string, string> = { ominivoice: 'omni-voice-gen', voicebox: 'voice-gen' };
+    const voiceGenerator = VOICE_DRIVERS[vdriver];
+    if (!voiceGenerator) {
+        failWith(
+            1,
+            `generate: unknown vdriver '${vdriver}' (expected one of: ${Object.keys(VOICE_DRIVERS).join(', ')})`,
+        );
+    }
     const docs = join(workDir, '3-audio', `${runDate}_10_wrap-docs_docs.json`);
     const content = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
     timed(workDir, 'generate', () => {
@@ -898,6 +908,111 @@ function dailyGenerate(args: string[]): void {
         kk(['executor', 'run', voiceGenerator, '--in', docs, '--out', content, ...pluginsArgs(pluginsPath)], {
             env: { VOICE_GEN_MP3: transcodeMp3 },
         });
+    });
+}
+
+/**
+ * 20260917 review #7: prepend the show's 8s intro sting to the generated audio.
+ * `intro_music` empty -> skip. Writes `<stem>.intro.wav` (original render kept), points
+ * `audioPath` at the merged file, extends `duration`, marks `introMerged` (idempotent).
+ */
+function dailyIntro(args: string[]): void {
+    const [workDir = '', runDate = '', introSrc = ''] = args;
+    if (!introSrc || introSrc.trim() === '') {
+        console.log('intro-music: intro_music var empty — skip');
+        return;
+    }
+    const contentPath = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    timed(workDir, 'intro-music', () => {
+        const content = requireJson(contentPath, 'intro-music');
+        const meta = metadataOf(content);
+        if (meta.introMerged === true) {
+            console.log(`intro-music cached: ${contentPath}`);
+            return;
+        }
+        const rawFile = meta.mp3Path ?? meta.audioPath;
+        if (typeof rawFile !== 'string' || rawFile === '') {
+            failWith(1, 'intro-music: voice content carries no mp3Path/audioPath');
+        }
+        const introPath = resolve(introSrc);
+        if (!existsSync(introPath)) failWith(1, `intro-music: intro file not found: ${introPath}`);
+        const mainPath = resolve(rawFile);
+        if (!existsSync(mainPath)) failWith(1, `intro-music: generated audio not found: ${mainPath}`);
+        const mergedPath = mainPath.replace(/\.wav$/, '.intro.wav');
+        const probe = (file: string, entries: string): string =>
+            spawnSync('ffprobe', [
+                '-v',
+                'error',
+                '-select_streams',
+                'a:0',
+                '-show_entries',
+                entries,
+                '-of',
+                'csv=p=0',
+                file,
+            ])
+                .stdout?.toString()
+                .trim() ?? '';
+        const mainDur = Number.parseFloat(probe(mainPath, 'format=duration'));
+        const introDur = Number.parseFloat(probe(introPath, 'format=duration'));
+        if (!Number.isFinite(mainDur) || !Number.isFinite(introDur)) {
+            failWith(1, `intro-music: ffprobe could not read durations (main=${mainDur} intro=${introDur})`);
+        }
+        const rate = probe(mainPath, 'stream=sample_rate') || '24000'; // match the generated audio's rate; mono s16 both sides
+        const norm = (label: string): string =>
+            `[${label}:a]aresample=${rate},aformat=sample_fmts=s16:channel_layouts=mono[${label}]`;
+        const fc = `${norm('0')};${norm('1')};[0][1]concat=n=2:v=0:a=1[out]`;
+        const conv = spawnSync('ffmpeg', [
+            '-y',
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-i',
+            introPath,
+            '-i',
+            mainPath,
+            '-filter_complex',
+            fc,
+            '-map',
+            '[out]',
+            '-c:a',
+            'pcm_s16le',
+            mergedPath,
+        ]);
+        if (conv.status !== 0 || !existsSync(mergedPath)) {
+            failWith(1, `intro-music: ffmpeg concat failed: ${conv.stderr?.toString().trim()}`);
+        }
+        if (meta.mp3Path && typeof meta.mp3Path === 'string') {
+            // transcode_mp3=true: keep the mp3 path honest by re-transcoding the merged wav.
+            const mp3 = spawnSync('ffmpeg', [
+                '-y',
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-i',
+                mergedPath,
+                '-codec:a',
+                'libmp3lame',
+                '-qscale:a',
+                '2',
+                resolve(meta.mp3Path),
+            ]);
+            if (mp3.status !== 0) failWith(1, `intro-music: mp3 re-transcode failed: ${mp3.stderr?.toString().trim()}`);
+        }
+        const mergedDur = Number.parseFloat(probe(mergedPath, 'format=duration')) || mainDur + introDur;
+        const updated = {
+            ...content,
+            metadata: {
+                ...meta,
+                audioPath: mergedPath,
+                duration: mergedDur,
+                introMerged: true,
+            },
+        };
+        sted('write', contentPath, () => writeJsonText(contentPath, updated));
+        console.log(
+            `intro-music: merged ${introDur.toFixed(1)}s intro -> ${mergedPath} (${mergedDur.toFixed(1)}s total)`,
+        );
     });
 }
 
@@ -1116,6 +1231,95 @@ function dailyPublishPartial(args: string[]): void {
     });
 }
 
+/**
+ * 20260917 review #4/#6: after both publishes land, patch the surfdash disk posts —
+ * reuse the podcast-hosted cover URL in frontmatter (image/og_image; no re-upload; fallback:
+ * copy the local cover into assets/) and append a podcast cross-link at the end of zh/en/ja.
+ * Idempotent per post; commits + pushes the surfdash checkout (SURFDASH_AUTO_PUSH=0 keeps commit-only).
+ */
+function dailyPatchSurfdash(args: string[]): void {
+    const [workDir = '', runDate = '', surfdashRoot = ''] = args;
+    if (!surfdashRoot || !existsSync(surfdashRoot)) {
+        console.log(`patch-surfdash: surfdash root '${surfdashRoot}' not found — skip`);
+        return;
+    }
+    timed(workDir, 'patch-surfdash', () => {
+        const sdResult = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
+        const podcastResult = join(workDir, '3-publish', `${runDate}_16_publish-podcast_result.json`);
+        if (!isFile(sdResult) || !isFile(podcastResult)) {
+            failWith(1, 'patch-surfdash: missing surfdash/podcast publish results — run the publish states first');
+        }
+        const targetOf = (path: string): Record<string, unknown> => {
+            const parsed = readJson(path) as { targets?: Array<Record<string, unknown>> };
+            return parsed.targets?.[0] ?? {};
+        };
+        const sd = targetOf(sdResult);
+        const pod = targetOf(podcastResult);
+        const postPath = (sd.metadata as Record<string, unknown> | undefined)?.postPath;
+        if (typeof postPath !== 'string' || postPath === '')
+            failWith(1, 'patch-surfdash: surfdash result carries no postPath');
+        const slugDir = dirname(postPath);
+        const showNotesUrl = typeof pod.url === 'string' ? pod.url : '';
+        const coverUrl = ((pod.metadata as Record<string, unknown> | undefined)?.imageUrl as string | undefined) ?? '';
+        const localCover = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
+        const dateIso = `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`;
+        const crossLink: Record<string, string> = {
+            zh: `🎧 本期已同步制作为播客节目，[点击收听《每日 AI 资讯 · ${dateIso}》](${showNotesUrl})。`,
+            en: `🎧 This episode is also available as a podcast: [listen to the Daily AI Briefing · ${dateIso}](${showNotesUrl}).`,
+            ja: `🎧 本エピソードはポッドキャストでも配信中：[Daily AI Briefing · ${dateIso} を聴く](${showNotesUrl})。`,
+        };
+        let changed = 0;
+        for (const [locale, dir] of [
+            ['zh', slugDir],
+            ['en', join(dirname(slugDir), 'en', basename(slugDir))],
+            ['ja', join(dirname(slugDir), 'ja', basename(slugDir))],
+        ] as const) {
+            const indexMd = join(dir, 'index.md');
+            if (!existsSync(indexMd)) {
+                console.log(`patch-surfdash: ${locale} post not published (${indexMd}) — skip`);
+                continue;
+            }
+            let md = readFileSync(indexMd, 'utf-8');
+            const fmEnd = md.indexOf('---', 3); // frontmatter is `---\n ... \n---\n`
+            if (fmEnd < 0) failWith(1, `patch-surfdash: no frontmatter in ${indexMd}`);
+            if (!/^image:/m.test(md.slice(0, fmEnd))) {
+                let image = coverUrl;
+                if (image === '' && existsSync(localCover)) {
+                    // Fallback for pre-#6 runs: copy the local cover instead of a hosted URL.
+                    const assets = join(dir, 'assets');
+                    mkdirSync(assets, { recursive: true });
+                    copyFileSync(localCover, join(assets, 'cover.png'));
+                    image = './assets/cover.png';
+                }
+                if (image !== '') {
+                    md = md.replace(/^publishDate: .*$/m, (m0) => `${m0}\nimage: '${image}'\nog_image: '${image}'`);
+                }
+            }
+            if (showNotesUrl !== '' && !md.includes(showNotesUrl)) {
+                md = `${md.replace(/\s*$/, '')}\n\n${crossLink[locale]}\n`;
+            }
+            if (md !== readFileSync(indexMd, 'utf-8')) {
+                sted('write', indexMd, () => writeFileSync(indexMd, md));
+                changed++;
+            }
+        }
+        if (changed === 0) {
+            console.log('patch-surfdash: nothing to change');
+            return;
+        }
+        const git = (...a: string[]): void => {
+            const r = spawnSync('git', ['-C', surfdashRoot, ...a]);
+            if (r.status !== 0) failWith(1, `patch-surfdash: git ${a[0]} failed: ${r.stderr?.toString().trim()}`);
+        };
+        git('add', 'content/posts/articles');
+        git('commit', '-m', `feat: cover + podcast cross-link for ${basename(slugDir)} (kk daily patch)`);
+        if (process.env.SURFDASH_AUTO_PUSH !== '0') git('push');
+        console.log(
+            `patch-surfdash: patched ${changed} post(s), committed${process.env.SURFDASH_AUTO_PUSH !== '0' ? ' + pushed' : ' (push skipped: SURFDASH_AUTO_PUSH=0)'}`,
+        );
+    });
+}
+
 function dailyRunReport(args: string[]): void {
     const [
         workDir = '',
@@ -1154,6 +1358,9 @@ function dailyRunReport(args: string[]): void {
                 NEWS_REPORT_TIMING_FILE: join(workDir, 'step-timing.json'),
                 // 0139 R5b: the generate stage's QC audit, read best-effort (absent -> section omitted).
                 NEWS_REPORT_QC_FILE: join(workDir, '3-audio', `${runDate}_11_generate_content.json`),
+                // 20260917 funnel: the plan stage's full selection trail (every fetched title +
+                // scores + disposition), rendered as the 选稿漏斗 section (absent -> omitted).
+                NEWS_REPORT_PLAN_AUDIT_FILE: join(workDir, '2-plan', `${runDate}_03_plan_plan.json.audit.json`),
                 NEWS_REPORT_DATE: runDate,
             },
         });
@@ -1329,6 +1536,9 @@ if (import.meta.main)
         case 'daily-generate':
             dailyGenerate(rest);
             break;
+        case 'daily-intro':
+            dailyIntro(rest);
+            break;
         case 'daily-quality-report':
             dailyQualityReport(rest);
             break;
@@ -1346,6 +1556,9 @@ if (import.meta.main)
             break;
         case 'daily-publish-classify':
             dailyPublishClassify(rest);
+            break;
+        case 'daily-patch-surfdash':
+            dailyPatchSurfdash(rest);
             break;
         case 'daily-publish-partial':
             dailyPublishPartial(rest);
