@@ -169,6 +169,38 @@ def test_audit_empty_script_passes_with_score_100() -> None:
     assert report.segment_audits == []
 
 
+# Dogfood 2026-09-18: a version string in the source text tripped the word-run regex and
+# condemned a 70-minute render. The battery is transcription-only (voice-gen qc.ts parity)
+# and an issue only when duration anomaly corroborates.
+def test_audit_source_text_version_string_does_not_flag_repetition() -> None:
+    script = script_with(VoiceSegment(text="版本1.1.1.发布", language="zh"))
+    report = audit_voice_segments(script, [CLEAN_WAV], [{"duration": 1.0}])
+    audit = report.segment_audits[0]
+    assert audit.repetition_detected is False
+    assert all("repetition_detected" not in issue for issue in audit.issues)
+
+
+def test_audit_transcription_repetition_without_duration_anomaly_is_recorded_not_failed() -> None:
+    # Whisper phantom loop over trailing silence: repetition recorded, no issue, audit passes.
+    script = script_with(VoiceSegment(text="你好世界", language="zh"))
+    meta = {"duration": 1.0, "transcription": "你好世界ababab"}
+    report = audit_voice_segments(script, [CLEAN_WAV], [meta])
+    audit = report.segment_audits[0]
+    assert audit.repetition_detected is True
+    assert all("repetition_detected" not in issue for issue in audit.issues)
+    assert report.passed is True
+
+
+def test_audit_transcription_repetition_with_duration_anomaly_fails() -> None:
+    # Real TTS loop: repetition + inflated duration -> corroborated issue (R5a keys on this).
+    script = script_with(VoiceSegment(text="你好世界", language="zh"))
+    meta = {"duration": 30.0, "transcription": "你好世界ababab"}
+    report = audit_voice_segments(script, [CLEAN_WAV], [meta])
+    audit = report.segment_audits[0]
+    assert any("repetition_detected" in issue for issue in audit.issues)
+    assert report.passed is False
+
+
 def test_audit_backend_transcription_success_and_low_fidelity() -> None:
     backend = StubBackend(result="completely unrelated transcription")
     script = script_with(VoiceSegment(text="你好世界", language="zh"))
@@ -207,12 +239,13 @@ def test_audit_empty_transcription_skips_fidelity() -> None:
     assert report.segment_audits[0].fidelity_score is None
 
 
-def test_audit_repetition_flagged() -> None:
+def test_audit_source_repetition_without_transcription_not_flagged() -> None:
+    # Transcription-only battery: no transcription -> nothing to flag, whatever the source says.
     script = script_with(VoiceSegment(text="aaaa", language="zh"))
-    report = audit_voice_segments(script, [CLEAN_WAV], [{"duration": 10.0}])
+    report = audit_voice_segments(script, [CLEAN_WAV], [{"duration": 1.0}])
     audit = report.segment_audits[0]
-    assert audit.repetition_detected is True
-    assert "repetition_detected" in audit.issues
+    assert audit.repetition_detected is False
+    assert audit.issues == []
 
 
 def test_audit_duration_anomaly_flagged() -> None:

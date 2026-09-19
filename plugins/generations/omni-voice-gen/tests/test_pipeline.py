@@ -332,9 +332,10 @@ def test_repetition_detected_fails_run_but_keeps_content_for_inspection(
     """0139 R5a: repetition is the one QC issue the verify loop cannot fix and the one that damages
     credibility on air, so it fails the run — after writing content.json (outside the
     delete-on-failure path) so the operator can inspect the audit that condemned it."""
-    # The repetition lives in the segment TEXT and the transcription matches it, so fidelity passes
-    # and the verify loop never retries — the only failing signal is repetition itself.
-    backend = FakeBackend([CLEAN_A], [2.0], {0: "ababab"})
+    # The repetition lives in the transcription and is corroborated by a duration anomaly (a real
+    # TTS loop inflates duration — qc.ts parity; dogfood 2026-09-18), so fidelity passes and the
+    # verify loop never retries — the only failing signals are repetition + duration.
+    backend = FakeBackend([CLEAN_A], [60.0], {0: "ababab"})
     monkeypatch.setattr(pipeline, "OmnivoiceBackend", lambda: backend)
     out = tmp_path / "episode.json"
 

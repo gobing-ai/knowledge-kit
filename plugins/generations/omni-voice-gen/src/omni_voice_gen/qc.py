@@ -158,21 +158,6 @@ def audit_voice_segments(
             if fidelity < TRANSCRIPTION_FIDELITY_FLOOR:
                 issues.append(f"transcription_fidelity_low:{fidelity:.2f}")
 
-        # Repetition
-        repetition = detect_repetitions(text) or (
-            detect_repetitions(transcription) if transcription is not None else False
-        )
-        if repetition:
-            issues.append("repetition_detected")
-
-        # Loudness dip: reuse the verify-phase result when present; only run the windowed
-        # scan when the verify phase did not (meta.loudness_dip absent).
-        dip, dip_at = (
-            (bool(meta["loudness_dip"]), None) if "loudness_dip" in meta else detect_loudness_dip(wav)
-        )
-        if dip:
-            issues.append(f"loudness_dip:{f'{dip_at}s' if dip_at is not None else 'unknown'}")
-
         # Duration anomaly
         ratio_anomaly = duration > MAX_DURATION_RATIO * max_sec if max_sec > 0 else False
         abs_anomaly = duration > max_sec + MAX_ABS_DIFF_SEC if max_sec > 0 else False
@@ -186,6 +171,25 @@ def audit_voice_segments(
             issues.append(
                 f"duration_anomaly: expected {min_sec:.2f}s-{max_sec:.2f}s, got {duration:.2f}s"
             )
+
+        # Repetition — transcription channel only, corroborated by duration anomaly (voice-gen
+        # qc.ts parity): the battery is an ASR/TTS-artifact detector, not a source-text lint.
+        # Source strings like version numbers ("1.1.1.") are legitimate copy and speak fine
+        # (dogfood 2026-09-18: a version string in the source tripped the word-run regex and
+        # condemned a 70-minute render that no regeneration could fix). A real TTS loop always
+        # inflates duration; a Whisper phantom loop over trailing silence does not.
+        repetition = detect_repetitions(transcription) if transcription is not None else False
+        if repetition and duration_anomaly:
+            # Bare token: pipeline.py's R5a gate matches issues by exact membership.
+            issues.append("repetition_detected")
+
+        # Loudness dip: reuse the verify-phase result when present; only run the windowed
+        # scan when the verify phase did not (meta.loudness_dip absent).
+        dip, dip_at = (
+            (bool(meta["loudness_dip"]), None) if "loudness_dip" in meta else detect_loudness_dip(wav)
+        )
+        if dip:
+            issues.append(f"loudness_dip:{f'{dip_at}s' if dip_at is not None else 'unknown'}")
 
         audits.append(
             SegmentQualityAudit(
