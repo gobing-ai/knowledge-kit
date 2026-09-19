@@ -1,0 +1,40 @@
+{
+    "comment": "Golden vectors pinning the repetition battery contract shared by omni-voice-gen qc.py and canonical voice-gen qc.ts (0148 R9). repetitionDetected = detector fired on the transcription only (never source text); flagged = corroborated by duration anomaly -> run-failing issue. Scope note: vectors avoid the known threshold divergence (py uses 3x-max/+15s/rate>15 anomaly thresholds; TS canonical uses 1.5x-max/rate<1.8 with an 8-char floor) — vector texts are sized so both batteries agree on anomaly on/off. Threshold alignment is a separate follow-up.",
+    "vectors": [
+        {
+            "name": "clean-pass",
+            "text": "你好世界",
+            "language": "zh",
+            "duration": 1.0,
+            "transcription": "你好世界",
+            "expectRepetitionDetected": false,
+            "expectFlagged": false
+        },
+        {
+            "name": "source-numbering-no-transcription",
+            "text": "版本1.1.1.发布",
+            "language": "zh",
+            "duration": 1.0,
+            "expectRepetitionDetected": false,
+            "expectFlagged": false
+        },
+        {
+            "name": "asr-phantom-in-range",
+            "text": "你好世界",
+            "language": "zh",
+            "duration": 1.0,
+            "transcription": "你好世界ababab",
+            "expectRepetitionDetected": true,
+            "expectFlagged": false
+        },
+        {
+            "name": "corroborated-loop-fails",
+            "text": "你好世界请继续收听",
+            "language": "zh",
+            "duration": 30.0,
+            "transcription": "你好世界请继续收听ababab",
+            "expectRepetitionDetected": true,
+            "expectFlagged": true
+        }
+    ]
+}

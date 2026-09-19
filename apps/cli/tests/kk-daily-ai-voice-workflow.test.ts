@@ -556,4 +556,20 @@ if (plugin === 'aihot-ingest') {
         // matches healthy names and cannot distinguish a flattening.
         expect(yaml).not.toMatch(/\$\{vars\.work_dir\}\/[0-9]-[^/\s]+-[^/\s]*\.[A-Za-z]/);
     });
+
+    it('transitions run translate before patch-surfdash so all locales get patched (0148 R7)', () => {
+        const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
+        expect(edges).toContain('publish->translate');
+        expect(edges).toContain('translate->patch-surfdash');
+        expect(edges).toContain('patch-surfdash->run-report');
+        // done is reachable from run-report under both full and partial publish statuses.
+        expect(edges.filter((e) => e === 'run-report->done').length).toBe(2);
+        // The pre-0148 chain must be gone: patch ran before translate, leaving en/ja unpatched.
+        expect(edges).not.toContain('publish->patch-surfdash');
+        expect(edges).not.toContain('run-report->translate');
+        expect(edges).not.toContain('translate->done');
+        // The publish exit fan-out stays explicitly guarded full|partial|none.
+        expect(edges).toContain('publish->publish-partial');
+        expect(edges).toContain('publish->failed');
+    });
 });

@@ -185,7 +185,9 @@ def test_surviving_loudness_dip_is_recorded_not_failed(tmp_path: Path, capsys) -
 
     meta = read_meta(out)
     assert (meta["segments"][0]["loudnessDip"], meta["segments"][0]["verifyRetries"]) == (True, 2)
-    assert "loudness_dip:unknown" in meta["qc"]["criticalIssues"]
+    # dip_at survives the verify phase -> position rendered, not 'unknown' (0148 R8).
+    assert "loudness_dip:2.5s" in meta["qc"]["criticalIssues"]
+    assert meta["qc"]["segmentAudits"][0]["verifyRetries"] == 2
     assert "loudness dip detected at 2.5s" in capsys.readouterr().err
 
 

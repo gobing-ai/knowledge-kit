@@ -48,6 +48,7 @@ class SegmentQualityAudit:
     repetition_detected: bool
     duration_anomaly: bool
     fidelity_score: float | None
+    verify_retries: int = 0
     issues: list[str] = field(default_factory=list)
 
 
@@ -186,7 +187,9 @@ def audit_voice_segments(
         # Loudness dip: reuse the verify-phase result when present; only run the windowed
         # scan when the verify phase did not (meta.loudness_dip absent).
         dip, dip_at = (
-            (bool(meta["loudness_dip"]), None) if "loudness_dip" in meta else detect_loudness_dip(wav)
+            (bool(meta["loudness_dip"]), meta.get("dip_at"))
+            if "loudness_dip" in meta
+            else detect_loudness_dip(wav)
         )
         if dip:
             issues.append(f"loudness_dip:{f'{dip_at}s' if dip_at is not None else 'unknown'}")
@@ -202,6 +205,7 @@ def audit_voice_segments(
                 repetition_detected=repetition,
                 duration_anomaly=duration_anomaly,
                 fidelity_score=fidelity,
+                verify_retries=int(meta.get("verify_retries", 0) or 0),
                 issues=issues,
             )
         )

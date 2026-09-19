@@ -133,8 +133,8 @@ def _transcribe(backend: Backend, wav: bytes, language: str) -> str | None:
         return None
 
 
-def _render_verified(backend: Backend, spec: SegmentSpec) -> tuple[bytes, float, int, str | None, bool]:
-    """Spec §5 verify-retry -> (wav, duration, verify_retries, transcription, loudness_dip)."""
+def _render_verified(backend: Backend, spec: SegmentSpec) -> tuple[bytes, float, int, str | None, bool, float | None]:
+    """Spec §5 verify-retry -> (wav, duration, verify_retries, transcription, loudness_dip, dip_at)."""
     for attempt in range(MAX_VERIFY_RETRIES + 1):
         final = attempt == MAX_VERIFY_RETRIES  # the final attempt is always accepted
         if attempt:
@@ -154,7 +154,7 @@ def _render_verified(backend: Backend, spec: SegmentSpec) -> tuple[bytes, float,
         if dip and not final:
             _log(f"loudness dip detected at {dip_at}s — regenerating segment")
             continue
-        return wav, duration, attempt, transcription, dip
+        return wav, duration, attempt, transcription, dip, dip_at
     raise AssertionError("unreachable: the final verify attempt always returns")  # pragma: no cover
 
 
@@ -212,7 +212,7 @@ def _render(
             "seed": None if segment.seed is None else int(segment.seed),
             "speed": None if segment.speed is None else float(segment.speed),
         }
-        wav, duration, retries, transcription, dip = _render_verified(backend, spec)
+        wav, duration, retries, transcription, dip, dip_at = _render_verified(backend, spec)
 
         gap_ms = segment.gap_ms or 0
         wavs.append(wav)
@@ -233,7 +233,15 @@ def _render(
                 }
             )
         )
-        audit_meta.append({"duration": duration, "transcription": transcription, "loudness_dip": dip})
+        audit_meta.append(
+            {
+                "duration": duration,
+                "transcription": transcription,
+                "loudness_dip": dip,
+                "dip_at": dip_at,
+                "verify_retries": retries,
+            }
+        )
         retry_note = f" ({retries} verify {'retry' if retries == 1 else 'retries'})" if retries else ""
         _log(f"segment {index + 1}/{total} done in {monotonic() - segment_started:.1f}s{retry_note}")
 

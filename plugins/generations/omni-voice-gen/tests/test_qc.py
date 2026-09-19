@@ -312,3 +312,40 @@ def test_audit_overall_score_rounds_partial_pass() -> None:
     report = audit_voice_segments(script, [CLEAN_WAV, CLEAN_WAV, CLEAN_WAV], metas)
     assert report.overall_score == 67  # 2/3 pass, JS Math.round parity
     assert report.passed is False
+
+
+# --- 0148 R8: verify-phase dip position + retry counters reach the audit ---
+
+def test_audit_renders_verify_phase_dip_position_not_unknown() -> None:
+    script = script_with(VoiceSegment(text="你好世界", language="zh"))
+    meta = {"duration": 1.0, "loudness_dip": True, "dip_at": 2.5}
+    report = audit_voice_segments(script, [CLEAN_WAV], [meta])
+    assert "loudness_dip:2.5s" in report.segment_audits[0].issues
+
+
+def test_audit_verify_retries_surface_on_segment_audit() -> None:
+    script = script_with(VoiceSegment(text="你好世界", language="zh"))
+    report = audit_voice_segments(script, [CLEAN_WAV], [{"duration": 1.0, "verify_retries": 3}])
+    assert report.segment_audits[0].verify_retries == 3
+    assert report.segment_audits[0].issues == []
+
+
+# --- 0148 R9: shared golden vectors pin the repetition battery to canonical qc.ts ---
+
+def test_audit_matches_shared_parity_vectors() -> None:
+    import json
+    from pathlib import Path
+
+    vectors = json.loads(
+        (Path(__file__).parent / "fixtures" / "qc-parity-vectors.json").read_text()
+    )["vectors"]
+    for v in vectors:
+        script = script_with(VoiceSegment(text=v["text"], language=v["language"]))
+        meta: dict = {"duration": v["duration"]}
+        if "transcription" in v:
+            meta["transcription"] = v["transcription"]
+        report = audit_voice_segments(script, [CLEAN_WAV], [meta])
+        audit = report.segment_audits[0]
+        assert audit.repetition_detected is v["expectRepetitionDetected"], v["name"]
+        flagged = any("repetition_detected" in issue for issue in audit.issues)
+        assert flagged is v["expectFlagged"], v["name"]

@@ -518,10 +518,12 @@ transitions:
       kind: always
 
   - from: publish
-    to: patch-surfdash
-    description: "Publish classified -> patch surfdash posts with cover + podcast cross-link"
+    to: translate
+    description: "Publish classified -> full publish continues to en/ja translation; guard is full-only (partial exits via publish-partial); patch-surfdash runs after translate so all three locales get cover + podcast cross-link patching"
     guard:
-      kind: always
+      kind: shell
+      options:
+        command: 'test "${vars.publish_status}" = "full"'
 
   - from: patch-surfdash
     to: run-report
@@ -551,24 +553,24 @@ transitions:
     guard:
       kind: always
 
-  - from: run-report
-    to: translate
-    description: "Run report assembled after full publish -> scaffold + translate en/ja locales + sync"
+  - from: translate
+    to: patch-surfdash
+    description: "zh post + en/ja locales scaffolded, translated, and synced -> patch all published posts with cover + podcast cross-link"
     guard:
-      kind: shell
-      options:
-        command: 'test "${vars.publish_status}" = "full"'
+      kind: always
 
   - from: run-report
     to: done
-    description: "Run report assembled after partial publish -> done; retry failed targets later via kk executor fan-out --retry-from"
+    description: "Run report assembled after non-full publish (partial) -> done; retry failed targets later via kk executor fan-out --retry-from"
     guard:
       kind: shell
       options:
         command: 'test "${vars.publish_status}" = "partial"'
 
-  - from: translate
+  - from: run-report
     to: done
-    description: "zh post + en/ja locales scaffolded, translated, and synced into the surfdash CMS -> episode complete"
+    description: "Run report assembled after full publish -> episode complete (en/ja already translated and patched)"
     guard:
-      kind: always
+      kind: shell
+      options:
+        command: 'test "${vars.publish_status}" = "full"'
