@@ -904,7 +904,14 @@ function dailyScript(args: string[]): void {
         sted('write', yamlOut, () => writeRaw(yamlOut, body));
         // R3 (task 0139): fresh writes are validated here; the script cache path is covered by
         // wrap-docs, which runs on every path that reaches audio.
-        assertScriptContent(yamlOut);
+        try {
+            assertScriptContent(yamlOut);
+        } catch (err) {
+            // A rejected fresh write would otherwise poison the isFile(yamlOut) cache: every
+            // resume skips regeneration and re-fails at wrap-docs. Drop it so retry regenerates.
+            unlinkSync(yamlOut);
+            throw err;
+        }
     });
 }
 

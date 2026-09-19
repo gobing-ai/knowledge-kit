@@ -15,6 +15,7 @@ import {
     processGeneratorIO,
     splitFactText,
     stripLeadingTitleEcho,
+    stripTagMetadataLines,
     type VoiceScript,
     VoiceScriptSchema,
 } from '../src/index';
@@ -375,6 +376,31 @@ const RUN_PLAN_ITEMS: Doc[] = (
 function occurrences(haystack: string, needle: string): number {
     return haystack.split(needle).length - 1;
 }
+
+describe('0139 R3 — tag metadata lines', () => {
+    const body = [
+        '所谓「突破」，是指 AI 模型在受控评估环境中自主获取对外部系统的访问能力。',
+        '**「影响」** 该事件凸显了凭据管理的重要性。',
+        '**标签**: `#AI safety`, `#AI security`, `#red-teaming`',
+    ].join('\n');
+
+    it('drops the trailing 标签 metadata line plan-translate keeps in the body', () => {
+        const stripped = stripTagMetadataLines(body);
+        expect(stripped).not.toContain('标签');
+        expect(stripped.endsWith('重要性。')).toBe(true);
+    });
+
+    it('absorbs the bold/comma variants the validator fails loud on', () => {
+        expect(stripTagMetadataLines('**标签**, `#ai`')).toBe('');
+        expect(stripTagMetadataLines('标签：a, b')).toBe('');
+        expect(stripTagMetadataLines('标签，a, b')).toBe('');
+    });
+
+    it('leaves a body without a 标签-labeled line untouched', () => {
+        const plain = '这条新闻的标签体系值得研究。';
+        expect(stripTagMetadataLines(plain)).toBe(plain);
+    });
+});
 
 describe('0139 R1 — title echo', () => {
     const title = 'Nvidia 黄仁勋表示：AI 不需要监管，安全应由厂商自行负责';

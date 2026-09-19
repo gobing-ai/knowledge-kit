@@ -246,6 +246,24 @@ export function stripLeadingTitleEcho(body: string, title: string): string {
 }
 
 /**
+ * Drop `**标签**: …` metadata lines from a plan doc body (0139 R3).
+ *
+ * `plan-translate` keeps the research note's trailing tag line in the body it hands over; spoken
+ * aloud it reads as a `标签，…` tail the script validator rejects. The line is article metadata,
+ * not copy — remove whole lines that open with the 标签 label + separator; anything else is left
+ * for the validator to fail loud on.
+ */
+const TAG_METADATA_LINE_RE = /^\s*\**\s*标签\s*\**\s*[：:，,]/;
+
+export function stripTagMetadataLines(body: string): string {
+    const kept = body
+        .split('\n')
+        .filter((line) => !TAG_METADATA_LINE_RE.test(line))
+        .join('\n');
+    return kept === body ? body : kept.trim();
+}
+
+/**
  * Split a fact text into chunks of at most `maxChars` (task 0139 R4).
  *
  * Greedy packing at clause boundaries: a chunk closes when the next clause would push it past the
@@ -360,7 +378,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         const cleanTitle = (doc.title ?? '').trim();
         // R1: drop the title restatement plan-translate prepends to the body, so the lead's
         // 【title】 is the only place the title is spoken for this item.
-        const cleanBody = stripLeadingTitleEcho((doc.body ?? '').trim(), cleanTitle);
+        const cleanBody = stripLeadingTitleEcho(stripTagMetadataLines((doc.body ?? '').trim()), cleanTitle);
 
         // Conversational lead
         const lead = isZh
