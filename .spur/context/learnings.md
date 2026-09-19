@@ -107,3 +107,18 @@ Conventions / decisions discovered the hard way. Newest first.
 - `task verdict --from-answer` parses ONLY `Verdict: <PASS|PARTIAL|FAIL>` + pipe-table rows `| Rn | MET | … |` with a `| Req | Status | Evidence |` header. Bullet-style answers yield UNKNOWN; reformat mechanically (content verbatim) rather than re-dispatching.
 - Feature tombstones: `feature check --strict` fails `L4.orphan-scenarios` when a cancelled feature keeps gherkin AC while its tasks moved away. Empty the AC section (Notes section accepts the pointer prose; AC section must be empty or valid BDD — blockquotes trip L3.ac-bdd-*).
 - kk-solo-podcast.yaml has a PRE-EXISTING schema defect (8 shell actions, `command:` at 8-space indent, `options: null`) — identical on main; tracked as task 0130. No CI test executes that YAML, which is why it went unnoticed.
+
+## 2026-09-19 — kk-daily-ai-voice live dogfood (091825 → done) + two fixes
+
+- Shipped fixes: `cc219c8e` (标签 metadata lines stripped at script-builder seam; cache-unpoison unlink in dailyScript) and `11c2f8b3` (omni qc.py repetition battery is transcription-only + duration corroboration — canonical qc.ts parity; bare `"repetition_detected"` issue token, R5a gate does exact list membership).
+- qc port divergence was live for weeks: the Python port flagged source-text patterns unconditionally while canonical qc.ts checks transcription only, corroborated by duration anomaly. Consider a parity test for any ported QC logic.
+- (a) `spur workflow run --run-id <terminal-id>` silently no-ops; failed runs are not continue-able — always fresh run-id per retry.
+- (b) Killing a foreground `workflow continue` orphans the run as `running`; repair = restore exact pre-continue row (`status='paused', pid=NULL`).
+- (c) Bare `workflow continue` (no `--answer`) on non-TTY marks a paused run failed.
+- (d) Agent stages (plan/article/QC) re-run eagerly on fresh run-id even when shell stages cache-hit → generation mixing on resume.
+- (e) `workflow continue` lacks `--async`; must nohup-detach (no `--async` flag exists).
+- (f) Shell action stdout/stderr not persisted — 70-min generate fails with opaque exit 1 and zero evidence. Biggest observability gap in the workflow engine.
+- (g) `workflow continue` can sit alive 10+ min with no output before the resumed states appear in trace (run log file itself is not updated by the continued session — use `workflow trace --json` as the liveness source).
+- Date-rollover effect: a run launched before midnight local builds the NEW day's episode (collect re-runs live, ~19 min; prior-day caches don't apply). Launched 00:39 → Sep 19 episode end-to-end.
+- QC outcome on 25-seg Sep 19 episode: 0 repetition, 0 duration anomalies; 10 non-failing `loudness_dip:unknown` recorded (known cosmetic, survives verify regen). Audio 1219.68s; surfdash zh + podcast published live; patch + en/ja locales committed/pushed (surfdash 51f14ce → 1fc968a → be102f0).
+- translate-sync is file-sync only (surfdash publish-orchestrator, no git) — committing en/ja posts is a manual wrap-up step (prior-day convention message: `content: translate daily AI news <date> (en, ja)`).
