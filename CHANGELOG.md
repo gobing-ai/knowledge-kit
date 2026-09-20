@@ -1,3 +1,17 @@
+## [0.0.20] - 2026-09-19
+
+### Fixed
+
+- fix: strip plan-doc 标签 metadata lines before spoken script assembly (cc219c8e)
+- fix(omni-voice-gen): repetition battery is transcription-only with duration corroboration (11c2f8b3)
+- fix(voice): reorder daily pipeline transitions; propagate QC dip position; shared QC parity vectors (a9058b82)
+- fix(rules): sanction stage executor + voicebox fd-transport sites; add stage tests (ac7e744e)
+
+### Other
+
+- docs(tasks): update task status after refinement (24c2794a)
+- docs(tasks): update task status after refinement (6c46e5c3)
+
 ## [0.0.19] - 2026-09-18
 
 ### Added
