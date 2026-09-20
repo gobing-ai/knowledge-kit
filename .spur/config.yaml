@@ -59,11 +59,18 @@ bootstrap:
       # runs against local voicebox (no TTS quota); the ARK 429 quota reset
       # (2026-09-18) affects only LLM agent stages — the E2E run of 2026-09-12
       # completed with ARK still exhausted. The run fails loud like any other
-      # stage. Voicebox is NOT probed here: the default vdriver=ominivoice
-      # needs no server, and vdriver=voicebox makes the voice-gen plugin
-      # auto-start it (VOICEBOX_SERVER_BIN / VOICEBOX_DATA_DIR).
+      # stage. Voicebox is NOT probed here: the workflow default vdriver=voicebox
+      # makes the voice-gen plugin auto-start the server (VOICEBOX_SERVER_BIN /
+      # VOICEBOX_DATA_DIR).
       - name: kk-daily-ai-voice
         cron: "0 6 * * *"
+        # 4h child budget (default is 600s — the 06:00 runs of 2026-09-19/20 died
+        # at ten minutes). Covers the slowest healthy E2E: ominivoice voicegen
+        # alone is ~2.4h. Chosen above the queue's two-hour visibility ceiling on
+        # purpose: durable single-flight (queue_jobs unique index, task 0863)
+        # folds any redelivered sibling, so a wedged run is killed at 4h instead
+        # of a legitimate slow run being killed at 2h.
+        timeoutMs: 14400000
         # run_date only names the workspace: with work_dir unset, daily-prepare
         # composes the real dir as works_dir/kk-daily-ai-voice/<stamp> from
         # ~/.config/kk/config.yaml and writes the effective path to the
