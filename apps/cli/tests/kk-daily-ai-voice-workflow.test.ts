@@ -82,7 +82,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('kk stage daily-prepare');
         expect(runnerSource).toContain("last30daysEnabled !== 'true'");
         expect(runnerSource).toContain("'1-ingest/last30days-docs.json'");
-        expect(yaml).toContain('vdriver: "ominivoice"');
+        expect(yaml).toContain('vdriver: "voicebox"');
         expect(yaml).toContain('intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"');
         expect(yaml).toContain('surfdash_root: "/Users/robin/xprojects/surfdash"');
         // Content QC thresholds ride the plugin env channel (0099-calibrated DEFAULT_FILTER_CONFIG).
@@ -239,13 +239,14 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
                 'kk-daily-ai-voice integration test requires `spur` on PATH (the repo quality gate installs it); refusing to skip silently',
             );
         }
-        // unset -> workflow default vdriver 'ominivoice' (omni-voice-gen, ADR-020 amendment
-        // 2026-09-13); explicit 'voicebox' pins the Voicebox REST fallback path.
+        // unset -> workflow default vdriver 'voicebox' (voice-gen, flipped from
+        // ominivoice 2026-09-20 after the matched-rate A/B); explicit 'ominivoice'
+        // keeps covering the omni-voice-gen branch (generator swap + call log).
         // 0140: the third case drives a degradation-class audit (`passed:false`, no
         // `repetition_detected`) through the real engine — Branch A publishes it warn-only.
         for (const [vdriver, qcPassed] of [
             [undefined, true],
-            ['voicebox', true],
+            ['ominivoice', true],
             [undefined, false],
         ] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
@@ -472,7 +473,7 @@ if (plugin === 'aihot-ingest') {
                 expect(existsSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`))).toBe(true);
                 expect(existsSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`))).toBe(true);
                 expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
-                if (vdriver !== 'voicebox') {
+                if (vdriver === 'ominivoice') {
                     const swapped = JSON.parse(
                         readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
                     );
@@ -497,7 +498,7 @@ if (plugin === 'aihot-ingest') {
                     'episode-plan-gen',
                     'daily-article-gen',
                     'dailynews-gen',
-                    vdriver === 'voicebox' ? 'voice-gen' : 'omni-voice-gen',
+                    vdriver === 'ominivoice' ? 'omni-voice-gen' : 'voice-gen',
                 ]);
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).

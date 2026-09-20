@@ -19,8 +19,10 @@ vars:
   limit: "10"
   language: "zh"
   voice_profile: "robin-news"
-  # 20260917: voice driver switch — ominivoice (default, omni-voice-gen) | voicebox (voice-gen).
-  vdriver: "ominivoice"
+  # 20260917: voice driver switch — voicebox (default, voice-gen) | ominivoice (omni-voice-gen).
+  # 20260920: default flipped to voicebox — operator A/B at matched speech rate (~5.2 chars/s)
+  # judged voicebox clearly better (ominivoice carries ~1min dead air over 16min + ASR-garble class).
+  vdriver: "voicebox"
   # 20260917 review #7: 8s intro sting prepended to every daily output; empty = skip.
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   # 20260917 review #4/#6: surfdash checkout the patch stage commits to.
