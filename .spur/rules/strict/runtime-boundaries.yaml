@@ -74,6 +74,15 @@ rules:
             # is set because Bun fetch drops long-lived proxied sockets (0115 port).
             - "plugins/generations/image-gen/src/providers/codex-cli.ts"
             - "plugins/generations/image-gen/src/providers/google.ts"
+            # The stage executor's transport IS spawning the stages runner script
+            # (spawnSync with inherited stdio, exit-code passthrough) — same
+            # executor class as invoke.ts (ADR-006). ts-runtime itself blesses
+            # direct spawnSync for sync contexts.
+            - "apps/cli/src/stage.ts"
+            # Voicebox auto-start spawns the app's server binary detached
+            # (survives plugin exit) — vendor-app transport by contract, same
+            # class as the file-cli/ffmpeg entries above.
+            - "plugins/generations/voice-gen/src/voicebox-server.ts"
 
   - id: no-direct-fs-io
     description: "File IO must go through @gobing-ai/ts-runtime's FileSystem seam (createNodeFileSystem). Sync-structural sites are allowlisted below."
@@ -129,3 +138,11 @@ rules:
             # asset/cover copies via node:fs/promises (cp/copyFile) — the seam is
             # text-only, same class as podcast-pub. Sanctioned 2026-09-08 (sp fixall).
             - "plugins/publishings/surfdash-pub/src/index.ts"
+            # stage.ts: sync-structural realpath/existsSync probes in sync stage-script
+            # path resolution — same class as config.ts/plugin.ts (seam would force an
+            # async API change for no gain).
+            - "apps/cli/src/stage.ts"
+            # voicebox-server: openSync log fd is handed to the detached spawn's stdio
+            # — the seam is text-only and cannot produce an fd (same fd-transport class
+            # as podcast-pub binary bytes).
+            - "plugins/generations/voice-gen/src/voicebox-server.ts"
