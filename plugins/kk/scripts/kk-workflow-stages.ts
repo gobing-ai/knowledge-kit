@@ -1325,9 +1325,12 @@ function dailyPatchSurfdash(args: string[]): void {
         };
         let changed = 0;
         for (const [locale, dir] of [
+            // zh posts live under articles/zh/<slug>; en/ja under articles/<locale>/<slug> —
+            // two dirnames up, not one (20260919: `articles/zh/en/...` never existed, so en/ja
+            // were silently skipped by the not-published branch).
             ['zh', slugDir],
-            ['en', join(dirname(slugDir), 'en', basename(slugDir))],
-            ['ja', join(dirname(slugDir), 'ja', basename(slugDir))],
+            ['en', join(dirname(dirname(slugDir)), 'en', basename(slugDir))],
+            ['ja', join(dirname(dirname(slugDir)), 'ja', basename(slugDir))],
         ] as const) {
             const indexMd = join(dir, 'index.md');
             if (!existsSync(indexMd)) {
@@ -1337,17 +1340,28 @@ function dailyPatchSurfdash(args: string[]): void {
             let md = readFileSync(indexMd, 'utf-8');
             const fmEnd = md.indexOf('---', 3); // frontmatter is `---\n ... \n---\n`
             if (fmEnd < 0) failWith(1, `patch-surfdash: no frontmatter in ${indexMd}`);
-            if (!/^image:/m.test(md.slice(0, fmEnd))) {
-                let image = coverUrl;
-                if (image === '' && existsSync(localCover)) {
-                    // Fallback for pre-#6 runs: copy the local cover instead of a hosted URL.
+            // Upsert a single-line `key: 'value'`; the regex consumes folded-scalar continuation
+            // lines (`og_image: >-\n  https://...`) so multi-line publish output is replaced whole.
+            const upsertKey = (src: string, key: string, value: string): string => {
+                const line = `${key}: '${value}'`;
+                const re = new RegExp(`^${key}:.*(?:\\n[ \\t]+.*)*`, 'm');
+                if (re.test(src)) return src.replace(re, line);
+                return src.replace(/^publishDate: .*$/m, (m0) => `${m0}\n${line}`);
+            };
+            if (coverUrl !== '') {
+                // 20260919 prod feedback: the podcast-hosted cover URL wins even when surfdash-pub
+                // already wrote `image:` — its resolved og_image points at /content-posts/<slug>/
+                // assets/cover.png, which the deployed worker does not serve (404).
+                md = upsertKey(md, 'image', coverUrl);
+                md = upsertKey(md, 'og_image', coverUrl);
+            } else if (!/^image:/m.test(md.slice(0, fmEnd))) {
+                // Fallback for runs without a podcast cover: copy the local cover instead.
+                if (existsSync(localCover)) {
                     const assets = join(dir, 'assets');
                     mkdirSync(assets, { recursive: true });
                     copyFileSync(localCover, join(assets, 'cover.png'));
-                    image = './assets/cover.png';
-                }
-                if (image !== '') {
-                    md = md.replace(/^publishDate: .*$/m, (m0) => `${m0}\nimage: '${image}'\nog_image: '${image}'`);
+                    md = upsertKey(md, 'image', './assets/cover.png');
+                    md = upsertKey(md, 'og_image', './assets/cover.png');
                 }
             }
             if (showNotesUrl !== '' && !md.includes(showNotesUrl)) {

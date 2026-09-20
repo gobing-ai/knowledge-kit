@@ -463,8 +463,14 @@ transitions:
       kind: always
 
   - from: generate
+    to: intro-music
+    description: "Audio generated -> prepend intro sting"
+    guard:
+      kind: always
+
+  - from: intro-music
     to: quality-control
-    description: "Audio generated -> run quality control validation"
+    description: "Intro merged -> run quality control validation"
     guard:
       kind: always
 

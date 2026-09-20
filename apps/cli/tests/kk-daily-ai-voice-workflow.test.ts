@@ -421,6 +421,10 @@ if (plugin === 'aihot-ingest') {
                     last30days_enabled: 'true',
                     plugins_path: join(testRoot, 'plugin root'),
                     vdriver,
+                    // 0149: generate now really routes into daily-intro; the stub's wav is fake
+                    // bytes no ffprobe can read, so point the intro var at empty (= skip) and
+                    // exercise the merge itself only in live runs.
+                    intro_music: '',
                 });
                 const result = Bun.spawnSync(
                     ['spur', 'workflow', 'run', workflowPath, '--vars', vars, '--run-id', runId, '--json'],
@@ -571,5 +575,13 @@ if (plugin === 'aihot-ingest') {
         // The publish exit fan-out stays explicitly guarded full|partial|none.
         expect(edges).toContain('publish->publish-partial');
         expect(edges).toContain('publish->failed');
+    });
+
+    it('generate routes through intro-music before quality-control (0149: intro state was orphaned)', () => {
+        const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
+        expect(edges).toContain('generate->intro-music');
+        expect(edges).toContain('intro-music->quality-control');
+        // The pre-0149 shortcut must stay gone: it left every episode without the intro sting.
+        expect(edges).not.toContain('generate->quality-control');
     });
 });
