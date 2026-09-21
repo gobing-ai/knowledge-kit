@@ -15,8 +15,18 @@ import type { Doc } from '@gobing-ai/kk-core';
  * still applies to feed items.
  */
 
-/** Default fresh AI-news feed (RSS 2.0, high volume, reachable without auth). */
-export const AIHOT_FEED_URL_DEFAULT = 'https://techcrunch.com/category/artificial-intelligence/feed/';
+/** Default fresh AI-news feed (RSS 2.0, full text, reachable without auth).
+ *
+ * Why Ars Technica (2026-09-20, dogfood): the previous default (TechCrunch AI
+ * category feed) stopped shipping `content:encoded` — items now carry only
+ * 86–236-char `description` summaries. Every such body lands below the planner's
+ * STUB_BODY_FLOOR (300 chars), scores quality 1, and is auto-rejected at
+ * `qc_min_quality=2`, so the aihot leg contributed ~0 usable items (the
+ * 2026-09-20 episode collapsed to 3 items / 5m33s). The Ars Technica AI feed
+ * ships full `content:encoded` (≈900–1800 chars) on every item. The parser
+ * already prefers `content:encoded`, so only the URL changes.
+ */
+export const AIHOT_FEED_URL_DEFAULT = 'https://arstechnica.com/ai/feed/';
 
 export type RssFetchLike = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 

@@ -3,5 +3,5 @@
     "kind": "ingestion",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Ingests fresh AI news from an RSS feed (default TechCrunch AI) into Doc[]; legacy aihot.virxact.com API behind AIHOT_SOURCE=api"
+    "description": "Ingests fresh AI news from an RSS feed (default Ars Technica AI, full text) into Doc[]; legacy aihot.virxact.com API behind AIHOT_SOURCE=api"
 }
