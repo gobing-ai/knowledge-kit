@@ -35,7 +35,10 @@ Parse per the frozen rule:
   `--fixture` → force `fixture: "true"`.
 - Profile `kk-itc`: `--dir <path>` (default `$works_dir/kk-itc/<kebab>`), `--playbook generic|english|wechat` (default `generic`),
   `--research` (`true`|`false`, default `false`), `--judge` (`true`|`false`, default `false`),
-  `--outline <a|b|c>` (default empty), `--writer itc-generating|topic` (default `itc-generating`).
+  `--outline <a|b|c>` (default empty), `--writer itc-generating|topic` (default `itc-generating`),
+  `--auto`, `--unslop true|false` (default `false`), `--max-revisions <N>` (default `2`),
+  `--cover`, `--inline-images`, `--targets <a,b>` (default empty), `--live`,
+  `--source-locale en|zh|ja` (default `en`; `--playbook wechat` without it implies `zh`).
   `--fixture` passed with `kk-itc` or `kk-solo-podcast` → exit 1 (`fixture is storm-only`).
 - Profile `kk-solo-podcast`: `--dir <path>` (default `$works_dir/kk-solo-podcast/<date>`), `--outline <a|b|c>`
   (default empty), `--duration <min>` (default `8`), `--language <code>` (default `en`),
@@ -48,7 +51,9 @@ Parse per the frozen rule:
 
 Resolve these before step 2: `NAME`, `TOPIC`, `INPUT_FILE` (empty in sentence mode), `FIXTURE`
 (`true`|`false`), `FORCE` (`true`|`false`), `DIR`, `PLAYBOOK`, `RESEARCH`, `JUDGE`, `OUTLINE`,
-`WRITER`, `DURATION` (`8`), `LANGUAGE` (`en`), `SCRIPT_APPROVED` (`true`|`false`),
+`WRITER`, `AUTO` (`true`|`false`), `UNSLOP` (`true`|`false`), `MAX_REVISIONS` (`2`), `COVER`
+(`true`|`false`), `INLINE_IMAGES` (`true`|`false`), `TARGETS`, `LIVE` (`true`|`false`),
+`SOURCE_LOCALE` (`en`), `DURATION` (`8`), `LANGUAGE` (`en`), `SCRIPT_APPROVED` (`true`|`false`),
 `VOICE_PROFILE` (from `VOICEBOX_DEFAULT_PROFILE`, default empty).
 
 ## 2. Resolve the config
@@ -185,6 +190,14 @@ mkdir -p "$work_dir"
 `work_dir="${DIR:-$works_dir/kk-itc/$kebab}"`. Empty derived `kebab` → exit 1. An explicit
 `--dir` still wins, and the default never writes into the caller's cwd.
 
+Binding (0153): `--auto` binds `auto=true` and defaults `research`, `judge` and `unslop` to
+`true` unless the operator passed them explicitly. `--live` is never implied — `publish_live`
+stays `false` unless `--live` is passed explicitly (ADR-022). `--playbook wechat` without
+`--source-locale` binds `source_locale=zh`; an explicit `--source-locale` always wins.
+`--targets <a,b>` binds `publish_targets`; `--cover` / `--inline-images` bind
+`cover_enabled` / `inline_images` (`false` unless passed); `--max-revisions` binds
+`max_revisions` (default `2`).
+
 ### Profile `kk-solo-podcast`
 
 `date` = today's date in `YYYY-MM-DD` (`$(date +%Y-%m-%d)`).
@@ -218,13 +231,14 @@ spur workflow run "$dest" --vars \
 
 ### Profile `kk-itc`
 
-Bind vars: `topic`, `input_file`, `work_dir`, `writer`, `playbook`, `research`, `judge`, `outline`,
-`force`, `rubric` (`tech-accuracy`), `agent`. The judge verdict lands at `$work_dir/.itc-verdict.json`
-(fixed path inside the workflow).
+Bind vars: `topic`, `input_file`, `work_dir`, `writer`, `playbook`, `research`, `judge`, `auto`,
+`unslop`, `max_revisions`, `outline`, `force`, `rubric` (`tech-accuracy`), `agent`,
+`cover_enabled`, `inline_images`, `publish_targets`, `publish_live`, `source_locale`. The judge
+verdict lands at `$work_dir/.itc-verdict.json` (fixed path inside the workflow).
 
 ```bash
 spur workflow run "$dest" --vars \
-  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"writer\":\"$WRITER\",\"playbook\":\"$PLAYBOOK\",\"research\":\"$RESEARCH\",\"judge\":\"$JUDGE\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"agent\":\"$AGENT\"}"
+  "{\"topic\":\"$TOPIC\",\"input_file\":\"$INPUT_FILE\",\"work_dir\":\"$work_dir\",\"writer\":\"$WRITER\",\"playbook\":\"$PLAYBOOK\",\"research\":\"$RESEARCH\",\"judge\":\"$JUDGE\",\"auto\":\"$AUTO\",\"unslop\":\"$UNSLOP\",\"max_revisions\":\"$MAX_REVISIONS\",\"outline\":\"$OUTLINE\",\"force\":\"$FORCE\",\"rubric\":\"tech-accuracy\",\"agent\":\"$AGENT\",\"cover_enabled\":\"$COVER\",\"inline_images\":\"$INLINE_IMAGES\",\"publish_targets\":\"$TARGETS\",\"publish_live\":\"$LIVE\",\"source_locale\":\"$SOURCE_LOCALE\"}"
 ```
 
 ### Profile `kk-solo-podcast`

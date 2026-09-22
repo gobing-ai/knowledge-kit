@@ -856,7 +856,7 @@ operator-private registry via `OMNIVOICE_PROFILE_REGISTRY`).
 
 ## ADR-021: kk-itc is the end-to-end IT-content workflow (idea → platform drafts)
 
-**Status:** Accepted (design) · **Date:** 2026-09-22 (feature F41)
+**Status:** Accepted · **Date:** 2026-09-22 (feature F41, shipped)
 
 **Decision.** `plugins/kk/workflows/kk-itc.yaml` grows var-gated states for the auto path,
 de-slop, the judge revise loop, the cover, per-platform adaptation, Content materialization,
@@ -874,7 +874,7 @@ to drafts require one YAML. A second workflow would duplicate the authoring stat
 
 ## ADR-022: Publishing defaults to platform drafts; auto never implies live
 
-**Status:** Accepted (design) · **Date:** 2026-09-22 (feature F41)
+**Status:** Accepted · **Date:** 2026-09-22 (feature F41, shipped)
 
 **Decision.** A kk workflow that publishes writes every target's own draft switch explicitly on
 every Content it sends: `published` for emdash, surfdash, qiita and zenn; `publishStatus` for

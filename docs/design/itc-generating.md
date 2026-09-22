@@ -12,6 +12,8 @@ Authority: existing **ADR-009** (`plugins/kk` is the only home for agent capabil
 **ADR-011** (first-layer nouns stay `executor` + `plugin`). No new ADR — this feature
 extends those conventions; it does not set a new cross-cutting one.
 
+The end-to-end orchestration that drives this skill from idea to platform drafts (HITL + auto, publish tail) now lives in `docs/design/kk-itc-end-to-end.md` (F41; ADR-021/ADR-022, shipped 2026-09-22).
+
 ---
 
 ## 1. Decisions

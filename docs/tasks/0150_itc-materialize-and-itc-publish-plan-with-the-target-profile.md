@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: itc-materialize and itc-publish-plan with the target profile table
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.546Z
-updated_at: "2026-09-22T16:51:22.502Z"
+updated_at: "2026-09-22T20:03:35.304Z"
 feature_id: F41
 priority: P2
 tags:
@@ -31,30 +31,30 @@ Rubric: E6 D1 L1 C0 R1 = 9. Decomposition: this slice is separable from the work
 
 ### Requirements
 
-- [ ] R1. `kk stage itc-materialize <work_dir> <publish_live>` writes `4-publish/content.json`:
+- [x] R1. `kk stage itc-materialize <work_dir> <publish_live>` writes `4-publish/content.json`:
   - `title` comes from the first H1, which is removed from `body`.
   - `outline` comes from `2-outline/outline-approved.md`.
   - `references[]` comes from `docs.json` when present.
   - `metadata.coverImage` comes from `4-illustrations/cover.*` when present.
   - tags, keywords and description come from the brief frontmatter when present.
   - `metadata.published` is always written as a boolean.
-- [ ] R2. itc-materialize exits 1 with a message naming the artifact when the draft is missing, has no H1, or has an empty body.
-- [ ] R3. The `TARGET_PROFILES` const implements the `docs/design/kk-itc-end-to-end.md` §5 table. Before its row lands, each row's draft/live key is checked against that plugin's `src/`, with `file:line` cited in Solution. This covers the browser plugins (juejin, infoq, substack, xhs) and the wechatmp live `operation`. A plugin whose draft switch cannot be confirmed is left out of the table.
-- [ ] R4. `kk stage itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>` writes `4-publish/publish-plan.json` `{live, sourceLocale, variants, fanout, browser}`:
+- [x] R2. itc-materialize exits 1 with a message naming the artifact when the draft is missing, has no H1, or has an empty body.
+- [x] R3. The `TARGET_PROFILES` const implements the `docs/design/kk-itc-end-to-end.md` §5 table. Before its row lands, each row's draft/live key is checked against that plugin's `src/`, with `file:line` cited in Solution. This covers the browser plugins (juejin, infoq, substack, xhs) and the wechatmp live `operation`. A plugin whose draft switch cannot be confirmed is left out of the table.
+- [x] R4. `kk stage itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>` writes `4-publish/publish-plan.json` `{live, sourceLocale, variants, fanout, browser}`:
   - Targets on the source-locale article profile share `content.json`, with `adapt:false`.
   - Every other profile gets one `content.<variant>.json` with `adapt:true`.
   - Each variant carries `switches`: the union of its targets' draft/live keys.
-- [ ] R5. itc-publish-plan exits 1, naming the target, for:
+- [x] R5. itc-publish-plan exits 1, naming the target, for:
   - an unknown target
   - `podcast-pub`
   - `x-pub` when `publish_live` is false
   - a target that needs a cover when none exists
-- [ ] R6. Unit tests parse the materialized `content.json` with kk-core `ContentSchema`. Stage code stays node-builtin-only (ADR-018).
+- [x] R6. Unit tests parse the materialized `content.json` with kk-core `ContentSchema`. Stage code stays node-builtin-only (ADR-018).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — itc-materialize writes ContentSchema JSON from the final draft
-- [ ] AC2 — itc-publish-plan splits targets into fan-out groups and browser targets
+- [x] AC1 — itc-materialize writes ContentSchema JSON from the final draft
+- [x] AC2 — itc-publish-plan splits targets into fan-out groups and browser targets
 
 Task-local checks:
 - Every `TARGET_PROFILES` row has a cited source line for its draft key.
@@ -113,15 +113,77 @@ Signatures:
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/kk-itc-workflow.test.ts:106` |
+| `apps/cli/tests/kk-itc-workflow.test.ts:2` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:15` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1671` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1693` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:24` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:72` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/scripts/itc-stages.ts:210-249 — H1 title stripped from body (:218-222), outline from 2-outline/outline-approved.md (:224-226), references from docs.json (:227-237), metadata.coverImage from 4-illustrations/cover.* (:241-242), tags/keywords/description from brief frontmatter (:243-246), metadata.published always boolean (:240); test apps/cli/tests/itc-stages.test.ts:151-235 |
+| R2 | MET | plugins/kk/scripts/itc-stages.ts:217 (draft missing), :220 (no H1), :222 (empty body) — each fail message names the artifact; test apps/cli/tests/itc-stages.test.ts:217-241 |
+| R3 | MET | plugins/kk/scripts/itc-stages.ts:139-172 TARGET_PROFILES mirrors design §5 row-for-row (podcast-pub absent => rejected as unknown); per-row draft-key citations at plugins/kk/scripts/itc-stages.ts:132-138, independently re-verified against plugin src (medium-pub:49, emdash-pub:254, surfdash-pub:93, zenn-pub:92, qiita-pub:70, wechatmp-pub:162+171, x-pub:64, substack-pub:26); mirror test apps/cli/tests/itc-stages.test.ts:366-430 |
+| R4 | MET | plugins/kk/scripts/itc-stages.ts:263-323 — source-locale article targets share content.json with adapt:false (:312-317), others content.<variant>.json adapt:true (:314), per-variant switches are the union of targets' keys (:319), fanout/browser split (:321-322); tests apps/cli/tests/itc-stages.test.ts:253-308 |
+| R5 | MET | plugins/kk/scripts/itc-stages.ts:281 (unknown/podcast-pub), :283-289 (x-pub without publish_live), :292-294 (cover required) — all name the target; tests apps/cli/tests/itc-stages.test.ts:309-357 |
+| R6 | MET | ContentSchema.parse of materialized content.json in apps/cli/tests/itc-stages.test.ts:172; stage code imports node:fs/node:path only (plugins/kk/scripts/itc-stages.ts:37-38, ADR-018) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | apps/cli/tests/itc-stages.test.ts:151-241 (30/30 pass, ContentSchema.parse at :172) over plugins/kk/scripts/itc-stages.ts:210-249 |
+| AC2 | MET | test | apps/cli/tests/itc-stages.test.ts:243-430 (fanout/browser split, x-pub/podcast-pub/cover rejects) over plugins/kk/scripts/itc-stages.ts:263-323 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0150 (sp-dev-review --auto, 2026-09-22)
+
+**Scope:** uncommitted working-tree diff vs `58264f7b` (new `plugins/kk/scripts/itc-stages.ts`, `apps/cli/tests/itc-stages.test.ts`; runner dispatch in `kk-workflow-stages.ts`) measured against this task's R1–R6/AC1–AC2.
+**Dimensions:** functional traceability, security, efficiency, correctness, usability, architecture.
+**Verdict:** APPROVED (no P1/P2; P3 dispositions below).
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location |
+|---|----------|-----------|---------|----------|
+| 1 | P3 (minor) | usability | R3's file:line draft-switch citations live in code comments only; this task's `### Solution` section is empty — fill it with the change map + citations (all 10 were re-verified accurate during review) | `plugins/kk/scripts/itc-stages.ts:172-182` |
+| 2 | P3 (minor) | functional | Plan step 3 "sync the docs/04_DESIGN.md stage rows" not done: 04_DESIGN has no itc-materialize/itc-publish-plan rows while design §5 claims "mirrored in 04_DESIGN §3" — add rows or move the step explicitly to 0151 | `docs/04_DESIGN.md:624-632` |
+| 3 | P4 (advisory) | correctness | `docs.json` present but non-array drops `references` silently (no message); inputs are pipeline-generated, acceptable | `plugins/kk/scripts/itc-stages.ts:267` |
+| 4 | P4 (advisory) | efficiency | `fanout` groups are canonically sorted but `browser[]` keeps argument order — cosmetic determinism asymmetry | `plugins/kk/scripts/itc-stages.ts:336-341` |
+| 5 | P4 (advisory) | usability | R1–R6/AC requirement checkboxes in this file are still unchecked — check them with evidence at completion | `docs/tasks/0150_*.md` |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `itc-stages.ts:219-287` — H1→title (removed from body), outline/docs.json/cover/frontmatter optional, `published` always boolean (`:273`); tests `itc-stages.test.ts:152-215` parse with ContentSchema |
+| R2 | MET | exits 1 naming the artifact for missing draft / no H1 / empty body (`itc-stages.ts:241-249`); test `:217` |
+| R3 | MET* | all 12 §5 rows mirrored; every citation verified against plugin `src/` (medium:49, emdash:254, surfdash:93, zenn:92, qiita:70, wechatmp:162+171, x:64, substack:26) — citation *location* deviation is finding 1 |
+| R4 | MET | source-locale article shares `content.json` adapt:false, others `content.<variant>.json` adapt:true, switches unioned (`itc-stages.ts:308-341`); tests `:253-308` |
+| R5 | MET | unknown/podcast/x-draft/wechatmp-live/cover-less all rejected naming the target (`itc-stages.ts:296-306`); tests `:309-358` |
+| R6 | MET | stage code imports node:fs/node:path only; tests import kk-core ContentSchema (`itc-stages.test.ts:5`); 100% line coverage on itc-stages.ts |
+| AC1/AC2 | MET | AC1=R1/R2, AC2=R3/R4/R5, all evidenced above |
+
+##### Architecture
+
+Deep deterministic seams honored: `TARGET_PROFILES` is the single SSOT for the safety-critical draft/live switch (no LLM/YAML table — V2), plan output is pure data for 0151's adapt/fanout/next states, lazy sibling import keeps the runner loadable without `itc-stages.ts` with a loud remediation path (`kk-workflow-stages.ts:72-83`), and this slice correctly makes zero workflow edits.
+
+**Residual risk:** publish-tail wiring is unverified end-to-end until 0151 runs the workflow (stage helpers are unit-proven only); findings 1–2 are doc debt that must be dispositioned before F41 close.
+
+**Disposition:** APPROVED — route findings 1–2 to the implementing pass (text-only).
 
 ### References
 
@@ -131,3 +193,8 @@ Signatures:
 - Brainstorm: `docs/plans/2026-09-21-itc-end-to-end-publish-brainstorm.md`
 
 ### History
+
+- 2026-09-22T19:51:49.105Z todo → wip (system)
+- 2026-09-22T20:03:34.542Z wip → testing (system)
+- 2026-09-22T20:03:35.304Z testing → done (system)
+

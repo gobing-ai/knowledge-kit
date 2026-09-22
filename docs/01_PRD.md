@@ -83,7 +83,7 @@ the unimplemented `Brief` / `GeneratorInput` contract.
 | Package rename | — | Rejected | Package `@gobing-ai/knowledge-kit` is historical (ADR-007 R2). Operator binary `kk` is in scope (A2 / ADR-010). |
 | LLM wiki | **I** | Undecided | Parked as map fog; requires go/no-go spike first |
 | Own STORM generator | **D4** | Phase 3 | Future generator depth |
-| Remaining WT agent-skill families | Future **F** children | Deferred | Image, auxiliary research, adaptation, and publishing require separate intake after F2 topic core |
+| Remaining WT agent-skill families | **F41** | Shipped | Image, auxiliary research, adaptation and publishing delivered by F41 kk-itc end-to-end (ADR-021/ADR-022, `docs/design/kk-itc-end-to-end.md`) |
 
 ## Success criteria
 

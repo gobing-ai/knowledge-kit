@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Cover illustration and kk:article-adapt per-platform variants
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.547Z
-updated_at: "2026-09-22T16:51:23.267Z"
+updated_at: "2026-09-22T22:49:39.743Z"
 feature_id: F41
 priority: P2
 tags:
@@ -33,20 +33,20 @@ Rubric: E6 D1 L2 C1 R1 = 11 → a separate task: a distinct skill artifact with 
 
 ### Requirements
 
-- [ ] R1. Add the vars `cover_enabled` (false) and `inline_images` (false). An `illustrate` state sits between publish-entry and materialize. It runs `kk:image-authoring` with `KK_NONINTERACTIVE=1 KK_IMAGE_AUTO_CONFIRM=1` and writes `4-illustrations/cover.*` (plus `inline-*` when `inline_images` is true). When both vars are false, the state is not entered.
-- [ ] R2. New skill `plugins/kk/skills/article-adapt/SKILL.md`, authored and checked with `superskill skill` (scaffold, validate, evaluate). For each `publish-plan.json` variant with `adapt:true`, it:
+- [x] R1. Add the vars `cover_enabled` (false) and `inline_images` (false). An `illustrate` state sits between publish-entry and materialize. It runs `kk:image-authoring` with `KK_NONINTERACTIVE=1 KK_IMAGE_AUTO_CONFIRM=1` and writes `4-illustrations/cover.*` (plus `inline-*` when `inline_images` is true). When both vars are false, the state is not entered.
+- [x] R2. New skill `plugins/kk/skills/article-adapt/SKILL.md`, authored and checked with `superskill skill` (scaffold, validate, evaluate). For each `publish-plan.json` variant with `adapt:true`, it:
   - translates `title` and `body` to the variant locale
   - applies the variant `limits`
   - keeps code blocks, URLs and `references`
   - writes the variant file
   The skill holds no platform table.
-- [ ] R3. An `adapt` state after publish-plan runs only when some variant has `adapt:true`. A follow-up shell step fails when a variant file is missing or lacks `title`/`body`.
-- [ ] R4. Tests cover the illustrate and adapt edge guards (structural), plus a seeded adapted variant that parses against `ContentSchema` and flows through `itc-publish-fanout` stamping.
+- [x] R3. An `adapt` state after publish-plan runs only when some variant has `adapt:true`. A follow-up shell step fails when a variant file is missing or lacks `title`/`body`.
+- [x] R4. Tests cover the illustrate and adapt edge guards (structural), plus a seeded adapted variant that parses against `ContentSchema` and flows through `itc-publish-fanout` stamping.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Cover generation runs only when cover_enabled is true
-- [ ] AC2 — article-adapt writes one Content variant per target profile
+- [x] AC1 — Cover generation runs only when cover_enabled is true
+- [x] AC2 — article-adapt writes one Content variant per target profile
 
 Task-local check: `superskill skill validate` passes for `article-adapt`.
 
@@ -90,15 +90,72 @@ Invariants:
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/kk-itc-workflow.test.ts:106` |
+| `apps/cli/tests/kk-itc-workflow.test.ts:2` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:15` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1673` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1710` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:26` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:74` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/workflows/kk-itc.yaml:37-38 (cover_enabled/inline_images default "false"); :192-208 (illustrate state: kk:image-authoring with KK_NONINTERACTIVE=1 KK_IMAGE_AUTO_CONFIRM=1, writes 4-illustrations/cover.*, inline figures only when inline_images=true, post-check cover artifact exists); :545-562 (publish-entry->illustrate entered only when a spend var is on; else-edge goes straight to materialize); tests apps/cli/tests/kk-itc-workflow.test.ts:308-331 |
+| R2 | MET | plugins/kk/skills/article-adapt/SKILL.md:46-68 (per adapt:true variant: translate title/body to the variant locale, apply entry limits, keep code blocks/URLs/references verbatim, write <entry.file>); :74-84 (invariants: never sets draft/live keys, holds no platform table); fresh superskill skill validate --strict -> Valid exit 0; evaluate exit 0 (one anti-hallucination advisory) |
+| R3 | MET | plugins/kk/workflows/kk-itc.yaml:577-584 (publish-plan->adapt guarded on jq count of adapt:true variants); :585-590 (else-edge to publish-gate); :226-241 (adapt state + follow-up kk stage itc-adapt-verify); plugins/kk/scripts/itc-stages.ts:429-453 (itcAdaptVerify fails by name on missing file or empty title/body); tests apps/cli/tests/itc-stages.test.ts:861-929 |
+| R4 | MET | apps/cli/tests/kk-itc-workflow.test.ts:308-351 (structural asserts for both illustrate and adapt edge guards); :353-390 (dry-run walk, 14 transitions with cover/inline on); apps/cli/tests/kk-itc-publish-tail.test.ts:75-116 (seeded ja-article variant parses ContentSchema, flows through itc-publish-fanout stamping); :126-139 (unadapted variant rejected at verify); apps/cli/tests/itc-stages.test.ts:861-929 (itc-adapt-verify branches) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | apps/cli/tests/kk-itc-workflow.test.ts:308-331 pins both spend-var guard edges and the both-false else-edge; :353-390 executes `spur workflow run --dry-run` with cover_enabled/inline_images=true and asserts 14 transitions to done — behavioral proof illustrate is entered only when a var is on |
+| AC2 | MET | test | apps/cli/tests/itc-stages.test.ts:861-929 (adapt-verify behaviorally fails missing/title-body-less variants); :282-308 (one adapt:true variant per non-source profile, with limits); apps/cli/tests/kk-itc-publish-tail.test.ts:75-116 (seeded variant parses ContentSchema and is stamped by fanout); apps/cli/tests/kk-itc-workflow.test.ts:334-351; static: plugins/kk/skills/article-adapt/SKILL.md:46-84, superskill skill validate --strict Valid |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**Reviewed:** working-tree diff vs HEAD (10 modified + 4 new files) against R1-R4/AC1-AC2. Verdict: **PASS (approved)**.
+
+| # | Priority | Dimension | Finding | Location |
+|---|----------|-----------|---------|----------|
+| 1 | P3 (minor) | usability | Task-file hygiene: the `### Solution` and `### Testing` sections still hold their template placeholders — the implement/verify steps recorded no change map or test evidence in the task file (the evidence lives in the diff and tests) | `docs/tasks/0152_cover-illustration-and-kk-article-adapt-per-platform-variant.md` (Solution/Testing) |
+| 2 | P4 (advisory) | security | `superskill skill evaluate` passes (grade B) with one anti-hallucination advisory ("add verify-with-source language"); for a translation skill the source is the in-context `content.json` already covered by the faithfulness invariant — accept | `plugins/kk/skills/article-adapt/SKILL.md` |
+| 3 | P4 (advisory) | correctness | Spend-guard asymmetry: `cover_enabled=true` has a post-check that a cover artifact exists; `inline_images=true` has no analogous check, so silently skipped inline figures would go unnoticed (design §6 mandates only the cover check) | `plugins/kk/workflows/kk-itc.yaml:206-208` |
+| 4 | P4 (advisory) | architecture | 0151's Review fix-verification row still cites the plan-time rejection (`itc-stages.ts:424-435`) that this task relocated into `itc-adapt-verify`; point-in-time review text — current behavior is documented in `docs/04_DESIGN.md` (0152 paragraph) and `kk-itc-publish-tail.test.ts:126` | `docs/tasks/0151_kk-itc-publish-tail-fan-out-browser-loop-retry-and-operator-.md` |
+
+#### Functional traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1/AC1 | MET | vars default `"false"` (`kk-itc.yaml:37-38`); illustrate entered only when a spend var is on (`:549-555`), else-edge straight to materialize (`:556-562`); `KK_NONINTERACTIVE=1 KK_IMAGE_AUTO_CONFIRM=1` + `4-illustrations/cover.*` (`:192-208`); cover post-check; tests `kk-itc-workflow.test.ts:308-332` and the 14-transition dry-run walk (`:353-390`) |
+| R2/AC2 | MET | `plugins/kk/skills/article-adapt/SKILL.md` — per `adapt:true` variant: translate title/body to the variant locale, apply plan `limits`, keep code/URLs/`references`, write `<entry.file>`; no platform table; `superskill skill validate --strict` → Valid, `evaluate` → PASS (B) |
+| R3 | MET | `publish-plan → adapt` guarded on the jq `adapt:true` count (`kk-itc.yaml:577-584`), else-edge always (`:585-590`); follow-up `kk stage itc-adapt-verify` (`:240-241`) fails by name on missing files or empty title/body (`itc-stages.ts:429-453`) |
+| R4 | MET | structural asserts for both guards (`kk-itc-workflow.test.ts:289-351`); seeded `ja-article` variant parses `ContentSchema` before and after fanout stamping (`kk-itc-publish-tail.test.ts:76-80,113-116`); `itc-adapt-verify` branch tests (`itc-stages.test.ts:861-929`) |
+
+#### Relocation check (scope note — 0151 AC3/AC7)
+
+The 0151 plan-time unadapted-variant rejection is gone from `itcPublishPlan` (now writes `adapt:true` variants and the plan, `itc-stages.ts:367-426`) and re-landed as the adapt state's follow-up verify (`itc-adapt-verify`, `itc-stages.ts:429-453`), which fails pre-gate by name before fan-out can run; fan-out keeps its own `existsSync` guard (`itc-stages.ts:483`). 0151 AC3 intent intact (fan-out group spawn/retry unchanged; `itc-publish-fanout` tests pass); AC7 intent intact — the fake-transport fixture still reaches draft ok Results with the variant seeded (`kk-itc-publish-tail.test.ts:63-137`), and the new regression test pins the failure at verify, not mid-tail (`:126-139`).
+
+#### Fresh verification evidence
+
+- `superskill skill validate plugins/kk/skills/article-adapt/SKILL.md --strict` → `Valid`
+- `superskill skill evaluate …` → PASS, grade B
+- `bun test` (3 kk-itc files) → 59 pass / 0 fail; `itc-stages.ts` 100% line, 92.76% branch
+- `bun run lint` → exit 0 · `bun run test` → 1225 pass / 0 fail
+
+**Residual risk:** the adapt/illustrate `agent.run` steps are model work and are not executed in CI — translation/figure quality is untestable there; the guard rails (`itc-adapt-verify`, switch stamping, cover post-check) bound the failure modes.
+
+**Next:** approved — proceed to record/verdict in the pipeline (implementer's lane); P3 is implement-step task hygiene, P4s are accept/defer.
 
 ### References
 
@@ -108,3 +165,8 @@ Invariants:
 - Brainstorm: `docs/plans/2026-09-21-itc-end-to-end-publish-brainstorm.md`
 
 ### History
+
+- 2026-09-22T22:30:31.622Z todo → wip (system)
+- 2026-09-22T22:49:38.479Z wip → testing (system)
+- 2026-09-22T22:49:39.743Z testing → done (system)
+

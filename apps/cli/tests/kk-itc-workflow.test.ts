@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -100,5 +101,291 @@ describe('kk-itc workflow (0069)', () => {
         expect(yaml).not.toContain(['', '{vars.work_dir}/3-draft/'].join('$')); // no stage-dir refs remain
         // the multi-file stage keeps its dir (staged by the runner, still addressed by the artifacts)
         expect(yaml).toContain(['', '{vars.work_dir}/2-outline/outline-approved.md'].join('$'));
+    });
+});
+
+// --- 0149: auto mode, judge revise loop, run report (F41 slice 1) -----------------------------
+
+describe('kk-itc auto mode + revise loop + report (0149)', () => {
+    const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-itc.yaml');
+    const yaml = readFileSync(workflowPath, 'utf-8');
+    const runner = readFileSync(join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'), 'utf-8');
+
+    const stateIds = [...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1]);
+
+    // `${vars.name}` assembled at runtime so lint's noTemplateCurlyInString stays quiet
+    // (same dodge as the 0069 expectFile assertions above).
+    const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
+
+    /** Extract each transition's guard command from the transitions section, keyed `from->to`. */
+    const guardOf = (from: string, to: string): string => {
+        const transitions = yaml.slice(yaml.indexOf('\ntransitions:'));
+        const blocks = [...transitions.matchAll(/- from: ([\w-]+)\n\s+to: ([\w-]+)([\s\S]*?)(?=\n {2}- from:|$)/g)];
+        const block = blocks.find((m) => m[1] === from && m[2] === to);
+        expect(block, `transition ${from}->${to} exists`).toBeDefined();
+        return block?.[3] ?? '';
+    };
+
+    /** The state block's source (description + onEnter), sliced to just that state. */
+    const stateBlock = (id: string): string =>
+        yaml.match(new RegExp(`- id: ${id}\\n[\\s\\S]*?(?=\\n {2}- id: )`))?.[0] ?? '';
+
+    it('R1 — the new vars default off and the loop caps stay present', () => {
+        expect(yaml).toContain('auto: "false"');
+        expect(yaml).toContain('unslop: "false"');
+        expect(yaml).toContain('max_revisions: "2"');
+    });
+
+    it('R1 (V1) — with default vars every new edge is guarded behind auto/unslop, so the path is unchanged', () => {
+        expect(stateIds).toEqual(expect.arrayContaining(['outline-autopick', 'unslop', 'draft-autorevise', 'report']));
+        // The judge NEEDS_REVISION -> draft-revise edge is the one Q&A-sanctioned default-path change
+        // (it replaces today's route to failed); it carries its own dedicated assertions below.
+        for (const [from, to] of [
+            ['outline-write', 'outline-autopick'],
+            ['draft-write', 'unslop'],
+            ['draft-write', 'judge'],
+            ['unslop', 'judge'],
+            ['unslop', 'draft-review'],
+            ['draft-autorevise', 'unslop'],
+            ['draft-autorevise', 'judge'],
+            ['judge', 'report'],
+            ['judge', 'draft-autorevise'],
+        ] as const) {
+            expect(guardOf(from, to), `${from}->${to} must reference vars.auto or vars.unslop`).toMatch(
+                /vars\.(auto|unslop)/,
+            );
+        }
+    });
+
+    it('R2 (AC2) — outline-write routes to outline-autopick in auto mode, which binds the pick and never enters outline-select', () => {
+        expect(guardOf('outline-write', 'outline-autopick')).toContain(`test "${varRef('auto')}" = "true"`);
+        expect(guardOf('outline-write', 'outline-autopick')).toContain(`-z "${varRef('outline')}"`);
+        expect(guardOf('outline-write', 'outline-select')).toContain(`test "${varRef('auto')}" != "true"`);
+        const block = stateBlock('outline-autopick');
+        expect(block).toContain('kk stage itc-outline-pick');
+        expect(block).toContain('kind: file.read.into-var');
+        expect(block).toContain('var: outline');
+        expect(guardOf('outline-autopick', 'outline-commit')).toContain('always');
+        // the writer prompt carries the recommendation contract
+        expect(stateBlock('outline-write')).toContain('outline-recommendation.json');
+        expect(stateBlock('outline-write')).toContain('"pick": "a|b|c"');
+    });
+
+    it('R3/AC6 — the unslop state edits the draft in place and sits on every auto revision path', () => {
+        const block = stateBlock('unslop');
+        expect(block).toContain('kk:taste-unslop');
+        expect(block).toContain('in place');
+        expect(block).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.md'].join('$'));
+        expect(guardOf('draft-write', 'unslop')).toContain(`test "${varRef('unslop')}" = "true"`);
+        expect(guardOf('draft-autorevise', 'unslop')).toContain(`test "${varRef('unslop')}" = "true"`);
+        expect(guardOf('unslop', 'judge')).toContain(`test "${varRef('auto')}" = "true"`);
+        expect(guardOf('unslop', 'draft-review')).toContain(`test "${varRef('auto')}" != "true"`);
+    });
+
+    it('R3 — draft-write/draft-autorevise split on unslop; interactive drafts still pause at review', () => {
+        expect(guardOf('draft-write', 'judge')).toContain(`test "${varRef('auto')}" = "true"`);
+        expect(guardOf('draft-write', 'judge')).toContain(`"${varRef('unslop')}" != "true"`);
+        expect(guardOf('draft-write', 'draft-review')).toContain(`test "${varRef('auto')}" != "true"`);
+        expect(guardOf('draft-write', 'draft-review')).toContain(`"${varRef('unslop')}" != "true"`);
+        expect(guardOf('draft-autorevise', 'judge')).toContain(`test "${varRef('auto')}" = "true"`);
+    });
+
+    it('R4 (AC3, V5) — auto NEEDS_REVISION loops through draft-autorevise, bounded by max_revisions', () => {
+        const block = stateBlock('draft-autorevise');
+        expect(block).toContain('.auto-revise-count');
+        expect(block).toContain('feedback[]');
+        expect(block).toContain('.itc-verdict.json');
+        expect(block).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.md'].join('$'));
+
+        const autorevise = guardOf('judge', 'draft-autorevise');
+        expect(autorevise).toContain(`test "${varRef('auto')}" = "true"`);
+        expect(autorevise).toContain('NEEDS_REVISION');
+        expect(autorevise).toContain('.auto-revise-count');
+        expect(autorevise).toContain(`-lt "${varRef('max_revisions')}"`);
+
+        const report = guardOf('judge', 'report');
+        expect(report).toContain(`test "${varRef('auto')}" = "true"`);
+        expect(report).toContain('PASS'); // PASS still reports (then routes done)
+        expect(report).toContain('FAIL');
+        expect(report).toContain(`-ge "${varRef('max_revisions')}"`); // exhausted NEEDS_REVISION reports, ends failed
+    });
+
+    it('R4/R5 (AC4) — interactive NEEDS_REVISION routes back to draft-revise with the feedback shown, capped at 3', () => {
+        const revise = guardOf('judge', 'draft-revise');
+        expect(revise).toContain(`test "${varRef('auto')}" != "true"`);
+        expect(revise).toContain('NEEDS_REVISION');
+        expect(revise).toContain('.revise-count');
+        expect(revise).toContain('-lt 3');
+
+        const failed = guardOf('judge', 'failed');
+        expect(failed).toContain(`test "${varRef('auto')}" != "true"`);
+        expect(failed).toContain('FAIL');
+        expect(failed).toContain('-ge 3');
+
+        // The judge binds the verdict so draft-revise can show the feedback; the prompt carries it.
+        const judgeBlock = stateBlock('judge');
+        expect(judgeBlock).toContain('kind: file.read.into-var');
+        expect(judgeBlock).toContain('var: __verdictFeedback');
+        expect(yaml).toContain(['Revision feedback: ', '{vars.__hitlInput}'].join('$'));
+        expect(stateBlock('draft-revise')).toContain('Judge feedback');
+    });
+
+    it('R5 (AC5) — the judge prompt names docs.json as research evidence', () => {
+        expect(stateBlock('judge')).toContain('docs.json');
+    });
+
+    it('R7 — the report state delegates itc-report and routes done/failed on the outcome', () => {
+        const block = stateBlock('report');
+        expect(block).toContain('kk stage itc-report');
+        expect(block).toContain(`"${varRef('max_revisions')}"`);
+        // Empty outcome = done keeps the dry-run walkable (mirrors the empty-verdict PASS convention).
+        expect(guardOf('report', 'done')).toContain('test -z "$o" -o "$o" = done');
+        expect(guardOf('report', 'failed')).toContain('"$o" != done');
+    });
+
+    it('R8 — the helpers live in itc-stages.ts, are dispatched from the runner switch, and stay node-builtin-only', () => {
+        // Lazy sibling resolution: a runner copy without itc-stages.ts still loads and fails loud.
+        expect(runner).toContain(`import('./itc-stages.ts')`);
+        expect(runner).toContain('loadItcStages');
+        expect(runner).toContain(`case 'itc-outline-pick':`);
+        expect(runner).toContain(`case 'itc-report':`);
+        const stages = readFileSync(join(import.meta.dir, '../../../plugins/kk/scripts/itc-stages.ts'), 'utf-8');
+        expect(stages).not.toContain('@gobing-ai/');
+        expect(stages).not.toContain(`from '../`); // no cross-directory imports (ADR-018/V6)
+        expect(stages).toContain('outline-recommendation.json');
+        expect(stages).toContain('report.json');
+    });
+
+    it('task check — the dry-run walk with auto=true reaches done', () => {
+        const workDir = mkdtempSync(join(tmpdir(), 'kk-itc-dryrun-'));
+        const result = Bun.spawnSync(
+            [
+                'spur',
+                'workflow',
+                'run',
+                workflowPath,
+                '--run-id',
+                `kk-itc-dryrun-${Date.now()}`,
+                '--dry-run',
+                '--json',
+                '--vars',
+                JSON.stringify({ work_dir: workDir, auto: 'true', judge: 'true', unslop: 'true' }),
+            ],
+            {
+                cwd: join(import.meta.dir, '../../..'),
+                // The test may run inside a pipeline step — never leak the guard into the child.
+                env: { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined },
+                stdout: 'pipe',
+                stderr: 'pipe',
+            },
+        );
+        expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
+        const summary = JSON.parse(result.stdout.toString());
+        expect(summary.status).toBe('done');
+        expect(summary.finalState).toBe('done');
+    });
+});
+
+describe('kk-itc illustrate + adapt (0152)', () => {
+    const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-itc.yaml');
+    const yaml = readFileSync(workflowPath, 'utf-8');
+    const stages = readFileSync(join(import.meta.dir, '../../../plugins/kk/scripts/itc-stages.ts'), 'utf-8');
+
+    // `${vars.name}` assembled at runtime so lint's noTemplateCurlyInString stays quiet
+    const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
+
+    const guardOf = (from: string, to: string): string => {
+        const transitions = yaml.slice(yaml.indexOf('\ntransitions:'));
+        const blocks = [...transitions.matchAll(/- from: ([\w-]+)\n\s+to: ([\w-]+)([\s\S]*?)(?=\n {2}- from:|$)/g)];
+        const block = blocks.find((m) => m[1] === from && m[2] === to);
+        expect(block, `transition ${from}->${to} exists`).toBeDefined();
+        return block?.[3] ?? '';
+    };
+
+    const stateBlock = (id: string): string =>
+        yaml.match(new RegExp(`- id: ${id}\\n[\\s\\S]*?(?=\\n {2}- id: )`))?.[0] ?? '';
+
+    it('R1 (R7/AC1) — the spend vars default false and illustrate runs only when one is on', () => {
+        expect(yaml).toContain('cover_enabled: "false"');
+        expect(yaml).toContain('inline_images: "false"');
+        expect(guardOf('publish-entry', 'illustrate')).toContain(`test "${varRef('cover_enabled')}" = "true"`);
+        expect(guardOf('publish-entry', 'illustrate')).toContain(`-o "${varRef('inline_images')}" = "true"`);
+        // else-branch: with both vars false the state is never entered
+        expect(guardOf('publish-entry', 'materialize')).toContain(`"${varRef('cover_enabled')}" != "true"`);
+        expect(guardOf('publish-entry', 'materialize')).toContain(`"${varRef('inline_images')}" != "true"`);
+        expect(guardOf('illustrate', 'materialize')).toContain('always');
+        expect([...yaml.matchAll(/^\s+- id: ([\w-]+)/gm)].map((m) => m[1])).toContain('illustrate');
+    });
+
+    it('R7 — illustrate runs kk:image-authoring non-interactively with auto-confirm and verifies the cover', () => {
+        const block = stateBlock('illustrate');
+        expect(block).toContain('kk:image-authoring');
+        expect(block).toContain('KK_NONINTERACTIVE=1');
+        expect(block).toContain('KK_IMAGE_AUTO_CONFIRM=1');
+        expect(block).toContain('4-illustrations');
+        expect(block).toContain('cover.png');
+        // inline figures are requested only when inline_images=true
+        expect(block).toContain('When inline_images=true');
+        // spend guard: cover_enabled=true must yield a cover artifact
+        expect(block).toContain(`test "${varRef('cover_enabled')}" = "true" || exit 0`);
+        expect(block).toContain('4-illustrations/cover.*');
+    });
+
+    it('R9 (AC2) — adapt runs only for a plan variant needing adaptation and verifies the files', () => {
+        const block = stateBlock('adapt');
+        expect(block).toContain('kk:article-adapt');
+        expect(block).toContain('publish-plan.json');
+        expect(block).toContain('adapt=true');
+        // invariant: the adapt step never sets draft/live switches — fanout stamps them (V3)
+        expect(block).toContain('Never set metadata.published');
+        // R3 follow-up shell step fails on a missing or title/body-lacking variant file
+        expect(block).toContain('kk stage itc-adapt-verify');
+        expect(stages).toContain('export function itcAdaptVerify');
+
+        const adaptEdge = guardOf('publish-plan', 'adapt');
+        expect(adaptEdge).toContain('publish-plan.json');
+        expect(adaptEdge).toContain('.adapt == true');
+        expect(guardOf('adapt', 'publish-gate')).toContain('always');
+        // fallback edge: no adaptation needed -> straight through the send gate
+        expect(guardOf('publish-plan', 'publish-gate')).toContain('always');
+    });
+
+    it('task check — a dry-run walk with cover/inline on and targets set still reaches done', () => {
+        const workDir = mkdtempSync(join(tmpdir(), 'kk-itc-dryrun-0152-'));
+        const result = Bun.spawnSync(
+            [
+                'spur',
+                'workflow',
+                'run',
+                workflowPath,
+                '--run-id',
+                `kk-itc-dryrun-0152-${Date.now()}`,
+                '--dry-run',
+                '--json',
+                '--vars',
+                JSON.stringify({
+                    work_dir: workDir,
+                    auto: 'true',
+                    judge: 'true',
+                    unslop: 'true',
+                    cover_enabled: 'true',
+                    inline_images: 'true',
+                    publish_targets: 'zenn-pub,qiita-pub,surfdash-pub',
+                }),
+            ],
+            {
+                cwd: join(import.meta.dir, '../../..'),
+                // The test may run inside a pipeline step — never leak the guard into the child.
+                env: { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined },
+                stdout: 'pipe',
+                stderr: 'pipe',
+            },
+        );
+        expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
+        const summary = JSON.parse(result.stdout.toString());
+        expect(summary.status).toBe('done');
+        expect(summary.finalState).toBe('done');
+        // AC1 behavioral proof: the spend vars route the walk through illustrate (+1 transition vs base)
+        expect(summary.transitionsTaken).toBe(14);
     });
 });

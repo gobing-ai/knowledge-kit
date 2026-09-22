@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: /workflow-run kk-itc end-to-end profile flags
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.548Z
-updated_at: "2026-09-22T16:51:23.580Z"
+updated_at: "2026-09-22T23:06:24.107Z"
 feature_id: F41
 priority: P2
 tags:
@@ -30,7 +30,7 @@ Rubric: E3 D1 L1 C0 R0 = 5. One command surface plus its test.
 
 ### Requirements
 
-- [ ] R1. The kk-itc profile in `plugins/kk/commands/workflow-run.md` gains these flags:
+- [x] R1. The kk-itc profile in `plugins/kk/commands/workflow-run.md` gains these flags:
   - `--auto`
   - `--unslop true|false`
   - `--cover true|false`
@@ -39,13 +39,13 @@ Rubric: E3 D1 L1 C0 R0 = 5. One command surface plus its test.
   - `--live`
   - `--max-revisions N`
   - `--source-locale en|zh|ja`
-- [ ] R2. `--auto` binds `research`, `judge` and `unslop` to true unless the operator passed them. `--live` is never implied. `--playbook wechat` without `--source-locale` binds `zh`.
-- [ ] R3. `apps/cli/tests/workflow-run-command.test.ts` covers the binding, including `publish_live` false by default under `--auto`.
-- [ ] R4. Sync the `docs/04_DESIGN.md` §7 surface in the same commit (T3).
+- [x] R2. `--auto` binds `research`, `judge` and `unslop` to true unless the operator passed them. `--live` is never implied. `--playbook wechat` without `--source-locale` binds `zh`.
+- [x] R3. `apps/cli/tests/workflow-run-command.test.ts` covers the binding, including `publish_live` false by default under `--auto`.
+- [x] R4. Sync the `docs/04_DESIGN.md` §7 surface in the same commit (T3).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — workflow-run binds an end-to-end kk-itc profile
+- [x] AC1 — workflow-run binds an end-to-end kk-itc profile
 
 Task-local check: `--auto` alone leaves `publish_live` false.
 
@@ -84,15 +84,72 @@ Invariant: `--live` binds `publish_live` only when passed explicitly (ADR-022).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/kk-itc-workflow.test.ts:106` |
+| `apps/cli/tests/kk-itc-workflow.test.ts:2` |
+| `apps/cli/tests/workflow-run-command.test.ts:196` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:15` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1673` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1710` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:26` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:74` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/commands/workflow-run.md:39-41 (all eight flags: --auto, --unslop true |
+| R2 | MET | plugins/kk/commands/workflow-run.md:193-198 (auto defaults research/judge/unslop unless passed; --live never implied, ADR-022; wechat without --source-locale implies zh, explicit wins) and :241-243 (JSON binds auto/unslop/max_revisions/cover_enabled/inline_images/publish_targets/publish_live/source_locale); tests apps/cli/tests/workflow-run-command.test.ts:217-256 (test+command: 20 pass / 0 fail) |
+| R3 | MET | apps/cli/tests/workflow-run-command.test.ts:202-260 — six static-invariant tests incl. task-local check (--auto alone leaves publish_live false, :223-229); fresh run: NODE_ENV=test bun test apps/cli/tests/workflow-run-command.test.ts → 20 pass, 0 fail, 111 expect() calls (test+command) |
+| R4 | MET | docs/04_DESIGN.md:614-622 (§7.2 surface gains the eight flags) and :639 (0153 binding paragraph, ADR-022-consistent) (static-ref) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | workflow-run binds an end-to-end kk-itc profile: plugins/kk/commands/workflow-run.md:39-41,193-198,241-243; covered by apps/cli/tests/workflow-run-command.test.ts:206-260 (fresh: 20 pass / 0 fail). Task-local check (--auto alone leaves publish_live false) asserted at :223-229 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0153 (/sp:dev-review 0153 --auto, 2026-09-22)
+
+**Scope:** uncommitted working-tree diff vs HEAD, measured against this task spec (Requirements R1–R4, AC1).
+**Dimensions:** functional, security, efficiency, correctness, usability, architecture.
+**Verdict:** PASS (pipeline: APPROVED). Fresh evidence: `NODE_ENV=test bun test` on the four touched test files → **79 pass / 0 fail, 573 expect() calls**; `bun run lint` → biome "Checked 304 files", typecheck exit 0.
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location |
+|---|----------|-----------|---------|----------|
+| 1 | P4 (advisory) | correctness | `--max-revisions <N>` does not state that N must be a non-negative integer; a non-numeric value makes the `test -lt "${vars.max_revisions}"` guards error-and-evaluate-false (run routes to report/failed — bounded, no hang) | `plugins/kk/commands/workflow-run.md:38`, `plugins/kk/workflows/kk-itc.yaml:520-528` |
+| 2 | P4 (advisory) | usability | Resolve-list annotation `MAX_REVISIONS` (`2`) reads as a resolved value next to `true|false` flags; cosmetic — flag default is unambiguous at :38 | `plugins/kk/commands/workflow-run.md:54` |
+
+No P1–P3 findings. Both advisories are non-blocking; disposition: recorded, no fix required for this slice.
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | all eight flags documented `plugins/kk/commands/workflow-run.md:38-39`; asserted by `apps/cli/tests/workflow-run-command.test.ts:206-215` |
+| R2 | MET | binding rules `plugins/kk/commands/workflow-run.md:193-198` (auto defaults research/judge/unslop unless passed; `--live` never implied, ADR-022; wechat→zh, explicit `--source-locale` wins); JSON binds all new vars `:241`; tests `workflow-run-command.test.ts:217-255` |
+| R3 | MET | `apps/cli/tests/workflow-run-command.test.ts:202-260` — six static tests incl. AC task-local check (`--auto` alone leaves `publish_live` false, `:227-228`); 79/79 pass fresh |
+| R4 | MET | `docs/04_DESIGN.md:616-643` — §7 surface gains the eight flags plus a 0153 binding paragraph consistent with ADR-022 |
+| AC1 | MET | workflow-run binds an end-to-end kk-itc profile; task-local check passes |
+
+**Cross-slice consistency (0149–0152 vars):** the command JSON binds (`workflow-run.md:241`) match `plugins/kk/workflows/kk-itc.yaml:23-39` var names exactly — `auto`, `unslop`, `max_revisions`, `cover_enabled`, `inline_images`, `publish_targets`, `publish_live`, `source_locale` — and defaults agree (`max_revisions` 2, `source_locale` en, spend vars false, targets empty). `--live`/`publish_live` honors ADR-022 end to end: workflow gate `kk-itc.yaml:605` (`auto≠true ∨ publish_live=true` pauses) matches the flag rule and design §7 (`docs/design/kk-itc-end-to-end.md:24,40`).
+
+**Architecture:** profile stays a thin static command surface — one parse rule, one resolve list, one JSON bind line; binding rules stated once and tested as text invariants (existing 0060 convention). New deterministic logic stayed out of the markdown (it lives in `itc-stages.ts` behind lazy sibling import, `kk-workflow-stages.ts:74-88`). No new abstraction, no shallow pass-through added by this slice.
+
+**Residual risk:** the command is procedural markdown executed by an agent, so bindings are convention + static tests, not runtime-enforced; acceptable per the established command pattern (R19 bars a new command).
+
+**Next:** none — proceed (advisories can ride with any later touch of the file).
 
 ### References
 
@@ -102,3 +159,8 @@ Invariant: `--live` binds `publish_live` only when passed explicitly (ADR-022).
 - Brainstorm: `docs/plans/2026-09-21-itc-end-to-end-publish-brainstorm.md`
 
 ### History
+
+- 2026-09-22T22:58:28.879Z todo → wip (system)
+- 2026-09-22T23:06:22.921Z wip → testing (system)
+- 2026-09-22T23:06:24.107Z testing → done (system)
+

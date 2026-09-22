@@ -193,3 +193,70 @@ describe('workflow-run command (0060)', () => {
         expect(cmd).toMatch(/explicit `--dir`\s+overrides all four defaults/);
     });
 });
+
+/**
+ * Task 0153 (F41) — `/workflow-run` kk-itc end-to-end profile flags: one command surface
+ * binds the 0149-0152 vars (auto/unslop/max-revisions/cover/inline-images/targets/live/
+ * source-locale). Static invariants of the markdown command, per the 0060 convention above.
+ */
+describe('workflow-run kk-itc end-to-end profile flags (0153)', () => {
+    const cmdPath = join(import.meta.dir, '../../../plugins/kk/commands/workflow-run.md');
+    const cmd = readFileSync(cmdPath, 'utf-8');
+
+    it('R1 — the kk-itc profile documents all eight end-to-end flags', () => {
+        expect(cmd).toContain('--auto');
+        expect(cmd).toMatch(/--unslop true\|false/);
+        expect(cmd).toMatch(/--cover/);
+        expect(cmd).toMatch(/--inline-images/);
+        expect(cmd).toMatch(/--targets <a,b>/);
+        expect(cmd).toMatch(/--live/);
+        expect(cmd).toMatch(/--max-revisions <N>/);
+        expect(cmd).toMatch(/--source-locale en\|zh\|ja/);
+    });
+
+    it('R2 — --auto defaults research, judge and unslop to true unless the operator passed them', () => {
+        expect(cmd).toMatch(
+            /`--auto` binds `auto=true` and defaults `research`, `judge` and `unslop` to\s+`true` unless the operator passed them explicitly/,
+        );
+    });
+
+    it('R2 — --live is never implied: publish_live stays false unless passed explicitly (ADR-022)', () => {
+        expect(cmd).toMatch(
+            /`--live` is never implied — `publish_live`\s+stays `false` unless `--live` is passed explicitly \(ADR-022\)/,
+        );
+        // AC task-local check: --auto alone leaves publish_live false.
+        expect(cmd).not.toMatch(/`--auto`[^\n]*imply[^\n]*live/i);
+    });
+
+    it('R2 — --playbook wechat without --source-locale binds zh; explicit --source-locale wins', () => {
+        expect(cmd).toMatch(
+            /`--playbook wechat` without\s+`--source-locale` binds `source_locale=zh`; an explicit `--source-locale` always wins/,
+        );
+    });
+
+    it('R2 — the kk-itc run JSON binds all end-to-end vars (spend approvals stay false unless passed)', () => {
+        const jsonBlock = cmd
+            .split('\n')
+            .filter((l) => l.includes(String.raw`\"publish_targets\"`))
+            .find((l) => l.includes(String.raw`\"topic\"`));
+        expect(jsonBlock).toBeDefined();
+        for (const pair of [
+            ['auto', 'AUTO'],
+            ['unslop', 'UNSLOP'],
+            ['max_revisions', 'MAX_REVISIONS'],
+            ['cover_enabled', 'COVER'],
+            ['inline_images', 'INLINE_IMAGES'],
+            ['publish_targets', 'TARGETS'],
+            ['publish_live', 'LIVE'],
+            ['source_locale', 'SOURCE_LOCALE'],
+        ]) {
+            expect(jsonBlock).toContain(String.raw`\"${pair[0]}\":\"$${pair[1]}\"`);
+        }
+    });
+
+    it('R2 — cover/inline-images and targets/max-revisions bind their same-named vars, defaulting off', () => {
+        expect(cmd).toMatch(/`--targets <a,b>` binds `publish_targets`; `--cover` \/ `--inline-images` bind/);
+        expect(cmd).toMatch(/`cover_enabled` \/ `inline_images` \(`false` unless passed\)/);
+        expect(cmd).toMatch(/`--max-revisions` binds\s+`max_revisions` \(default `2`\)/);
+    });
+});

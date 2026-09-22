@@ -3,7 +3,8 @@
 name: kk-itc
 kind: state-machine
 description: >-
-  IT content authoring pipeline using topic/itc-generating, Spur HITL gates, and optional judging
+  IT content authoring pipeline using topic/itc-generating, Spur HITL gates, and optional judging;
+  an auto path (auto-picked outline, unslop pass, judge revise loop) ends in a run report
 initialState: prepare
 terminalStates:
   - done
@@ -19,6 +20,9 @@ vars:
   playbook: "generic"
   research: "false"
   judge: "false"
+  auto: "false" # auto mode: writer-recommended outline, no draft-review pause, mandatory judge, auto revise loop
+  unslop: "false" # run kk:taste-unslop on the draft before review/judge
+  max_revisions: "2" # cap on the auto revise loop (interactive stays bounded by the existing 3)
   outline: ""
   force: "false"
   rubric: "tech-accuracy"
@@ -26,6 +30,13 @@ vars:
   agent: ""
   __hitlAnswer: ""
   __hitlInput: ""
+  __verdictFeedback: "" # raw .itc-verdict.json, read by judge so draft-revise can show the feedback
+  publish_targets: "" # comma list of publish plugin names; empty = no publish tail (V1)
+  publish_live: "false" # live instead of draft; launch-only, never implied by auto (V4)
+  source_locale: "en" # locale of the authored draft (en|zh|ja)
+  cover_enabled: "false" # generate a cover via kk:image-authoring — this is the spend approval (R7)
+  inline_images: "false" # also generate inline illustrations — also a spend approval
+  browser_target: "" # internal cursor for the browser publish loop (written by itc-publish-next)
 
 states:
   - id: prepare
@@ -62,6 +73,7 @@ states:
           input: |
             Invoke the kk:${vars.writer} skill.
             Generate outline options (outline-option-a.md, outline-option-b.md, and optionally outline-option-c.md) in ${vars.work_dir}/2-outline/ from the brief at ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            When auto mode is on (auto=true), also write 2-outline/outline-recommendation.json as {"pick": "a|b|c", "rationale": "<why this option is strongest>"} recommending the option you would commit.
             Do not wait for operator selection; write the option files.
           expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
       - kind: shell
@@ -81,6 +93,18 @@ states:
             - b
             - c
           var: __hitlAnswer
+
+  - id: outline-autopick
+    description: "Auto mode — validate the writer's outline-recommendation.json and bind the pick as the selected outline"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage itc-outline-pick "${vars.work_dir}"
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/2-outline/.auto-pick
+          var: outline
 
   - id: outline-commit
     description: "Copy selected outline to outline-approved.md"
@@ -110,6 +134,18 @@ states:
             Revision feedback: ${vars.__hitlInput}
           expectFile: ${vars.work_dir}/3-draft-draft-article.md
 
+  - id: unslop
+    description: "De-slop pass — kk:taste-unslop edits the draft in place"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:taste-unslop skill.
+            Edit ${vars.work_dir}/3-draft-draft-article.md in place to remove slop (AI-tell phrasing, filler, hedging) while preserving the technical claims, code blocks, links, and the approved outline's structure.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.md
+
   - id: draft-review
     description: "Operator reviews and approves or requests revision on draft-article.md"
     pause: true
@@ -130,8 +166,135 @@ states:
             echo $((n + 1)) > "${vars.work_dir}/.revise-count";
       - kind: hitl.input
         options:
-          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-draft-draft-article.md:"
+          prompt: "Judge feedback (from ${vars.work_dir}/.itc-verdict.json): ${vars.__verdictFeedback}\nProvide specific revision feedback for ${vars.work_dir}/3-draft-draft-article.md:"
           var: __hitlInput
+
+  - id: draft-autorevise
+    description: "Auto mode — apply the judge feedback[] to the draft and consume one revision from the budget"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.auto-revise-count";
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:${vars.writer} skill.
+            Revise the draft at ${vars.work_dir}/3-draft-draft-article.md in place by applying every item of feedback[] in ${vars.work_dir}/.itc-verdict.json.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.md
+
+  - id: publish-entry
+    description: "Publish tail entry — targets are set; route into illustration/materialization"
+
+  - id: illustrate
+    description: "Optional cover/inline illustrations via kk:image-authoring — entered only when a spend var is on (R7)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:image-authoring skill with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 (non-interactive, auto-confirm — the operator approved spend via the cover_enabled/inline_images vars).
+            Create ${vars.work_dir}/4-illustrations/ and generate the cover illustration into it as cover.png (cover.jpg acceptable), sized for an article hero image.
+            When inline_images=true, also generate inline figures for the draft's key sections as inline-<slug>.png in the same directory.
+            Print each written path as the last line of stdout.
+      - kind: shell
+        options:
+          command: >-
+            test "${vars.cover_enabled}" = "true" || exit 0;
+            ls "${vars.work_dir}"/4-illustrations/cover.* >/dev/null 2>&1 || { echo "cover_enabled=true but no 4-illustrations/cover.* in ${vars.work_dir}" >&2; exit 1; }
+
+  - id: materialize
+    description: "Materialize the approved draft to 4-publish/content.json"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage itc-materialize "${vars.work_dir}" "${vars.publish_live}"
+
+  - id: publish-plan
+    description: "Split targets into fan-out groups and browser targets (4-publish/publish-plan.json)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage itc-publish-plan "${vars.work_dir}" "${vars.publish_targets}" "${vars.source_locale}" "${vars.publish_live}"
+
+  - id: adapt
+    description: "Write one adapted Content file per plan variant with adapt:true — kk:article-adapt (R9)"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:article-adapt skill.
+            Read ${vars.work_dir}/4-publish/publish-plan.json and, for every entry in variants with adapt=true, read the source ${vars.work_dir}/4-publish/content.json and write ${vars.work_dir}/4-publish/<entry.file>: translate title and body to the variant locale, apply the entry's limits, and keep code blocks, URLs and references unchanged.
+            Set format to the variant key's format suffix. Never set metadata.published, metadata.publishStatus or metadata.operation — itc-publish-fanout stamps the draft/live switches at send time.
+      - kind: shell
+        options:
+          command: >-
+            kk stage itc-adapt-verify "${vars.work_dir}"
+
+  - id: publish-gate
+    description: "Route to the operator confirm unless auto publishes drafts"
+
+  - id: publish-confirm
+    description: "Operator confirms the send — every target, draft or live mode"
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: >-
+            Send to targets [${vars.publish_targets}] in ${vars.publish_live} mode (false = draft,
+            true = LIVE)? Review ${vars.work_dir}/4-publish/publish-plan.json first.
+          var: __hitlAnswer
+      - kind: shell
+        options:
+          command: >-
+            test "${vars.__hitlAnswer}" = "yes" || printf declined > "${vars.work_dir}/4-publish/.publish-declined"
+
+  - id: publish-fanout
+    description: "Send each fan-out group through kk executor fan-out — target failures are data"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage itc-publish-fanout "${vars.work_dir}"
+
+  - id: publish-retry
+    description: "Re-send failed fan-out groups once through --retry-from (V5)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.publish-retry-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.publish-retry-count";
+            kk stage itc-publish-fanout "${vars.work_dir}" --retry
+
+  - id: publish-agent
+    description: "Publish one pending browser target via kk:publish — file-cursor loop bounded by the plan"
+    onEnter:
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/4-publish/.next-browser
+          var: browser_target
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:publish skill for the browser target ${vars.browser_target}.
+            Read ${vars.work_dir}/4-publish/publish-plan.json, find the browser entry whose target is ${vars.browser_target}, and use that variant's file under ${vars.work_dir}/4-publish/ as the Content input.
+            When the plan's live is true pass the skill's --live flag; otherwise publish as a draft (V4).
+            Always write the Result to ${vars.work_dir}/4-publish/result.${vars.browser_target}.json, including {ok: false, error: ...} when the publish fails.
+          expectFile: ${vars.work_dir}/4-publish/result.${vars.browser_target}.json
+      - kind: shell
+        options:
+          command: 'kk stage itc-publish-next "${vars.work_dir}"'
 
   - id: judge
     description: "Evaluate technical draft with content-judge (agent.run)"
@@ -143,9 +306,22 @@ states:
           input: |
             Invoke the kk:content-judge skill.
             Evaluate the draft at ${vars.work_dir}/3-draft-draft-article.md against the ${vars.rubric} rubric.
+            Research evidence: if ${vars.work_dir}/docs.json exists, read it and weigh it when judging.
             Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json per the skill's verdict contract.
             Print the verdict path as the last line of stdout.
           expectFile: ${vars.work_dir}/.itc-verdict.json
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/.itc-verdict.json
+          var: __verdictFeedback
+
+  - id: report
+    description: "Write the run report, then route to done or failed on its outcome"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage itc-report "${vars.work_dir}" "${vars.max_revisions}"
 
   - id: done
     description: "Terminal — IT content draft generated and approved successfully"
@@ -176,12 +352,20 @@ transitions:
       kind: always
 
   - from: outline-write
-    to: outline-select
-    description: "Outline not pre-selected -> pause for operator selection"
+    to: outline-autopick
+    description: "Auto mode with no pre-selected outline -> validate the writer recommendation and bind it"
     guard:
       kind: shell
       options:
-        command: 'test -z "${vars.outline}"'
+        command: 'test "${vars.auto}" = "true" -a -z "${vars.outline}"'
+
+  - from: outline-write
+    to: outline-select
+    description: "Interactive mode with no pre-selected outline -> pause for operator selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true" -a -z "${vars.outline}"'
 
   - from: outline-write
     to: outline-commit
@@ -197,6 +381,12 @@ transitions:
     guard:
       kind: always
 
+  - from: outline-autopick
+    to: outline-commit
+    description: "Writer recommendation validated and bound -> commit approved outline"
+    guard:
+      kind: always
+
   - from: outline-commit
     to: draft-write
     description: "Approved outline committed -> write draft"
@@ -204,10 +394,44 @@ transitions:
       kind: always
 
   - from: draft-write
-    to: draft-review
-    description: "Draft written -> pause for operator review"
+    to: unslop
+    description: "Unslop enabled -> de-slop the fresh draft"
     guard:
-      kind: always
+      kind: shell
+      options:
+        command: 'test "${vars.unslop}" = "true"'
+
+  - from: draft-write
+    to: draft-review
+    description: "Interactive mode without unslop -> pause for operator review"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true" -a "${vars.unslop}" != "true"'
+
+  - from: draft-write
+    to: judge
+    description: "Auto mode without unslop -> straight to the judge"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" = "true" -a "${vars.unslop}" != "true"'
+
+  - from: unslop
+    to: judge
+    description: "Auto mode -> the de-slopped draft goes to the judge"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" = "true"'
+
+  - from: unslop
+    to: draft-review
+    description: "Interactive mode -> pause for operator review of the de-slopped draft"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true"'
 
   - from: draft-review
     to: judge
@@ -219,11 +443,19 @@ transitions:
 
   - from: draft-review
     to: done
-    description: "Draft approved and judge disabled -> complete workflow"
+    description: "Draft approved, judge disabled, no publish targets -> complete workflow"
     guard:
       kind: shell
       options:
-        command: '{ test -z "${vars.__hitlAnswer}" || test "${vars.__hitlAnswer}" = "yes"; } && test "${vars.judge}" != "true"'
+        command: '{ test -z "${vars.__hitlAnswer}" || test "${vars.__hitlAnswer}" = "yes"; } && test "${vars.judge}" != "true" && test -z "${vars.publish_targets}"'
+
+  - from: draft-review
+    to: publish-entry
+    description: "Draft approved, judge disabled, targets set -> enter the publish tail"
+    guard:
+      kind: shell
+      options:
+        command: '{ test -z "${vars.__hitlAnswer}" || test "${vars.__hitlAnswer}" = "yes"; } && test "${vars.judge}" != "true" && test -n "${vars.publish_targets}"'
 
   - from: draft-review
     to: draft-revise
@@ -247,18 +479,221 @@ transitions:
     guard:
       kind: always
 
-  - from: judge
-    to: done
-    description: "Judge verdict is PASS (or empty in dry-run) -> complete workflow"
+  - from: draft-autorevise
+    to: unslop
+    description: "Unslop enabled -> de-slop the auto-revised draft"
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
+        command: 'test "${vars.unslop}" = "true"'
+
+  - from: draft-autorevise
+    to: judge
+    description: "Auto mode without unslop -> back to the judge"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" = "true" -a "${vars.unslop}" != "true"'
+
+  - from: judge
+    to: done
+    description: "Interactive mode, verdict PASS (or empty in dry-run), no publish targets -> complete workflow"
+    guard:
+      kind: shell
+      options:
+        command: '{ test "${vars.auto}" != "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -z "$v" -o "$v" = PASS; } && test -z "${vars.publish_targets}"'
+
+  - from: judge
+    to: publish-entry
+    description: "Verdict PASS with targets set -> enter the publish tail (auto runs report after the tail)"
+    guard:
+      kind: shell
+      options:
+        command: '{ v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -z "$v" -o "$v" = PASS; } && test -n "${vars.publish_targets}"'
+
+  - from: judge
+    to: report
+    description: "Auto mode -> the run ends in the report (PASS without targets, FAIL, or exhausted NEEDS_REVISION)"
+    guard:
+      kind: shell
+      options:
+        command: '{ test "${vars.auto}" = "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; c="$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0)"; { test -z "$v" -o "$v" = PASS; } || test "$v" = FAIL || { test "$v" = NEEDS_REVISION -a "$c" -ge "${vars.max_revisions}"; }; }'
+
+  - from: judge
+    to: draft-autorevise
+    description: "Auto mode, NEEDS_REVISION with revise budget left -> apply feedback and re-judge"
+    guard:
+      kind: shell
+      options:
+        command: '{ test "${vars.auto}" = "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; c="$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0)"; test "$v" = NEEDS_REVISION -a "$c" -lt "${vars.max_revisions}"; }'
+
+  - from: judge
+    to: draft-revise
+    description: "Interactive mode, NEEDS_REVISION with revise budget left -> collect revision with the feedback shown"
+    guard:
+      kind: shell
+      options:
+        command: '{ test "${vars.auto}" != "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; c="$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)"; test "$v" = NEEDS_REVISION -a "$c" -lt 3; }'
 
   - from: judge
     to: failed
-    description: "Judge verdict is not PASS -> fail"
+    description: "Interactive mode, verdict FAIL or revise budget exhausted -> fail"
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -n "$v" -a "$v" != PASS'
+        command: '{ test "${vars.auto}" != "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; c="$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)"; test "$v" = FAIL || { test "$v" = NEEDS_REVISION -a "$c" -ge 3; }; }'
+
+  # --- 0151 publish tail: materialize -> plan -> gate -> confirm/fanout -> retry -> browser loop ---
+
+  - from: publish-entry
+    to: illustrate
+    description: "Cover or inline images approved -> run the illustration step (R7: no image spend while both vars are false)"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.cover_enabled}" = "true" -o "${vars.inline_images}" = "true"'
+
+  - from: publish-entry
+    to: materialize
+    description: "No illustration spend approved -> materialize directly"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.cover_enabled}" != "true" -a "${vars.inline_images}" != "true"'
+
+  - from: illustrate
+    to: materialize
+    description: "Illustrations written -> materialize the final draft (metadata.coverImage picks up 4-illustrations/cover.*)"
+    guard:
+      kind: always
+
+  - from: materialize
+    to: publish-plan
+    description: "content.json written -> split targets into groups"
+    guard:
+      kind: always
+
+  - from: publish-plan
+    to: adapt
+    description: "The plan has at least one adapt:true variant -> write the adapted variant files (R9)"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          v="$(jq '[.variants[] | select(.adapt == true)] | length' "${vars.work_dir}/4-publish/publish-plan.json" 2>/dev/null)";
+          test -n "$v" -a "$v" -gt 0
+
+  - from: publish-plan
+    to: publish-gate
+    description: "Nothing needs adaptation -> route through the send gate"
+    guard:
+      kind: always
+
+  - from: adapt
+    to: publish-gate
+    description: "Variant files verified (itc-adapt-verify) -> route through the send gate"
+    guard:
+      kind: always
+
+  - from: publish-gate
+    to: publish-confirm
+    description: "Interactive run or live publish -> pause for the operator answer (V4)"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.auto}" != "true" -o "${vars.publish_live}" = "true"
+
+  - from: publish-gate
+    to: publish-fanout
+    description: "Auto draft run -> send without pausing (ADR-022)"
+    guard:
+      kind: always
+
+  - from: publish-confirm
+    to: publish-fanout
+    description: "Operator confirmed -> send"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "yes"'
+
+  - from: publish-confirm
+    to: report
+    description: "Operator declined (or dry-run left no answer) -> report without any publish call"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test -z "${vars.__hitlAnswer}" -o "${vars.__hitlAnswer}" = "no"
+
+  - from: publish-fanout
+    to: publish-retry
+    description: "A fan-out group has ok:false and the retry budget is untouched -> re-send once (V5)"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "$(cat "${vars.work_dir}/.publish-retry-count" 2>/dev/null || echo 0)" -lt 1
+          -a -s "${vars.work_dir}/4-publish/.fanout-failed"
+
+  - from: publish-fanout
+    to: publish-agent
+    description: "A browser target has no result.<target>.json -> run the kk:publish loop"
+    guard:
+      kind: shell
+      options:
+        # .next-browser cursor: seeded by itc-publish-fanout, recomputed after each kk:publish step
+        command: 'test -s "${vars.work_dir}/4-publish/.next-browser"'
+
+  - from: publish-fanout
+    to: report
+    description: "Otherwise -> report the per-target outcomes"
+    guard:
+      kind: always
+
+  - from: publish-retry
+    to: publish-agent
+    description: "Retry done, a browser target is still pending -> run the kk:publish loop"
+    guard:
+      kind: shell
+      options:
+        # .next-browser cursor: seeded by itc-publish-fanout, recomputed after each kk:publish step
+        command: 'test -s "${vars.work_dir}/4-publish/.next-browser"'
+
+  - from: publish-retry
+    to: report
+    description: "Otherwise -> report (remaining fan-out failures are terminal data)"
+    guard:
+      kind: always
+
+  - from: publish-agent
+    to: publish-agent
+    description: "A browser target is still pending -> next cursor iteration (bounded by the plan, V5)"
+    guard:
+      kind: shell
+      options:
+        # .next-browser cursor: seeded by itc-publish-fanout, recomputed after each kk:publish step
+        command: 'test -s "${vars.work_dir}/4-publish/.next-browser"'
+
+  - from: publish-agent
+    to: report
+    description: "Browser list exhausted -> report"
+    guard:
+      kind: always
+
+  - from: report
+    to: done
+    description: "Report outcome done or declined (empty outcome = done in dry-run, mirroring the empty-verdict PASS convention)"
+    guard:
+      kind: shell
+      options:
+        command: 'o="$(jq -r .outcome ${vars.work_dir}/5-report/report.json 2>/dev/null)"; test -z "$o" -o "$o" = done -o "$o" = declined'
+
+  - from: report
+    to: failed
+    description: "Report outcome failed -> fail"
+    guard:
+      kind: shell
+      options:
+        command: 'o="$(jq -r .outcome ${vars.work_dir}/5-report/report.json 2>/dev/null)"; test -n "$o" -a "$o" != done'

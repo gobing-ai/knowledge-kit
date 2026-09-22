@@ -12,13 +12,21 @@
  *   wrap          [<override>] --in <voicescript.yaml> --out <docs.json> [--profile <name>]
  *   duration      <work_dir> <target_duration_min>
  *   render-storm  [<override>] --in <content.json> --out <content.md>
+ *   itc-outline-pick <work_dir>          (0149, body in the sibling itc-stages.ts)
+ *   itc-report       <work_dir> [max_revisions]  (0149, body in the sibling itc-stages.ts)
+ *   itc-materialize  <work_dir> <publish_live>   (0150, sibling)
+ *   itc-publish-plan <work_dir> <targets> <source_locale> <publish_live>  (0150, sibling)
+ *   itc-publish-fanout <work_dir> [--retry]   (0151, sibling)
+ *   itc-publish-next  <work_dir>              (0151, sibling)
  *
  * `validate` / `wrap` / `render-storm` resolve the shipped sibling sidecars and delegate to them;
  * nothing about those sidecars changed. The `prepare-*` verbs and `duration` keep the logic that
  * used to live inline in `plugins/kk/workflows/*.yaml`, message-for-message.
  *
- * Node/Bun builtins only — no @gobing-ai/* and no relative imports (the file is resolved from the
- * installed package or from a checkout).
+ * Node/Bun builtins only — no @gobing-ai/* and no cross-directory relative imports (the file is
+ * resolved from the installed package or from a checkout). The itc-* stages delegate to their
+ * same-directory sibling `itc-stages.ts`, imported lazily so a runner copy without the sibling
+ * still loads and fails loud with the remediation path.
  *
  * The YAML prelude resolves this file as `$pkg/plugins/kk/scripts/kk-workflow-stages.ts` where `pkg`
  * comes from `realpath "$(command -v kk)"` (the installed package root), and falls back to the
@@ -61,6 +69,21 @@ const DEDUP_TITLE_THRESHOLD = 0.4;
 function fail(message: string): never {
     console.error(message);
     process.exit(1);
+}
+
+/**
+ * Load the itc-* helper sibling lazily: this runner is resolved (and copied alone, e.g. by
+ * apps/cli/tests/kk-workflow-stages.test.ts) from installs where the sibling may be absent, so
+ * the itc-* stages fail loud with a remediation path instead of breaking every stage at load.
+ */
+async function loadItcStages(): Promise<typeof import('./itc-stages.ts')> {
+    try {
+        return await import('./itc-stages.ts');
+    } catch {
+        return fail(
+            'itc-stages.ts not found next to kk-workflow-stages.ts — install or refresh the kk package (bun link in a checkout)',
+        );
+    }
 }
 
 /** coreutils-style reason for the errno codes the staged file operations can hit. */
@@ -1647,8 +1670,43 @@ if (import.meta.main)
         case 'daily-translate-sync':
             dailyTranslateSync(rest);
             break;
+        case 'itc-outline-pick': {
+            const { itcOutlinePick } = await loadItcStages();
+            itcOutlinePick(rest);
+            break;
+        }
+        case 'itc-report': {
+            const { itcReport } = await loadItcStages();
+            itcReport(rest);
+            break;
+        }
+        case 'itc-materialize': {
+            const { itcMaterialize } = await loadItcStages();
+            itcMaterialize(rest);
+            break;
+        }
+        case 'itc-publish-plan': {
+            const { itcPublishPlan } = await loadItcStages();
+            itcPublishPlan(rest);
+            break;
+        }
+        case 'itc-publish-fanout': {
+            const { itcPublishFanout } = await loadItcStages();
+            itcPublishFanout(rest);
+            break;
+        }
+        case 'itc-publish-next': {
+            const { itcPublishNext } = await loadItcStages();
+            itcPublishNext(rest);
+            break;
+        }
+        case 'itc-adapt-verify': {
+            const { itcAdaptVerify } = await loadItcStages();
+            itcAdaptVerify(rest);
+            break;
+        }
         default:
             fail(
-                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|daily-*)`,
+                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|itc-*|daily-*)`,
             );
     }
