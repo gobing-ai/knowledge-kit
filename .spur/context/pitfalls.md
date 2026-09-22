@@ -1,0 +1,7 @@
+
+## 2026-09-22 — F41 batch (0149–0154) pitfalls
+- Digest exclusion regex fragility: 0149's proof-digest v1 stripped `/^## Review/,$d` but the task file used `### Review` — the canonical review block leaked into the digest and verify-entry compared unequal despite zero real proof-input change. Match heading level (or use `^#+ Review`) before declaring a digest mismatch a tamper signal.
+- Per-file coverage perfectionism inside the implement budget kills the attempt: 0150 died mid-way writing in-process coverage-branch tests chasing ~80% function coverage on one file while the actual gate is AGGREGATE >=90% line+function (bunfig.toml). Chase the aggregate, never per-file 100%.
+- Verifier under-citation is the commonest post-verify correction (0151 AC1/AC7): an honest verifier writes prose-but-no-evidenceType and the evidence rule rejects the answer file; budget for a mechanical AC-table completion + digest re-stamp after verify.
+- fanin/runInvoke wall-time asserts flake under full-suite parallel load (0152): a failing `apps/cli/tests/fanin.test.ts` in the full run is not automatically a regression — run it isolated; if 27/27 green, log as load flake and move on instead of "fixing" timing asserts.
+- Continuation briefs must correct the predecessor's stale claims explicitly: 0151's attempt-1 last words claimed 2 lint errors were "pre-existing 0149 debt" when the tree was lint-green at 0150 done; the continuation brief called this out and forced a root-cause fix instead of suppression.

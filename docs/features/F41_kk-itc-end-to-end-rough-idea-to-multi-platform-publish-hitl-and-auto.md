@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F41"
 name: "kk-itc end-to-end: rough idea to multi-platform publish (HITL and auto)"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-22T07:00:20.511Z"
-updated_at: "2026-09-22T19:10:12.458Z"
+updated_at: "2026-09-22T23:49:16.258Z"
 ---
 
 # F41: kk-itc end-to-end: rough idea to multi-platform publish (HITL and auto)
@@ -266,4 +266,6 @@ Feature: kk-itc end-to-end from rough idea to multi-platform publish
 ## History
 
 - 2026-09-22T19:10:12.458Z backlog → active (system)
+- 2026-09-22T23:32:20.925Z active → verifying (system)
+- 2026-09-22T23:49:16.258Z verifying → done (system)
 

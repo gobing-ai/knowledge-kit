@@ -39,7 +39,7 @@
     ├── [done] **F2**: Topic-core authoring skill ([F2_wt-generator-harvest.md](./F2_wt-generator-harvest.md))
     ├── [done] **F3**: ITC generating skill ([F3_itc-generating-skill.md](./F3_itc-generating-skill.md))
     ├── [done] **F4**: IT-content workflow and product YAML home ([F4_it-content-workflow-and-product-yaml-home.md](./F4_it-content-workflow-and-product-yaml-home.md))
-        └── [active] **F41**: kk-itc end-to-end: rough idea to multi-platform publish (HITL and auto) ([F41_kk-itc-end-to-end-rough-idea-to-multi-platform-publish-hitl-and-auto.md](./F41_kk-itc-end-to-end-rough-idea-to-multi-platform-publish-hitl-and-auto.md))
+        └── [done] **F41**: kk-itc end-to-end: rough idea to multi-platform publish (HITL and auto) ([F41_kk-itc-end-to-end-rough-idea-to-multi-platform-publish-hitl-and-auto.md](./F41_kk-itc-end-to-end-rough-idea-to-multi-platform-publish-hitl-and-auto.md))
     ├── [done] **F5**: Solo-podcast workflow (voice-gen dogfood) ([F5_solo-podcast-workflow-voice-gen-dogfood.md](./F5_solo-podcast-workflow-voice-gen-dogfood.md))
     ├── [done] **F6**: Daily AI news workflow and plugins ([F6_daily-ai-news-workflow-and-plugins.md](./F6_daily-ai-news-workflow-and-plugins.md))
         └── [active] **F61**: Daily AI news end-to-end pipeline (wayfinder map) ([F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md](./F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md))
