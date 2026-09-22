@@ -346,6 +346,23 @@ agent-default channels sequence as workflow steps. Channel plugins (`medium-pub`
 
 Full design: `docs/design/remaining-wt-publish-harvest.md`.
 
+## kk-itc end-to-end (ADR-021/ADR-022, accepted design — F41)
+
+`kk-itc` runs the whole path from idea to platform drafts in one state machine, because spur has
+no sub-workflow action. The authoring states stay as they are. A var-gated tail follows:
+`illustrate → materialize → publish-plan → adapt → publish-confirm → publish-fanout →
+publish-agent → publish-retry → report`.
+
+- `kk stage itc-*` helpers own the deterministic seams: Content materialization, the target
+  profile table, fan-out groups and the report.
+- API and file-cli targets go through `kk executor fan-out` (`--retry-from` once). Browser targets
+  loop over `agent.run kk:publish`.
+- `itc-materialize` is the future split point if a second generator ever needs a generic publish
+  workflow.
+- Drafts are the default, and every target's own draft switch is written explicitly (ADR-022).
+
+Full design: `docs/design/kk-itc-end-to-end.md`.
+
 ## Multi-root discovery (ADR-012)
 
 `discoverPlugins(root)` remains the ADR-009 per-root scanner. Default CLI discovery calls

@@ -43,6 +43,7 @@ sync: [T3]
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
 | [article-publish-fanout-brief.md](design/article-publish-fanout-brief.md) | Article generator home, podcast show notes, and fan-out shape brief | research (F61) |
 | [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | shipped (F611) |
+| [kk-itc-end-to-end.md](design/kk-itc-end-to-end.md) | kk-itc idea → research → judge-gated draft → per-platform drafts (HITL + auto) | accepted design (F41) |
 
 ## 1. CLI commands
 
@@ -582,6 +583,7 @@ File: `.spur/config.yaml`
 | Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |
 | Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |
 | Article & publish fan-out brief | `docs/design/article-publish-fanout-brief.md` | content-gen home, podcast show notes, and single-state fan-out brief (F61 task 0091) |
+| kk-itc end-to-end | `docs/design/kk-itc-end-to-end.md` | kk-itc auto/HITL path, `kk stage itc-*` publish tail, target profile table, draft-default switch per target (F41 **accepted design** 2026-09-22, ADR-021/ADR-022) |
 
 ## 7. Workflow resolution (run-anywhere) and `/workflow-run` surface
 

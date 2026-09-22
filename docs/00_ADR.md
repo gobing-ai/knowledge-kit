@@ -854,6 +854,43 @@ operator-private registry via `OMNIVOICE_PROFILE_REGISTRY`).
 
 ---
 
+## ADR-021: kk-itc is the end-to-end IT-content workflow (idea → platform drafts)
+
+**Status:** Accepted (design) · **Date:** 2026-09-22 (feature F41)
+
+**Decision.** `plugins/kk/workflows/kk-itc.yaml` grows var-gated states for the auto path,
+de-slop, the judge revise loop, the cover, per-platform adaptation, Content materialization,
+multi-platform publish and a run report. New behavior sits behind a var, so default-var runs keep
+today's F4 path. Deterministic steps are `kk stage itc-*` helpers in the shared stage runner.
+Model steps reuse shipped skills plus one new skill, `kk:article-adapt`. There is no new workflow
+file, `kk` noun, slash command or generator plugin.
+
+**Why.** Spur has no sub-workflow action, so one run, one trace and one `--auto` switch from idea
+to drafts require one YAML. A second workflow would duplicate the authoring states and thread
+`--auto` twice.
+
+**Detail:** `docs/design/kk-itc-end-to-end.md`; mechanism pointer in `docs/03_ARCHITECTURE.md`
+→ *kk-itc end-to-end*.
+
+## ADR-022: Publishing defaults to platform drafts; auto never implies live
+
+**Status:** Accepted (design) · **Date:** 2026-09-22 (feature F41)
+
+**Decision.** A kk workflow that publishes writes every target's own draft switch explicitly on
+every Content it sends: `published` for emdash, surfdash, qiita and zenn; `publishStatus` for
+medium; `operation` for wechatmp. Live publishing needs an operator-set launch var
+(`publish_live=true` in kk-itc). No mode, including `auto`, `KK_NONINTERACTIVE` or a skipped
+review, sets it. A target with no draft mode (`x-pub` post) is rejected unless live was
+requested.
+
+**Why.** A live post is the one irreversible, external step in the pipeline, and plugin defaults
+differ (`zenn-pub` publishes live when `published` is absent). An explicit per-target switch plus
+a launch-only live var keeps unattended runs reversible.
+
+**Detail:** `docs/design/kk-itc-end-to-end.md` §5; complements `kk:publish` § Confirmation.
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
