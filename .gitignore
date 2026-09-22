@@ -163,6 +163,7 @@ dist
 
 # Spur history-anatomy analyze dumps (3.6 MiB each) — untracked 2026-09-08; keep the repo lean
 /.spur/reports/history/*/analyze-*.json
+/.spur/reports/history/latest.json
 /data/voicebox.db
 /data/backends/cuda
 
