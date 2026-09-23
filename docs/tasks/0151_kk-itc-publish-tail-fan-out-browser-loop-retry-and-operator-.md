@@ -4,7 +4,7 @@ name: "kk-itc publish tail: fan-out, browser loop, retry and operator confirm"
 status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.546Z
-updated_at: "2026-09-22T22:03:22.170Z"
+updated_at: "2026-09-23T04:59:22.956Z"
 feature_id: F41
 priority: P2
 tags:
@@ -131,27 +131,36 @@ Each entry cites the first changed line per file (`file:line`).
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/workflows/kk-itc.yaml:34-37 (vars), 187-282 (states publish-entry..report), 512-531 (entry edges), 415-419 (draft-review yes -> publish-entry), 470-477 (judge PASS -> publish-entry) |
-| R2 | MET | plugins/kk/workflows/kk-itc.yaml:209-223 (confirm prompt lists targets+mode, declined marker), 530-537 (gate pauses unless auto && !publish_live), 553-558 (declined -> report, no publish call) |
-| R3 | MET | plugins/kk/scripts/itc-stages.ts:444-500 (fanout: per-group spawn, ok:false rows as data, --retry only failed groups via --retry-from); kk-itc.yaml:562-571 (retry cap -lt 1) |
-| R4 | MET | plugins/kk/scripts/itc-stages.ts:504-509 (.next-browser cursor); kk-itc.yaml:242-258 (publish-agent agent.run kk:publish, result.<target>.json with ok:false on failure), 573-591 (loop until cursor empty) |
-| R5 | MET | plugins/kk/scripts/itc-stages.ts:144-210 (per-target ok/url/error rows, exact `kk executor fan-out --retry-from` commands, outcome failed on any ok:false) |
-| R6 | MET | apps/cli/tests/kk-itc-publish-tail.test.ts:62-135 — fresh run 2026-09-22: 54 pass / 0 fail (zenn/qiita/surfdash draft ok, dry-run walk reaches done) |
-| R7 | MET | docs/04_DESIGN.md:631-633 (kk-itc publish tail 0150/0151 paragraph matches shipped vars/states/markers/report shape) |
+| R1 | MET | `plugins/kk/workflows/kk-itc.yaml:189,218,242,245,260,268,278,318` (publish-entry, publish-plan, publish-gate, publish-confirm, publish-fanout, publish-retry, publish-agent, report); structural test `apps/cli/tests/kk-itc-workflow.test.ts:20` (frozen machine walkable) |
+| R2 | MET | `plugins/kk/workflows/kk-itc.yaml:34-39` (publish_targets/publish_live/source_locale/browser_target, publish_live default false); test `apps/cli/tests/kk-itc-workflow.test.ts:133` |
+| R3 | MET | `plugins/kk/workflows/kk-itc.yaml:245-258` (publish-confirm hitl.confirm prompt + declined marker write), `:623`/`:691` (declined → report without any publish call); HITL action test `apps/cli/tests/kk-itc-workflow.test.ts:38` |
+| R4 | MET | `plugins/kk/scripts/itc-stages.ts:472` (itcPublishFanout); test `apps/cli/tests/itc-stages.test.ts:746` (stamps switches, routing markers) |
+| R5 | MET | `plugins/kk/scripts/itc-stages.ts:368` + `:223` (source-locale rules in plan); test `apps/cli/tests/itc-stages.test.ts:608` |
+| R6 | MET | `plugins/kk/scripts/itc-stages.ts:15-19` (report contract: per-target ok/url/error, ok:false rows, retry command); test `apps/cli/tests/itc-stages.test.ts:650` (report publish section) and `:746` (fan-out failure kept as data) |
+| R7 | MET | `plugins/kk/workflows/kk-itc.yaml:278` (publish-agent loop) + `plugins/kk/scripts/itc-stages.ts:526` (itcPublishNext cursor); test `apps/cli/tests/itc-stages.test.ts:832` (cursor walks browser targets, empties when done) |
+| R8 | MET | `plugins/kk/scripts/itc-stages.ts:174` (--retry-from re-send of ok:false rows), `plugins/kk/workflows/kk-itc.yaml:275-276` (.publish-retry-count cap + --retry); test `apps/cli/tests/itc-stages.test.ts:746` |
+| R9 | MET | command `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | PARTIAL | static-ref | plugins/kk/workflows/kk-itc.yaml:34-37,187-282,512-531,415-419,470-477 — vars, tail states, judge/draft-review edges to publish-entry |
-| AC2 | MET | test | kk-itc.yaml:209-223,530-537,553-558; apps/cli/tests/itc-stages.test.ts:246+ asserts declined outcome; kk-itc.yaml:593-599 routes declined -> done |
-| AC3 | MET | test | itc-stages.ts:444-500 (failures-as-data, --retry failed-only, cap 1 at kk-itc.yaml:562-571); apps/cli/tests/itc-stages.test.ts fanout/retry cases passing in fresh run |
-| AC4 | MET | test | itc-stages.ts:504-509 cursor; kk-itc.yaml:242-258,573-591 loop; kk-itc-publish-tail.test.ts:130-135 browser-loop walk reaches done |
-| AC5 | MET | test | itc-stages.ts:144-210 (failed on any ok:false, declined branch, exact retry commands); apps/cli/tests/itc-stages.test.ts report cases passing |
-| AC6 | MET | test | bun test kk-itc-publish-tail itc-stages kk-itc-workflow — 54 pass / 0 fail / 397 expects, fresh this session |
-| AC7 | PARTIAL | static-ref | docs/04_DESIGN.md:631-633 documents vars, stage pipeline, markers, retry cap and report semantics as implemented |
+| AC1 | MET | test | `plugins/kk/workflows/kk-itc.yaml:245-253` (publish-confirm pauses with hitl.confirm listing targets + draft/live mode); HITL confirm action test `apps/cli/tests/kk-itc-workflow.test.ts:38` |
+| AC2 | MET | test | `plugins/kk/workflows/kk-itc.yaml:623` (declined → report without any publish call) + `:691` (outcome declined terminal); dry-run walk test `apps/cli/tests/kk-itc-publish-tail.test.ts:140` reaches done with no send |
+| AC3 | MET | test | `apps/cli/tests/itc-stages.test.ts:746` (itc-publish-fanout drives kk fan-out per group, stamps switches, writes routing markers) |
+| AC4 | MET | test | `apps/cli/tests/itc-stages.test.ts:746` (exit-1 seed kept as data) + `:650` (report carries per-target ok/url/error rows, failed outcome) |
+| AC5 | MET | test | `apps/cli/tests/itc-stages.test.ts:832` (itc-publish-next cursor empties when done) |
+| AC6 | MET | test | `apps/cli/tests/itc-stages.test.ts:650` (report reads publish-plan.json and result files, carries per-target rows) |
+| AC7 | MET | test | `apps/cli/tests/kk-itc-publish-tail.test.ts:63` (seeded tail on KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake: zenn/qiita/surfdash draft ok, report done) |
+| AC-11 | MET | test | alias of AC1: `plugins/kk/workflows/kk-itc.yaml:245-253`; test `apps/cli/tests/kk-itc-workflow.test.ts:38` |
+| AC-12 | MET | test | alias of AC2: `plugins/kk/workflows/kk-itc.yaml:623,691`; test `apps/cli/tests/kk-itc-publish-tail.test.ts:140` |
+| AC-13 | MET | test | alias of AC3: `apps/cli/tests/itc-stages.test.ts:746` |
+| AC-14 | MET | test | alias of AC4: `apps/cli/tests/itc-stages.test.ts:746,650` |
+| AC-15 | MET | test | alias of R8: `plugins/kk/scripts/itc-stages.ts:174`; test `apps/cli/tests/itc-stages.test.ts:746` |
+| AC-16 | MET | test | alias of AC6: `apps/cli/tests/itc-stages.test.ts:650` |
+| AC-18 | MET | test | alias of AC7: `apps/cli/tests/kk-itc-publish-tail.test.ts:63` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

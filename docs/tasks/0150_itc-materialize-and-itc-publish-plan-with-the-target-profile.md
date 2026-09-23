@@ -4,7 +4,7 @@ name: itc-materialize and itc-publish-plan with the target profile table
 status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.546Z
-updated_at: "2026-09-22T20:03:35.304Z"
+updated_at: "2026-09-23T04:59:22.790Z"
 feature_id: F41
 priority: P2
 tags:
@@ -134,17 +134,20 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/scripts/itc-stages.ts:210-249 — H1 title stripped from body (:218-222), outline from 2-outline/outline-approved.md (:224-226), references from docs.json (:227-237), metadata.coverImage from 4-illustrations/cover.* (:241-242), tags/keywords/description from brief frontmatter (:243-246), metadata.published always boolean (:240); test apps/cli/tests/itc-stages.test.ts:151-235 |
-| R2 | MET | plugins/kk/scripts/itc-stages.ts:217 (draft missing), :220 (no H1), :222 (empty body) — each fail message names the artifact; test apps/cli/tests/itc-stages.test.ts:217-241 |
-| R3 | MET | plugins/kk/scripts/itc-stages.ts:139-172 TARGET_PROFILES mirrors design §5 row-for-row (podcast-pub absent => rejected as unknown); per-row draft-key citations at plugins/kk/scripts/itc-stages.ts:132-138, independently re-verified against plugin src (medium-pub:49, emdash-pub:254, surfdash-pub:93, zenn-pub:92, qiita-pub:70, wechatmp-pub:162+171, x-pub:64, substack-pub:26); mirror test apps/cli/tests/itc-stages.test.ts:366-430 |
-| R4 | MET | plugins/kk/scripts/itc-stages.ts:263-323 — source-locale article targets share content.json with adapt:false (:312-317), others content.<variant>.json adapt:true (:314), per-variant switches are the union of targets' keys (:319), fanout/browser split (:321-322); tests apps/cli/tests/itc-stages.test.ts:253-308 |
-| R5 | MET | plugins/kk/scripts/itc-stages.ts:281 (unknown/podcast-pub), :283-289 (x-pub without publish_live), :292-294 (cover required) — all name the target; tests apps/cli/tests/itc-stages.test.ts:309-357 |
-| R6 | MET | ContentSchema.parse of materialized content.json in apps/cli/tests/itc-stages.test.ts:172; stage code imports node:fs/node:path only (plugins/kk/scripts/itc-stages.ts:37-38, ADR-018) |
+| R1 | MET | `plugins/kk/scripts/itc-stages.ts:314` (itcMaterialize; H1 stripped per contract comment `:24-26`); test `apps/cli/tests/itc-stages.test.ts:553` and ContentSchema parse `:152,:172` |
+| R2 | MET | `plugins/kk/scripts/itc-stages.ts:248-258` (TARGET_PROFILES loaded from the table: format, locale, transport, cover, switch names); syncs `docs/design/kk-itc-end-to-end.md` §5 table |
+| R3 | MET | `plugins/kk/scripts/itc-stages.ts:367` (itcPublishPlan writes publish-plan.json {live, sourceLocale, variants, fanout, browser}); test `apps/cli/tests/itc-stages.test.ts:608` |
+| R4 | MET | `plugins/kk/scripts/itc-stages.ts:368` (args workDir/targets/sourceLocale/live), `:223` (source locale rule); test `apps/cli/tests/itc-stages.test.ts:608` |
+| R5 | MET | `plugins/kk/scripts/itc-stages.ts:387` (unknown/non-article target fail), `:390` (x-pub live rejected), `:397` (cover_required fail); test `apps/cli/tests/itc-stages.test.ts:608` |
+| R6 | MET | `plugins/kk/scripts/itc-stages.ts:229` (switch per profile from the plan's live flag); test `apps/cli/tests/itc-stages.test.ts:212` (metadata.published false default) |
+| R7 | MET | command `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | apps/cli/tests/itc-stages.test.ts:151-241 (30/30 pass, ContentSchema.parse at :172) over plugins/kk/scripts/itc-stages.ts:210-249 |
-| AC2 | MET | test | apps/cli/tests/itc-stages.test.ts:243-430 (fanout/browser split, x-pub/podcast-pub/cover rejects) over plugins/kk/scripts/itc-stages.ts:263-323 |
+| AC1 | MET | test | `apps/cli/tests/itc-stages.test.ts:553` (materialize branches incl. missing draft/no-H1 exits) + `:608` (plan artifact) — the pair consumable via publish-plan reading 4-publish/content.json |
+| AC2 | MET | test | `apps/cli/tests/itc-stages.test.ts:172` (`ContentSchema.parse` of the materialized content.json succeeds) |
+| AC-8 | MET | test | alias of AC1: `apps/cli/tests/itc-stages.test.ts:553,608` |
+| AC-10 | MET | test | alias of AC2: `apps/cli/tests/itc-stages.test.ts:172` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

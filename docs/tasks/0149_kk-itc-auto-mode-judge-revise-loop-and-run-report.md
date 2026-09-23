@@ -4,7 +4,7 @@ name: kk-itc auto mode, judge revise loop and run report
 status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.541Z
-updated_at: "2026-09-22T19:10:12.849Z"
+updated_at: "2026-09-23T15:44:13.755Z"
 feature_id: F41
 priority: P2
 tags:
@@ -126,23 +126,21 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/workflows/kk-itc.yaml:23-25 — vars auto:"false", unslop:"false", max_revisions:"2"; V1 pinned by structural test R1(V1) in apps/cli/tests/kk-itc-workflow.test.ts (every new edge guarded behind auto/unslop) |
-| R2 | MET | plugins/kk/workflows/kk-itc.yaml:70 (writer writes outline-recommendation.json), :91-104 (outline-autopick: itc-outline-pick :97 + file.read.into-var binds outline :99-103), :268 (-> outline-commit, never outline-select); pinned by test R2(AC2); helper plugins/kk/scripts/itc-stages.ts:44-62 |
-| R3 | MET | plugins/kk/workflows/kk-itc.yaml:131-140 (unslop state: kk:taste-unslop edits 3-draft in place, expectFile), edges to unslop after draft-write :281 and after draft-autorevise :359, before review/judge :297/:305/:312/:321 |
-| R4 | MET | plugins/kk/workflows/kk-itc.yaml:166-176 (draft-autorevise applies feedback, increments .auto-revise-count :172-173), :393-396 (judge->draft-autorevise guarded NEEDS_REVISION && count<max_revisions), :383-388 (FAIL or exhausted budget -> report), dry-run auto walk reaches done (test "task check") |
-| R5 | MET | plugins/kk/workflows/kk-itc.yaml:163 (draft-revise hitl.input shows verdict feedback), :398-399 (judge->draft-revise on interactive NEEDS_REVISION), :401-406 (interactive FAIL or .revise-count>=3 -> failed) |
-| R6 | MET | plugins/kk/workflows/kk-itc.yaml:193 — judge prompt: "Research evidence: if ${vars.work_dir}/docs.json exists, read it and weigh it when judging" |
-| R7 | MET | plugins/kk/scripts/itc-stages.ts:64-92 (itc-report writes 5-report/report.{md,json} {outcome,verdict,revisions}; exits 1 only on write failure), kk-itc.yaml:202-208 (report state delegates with max_revisions), :414-423 (report routes done/failed on .outcome) |
-| R8 | MET | plugins/kk/scripts/itc-stages.ts:11-13 (node builtins only: node:fs, node:path), plugins/kk/scripts/kk-workflow-stages.ts:1669/:1674 (switch dispatch, lazy sibling load :75-80), docs/04_DESIGN.md:631 (design doc updated in same diff) |
+| R1 | MET | `plugins/kk/workflows/kk-itc.yaml:23-25` (auto/unslop/max_revisions vars, default off/2); test `apps/cli/tests/kk-itc-workflow.test.ts:133` (vars default off) and `:139` (V1 default path unchanged) |
+| R2 | MET | `plugins/kk/workflows/kk-itc.yaml:97` (outline-autopick state) + `:355` (outline-write→outline-autopick edge); `plugins/kk/scripts/itc-stages.ts:94` (itcOutlinePick); test `apps/cli/tests/itc-stages.test.ts:492`, workflow test `:160` |
+| R3 | MET | `plugins/kk/workflows/kk-itc.yaml:137` (unslop), `:172` (draft-autorevise), `:318` (report), `:309` (judge reads docs.json); `plugins/kk/scripts/itc-stages.ts:130` (itcReport); tests `apps/cli/tests/kk-itc-workflow.test.ts:186,205` |
+| R4 | MET | command `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail, rules pass) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | plugins/kk/workflows/kk-itc.yaml:23-25 default-off vars + structural test "R1 (V1)" (all new edges guarded) in apps/cli/tests/kk-itc-workflow.test.ts — default path unchanged; pre-existing 0069 tests all pass |
-| AC2 | MET | test | Structural test "R2 (AC2)" (apps/cli/tests/kk-itc-workflow.test.ts) pins outline-write->outline-autopick->outline-commit with no select pause |
-| AC3 | MET | test | Structural test "R4 (AC3, V5)" pins the bounded loop; unit tests in apps/cli/tests/itc-stages.test.ts cover exhausted-budget=failure, PASS-on-final-revision=done, missing-verdict=PASS |
-| AC4 | MET | test | Structural test "R4/R5 (AC4)" pins judge->draft-revise with feedback shown, cap 3 (plugins/kk/workflows/kk-itc.yaml:398-399, :401-406) |
-| AC5 | MET | test | Structural test "R5 (AC5)" asserts the judge prompt names docs.json as research evidence (kk-itc.yaml:193) |
-| AC6 | MET | test | Structural test "R3/AC6" asserts the unslop state sits on every auto revision path before review/judge (kk-itc.yaml:281, :359) |
+| AC1 | MET | test | `plugins/kk/workflows/kk-itc.yaml:137` unslop state ordered before draft-review/judge; test `apps/cli/tests/kk-itc-workflow.test.ts:186` (unslop in place, on every auto revision path), `:197` (draft-write/draft-autorevise split) |
+| AC2 | MET | test | `apps/cli/tests/kk-itc-workflow.test.ts:160` (auto=true routes to outline-autopick, never outline-select — no pauses); default-off invariant `:139` |
+| AC-1 | MET | test | alias of R1: `plugins/kk/workflows/kk-itc.yaml:23-25`; test `apps/cli/tests/kk-itc-workflow.test.ts:133,139` |
+| AC-2 | MET | test | alias of AC2: `apps/cli/tests/kk-itc-workflow.test.ts:160,139` |
+| AC-3 | MET | test | alias of AC1: `plugins/kk/workflows/kk-itc.yaml:137`; test `apps/cli/tests/kk-itc-workflow.test.ts:186,197` |
+| AC-4 | MET | test | alias of R3: `apps/cli/tests/kk-itc-workflow.test.ts:205,225` |
+| AC-5 | MET | test | alias of R3: `plugins/kk/scripts/itc-stages.ts:130`; test `apps/cli/tests/itc-stages.test.ts:520` |
+| AC-6 | MET | command | alias of R4: `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

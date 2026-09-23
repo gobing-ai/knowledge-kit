@@ -4,7 +4,7 @@ name: Docs sync for the kk-itc end-to-end contract
 status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.548Z
-updated_at: "2026-09-22T23:29:10.247Z"
+updated_at: "2026-09-23T04:59:23.466Z"
 feature_id: F41
 priority: P2
 tags:
@@ -98,15 +98,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | docs/00_ADR.md:859 (ADR-021 "**Status:** Accepted · **Date:** 2026-09-22 (feature F41, shipped)") and docs/00_ADR.md:877 (ADR-022 same flip) — diff touches only the Status line per ADR, Decision text untouched (Q&A invariant held); docs/04_DESIGN.md:46 index row → "shipped (F41)"; §7.2 workflow/profile table kk-itc row updated with publish-tail artifacts + "F41 shipped 2026-09-22" docs/04_DESIGN.md:629 (§6 satellite row also updated docs/04_DESIGN.md:586) |
-| R2 | MET | docs/01_PRD.md:86 deferral row → "**F41** |
-| R3 | MET | Command (fresh): kk --help lists exactly executor / plugin / stage / help — no new top-level noun. Command: git diff 58264f7b --name-status -- plugins/kk/workflows plugins/kk/commands → M plugins/kk/commands/workflow-run.md, M plugins/kk/workflows/kk-itc.yaml; no A rows. git status --porcelain for both dirs → modifications only; sole surface-adjacent untracked path is plugins/kk/skills/article-adapt/ (agent-invoked skill, not a workflow file / kk noun / slash command) |
-| R4 | MET | Command (fresh): bun run gate → 1231 pass / 0 fail across 82 files, 4865 expect() calls (86.68s), format+build clean; spur rule run --preset recommended-post-check --fail-on warning → "All 2 rules passed — no violations found." |
+| R1 | MET | `docs/00_ADR.md:857-860` (ADR-021 Status: Accepted, 2026-09-22) and `:875-878` (ADR-022 Status: Accepted, 2026-09-22); Decision text untouched |
+| R2 | MET | `docs/04_DESIGN.md:637,639` (illustrate/adapt + profile flags rows shipped), `docs/01_PRD.md:86` (F41 Shipped), `docs/05_FEATURES.md:85` (F41 ✅ done row), `docs/design/itc-generating.md:24` (design-SSOT link to /workflow-run) |
+| R3 | MET | command `git diff --name-status 58264f7b..HEAD -- plugins/kk/workflows plugins/kk/commands` 2026-09-22 → 2 M, 0 A (kk-itc.yaml + workflow-run.md modified only); command `./apps/cli/dist/index.js --help` → Commands: executor, plugin, stage, help (unchanged) |
+| R4 | MET | command `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail, rules pass) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | command | kk --help (top-level commands unchanged: executor/plugin/stage) + git diff 58264f7b --name-status plugins/kk/workflows plugins/kk/commands → M only, zero added files; untracked inventory confirms no new workflow file or command; claim echoed in docs/05_FEATURES.md:85 "(verified 0154)" |
-| AC2 | MET | command | docs/04_DESIGN.md:635 records the widened contract incl. draft-default rule verbatim ("publish_live (false; live is never implied by auto)", publish-confirm HITL skipped only when auto ∧ ¬publish_live, ADR-022); docs/04_DESIGN.md:639 records --live binding only when explicitly passed; ADR-022 docs/00_ADR.md:877; command backing: bun run gate green includes kk-itc-publish-tail/kk-itc-workflow tests pinning draft-default behavior; grep confirms the recorded phrases at cited lines |
+| AC1 | MET | command | `git diff --name-status 58264f7b..HEAD -- plugins/kk/workflows plugins/kk/commands` → M-only (2 files); `kk --help` lists executor/plugin/stage/help only |
+| AC2 [docs-only] | MET | static-ref | `docs/04_DESIGN.md:637` (draft-default + spend vars contract), `:639` (profile flags binding incl. ADR-022 rule), `docs/00_ADR.md:875-878` (ADR-022 Accepted) |
+| AC-19 | MET | command | alias of AC1: `git diff --name-status 58264f7b..HEAD -- plugins/kk/workflows plugins/kk/commands` M-only; `kk --help` executor/plugin/stage/help |
+| AC-20 | MET | command | `grep -n 'cover_enabled\|publish_live' docs/04_DESIGN.md` 2026-09-22 → rows 637/639 record the widened kk-itc contract and draft-default rule (also `docs/00_ADR.md:875-878`) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

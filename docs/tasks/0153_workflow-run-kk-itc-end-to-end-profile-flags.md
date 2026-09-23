@@ -4,7 +4,7 @@ name: /workflow-run kk-itc end-to-end profile flags
 status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.548Z
-updated_at: "2026-09-22T23:06:24.107Z"
+updated_at: "2026-09-23T04:59:23.298Z"
 feature_id: F41
 priority: P2
 tags:
@@ -106,14 +106,18 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/commands/workflow-run.md:39-41 (all eight flags: --auto, --unslop true |
-| R2 | MET | plugins/kk/commands/workflow-run.md:193-198 (auto defaults research/judge/unslop unless passed; --live never implied, ADR-022; wechat without --source-locale implies zh, explicit wins) and :241-243 (JSON binds auto/unslop/max_revisions/cover_enabled/inline_images/publish_targets/publish_live/source_locale); tests apps/cli/tests/workflow-run-command.test.ts:217-256 (test+command: 20 pass / 0 fail) |
-| R3 | MET | apps/cli/tests/workflow-run-command.test.ts:202-260 — six static-invariant tests incl. task-local check (--auto alone leaves publish_live false, :223-229); fresh run: NODE_ENV=test bun test apps/cli/tests/workflow-run-command.test.ts → 20 pass, 0 fail, 111 expect() calls (test+command) |
-| R4 | MET | docs/04_DESIGN.md:614-622 (§7.2 surface gains the eight flags) and :639 (0153 binding paragraph, ADR-022-consistent) (static-ref) |
+| R1 | MET | `plugins/kk/commands/workflow-run.md:36-41` (kk-itc profile lists all 8 flags: --auto, --unslop, --max-revisions, --cover, --inline-images, --targets, --live, --source-locale); test `apps/cli/tests/workflow-run-command.test.ts:111` (profile flags) |
+| R2 | MET | `plugins/kk/commands/workflow-run.md:194-195` (binding rules: --auto defaults research/judge/unslop unless passed; --live never implied); tests `apps/cli/tests/workflow-run-command.test.ts:223,231,237` |
+| R3 | MET | `plugins/kk/commands/workflow-run.md:234` (Bind vars JSON: topic … auto … publish_targets, cover_enabled, inline_images, max_revisions, source_locale); test `apps/cli/tests/workflow-run-command.test.ts:237` (run JSON binds all end-to-end vars) |
+| R4 | MET | `docs/04_DESIGN.md:639` (§7.2 kk-itc profile flags synced) |
+| R5 | MET | command `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | workflow-run binds an end-to-end kk-itc profile: plugins/kk/commands/workflow-run.md:39-41,193-198,241-243; covered by apps/cli/tests/workflow-run-command.test.ts:206-260 (fresh: 20 pass / 0 fail). Task-local check (--auto alone leaves publish_live false) asserted at :223-229 |
+| AC1 | MET | test | `apps/cli/tests/workflow-run-command.test.ts:223` (--live is never implied: publish_live stays false unless passed explicitly, ADR-022) |
+| AC2 | MET | test | `apps/cli/tests/workflow-run-command.test.ts:231` (--playbook wechat without --source-locale binds zh; explicit wins) |
+| AC3 | MET | test | `apps/cli/tests/workflow-run-command.test.ts:124` (command stays a thin wrapper — ADR-011: no new kk first-layer noun) |
+| AC-17 | MET | test | alias of AC1: `apps/cli/tests/workflow-run-command.test.ts:223,237` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

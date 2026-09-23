@@ -4,7 +4,7 @@ name: Cover illustration and kk:article-adapt per-platform variants
 status: done
 template: feature-impl
 created_at: 2026-09-22T16:46:32.547Z
-updated_at: "2026-09-22T22:49:39.743Z"
+updated_at: "2026-09-23T04:59:23.130Z"
 feature_id: F41
 priority: P2
 tags:
@@ -111,15 +111,25 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/workflows/kk-itc.yaml:37-38 (cover_enabled/inline_images default "false"); :192-208 (illustrate state: kk:image-authoring with KK_NONINTERACTIVE=1 KK_IMAGE_AUTO_CONFIRM=1, writes 4-illustrations/cover.*, inline figures only when inline_images=true, post-check cover artifact exists); :545-562 (publish-entry->illustrate entered only when a spend var is on; else-edge goes straight to materialize); tests apps/cli/tests/kk-itc-workflow.test.ts:308-331 |
-| R2 | MET | plugins/kk/skills/article-adapt/SKILL.md:46-68 (per adapt:true variant: translate title/body to the variant locale, apply entry limits, keep code blocks/URLs/references verbatim, write <entry.file>); :74-84 (invariants: never sets draft/live keys, holds no platform table); fresh superskill skill validate --strict -> Valid exit 0; evaluate exit 0 (one anti-hallucination advisory) |
-| R3 | MET | plugins/kk/workflows/kk-itc.yaml:577-584 (publish-plan->adapt guarded on jq count of adapt:true variants); :585-590 (else-edge to publish-gate); :226-241 (adapt state + follow-up kk stage itc-adapt-verify); plugins/kk/scripts/itc-stages.ts:429-453 (itcAdaptVerify fails by name on missing file or empty title/body); tests apps/cli/tests/itc-stages.test.ts:861-929 |
-| R4 | MET | apps/cli/tests/kk-itc-workflow.test.ts:308-351 (structural asserts for both illustrate and adapt edge guards); :353-390 (dry-run walk, 14 transitions with cover/inline on); apps/cli/tests/kk-itc-publish-tail.test.ts:75-116 (seeded ja-article variant parses ContentSchema, flows through itc-publish-fanout stamping); :126-139 (unadapted variant rejected at verify); apps/cli/tests/itc-stages.test.ts:861-929 (itc-adapt-verify branches) |
+| R1 | MET | `plugins/kk/workflows/kk-itc.yaml:37-38` (cover_enabled/inline_images default false); test `apps/cli/tests/kk-itc-workflow.test.ts:133` (new vars default off) |
+| R2 | MET | `plugins/kk/skills/article-adapt/SKILL.md` present; command `superskill skill validate plugins/kk/skills/article-adapt/SKILL.md --json` 2026-09-22 → valid:true, 0 errors |
+| R3 | MET | `plugins/kk/workflows/kk-itc.yaml:226-240` (adapt state + itc-adapt-verify); `plugins/kk/scripts/itc-stages.ts:430` (itcAdaptVerify); test `apps/cli/tests/itc-stages.test.ts:867` |
+| R4 | MET | `plugins/kk/workflows/kk-itc.yaml:548-556` (publish-entry→illustrate guard), `:564` (illustrate→materialize), `:577` (adapt after publish-plan); workflow walk test `apps/cli/tests/kk-itc-publish-tail.test.ts:140` |
+| R5 | MET | `plugins/kk/scripts/itc-stages.ts:314` (itcMaterialize; cover into metadata.coverImage per `:24-26` contract); test `apps/cli/tests/itc-stages.test.ts:152` |
+| R6 | MET | `plugins/kk/workflows/kk-itc.yaml:554` (edge guard: cover_enabled OR inline_images) + `:207-208` (cover presence shell check); test `apps/cli/tests/kk-itc-workflow.test.ts:139` (default vars keep path unchanged) |
+| R7 | MET | `plugins/kk/workflows/kk-itc.yaml:37-38` (spend approvals are vars); binding test `apps/cli/tests/workflow-run-command.test.ts:237` (spend approvals stay false unless passed) |
+| R8 | MET | test `apps/cli/tests/kk-itc-publish-tail.test.ts:140` (spur workflow run --dry-run with auto=true + targets reaches done) |
+| R9 | MET | `plugins/kk/workflows/kk-itc.yaml:235` (one adapted Content per adapt:true variant; limits applied; code/URLs/references unchanged); test `apps/cli/tests/itc-stages.test.ts:867` (verify branches) |
+| R10 | MET | command `bun run gate` 2026-09-22 exit 0 (1231 pass / 0 fail) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | apps/cli/tests/kk-itc-workflow.test.ts:308-331 pins both spend-var guard edges and the both-false else-edge; :353-390 executes `spur workflow run --dry-run` with cover_enabled/inline_images=true and asserts 14 transitions to done — behavioral proof illustrate is entered only when a var is on |
-| AC2 | MET | test | apps/cli/tests/itc-stages.test.ts:861-929 (adapt-verify behaviorally fails missing/title-body-less variants); :282-308 (one adapt:true variant per non-source profile, with limits); apps/cli/tests/kk-itc-publish-tail.test.ts:75-116 (seeded variant parses ContentSchema and is stamped by fanout); apps/cli/tests/kk-itc-workflow.test.ts:334-351; static: plugins/kk/skills/article-adapt/SKILL.md:46-84, superskill skill validate --strict Valid |
+| AC1 | MET | test | `plugins/kk/workflows/kk-itc.yaml:554` (illustrate only when a spend var is on) + `:207` (cover_enabled=true with no cover fails); guard test `apps/cli/tests/kk-itc-workflow.test.ts:139` |
+| AC2 | MET | test | `apps/cli/tests/itc-stages.test.ts:867` (itc-adapt-verify branches: missing/empty variant fails by name); adapt guard `plugins/kk/workflows/kk-itc.yaml:577` (only when plan has adapt:true) |
+| AC3 | MET | test | `plugins/kk/workflows/kk-itc.yaml:236` (adapt never sets metadata.published/publishStatus/operation — fan-out stamps at send time); fanout stamping test `apps/cli/tests/itc-stages.test.ts:746` + `:212` (metadata.published false) |
+| AC4 | MET | test | `apps/cli/tests/kk-itc-publish-tail.test.ts:140` (dry-run walk reaches done) |
+| AC-7 | MET | test | alias of AC1: `plugins/kk/workflows/kk-itc.yaml:554,207`; test `apps/cli/tests/kk-itc-workflow.test.ts:139` |
+| AC-9 | MET | test | alias of AC2/AC4: `apps/cli/tests/itc-stages.test.ts:867`; `apps/cli/tests/kk-itc-publish-tail.test.ts:140` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
