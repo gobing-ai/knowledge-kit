@@ -1,3 +1,15 @@
+## [0.0.21] - 2026-09-23
+
+### Fixed
+
+- fix(kk): make kk-itc edit-in-place states executor-conformant (write-new then swap) (a77a6f04)
+- fix(kk): fail fast on out-of-contract kk-itc judge verdicts (804ea64b)
+
+### Changed
+
+- docs(tasks): refresh F41 verification rows from forced re-audit (93da1528)
+- test(cli): silence child output leaking into the test reporter (36374dc5)
+
 ## [0.0.20] - 2026-09-19
 
 ### Fixed
