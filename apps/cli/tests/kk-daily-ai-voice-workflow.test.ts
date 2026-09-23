@@ -283,7 +283,7 @@ if (args[0] === 'stage') {
     // 0144: kk stage <daily-*> delegates to the real shipped runner — the integration
     // exercises the actual stages logic, not a stub of it.
     const stages = '${stagesAbs}';
-    const res = Bun.spawnSync(['bun', stages, ...args.slice(1)], { stdio: ['inherit', 'inherit', 'inherit'] });
+    const res = Bun.spawnSync(['bun', stages, ...args.slice(1)], { stdio: ['inherit', 'pipe', 'pipe'] });
     process.exit(res.exitCode ?? 1);
 }
 if (args[0] !== 'executor') process.exit(2);

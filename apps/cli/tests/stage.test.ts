@@ -25,9 +25,10 @@ describe('resolveStagesScript', () => {
 });
 
 describe('runStage', () => {
-    test('returns the spawned process exit code (echo exits 0)', () => {
-        // execPath override keeps the test hermetic: /bin/echo ignores its args.
-        expect(runStage(['--anything'], '/bin/echo', '/nonexistent/kk-entry')).toBe(0);
+    test('returns the spawned process exit code (silent runner exits 0)', () => {
+        // execPath override keeps the test hermetic: /usr/bin/true ignores its args and prints nothing,
+        // so nothing leaks onto the test reporter's inherited stdout.
+        expect(runStage(['--anything'], '/usr/bin/true', '/nonexistent/kk-entry')).toBe(0);
     });
 
     test('fails loud when the executable cannot be spawned', () => {

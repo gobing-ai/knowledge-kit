@@ -465,10 +465,14 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         const mod = await loadMod();
         const origExit = process.exit;
         const origErr = console.error;
+        const origLog = console.log;
         let stderr = '';
         console.error = (message: unknown) => {
             stderr += `${String(message)}\n`;
         };
+        // Stages emit operator progress on stdout (e.g. fan-out per-group exit lines); capture it
+        // so in-process runs don't pollute the test reporter.
+        console.log = () => {};
         process.exit = (code?: number) => {
             throw new ExitError(code ?? 0);
         };
@@ -481,6 +485,7 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         } finally {
             process.exit = origExit;
             console.error = origErr;
+            console.log = origLog;
         }
     }
 
@@ -743,7 +748,8 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
         // Minimal kk stub: writes the aggregate named by --out (when told to), exits with $KK_EXIT.
         writeFileSync(
             join(binDir, 'kk'),
-            '#!/bin/bash\nout=""; prev=""\nfor a in "$@"; do [ "$prev" = "--out" ] && out="$a"; prev="$a"; done\n[ -n "$KK_STUB_AGGREGATE" ] && printf \'%s\' "$KK_STUB_AGGREGATE" > "$out"\nexit ${KK_EXIT:-0}\n',
+            '#!/bin/bash\nout=""; prev=""\nfor a in "$@"; do [ "$prev" = "--out" ] && out="$a"; prev="$a"; done\n[ -n "$KK_STUB_AGGREGATE" ] && printf \'%s\' "$KK_STUB_AGGREGATE" > "$out"\nexit $' +
+                '{KK_EXIT:-0}\n',
         );
         chmodSync(join(binDir, 'kk'), 0o755);
         const origPath = process.env.PATH;
