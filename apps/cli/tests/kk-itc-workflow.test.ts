@@ -171,6 +171,18 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         expect(stateBlock('outline-write')).toContain('"pick": "a|b|c"');
     });
 
+    it('R3 (0149 review P3) — a judge catch-all fails out-of-contract verdicts instead of deadlocking', () => {
+        // two judge->failed edges exist (interactive FAIL + this catch-all); pin the catch-all by its description
+        const i = yaml.indexOf('Catch-all: an out-of-contract verdict');
+        expect(i).toBeGreaterThan(-1);
+        const guard = yaml.slice(i);
+        // non-empty verdict that is none of PASS / FAIL / NEEDS_REVISION still exits the machine
+        expect(guard).toContain('test -n "$v"');
+        expect(guard).toContain('!= PASS');
+        expect(guard).toContain('!= FAIL');
+        expect(guard).toContain('!= NEEDS_REVISION');
+    });
+
     it('R3/AC6 — the unslop state edits the draft in place and sits on every auto revision path', () => {
         const block = stateBlock('unslop');
         expect(block).toContain('kk:taste-unslop');

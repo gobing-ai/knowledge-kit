@@ -697,3 +697,11 @@ transitions:
       kind: shell
       options:
         command: 'o="$(jq -r .outcome ${vars.work_dir}/5-report/report.json 2>/dev/null)"; test -n "$o" -a "$o" != done'
+
+  - from: judge
+    to: failed
+    description: "Catch-all: an out-of-contract verdict string fails the run instead of deadlocking the machine (0149 review P3)"
+    guard:
+      kind: shell
+      options:
+        command: 'v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -n "$v" -a "$v" != PASS -a "$v" != FAIL -a "$v" != NEEDS_REVISION'
