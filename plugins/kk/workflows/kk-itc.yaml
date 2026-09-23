@@ -135,7 +135,7 @@ states:
           expectFile: ${vars.work_dir}/3-draft-draft-article.md
 
   - id: unslop
-    description: "De-slop pass — kk:taste-unslop edits the draft in place"
+    description: "De-slop pass — kk:taste-unslop line-edits the draft (writes a new file, then the swap makes it in place)"
     onEnter:
       - kind: agent.run
         options:
@@ -143,8 +143,11 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:taste-unslop skill.
-            Edit ${vars.work_dir}/3-draft-draft-article.md in place to remove slop (AI-tell phrasing, filler, hedging) while preserving the technical claims, code blocks, links, and the approved outline's structure.
-          expectFile: ${vars.work_dir}/3-draft-draft-article.md
+            Read ${vars.work_dir}/3-draft-draft-article.md and write the line-edited version to ${vars.work_dir}/3-draft-draft-article.new.md, removing slop (AI-tell phrasing, filler, hedging) while preserving the technical claims, code blocks, links, and the approved outline's structure. Do not modify or delete the original file; the pipeline swaps the edited file in.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.new.md
+      - kind: shell
+        options:
+          command: mv -f "${vars.work_dir}/3-draft-draft-article.new.md" "${vars.work_dir}/3-draft-draft-article.md"
 
   - id: draft-review
     description: "Operator reviews and approves or requests revision on draft-article.md"
@@ -183,8 +186,11 @@ states:
           agent: ${vars.agent}
           input: |
             Invoke the kk:${vars.writer} skill.
-            Revise the draft at ${vars.work_dir}/3-draft-draft-article.md in place by applying every item of feedback[] in ${vars.work_dir}/.itc-verdict.json.
-          expectFile: ${vars.work_dir}/3-draft-draft-article.md
+            Read the draft at ${vars.work_dir}/3-draft-draft-article.md and write a revised version to ${vars.work_dir}/3-draft-draft-article.new.md, applying every item of feedback[] in ${vars.work_dir}/.itc-verdict.json. Do not modify or delete the original file; the pipeline swaps the revised file in.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.new.md
+      - kind: shell
+        options:
+          command: mv -f "${vars.work_dir}/3-draft-draft-article.new.md" "${vars.work_dir}/3-draft-draft-article.md"
 
   - id: publish-entry
     description: "Publish tail entry — targets are set; route into illustration/materialization"

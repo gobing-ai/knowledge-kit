@@ -186,8 +186,10 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
     it('R3/AC6 — the unslop state edits the draft in place and sits on every auto revision path', () => {
         const block = stateBlock('unslop');
         expect(block).toContain('kk:taste-unslop');
-        expect(block).toContain('in place');
-        expect(block).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.md'].join('$'));
+        // executor deletes expectFile pre-dispatch — the editor must write a NEW file (input survives), then the swap makes it in place
+        expect(block).toContain('Do not modify or delete the original file');
+        expect(block).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.new.md'].join('$'));
+        expect(block).toContain('mv -f');
         expect(guardOf('draft-write', 'unslop')).toContain(`test "${varRef('unslop')}" = "true"`);
         expect(guardOf('draft-autorevise', 'unslop')).toContain(`test "${varRef('unslop')}" = "true"`);
         expect(guardOf('unslop', 'judge')).toContain(`test "${varRef('auto')}" = "true"`);
@@ -207,7 +209,9 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         expect(block).toContain('.auto-revise-count');
         expect(block).toContain('feedback[]');
         expect(block).toContain('.itc-verdict.json');
-        expect(block).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.md'].join('$'));
+        // executor deletes expectFile pre-dispatch — the reviser must write a NEW file, then the swap
+        expect(block).toContain(['expectFile: ', '{vars.work_dir}/3-draft-draft-article.new.md'].join('$'));
+        expect(block).toContain('mv -f');
 
         const autorevise = guardOf('judge', 'draft-autorevise');
         expect(autorevise).toContain(`test "${varRef('auto')}" = "true"`);
