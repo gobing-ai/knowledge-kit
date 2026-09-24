@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Fix packages/ review findings: kk-core + publish-harness hardening"
-status: testing
+status: done
 template: issue
 created_at: 2026-09-23T23:14:38.909Z
-updated_at: "2026-09-24T05:35:14.244Z"
+updated_at: "2026-09-24T05:38:09.230Z"
 
 priority: P3
 ac_altitude: task-local
@@ -353,4 +353,5 @@ Retracted during verification: (1) "tsc requires `override`" (probe showed it do
 
 - 2026-09-24T00:52:35.340Z todo → wip (system)
 - 2026-09-24T05:35:14.244Z wip → testing (system)
+- 2026-09-24T05:38:09.230Z testing → done (system)
 
