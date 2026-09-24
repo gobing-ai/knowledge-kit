@@ -43,6 +43,7 @@ export async function processGeneratorIO(
     outputPath: string,
     clientOverride?: VoiceboxClient,
     transcodeMp3?: Mp3Transcoder,
+    generator = 'kk:voice-gen',
 ): Promise<void> {
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
@@ -317,7 +318,7 @@ export async function processGeneratorIO(
         await Bun.write(audioPath, concatenatedWav);
 
         const metadata: Record<string, unknown> = {
-            generator: 'kk:voice-gen',
+            generator,
             audioPath,
             duration: totalDuration,
             segments: segmentMetadata,

@@ -2,6 +2,9 @@
     "name": "@gobing-ai/voice-gen",
     "type": "module",
     "private": true,
+    "exports": {
+        ".": "./src/index.ts"
+    },
     "scripts": {
         "typecheck": "tsc --noEmit"
     },

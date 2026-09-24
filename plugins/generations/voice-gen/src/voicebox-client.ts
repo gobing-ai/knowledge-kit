@@ -44,7 +44,8 @@ export interface VoiceboxClient {
         pollMs?: number,
     ): Promise<{ status: 'completed' | 'failed'; duration?: number; error?: string }>;
     downloadAudio(id: string): Promise<Uint8Array>;
-    transcribe(audio: Uint8Array, language?: string): Promise<{ text: string; duration?: number }>;
+    /** Optional: backends without ASR omit it; callers skip fidelity/repetition checks. */
+    transcribe?(audio: Uint8Array, language?: string): Promise<{ text: string; duration?: number }>;
 }
 
 export interface VoiceboxClientOptions {
