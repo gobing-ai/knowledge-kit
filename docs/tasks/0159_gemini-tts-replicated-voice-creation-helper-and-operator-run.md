@@ -4,7 +4,7 @@ name: gemini-tts replicated-voice creation helper and operator runbook
 status: wip
 template: feature-impl
 created_at: 2026-09-24T17:58:49.694Z
-updated_at: "2026-09-24T20:58:13.904Z"
+updated_at: "2026-09-24T21:06:21.018Z"
 feature_id: F612
 priority: P2
 tags:
@@ -84,11 +84,35 @@ Then run a one-segment VoiceScript through `kk executor run gemini-tts --in … 
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: FAIL (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/generations/gemini-tts/src/voice-create.ts:23-47` validateVoiceWav checks RIFF PCM 24kHz mono 16-bit WAV, 10-30s source; `plugins/generations/gemini-tts/src/voice-create.ts:126-176` main CLI options; tests `plugins/generations/gemini-tts/tests/voice-create.test.ts:67-82`, `243-311` passed this run |
+| R2 | MET | `plugins/generations/gemini-tts/src/voice-create.ts:67-118` POST {base}/v1beta/voices with store, type: replicated, source/consent base64; `:170` prints voice id; `:62-64`, `:94`, `:105` redact key; tests `plugins/generations/gemini-tts/tests/voice-create.test.ts:85-122`, `124-151`, `153-185`, `187-240` passed this run |
+| R3 | MET | `plugins/generations/gemini-tts/README.md:10-94` documents consent statement (:10-15), Voicebox sample export (:16-30), ffmpeg conversion (:31-41), create helper & AI Studio fallback (:42-64), profile map & config.yaml wiring (:65-88), renewal & git hygiene (:89-94) |
+| R4 | UNMET | Voicebox consent sample probed 24kHz mono s16 7.13s (200 OK); robin-news.wav 24kHz mono s16 28.39s; live run of `voice-create.ts` failed with HTTP 500 "Error translating server response to JSON" due to Google API server defect (tested live this turn); operator profile map not written; live TTS renders pending resolution |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: R8 — Operator can create the replicated robin-news voice from a source clip and a consent clip | UNMET | command | Live execution of `voice-create.ts` exited 1 with HTTP 500 "Error translating server response to JSON" this run; Google server defect blocks API creation; AI Studio UI fallback pending operator execution |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: FAIL)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | design-conformance | — | 3/4 requirements MET; R4 documented as blocked by external Google 500 defect in Solution |
+| P4 | tests-pass | — | 23/23 tests in gemini-tts pass; 1335/1335 repo-wide pass |
+| P4 | lint-clean | — | biome check . and typecheck clean across all 29 workspaces/plugins |
+| P4 | coverage | — | voice-create.ts 100% funcs / 99.30% lines; gemini-client.ts 94.74% funcs / 100% lines; index.ts 100% funcs / 96% lines |
+| P4 | evidence-rule-pass | — | Behavior-bearing AC evaluated with command evidence |
 
 ### References
 

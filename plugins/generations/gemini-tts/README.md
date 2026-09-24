@@ -57,10 +57,12 @@ rm -rf "$T"
 ```
 
 Stdout is the `voice_…` id. A non-zero exit prints the HTTP status and API message and does not
-print the key. HTTP 500 `Error translating server response to JSON` is a Gemini-side failure on the
+print the key. HTTP 500 `Error translating server response to JSON` is a Gemini-side API defect on the
 clip pair (observed 2026-09-24 for `robin-news.wav` plus the Voicebox consent sample, including a
-12s and a 16s re-encode). Re-record the source and consent in one session and retry; do not commit
-the clips.
+12s and a 16s re-encode). When `POST /v1beta/voices` fails with 500, use Google AI Studio's interactive
+voice replication UI as a fallback: upload the two clips, create the stored voice, and copy the returned
+`voice_…` id into the profile map below. Re-record the source and consent in one session and retry if
+needed; do not commit the clips.
 
 ## Wire the id
 
