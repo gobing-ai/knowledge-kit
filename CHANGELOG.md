@@ -1,3 +1,26 @@
+## [0.0.23] - 2026-09-24
+
+### Added
+
+- feat(gemini-tts): add Gemini TTS voice generator plugin over voice-gen (46ff24f8)
+- feat(gemini-tts): add voice-create CLI helper and operator runbook (F612, 0159) (efd21501)
+- feat(kk-daily): wire vdriver gemini to gemini-tts and sync docs (F612, 0160) (d7c0165e)
+
+### Changed
+
+- refactor(voice-gen): open pipeline for sibling-plugin reuse (3d05f728)
+- test: close task-0158 verification gaps (voice-gen tag override, kk-core shipped-plugin manifest) (f31cb70a)
+
+### Other
+
+- docs(gemini-tts): add ADR-023 and F612 feature/task corpus (1a5bff81)
+- docs(tasks): record 0158 pipeline evidence (Solution/Testing/Review, Plan closed, F612 active) (70d8d1bf)
+- docs(tasks): updat tasks after verification (5b84e98a)
+- docs(tasks): record 0159 R4 external blocker (Google voices.create 500) and AI Studio resolution path (f88cba3e)
+- docs(gemini-tts): record 0159 verification results and AI Studio README fallback (344d50bd)
+- docs(tasks): record 0159 operator run completion and mark done (F612) (036f8dc2)
+- docs: wrapup sync for F612 (0158-0160) — ADR vdriver amendment, derived-doc drift fixes, learnings+metrics capture (85a7e5da)
+
 ## [0.0.22] - 2026-09-24
 
 ### Fixed
