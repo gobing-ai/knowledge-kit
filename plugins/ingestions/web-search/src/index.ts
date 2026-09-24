@@ -8,6 +8,9 @@ import { echoError } from '@gobing-ai/ts-utils';
 
 const log = getLogger('kk.ingestion.web-search');
 
+/** Per-request timeout (ms) for the Firecrawl call — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 /** Validated `--in` input per the 0054 contract (`topic` required; `maxResults`/`fixture` optional). */
 interface InInput {
     topic: string;
@@ -136,6 +139,7 @@ export async function searchFirecrawl(input: InInput, deps: SearchDeps): Promise
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${key}`,
             },
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             body: JSON.stringify({
                 query: input.topic,
                 limit: input.maxResults,

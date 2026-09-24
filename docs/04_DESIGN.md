@@ -319,7 +319,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | ----- | ---------- | ------------- |
 | `NODE_ENV` | no | Set to `test` by workspace test scripts |
 | `POSTSURFING_BIN` | no (surfdash-pub) | Path to the `postsurfing` binary the Surfdash transport invokes (default: on PATH) |
-| `ZENN_REPO` | yes (zenn-pub) | Zenn/GitHub repository path the Zenn transport publishes into (`npx zenn` + `git add/commit/push`) |
+| `ZENN_REPO` | yes (zenn-pub) | Zenn/GitHub repository path the Zenn transport publishes into (`npx --yes --package zenn-cli@0.5.4 zenn new:article` + pathspec-scoped `git add/commit -- articles/<slug>.md` + `git push origin main`). `npx <name>` resolves the npm package *named* `<name>`; package `zenn` was unpublished 2021-04-20, so `--package` names the real `zenn-cli` explicitly |
+| `ZENN_USERNAME` | no (zenn-pub) | Zenn account name for the reported article URL (`https://zenn.dev/<user>/articles/<slug>`). Unset → `url` is omitted and `message` names this var, because `https://zenn.dev/articles/<slug>` (no username segment) 404s |
 | `QIITA_TOKEN` | yes (qiita-pub) | Qiita API v2 token; sent as `Authorization: Bearer <token>` on `POST /api/v2/items` |
 | `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` | no | `fake` selects `FakeFileCliTransport` instead of the real transport — the offline harness switch, identical across `surfdash-pub` / `zenn-pub` / `qiita-pub` |
 | `KNOWLEDGE_KIT_PROJECT_ROOT` | no | Project root the executor hands to every spawned plugin (default: the `kk` process cwd). `content-gen`'s STORM stages pass it as `spur agent run --cwd` so agents anchor to the project, not the plugin package dir |
@@ -330,7 +331,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `DAILYNEWS_LANGUAGE` | no (dailynews-gen) | Broadcast language passed through `kk executor run`; `zh` (default) or `en` |
 | `DAILYNEWS_TITLE` | no (dailynews-gen) | Optional broadcast title passed through `kk executor run` |
 | `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen) | Default profile name/ID when the news workflow or segment/doc omits profile |
-| `VOICEBOX_TIMEOUT_MS` | no (voice-gen) | Poll timeout per generation in ms (default: `600000`) |
+| `VOICEBOX_TIMEOUT_MS` | no (voice-gen) | Per-request timeout in ms (default: `600000`) — bounds both the generation poll and every Voicebox HTTP call (`/health`, `/profiles`, `/generate`, `/history/<id>`, `/audio/<id>`, `/transcribe`) |
 | `VOICEBOX_POLL_MS` | no (voice-gen) | Poll interval in ms (default: `1000`) |
 | `VOICEBOX_ENGINE` | no (voice-gen) | TTS engine override when script/profile omit it (`qwen` default; `qwen_custom_voice` has no clone support) |
 | `VOICE_GEN_FAIL_ON_QC` | no (voice-gen, omni-voice-gen) | `true` fails generation when the QC audit fails (fidelity/duration/repetition); the daily workflow does **not** route on `metadata.qc.passed` — degradation-class audits publish warn-only and surface in the run report's `## 音频 QC` block (0140), while the credibility-damaging `repetition_detected` class is hard-failed upstream by 0139 R5a |
@@ -357,6 +358,23 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `MICROFEED_BASE_URL` | yes (podcast-pub) | Base URL for self-hosted microfeed REST API (e.g. `https://<instance>.workers.dev`) |
 | `MICROFEED_API_KEY` | yes (podcast-pub) | microfeed named API key (`mf_…`) with write scope |
 | `MICROFEED_TIMEOUT_MS` | no (podcast-pub) | Request / upload timeout in ms (default: `300000`) |
+
+### Request timeouts
+
+Bun's `fetch` — like WHATWG `fetch` — has no overall request deadline unless a `signal` is passed, so
+a stalled peer would hang a workflow step until someone killed the run (task 0156 R5). Every plugin
+HTTP call therefore passes `signal: AbortSignal.timeout(<ms>)`, sourced from one module-level
+constant per plugin:
+
+| Constant | Value | Scope |
+| -------- | ----- | ----- |
+| `PROVIDER_REQUEST_TIMEOUT_MS` | `300_000` | Every `image-gen` provider call. Declared in `src/providers/timeouts.ts` (a leaf module) and re-exported from `src/providers/types.ts` — it cannot live in `types.ts` directly, because that file builds the `PROVIDERS` registry from value imports of each adapter, so the constant would create a `types.ts ⇄ <adapter>` runtime cycle (TDZ on `create` for consumers that import an adapter first) |
+| `ProviderOptions.timeoutMs` | optional | `image-gen` only, `@internal` test hook: providers resolve the timeout as `options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS`, so a test can drive the abort path without waiting 300s |
+| `REQUEST_TIMEOUT_MS` | `120_000` | One per plugin in `aihot-ingest`, `web-search`, `emdash-pub`, `medium-pub`, `qiita-pub`, `wechatmp-pub`, `x-pub` |
+| `resolveVoiceboxTimeoutMs()` | `VOICEBOX_TIMEOUT_MS` or `600_000` | `voice-gen`, shared by `voicebox-client` and `voicebox-server` |
+
+Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfeed-client.ts`
+(`MICROFEED_TIMEOUT_MS`) and the `surfdash-pub` live-URL poll (`AbortSignal.timeout(5_000)`).
 
 ## 4. Public package surface
 
@@ -394,7 +412,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`) / `sync` (publish-orchestrator) — 0096. On publish success the transport commits + pushes only the post path to `main` (pathspec commit; deploy.yml builds the site) and polls the article URL until 2xx (`metadata.live`, `metadata.gitCommit`; push acceptance is authoritative — an unverified URL stays non-fatal). EmDash 401/`INVALID_TOKEN` errors surface with a regenerate-the-token hint |
+| `PostsurfingFileCliTransport` | class | `file-cli` transport: `postsurfing` CLI child process; requires `POSTSURFING_BIN` (default: on PATH); routes `options.operation`: `publish` (default) / `scaffold-locale` (`sd translate` scaffold + assets copy → `metadata.draftPath`; targets `en`/`ja`) / `sync` (publish-orchestrator) — 0096. On publish success the transport commits + pushes only the post path to `main` (pathspec commit; deploy.yml builds the site) and polls the article URL until 2xx (`metadata.live`, `metadata.gitCommit`; push acceptance is authoritative — an unverified URL stays non-fatal). EmDash 401/`INVALID_TOKEN` errors surface with a regenerate-the-token hint. Path-derived metadata is validated before any filesystem effect (0156 R4): `metadata.runDate` must be `YYYYMMDD`, the resolved post dir must stay one segment under `content/posts/articles/<locale>`, and `metadata.coverImage` must carry a known image extension (`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`); a violation returns `ok:false` and writes nothing. Invalid `--in` Content yields the spec §2.5 `ok:false` Result plus a non-zero exit instead of an uncaught `SyntaxError` (0156 R7) |
 | `mapContentToSurfingMarkdown(content)` | function | Renders Surfdash markdown + frontmatter (title, description, tags, date, canonical_url, published) |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; forwards a top-level input `options` object to the transport (operation selection, 0096) |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |
@@ -403,7 +421,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `ZennCliFileCliTransport` | class | `file-cli` transport: `npx --yes zenn new:article` + `articles/<slug>.md` write + git push; requires `ZENN_REPO` |
+| `ZennCliFileCliTransport` | class | `file-cli` transport: `npx --yes --package zenn-cli@0.5.4 zenn new:article` + `articles/<slug>.md` write + git scoped to that article (`rev-parse --abbrev-ref HEAD` must be `main`, then `add -- <path>`, `commit -m <msg> -- <path>`, `push origin main`); requires `ZENN_REPO`; `url` comes from `ZENN_USERNAME` |
 | `mapContentToZennMarkdown(content)` | function | Renders Zenn frontmatter (title, type, emoji, topics, published, slug) + body |
 | `processPublishIO(inputPath, outputPath, transport?)` | function | `--in`/`--out` IO per the publish spec §1; writes fail-loud `Result` |
 | `main()` | function | `--in`/`--out` arg parsing; exit 0 success / 1 failure |

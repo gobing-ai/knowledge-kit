@@ -11,6 +11,7 @@ import {
     getPublishTransport,
     main,
     mapContentToSurfingMarkdown,
+    normalizeLocaleFrontmatter,
     PostsurfingFileCliTransport,
     processPublishIO,
     pushPostGit,
@@ -836,6 +837,151 @@ describe('surfdash-pub operations (0096)', () => {
         } finally {
             live.stop(true);
             never.stop(true);
+        }
+    });
+});
+
+describe('processPublishIO invalid input (R7)', () => {
+    const cases: Array<{ name: string; payload: string }> = [
+        { name: 'malformed JSON', payload: '{not json' },
+        { name: 'a schema-invalid body', payload: '{"body": 42}' },
+    ];
+
+    for (const { name, payload } of cases) {
+        test(`${name} writes an ok:false Result and rejects`, async () => {
+            const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r7');
+            await mkdir(tmpDir, { recursive: true });
+            const inPath = join(tmpDir, 'input.json');
+            // A nested output dir also proves ensureDir runs on the failure path (AC7c).
+            const outPath = join(tmpDir, 'nested', 'result.json');
+            const origRoot = process.env.SURFDASH_ROOT;
+            try {
+                delete process.env.SURFDASH_ROOT;
+                await writeFile(inPath, payload, 'utf-8');
+                await expect(processPublishIO(inPath, outPath)).rejects.toThrow(/Invalid Content input:/);
+                expect(existsSync(outPath)).toBe(true);
+                const result = ResultSchema.parse(JSON.parse(await readFile(outPath, 'utf-8')));
+                expect(result.ok).toBe(false);
+                expect(result.error?.startsWith('Invalid Content input:')).toBe(true);
+            } finally {
+                if (origRoot !== undefined) process.env.SURFDASH_ROOT = origRoot;
+                else delete process.env.SURFDASH_ROOT;
+                await rm(tmpDir, { recursive: true, force: true });
+            }
+        });
+    }
+});
+
+describe('normalizeLocaleFrontmatter (R3)', () => {
+    test('rewrites only the frontmatter head and preserves the body byte-for-byte', () => {
+        // The defect dropped every empty line in the WHOLE document (the body included), which is
+        // the sync corruption. The rewrite must be frontmatter-only.
+        const input =
+            '---\ntitle: T\ncanonical: https://x/zh/p\ndraft: true\n---\n\nPara one.\n\nPara two.\n\n```ts\na();\n\nb();\n```\n';
+        const expected = '---\ntitle: T\ndraft: false\n---\n\nPara one.\n\nPara two.\n\n```ts\na();\n\nb();\n```\n';
+        expect(normalizeLocaleFrontmatter(input)).toBe(expected);
+    });
+
+    test('returns text without leading frontmatter unchanged', () => {
+        const input = 'No frontmatter here.\n\nSecond para.\n';
+        expect(normalizeLocaleFrontmatter(input)).toBe(input);
+    });
+
+    test('returns an unterminated frontmatter unchanged', () => {
+        const input = '---\ntitle: T\ndraft: true\n';
+        expect(normalizeLocaleFrontmatter(input)).toBe(input);
+    });
+});
+
+describe('path-derived metadata validation (R4)', () => {
+    const mockBin = async (dir: string): Promise<string> => {
+        const bin = join(dir, 'postsurfing');
+        await writeFile(bin, '#!/usr/bin/env bun\nconsole.log("Published"); process.exit(0);\n', 'utf-8');
+        await Bun.spawn(['chmod', '+x', bin]).exited;
+        return bin;
+    };
+
+    const withRoot = async (
+        tmpDir: string,
+        metadata: Record<string, unknown>,
+        locale?: string,
+    ): Promise<Awaited<ReturnType<PostsurfingFileCliTransport['publish']>>> => {
+        process.env.POSTSURFING_BIN = await mockBin(tmpDir);
+        process.env.SURFDASH_ROOT = tmpDir;
+        if (locale !== undefined) process.env.SURFDASH_LOCALE = locale;
+        const content: Content = {
+            title: 'Daily AI',
+            body: '# Daily AI\n\nBody.',
+            format: 'markdown',
+            metadata,
+        };
+        return new PostsurfingFileCliTransport().publish({ content });
+    };
+
+    test('(a) a non-YYYYMMDD runDate is rejected and writes nothing under the articles tree', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r4-rundate');
+        await mkdir(tmpDir, { recursive: true });
+        const orig = { bin: process.env.POSTSURFING_BIN, root: process.env.SURFDASH_ROOT };
+        try {
+            const result = await withRoot(tmpDir, { runDate: '../../../../tmp/evil' });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('runDate');
+            // The escape never created a post directory (this was the reproduced escape).
+            expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh'))).toBe(false);
+        } finally {
+            if (orig.bin !== undefined) process.env.POSTSURFING_BIN = orig.bin;
+            else delete process.env.POSTSURFING_BIN;
+            if (orig.root !== undefined) process.env.SURFDASH_ROOT = orig.root;
+            else delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('(b) a traversing SURFDASH_LOCALE is rejected', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r4-locale');
+        await mkdir(tmpDir, { recursive: true });
+        const orig = {
+            bin: process.env.POSTSURFING_BIN,
+            root: process.env.SURFDASH_ROOT,
+            locale: process.env.SURFDASH_LOCALE,
+        };
+        try {
+            const result = await withRoot(tmpDir, { runDate: '20260904' }, '../../x');
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('escapes');
+        } finally {
+            if (orig.bin !== undefined) process.env.POSTSURFING_BIN = orig.bin;
+            else delete process.env.POSTSURFING_BIN;
+            if (orig.root !== undefined) process.env.SURFDASH_ROOT = orig.root;
+            else delete process.env.SURFDASH_ROOT;
+            if (orig.locale !== undefined) process.env.SURFDASH_LOCALE = orig.locale;
+            else delete process.env.SURFDASH_LOCALE;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test.each([
+        ['(c) a non-image coverImage extension', 'secret.txt'],
+        ['(d) a coverImage with no extension', 'cover'],
+    ])('%s is rejected before any asset is written', async (_label, name) => {
+        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-r4-cover');
+        await mkdir(tmpDir, { recursive: true });
+        const orig = { bin: process.env.POSTSURFING_BIN, root: process.env.SURFDASH_ROOT };
+        try {
+            const secret = join(tmpDir, name);
+            await writeFile(secret, 'not-an-image', 'utf-8');
+            const result = await withRoot(tmpDir, { runDate: '20260904', coverImage: secret });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('coverImage');
+            expect(existsSync(join(tmpDir, 'content', 'posts', 'articles', 'zh', '20260904-post', 'assets'))).toBe(
+                false,
+            );
+        } finally {
+            if (orig.bin !== undefined) process.env.POSTSURFING_BIN = orig.bin;
+            else delete process.env.POSTSURFING_BIN;
+            if (orig.root !== undefined) process.env.SURFDASH_ROOT = orig.root;
+            else delete process.env.SURFDASH_ROOT;
+            await rm(tmpDir, { recursive: true, force: true });
         }
     });
 });

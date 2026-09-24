@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { refToDataUri } from './refs';
 import { extensionFromUrl } from './seedream';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -61,13 +62,14 @@ export function buildRequestBody(
 export async function extractImageFromResponse(
     result: AgnesResponse,
     fetchFn: typeof fetch = fetch,
+    timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
 ): Promise<Uint8Array> {
     const img = result.data[0];
     if (img?.b64_json !== undefined && img.b64_json !== '') {
         return Uint8Array.from(Buffer.from(img.b64_json, 'base64'));
     }
     if (img?.url !== undefined) {
-        const imgRes = await fetchFn(img.url);
+        const imgRes = await fetchFn(img.url, { signal: AbortSignal.timeout(timeoutMs) });
         if (!imgRes.ok) throw new Error(`Failed to download image from Agnes: ${imgRes.status}`);
         return new Uint8Array(await imgRes.arrayBuffer());
     }
@@ -76,6 +78,7 @@ export async function extractImageFromResponse(
 
 export const createAgnes: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
 
@@ -94,10 +97,11 @@ export const createAgnes: ProviderFactory = (options?: ProviderOptions): ImagePr
                 method: 'POST',
                 headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
                 body: JSON.stringify(body),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             if (!res.ok) throw new Error(`Agnes API error (${res.status}): ${await res.text()}`);
             const result = (await res.json()) as AgnesResponse;
-            const bytes = await extractImageFromResponse(result, fetchFn);
+            const bytes = await extractImageFromResponse(result, fetchFn, timeoutMs);
             const url = result.data[0]?.url;
             return {
                 bytes,

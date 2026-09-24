@@ -7,6 +7,9 @@ import { echoError } from '@gobing-ai/ts-utils';
 
 const TARGET = 'wechatmp';
 const TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token';
+
+/** Per-request timeout (ms) for WeChat HTTP calls — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
 const DRAFT_ADD_URL = 'https://api.weixin.qq.com/cgi-bin/draft/add';
 const APP_ID_ENV = 'WECHAT_APP_ID';
 const APP_SECRET_ENV = 'WECHAT_APP_SECRET';
@@ -32,7 +35,7 @@ function fail(error: string): Result {
 }
 
 function escapeHtml(text: string): string {
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**
@@ -58,7 +61,12 @@ export function markdownToWechatHtml(markdown: string): string {
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
             .replace(/\*([^*]+)\*/g, '<em>$1</em>')
             .replace(/`([^`]+)`/g, '<code>$1</code>')
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+            // `href` is already HTML-escaped (inline() escapes before replacing), so a `"` can no
+            // longer close the attribute. The scheme allowlist is still required: escaping does not
+            // neutralise `javascript:`. Non-http(s) links degrade to their label text.
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text: string, href: string) =>
+                /^https?:\/\//i.test(href) ? `<a href="${href}">${text}</a>` : text,
+            );
 
     for (const line of lines) {
         if (line.startsWith('```')) {
@@ -197,7 +205,7 @@ export class WechatDraftApiTransport implements PublishTransport {
 
         try {
             const tokenUrl = `${TOKEN_URL}?grant_type=client_credential&appid=${encodeURIComponent(appId ?? '')}&secret=${encodeURIComponent(appSecret ?? '')}`;
-            const tokenResponse = await fetch(tokenUrl);
+            const tokenResponse = await fetch(tokenUrl, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
             const tokenJson = (await tokenResponse.json()) as {
                 access_token?: unknown;
                 errmsg?: unknown;
@@ -214,6 +222,7 @@ export class WechatDraftApiTransport implements PublishTransport {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(articles),
+                    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
                 },
             );
             const draftJson = (await draftResponse.json()) as {

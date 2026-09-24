@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { readBytes } from '../bytes';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -36,6 +37,7 @@ export function extensionFromUrl(url: string): string {
 
 export const createSeedream: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
     const supportsRef = (model: string): boolean => REF_MODEL_FRAGMENTS.some((fragment) => model.includes(fragment));
@@ -80,6 +82,7 @@ export const createSeedream: ProviderFactory = (options?: ProviderOptions): Imag
                 method: 'POST',
                 headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
                 body: JSON.stringify(body),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             const text = await resp.text();
             if (!resp.ok) {
@@ -107,7 +110,7 @@ export const createSeedream: ProviderFactory = (options?: ProviderOptions): Imag
                 };
             }
             if (image.url !== undefined) {
-                const r = await fetchFn(image.url);
+                const r = await fetchFn(image.url, { signal: AbortSignal.timeout(timeoutMs) });
                 if (!r.ok) {
                     throw new Error(`seedream fetch URL HTTP ${r.status}`);
                 }

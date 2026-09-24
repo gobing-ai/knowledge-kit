@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { z } from 'zod';
 
@@ -266,7 +266,7 @@ export function resolvePresetRoots(): string[] {
     if (isDirectory(projectRoot)) {
         roots.push(projectRoot);
     }
-    for (const entry of process.env.KK_IMAGE_PRESET_PATH?.split(':') ?? []) {
+    for (const entry of process.env.KK_IMAGE_PRESET_PATH?.split(delimiter).filter((p) => p !== '') ?? []) {
         if (entry !== '' && isDirectory(entry)) {
             roots.push(entry);
         }

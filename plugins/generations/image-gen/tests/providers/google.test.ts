@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -265,5 +265,49 @@ describe('google provider generate', () => {
         await expect(provider.generate({ prompt: 'p', model: 'gemini-3-pro-image' })).rejects.toThrow(
             'Google API request failed via curl',
         );
+    });
+});
+
+/**
+ * R1: `execFileSync` embeds the whole argv in `error.message`, so passing the proxy and the API
+ * key as `-x <proxy>` / `-H 'x-goog-api-key: …'` leaked both into logs. They now travel via a
+ * curl config file on stdin (`-K -`).
+ *
+ * The AC's prescribed probe (a fake `curl` earlier on `PATH`) cannot intercept this call: Bun's
+ * `node:child_process.execFileSync` resolves the executable without honouring a mutated
+ * `process.env.PATH` (verified on Bun 1.3.14 — a fake `curl` on a prepended PATH is ignored and the
+ * real curl runs). So the property is asserted through the observable leak channel instead: the
+ * thrown message, which is where argv used to surface, and the temp-file lifecycle.
+ */
+describe('google proxy secret handling (R1)', () => {
+    const KEY = 'SEKRET-KEY-123';
+    const PROXY = 'http://u:PROXYPW@127.0.0.1:9';
+
+    test('a failing proxied request leaks neither the key nor the proxy password', async () => {
+        const provider = PROVIDERS.google.create({ env: { GOOGLE_API_KEY: KEY, HTTPS_PROXY: PROXY } });
+        let message = '';
+        try {
+            await provider.generate({ prompt: 'p', model: 'gemini-3-pro-image' });
+        } catch (err) {
+            message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message).toContain('Google API request failed via curl');
+        expect(message).not.toContain(KEY);
+        expect(message).not.toContain('PROXYPW');
+        // The proxy was honoured from the stdin config (it is no longer an `-x` argv value): curl
+        // reports the configured proxy as the address it could not reach.
+        expect(message).toContain('127.0.0.1');
+    });
+
+    test('the curl config temp file is removed when the request finishes', async () => {
+        const before = (await readdir(tmpdir())).filter((n) => n.startsWith('kk-image-gen-'));
+        const provider = PROVIDERS.google.create({ env: { GOOGLE_API_KEY: KEY, HTTPS_PROXY: PROXY } });
+        await provider
+            .generate({ prompt: 'p', model: 'gemini-3-pro-image' })
+            .then(() => undefined)
+            .catch(() => undefined);
+        const after = (await readdir(tmpdir())).filter((n) => n.startsWith('kk-image-gen-'));
+        expect(after.length).toBeLessThanOrEqual(before.length);
+        for (const name of after) expect(before).toContain(name);
     });
 });

@@ -1,6 +1,9 @@
 import { echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 
+/** Per-request timeout (ms) for aihot HTTP calls — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 export const AIHOT_BASE_URL = 'https://aihot.virxact.com';
 export const DEFAULT_AIHOT_USER_AGENT = 'aihot-ingest/1.0.0';
 
@@ -123,6 +126,7 @@ export class AihotClient {
                 Accept: 'application/json',
                 'User-Agent': this.userAgent,
             },
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
 
         if (!res.ok) {
@@ -152,6 +156,7 @@ export class AihotClient {
                 Accept: 'application/json',
                 'User-Agent': this.userAgent,
             },
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
 
         if (!res.ok) {

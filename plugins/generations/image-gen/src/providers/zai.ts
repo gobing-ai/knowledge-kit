@@ -1,3 +1,4 @@
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -180,6 +181,7 @@ interface ZaiResponse {
 
 export const createZai: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
 
@@ -220,11 +222,12 @@ export const createZai: ProviderFactory = (options?: ProviderOptions): ImageProv
                     quality: req.quality === 'normal' ? 'standard' : 'hd',
                     size,
                 }),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             if (!response.ok) throw new Error(`Z.AI API error (${response.status}): ${await response.text()}`);
             const url = ((await response.json()) as ZaiResponse).data?.[0]?.url;
             if (url === undefined) throw new Error('No image URL in Z.AI response');
-            const imageResponse = await fetchFn(url);
+            const imageResponse = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) });
             if (!imageResponse.ok) throw new Error(`Failed to download image from Z.AI: ${imageResponse.status}`);
             return {
                 bytes: new Uint8Array(await imageResponse.arrayBuffer()),

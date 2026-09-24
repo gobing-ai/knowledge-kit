@@ -7,6 +7,9 @@ import { echoError } from '@gobing-ai/ts-utils';
 
 /** Medium REST API v1 (integration tokens still post; official docs archived 2023). */
 const MEDIUM_API_BASE = 'https://api.medium.com/v1';
+
+/** Per-request timeout (ms) for Medium HTTP calls — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
 const TARGET = 'medium';
 const TOKEN_ENV = 'MEDIUM_INTEGRATION_TOKEN';
 const STATUS_ENV = 'MEDIUM_PUBLISH_STATUS';
@@ -91,6 +94,7 @@ export class MediumApiTransport implements PublishTransport {
         try {
             const meResponse = await fetch(`${MEDIUM_API_BASE}/me`, {
                 headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             });
             if (!meResponse.ok) {
                 const errorText = (await meResponse.text()).slice(0, 1000);
@@ -110,6 +114,7 @@ export class MediumApiTransport implements PublishTransport {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
                 },
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
                 body: JSON.stringify(body),
             });
             if (!postResponse.ok) {

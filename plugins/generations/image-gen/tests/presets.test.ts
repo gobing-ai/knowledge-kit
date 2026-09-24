@@ -1,13 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import {
     composePrompt,
     type FormatPreset,
     FormatPresetSchema,
     loadPresets,
     renderTemplate,
+    resolvePresetRoots,
     type StylePreset,
     StylePresetSchema,
 } from '../src/presets';
@@ -326,5 +327,37 @@ describe('R6 — the golden cover prompt', () => {
             topics: 'distributed systems',
         });
         expect(prompt).toBe(GOLDEN_COVER_PROMPT);
+    });
+});
+
+describe('resolvePresetRoots (R8)', () => {
+    test('splits KK_IMAGE_PRESET_PATH on path.delimiter and drops empty entries', () => {
+        // The bug was a hard-coded ':' (R8): on Windows the separator is ';', so the whole
+        // string became one bogus root. Using `delimiter` keeps the empty entry in the split
+        // result, which the filter must drop.
+        const dirA = mkdtempSync(join(tmpdir(), 'kk-preset-a-'));
+        const dirB = mkdtempSync(join(tmpdir(), 'kk-preset-b-'));
+        const origPath = process.env.KK_IMAGE_PRESET_PATH;
+        const origProjectRoot = process.env.KNOWLEDGE_KIT_PROJECT_ROOT;
+        try {
+            // Point the project root at an empty dir so its .kk/image-presets root cannot appear.
+            process.env.KNOWLEDGE_KIT_PROJECT_ROOT = mkdtempSync(join(tmpdir(), 'kk-preset-root-'));
+            process.env.KK_IMAGE_PRESET_PATH = [dirA, '', dirB].join(delimiter);
+
+            const roots = resolvePresetRoots();
+
+            expect(roots).toContain(dirA);
+            expect(roots).toContain(dirB);
+            expect(roots.indexOf(dirA)).toBeLessThan(roots.indexOf(dirB));
+            expect(roots).not.toContain('');
+            expect(roots.filter((r) => r === dirA).length).toBe(1);
+        } finally {
+            if (origPath !== undefined) process.env.KK_IMAGE_PRESET_PATH = origPath;
+            else delete process.env.KK_IMAGE_PRESET_PATH;
+            if (origProjectRoot !== undefined) process.env.KNOWLEDGE_KIT_PROJECT_ROOT = origProjectRoot;
+            else delete process.env.KNOWLEDGE_KIT_PROJECT_ROOT;
+            rmSync(dirA, { recursive: true, force: true });
+            rmSync(dirB, { recursive: true, force: true });
+        }
     });
 });

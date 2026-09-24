@@ -1,5 +1,9 @@
+import { extname } from 'node:path';
 import type { Content } from '@gobing-ai/kk-core';
 import { renderShowNotesHtml } from './show-notes';
+
+/** Local-cover extensions accepted from `metadata.coverImage` (R4); anything else is rejected. */
+const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
 /** Resolved episode fields derived from a Content payload (design D6). */
 export interface EpisodeMapping {
@@ -107,6 +111,13 @@ export function mapContentToEpisode(content: Content): EpisodeMapping {
     // microfeed keeps remote image URLs verbatim (`image` field); a local cover file
     // goes through the presigned image upload flow (no item_id required) instead.
     const imageUrl = coverImage?.startsWith('http') ? coverImage : undefined;
+    // `coverImage` is agent-steerable via article metadata, so a local path must be a known image
+    // extension — otherwise an arbitrary file (/etc/passwd) would be read and uploaded (R4).
+    if (coverImage && coverImage.length > 0 && !imageUrl && !COVER_EXTS.has(extname(coverImage).toLowerCase())) {
+        throw new Error(
+            `invalid metadata.coverImage: expected an http(s) URL or a local image (${[...COVER_EXTS].join(', ')}), got '${coverImage}'`,
+        );
+    }
     const imagePath = !imageUrl && coverImage && coverImage.length > 0 ? coverImage : undefined;
 
     let datePublishedMs: number | undefined;

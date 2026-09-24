@@ -1,7 +1,12 @@
 import { Buffer } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { readBytes } from '../bytes';
 import { mimeForPath } from './refs';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -112,6 +117,25 @@ function getHttpProxy(readEnv: (key: string) => string): string | null {
     );
 }
 
+/**
+ * curl config-file quoting: backslash-escape `\` and `"` inside a double-quoted value.
+ * curl's config parser is not a shell, but it does honour these two escapes.
+ */
+const curlQuote = (s: string): string => `"${s.replace(/[\\"]/g, '\\$&')}"`;
+
+/** Replaces every secret with `***`; empty entries are skipped so `''` cannot mangle the text. */
+const redact = (s: string, secrets: string[]): string =>
+    secrets.filter((x) => x !== '').reduce((acc, x) => acc.replaceAll(x, '***'), s);
+
+/** Decoded password from a proxy URL, or '' when the URL carries none or does not parse. */
+function proxyPassword(proxy: string): string {
+    try {
+        return decodeURIComponent(new URL(proxy).password);
+    } catch {
+        return '';
+    }
+}
+
 interface GeminiResponse {
     candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }>;
 }
@@ -123,6 +147,7 @@ interface ImagenResponse {
 
 export const createGoogle: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
     const refModels = [
@@ -143,35 +168,50 @@ export const createGoogle: ProviderFactory = (options?: ProviderOptions): ImageP
         const proxy = getHttpProxy(readEnv);
         // Bun's fetch drops long-lived proxied sockets; upstream works around it with curl (0115 port).
         if (proxy !== null && options?.fetch === undefined) {
-            const result = (() => {
-                try {
-                    return execFileSync(
-                        'curl',
-                        [
-                            '-s',
-                            '--connect-timeout',
-                            '30',
-                            '--max-time',
-                            '300',
-                            '-x',
-                            proxy,
-                            url,
-                            '-H',
-                            'Content-Type: application/json',
-                            '-H',
-                            `x-goog-api-key: ${apiKey}`,
-                            '-d',
-                            '@-',
-                        ],
-                        { input: JSON.stringify(body), encoding: 'utf8', timeout: 310_000 },
-                    );
-                } catch (error: unknown) {
-                    const e = error as { message?: string; stderr?: string | Buffer };
-                    const details =
-                        (typeof e.stderr === 'string' ? e.stderr.trim() : '') || e.message || 'curl request failed';
-                    throw new Error(`Google API request failed via curl: ${details}`);
-                }
-            })();
+            // Secrets stay out of argv: curl reads the proxy and the API key from a config file
+            // (`-K <path>`), and the request body arrives on stdin (`-d @-`). `execFileSync` embeds the
+            // full argv in `error.message`, so `-x <proxy>` / `-H 'x-goog-api-key: …'` would leak both
+            // the key and the proxy password into logs. `-sS` (not `-s`) keeps curl's own diagnostic on
+            // stderr, so `details` no longer falls back to that argv-bearing message.
+            //
+            // File IO goes through the `@gobing-ai/ts-runtime` seam (`no-direct-fs-io`): the seam is
+            // text-only with no `mode` argument, and the file lives in `os.tmpdir()`, which is a
+            // per-user directory (0700 on macOS).
+            const configPath = join(tmpdir(), `kk-image-gen-${randomUUID()}.curlrc`);
+            const config = `proxy = ${curlQuote(proxy)}\nheader = ${curlQuote(`x-goog-api-key: ${apiKey}`)}\n`;
+            const fileSystem = createNodeFileSystem();
+            await fileSystem.writeFile(configPath, config);
+            let result: string;
+            try {
+                result = execFileSync(
+                    'curl',
+                    [
+                        '-sS',
+                        '--connect-timeout',
+                        '30',
+                        '--max-time',
+                        '300',
+                        '-K',
+                        configPath,
+                        '-H',
+                        'Content-Type: application/json',
+                        '-d',
+                        '@-',
+                        url,
+                    ],
+                    { input: JSON.stringify(body), encoding: 'utf8', timeout: 310_000 },
+                );
+            } catch (error: unknown) {
+                const e = error as { message?: string; stderr?: string | Buffer };
+                const details =
+                    (typeof e.stderr === 'string' ? e.stderr.trim() : '') || e.message || 'curl request failed';
+                // Redact the raw `user:pass@host` form as well as the decoded password.
+                throw new Error(
+                    `Google API request failed via curl: ${redact(details, [apiKey, proxyPassword(proxy), proxy])}`,
+                );
+            } finally {
+                await fileSystem.deleteFile(configPath);
+            }
             const parsed = JSON.parse(result) as T & { error?: { code?: string; message?: string } };
             if (parsed.error !== undefined) {
                 throw new Error(`Google API error (${parsed.error.code}): ${parsed.error.message}`);
@@ -182,6 +222,7 @@ export const createGoogle: ProviderFactory = (options?: ProviderOptions): ImageP
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
             body: JSON.stringify(body),
+            signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
             const err = await res.text();

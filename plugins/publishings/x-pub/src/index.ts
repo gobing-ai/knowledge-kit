@@ -13,6 +13,9 @@ import {
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
+/** Per-request timeout (ms) for the X API call — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 const TARGET = 'x';
 const TWEETS_URL = 'https://api.twitter.com/2/tweets';
 const TOKEN_ENVS = ['X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_TOKEN_SECRET'] as const;
@@ -98,6 +101,7 @@ export class XPostApiTransport implements PublishTransport {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ text: text.slice(0, 280) }),
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             });
             if (!response.ok) {
                 const errorText = (await response.text()).slice(0, 1000);

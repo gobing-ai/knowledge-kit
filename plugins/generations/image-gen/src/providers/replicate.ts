@@ -1,5 +1,6 @@
 import { refToDataUri } from './refs';
 import { extensionFromUrl } from './seedream';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -208,10 +209,11 @@ export function extractOutputUrl(prediction: PredictionResponse): string {
 export const createReplicate: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
     const env = options?.env ?? process.env;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const readEnv = (key: string): string => env[key] ?? '';
 
     async function downloadImage(url: string): Promise<Uint8Array> {
-        const res = await fetchFn(url);
+        const res = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) });
         if (!res.ok) throw new Error(`Failed to download image from Replicate: ${res.status}`);
         return new Uint8Array(await res.arrayBuffer());
     }
@@ -219,7 +221,10 @@ export const createReplicate: ProviderFactory = (options?: ProviderOptions): Ima
     async function pollPrediction(apiToken: string, getUrl: string): Promise<PredictionResponse> {
         const start = Date.now();
         while (Date.now() - start < MAX_POLL_MS) {
-            const res = await fetchFn(getUrl, { headers: { authorization: `Bearer ${apiToken}` } });
+            const res = await fetchFn(getUrl, {
+                headers: { authorization: `Bearer ${apiToken}` },
+                signal: AbortSignal.timeout(timeoutMs),
+            });
             if (!res.ok) throw new Error(`Replicate poll error (${res.status}): ${await res.text()}`);
             const prediction = (await res.json()) as PredictionResponse;
             if (prediction.status === 'succeeded') return prediction;
@@ -260,7 +265,12 @@ export const createReplicate: ProviderFactory = (options?: ProviderOptions): Ima
                 Prefer: `wait=${SYNC_WAIT_SECONDS}`,
             };
             let prediction = (await (
-                await fetchFn(url, { method: 'POST', headers, body: JSON.stringify(body) })
+                await fetchFn(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body),
+                    signal: AbortSignal.timeout(timeoutMs),
+                })
             ).json()) as PredictionResponse;
             if (prediction.status !== 'succeeded') {
                 if (prediction.urls?.get === undefined)

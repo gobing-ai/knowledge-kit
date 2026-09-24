@@ -70,10 +70,20 @@ export interface ImageProvider {
 }
 
 /** Injection seam for tests — mirrors `VoiceboxClientOptions.fetch` (voice-gen). */
+/**
+ * Default per-request timeout for every image-gen provider HTTP call. Defined in `./timeouts` (a
+ * leaf module) and re-exported here so `types.ts` stays the public surface; see that file for why
+ * it cannot be declared inline (import cycle → TDZ). Overridable per call via
+ * `ProviderOptions.timeoutMs` (tests).
+ */
+export { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
+
 export interface ProviderOptions {
     fetch?: typeof fetch;
     /** Environment consulted instead of process.env (tests). */
     env?: Record<string, string | undefined>;
+    /** Per-request timeout override (tests). Defaults to {@link PROVIDER_REQUEST_TIMEOUT_MS}. */
+    timeoutMs?: number;
 }
 
 export type ProviderFactory = (options?: ProviderOptions) => ImageProvider;

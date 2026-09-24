@@ -7,6 +7,14 @@ import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
 /**
+ * Pinned `zenn-cli` version. `npx <name>` resolves the npm package *named* `<name>`, and the
+ * package `zenn` was unpublished on 2021-04-20 — so `npx zenn` fails (or worse, runs whatever a
+ * future republisher ships, with `--yes` suppressing the prompt). `--package` names the real
+ * package explicitly.
+ */
+const ZENN_CLI_VERSION = '0.5.4';
+
+/**
  * Converts a string into a lowercase hyphenated tag (slug) per the publish spec tags convention.
  */
 export function slugify(str: string): string {
@@ -161,11 +169,26 @@ export class ZennCliFileCliTransport implements PublishTransport {
             });
         }
         const repoPath = repo.startsWith('~') ? join(homedir(), repo.slice(2)) : repo;
+        // Zenn article URLs are `https://zenn.dev/<user>/articles/<slug>`; without the username the
+        // path is wrong (it 404s), so omit `url` rather than report a broken link.
+        const zennUsername = process.env.ZENN_USERNAME?.trim();
 
         try {
             await createNodeFileSystem().ensureDir(repoPath);
 
-            const cliArgs = ['--yes', 'zenn', 'new:article', '--slug', slug, '--title', title, '--type', type];
+            const cliArgs = [
+                '--yes',
+                '--package',
+                `zenn-cli@${ZENN_CLI_VERSION}`,
+                'zenn',
+                'new:article',
+                '--slug',
+                slug,
+                '--title',
+                title,
+                '--type',
+                type,
+            ];
             if (emoji) {
                 cliArgs.push('--emoji', emoji);
             }
@@ -184,18 +207,27 @@ export class ZennCliFileCliTransport implements PublishTransport {
             await createNodeFileSystem().writeFile(articlePath, markdown);
 
             if (published) {
+                const articleRel = `articles/${slug}.md`;
                 const gitSteps: string[][] = [
-                    ['add', `articles/${slug}.md`],
-                    ['commit', '-m', `Add article: ${title}`],
-                    ['push'],
+                    ['rev-parse', '--abbrev-ref', 'HEAD'],
+                    ['add', '--', articleRel],
+                    ['commit', '-m', `Add article: ${title}`, '--', articleRel],
+                    ['push', 'origin', 'main'],
                 ];
                 for (const gitArgs of gitSteps) {
-                    const [code, , stderr] = await this.runCli('git', gitArgs, repoPath);
+                    const [code, stdout, stderr] = await this.runCli('git', gitArgs, repoPath);
                     if (code !== 0) {
                         return ResultSchema.parse({
                             ok: false,
                             target: 'zenn',
                             error: `git ${gitArgs.join(' ')} failed (exit ${code}): ${stderr.trim() || 'Unknown error'}`,
+                        });
+                    }
+                    if (gitArgs[0] === 'rev-parse' && stdout.trim() !== 'main') {
+                        return ResultSchema.parse({
+                            ok: false,
+                            target: 'zenn',
+                            error: `Zenn repo is on branch '${stdout.trim()}', not 'main' — Zenn deploys from main; refusing to commit`,
                         });
                     }
                 }
@@ -204,11 +236,13 @@ export class ZennCliFileCliTransport implements PublishTransport {
             return ResultSchema.parse({
                 ok: true,
                 target: 'zenn',
-                url: `https://zenn.dev/articles/${slug}`,
+                url: zennUsername ? `https://zenn.dev/${zennUsername}/articles/${slug}` : undefined,
                 id: slug,
-                message: published
-                    ? 'Published to Zenn via Zenn CLI (article committed and pushed to GitHub)'
-                    : 'Zenn draft article created (published: false; commit and push to deploy)',
+                message: `${
+                    published
+                        ? 'Published to Zenn via Zenn CLI (article committed and pushed to GitHub)'
+                        : 'Zenn draft article created (published: false; commit and push to deploy)'
+                }${zennUsername ? '' : ' (set ZENN_USERNAME to report the article URL)'}`,
             });
         } catch (err: unknown) {
             return ResultSchema.parse({

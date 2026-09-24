@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { basename } from 'node:path';
 import { readBytes } from '../bytes';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -207,13 +208,14 @@ export function getMimeType(filename: string): string {
 export async function extractImageFromResponse(
     result: OpenAIImageResponse,
     fetchFn: typeof fetch = fetch,
+    timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
 ): Promise<Uint8Array> {
     const img = result.data[0];
     if (img?.b64_json !== undefined && img.b64_json !== '') {
         return Uint8Array.from(Buffer.from(img.b64_json, 'base64'));
     }
     if (img?.url !== undefined) {
-        const imgRes = await fetchFn(img.url);
+        const imgRes = await fetchFn(img.url, { signal: AbortSignal.timeout(timeoutMs) });
         if (!imgRes.ok) throw new Error('Failed to download image');
         return new Uint8Array(await imgRes.arrayBuffer());
     }
@@ -222,6 +224,7 @@ export async function extractImageFromResponse(
 
 export const createOpenai: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
     const supportsRef = (model: string): boolean => model.includes('gpt-image');
@@ -255,6 +258,7 @@ export const createOpenai: ProviderFactory = (options?: ProviderOptions): ImageP
                     method: 'POST',
                     headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
                     body: JSON.stringify({ model: req.model, messages: [{ role: 'user', content: req.prompt }] }),
+                    signal: AbortSignal.timeout(timeoutMs),
                 });
                 if (!chatRes.ok) throw new Error(`OpenAI API error: ${await chatRes.text()}`);
                 const content =
@@ -301,17 +305,19 @@ export const createOpenai: ProviderFactory = (options?: ProviderOptions): ImageP
                         method: 'POST',
                         headers: { authorization: `Bearer ${apiKey}` },
                         body: form,
+                        signal: AbortSignal.timeout(timeoutMs),
                     });
                     if (!res.ok) throw new Error(`OpenAI edits API error: ${await res.text()}`);
-                    return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn);
+                    return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn, timeoutMs);
                 }
                 const res = await fetchFn(`${baseURL}/images/generations`, {
                     method: 'POST',
                     headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
                     body: JSON.stringify(buildOpenAIGenerationsBody(req.prompt, req.model, args)),
+                    signal: AbortSignal.timeout(timeoutMs),
                 });
                 if (!res.ok) throw new Error(`OpenAI API error: ${await res.text()}`);
-                return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn);
+                return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn, timeoutMs);
             })();
             return { bytes, extension: 'png', provider: 'openai', model: req.model };
         },

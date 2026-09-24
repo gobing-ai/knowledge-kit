@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { type Content, type Doc, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
@@ -8,7 +8,7 @@ import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { getPublishTransport, main, PodcastPubTransport, processPublishIO } from '../src/index';
 import { mapContentToEpisode, resolveAudioMimeType } from '../src/map';
 import { resolveTimeoutMs } from '../src/microfeed-client';
-import { renderShowNotesMarkdown } from '../src/show-notes';
+import { renderShowNotesHtml, renderShowNotesMarkdown } from '../src/show-notes';
 
 /** A recorded fake-API request. */
 interface CapturedRequest {
@@ -416,9 +416,11 @@ describe('podcast-pub publish (R1/R3)', () => {
                     size: 8,
                     type: 'audio/wav',
                 });
+                // R4: only the basename is sent as `full_local_file_path`; the MIME follows the
+                // real extension (cover.png here) instead of assuming PNG.
                 expect(presigns[1]?.body).toEqual({
                     category: 'image',
-                    full_local_file_path: coverPath,
+                    full_local_file_path: basename(coverPath),
                     size: 8,
                     type: 'image/png',
                 });
@@ -1337,7 +1339,10 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
                 // options.audioFile wins over metadata.audioUrl (file branch, no ambiguity error)…
                 expect(api.requests[1]?.body).toMatchObject({ category: 'audio', full_local_file_path: audioPath });
                 // …options.coverPath wins over the remote metadata cover.
-                expect(api.requests[3]?.body).toMatchObject({ category: 'image', full_local_file_path: coverPath });
+                expect(api.requests[3]?.body).toMatchObject({
+                    category: 'image',
+                    full_local_file_path: basename(coverPath),
+                });
             } finally {
                 api.restore();
                 await rm(dir, { recursive: true, force: true });
@@ -1366,6 +1371,109 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
                 }
             } finally {
                 spy.mockRestore();
+            }
+        });
+    });
+});
+
+describe('show-notes HTML safety (R2)', () => {
+    const briefDocs = (sourceUri: string): Doc[] =>
+        [
+            {
+                id: 'a',
+                title: 'Sora 2 发布',
+                body: 'OpenAI 发布 Sora 应用。',
+                sourceUri,
+                mediaType: 'text/markdown',
+                metadata: { brief: 'OpenAI 发布 Sora 应用。' },
+            },
+        ] as Doc[];
+    // briefMode needs a resolved post slug (articlePostPath); without one the renderer degrades to
+    // the legacy per-item layout and never emits a timeline block.
+    const OPTS = {
+        title: '每日 AI 要闻',
+        runDate: '2026-09-06',
+        briefMode: true,
+        articlePostPath: '/srv/surfdash/content/posts/articles/zh/20260906-ai-daily/index.md',
+    };
+
+    test('(a) a javascript: sourceUri never becomes an href, an https one still does', () => {
+        const hostile = renderShowNotesHtml(
+            renderShowNotesMarkdown(briefDocs('javascript:alert(document.domain)'), OPTS),
+        );
+        // The row loses its source link entirely — the scheme is never emitted.
+        expect(hostile).not.toContain('javascript:');
+        expect(hostile).not.toContain('来源</a>');
+
+        const safe = renderShowNotesHtml(renderShowNotesMarkdown(briefDocs('https://example.com/a'), OPTS));
+        expect(safe).toContain('href="https://example.com/a"');
+    });
+
+    test('(b) a script tag inside the markers is escaped, not passed through', () => {
+        const html = renderShowNotesHtml('<!--kk:timeline-->\n<script>alert(1)</script>\n<!--/kk:timeline-->');
+        expect(html).toContain('&lt;script&gt;');
+        expect(html).not.toContain('<script');
+    });
+
+    test('(c) forged markup inside the markers is escaped', () => {
+        // Escaping preserves the literal text; what must not survive is live markup.
+        const link = renderShowNotesHtml('<!--kk:timeline-->\n<a href="javascript:x">click</a>\n<!--/kk:timeline-->');
+        expect(link).not.toContain('<a href="javascript:');
+        expect(link).toContain('&lt;a href=');
+        const img = renderShowNotesHtml('<!--kk:timeline-->\n<img src=x onerror=y>\n<!--/kk:timeline-->');
+        expect(img).not.toContain('<img');
+        expect(img).toContain('&lt;img');
+    });
+
+    test('(d) generator output round-trips through the validator unescaped', () => {
+        const html = renderShowNotesHtml(renderShowNotesMarkdown(briefDocs('https://example.com/a'), OPTS));
+        expect(html).toContain('<div class="kk-tl">');
+        expect(html).not.toContain('&lt;div');
+    });
+});
+
+describe('cover-image validation (R4)', () => {
+    test('(f) coverImage: /etc/passwd is rejected before any read or upload', async () => {
+        await withEnv(VALID_ENV, async () => {
+            const dir = join(process.cwd(), '.tmp-test-podcast-r4-passwd');
+            const audioPath = await makeAudioFile(dir, 'episode.wav');
+            const api = installFakeApi(twoPhaseRoutesWithCover('ITEM04'));
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioFile: audioPath, coverImage: '/etc/passwd' }),
+                });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('coverImage');
+                const presigns = api.requests.filter((r) => r.url.endsWith('/media_files/presigned_urls'));
+                // Mapping rejects before the client is ever asked to upload.
+                expect(presigns.length).toBe(0);
+            } finally {
+                api.restore();
+                await rm(dir, { recursive: true, force: true });
+            }
+        });
+    });
+
+    test('(g) a .jpg cover sends the basename and image/jpeg', async () => {
+        await withEnv(VALID_ENV, async () => {
+            const dir = join(process.cwd(), '.tmp-test-podcast-r4-jpg');
+            const audioPath = await makeAudioFile(dir, 'episode.wav');
+            const coverPath = await makeAudioFile(dir, 'cover.jpg');
+            const api = installFakeApi(twoPhaseRoutesWithCover('ITEM05'));
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioFile: audioPath, coverImage: coverPath }),
+                });
+                expect(result.ok).toBe(true);
+                const presigns = api.requests.filter((r) => r.url.endsWith('/media_files/presigned_urls'));
+                expect(presigns[1]?.body).toMatchObject({
+                    category: 'image',
+                    full_local_file_path: 'cover.jpg',
+                    type: 'image/jpeg',
+                });
+            } finally {
+                api.restore();
+                await rm(dir, { recursive: true, force: true });
             }
         });
     });

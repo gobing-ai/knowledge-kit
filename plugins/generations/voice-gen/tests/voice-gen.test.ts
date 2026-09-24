@@ -1373,3 +1373,20 @@ describe('voice-gen validateVoiceScript content checks (0139 R3 SYNC twin)', () 
         expect(() => validateVoiceScript(script('A clean spoken sentence.', 'Another clean one.'))).not.toThrow();
     });
 });
+
+describe('voicebox client request timeouts (R5)', () => {
+    it('every client request carries an abort signal', async () => {
+        const inits: Array<RequestInit | undefined> = [];
+        const spy = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
+            inits.push(init);
+            return new Response('ok', { status: 200 });
+        }) as typeof fetch;
+
+        const client = createVoiceboxClient({ url: 'http://127.0.0.1:1', fetch: spy });
+        await client.health();
+        await client.downloadAudio('ep1');
+
+        expect(inits.length).toBeGreaterThan(0);
+        for (const init of inits) expect(init?.signal).toBeInstanceOf(AbortSignal);
+    });
+});

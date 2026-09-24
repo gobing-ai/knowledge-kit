@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, cp, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
@@ -17,6 +17,9 @@ type Operation = (typeof OPERATIONS)[number];
 /** Locales `scaffold-locale` can scaffold; LLM translation stays in the workflow's agent step. */
 const SCAFFOLD_LOCALES = ['en', 'ja'] as const;
 type ScaffoldLocale = (typeof SCAFFOLD_LOCALES)[number];
+
+/** Cover-image extensions accepted from `metadata.coverImage` (R4): anything else is rejected, not copied. */
+const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
 /** Target-specific options carried on the invoke payload's `options` channel. */
 interface SurfdashPubOptions {
@@ -111,6 +114,19 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
 /** `Result` failure helper: ok false + error (podcast-pub pattern). */
 function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error });
+}
+
+/**
+ * Writes a Result JSON to `outputPath`, creating the directory as needed. Shared by the success
+ * path and the invalid-input path so a malformed payload still produces the spec §2.5 `ok:false`
+ * Result artifact (R7).
+ */
+async function writePublishResult(outputPath: string, result: Result): Promise<void> {
+    const outDir = dirname(outputPath);
+    if (outDir && outDir !== '.') {
+        await createNodeFileSystem().ensureDir(outDir);
+    }
+    await createNodeFileSystem().writeFile(outputPath, JSON.stringify(result, null, 2));
 }
 
 /** Parses and routes `options.operation`; unknown or misplaced values fail loud. */
@@ -359,14 +375,19 @@ async function scaffoldLocale(options: SurfdashPubOptions): Promise<Result> {
  * for the agent prompt; safe because sync always runs after the agent's edit.
  */
 export function normalizeLocaleFrontmatter(markdown: string): string {
+    // Frontmatter-only rewrite (R3). The previous implementation filtered empty lines across the
+    // WHOLE document, deleting every blank line in the body — that is the sync corruption. Only
+    // the head between the opening and closing `---` is rewritten here; `split`/`join` on '\n'
+    // round-trips the rest of the document byte-for-byte.
     const lines = markdown.split('\n');
-    const inFrontmatter = lines[0]?.trim() === '---';
-    for (let i = 1; inFrontmatter && i < lines.length; i++) {
-        if (lines[i]?.trim() === '---') break;
-        if (/^canonical\s*:/.test(lines[i] ?? '')) lines[i] = '';
-        else if (/^draft\s*:/.test(lines[i] ?? '')) lines[i] = 'draft: false';
-    }
-    return lines.filter((line) => line !== '').join('\n');
+    if (lines[0]?.trim() !== '---') return markdown;
+    const close = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+    if (close < 0) return markdown;
+    const head = lines
+        .slice(1, close)
+        .filter((l) => !/^canonical\s*:/.test(l))
+        .map((l) => (/^draft\s*:/.test(l) ? 'draft: false' : l));
+    return [lines[0], ...head, ...lines.slice(close)].join('\n');
 }
 
 async function syncPost(options: SurfdashPubOptions): Promise<Result> {
@@ -435,17 +456,32 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
     const dateStamp = runDate || today;
     const titleSlug = slugify(payload.content.title ?? '');
     const slug = titleSlug ? `${dateStamp}-${titleSlug}` : `${dateStamp}-post`;
-    const postDir = join(surfdashRoot, 'content', 'posts', 'articles', locale, slug);
+    // Validate before touching disk (R4): a `metadata.runDate` or slug that escapes the articles
+    // tree would write a post outside it, and a non-image `coverImage` would be copied into a post
+    // that pushPostGit then publishes to a public repo.
+    if (runDate !== '' && !/^\d{8}$/.test(runDate)) {
+        return fail(`metadata.runDate must be YYYYMMDD, got '${runDate}'`);
+    }
+    const articlesRoot = resolve(surfdashRoot, 'content', 'posts', 'articles');
+    const localeRoot = resolve(articlesRoot, locale);
+    const postDir = resolve(localeRoot, slug);
+    if (dirname(localeRoot) !== articlesRoot || dirname(postDir) !== localeRoot) {
+        return fail(`post path escapes ${articlesRoot}`);
+    }
+    const coverPath = payload.content.metadata?.coverImage;
+    if (typeof coverPath === 'string' && existsSync(coverPath) && !COVER_EXTS.has(extname(coverPath).toLowerCase())) {
+        return fail(`metadata.coverImage must be one of ${[...COVER_EXTS].join(', ')}`);
+    }
+
     await createNodeFileSystem().ensureDir(postDir);
 
     // Cover image: metadata.coverImage (absolute local path) is copied into the post's
     // assets dir and referenced relatively — the surfdash PostSchema accepts ./assets/<file>.
     let imageFrontmatter: string | undefined;
-    const coverPath = payload.content.metadata?.coverImage;
     if (typeof coverPath === 'string' && existsSync(coverPath)) {
         const assetsDir = join(postDir, 'assets');
         await createNodeFileSystem().ensureDir(assetsDir);
-        const coverName = `cover${coverPath.slice(coverPath.lastIndexOf('.'))}`;
+        const coverName = `cover${extname(coverPath).toLowerCase()}`;
         await copyFile(coverPath, join(assetsDir, coverName));
         imageFrontmatter = `./assets/${coverName}`;
     }
@@ -552,8 +588,18 @@ export async function processPublishIO(
 ): Promise<void> {
     await createNodeFileSystem().deleteFile(outputPath);
     const rawInput = await createNodeFileSystem().readFile(inputPath);
-    const raw = JSON.parse(rawInput) as Record<string, unknown>;
-    const content = ContentSchema.parse(raw);
+    // A malformed payload must yield the spec §2.5 `ok:false` Result and a non-zero exit, not an
+    // uncaught SyntaxError (R7 — the other publishers were built from a template with this catch).
+    let raw: Record<string, unknown>;
+    let content: Content;
+    try {
+        raw = JSON.parse(rawInput) as Record<string, unknown>;
+        content = ContentSchema.parse(raw);
+    } catch (error: unknown) {
+        const message = `Invalid Content input: ${error instanceof Error ? error.message : String(error)}`;
+        await writePublishResult(outputPath, fail(message));
+        throw new Error(message);
+    }
     const options =
         raw.options !== undefined && typeof raw.options === 'object' && raw.options !== null
             ? (raw.options as Record<string, unknown>)
@@ -562,12 +608,7 @@ export async function processPublishIO(
     const result = await transport.publish({ content, options });
     const validatedResult = ResultSchema.parse(result);
 
-    const outDir = dirname(outputPath);
-    if (outDir && outDir !== '.') {
-        await createNodeFileSystem().ensureDir(outDir);
-    }
-
-    await createNodeFileSystem().writeFile(outputPath, JSON.stringify(validatedResult, null, 2));
+    await writePublishResult(outputPath, validatedResult);
 
     if (!validatedResult.ok) {
         throw new Error(validatedResult.error ?? 'Publish failed');

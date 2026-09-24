@@ -54,7 +54,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 
 const SCRIPTS_DIR = import.meta.dir;
 const VALIDATE_SIDECAR = 'validate-voicescript.ts';
@@ -1336,6 +1336,17 @@ function dailyPatchSurfdash(args: string[]): void {
         const postPath = (sd.metadata as Record<string, unknown> | undefined)?.postPath;
         if (typeof postPath !== 'string' || postPath === '')
             failWith(1, 'patch-surfdash: surfdash result carries no postPath');
+        // Refuse before anything is written: surfdash's deploy.yml publishes from main, so a commit
+        // on any other branch is invisible to production. Placed here (after the input checks) so a
+        // refusal leaves the working tree untouched.
+        const head = spawnSync('git', ['-C', surfdashRoot, 'rev-parse', '--abbrev-ref', 'HEAD'])
+            .stdout?.toString()
+            .trim();
+        if (head !== 'main')
+            failWith(1, `patch-surfdash: refusing to commit on '${head}' — surfdash deploys from main`);
+        // Paths this run actually wrote, relative to surfdashRoot. `git add`/`commit` take these as a
+        // pathspec so the operator's unrelated staged work is never swept into the commit.
+        const written: string[] = [];
         const slugDir = dirname(postPath);
         const showNotesUrl = typeof pod.url === 'string' ? pod.url : '';
         const coverUrl = ((pod.metadata as Record<string, unknown> | undefined)?.imageUrl as string | undefined) ?? '';
@@ -1366,10 +1377,19 @@ function dailyPatchSurfdash(args: string[]): void {
             // Upsert a single-line `key: 'value'`; the regex consumes folded-scalar continuation
             // lines (`og_image: >-\n  https://...`) so multi-line publish output is replaced whole.
             const upsertKey = (src: string, key: string, value: string): string => {
-                const line = `${key}: '${value}'`;
+                // YAML single-quoted scalars escape `'` as `''`; the replacement is a function so
+                // `$&`/`$1`/`$$` in the value are never expanded. Scope the match to the frontmatter
+                // (recomputed per call, since each upsert shifts offsets) so a body line starting with
+                // `image:` is not rewritten.
+                const end = src.indexOf('\n---', 3);
+                const fm = src.slice(0, end);
+                const body = src.slice(end);
+                const line = `${key}: '${value.replaceAll("'", "''")}'`;
                 const re = new RegExp(`^${key}:.*(?:\\n[ \\t]+.*)*`, 'm');
-                if (re.test(src)) return src.replace(re, line);
-                return src.replace(/^publishDate: .*$/m, (m0) => `${m0}\n${line}`);
+                const next = re.test(fm)
+                    ? fm.replace(re, () => line)
+                    : fm.replace(/^publishDate: .*$/m, (m0) => `${m0}\n${line}`);
+                return next + body;
             };
             if (coverUrl !== '') {
                 // 20260919 prod feedback: the podcast-hosted cover URL wins even when surfdash-pub
@@ -1383,6 +1403,7 @@ function dailyPatchSurfdash(args: string[]): void {
                     const assets = join(dir, 'assets');
                     mkdirSync(assets, { recursive: true });
                     copyFileSync(localCover, join(assets, 'cover.png'));
+                    written.push(relative(surfdashRoot, join(assets, 'cover.png')));
                     md = upsertKey(md, 'image', './assets/cover.png');
                     md = upsertKey(md, 'og_image', './assets/cover.png');
                 }
@@ -1392,6 +1413,7 @@ function dailyPatchSurfdash(args: string[]): void {
             }
             if (md !== readFileSync(indexMd, 'utf-8')) {
                 sted('write', indexMd, () => writeFileSync(indexMd, md));
+                written.push(relative(surfdashRoot, indexMd));
                 changed++;
             }
         }
@@ -1403,9 +1425,15 @@ function dailyPatchSurfdash(args: string[]): void {
             const r = spawnSync('git', ['-C', surfdashRoot, ...a]);
             if (r.status !== 0) failWith(1, `patch-surfdash: git ${a[0]} failed: ${r.stderr?.toString().trim()}`);
         };
-        git('add', 'content/posts/articles');
-        git('commit', '-m', `feat: cover + podcast cross-link for ${basename(slugDir)} (kk daily patch)`);
-        if (process.env.SURFDASH_AUTO_PUSH !== '0') git('push');
+        git('add', '--', ...written);
+        git(
+            'commit',
+            '-m',
+            `feat: cover + podcast cross-link for ${basename(slugDir)} (kk daily patch)`,
+            '--',
+            ...written,
+        );
+        if (process.env.SURFDASH_AUTO_PUSH !== '0') git('push', 'origin', 'main');
         console.log(
             `patch-surfdash: patched ${changed} post(s), committed${process.env.SURFDASH_AUTO_PUSH !== '0' ? ' + pushed' : ' (push skipped: SURFDASH_AUTO_PUSH=0)'}`,
         );

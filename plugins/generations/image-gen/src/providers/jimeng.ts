@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -142,6 +143,7 @@ interface JimengTaskResponse {
 
 export const createJimeng: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
 
@@ -170,7 +172,12 @@ export const createJimeng: ProviderFactory = (options?: ProviderOptions): ImageP
             'cv',
             endpoint.canonicalUri,
         );
-        return fetchFn(endpoint.url, { method: 'POST', headers: { ...headers, authorization }, body });
+        return fetchFn(endpoint.url, {
+            method: 'POST',
+            headers: { ...headers, authorization },
+            body,
+            signal: AbortSignal.timeout(timeoutMs),
+        });
     }
 
     async function submitTask(
@@ -214,7 +221,7 @@ export const createJimeng: ProviderFactory = (options?: ProviderOptions): ImageP
                 }
                 if (status === 'done' && image_urls !== undefined && image_urls.length > 0) {
                     const url = image_urls[0] as string;
-                    const imgRes = await fetchFn(url);
+                    const imgRes = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) });
                     if (!imgRes.ok) throw new Error(`Failed to download image from ${url}`);
                     return new Uint8Array(await imgRes.arrayBuffer());
                 }

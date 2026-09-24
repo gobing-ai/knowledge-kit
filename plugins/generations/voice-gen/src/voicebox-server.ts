@@ -3,6 +3,7 @@ import { existsSync, openSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { echoError } from '@gobing-ai/ts-utils';
+import { resolveVoiceboxTimeoutMs } from './voicebox-client';
 
 /** Boot wait / poll cadence for a freshly spawned local server (Voicebox cold start ≈ 2-5s). */
 const BOOT_WAIT_MS = 30_000;
@@ -23,7 +24,7 @@ export interface VoiceboxServerOptions {
 
 async function probeVoiceboxHealth(url: string, customFetch: typeof fetch): Promise<boolean> {
     try {
-        return (await customFetch(`${url}/health`)).ok;
+        return (await customFetch(`${url}/health`, { signal: AbortSignal.timeout(resolveVoiceboxTimeoutMs()) })).ok;
     } catch {
         return false;
     }

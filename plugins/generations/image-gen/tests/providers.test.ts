@@ -182,3 +182,67 @@ describe('selectProvider resolution order (R3)', () => {
         expect(unavailable).toThrow("Provider 'codex-cli' is not available: requires the 'codex' CLI");
     });
 });
+
+/**
+ * R5: Bun's `fetch` has no overall request deadline, so every provider call must pass a `signal`.
+ * A stalled peer would otherwise hang the workflow step until someone killed the run.
+ */
+describe('every provider fetch carries an abort signal (R5)', () => {
+    // codex-cli shells out to a CLI instead of making HTTP calls.
+    const FETCHING = ALL_NAMES.filter((name) => name !== 'codex-cli');
+
+    // The registry names credentials only; these are endpoint/deployment config an adapter needs
+    // before it can build a request URL at all.
+    const EXTRA_ENV: Record<string, Record<string, string>> = {
+        azure: { AZURE_OPENAI_BASE_URL: 'https://res.openai.azure.com/openai/deployments/dep' },
+    };
+
+    test.each(FETCHING)('%s passes signal on every request', async (name) => {
+        const spec = PROVIDERS[name];
+        if (spec === undefined) throw new Error(`no registration for ${name}`);
+
+        const inits: Array<RequestInit | undefined> = [];
+        const spy = (async (_input: unknown, init?: RequestInit): Promise<Response> => {
+            inits.push(init);
+            return new Response(JSON.stringify({}), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            });
+        }) as typeof fetch;
+
+        // Dummy credential values make each adapter usable; `envAll` rows need every listed key.
+        const env: Record<string, string> = {};
+        for (const key of [...spec.env, ...(spec.envAll ?? [])]) env[key] = 'test-value';
+        Object.assign(env, EXTRA_ENV[name] ?? {});
+
+        const provider = spec.create({ env, fetch: spy, timeoutMs: 50 });
+        try {
+            await provider.generate({ prompt: 'a cat', model: spec.defaultModel } as ImageRequest);
+        } catch {
+            // A generic body cannot satisfy every response parser; the fetch call (and its signal)
+            // happens before parsing, which is what this test asserts.
+        }
+        expect(inits.length).toBeGreaterThan(0);
+        for (const init of inits) expect(init?.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    test('the overridable timeout actually aborts a stalled request', async () => {
+        // Never resolves on its own — only the abort can settle this promise.
+        const spy = ((_input: unknown, init?: RequestInit): Promise<Response> =>
+            new Promise<Response>((_resolve, reject) => {
+                const signal = init?.signal;
+                if (!signal) {
+                    reject(new Error('no abort signal was passed'));
+                    return;
+                }
+                signal.addEventListener('abort', () => reject(new Error(`aborted: ${String(signal.reason)}`)));
+            })) as typeof fetch;
+
+        const provider = PROVIDERS.agnes?.create({
+            env: { AGNES_API_KEY: 'k' },
+            fetch: spy,
+            timeoutMs: 50,
+        });
+        await expect(provider?.generate({ prompt: 'x', model: 'm' } as ImageRequest)).rejects.toBeDefined();
+    });
+});

@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { readBytes } from '../bytes';
 import { mimeForPath } from './refs';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -117,6 +118,7 @@ export async function buildSubjectReference(referenceImages: string[]): Promise<
 export async function extractImageFromResponse(
     result: MinimaxResponse,
     fetchFn: typeof fetch = fetch,
+    timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
 ): Promise<Uint8Array> {
     const baseResp = result.base_resp;
     if (baseResp?.status_code !== undefined && baseResp.status_code !== 0) {
@@ -126,7 +128,7 @@ export async function extractImageFromResponse(
     if (base64Image !== undefined) return Uint8Array.from(Buffer.from(base64Image, 'base64'));
     const url = result.data?.image_urls?.[0];
     if (url !== undefined) {
-        const response = await fetchFn(url);
+        const response = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) });
         if (!response.ok) throw new Error(`Failed to download image from MiniMax: ${response.status}`);
         return new Uint8Array(await response.arrayBuffer());
     }
@@ -135,6 +137,7 @@ export async function extractImageFromResponse(
 
 export const createMinimax: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
 
@@ -160,11 +163,16 @@ export const createMinimax: ProviderFactory = (options?: ProviderOptions): Image
                 method: 'POST',
                 headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
                 body: JSON.stringify(body),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             if (!response.ok) {
                 throw new Error(`MiniMax API error (${response.status}): ${await response.text()}`);
             }
-            const bytes = await extractImageFromResponse((await response.json()) as MinimaxResponse, fetchFn);
+            const bytes = await extractImageFromResponse(
+                (await response.json()) as MinimaxResponse,
+                fetchFn,
+                timeoutMs,
+            );
             return { bytes, extension: 'jpg', provider: 'minimax', model: req.model };
         },
     };

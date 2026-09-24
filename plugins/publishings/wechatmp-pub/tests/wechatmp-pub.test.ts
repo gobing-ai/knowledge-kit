@@ -174,3 +174,25 @@ describe('wechatmp-pub plugin', () => {
         }
     });
 });
+
+describe('markdownToWechatHtml inline safety (R9)', () => {
+    test('a quote in a link destination cannot close the href attribute', () => {
+        const html = markdownToWechatHtml('[y](a" onclick="z)');
+        expect(html).not.toContain(' onclick=');
+    });
+
+    test('a javascript: destination is not turned into a link', () => {
+        const html = markdownToWechatHtml('[x](javascript:alert(1))');
+        expect(html).not.toContain('<a');
+        expect(html).not.toContain('javascript:');
+        expect(html).toContain('x');
+    });
+
+    test('an http(s) destination still renders a link', () => {
+        expect(markdownToWechatHtml('[ok](https://example.com)')).toContain('<a href="https://example.com">ok</a>');
+    });
+
+    test('double quotes in text are escaped', () => {
+        expect(markdownToWechatHtml('He said "hi"')).toContain('&quot;hi&quot;');
+    });
+});

@@ -121,3 +121,18 @@ describe('ensureVoiceboxRunning', () => {
         ).rejects.toThrow(/VOICEBOX_SERVER_BIN is missing/);
     });
 });
+
+describe('server health probe timeout (R5)', () => {
+    it('the probe carries an abort signal', async () => {
+        const inits: Array<RequestInit | undefined> = [];
+        const spy = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
+            inits.push(init);
+            return new Response('ok', { status: 200 });
+        }) as typeof fetch;
+
+        await ensureVoiceboxRunning({ url: 'http://127.0.0.1:1', fetch: spy });
+
+        expect(inits.length).toBeGreaterThan(0);
+        for (const init of inits) expect(init?.signal).toBeInstanceOf(AbortSignal);
+    });
+});

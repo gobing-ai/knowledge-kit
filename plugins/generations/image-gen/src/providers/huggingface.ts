@@ -1,3 +1,4 @@
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -25,6 +26,7 @@ export const buildPayload = (
 
 export const createHuggingface: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
 
@@ -44,6 +46,7 @@ export const createHuggingface: ProviderFactory = (options?: ProviderOptions): I
                 method: 'POST',
                 headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
                 body: JSON.stringify(buildPayload(req)),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             if (!res.ok) {
                 const text = (await res.text()).slice(0, 200);

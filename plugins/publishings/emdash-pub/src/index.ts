@@ -5,6 +5,9 @@ import { FakeFileCliTransport, type PublishTransport, type PublishTransportPaylo
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
+/** Per-request timeout (ms) for the EmDash REST call — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 /** EmDash create envelope per docs/design/emdash-pub.md §3 (REST create). */
 export interface EmDashCreateEnvelope {
     data: {
@@ -313,6 +316,7 @@ export class EmDashApiTransport implements PublishTransport {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(envelope),
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             });
 
             let body: { success?: unknown; error?: { code?: unknown }; data?: { item?: { id?: unknown } } } | undefined;

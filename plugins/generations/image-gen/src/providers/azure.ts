@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import { readBytes } from '../bytes';
 import { extractImageFromResponse, getOpenAISize, type OpenAIImageResponse } from './openai';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -77,6 +78,7 @@ export function validateReferenceImages(referenceImages: readonly string[]): voi
 
 export const createAzure: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     // Azure's own env-precedence for a default model: explicit deployment, then the base URL,
     // then the frozen 'gpt-image-2' (matches the baoyu getDefaultModel chain; spec facts unchanged).
@@ -135,17 +137,19 @@ export const createAzure: ProviderFactory = (options?: ProviderOptions): ImagePr
                         method: 'POST',
                         headers: { 'api-key': apiKey },
                         body: form,
+                        signal: AbortSignal.timeout(timeoutMs),
                     });
                     if (!res.ok) throw new Error(`Azure OpenAI edits API error: ${await res.text()}`);
-                    return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn);
+                    return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn, timeoutMs);
                 }
                 const res = await fetchFn(buildURL(endpoint, deployment, '/images/generations', env), {
                     method: 'POST',
                     headers: { 'content-type': 'application/json', 'api-key': apiKey },
                     body: JSON.stringify({ prompt: req.prompt, size, n: 1, quality: getAzureQuality(req.quality) }),
+                    signal: AbortSignal.timeout(timeoutMs),
                 });
                 if (!res.ok) throw new Error(`Azure OpenAI API error: ${await res.text()}`);
-                return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn);
+                return extractImageFromResponse((await res.json()) as OpenAIImageResponse, fetchFn, timeoutMs);
             })();
             return { bytes, extension: 'png', provider: 'azure', model: req.model };
         },

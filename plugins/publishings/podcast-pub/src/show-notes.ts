@@ -95,6 +95,37 @@ export function computeAudioOffsets(
     return starts;
 }
 
+const isHttpUrl = (u: string): boolean => /^https?:\/\//i.test(u.trim());
+
+/** The exact `<style>` block {@link renderTimelineHtml} emits; reused by the marker validator. */
+const TIMELINE_STYLE = `<style>
+.kk-tl{margin:1em 0}
+.kk-tl-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(128,128,128,.25)}
+.kk-tl-t{flex:0 0 56px;font-variant-numeric:tabular-nums;font-weight:700;color:#0969da}
+.kk-tl-body{flex:1;min-width:0}
+.kk-tl-title{font-weight:600}
+.kk-tl-brief{margin:4px 0 0;color:#666;font-size:.95em}
+</style>`;
+
+/**
+ * Tags {@link renderTimelineHtml} can emit: `div`/`p`/`a` carrying only the exact class, href,
+ * target, and rel attributes it produces. Anything else inside a marker block is attacker-supplied.
+ */
+const TIMELINE_TAG =
+    /^<\/?(?:div|p|a)(?:\s+(?:class="kk-tl(?:-[a-z]+)?"|href="https?:\/\/[^"<>\s]*"|target="_blank"|rel="noopener"))*\s*>$/;
+
+/**
+ * A marker block is trusted only if it is markup {@link renderTimelineHtml} could have produced.
+ * The markers are a legitimate cross-process channel (see {@link renderShowNotesHtml}), so the
+ * block is validated rather than stripped: a comment or `<style` inside it is an injection attempt,
+ * and any leftover stray `<` means the block is not well-formed generator output.
+ */
+function isGeneratedTimeline(block: string): boolean {
+    const rest = block.replace(TIMELINE_STYLE, '');
+    if (rest.includes('<style') || rest.includes('<!--')) return false;
+    return (rest.match(/<[^>]*>/g) ?? []).every((tag) => TIMELINE_TAG.test(tag)) && !/<(?![^>]*>)/.test(rest);
+}
+
 /**
  * Brief-mode timeline block: two-column HTML (offset left, title + briefing right),
  * marked `<!--kk:timeline-->` so {@link renderShowNotesHtml} passes it through
@@ -108,25 +139,24 @@ function renderTimelineHtml(docs: Doc[], offsets: number[], articleUrl: string):
             const title = escapeHtml(d.title ?? `条目 ${i + 1}`);
             const brief = escapeHtml(itemBrief(d));
             const at = formatOffset(offsets[i] ?? Number.NaN);
-            const link = d.sourceUri
-                ? ` <a href="${escapeHtml(d.sourceUri)}" target="_blank" rel="noopener">来源</a>`
-                : '';
+            // A `sourceUri` that is not http(s) (e.g. `javascript:`) must not become a live href;
+            // escaping alone does not neutralise a scheme, so the link is dropped instead (R2).
+            const link =
+                d.sourceUri && isHttpUrl(d.sourceUri)
+                    ? ` <a href="${escapeHtml(d.sourceUri)}" target="_blank" rel="noopener">来源</a>`
+                    : '';
             return `
     <div class="kk-tl-row"><div class="kk-tl-t">${at}</div><div class="kk-tl-body"><div class="kk-tl-title">${i + 1}. ${title}${link}</div><p class="kk-tl-brief">${brief}</p></div></div>`;
         })
         .join('');
+    const articleTail = isHttpUrl(articleUrl)
+        ? `<p>完整图文版：<a href="${escapeHtml(articleUrl)}" target="_blank" rel="noopener">${escapeHtml('本期完整文章')}</a></p>`
+        : `<p>${escapeHtml('本期完整文章')}</p>`;
     return `<!--kk:timeline-->
-<style>
-.kk-tl{margin:1em 0}
-.kk-tl-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(128,128,128,.25)}
-.kk-tl-t{flex:0 0 56px;font-variant-numeric:tabular-nums;font-weight:700;color:#0969da}
-.kk-tl-body{flex:1;min-width:0}
-.kk-tl-title{font-weight:600}
-.kk-tl-brief{margin:4px 0 0;color:#666;font-size:.95em}
-</style>
+${TIMELINE_STYLE}
 <div class="kk-tl">${rows}
 </div>
-<p>完整图文版：<a href="${escapeHtml(articleUrl)}" target="_blank" rel="noopener">${escapeHtml('本期完整文章')}</a></p>
+${articleTail}
 <!--/kk:timeline-->`;
 }
 
@@ -150,6 +180,17 @@ export function renderShowNotesHtml(markdown: string): string {
         }
     };
 
+    // Escape every buffered timeline line through the normal paragraph path. Used when the block
+    // fails {@link isGeneratedTimeline} and for a marker that is never closed.
+    const escapeBufferedTimeline = () => {
+        for (const l of timeline) {
+            const t = l.trim();
+            if (t.length > 0) paragraph.push(t);
+        }
+        timeline.length = 0;
+        flush();
+    };
+
     for (const rawLine of markdown.split('\n')) {
         const line = rawLine.trim();
         if (line === '<!--kk:timeline-->') {
@@ -160,6 +201,17 @@ export function renderShowNotesHtml(markdown: string): string {
         if (inTimeline) {
             if (line === '<!--/kk:timeline-->') {
                 inTimeline = false;
+                // The marker is a legitimate cross-process channel: renderShowNotesMarkdown writes
+                // the timeline into markdown, and that markdown later arrives as metadata.showNotes.
+                // Stripping the markers would break the feature, so the block is validated against
+                // the generator's own grammar instead — anything renderTimelineHtml could not have
+                // produced is escaped line by line rather than passed through (R2).
+                if (isGeneratedTimeline(timeline.join('\n'))) {
+                    blocks.push(timeline.join('\n'));
+                    timeline.length = 0;
+                } else {
+                    escapeBufferedTimeline();
+                }
                 continue;
             }
             timeline.push(rawLine);
@@ -182,7 +234,8 @@ export function renderShowNotesHtml(markdown: string): string {
         paragraph.push(line);
     }
     flush();
-    if (timeline.length > 0) blocks.push(timeline.join('\n'));
+    // An unclosed marker never reaches the closing branch above — escape whatever it buffered.
+    if (timeline.length > 0) escapeBufferedTimeline();
     return blocks.join('\n');
 }
 

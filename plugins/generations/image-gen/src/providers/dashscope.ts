@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { echoError } from '@gobing-ai/ts-utils';
 import { refToDataUri } from './refs';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -389,7 +390,11 @@ interface DashScopeResponse {
     };
 }
 
-async function extractImageFromResponse(result: DashScopeResponse, fetchFn: typeof fetch): Promise<Uint8Array> {
+async function extractImageFromResponse(
+    result: DashScopeResponse,
+    fetchFn: typeof fetch,
+    timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
+): Promise<Uint8Array> {
     let imageData: string | null = null;
     if (result.output?.result_image !== undefined) {
         imageData = result.output.result_image;
@@ -403,7 +408,7 @@ async function extractImageFromResponse(result: DashScopeResponse, fetchFn: type
     }
     if (imageData === null) throw new Error('No image in response');
     if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
-        const imgRes = await fetchFn(imageData);
+        const imgRes = await fetchFn(imageData, { signal: AbortSignal.timeout(timeoutMs) });
         if (!imgRes.ok) throw new Error('Failed to download image');
         return new Uint8Array(await imgRes.arrayBuffer());
     }
@@ -412,6 +417,7 @@ async function extractImageFromResponse(result: DashScopeResponse, fetchFn: type
 
 export const createDashscope: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
     const supportsRef = (model: string): boolean => model.includes('wan2.7');
@@ -476,9 +482,10 @@ export const createDashscope: ProviderFactory = (options?: ProviderOptions): Ima
                 method: 'POST',
                 headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
                 body: JSON.stringify(body),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             if (!res.ok) throw new Error(`DashScope API error (${res.status}): ${await res.text()}`);
-            const bytes = await extractImageFromResponse((await res.json()) as DashScopeResponse, fetchFn);
+            const bytes = await extractImageFromResponse((await res.json()) as DashScopeResponse, fetchFn, timeoutMs);
             return { bytes, extension: 'png', provider: 'dashscope', model: req.model };
         },
     };

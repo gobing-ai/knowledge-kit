@@ -56,18 +56,30 @@ export interface VoiceboxClientOptions {
 /**
  * Creates a client for the Voicebox local REST API.
  */
+/**
+ * Per-request timeout (ms): `VOICEBOX_TIMEOUT_MS` when set to a positive number, else 600 000.
+ * Voice generation is slow, so the default is generous — but every call must be bounded, because
+ * Bun's `fetch` has no overall request deadline without a `signal` (R5).
+ */
+export function resolveVoiceboxTimeoutMs(): number {
+    const raw = process.env.VOICEBOX_TIMEOUT_MS;
+    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 600_000;
+}
+
 export function createVoiceboxClient(options: VoiceboxClientOptions = {}): VoiceboxClient {
     const rawUrl = options.url || process.env.VOICEBOX_URL || 'http://127.0.0.1:17493';
     const url = rawUrl.replace(/\/+$/, '');
     const customFetch = options.fetch ?? globalThis.fetch;
     const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+    const requestTimeoutMs = resolveVoiceboxTimeoutMs();
 
     return {
         url,
 
         async health(): Promise<void> {
             try {
-                const res = await customFetch(`${url}/health`);
+                const res = await customFetch(`${url}/health`, { signal: AbortSignal.timeout(requestTimeoutMs) });
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status} ${res.statusText}`);
                 }
@@ -82,7 +94,7 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
         async resolveProfile(nameOrId: string): Promise<VoiceboxProfile> {
             let res: Response;
             try {
-                res = await customFetch(`${url}/profiles`);
+                res = await customFetch(`${url}/profiles`, { signal: AbortSignal.timeout(requestTimeoutMs) });
             } catch (err: unknown) {
                 const reason = err instanceof Error ? err.message : String(err);
                 throw new Error(`Voicebox /profiles request failed at ${url}: ${reason}`);
@@ -123,6 +135,7 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(body),
+                    signal: AbortSignal.timeout(requestTimeoutMs),
                 });
             } catch (err: unknown) {
                 const reason = err instanceof Error ? err.message : String(err);
@@ -170,7 +183,7 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
             while (true) {
                 let res: Response;
                 try {
-                    res = await customFetch(`${url}/history/${id}`);
+                    res = await customFetch(`${url}/history/${id}`, { signal: AbortSignal.timeout(requestTimeoutMs) });
                 } catch (err: unknown) {
                     const reason = err instanceof Error ? err.message : String(err);
                     throw new Error(`Voicebox /history/${id} request failed at ${url}: ${reason}`);
@@ -212,7 +225,7 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
         async downloadAudio(id: string): Promise<Uint8Array> {
             let res: Response;
             try {
-                res = await customFetch(`${url}/audio/${id}`);
+                res = await customFetch(`${url}/audio/${id}`, { signal: AbortSignal.timeout(requestTimeoutMs) });
             } catch (err: unknown) {
                 const reason = err instanceof Error ? err.message : String(err);
                 throw new Error(`Voicebox /audio/${id} request failed at ${url}: ${reason}`);
@@ -242,6 +255,7 @@ export function createVoiceboxClient(options: VoiceboxClientOptions = {}): Voice
                 res = await customFetch(`${url}/transcribe`, {
                     method: 'POST',
                     body: formData,
+                    signal: AbortSignal.timeout(requestTimeoutMs),
                 });
             } catch (err: unknown) {
                 const reason = err instanceof Error ? err.message : String(err);

@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { refToDataUri } from './refs';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from './timeouts';
 import type { ImageProvider, ImageRequest, ImageResult, ProviderFactory, ProviderOptions } from './types';
 
 /**
@@ -137,11 +138,15 @@ function decodeDataUrl(value: string): Uint8Array | null {
     return Uint8Array.from(Buffer.from(match[1] as string, 'base64'));
 }
 
-async function downloadImage(value: string, fetchFn: typeof fetch): Promise<Uint8Array> {
+async function downloadImage(
+    value: string,
+    fetchFn: typeof fetch,
+    timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
+): Promise<Uint8Array> {
     const inline = decodeDataUrl(value);
     if (inline !== null) return inline;
     if (value.startsWith('http://') || value.startsWith('https://')) {
-        const response = await fetchFn(value);
+        const response = await fetchFn(value, { signal: AbortSignal.timeout(timeoutMs) });
         if (!response.ok) throw new Error(`Failed to download OpenRouter image: ${response.status}`);
         return new Uint8Array(await response.arrayBuffer());
     }
@@ -151,12 +156,13 @@ async function downloadImage(value: string, fetchFn: typeof fetch): Promise<Uint
 export async function extractImageFromResponse(
     result: OpenRouterResponse,
     fetchFn: typeof fetch = fetch,
+    timeoutMs: number = PROVIDER_REQUEST_TIMEOUT_MS,
 ): Promise<Uint8Array> {
     const choice = result.choices?.[0];
     const message = choice?.message;
     for (const image of message?.images ?? []) {
         const imageUrl = extractImageUrl(image);
-        if (imageUrl !== null) return downloadImage(imageUrl, fetchFn);
+        if (imageUrl !== null) return downloadImage(imageUrl, fetchFn, timeoutMs);
     }
     if (Array.isArray(message?.content)) {
         for (const item of message.content) {
@@ -211,6 +217,7 @@ export function buildRequestBody(
 
 export const createOpenrouter: ProviderFactory = (options?: ProviderOptions): ImageProvider => {
     const fetchFn = options?.fetch ?? fetch;
+    const timeoutMs = options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS;
     const env = options?.env ?? process.env;
     const readEnv = (key: string): string => env[key] ?? '';
 
@@ -246,11 +253,16 @@ export const createOpenrouter: ProviderFactory = (options?: ProviderOptions): Im
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body),
+                signal: AbortSignal.timeout(timeoutMs),
             });
             if (!response.ok) {
                 throw new Error(`OpenRouter API error (${response.status}): ${await response.text()}`);
             }
-            const bytes = await extractImageFromResponse((await response.json()) as OpenRouterResponse, fetchFn);
+            const bytes = await extractImageFromResponse(
+                (await response.json()) as OpenRouterResponse,
+                fetchFn,
+                timeoutMs,
+            );
             return { bytes, extension: 'png', provider: 'openrouter', model: req.model };
         },
     };

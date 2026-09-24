@@ -147,8 +147,11 @@ describe('zenn-pub plugin', () => {
 
         const origPath = process.env.PATH;
         const origRepo = process.env.ZENN_REPO;
+        const origUser = process.env.ZENN_USERNAME;
         process.env.PATH = `${binDir}:${origPath ?? ''}`;
         process.env.ZENN_REPO = repoDir;
+        // R10: the article URL needs the username segment (`/articles/<slug>` 404s).
+        process.env.ZENN_USERNAME = 'alice';
         try {
             const transport = new ZennCliFileCliTransport();
             const content: Content = {
@@ -162,7 +165,7 @@ describe('zenn-pub plugin', () => {
             expect(result.ok).toBe(true);
             expect(result.target).toBe('zenn');
             expect(result.id).toBe(generateZennSlug(content.title ?? ''));
-            expect(result.url).toContain(`https://zenn.dev/articles/${generateZennSlug(content.title ?? '')}`);
+            expect(result.url).toBe(`https://zenn.dev/alice/articles/${generateZennSlug(content.title ?? '')}`);
 
             const articlePath = join(repoDir, 'articles', `${generateZennSlug(content.title ?? '')}.md`);
             const article = await readFile(articlePath, 'utf-8');
@@ -173,6 +176,8 @@ describe('zenn-pub plugin', () => {
             else delete process.env.PATH;
             if (origRepo !== undefined) process.env.ZENN_REPO = origRepo;
             else delete process.env.ZENN_REPO;
+            if (origUser !== undefined) process.env.ZENN_USERNAME = origUser;
+            else delete process.env.ZENN_USERNAME;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -222,8 +227,11 @@ describe('zenn-pub plugin', () => {
 
         const origPath = process.env.PATH;
         const origRepo = process.env.ZENN_REPO;
+        const origUser = process.env.ZENN_USERNAME;
         process.env.PATH = `${binDir}:${origPath ?? ''}`;
         process.env.ZENN_REPO = repoDir;
+        // R10: the article URL needs the username segment (`/articles/<slug>` 404s).
+        process.env.ZENN_USERNAME = 'alice';
         // A short title (no metadata.slug) forces the Date.now() slug path; each
         // tick differs so a second resolution would re-roll the slug.
         let ticks = 0;
@@ -242,7 +250,7 @@ describe('zenn-pub plugin', () => {
 
             const slugPassed = await readFile(slugPassedPath, 'utf-8');
             expect(result.id).toBe(slugPassed);
-            expect(result.url).toContain(`https://zenn.dev/articles/${slugPassed}`);
+            expect(result.url).toBe(`https://zenn.dev/alice/articles/${slugPassed}`);
 
             const articlePath = join(repoDir, 'articles', `${slugPassed}.md`);
             const article = await readFile(articlePath, 'utf-8');
@@ -257,6 +265,8 @@ describe('zenn-pub plugin', () => {
             else delete process.env.PATH;
             if (origRepo !== undefined) process.env.ZENN_REPO = origRepo;
             else delete process.env.ZENN_REPO;
+            if (origUser !== undefined) process.env.ZENN_USERNAME = origUser;
+            else delete process.env.ZENN_USERNAME;
             await rm(tmpDir, { recursive: true, force: true });
         }
     });
@@ -462,5 +472,131 @@ describe('zenn-pub plugin', () => {
         }
 
         await rm(tmpDir, { recursive: true, force: true });
+    });
+});
+
+describe('Zenn CLI packaging, git scoping, and URL (R10)', () => {
+    interface Harness {
+        binDir: string;
+        repoDir: string;
+        logFile: string;
+    }
+
+    const CALL_LOG = (logFile: string): string =>
+        `require('node:fs').appendFileSync(${JSON.stringify(logFile)}, JSON.stringify({ bin: process.argv[1].split('/').pop(), args: process.argv.slice(2) }) + '\\n');`;
+
+    async function harness(dir: string, branch: string): Promise<Harness> {
+        const binDir = join(dir, 'bin');
+        const repoDir = join(dir, 'repo');
+        const logFile = join(dir, 'calls.jsonl');
+        await mkdir(repoDir, { recursive: true });
+        await writeMockBin(binDir, 'npx', `${CALL_LOG(logFile)}\nprocess.exit(0);`);
+        // `git` logs its argv and prints the branch as `rev-parse` output.
+        await writeMockBin(
+            binDir,
+            'git',
+            `${CALL_LOG(logFile)}\nconst a = process.argv.slice(2);\nif (a[0] === 'rev-parse') process.stdout.write(${JSON.stringify(branch)});\nprocess.exit(0);`,
+        );
+        return { binDir, repoDir, logFile };
+    }
+
+    async function calls(logFile: string): Promise<Array<{ bin: string; args: string[] }>> {
+        const raw = await readFile(logFile, 'utf-8');
+        return raw
+            .split('\n')
+            .filter((line) => line !== '')
+            .map((line) => JSON.parse(line) as { bin: string; args: string[] });
+    }
+
+    /** Runs a publish against the mock bins, restoring PATH/ZENN_REPO/ZENN_USERNAME afterwards. */
+    async function withHarness<T>(
+        dir: string,
+        branch: string,
+        username: string | undefined,
+        fn: (h: Harness) => Promise<T>,
+    ): Promise<T> {
+        const orig = { path: process.env.PATH, repo: process.env.ZENN_REPO, user: process.env.ZENN_USERNAME };
+        const h = await harness(dir, branch);
+        process.env.PATH = `${h.binDir}:${orig.path ?? ''}`;
+        process.env.ZENN_REPO = h.repoDir;
+        if (username === undefined) delete process.env.ZENN_USERNAME;
+        else process.env.ZENN_USERNAME = username;
+        try {
+            return await fn(h);
+        } finally {
+            if (orig.path !== undefined) process.env.PATH = orig.path;
+            else delete process.env.PATH;
+            if (orig.repo !== undefined) process.env.ZENN_REPO = orig.repo;
+            else delete process.env.ZENN_REPO;
+            if (orig.user !== undefined) process.env.ZENN_USERNAME = orig.user;
+            else delete process.env.ZENN_USERNAME;
+        }
+    }
+
+    const publishedContent = (): Content => ({
+        title: 'Published Article',
+        body: '# Published Article\n\nBody.',
+        format: 'markdown',
+        metadata: { published: true },
+    });
+
+    async function withDir<T>(name: string, fn: (dir: string) => Promise<T>): Promise<T> {
+        const dir = join(process.cwd(), name);
+        await mkdir(dir, { recursive: true });
+        try {
+            return await fn(dir);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    }
+
+    test('(a)(b)(d) pins the CLI package, scopes git to the article, pushes to main, and reports the URL', async () => {
+        await withDir('.tmp-test-zenn-r10-main', async (dir) => {
+            await withHarness(dir, 'main', 'alice', async (h) => {
+                const result = await new ZennCliFileCliTransport().publish({ content: publishedContent() });
+                expect(result.ok).toBe(true);
+                expect(result.url).toBe(`https://zenn.dev/alice/articles/${result.id ?? ''}`);
+
+                const recorded = await calls(h.logFile);
+                const npx = recorded.find((c) => c.bin === 'npx');
+                if (npx === undefined) throw new Error('npx was never invoked');
+                // `npx <name>` would resolve the npm package literally named `zenn` (unpublished).
+                expect(npx.args.slice(0, 5)).toEqual(['--yes', '--package', 'zenn-cli@0.5.4', 'zenn', 'new:article']);
+
+                const gitArgs = recorded.filter((c) => c.bin === 'git').map((c) => c.args);
+                expect(gitArgs).toContainEqual(['rev-parse', '--abbrev-ref', 'HEAD']);
+                expect(gitArgs).toContainEqual(['push', 'origin', 'main']);
+                const articleRel = `articles/${result.id ?? ''}.md`;
+                expect(gitArgs.find((args) => args[0] === 'add')).toEqual(['add', '--', articleRel]);
+                const commit = gitArgs.find((args) => args[0] === 'commit');
+                expect(commit).toBeDefined();
+                expect(commit?.slice(-2)).toEqual(['--', articleRel]);
+            });
+        });
+    });
+
+    test('(c) a non-main branch fails loud before any commit or push', async () => {
+        await withDir('.tmp-test-zenn-r10-branch', async (dir) => {
+            await withHarness(dir, 'feature', 'alice', async (h) => {
+                const result = await new ZennCliFileCliTransport().publish({ content: publishedContent() });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('main');
+
+                const gitArgs = (await calls(h.logFile)).filter((c) => c.bin === 'git').map((c) => c.args);
+                expect(gitArgs.some((args) => args[0] === 'commit')).toBe(false);
+                expect(gitArgs.some((args) => args[0] === 'push')).toBe(false);
+            });
+        });
+    });
+
+    test('(e) without ZENN_USERNAME the URL is omitted and the message names the env var', async () => {
+        await withDir('.tmp-test-zenn-r10-nouser', async (dir) => {
+            await withHarness(dir, 'main', undefined, async () => {
+                const result = await new ZennCliFileCliTransport().publish({ content: publishedContent() });
+                expect(result.ok).toBe(true);
+                expect(result.url).toBeUndefined();
+                expect(result.message).toContain('ZENN_USERNAME');
+            });
+        });
     });
 });

@@ -8,6 +8,9 @@ import { echoError } from '@gobing-ai/ts-utils';
 /** Qiita API v2 article-create endpoint (audited from wt-publish-to-qiita). */
 const QIITA_ITEMS_URL = 'https://qiita.com/api/v2/items';
 
+/** Per-request timeout (ms) for the Qiita call — Bun's `fetch` has no default deadline (R5). */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 /**
  * Converts a string into a lowercase hyphenated tag (slug) per the publish spec tags convention.
  * Qiita tag names allow only alphanumeric, hyphen, and underscore, so the slugified form is
@@ -131,6 +134,7 @@ export class QiitaApiTransport implements PublishTransport {
                     Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
                 body: JSON.stringify({
                     title: fields.title,
                     body: payload.content.body,

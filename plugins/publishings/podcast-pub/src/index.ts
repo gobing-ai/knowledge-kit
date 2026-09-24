@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { basename, dirname, extname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, DocListSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
@@ -74,6 +74,18 @@ function resolveClient(): { client: MicrofeedClient } | { error: string } {
 function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error });
 }
+
+/**
+ * Local-cover MIME by extension. `map.ts` has already rejected anything outside this set (R4), so
+ * the fallback is unreachable in practice; it keeps the field non-empty for the type system.
+ */
+const COVER_MIME: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+};
 
 /** Parses and routes `options.operation`; unknown or misplaced values fail loud. */
 function resolveOperation(options: PodcastPubOptions): { operation: Operation } | { error: string } {
@@ -333,17 +345,20 @@ async function publishEpisode(
     });
     await client.uploadBytes(prepared.presignedUrl, bytes, episode.audio.mimeType);
 
-    // Phase 2b: upload a local cover via the presigned image flow (no item_id needed).
+    // Phase 2b: upload a local cover via the presigned image flow (no item_id needed). Only the
+    // basename is sent as `full_local_file_path`, and the MIME follows the real extension rather
+    // than assuming PNG (R4).
     let imageUrl = episode.imageUrl;
     if (episode.imagePath && !imageUrl) {
+        const imageMime = COVER_MIME[extname(episode.imagePath).toLowerCase()] ?? 'image/png';
         const imageBytes = new Uint8Array(await readFile(episode.imagePath));
         const imagePrepared = await client.prepareUpload({
             category: 'image',
-            full_local_file_path: episode.imagePath,
+            full_local_file_path: basename(episode.imagePath),
             size: imageBytes.byteLength,
-            type: 'image/png',
+            type: imageMime,
         });
-        await client.uploadBytes(imagePrepared.presignedUrl, imageBytes, 'image/png');
+        await client.uploadBytes(imagePrepared.presignedUrl, imageBytes, imageMime);
         imageUrl = imagePrepared.mediaUrl;
     }
 

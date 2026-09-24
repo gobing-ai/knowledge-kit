@@ -1103,3 +1103,116 @@ describe('kk workflow stage runner — daily-prepare work_dir composition (0139)
         });
     });
 });
+
+describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
+    const RUN_DATE = '20260904';
+    const POST_REL = `content/posts/articles/zh/${RUN_DATE}-post/index.md`;
+
+    const git = (cwd: string, ...args: string[]): { status: number; stdout: string; stderr: string } => {
+        const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf-8' });
+        return { status: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+    };
+
+    /**
+     * A throwaway surfdash checkout on `main` with a bare `origin`, one zh post, the two publish
+     * result fixtures the stage reads, and an unrelated *staged* file that must survive the commit.
+     */
+    function setupFixture(
+        dir: string,
+        imageUrl: string,
+        bodyLine: string,
+    ): { workDir: string; root: string; bare: string; postDir: string } {
+        const workDir = join(dir, 'work');
+        const root = join(dir, 'surfdash');
+        const bare = join(dir, 'bare.git');
+        const postDir = join(root, 'content', 'posts', 'articles', 'zh', `${RUN_DATE}-post`);
+        mkdirSync(postDir, { recursive: true });
+        writeFileSync(
+            join(postDir, 'index.md'),
+            `---\ntitle: T\npublishDate: ${RUN_DATE.slice(0, 4)}-${RUN_DATE.slice(4, 6)}-${RUN_DATE.slice(6, 8)}\n---\n\n${bodyLine}\n`,
+            'utf-8',
+        );
+
+        const pub = join(workDir, '3-publish');
+        mkdirSync(pub, { recursive: true });
+        writeFileSync(
+            join(pub, `${RUN_DATE}_14_publish-surfdash_result.json`),
+            JSON.stringify({ targets: [{ metadata: { postPath: join(postDir, 'index.md') } }] }),
+            'utf-8',
+        );
+        writeFileSync(
+            join(pub, `${RUN_DATE}_16_publish-podcast_result.json`),
+            JSON.stringify({ targets: [{ url: 'https://pod.example/i/1', metadata: { imageUrl } }] }),
+            'utf-8',
+        );
+
+        git(root, 'init', '-b', 'main');
+        git(root, 'config', 'user.email', 'test@example.com');
+        git(root, 'config', 'user.name', 'Test');
+        writeFileSync(join(root, 'other.txt'), 'unrelated\n', 'utf-8');
+        git(root, 'add', '-A');
+        git(root, 'commit', '-m', 'init');
+        // The operator's unrelated work is *modified and staged* so it is visible in the index and
+        // must survive the stage's scoped commit (staging an unmodified file leaves no diff).
+        writeFileSync(join(root, 'other.txt'), 'unrelated modified\n', 'utf-8');
+        git(root, 'add', 'other.txt');
+
+        spawnSync('git', ['init', '--bare', bare], { encoding: 'utf-8' });
+        git(root, 'remote', 'add', 'origin', bare);
+        return { workDir, root, bare, postDir };
+    }
+
+    it('commits only its own paths, from main, leaving unrelated staged work alone', () => {
+        withTempDir((dir) => {
+            const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '1' });
+            expect(res.status).toBe(0);
+
+            const committed = git(fx.root, 'show', '--name-only', '--pretty=format:', 'HEAD')
+                .stdout.split('\n')
+                .filter((l) => l.trim() !== '');
+            expect(committed).toEqual([POST_REL]);
+            // The unrelated staged file is still staged — and was never committed.
+            expect(git(fx.root, 'diff', '--cached', '--name-only').stdout).toContain('other.txt');
+            expect(committed).not.toContain('other.txt');
+            // The push targeted origin main.
+            const localHead = git(fx.root, 'rev-parse', 'HEAD').stdout.trim();
+            expect(git(fx.bare, 'log', 'main', '-1', '--format=%H').stdout.trim()).toBe(localHead);
+        });
+    });
+
+    it('refuses to commit when the checkout is not on main', () => {
+        withTempDir((dir) => {
+            const fx = setupFixture(dir, 'https://cdn.example/c.png', 'Body.');
+            git(fx.root, 'checkout', '-b', 'feature');
+            const before = git(fx.root, 'rev-parse', 'HEAD').stdout.trim();
+
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '1' });
+
+            expect(res.status).not.toBe(0);
+            expect(`${res.stdout}${res.stderr}`).toContain('main');
+            expect(git(fx.root, 'rev-parse', 'HEAD').stdout.trim()).toBe(before);
+        });
+    });
+
+    it('writes valid, frontmatter-only YAML when the value holds a quote and a dollar', () => {
+        withTempDir((dir) => {
+            const url = "https://cdn.example/it's-$&-cover.png";
+            const fx = setupFixture(dir, url, 'image: keep-me');
+            const res = run(['daily-patch-surfdash', fx.workDir, RUN_DATE, fx.root], { SURFDASH_AUTO_PUSH: '1' });
+            expect(res.status).toBe(0);
+
+            const md = readFileSync(join(fx.postDir, 'index.md'), 'utf-8');
+            // YAML single-quoted scalars escape `'` as `''`; `$&` is not expanded (function replacement).
+            expect(md).toContain("image: 'https://cdn.example/it''s-$&-cover.png'");
+            expect(md).toContain("og_image: 'https://cdn.example/it''s-$&-cover.png'");
+            // A body line starting with `image:` is untouched — the upsert is frontmatter-scoped.
+            expect(md).toContain('image: keep-me');
+
+            const frontmatter = md.split('---')[1] ?? '';
+            const parsed = Bun.YAML.parse(frontmatter) as Record<string, unknown>;
+            expect(parsed.image).toBe(url);
+            expect(parsed.og_image).toBe(url);
+        });
+    });
+});
