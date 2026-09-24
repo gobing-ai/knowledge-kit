@@ -1,0 +1,16 @@
+{
+    "name": "@gobing-ai/gemini-tts",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/ts-utils": "catalog:",
+        "@gobing-ai/voice-gen": "workspace:*"
+    },
+    "devDependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@types/bun": "1.3.14"
+    }
+}
