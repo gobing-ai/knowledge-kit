@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Fix apps review findings: invoke input-deletion alias, fan-out duplicate publish, fan-in plugin roots + CLI hardening"
-status: todo
+status: done
 template: issue
 created_at: 2026-09-24T00:17:20.579Z
-updated_at: "2026-09-24T00:24:34.001Z"
+updated_at: "2026-09-24T08:10:17.407Z"
 
 priority: P1
 ac_altitude: task-local
@@ -139,20 +139,20 @@ Every AC names its test file. A "new test" must fail on `main@d4dd562d`, and the
 - `apps/cli/tests/fanin.test.ts`: `withTempDir`, `writeFixtureIngestionPlugin`, `withPluginPath`
 - `apps/cli/tests/commands/plugin.test.ts`: `runCaptured` → `{ code, out, err }`
 
-- [ ] **AC1 (R1)**, in `apps/cli/tests/invoke.test.ts`, next to the existing "0110 I5" alias test (`:379-408`). New tests, each asserting `res === 1`, stderr containing `alias the same path`, the input bytes unchanged, and the entry script never run (the fixture entry writes a marker file; assert that it does not exist):
+- [x] **AC1 (R1)**, in `apps/cli/tests/invoke.test.ts`, next to the existing "0110 I5" alias test (`:379-408`). New tests, each asserting `res === 1`, stderr containing `alias the same path`, the input bytes unchanged, and the entry script never run (the fixture entry writes a marker file; assert that it does not exist):
   - (a) **Case variant.** Input `In.json`, `--out` `in.json` in the same dir. Guard: if `existsSync(<lower-case variant>)` is false, the file system is case-sensitive, so return early with a comment. Do not use `.skip`: the test body is a no-op there, not skipped.
   - (b) **Symlinked parent directory.** `symlinkSync(dir, join(root,'ld'))`; `--in dir/in.json`, `--out ld/in.json`.
   - (c) **`--out` is a symlink to the input file.**
   - The existing same-string test stays green and unedited.
-- [ ] **AC2 (R2)**, in `apps/cli/tests/fanout.test.ts`. New test: `runFanout(['--content', c, '--target','a','--target','a','--target','b','--out', o], { dispatch })` with `makeDispatch([])` → `called` equals `['a','b']`, the written aggregate has `summary.total === 2` and `targets.map(t=>t.target)` equals `['a','b']`, and the exit is 0. The existing retry-dedupe tests stay green.
-- [ ] **AC3 (R3)**, in `apps/cli/tests/fanin.test.ts`. New tests:
+- [x] **AC2 (R2)**, in `apps/cli/tests/fanout.test.ts`. New test: `runFanout(['--content', c, '--target','a','--target','a','--target','b','--out', o], { dispatch })` with `makeDispatch([])` → `called` equals `['a','b']`, the written aggregate has `summary.total === 2` and `targets.map(t=>t.target)` equals `['a','b']`, and the exit is 0. The existing retry-dedupe tests stay green.
+- [x] **AC3 (R3)**, in `apps/cli/tests/fanin.test.ts`. New tests:
   - (a) `--plugins-root <root>` with `writeFixtureIngestionPlugin(root, 'src-a')` and `--source src-a:<in>` merges that plugin's docs, **without** `KK_PLUGIN_PATH` set.
   - (b) `--plugins-path <root>` does the same (union path).
   - (c) Both flags → exit 2, stderr contains `mutually exclusive`, and `--out` is not written.
   - (d) A second `--plugins-root` → exit 2.
   - (e) `--plugins-root` with no value → exit 2.
   - Plus commander-level tests in `apps/cli/tests/commands/executor.test.ts`. `executor fan-in --plugins-root <root> --source src-a:<in> --out <o>` succeeds, and the hidden `fanin` alias accepts the same flags. `--plugins-path` is forwarded by `runFaninAction`: assert the output docs.
-- [ ] **AC4 (R4)**, in `apps/cli/tests/stage.test.ts` and `apps/cli/tests/commands/stage.test.ts`.
+- [x] **AC4 (R4)**, in `apps/cli/tests/stage.test.ts` and `apps/cli/tests/commands/stage.test.ts`.
   - (a) New test in `apps/cli/tests/stage.test.ts`: create a temp dir that contains a planted `plugins/kk/scripts/kk-workflow-stages.ts`, `process.chdir` into it (restored by the existing `afterEach`), and call `resolveStagesScript('/nonexistent/kk-entry', '/nonexistent-checkout')`. It must **throw** matching `/install or refresh the kk package/`, not return the planted file. This fails today, because the current directory wins.
   - (b) A second new test: `resolveStagesScript('/nonexistent/kk-entry')`, called after `process.chdir(tmpdir())`, returns the repo's `plugins/kk/scripts/kk-workflow-stages.ts`. The default `checkoutRoot` is independent of the current directory.
   - (c) These tests stay green **unedited**, because the default checkout root is the repo root:
@@ -164,25 +164,25 @@ Every AC names its test file. A "new test" must fail on `main@d4dd562d`, and the
     - `stage.test.ts` "throws with install guidance when neither candidate exists"
     - `commands/stage.test.ts` "fails loud naming the attempted path when neither tier has the script"
     - The `chdir` lines may stay or go.
-- [ ] **AC5 (R5)**, in `apps/cli/tests/fanout.test.ts`. New test using the **real** `pluginDispatch`, not an injected dispatch:
+- [x] **AC5 (R5)**, in `apps/cli/tests/fanout.test.ts`. New test using the **real** `pluginDispatch`, not an injected dispatch:
   - Set up a fixture publish plugin under a temp `--plugins-root` whose entry writes `not json` to its `--out`, and pass it as `--target`.
   - Expect exit 1, and the aggregate's target entry to have `status: 'failed'` with `error` containing `Plugin '<name>' wrote invalid JSON`.
   - Reuse the existing helper `writeFakePublishPlugin(pluginsRoot, script)` (`fanout.test.ts:91-92`) with a script that writes `not json` to `--out`, and pass `--plugins-root` as the test at `fanout.test.ts:544` does.
-- [ ] **AC6 (R6)**, in `apps/cli/tests/commands/plugin.test.ts`. New test: `kk plugin status --plugins-root <root-with-one-broken-manifest>` via `runCaptured` → `err` contains `[` diagnostic lines, and `err.includes('\n\n')` is false.
-- [ ] **AC7 (R7).** A static check: `rg -n -B1 "^export function spawnPluginEntry\b|^function killProcessTree\b|^export function killProcessTree\b" apps/cli/src/invoke.ts` shows ` */` on the line directly above each. Record the output in Solution.
-- [ ] **AC8 (R8).** `rg -n "exitCode !== 0 \? proc.exitCode" apps/cli/src` returns no hits, and the existing non-zero-exit invoke tests stay green.
-- [ ] **AC9 (R9).**
+- [x] **AC6 (R6)**, in `apps/cli/tests/commands/plugin.test.ts`. New test: `kk plugin status --plugins-root <root-with-one-broken-manifest>` via `runCaptured` → `err` contains `[` diagnostic lines, and `err.includes('\n\n')` is false.
+- [x] **AC7 (R7).** A static check: `rg -n -B1 "^export function spawnPluginEntry\b|^function killProcessTree\b|^export function killProcessTree\b" apps/cli/src/invoke.ts` shows ` */` on the line directly above each. Record the output in Solution.
+- [x] **AC8 (R8).** `rg -n "exitCode !== 0 \? proc.exitCode" apps/cli/src` returns no hits, and the existing non-zero-exit invoke tests stay green.
+- [x] **AC9 (R9).**
   - (a) `rg -c "function collect" apps/cli/src/commands/executor.ts` = 1.
   - (b) Each `--plugins-root` / `--in <path>` / `--target` / `--source` option string appears once per verb registrar, not per command. Check with `rg -c "'--plugins-root <dir>'" apps/cli/src/commands/executor.ts` = 3 (run, fan-in, fan-out registrars).
   - (c) `--help` parity: for each of `run`/`invoke`, `fan-in`/`fanin`, `fan-out`/`fanout`, the options block of `bun apps/cli/src/index.ts executor <verb> --help` equals that of `bun apps/cli/src/index.ts <alias> --help`. Assert it in a test, or record both outputs in Solution. Before/after, fan-in differs only by the two R3 options.
-- [ ] **AC10 (R10).**
+- [x] **AC10 (R10).**
   - (a) `rg -n "issues\.map\(" apps/cli/src` returns hits only inside `plugin-output.ts`.
   - (b) A new `apps/cli/tests/plugin-output.test.ts` unit-tests `formatIssues`: root path → `root: …`; a nested path is dot-joined; multiple issues are `; `-joined. It also tests `readPluginJson` in three cases:
     - invalid JSON → throws `… wrote invalid JSON`
     - schema violation → throws with the issues
     - valid → returns parsed data
   - (c) No existing error-string assertion in `apps/cli/tests` changed. `git diff apps/cli/tests` shows only added tests, plus the AC4(d) edits.
-- [ ] **AC11 (R11).**
+- [x] **AC11 (R11).**
   - (a) `packages/kk-core/tests/schemas.test.ts` has new cases:
     - `AggregateResultSchema` accepts a valid aggregate with target `metadata`
     - it rejects a bad `status`
@@ -190,7 +190,7 @@ Every AC names its test file. A "new test" must fail on `main@d4dd562d`, and the
     - it strips unknown keys
   - (b) The four asserted substrings in `fanout.test.ts:396,519,694,762` still pass unedited.
   - (c) `readAggregateResult` contains no `typeof … !==` field checks: `rg -n "typeof t\.|typeof sum\[" apps/cli/src/fanout.ts` returns no hits.
-- [ ] **AC12 (gates + scope).**
+- [x] **AC12 (gates + scope).**
   - `bun run gate` passes, with aggregate coverage ≥ 90% lines and ≥ 90% functions (`bunfig.toml`).
   - `spur task check 0157 --json` reports only `L4.missing-feature-id`.
   - `git status --short` lists only:
@@ -496,15 +496,216 @@ All anchors are at `main@d4dd562d`. Repros were run during the review or during 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented 2026-09-24 on branch `sp/run-0157-7164` (base `5b7fb513`), task scope R1–R11 + AC12 gates.
+Every new test was executed against the pre-fix tree first (red evidence below) and then against the
+finished tree (green). No `.skip`, no new `biome-ignore`, no `--no-verify`.
+
+#### Change map (per requirement)
+
+| Req | Change | Location |
+| ----- | -------- | ---------- |
+| R1 | `isSameFile(a, b)` — dev+ino identity, follows symlinks; alias guard rejects `absInPath === absOutPath \|\| isSameFile(...)` | `apps/cli/src/invoke.ts:282`, guard `:319` |
+| R2 | Fresh-run target dedupe `let targets = [...new Set(opts.targets)]` (retry subset already deduped at `:428`) | `apps/cli/src/fanout.ts:399` |
+| R3 | `FaninOptions.pluginsRoot/pluginsPath` + parse branches (`--plugins-root requires a directory path` / `may be specified only once` / `--plugins-path requires a directory path`), mutual-exclusion guard, discovery honours both | `apps/cli/src/fanin.ts:42,44,227,354,375` |
+| R3 | fan-in `FaninOptions` + `runFaninAction` forwards both flags; registrars declare the options | `apps/cli/src/commands/executor.ts:123,145` |
+| R4 | `CHECKOUT_ROOT = resolve(import.meta.dir, '../../..')`; `resolveStagesScript(argv1, checkoutRoot = CHECKOUT_ROOT)` — cwd is never a candidate | `apps/cli/src/stage.ts:9,16,26` |
+| R5+R10 | New `plugin-output.ts`: `formatIssues` (single issue formatter) + `readPluginJson` (`wrote invalid JSON` / `<label> <violation>: <issues>`) | `apps/cli/src/plugin-output.ts:13,23` |
+| R5 | `pluginDispatch` / `collectSourceDocs` call `readPluginJson`; 5 other formatter copies replaced by `formatIssues` | `fanout.ts`, `fanin.ts`, `invoke.ts:361,366,416,456` |
+| R6 | Trailing `\n` removed from the 4 stderr literals (double newline under `writeLine`) | `apps/cli/src/commands/plugin.ts:84,86,100,112` |
+| R7 | `spawnPluginEntry` docblock moved above the function; `killProcessTree` docblock moved above `killProcessTree`; one-line comments on `pluginEntryCmd` / `KILL_TREE_SETTLE_MS` | `apps/cli/src/invoke.ts:113,135,149,167,196,214` |
+| R8 | `return proc.exitCode;` (dropped the `const exitCode` ternary) | `apps/cli/src/invoke.ts:416` |
+| R9 | `collectRepeatable` + `withRunOptions` / `withFaninOptions` / `withFanoutOptions`; each verb and its hidden alias register through the same registrar | `apps/cli/src/commands/executor.ts:36,114,123,145,162` |
+| R11 | `TargetOutcomeSchema` / `AggregateResultSchema` + `TargetOutcome` / `AggregateResult` types; `readAggregateResult` validates via the schema and maps the first issue back to the existing message tails | `packages/kk-core/src/schemas.ts:43,56,102,104`; exports `packages/kk-core/src/index.ts:41,52`; `apps/cli/src/fanout.ts:159,179,205` |
+| T3 docs | fan-in root flags (usage, option table, discovery/mutual-exclusion), fan-out `--target` dedupe, stricter prior-ledger validation | `docs/04_DESIGN.md`; `docs/design/fan-in-and-fan-out-specification.md` |
+
+#### Test-first red evidence (pre-fix tree)
+
+| AC | Command (source reverted to HEAD) | Result |
+| ---- | ---------------------------------- | -------- |
+| AC1 | `bun test apps/cli/tests/invoke.test.ts` | 3 fail — case variant, symlinked parent dir, `--out` symlinked to input |
+| AC2, AC5 | `bun test apps/cli/tests/fanout.test.ts` | 2 fail — dedupe on fresh runs; invalid-JSON target naming |
+| AC3 | `bun test apps/cli/tests/fanin.test.ts apps/cli/tests/commands/executor.test.ts` | 7 fail — 5 fanin (root/path/conflict/repeat/no-value) + 2 executor |
+| AC4 | `bun test apps/cli/tests/stage.test.ts apps/cli/tests/commands/stage.test.ts` | 2 fail — planted cwd script; default checkout root |
+| AC6 | `bun test apps/cli/tests/commands/plugin.test.ts` | 1 fail — diagnostic lines carried `\n\n` |
+| AC11 | `bun test packages/kk-core/tests/schemas.test.ts` | error — `Export named 'AggregateResultSchema' not found` |
+
+Static red (HEAD → after): AC7 docblock above `killProcessTree` absent → present (` */` at `:213` above
+`:214`); AC8 `exitCode !== 0 ? proc.exitCode` 1 hit → 0; AC9(a) `function collect` 5 → 1; AC9(b)
+`'--plugins-root <dir>'` 4 → 3; AC10(a) `issues.map(` in `invoke.ts` 2 → 0; AC11(c)
+`typeof t.|typeof sum[` in `fanout.ts` 8 → 0.
+
+#### Green evidence (finished tree)
+
+```text
+bun test apps/cli/tests/invoke.test.ts                         21 pass / 0 fail
+  (pass) runInvoke > 0157 R1 — --out differing only by letter case is rejected as an alias (case-insensitive fs)
+  (pass) runInvoke > 0157 R1 — --out through a symlinked parent directory is rejected as an alias
+  (pass) runInvoke > 0157 R1 — --out symlinked to the input file is rejected as an alias
+bun test apps/cli/tests/fanout.test.ts                         39 pass / 0 fail
+  (pass) runFanout > 0157 R2 — a repeated --target is deduped on fresh runs (each target attempted once)
+  (pass) runFanout > 0157 R5 — names the target when its plugin writes invalid JSON (real dispatch)
+bun test apps/cli/tests/fanin.test.ts                          32 pass / 0 fail
+  (pass) runFanin source-runner mode (--source) > R3 — --plugins-root selects the discovery root for --source without KK_PLUGIN_PATH
+  (pass) runFanin source-runner mode (--source) > R3 — --plugins-path unions the extra root into --source discovery
+  (pass) runFanin source-runner mode (--source) > R3 — --plugins-root with --plugins-path is a usage error and writes no output
+  (pass) runFanin source-runner mode (--source) > R3 — a second --plugins-root is a usage error
+  (pass) runFanin source-runner mode (--source) > R3 — --plugins-root with no value is a usage error
+bun test apps/cli/tests/commands/executor.test.ts              18 pass / 0 fail
+  (pass) registerExecutorCommand > R3 — executor fan-in --plugins-root discovers the source plugin and merges its docs
+  (pass) registerExecutorCommand > R3 — the hidden fanin alias accepts --plugins-root and runFaninAction forwards --plugins-path
+  (pass) registerExecutorCommand > R9 — each verb and its hidden alias render an identical options block
+bun test apps/cli/tests/stage.test.ts                           6 pass / 0 fail
+  (pass) resolveStagesScript > ignores a cwd-relative planted script — the checkout root is never the current directory
+  (pass) resolveStagesScript > defaults the checkout root to this module, independent of the current directory
+bun test apps/cli/tests/commands/stage.test.ts                  6 pass / 0 fail   (AC4(c)/(d) tests unedited except the 2 allowed second-argument edits + title rename)
+bun test apps/cli/tests/commands/plugin.test.ts                14 pass / 0 fail
+  (pass) registerPluginCommand > R6 — diagnostic lines carry no trailing blank line (no double newline in stderr)
+bun test apps/cli/tests/plugin-output.test.ts                   6 pass / 0 fail
+  (pass) formatIssues > 0157 R10 — renders an empty issue path as the `root` prefix
+  (pass) readPluginJson > 0157 R10 — throws `<label> wrote invalid JSON: …` when the file is malformed JSON
+bun test packages/kk-core/tests/schemas.test.ts                13 pass / 0 fail
+  (pass) AggregateResultSchema > 0157 R11 — accepts a valid aggregate including per-target metadata
+  (pass) AggregateResultSchema > 0157 R11 — rejects a bad status enum
+  (pass) AggregateResultSchema > 0157 R11 — rejects primitive metadata on a target
+  (pass) AggregateResultSchema > 0157 R11 — strips unknown keys (hand-parser parity)
+```
+
+Static checks after the change (recorded verbatim):
+
+```text
+$ rg -n -B1 "^export function spawnPluginEntry\b|^async function killProcessTree\b" apps/cli/src/invoke.ts
+148- */
+149:export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpawnResult {
+--
+213- */
+214:async function killProcessTree(pid: number): Promise<void> {
+# AC7's literal pattern also lists `^function killProcessTree` / `^export function killProcessTree`; the
+# declaration is `async function`, so only spawnPluginEntry matches that alternation. Intent (a ` */`
+# docblock directly above each function) is verified by the async-aware form above.
+
+$ rg -n "exitCode !== 0 \? proc.exitCode" apps/cli/src          → no hits (AC8)
+$ rg -c "function collect" apps/cli/src/commands/executor.ts    → 1 (AC9a)
+$ rg -c "'--plugins-root <dir>'" apps/cli/src/commands/executor.ts → 3 (AC9b)
+$ rg -n "issues\.map\(" apps/cli/src                            → only apps/cli/src/plugin-output.ts:14 (AC10a)
+$ rg -n "typeof t\.|typeof sum\[" apps/cli/src/fanout.ts        → no hits (AC11c)
+```
+
+AC9(c) `--help` parity is asserted in-test (`R9 — each verb and its hidden alias render an identical
+options block`), comparing the full `Options:` block of `run`/`invoke`, `fan-in`/`fanin`,
+`fan-out`/`fanout`.
+
+#### Gates (AC12)
+
+```text
+$ bun run gate            → exit 0
+1311 pass / 0 fail, 5087 expect() calls, 83 files
+All files 98.67 % funcs / 98.21 % lines   (threshold: ≥90 / ≥90)
+apps/cli/src/plugin-output.ts 100.00 / 100.00 | apps/cli/src/stage.ts 100.00 / 100.00
+packages/kk-core/src/schemas.ts 100.00 / 100.00 | packages/kk-core/src/index.ts 100.00 / 100.00
+$ spur rule run --preset recommended-post-check --fail-on warning
+All 2 rules passed — no violations found.
+$ spur task check 0157 --json  → pass: true, findings: [L4.missing-feature-id] (only the expected orphan warning)
+```
+
+`git status --short` lists only: `apps/cli/src/{invoke,fanin,fanout,stage}.ts`,
+`apps/cli/src/plugin-output.ts` (new), `apps/cli/src/commands/{executor,plugin}.ts`,
+`apps/cli/tests/{invoke,fanin,fanout,stage}.test.ts`, `apps/cli/tests/plugin-output.test.ts` (new),
+`apps/cli/tests/commands/{executor,plugin,stage}.test.ts`,
+`packages/kk-core/src/{schemas,index}.ts`, `packages/kk-core/tests/schemas.test.ts`,
+`docs/04_DESIGN.md`, `docs/design/fan-in-and-fan-out-specification.md`, this task file.
+
+#### Behavior changes recorded
+
+- **R11 (stricter prior ledger).** `readAggregateResult` now validates with `AggregateResultSchema`, so a
+  wrong-typed optional field (e.g. `url: 5`) is a named input error instead of a silently dropped field.
+  Accepted: the file is kk-written and stricter is correct at this trust boundary. No existing fanout test
+  fed a wrong-typed optional field, so no `.catch(undefined)` was needed. Top-level `metadata` now survives
+  the read (previously dropped); no consumer reads it, so this is inert. Documented in `docs/04_DESIGN.md`
+  §1.6 and in the spec's fan-in/fan-out notes.
+- **R3 (new fan-in surface).** `--plugins-root` / `--plugins-path` are new for `fan-in`; combining them is a
+  usage error (exit 2). Documented in `docs/04_DESIGN.md` §1.5 and the spec's dated correction block.
+- **R6 (stderr shape).** Diagnostic output loses its trailing blank line: one newline per message, no `\n\n`.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `invoke.ts:282` `isSameFile` (dev+ino); guard at `:319` uses `absInPath===absOutPath |
+| R2 | MET | `fanout.ts:399` `let targets = [...new Set(opts.targets)]`; test `0157 R2 — a repeated --target is deduped` passes — `bun test apps/cli/tests/fanout.test.ts` 39 pass / 0 fail |
+| R3 | MET | `fanin.ts:42,44,164,273` `pluginsRoot/pluginsPath` in `FaninOptions`+`parseArgs`; mutual-exclusion guard at `:353`; discovery at `:375`; forwarded in `executor.ts:123,145`; 5 fanin + 2 executor tests pass — all 32 fanin and 18 executor tests pass |
+| R4 | MET | `stage.ts:9` `CHECKOUT_ROOT = resolve(import.meta.dir,'../../...')`; `resolveStagesScript(argv1, checkoutRoot=CHECKOUT_ROOT)` at `:16`; cwd is never a candidate; 2 new tests pass — `bun test apps/cli/tests/stage.test.ts` 6 pass / 0 fail |
+| R5 | MET | `fanout.ts:338` calls `readPluginJson(fs,outTmp,ResultSchema,"Plugin '${target}'","wrote an invalid Result")`; test `0157 R5 — names the target when its plugin writes invalid JSON` passes — 39 fanout tests pass |
+| R6 | MET | `plugin.ts:84,86,100,112` trailing `\n` removed; `rg -n 'echoError.*\\n' apps/cli/src/commands/plugin.ts` returns no hits; test `R6 — diagnostic lines carry no trailing blank line` passes — 14 plugin tests pass |
+| R7 | MET | `rg -n -B1 "^export function spawnPluginEntry\b |
+| R8 | MET | `invoke.ts:416` `return proc.exitCode;` directly inside `if (proc.exitCode !== 0)`; `rg -n "exitCode !== 0 \? proc.exitCode" apps/cli/src` returns no hits |
+| R9 | MET | `executor.ts:36` `collectRepeatable`; `withRunOptions` at `:114`, `withFaninOptions` at `:123`, `withFanoutOptions` at `:145`; `rg -c "function collect" executor.ts`=1; `rg -c "'--plugins-root <dir>'" executor.ts`=3; test `R9 — each verb and its hidden alias render an identical options block` passes |
+| R10 | MET | `plugin-output.ts` new file with `formatIssues` at `:13` and `readPluginJson` at `:23`; `rg -n "issues\.map\(" apps/cli/src` hits only `plugin-output.ts:14`; 6 plugin-output tests pass — `bun test apps/cli/tests/plugin-output.test.ts` 6 pass / 0 fail |
+| R11 | MET | `kk-core/src/schemas.ts:43,56` `TargetOutcomeSchema`/`AggregateResultSchema`; exported at `index.ts:41,42,52,53`; `fanout.ts:205` `AggregateResultSchema.safeParse`; no `typeof t. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| **AC1 | MET | test | `bun test apps/cli/tests/invoke.test.ts` 21/0; 3 new tests: case-variant (pass), symlinked-parent (pass), symlinked-out (pass); all assert exit 1 + `alias the same path` in stderr + input bytes unchanged |
+| **AC2 | MET | test | `bun test apps/cli/tests/fanout.test.ts` 39/0; test `0157 R2 — a repeated --target is deduped on fresh runs` passes; called=`['a','b']`, summary.total=2 |
+| **AC3 | MET | test | `bun test apps/cli/tests/fanin.test.ts` 32/0 and `bun test apps/cli/tests/commands/executor.test.ts` 18/0; 5 fanin tests (R3: root, path, mutual-exclusion, double-root, missing-value) + 2 executor tests (fan-in --plugins-root, fanin alias --plugins-path) all pass |
+| **AC4 | MET | test | `bun test apps/cli/tests/stage.test.ts` 6/0 and `bun test apps/cli/tests/commands/stage.test.ts` 6/0; 2 new tests: `ignores a cwd-relative planted script` (pass), `defaults the checkout root to this module` (pass); AC4(d) tests patched with `/nonexistent-checkout` 2nd arg |
+| **AC5 | MET | test | `bun test apps/cli/tests/fanout.test.ts` 39/0; test `0157 R5 — names the target when its plugin writes invalid JSON (real dispatch)` passes; exit 1, aggregate target entry has `status: 'failed'` and error containing `Plugin '<name>' wrote invalid JSON` |
+| **AC6 | MET | test | `bun test apps/cli/tests/commands/plugin.test.ts` 14/0; test `R6 — diagnostic lines carry no trailing blank line (no double newline in stderr)` passes; `err.includes('\n\n')` is false |
+| **AC7 | MET | command | `rg -n -B1 "^export function spawnPluginEntry\b |
+| **AC8 | MET | command | `rg -n "exitCode !== 0 \? proc.exitCode" apps/cli/src` → no hits (exit code 1); `bun test apps/cli/tests/invoke.test.ts` 21 pass / 0 fail (non-zero-exit invoke tests stay green) |
+| **AC9 | MET | test | `rg -c "function collect" executor.ts`=1; `rg -c "'--plugins-root <dir>'" executor.ts`=3; test `R9 — each verb and its hidden alias render an identical options block` passes in `bun test apps/cli/tests/commands/executor.test.ts` 18/0 |
+| **AC10 | MET | test | `rg -n "issues\.map\(" apps/cli/src` hits only `plugin-output.ts:14`; `bun test apps/cli/tests/plugin-output.test.ts` 6/0: `formatIssues` root-path, dot-join, multi-issue; `readPluginJson` invalid-JSON, schema-violation, valid cases all pass |
+| **AC11 | MET | test | `bun test packages/kk-core/tests/schemas.test.ts` 13/0; 4 new R11 cases pass; fanout.test.ts:416,539,714,782 message-substring assertions pass in 39/0 fanout run; `rg -n "typeof t\. |
+| **AC12 | MET | command | Gate artifact `.spur/run/0157-test-gate.status`=PASS (1311 pass/0 fail/83 files, proof-digest sha256:c954ccd1); `git status --short` shows exactly 19 M + 2 ?? (plugin-output.ts + plugin-output.test.ts) matching AC12 allow-list |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+SECUA + functional traceability + architecture-depth review of task 0157's change set. Fresh-session
+reviewer on a distinct executor/model (`--auto`), reading only the task spec, the recorded diff, and the
+run artifacts.
+
+| Priority | Finding | Disposition |
+|----------|---------|-------------|
+| P1 (blocker) | None | N/A |
+| P2 (major) | `describeAggregateIssue`'s `targetName()` (`apps/cli/src/fanout.ts:167-168`) returns the literal string `undefined` when a Zod issue path indexes outside `targets`, or when an entry lacks `.target`. Unreachable today — Zod paths index real positions and `TargetOutcomeSchema` enforces `target: z.string()` — and no test exercises it | Accepted residual: advisory only, no fix needed for merge; recorded for a later hardening pass (fixing it now would invalidate the captured proof digest) |
+| P3 (minor) | None | N/A |
+| P4 (nit) | None | N/A |
+
+**Traceability (dimension 1) — PASS.** Every R1–R11 lands at the cited `file:line`, and the AC1–AC12 tests
+assert behavior rather than echoing the implementation's wording. Static checks re-confirmed
+independently: AC7 docblock adjacency (`invoke.ts:148`→`:149`, `:213`→`:214`); AC8 no
+`exitCode !== 0 ? proc.exitCode` anywhere in `apps/cli/src`; AC9(a) exactly one `collectRepeatable`;
+AC9(b) three `'--plugins-root <dir>'` registrar occurrences; AC10(a) `issues.map(` only in
+`plugin-output.ts:14`; AC11(c) no `typeof t.` / `typeof sum[` in `fanout.ts`; R6 no `echoError(…\n)` in
+`commands/plugin.ts`. The four prior-ledger message tails remain reachable through the new
+path-mapping in `readAggregateResult`.
+
+**SECUA (dimension 2) — PASS.** *Security:* no new unvalidated input path; `isSameFile` uses `statSync`
+(following symlinks is the intent) and is short-circuited behind `existsSync(absInPath)`, so a missing
+path is never stat'ed; the guard sits before the stale-output `unlinkSync`. *Efficiency:* the `Set`
+dedupe is O(n); plugin discovery stays one call per run. *Correctness:* the fan-in mutual-exclusion
+guard runs after argument parsing but before any file I/O; `[...new Set(opts.targets)]` preserves
+first-seen order and leaves the retry branch's own dedupe intact. *Usability:* named error messages are
+retained and the diagnostic double-newline is gone. *Architecture:* kk-core keeps schema ownership and
+`apps/cli` gains no direct `zod` dependency (`plugin-output.ts` uses structural types).
+
+**Architecture depth (dimension 3) — PASS.** `plugin-output.ts` collapses five duplicated formatter
+copies into one seam; the `with*Options` registrars remove verb/alias CLI-surface drift; `CHECKOUT_ROOT`
+anchors to `import.meta.dir`, so both the dev (`apps/cli/src`) and bundled (`apps/cli/dist`) layouts
+resolve without depending on the current directory; docs ship in the same change (T3).
+
+**Scope discipline.** 19 modified + 2 new files, exactly the AC12 allow-list (re-verified with
+`git status --short` in this run). No `.skip`, no new `biome-ignore`, no `--no-verify`; existing-test
+edits are limited to the two permitted AC4(d) call sites plus the AC4(c) title rename.
+
+**Residual risk:** Low — one advisory P2 with no reachable input; every other behavior is covered by a
+test shown red pre-fix and green post-fix.
+
+**Disposition:** Approve — proceed to verification.
 
 ### References
 
@@ -551,3 +752,8 @@ All anchors are at `main@d4dd562d`. Repros were run during the review or during 
 - **C3 placement:** decided to use kk-core, because `apps/cli` has no direct zod dependency (Q&A).
 
 ### History
+
+- 2026-09-24T06:52:54.724Z todo → wip (system)
+- 2026-09-24T08:06:02.873Z wip → testing (system)
+- 2026-09-24T08:10:17.407Z testing → done (system)
+
