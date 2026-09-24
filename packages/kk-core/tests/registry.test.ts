@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
 import {
     collectionForKind,
     discoverAllPlugins,
@@ -12,6 +12,7 @@ import {
     type PluginKind,
     resolvePluginRoots,
 } from '../src/index';
+import { findBuiltinRoot } from '../src/registry';
 
 function withTempDir(fn: (dir: string) => void): void {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-registry-test-'));
@@ -120,6 +121,25 @@ describe('discoverPlugins', () => {
             expect(res.diagnostics).toHaveLength(1);
             expect(res.diagnostics[0]?.code).toBe('kind_mismatch');
             expect(res.diagnostics[0]?.path).toBe(manifestPath);
+        });
+    });
+
+    it('treats a prototype-key directory (constructor) as misplaced, not a kind collection (0155 R1)', () => {
+        withTempDir((root) => {
+            // A valid ingestion manifest under `constructor/` — with the pre-0155 `in`-based
+            // kind lookup this directory was mistaken for a kind collection and produced a
+            // spurious `kind_mismatch` instead of the normal `misplaced` diagnostic.
+            const stray = join(root, 'constructor');
+            mkdirSync(stray, { recursive: true });
+            const strayManifest = join(stray, 'plugin.json');
+            writeFileSync(strayManifest, JSON.stringify({ name: 'stray', kind: 'ingestion', entry: 'e' }));
+
+            const res = discoverPlugins(root);
+            expect(res.plugins).toHaveLength(0);
+            expect(res.diagnostics.some((d) => d.code === 'kind_mismatch')).toBe(false);
+            expect(res.diagnostics).toHaveLength(1);
+            expect(res.diagnostics[0]?.code).toBe('misplaced');
+            expect(res.diagnostics[0]?.path.endsWith(join('constructor', 'plugin.json'))).toBe(true);
         });
     });
 
@@ -471,6 +491,46 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             const res = discoverAllPlugins(opts);
             expect(res.plugins.map((p) => p.name)).toEqual(['isolated-pub']);
             expect(res.diagnostics).toHaveLength(0);
+        });
+    });
+
+    it('splits KK_PLUGIN_PATH on path.delimiter and resolves relative entries against cwd (0155 R6)', () => {
+        withTempDir((tmp) => {
+            mkdirSync(join(tmp, 'relA'), { recursive: true });
+            mkdirSync(join(tmp, 'relB'), { recursive: true });
+            mkdirSync(join(tmp, 'relC'), { recursive: true });
+
+            const roots = resolvePluginRoots({
+                homeDir: join(tmp, 'home'),
+                packagePluginsRoot: join(tmp, 'builtin-empty'),
+                cwd: tmp,
+                env: { KK_PLUGIN_PATH: ['relA', 'relB'].join(delimiter) },
+                extraPaths: ['relC'],
+            });
+            const pathRoots = roots.filter((r) => r.origin === 'path').map((r) => r.root);
+            expect(pathRoots).toEqual([join(tmp, 'relA'), join(tmp, 'relB'), join(tmp, 'relC')]);
+            expect(pathRoots.every((p) => isAbsolute(p))).toBe(true);
+        });
+    });
+
+    it('findBuiltinRoot requires a sibling package.json next to the plugins tree (0155 R5)', () => {
+        withTempDir((tmp) => {
+            // (a) plugins tree with no package.json beside it -> not a builtin root.
+            const start = join(tmp, 'a', 'b', 'c');
+            mkdirSync(join(tmp, 'plugins', 'ingestions', 'some-ingest'), { recursive: true });
+            mkdirSync(start, { recursive: true });
+            expect(findBuiltinRoot(start)).toBeUndefined();
+
+            // (b) same tree plus the repo-root package.json -> resolves.
+            writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'repo', private: true }));
+            expect(findBuiltinRoot(start)).toBe(join(tmp, 'plugins'));
+
+            // (c) installed-package layout: <pkg>/dist start, manifest + plugins at <pkg>.
+            const pkg = join(tmp, 'pkg');
+            mkdirSync(join(pkg, 'dist'), { recursive: true });
+            mkdirSync(join(pkg, 'plugins', 'publishings', 'some-pub'), { recursive: true });
+            writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'pkg' }));
+            expect(findBuiltinRoot(join(pkg, 'dist'))).toBe(join(pkg, 'plugins'));
         });
     });
 

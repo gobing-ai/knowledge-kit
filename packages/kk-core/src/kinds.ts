@@ -38,12 +38,15 @@ export function collectionForKind(kind: PluginKind): PluginKindCollection {
     return PLUGIN_KIND_COLLECTIONS[kind];
 }
 
-/** Plugin kind for a collection directory name, or `undefined` if it is not a kind collection. */
+/**
+ * Plugin kind for a collection directory name, or `undefined` if it is not a kind collection.
+ * Own-key check (0155 R1): `in` would walk `Object.prototype`, so a plugins-root directory
+ * named `constructor` / `toString` / `__proto__` would be misread as a kind collection.
+ */
 export function kindForCollection(name: string): PluginKind | undefined {
-    if (name in PLUGIN_COLLECTION_KINDS) {
-        return PLUGIN_COLLECTION_KINDS[name as PluginKindCollection];
-    }
-    return undefined;
+    return Object.hasOwn(PLUGIN_COLLECTION_KINDS, name)
+        ? PLUGIN_COLLECTION_KINDS[name as PluginKindCollection]
+        : undefined;
 }
 
 /** Resolved I/O schemas for a plugin kind (data contract, not class methods). */

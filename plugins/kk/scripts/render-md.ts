@@ -101,6 +101,12 @@ function renderReferences(references: ContentInput['references']): string {
     return `\n\n## References\n\n${lines.join('\n')}`;
 }
 
+/** Escape `\\`, `[`, `]` so link text cannot terminate the `[title]` form early (0155 R4). */
+const escapeLinkText = (s: string): string => s.replace(/[\\[\]]/g, '\\$&');
+/** Percent-encode characters that would break the inline link destination `(url)` (0155 R4). */
+const escapeLinkUrl = (s: string): string =>
+    s.replace(/[ ()<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
+
 function renderReferenceLabel(ref: Ref): string {
     const { url, title, cite } = ref;
     const titleT = title?.trim() ?? '';
@@ -108,7 +114,7 @@ function renderReferenceLabel(ref: Ref): string {
     const citeT = cite?.trim() ?? '';
     let label: string;
     if (titleT !== '' && urlT !== '') {
-        label = `[${titleT}](${urlT})`;
+        label = `[${escapeLinkText(titleT)}](${escapeLinkUrl(urlT)})`;
     } else if (titleT !== '') {
         label = titleT;
     } else if (urlT !== '') {

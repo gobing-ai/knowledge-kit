@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import type { Content } from '@gobing-ai/kk-core';
+import { isAbsolute, join, resolve } from 'node:path';
+import type { Content, Result } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport, FakeFileCliTransport, resolveBrowserProfileDir, trySelectors } from '../src/index';
 
 describe('FakeFileCliTransport', () => {
@@ -60,6 +60,20 @@ describe('FakeFileCliTransport', () => {
         const freshResult = await transport.publish({ content: { body: 'fresh', format: 'markdown' } });
         expect(freshResult.ok).toBe(true);
     });
+
+    test('setNextResult is sticky until reset — every publish returns it (0155 R2)', async () => {
+        const transport = new FakeFileCliTransport();
+        const overridden: Result = { ok: false, target: 'fake-file-cli', error: 'Simulated CLI failure' };
+        transport.setNextResult(overridden);
+
+        expect(await transport.publish({ content: { body: 'one', format: 'markdown' } })).toBe(overridden);
+        expect(await transport.publish({ content: { body: 'two', format: 'markdown' } })).toBe(overridden);
+
+        transport.reset();
+        const fresh = await transport.publish({ content: { body: 'three', format: 'markdown' } });
+        expect(fresh.ok).toBe(true);
+        expect(fresh.target).toBe('fake-file-cli');
+    });
 });
 
 describe('FakeBrowserTransport', () => {
@@ -87,6 +101,7 @@ describe('FakeBrowserTransport', () => {
 
         expect(result.ok).toBe(true);
         expect(result.target).toBe('fake-browser');
+        expect(result.url).toBe('https://example.com/browser-draft');
         expect(result.id).toBe('fake-browser-id-123');
         expect(result.metadata?.driver).toBe('agent');
         expect(transport.getCallLogs()).toHaveLength(1);
@@ -122,6 +137,20 @@ describe('FakeBrowserTransport', () => {
         expect(fresh.ok).toBe(true);
         expect(fresh.metadata?.driver).toBe('script');
     });
+
+    test('setNextResult is sticky until reset — every publish returns it (0155 R2)', async () => {
+        const transport = new FakeBrowserTransport();
+        const overridden: Result = { ok: false, target: 'fake-browser', error: 'Simulated browser failure' };
+        transport.setNextResult(overridden);
+
+        expect(await transport.publish({ content: { body: 'one', format: 'markdown' } })).toBe(overridden);
+        expect(await transport.publish({ content: { body: 'two', format: 'markdown' } })).toBe(overridden);
+
+        transport.reset();
+        const fresh = await transport.publish({ content: { body: 'three', format: 'markdown' } });
+        expect(fresh.ok).toBe(true);
+        expect(fresh.target).toBe('fake-browser');
+    });
 });
 
 describe('resolveBrowserProfileDir', () => {
@@ -132,6 +161,11 @@ describe('resolveBrowserProfileDir', () => {
     test('override wins, expanding a ~/ prefix', () => {
         expect(resolveBrowserProfileDir('x', '~/custom-x-profile')).toBe(join(homedir(), 'custom-x-profile'));
         expect(resolveBrowserProfileDir('x', '/tmp/x-profile')).toBe('/tmp/x-profile');
+    });
+
+    test('relative override resolves to an absolute path (0155 R7)', () => {
+        expect(resolveBrowserProfileDir('x', 'rel/prof')).toBe(resolve('rel/prof'));
+        expect(isAbsolute(resolveBrowserProfileDir('x', 'rel/prof'))).toBe(true);
     });
 });
 
@@ -178,5 +212,31 @@ describe('trySelectors', () => {
 
         const result = await trySelectors(page, ['#a', '#b']);
         expect(result).toEqual({ found: false, selector: null });
+    });
+
+    test('forwards the caller timeout to isVisible uncapped; default 2000 (0155 R7)', async () => {
+        const seen: (number | undefined)[] = [];
+        const page = {
+            locator() {
+                return {
+                    first() {
+                        return {
+                            count: async () => 1,
+                            async isVisible(options?: { timeout?: number }) {
+                                seen.push(options?.timeout);
+                                return true;
+                            },
+                        };
+                    },
+                };
+            },
+        };
+
+        await trySelectors(page, ['#a'], { timeout: 7000 });
+        expect(seen).toEqual([7000]);
+
+        seen.length = 0;
+        await trySelectors(page, ['#a']);
+        expect(seen).toEqual([2000]);
     });
 });

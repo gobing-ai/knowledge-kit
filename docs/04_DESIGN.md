@@ -256,7 +256,7 @@ performed. Passing a collection directory itself is also valid as a root. `plugi
 Claude Code capability plugin and is never discovered as a kk-core plugin.
 
 Every product plugin directory carries a `plugin.json`. Schema:
-`PluginManifestSchema` (`packages/kk-core/src/manifest.ts`), `.passthrough()` — unknown keys are
+`PluginManifestSchema` (`packages/kk-core/src/manifest.ts`), a `z.looseObject` — unknown keys are
 preserved, not rejected.
 
 | Field | Type | Required | Status | Description |
@@ -324,7 +324,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `QIITA_TOKEN` | yes (qiita-pub) | Qiita API v2 token; sent as `Authorization: Bearer <token>` on `POST /api/v2/items` |
 | `KNOWLEDGE_KIT_PUBLISH_TRANSPORT` | no | `fake` selects `FakeFileCliTransport` instead of the real transport — the offline harness switch, identical across `surfdash-pub` / `zenn-pub` / `qiita-pub` |
 | `KNOWLEDGE_KIT_PROJECT_ROOT` | no | Project root the executor hands to every spawned plugin (default: the `kk` process cwd). `content-gen`'s STORM stages pass it as `spur agent run --cwd` so agents anchor to the project, not the plugin package dir |
-| `KK_PLUGIN_PATH` | no | Colon-separated extra plugin roots to union with the default discovery roots (ADR-012); overridden by `--plugins-root` |
+| `KK_PLUGIN_PATH` | no | `path.delimiter`-separated (`:` POSIX / `;` win32) extra plugin roots to union with the default discovery roots; relative entries resolve against the cwd and returned roots are absolute (ADR-012); overridden by `--plugins-root` |
 | `KK_CONFIG` | no | Path to the operator YAML (`works_dir`, workflow defaults, `plugins.<collection>.<name>.env`). Default: `~/.config/kk/config.yaml` |
 | `FIRECRAWL_API_KEY` | yes (web-search live) | Bearer token for the live Firecrawl client (task 0057; selected when `fixture` is absent/false) — unset → exit 1, no `--out` (fail loud) |
 | `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`). Local origins (`127.0.0.1`/`localhost`/`::1`) are **auto-started** when not already healthy (0146): voice-gen spawns the server binary detached, polls `/health` for 30s (500ms interval, fixed defaults), logs stderr to `/tmp/voicebox-server.log`. Non-local URLs and a missing binary (`VOICEBOX_SERVER_BIN`, default `/Applications/Voicebox.app/Contents/MacOS/voicebox-server`; data dir `VOICEBOX_DATA_DIR`) are configuration errors — fail loud, never spawn |
@@ -390,7 +390,8 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 | `PLUGIN_KIND_COLLECTIONS`, `PLUGIN_COLLECTION_KINDS`, `KK_CAPABILITY_COLLECTION` | constants | ADR-009 collection folder map |
 | `collectionForKind(kind)`, `kindForCollection(name)` | functions | Kind ↔ collection directory |
 | `kindContract(kind)` | function | Resolves I/O contract per plugin kind |
-| `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests |
+| `PluginManifestSchema`, `parsePluginManifest`, `PluginManifest` | schema & type | Validation for `plugin.json` manifests (loose object — unknown keys kept) |
+| `OperationIOSchema`, `OperationIO`, `PluginOperation` | schema & types | Declared auxiliary-operation IO forms (`doc-list \| markdown`); surface on `PluginRecord.operations` (0110 I3) |
 | `discoverPlugins(root)`, `discoverAllPlugins(opts)`, `resolvePluginRoots(opts)`, `listByKind`, `getByName` | functions | Per-root scan, merged multi-root discovery, root resolution, and registry filtering (ADR-012) |
 | `PluginRecord`, `PluginOrigin`, `DiscoverAllOptions`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types (`misplaced`, `kind_mismatch`, `shadowed` codes; `origin` on every record) |
 | `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()` | functions | Content → research-report markdown (frozen template) + `--in`/`--out` file/CLI wrapper (task 0058). **C5 (ADR-013):** drops the `## Outline` replay (applied to the byte-identical `plugins/kk/scripts/render-md.ts` copy too); references tail resolves cite ids to cached files |
@@ -401,11 +402,11 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 | -------- | ------ | ------- |
 | `PublishTransport` | interface | `{ kind: 'file-cli' \| 'browser', driver?: 'script' \| 'agent', publish(payload): Promise<Result> }` (ADR-008 amdt 2026-09-17) |
 | `PublishTransportPayload` | interface | `{ content: Content, options?: Record<string, unknown> }` |
-| `FakeFileCliTransport` | class | Offline fake for unit tests; `setNextResult`, records call log |
-| `FakeBrowserTransport` | class | Offline fake for `kind: 'browser'`; records calls, `setNextResult`, `reset` |
+| `FakeFileCliTransport` | class | Offline fake for unit tests; `setNextResult` is sticky until `reset()` (every subsequent `publish()` returns it), records call log |
+| `FakeBrowserTransport` | class | Offline fake for `kind: 'browser'`; same sticky `setNextResult` until `reset()`, records calls, `reset` |
 | `BrowserDriver` | type | `'script' \| 'agent'` — required when `kind` is `browser` |
-| `resolveBrowserProfileDir` | function | `~/.config/kk/browser-profiles/<channel>`; optional override (env/flag) |
-| `trySelectors` | function | First attached (optionally visible) selector; structural page type, no Playwright import |
+| `resolveBrowserProfileDir` | function | `~/.config/kk/browser-profiles/<channel>`; optional override (env/flag), always returned absolute |
+| `trySelectors` | function | First attached (optionally visible) selector; point-in-time visibility check — `timeout` is forwarded to `isVisible` for `SelectorLocator` compatibility but Playwright ignores it (returns immediately); structural page type, no Playwright import |
 | `launchPersistentBrowser` | function | Dynamic-imports Playwright; callers must have it on their own tree |
 
 ### `@gobing-ai/surfdash-pub` (`plugins/publishings/surfdash-pub`, kind `publish`)

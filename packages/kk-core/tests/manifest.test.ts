@@ -58,4 +58,9 @@ describe('PluginManifestSchema', () => {
         });
         expect(badIO.success).toBe(false);
     });
+
+    it('keeps unknown manifest keys (loose object, 0155 R8)', () => {
+        const manifest = parsePluginManifest({ name: 'n', kind: 'publish', entry: 'e', extra: 1 });
+        expect((manifest as { extra?: unknown }).extra).toBe(1);
+    });
 });

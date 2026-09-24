@@ -73,5 +73,10 @@ describe('PluginKind helpers', () => {
         expect(kindForCollection('publishings')).toBe('publish');
         expect(kindForCollection(KK_CAPABILITY_COLLECTION)).toBeUndefined();
         expect(kindForCollection('content-gen')).toBeUndefined();
+        // 0155 R1: `in` walks Object.prototype, so inherited names must not count
+        // as kind collections.
+        for (const protoKey of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+            expect(kindForCollection(protoKey)).toBeUndefined();
+        }
     });
 });

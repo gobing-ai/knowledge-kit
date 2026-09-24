@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
 
 /**
@@ -44,19 +44,19 @@ export interface FakeCallLogEntry {
 }
 
 /**
- * Fake File/CLI publish transport for offline unit testing without side effects.
+ * Shared body for the fake transports (0155 R3): the in-memory call log, the sticky result
+ * override, and the publish/log/reset surface live here once. Not exported — the public API
+ * stays the two fakes. Composition instead of an abstract base class: subclassing here
+ * deterministically trips a Bun 1.3.14 test-runner bug (full suite exits 1 with zero
+ * failures); composition keeps the single implementation site without inheritance.
  */
-export class FakeFileCliTransport implements PublishTransport {
-    public readonly kind = 'file-cli';
-    private callLogs: FakeCallLogEntry[];
+class FakeTransportCore {
+    private callLogs: FakeCallLogEntry[] = [];
     private nextResult?: Result;
 
-    constructor() {
-        this.callLogs = [];
-    }
-
     /**
-     * Configures the result to return on the next publish invocation.
+     * Configures the result returned by **every** subsequent publish call until `reset()`
+     * is called (sticky, not one-shot; 0155 R2).
      * @param result - Overridden result object.
      */
     public setNextResult(result: Result): void {
@@ -66,25 +66,15 @@ export class FakeFileCliTransport implements PublishTransport {
     /**
      * Executes a simulated publish call, recording the payload offline.
      * @param payload - Target content and options.
-     * @returns A promise resolving to a valid `Result` object.
+     * @param defaultResult - The fake's own default `Result` used when no override is set.
+     * @returns A promise resolving to the sticky override or the provided default.
      */
-    public async publish(payload: PublishTransportPayload): Promise<Result> {
+    public async publish(payload: PublishTransportPayload, defaultResult: Result): Promise<Result> {
         this.callLogs.push({
             timestamp: new Date().toISOString(),
             payload,
         });
-
-        if (this.nextResult) {
-            return this.nextResult;
-        }
-
-        return {
-            ok: true,
-            target: 'fake-file-cli',
-            url: 'https://example.com/published-post',
-            id: 'fake-id-123',
-            message: 'Published offline via FakeFileCliTransport',
-        };
+        return this.nextResult ?? defaultResult;
     }
 
     /**
@@ -104,28 +94,73 @@ export class FakeFileCliTransport implements PublishTransport {
 }
 
 /**
+ * Fake File/CLI publish transport for offline unit testing without side effects.
+ */
+export class FakeFileCliTransport implements PublishTransport {
+    public readonly kind = 'file-cli';
+    private readonly core = new FakeTransportCore();
+
+    /**
+     * Configures the result returned by **every** subsequent `publish()` call until
+     * `reset()` is called (sticky, not one-shot; 0155 R2).
+     * @param result - Overridden result object.
+     */
+    public setNextResult(result: Result): void {
+        this.core.setNextResult(result);
+    }
+
+    /**
+     * Executes a simulated file/CLI publish call, recording the payload offline.
+     * @param payload - Target content and options.
+     * @returns A promise resolving to a valid `Result` object.
+     */
+    public async publish(payload: PublishTransportPayload): Promise<Result> {
+        return this.core.publish(payload, {
+            ok: true,
+            target: 'fake-file-cli',
+            url: 'https://example.com/published-post',
+            id: 'fake-id-123',
+            message: 'Published offline via FakeFileCliTransport',
+        });
+    }
+
+    /**
+     * Returns all in-memory recorded call log entries.
+     */
+    public getCallLogs(): readonly FakeCallLogEntry[] {
+        return this.core.getCallLogs();
+    }
+
+    /**
+     * Clears all in-memory recorded call logs and custom result overrides.
+     */
+    public reset(): void {
+        this.core.reset();
+    }
+}
+
+/**
  * Fake browser publish transport for offline unit testing without a live browser.
  */
 export class FakeBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
-    private callLogs: FakeCallLogEntry[];
-    private nextResult?: Result;
+    private readonly core = new FakeTransportCore();
 
     /**
      * @param driver - Who would drive the real browser (`script` or `agent`).
      */
     constructor(driver: BrowserDriver = 'agent') {
         this.driver = driver;
-        this.callLogs = [];
     }
 
     /**
-     * Configures the result to return on the next publish invocation.
+     * Configures the result returned by **every** subsequent `publish()` call until
+     * `reset()` is called (sticky, not one-shot; 0155 R2).
      * @param result - Overridden result object.
      */
     public setNextResult(result: Result): void {
-        this.nextResult = result;
+        this.core.setNextResult(result);
     }
 
     /**
@@ -134,38 +169,28 @@ export class FakeBrowserTransport implements PublishTransport {
      * @returns A promise resolving to a valid `Result` object.
      */
     public async publish(payload: PublishTransportPayload): Promise<Result> {
-        this.callLogs.push({
-            timestamp: new Date().toISOString(),
-            payload,
-        });
-
-        if (this.nextResult) {
-            return this.nextResult;
-        }
-
-        return {
+        return this.core.publish(payload, {
             ok: true,
             target: 'fake-browser',
             url: 'https://example.com/browser-draft',
             id: 'fake-browser-id-123',
             message: 'Published offline via FakeBrowserTransport',
             metadata: { driver: this.driver },
-        };
+        });
     }
 
     /**
      * Returns all in-memory recorded call log entries.
      */
     public getCallLogs(): readonly FakeCallLogEntry[] {
-        return this.callLogs;
+        return this.core.getCallLogs();
     }
 
     /**
      * Clears all in-memory recorded call logs and custom result overrides.
      */
     public reset(): void {
-        this.callLogs = [];
-        this.nextResult = undefined;
+        this.core.reset();
     }
 }
 
@@ -209,10 +234,11 @@ export interface TrySelectorsResult {
  * Resolves the persistent profile directory for a publish channel.
  *
  * Default: `~/.config/kk/browser-profiles/<channel>`. An explicit override
- * (env or flag) wins. Does not create the directory.
+ * (env or flag) wins and is always resolved to an absolute path (0155 R7:
+ * non-`~/` overrides go through `path.resolve()`). Does not create the directory.
  *
  * @param channel - Channel slug (`juejin`, `x`, …).
- * @param override - Optional absolute or `~/`-prefixed path.
+ * @param override - Optional absolute, relative, or `~/`-prefixed path.
  */
 export function resolveBrowserProfileDir(channel: string, override?: string): string {
     if (override && override.trim().length > 0) {
@@ -220,7 +246,7 @@ export function resolveBrowserProfileDir(channel: string, override?: string): st
         if (trimmed.startsWith('~/')) {
             return join(homedir(), trimmed.slice(2));
         }
-        return trimmed;
+        return resolve(trimmed);
     }
     return join(homedir(), '.config', 'kk', 'browser-profiles', channel);
 }
@@ -229,16 +255,20 @@ export function resolveBrowserProfileDir(channel: string, override?: string): st
  * Try selectors in order and return the first attached (and optionally visible) match.
  * Harvested from `@wt/web-automation` trySelectors; no Playwright import.
  *
+ * The visibility check is a point-in-time read: `timeout` is forwarded to
+ * `isVisible` for compatibility with the structural `SelectorLocator`, but Playwright
+ * ignores it (1.55 marks the option `@deprecated`) and returns immediately.
+ *
  * @param page - Page exposing `locator(sel).first()`.
  * @param selectors - CSS/text selectors to try.
- * @param options - `timeout` per visibility check; `visible` defaults true.
+ * @param options - `timeout` forwarded to each visibility check (default 2000); `visible` defaults true.
  */
 export async function trySelectors(
     page: SelectorPage,
     selectors: readonly string[],
     options: { timeout?: number; visible?: boolean } = {},
 ): Promise<TrySelectorsResult> {
-    const timeout = options.timeout ?? 5000;
+    const timeout = options.timeout ?? 2000;
     const visible = options.visible ?? true;
 
     for (const selector of selectors) {
@@ -249,7 +279,7 @@ export async function trySelectors(
                 continue;
             }
             if (visible) {
-                const isVisible = await locator.isVisible({ timeout: Math.min(timeout, 2000) }).catch(() => false);
+                const isVisible = await locator.isVisible({ timeout }).catch(() => false);
                 if (!isVisible) {
                     continue;
                 }

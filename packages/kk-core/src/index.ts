@@ -17,8 +17,11 @@ export {
     PluginKindSchema,
 } from './kinds';
 export {
+    type OperationIO,
+    OperationIOSchema,
     type PluginManifest,
     PluginManifestSchema,
+    type PluginOperation,
     parsePluginManifest,
 } from './manifest';
 export {

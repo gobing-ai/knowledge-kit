@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KK_CAPABILITY_COLLECTION, kindForCollection, PLUGIN_COLLECTION_KINDS, type PluginKind } from './kinds';
 import { PluginManifestSchema, type PluginOperation } from './manifest';
@@ -36,7 +36,7 @@ export interface DiscoveryDiagnostic {
 export interface DiscoverAllOptions {
     /** Working directory; the `./plugins` project root resolves against it. */
     cwd?: string;
-    /** Environment snapshot; `KK_PLUGIN_PATH` (colon-separated) is read from it. */
+    /** Environment snapshot; `KK_PLUGIN_PATH` (`path.delimiter`-separated) is read from it. Relative entries resolve against `cwd`. */
     env?: { KK_PLUGIN_PATH?: string };
     /** Home directory; `~/.config/kk/plugins` resolves against it. Defaults to `os.homedir()`. */
     homeDir?: string;
@@ -136,25 +136,33 @@ export function resolvePluginRoots(opts: DiscoverAllOptions = {}): readonly { or
         roots.push({ origin: 'builtin', root: builtinRoot });
     }
 
+    const base = opts.cwd ?? process.cwd();
     const userRoot = join(opts.homeDir ?? homedir(), '.config', 'kk', 'plugins');
     if (isDirectory(userRoot)) {
         roots.push({ origin: 'user', root: userRoot });
     }
 
-    const projectRoot = join(opts.cwd ?? process.cwd(), 'plugins');
+    const projectRoot = join(base, 'plugins');
     if (isDirectory(projectRoot) && !(builtinRoot !== undefined && sameRealpath(projectRoot, builtinRoot))) {
         roots.push({ origin: 'project', root: projectRoot });
     }
 
+    // `path.delimiter` (`:` POSIX / `;` win32), not a literal colon (0155 R6); relative
+    // entries resolve against the injectable cwd, and returned roots are absolute.
     const env = opts.env ?? process.env;
-    for (const entry of (env.KK_PLUGIN_PATH ?? '').split(':').filter((e) => e !== '')) {
-        if (isDirectory(entry)) {
-            roots.push({ origin: 'path', root: entry });
+    for (const entry of (env.KK_PLUGIN_PATH ?? '').split(delimiter).filter((e) => e !== '')) {
+        const abs = resolve(base, entry);
+        if (isDirectory(abs)) {
+            roots.push({ origin: 'path', root: abs });
         }
     }
     for (const extra of opts.extraPaths ?? []) {
-        if (extra !== '' && isDirectory(extra)) {
-            roots.push({ origin: 'path', root: extra });
+        if (extra === '') {
+            continue;
+        }
+        const abs = resolve(base, extra);
+        if (isDirectory(abs)) {
+            roots.push({ origin: 'path', root: abs });
         }
     }
 
@@ -232,20 +240,28 @@ function mergeByName(
 }
 
 /**
- * Resolve the package-shipped built-in tree (ADR-012 D2): the `plugins/`
- * directory next to the running `kk` package. A bundled CLI lives at
- * `<pkg>/dist/index.js` → `<pkg>/plugins`; monorepo sources resolve up to the
- * repo-root `plugins/` tree. Found by walking up from the executing module;
- * injectable via {@link DiscoverAllOptions.packagePluginsRoot} for tests.
+ * Resolve the package-shipped built-in tree (ADR-012 D2): the `plugins/` directory next to
+ * the running `kk` package. A candidate `<dir>/plugins` is accepted only when `<dir>/package.json`
+ * also exists (0155 R5) — the plugins tree must sit beside a package manifest. This covers the
+ * installed package (`<pkg>/{package.json,plugins/}`), the bundled monorepo CLI
+ * (`apps/cli/{package.json,plugins/}`), and the monorepo source repo root, while an unrelated
+ * ancestor like `~/plugins/` without `~/package.json` no longer resolves as `builtin`.
+ * Found by walking up from the executing module; injectable via
+ * {@link DiscoverAllOptions.packagePluginsRoot} for tests.
  */
 function resolveBuiltinRoot(injected: string | undefined): string | undefined {
-    if (injected !== undefined) {
-        return injected;
-    }
-    let dir = dirname(fileURLToPath(import.meta.url));
+    return injected ?? findBuiltinRoot(dirname(fileURLToPath(import.meta.url)));
+}
+
+/**
+ * Walk up from `startDir` to the first `<dir>/plugins` tree that sits beside a `<dir>/package.json`.
+ * @internal exported for tests (0155 R5) — not part of the package entry point.
+ */
+export function findBuiltinRoot(startDir: string): string | undefined {
+    let dir = startDir;
     for (;;) {
         const candidate = join(dir, 'plugins');
-        if (isPluginsTree(candidate)) {
+        if (existsSync(join(dir, 'package.json')) && isPluginsTree(candidate)) {
             return candidate;
         }
         const parent = dirname(dir);

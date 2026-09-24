@@ -95,6 +95,24 @@ describe('renderContentMarkdown', () => {
         expect(out).toContain('- `C1`');
     });
 
+    it('escapes link metacharacters in the [title](url) form only (0155 R4)', () => {
+        const out = renderContentMarkdown({
+            body: 'body',
+            format: 'markdown',
+            references: [{ title: 'A [b] \\ c', url: 'https://x.test/a b(c)<d>' }],
+        });
+        expect(out).toContain('- [A \\[b\\] \\\\ c](https://x.test/a%20b%28c%29%3Cd%3E)');
+        // Title-only, url-only, and cite-only labels stay unescaped.
+        const plain = renderContentMarkdown({
+            body: 'body',
+            format: 'markdown',
+            references: [{ url: 'https://u.example/x (y)' }, { title: 'P [q]' }, { cite: 'C [1]' }],
+        });
+        expect(plain).toContain('- https://u.example/x (y)');
+        expect(plain).toContain('- P [q]');
+        expect(plain).toContain('- `C [1]`');
+    });
+
     it('emits no References block when every reference is skipped as empty', () => {
         const out = renderContentMarkdown({ body: 'body', format: 'markdown', references: [{}, { cite: '  ' }] });
         expect(out).not.toContain('## References');
@@ -175,6 +193,7 @@ describe('R3 — shipped script characterization (byte-identical to kk-core)', (
             references: [
                 { title: 'Alpha', url: 'https://a.example', cite: 'A1' },
                 { title: 'Beta', url: 'https://b.example' },
+                { title: 'A [b] \\ c', url: 'https://x.test/a b(c)<d>' },
             ],
         };
         const inPath = join(dir, 'full.json');
