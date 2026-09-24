@@ -1,3 +1,21 @@
+## [0.0.22] - 2026-09-24
+
+### Fixed
+
+- fix(plugins): harden plugin secrets, XSS, path handling and request timeouts (927d0cc3)
+- fix(packages): harden kk-core kind resolution, publish-harness fakes, builtin discovery (0155) (84525673)
+- fix(apps): invoke alias identity, fan-out target dedupe, fan-in plugin roots, executor hardening (0157) (29bf6447)
+
+### Other
+
+- docs(tasks): add new tasks (14aa8ee6)
+- chore(tasks): mark 0155 done (pipeline 451D27D7-36DD-437F-9130-6A329AEFD4E3) (f6a5d441)
+- docs(tasks): updat tasks after verification (5b7fb513)
+- chore(tasks): mark 0157 done (pipeline 6fec4165-C6D5-47D3-9AA5-0DE61BF02AF4) (fc6287cb)
+- docs: sync surface docs for the 0157 wrap-up (90ec5394)
+- docs(tasks): refresh 0156 review-finding verification evidence (d17acfcb)
+- docs(tasks): refresh 0157 review-finding verification evidence (1d4cc1fe)
+
 ## [0.0.21] - 2026-09-23
 
 ### Fixed
