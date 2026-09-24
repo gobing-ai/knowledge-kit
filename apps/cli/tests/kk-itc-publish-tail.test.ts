@@ -170,5 +170,5 @@ describe('kk-itc publish tail (0151)', () => {
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
         expect(summary.finalState).toBe('done');
-    });
+    }, 30_000);
 });

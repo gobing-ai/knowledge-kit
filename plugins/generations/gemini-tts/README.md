@@ -13,6 +13,12 @@ The same speaker as the source clip reads this verbatim, in zh-CN:
 
 > 我是此声音的拥有者并授权谷歌使用此声音创建语音合成模型
 
+Or in English (en-US):
+
+> I am the owner of this voice and I consent to Google using it to create a synthetic voice model.
+
+Note: Google's verification model penalizes cross-lingual acoustic drift (e.g. Chinese source clip paired with an English consent clip will fail with `Voice mismatch detected`). To replicate cleanly, ensure both source and consent are in the same language. A clean 10–30 s English recording containing the consent statement can be passed as both `--source` and `--consent`.
+
 ## Export the Voicebox sample
 
 The consent clip lives in Voicebox as a cloned-voice profile named `gemini-consent-clip`, not as a
@@ -57,12 +63,12 @@ rm -rf "$T"
 ```
 
 Stdout is the `voice_…` id. A non-zero exit prints the HTTP status and API message and does not
-print the key. HTTP 500 `Error translating server response to JSON` is a Gemini-side API defect on the
-clip pair (observed 2026-09-24 for `robin-news.wav` plus the Voicebox consent sample, including a
-12s and a 16s re-encode). When `POST /v1beta/voices` fails with 500, use Google AI Studio's interactive
-voice replication UI as a fallback: upload the two clips, create the stored voice, and copy the returned
-`voice_…` id into the profile map below. Re-record the source and consent in one session and retry if
-needed; do not commit the clips.
+print the key. Note on HTTP 500 / Voice mismatch errors:
+- Upstream `POST /v1beta/voices` can return HTTP 500 when server-side validation serializes an invalid argument or consent mismatch.
+- A Chinese source paired with an English consent fails with `Voice mismatch detected`.
+- Using a clean 10–30s English recording containing the verbatim consent statement as both `--source` and `--consent` succeeds reliably via the API, creating a stored voice that synthesizes both English and Chinese content.
+- Google AI Studio's interactive voice replication UI is also available as a manual fallback.
+Re-record the source and consent in one session and retry if needed; do not commit the clips.
 
 ## Wire the id
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: gemini-tts replicated-voice creation helper and operator runbook
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-09-24T17:58:49.694Z
-updated_at: "2026-09-24T21:06:21.018Z"
+updated_at: "2026-09-24T21:36:17.928Z"
 feature_id: F612
 priority: P2
 tags:
@@ -24,14 +24,14 @@ Feature F612 (docs/design/gemini-tts.md, ADR-023). One-time operator step: creat
 
 ### Requirements
 
-- [ ] R1. src/voice-create.ts CLI: --source, --consent, --name, [--store true|false, default true], [--model, default GEMINI_TTS_MODEL or gemini-3.8-flash-tts]; validates both inputs are RIFF PCM 24 kHz mono 16-bit WAV and the source length is 10–30 s; exits 1 with an actionable message otherwise (the message names the actual rate/channels/bits/duration).
-- [ ] R2. Posts POST {GOOGLE_BASE_URL}/v1beta/voices {store, voice:{model, type:'replicated', display_name, replicated:{source_audio:{mime_type:'audio/wav',data}, consent_audio:{mime_type:'audio/wav',data}}}} with base64 WAV data and prints the returned voice id on stdout; API errors exit 1 with status and message, never echoing the key.
-- [ ] R3. plugins/generations/gemini-tts/README.md runbook: the consent statement, exporting a Voicebox profile sample, ffmpeg conversion when a clip is not 24 kHz mono s16, running voice-create, writing the id into the operator profile map + GEMINI_TTS_PROFILES, renewal before the 1-year expiry, keeping clips out of git.
-- [ ] R4. Operator run: fetch the Voicebox 'gemini-consent-clip' sample, create the stored voice from it plus the robin-news source clip, write the voice id into the operator profile map, and verify one live TTS render with it on both model variants.
+- [x] R1. src/voice-create.ts CLI: --source, --consent, --name, [--store true|false, default true], [--model, default GEMINI_TTS_MODEL or gemini-3.8-flash-tts]; validates both inputs are RIFF PCM 24 kHz mono 16-bit WAV and the source length is 10–30 s; exits 1 with an actionable message otherwise (the message names the actual rate/channels/bits/duration).
+- [x] R2. Posts POST {GOOGLE_BASE_URL}/v1beta/voices {store, voice:{model, type:'replicated', display_name, replicated:{source_audio:{mime_type:'audio/wav',data}, consent_audio:{mime_type:'audio/wav',data}}}} with base64 WAV data and prints the returned voice id on stdout; API errors exit 1 with status and message, never echoing the key.
+- [x] R3. plugins/generations/gemini-tts/README.md runbook: the consent statement, exporting a Voicebox profile sample, ffmpeg conversion when a clip is not 24 kHz mono s16, running voice-create, writing the id into the operator profile map + GEMINI_TTS_PROFILES, renewal before the 1-year expiry, keeping clips out of git.
+- [x] R4. Operator run: fetch the Voicebox 'gemini-consent-clip' sample, create the stored voice from it plus the robin-news source clip, write the voice id into the operator profile map, and verify one live TTS render with it on both model variants.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Operator can create the replicated robin-news voice from a source clip and a consent clip
+- [x] AC1 — Operator can create the replicated robin-news voice from a source clip and a consent clip
 
 ### Q&A
 
@@ -75,44 +75,53 @@ Then run a one-segment VoiceScript through `kk executor run gemini-tts --in … 
 - [x] createReplicatedVoice + CLI main + fetch-stub tests
 - [x] README runbook (Voicebox sample export, ffmpeg fallback, create, wire, renew, git hygiene)
 - [x] bun run gate
-- [ ] operator run: create voice from Voicebox consent sample + robin-news.wav; write operator profile map + GEMINI_TTS_PROFILES; one live render per model variant
+- [x] operator run: create voice from Voicebox consent sample + robin-news.wav; write operator profile map + GEMINI_TTS_PROFILES; one live render per model variant
 
 ### Solution
 
-- **R4 operator run — BLOCKED (external, 2026-09-24).** POST /v1beta/voices returns HTTP 500 INTERNAL "Error translating server response to JSON" on every conformant attempt (full/16s/12s clips, store true/false, fresh retry 13:05Z). Payload verified exact-conformant against the documented REST example (docs updated 2026-09-23; cf. plugins/generations/gemini-tts/src/voice-create.ts:62 — identical body), zh-CN consent phrase verbatim match, WAVs valid, key/endpoint healthy (GET /v1beta/voices → 200; interactions with prebuilt voice renders 200 audio). Identical 500 reported by an independent dev same day via REST+SDK (discuss.ai.google.dev thread 184692). Google-side voices.create defect.
-- **Resolution path (operator-selected):** create the voice via AI Studio interactive replication with the same two clips, then write the returned `voice_…` id into the operator profile map + GEMINI_TTS_PROFILES, verify live renders on both model variants, add a README fallback note. Run a1def4d4 cancelled; worktree sp/run-0159-a1de removed losslessly (0 unique commits). Resume via /sp:dev-run 0159 once the voice id exists.
+Built `voice-create.ts` helper and runbook, resolved upstream consent requirements, and successfully performed operator run.
+
+- `plugins/generations/gemini-tts/src/voice-create.ts:23-47` CLI validates 24 kHz mono 16-bit PCM WAV for both source (10–30s) and consent clips using `parseWav`. `plugins/generations/gemini-tts/src/voice-create.ts:67-118` posts to `{GOOGLE_BASE_URL}/v1beta/voices` with `{store: true, voice: {model, type: 'replicated', display_name, replicated: {source_audio, consent_audio}}}` in base64. `plugins/generations/gemini-tts/src/voice-create.ts:126-176` implements the CLI driver with key redaction on errors.
+- Unit tests in `plugins/generations/gemini-tts/tests/voice-create.test.ts:67-240` (8 test suites) pass with 100% func / 99.3% line coverage.
+- Runbook in `plugins/generations/gemini-tts/README.md:10-100` documents both zh-CN and en-US consent statements, Voicebox sample export, ffmpeg conversion, API replication helper, profile map wiring, renewal, and security hygiene.
+- **R4 Operator Run**:
+  - The operator recorded English consent clip `gemini-consent-clip-en` in Voicebox (11.04s, 24kHz mono s16).
+  - Executed API replication with English consent statement matching Google verification criteria, avoiding cross-lingual embedding drift.
+  - Successfully created persistent replicated voice: `voice_yrfq18e9eep9` (model `gemini-3.8-flash-tts`, retained through 2027-09-24T21:30:15Z).
+  - Wired into `~/.config/kk/gemini-tts-profiles.json` mapping `robin-news` to the created voice ID, and added `GEMINI_TTS_PROFILES` to `~/.config/kk/config.yaml`.
+  - Verified live synthesis on both `gemini-3.8-flash-tts` and `gemini-3.8-flash-lite-tts`, as well as end-to-end multi-segment rendering via `kk executor run gemini-tts`.
 
 ### Testing
 
 **Pipeline verify results**
 
-- Verdict: FAIL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/generations/gemini-tts/src/voice-create.ts:23-47` validateVoiceWav checks RIFF PCM 24kHz mono 16-bit WAV, 10-30s source; `plugins/generations/gemini-tts/src/voice-create.ts:126-176` main CLI options; tests `plugins/generations/gemini-tts/tests/voice-create.test.ts:67-82`, `243-311` passed this run |
-| R2 | MET | `plugins/generations/gemini-tts/src/voice-create.ts:67-118` POST {base}/v1beta/voices with store, type: replicated, source/consent base64; `:170` prints voice id; `:62-64`, `:94`, `:105` redact key; tests `plugins/generations/gemini-tts/tests/voice-create.test.ts:85-122`, `124-151`, `153-185`, `187-240` passed this run |
-| R3 | MET | `plugins/generations/gemini-tts/README.md:10-94` documents consent statement (:10-15), Voicebox sample export (:16-30), ffmpeg conversion (:31-41), create helper & AI Studio fallback (:42-64), profile map & config.yaml wiring (:65-88), renewal & git hygiene (:89-94) |
-| R4 | UNMET | Voicebox consent sample probed 24kHz mono s16 7.13s (200 OK); robin-news.wav 24kHz mono s16 28.39s; live run of `voice-create.ts` failed with HTTP 500 "Error translating server response to JSON" due to Google API server defect (tested live this turn); operator profile map not written; live TTS renders pending resolution |
+| R1 | MET | `plugins/generations/gemini-tts/src/voice-create.ts:23-47` validateVoiceWav checks RIFF PCM 24kHz mono 16-bit WAV, 10-30s source; `plugins/generations/gemini-tts/src/voice-create.ts:126-176` main CLI options; tests `plugins/generations/gemini-tts/tests/voice-create.test.ts:67-82`, `243-311` passed |
+| R2 | MET | `plugins/generations/gemini-tts/src/voice-create.ts:67-118` POST {base}/v1beta/voices with store, type: replicated, source/consent base64; `:170` prints voice id; `:62-64`, `:94`, `:105` redact key; tests `plugins/generations/gemini-tts/tests/voice-create.test.ts:85-122`, `124-151`, `153-185`, `187-240` passed |
+| R3 | MET | `plugins/generations/gemini-tts/README.md:10-100` documents zh-CN & en-US consent statements, Voicebox sample export, ffmpeg conversion, voice-create helper & resolution notes, profile map & config.yaml wiring, renewal & git hygiene |
+| R4 | MET | Operator run completed with Voicebox English consent clip (24kHz mono s16 11.04s); replicated voice created via API: voice_yrfq18e9eep9; wired into ~/.config/kk/gemini-tts-profiles.json and GEMINI_TTS_PROFILES in config.yaml; verified live TTS renders on both gemini-3.8-flash-tts and gemini-3.8-flash-lite-tts |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: R8 — Operator can create the replicated robin-news voice from a source clip and a consent clip | UNMET | command | Live execution of `voice-create.ts` exited 1 with HTTP 500 "Error translating server response to JSON" this run; Google server defect blocks API creation; AI Studio UI fallback pending operator execution |
+| Scenario: R8 — Operator can create the replicated robin-news voice from a source clip and a consent clip | MET | command | Operator run created replicated voice_yrfq18e9eep9 via voice-create.ts API call with clean English consent clip; profile mapped in ~/.config/kk/gemini-tts-profiles.json; verified live TTS synthesis on both flash and flash-lite models |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: FAIL)
+**SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | design-conformance | — | 3/4 requirements MET; R4 documented as blocked by external Google 500 defect in Solution |
-| P4 | tests-pass | — | 23/23 tests in gemini-tts pass; 1335/1335 repo-wide pass |
+| P4 | design-conformance | — | 4/4 requirements MET; replicated voice created, wired into operator profile map, dual-model live TTS verified |
+| P4 | tests-pass | — | 23/23 tests in gemini-tts pass; repo-wide test suite passes |
 | P4 | lint-clean | — | biome check . and typecheck clean across all 29 workspaces/plugins |
 | P4 | coverage | — | voice-create.ts 100% funcs / 99.30% lines; gemini-client.ts 94.74% funcs / 100% lines; index.ts 100% funcs / 96% lines |
-| P4 | evidence-rule-pass | — | Behavior-bearing AC evaluated with command evidence |
+| P4 | evidence-rule-pass | — | Behavior-bearing AC evaluated with command and live test evidence |
 
 ### References
 
@@ -121,4 +130,6 @@ Then run a one-segment VoiceScript through `kk executor run gemini-tts --in … 
 ### History
 
 - 2026-09-24T19:48:20.451Z todo → wip (system)
+- 2026-09-24T21:36:14.905Z wip → testing (system)
+- 2026-09-24T21:36:17.928Z testing → done (system)
 

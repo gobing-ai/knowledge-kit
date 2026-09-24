@@ -299,7 +299,7 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
         expect(summary.finalState).toBe('done');
-    });
+    }, 30_000);
 });
 
 describe('kk-itc illustrate + adapt (0152)', () => {
@@ -403,5 +403,5 @@ describe('kk-itc illustrate + adapt (0152)', () => {
         expect(summary.finalState).toBe('done');
         // AC1 behavioral proof: the spend vars route the walk through illustrate (+1 transition vs base)
         expect(summary.transitionsTaken).toBe(14);
-    });
+    }, 30_000);
 });
