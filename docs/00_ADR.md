@@ -897,6 +897,29 @@ a launch-only live var keeps unattended runs reversible.
 
 ---
 
+## ADR-023: A generator plugin may reuse a sibling generator's library via workspace dependency
+
+**Status:** Accepted · **Date:** 2026-09-24 (feature F612)
+
+**Decision.** `plugins/generations/gemini-tts` depends on `@gobing-ai/voice-gen` (`workspace:*`)
+and supplies a Gemini-backed `VoiceboxClient` to voice-gen's `processGeneratorIO`, instead of
+copying or extracting voice-gen's VoiceScript/QC/WAV pipeline. voice-gen gains an `exports` entry,
+an optional `transcribe`, and an optional generator tag; its behaviour is unchanged.
+
+**Why.** The pipeline (profile resolution, verify-retry, loudness gate, speed, concat, QC, MP3) is
+backend-agnostic except for the client, which is already an injectable interface. Reusing it is
+the smallest diff and keeps both drivers on one QC contract. `scripts/bundle-plugins.ts` inlines
+workspace imports into each plugin's `dist/index.js`, so the dependency does not leak into the
+published tarball.
+
+**Cost.** voice-gen's exported surface becomes a contract for a second consumer: a breaking
+change there must update gemini-tts in the same commit. If a third consumer appears, extract the
+shared pipeline into a `packages/` library rather than chaining plugin-to-plugin imports.
+
+**Detail:** `docs/design/gemini-tts.md` D1.
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
