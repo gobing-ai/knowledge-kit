@@ -1136,6 +1136,24 @@ segments:
         expect(generatedBodies[2]?.instruct).toContain('confident');
     });
 
+    it('R1 — processGeneratorIO stamps a custom generator tag and keeps the kk:voice-gen default', async () => {
+        const doc: Doc = {
+            id: 'doc-tag',
+            sourceUri: 'https://example.com/test',
+            title: 'Generator Tag',
+            body: 'Speak this.',
+            metadata: { voiceProfile: 'Robin' },
+        };
+        writeFileSync(inputPath, JSON.stringify([doc]));
+        const mockClient = createMockClient();
+
+        await processGeneratorIO(inputPath, outputPath, mockClient, undefined, 'kk:gemini-tts');
+        expect(JSON.parse(readFileSync(outputPath, 'utf-8')).metadata?.generator).toBe('kk:gemini-tts');
+
+        await processGeneratorIO(inputPath, outputPath, mockClient);
+        expect(JSON.parse(readFileSync(outputPath, 'utf-8')).metadata?.generator).toBe('kk:voice-gen');
+    });
+
     it('main CLI — parses args and handles missing flags and errors', async () => {
         const oldArgv = process.argv;
         const errTarget = createBufferTarget();
