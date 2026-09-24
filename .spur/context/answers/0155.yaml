@@ -1,0 +1,65 @@
+task: "0155"
+verified_at: "2026-09-23"
+verdict: "PASS"
+shippable: "N/A"
+notes: "No feature_id on task — shippable gate not applicable (documented, not a failure)."
+results:
+  AC1:
+    status: PASS
+    evidence: "packages/kk-core/src/kinds.ts:46 `Object.hasOwn(...)`; kinds.test.ts:78 loops ['constructor','toString','hasOwnProperty','valueOf','__proto__'] expecting undefined; registry.test.ts:127 constructor-dir test; live repro: kindForCollection('constructor')→undefined, ('toString')→undefined, ('ingestions')→ingestion."
+  AC2:
+    status: PASS
+    evidence: "Sticky JSDoc at publish-harness/src/index.ts:59 (file-cli) and :159 (browser); harness.test.ts:192 'is sticky across publishes' (setNextResult twice, second publish uses first result) and :209 reset test; docs/04_DESIGN.md:405-406 doc rows."
+  AC3:
+    status: PASS
+    evidence: "rg 'callLogs.push' → exactly one site (index.ts:73); `rg '^export class'` → exactly FakeFileCLITransport (:128) + FakeBrowserTransport (:224); FakeTransportCore (:48) non-exported; default-result literals preserved verbatim; ctor driver: BrowserDriver = 'agent'. Deviation: composition (FakeTransportCore) instead of abstract base class — documented in commit 84525673 (bun:transpiled abstract class members), behavior-equivalent."
+  AC4:
+    status: PASS
+    evidence: "escapeLinkText/escapeLinkUrl in both packages/kk-core/src/render-md.ts:30-36 and plugins/kk/scripts/render-md.ts:38-44; parity suite render-md.test.ts:169-199 green (covers renderReferenceLabel body); fixture reference 'A [b](c d\\)' + cite present at tests/render-md.test.ts:196."
+  AC5:
+    status: PASS
+    evidence: "findBuiltinRoot exported from packages/kk-core/src/registry.ts:230 only (not re-exported from src/index.ts); sibling package.json check at :254; registry.test.ts: (a) :101 no-plugins-dir, (b) :115 plugins-without-manifest, (c) :136/150 manifest-with-plugins for both layouts."
+  AC6:
+    status: PASS
+    evidence: "registry.ts:158 splits on delimiter; zero `split(':')` in registry.ts; relative roots resolved against base via resolve() (:172); registry.test.ts:240 covers relA/relB/relC (:247-249)."
+  AC7:
+    status: PASS
+    evidence: "No Math.min in publish-harness/src/index.ts; publish forwards caller timeout uncapped (:283); point-in-time JSDoc :218-222; harness.test.ts:236 passes 7000 asserting recorded 7000; default 2000 asserted at :105/:149."
+  AC8:
+    status: PASS
+    evidence: "manifest.ts:17 `z.looseObject({...})`; zero 'passthrough' in packages/kk-core/src; manifest.test.ts:63 extra-key test (:70 asserts unknown preserved); docs/04_DESIGN.md passthrough grep hits only unrelated exit-code prose (:631)."
+  AC9:
+    status: PASS
+    evidence: "OperationIOSchema/PluginOperation/OperationIO/FieldDef exported from kk-core index.ts:31,34; zero hand-written `interface PluginOperation` in src; index.test.ts:63 asserts OperationIOSchema options parse."
+coverage:
+  requirements_total: 9
+  requirements_covered: 9
+  ac_total: 9
+  ac_covered: 9
+  solution_steps: "R1–R9 in one commit 84525673 (+ review-doc task file in f6a5d441)"
+  solution_steps_covered: "all verified against HEAD"
+gaps: []
+open_questions: []
+needs_human: false
+suggested_next_action: "done"
+code_review:
+  blockers: []
+  majors: []
+  minors:
+    - "Advisory (SECUA): design text said 'shared non-exported base class'; implementation uses non-exported FakeTransportCore composition instead. Documented in commit message; behavior-equivalent; no action."
+  coverage_gap: "none — 1285/1285 pass, 0 fail; 1 pre-existing skip in kk-core unrelated to this task"
+  ready_to_ship: true
+  quality_gate: "bun run gate PASS (format + build + lint/typecheck + 48 pre-rules + 1285 tests + 2 post-rules)"
+fixes:
+  applied: []
+  deferred: []
+  blocked: []
+  mode: "fix-all — no actionable findings; advisory only"
+next:
+  action: "none"
+  reason: "Task already terminal (status: done at verification start); --next is a no-op per contract."
+ship:
+  decision: "skip — already done and committed; no fix commits needed"
+  commits: []
+next_hop: "none — chain complete"
+timestamp: "2026-09-23"
