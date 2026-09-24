@@ -4,7 +4,7 @@ name: gemini-tts replicated-voice creation helper and operator runbook
 status: wip
 template: feature-impl
 created_at: 2026-09-24T17:58:49.694Z
-updated_at: "2026-09-24T19:48:20.451Z"
+updated_at: "2026-09-24T20:58:13.904Z"
 feature_id: F612
 priority: P2
 tags:
@@ -79,15 +79,8 @@ Then run a one-segment VoiceScript through `kk executor run gemini-tts --in … 
 
 ### Solution
 
-Bun CLI beside the adapter. WAV checks reuse voice-gen `parseWav`. No new audio dependency and no Voicebox client inside the helper.
-
-- `plugins/generations/gemini-tts/src/voice-create.ts:23` `validateVoiceWav` requires RIFF PCM 24 kHz mono 16-bit and, for `source` only, 10–30s. The error names the measured rate, channels, bits, and duration.
-- `plugins/generations/gemini-tts/src/voice-create.ts:67` `createReplicatedVoice` POSTs `{base}/v1beta/voices` with `store`, `type: replicated`, base64 WAV parts, and `x-goog-api-key`. The id is the first `voice_` / `voicekey_` string in `name`, `id`, `key`, or nested `voice`. Errors redact the key.
-- `plugins/generations/gemini-tts/src/voice-create.ts:126` `main` reads `--source`, `--consent`, `--name`, `--store` (default true), and `--model` (`GEMINI_TTS_MODEL` or `gemini-3.8-flash-tts`).
-- `plugins/generations/gemini-tts/README.md` is the runbook: consent statement, Voicebox sample export, ffmpeg conversion, create, operator profile map, renewal, and git hygiene.
-- Tests: `plugins/generations/gemini-tts/tests/voice-create.test.ts` (fetch stub, no live API in the suite). This run: 8 tests pass. `voice-create.ts` coverage 100% functions / 99.27% lines.
-
-**R4 operator run did not produce a voice id.** Consent sample `50d17c43-817b-4408-9900-ee93cc0d29c3` probed as pcm_s16le, 24000 Hz, 1 channel, 7.13s. `robin-news.wav` is pcm_s16le, 24000 Hz, mono, 28.39s. `POST /v1beta/voices` to `generativelanguage.googleapis.com` with `gemini-3.8-flash-tts` returned HTTP 500 `Error translating server response to JSON` for the full clip, a 16s re-encode, a 12s slice from 1s, and `store=false`. `gemini-3.8-flash-lite-tts` returned HTTP 400: that model does not support voice replication. `GET /v1beta/voices` showed no custom replicated voice afterward. No operator profile map was written.
+- **R4 operator run — BLOCKED (external, 2026-09-24).** POST /v1beta/voices returns HTTP 500 INTERNAL "Error translating server response to JSON" on every conformant attempt (full/16s/12s clips, store true/false, fresh retry 13:05Z). Payload verified exact-conformant against the documented REST example (docs updated 2026-09-23; cf. plugins/generations/gemini-tts/src/voice-create.ts:62 — identical body), zh-CN consent phrase verbatim match, WAVs valid, key/endpoint healthy (GET /v1beta/voices → 200; interactions with prebuilt voice renders 200 audio). Identical 500 reported by an independent dev same day via REST+SDK (discuss.ai.google.dev thread 184692). Google-side voices.create defect.
+- **Resolution path (operator-selected):** create the voice via AI Studio interactive replication with the same two clips, then write the returned `voice_…` id into the operator profile map + GEMINI_TTS_PROFILES, verify live renders on both model variants, add a README fallback note. Run a1def4d4 cancelled; worktree sp/run-0159-a1de removed losslessly (0 unique commits). Resume via /sp:dev-run 0159 once the voice id exists.
 
 ### Testing
 
