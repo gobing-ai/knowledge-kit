@@ -37,7 +37,7 @@ describe('kk stage verb (0144)', () => {
         });
     });
 
-    it('falls through to the cwd-relative copy when the entry package ships none', () => {
+    it('falls through to the checkout-relative copy when the entry package ships none', () => {
         withTempDir((dir) => {
             const argv1 = fakePkg(dir);
             const repoRoot = join(import.meta.dir, '../../../..');
@@ -60,7 +60,9 @@ describe('kk stage verb (0144)', () => {
             const prevCwd = process.cwd();
             process.chdir(empty);
             try {
-                expect(() => resolveStagesScript(argv1)).toThrow(/not found at .* — install or refresh the kk package/);
+                expect(() => resolveStagesScript(argv1, '/nonexistent-checkout')).toThrow(
+                    /not found at .* — install or refresh the kk package/,
+                );
             } finally {
                 process.chdir(prevCwd);
                 rmSync(empty, { recursive: true, force: true });

@@ -214,6 +214,28 @@ describe('registerPluginCommand', () => {
         }
     });
 
+    it('R6 — diagnostic lines carry no trailing blank line (no double newline in stderr)', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-status-broken-manifest');
+        // A stray directory carrying a plugin.json is a misplaced manifest: one
+        // diagnostic line, printed through printDiagnostics' two echoError calls.
+        const strayDir = join(tmpDir, 'stray');
+        await mkdir(strayDir, { recursive: true });
+        await writeFile(
+            join(strayDir, 'plugin.json'),
+            JSON.stringify({ name: 'stray', kind: 'ingestion', entry: './index.js' }),
+            'utf-8',
+        );
+
+        const { code, err } = await runCaptured(['plugin', 'status', '--plugins-root', tmpDir]);
+        try {
+            expect(code).toBe(1);
+            expect(err).toContain('[');
+            expect(err.includes('\n\n')).toBe(false);
+        } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
     it('hidden aliases plugins list and plugins doctor reach the unified status engine', async () => {
         // Both old paths emit the unified JSON object and fail loud on diagnostics.
         const healthy = await runCaptured(['plugins', 'list', '--json', '--plugins-root', FIXTURES_DIR]);

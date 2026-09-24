@@ -148,8 +148,8 @@ A missing `--out` parent directory is created (ADR-016); a write that genuinely 
 non-zero.
 
 ```text
-kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json>
-kk executor fan-in --source <plugin>:<f1> [--source <plugin>:<f2> …] [--source-timeout <ms>] [--source-timeout-override <plugin>:<ms> …] --out <merged.json>
+kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
+kk executor fan-in --source <plugin>:<f1> [--source <plugin>:<f2> …] [--source-timeout <ms>] [--source-timeout-override <plugin>:<ms> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
 ```
 
 | Option | Type | Required | Default | Description |
@@ -159,6 +159,8 @@ kk executor fan-in --source <plugin>:<f1> [--source <plugin>:<f2> …] [--source
 | `--source-timeout <ms>` | positive integer | no | 1800000 | Per-source timeout; a source cut short is recorded as failed |
 | `--source-timeout-override <plugin>:<ms>` | `<plugin>:<positive int>` (repeatable, once per plugin, plugin must be a `--source`) | no | — | Per-source timeout override for one named source — wins over `--source-timeout`/default for that source only (0099: the daily workflow pins `horizon-ingest:2700000` — horizon solo ran 28m39s in 0098 r7, straddling the 30m default) |
 | `--out <file>` | string | yes | — | Output merged `Doc[]` JSON path |
+| `--plugins-root <dir>` | string | no | — | Exclusive single-root scan for `--source` discovery (isolation/tests only; no union with defaults) |
+| `--plugins-path <dir>` | string[] | no | — | Extra plugin root to union with the default roots for `--source` discovery (repeatable; tree, kind collection, or single `plugin.json` dir) |
 
 \* At least one `--in` or `--source` is required (runtime exit `2`); the two modes combine.
 
@@ -178,6 +180,8 @@ to a `metadata.sourceErrors[]` entry (`{ plugin, error, durationMs }`, echoed to
 merged docs without aborting siblings; the output is written when ≥1 source succeeded (exit `0`),
 and exit `1` with no output only when every source failed. Provenance for source docs is the plugin
 name; merge order is `--in` inputs first, then `--source` declaration order (deterministic output).
+`--source` discovery honours `--plugins-root` (exclusive single root) and `--plugins-path`
+(union with the defaults); combining the two is a usage error (exit `2`, ADR-012 R6).
 
 **Timeout semantics (0110 I2, shipped):** a `timeoutMs` timeout kills the source plugin's whole
 process tree — descendants first, then the entry (`killProcessTree`, POSIX `pgrep -P` walk),
@@ -202,7 +206,7 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …] \
 | Option | Type | Required | Default | Description |
 | -------- | ------ | ---------- | --------- | ------------- |
 | `--content <file>` | string | yes | — | `Content` JSON to publish |
-| `--target <plugin>` | string (repeatable) | yes (≥1)\* | — | Publish plugin name per target |
+| `--target <plugin>` | string (repeatable) | yes (≥1)\* | — | Publish plugin name per target; duplicate names are deduped, so each distinct target is attempted once |
 | `--out <file>` | string | yes | — | Aggregate `Result` JSON path |
 | `--retry-from <file>` | string | no | — | Prior `Result`; published/skipped targets carried as `skipped` (url/id **and metadata** preserved, 0110 I4), only prior failures re-dispatched; failures outside the explicit selection are retained as `failed` in the aggregate (0110 I7) |
 | `--plugins-root <dir>` | string | no | — | Exclusive single-root scan (isolation/tests only; no union with defaults) |
@@ -229,7 +233,10 @@ succeeded, failed, skipped }, targets }` (spec §3.1) to `--out`.
 Partial success is **not** exit 0 — the run fails loud (ADR-007 R5), while successful targets stay
 published and are individually re-runnable via `--retry-from` (spec §5).
 
-**Retry semantics (0110 I4/I7, shipped):** `TargetOutcome.metadata` round-trips through read and
+**Retry semantics (0110 I4/I7, shipped):** prior ledgers are validated against kk-core's
+`AggregateResultSchema` (`TargetOutcomeSchema` per entry), so a wrong-typed optional field
+(`url: 5`) is a named input error rather than a silently dropped field; `TargetOutcome.metadata`
+round-trips through read and
 carry-forward (Surfdash's `postPath` survives), with a primitive `metadata` value in a prior
 ledger named as an input error (exit 2). Aggregate order is `skipped` → retained `failed` →
 fresh outcomes; unselected prior failures keep `ok: false` and exit 1. Target eligibility per

@@ -5,12 +5,15 @@ import { dirname, join, resolve } from 'node:path';
 /** Checkout/package-relative location of the stages runner this verb executes. */
 const STAGES_REL = 'plugins/kk/scripts/kk-workflow-stages.ts';
 
+/** Checkout root: `apps/cli/{src,dist}` are both three levels below it (bun build keeps import.meta.dir = bundle dir). */
+const CHECKOUT_ROOT = resolve(import.meta.dir, '../../..');
+
 /**
  * Resolve the stages script: package-shipped copy first (two levels up from the
  * running kk entry, mirroring `dirname $(dirname realpath kk)`), then the
- * checkout-relative copy for bun-link-less dev runs.
+ * checkout copy located from this module's own path — never the current directory.
  */
-export function resolveStagesScript(argv1 = process.argv[1]): string {
+export function resolveStagesScript(argv1 = process.argv[1], checkoutRoot = CHECKOUT_ROOT): string {
     let fromPkg = '';
     if (argv1) {
         try {
@@ -20,8 +23,8 @@ export function resolveStagesScript(argv1 = process.argv[1]): string {
         }
     }
     if (fromPkg && existsSync(fromPkg)) return fromPkg;
-    const fromCwd = resolve(STAGES_REL);
-    if (existsSync(fromCwd)) return fromCwd;
+    const fromCheckout = join(checkoutRoot, STAGES_REL);
+    if (existsSync(fromCheckout)) return fromCheckout;
     throw new Error(
         `kk-workflow-stages.ts not found at ${fromPkg || STAGES_REL} — install or refresh the kk package (bun link in a checkout)`,
     );

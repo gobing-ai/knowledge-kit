@@ -10,6 +10,7 @@ import {
     type PluginKind,
 } from '@gobing-ai/kk-core';
 import { echoError } from '@gobing-ai/ts-utils';
+import { formatIssues } from './plugin-output';
 
 /** Options for running a plugin invocation. */
 export interface InvokeOptions {
@@ -110,17 +111,6 @@ export function pluginEnvFromConfig(
     return out;
 }
 
-/**
- * Spawn a plugin entry with the `--in` / `--out` contract (ADR-006).
- *
- * This is the **only** sanctioned direct process spawn in the CLI surface
- * (`no-direct-process-spawn` allowlists `invoke.ts`). Callers such as
- * `fanout` must go through this helper rather than calling `Bun.spawnSync`
- * themselves.
- *
- * Precedence for plugin env: existing `process.env` wins over
- * `plugins.<collection>.<name>.env` in `$KK_CONFIG`.
- */
 /** Build the entry command: bun executes `.ts`/`.js` entries; anything else must be directly executable. */
 function pluginEntryCmd(opts: PluginEntrySpawnOptions): string[] {
     return opts.entryPath.endsWith('.ts') || opts.entryPath.endsWith('.js')
@@ -145,9 +135,16 @@ function pluginEntryEnv(opts: PluginEntrySpawnOptions): Record<string, string | 
 }
 
 /**
- * Spawn a plugin entry synchronously (ADR-006): plugin IO contract via stdin/stdout
- * around Bun.spawnSync, with the kk invocation root handed to the plugin env so
- * nested tooling anchors at the invocation root (see pluginEntryEnv).
+ * Spawn a plugin entry synchronously (ADR-006) with the `--in` / `--out` contract.
+ *
+ * This is the **only** sanctioned direct process spawn in the CLI surface
+ * (`no-direct-process-spawn` allowlists `invoke.ts`). Callers such as
+ * `fanout` must go through this helper rather than calling `Bun.spawnSync`
+ * themselves.
+ *
+ * Precedence for plugin env: existing `process.env` wins over
+ * `plugins.<collection>.<name>.env` in `$KK_CONFIG`; the kk invocation root
+ * is handed to the plugin env so nested tooling anchors there (see pluginEntryEnv).
  */
 export function spawnPluginEntry(opts: PluginEntrySpawnOptions): PluginEntrySpawnResult {
     const proc = Bun.spawnSync(pluginEntryCmd(opts), {
@@ -170,21 +167,7 @@ export interface PluginEntryAsyncSpawnOptions extends PluginEntrySpawnOptions {
     timeoutMs?: number;
 }
 
-/**
- * Kill a process and all of its descendants, children first so nothing
- * respawns a parent (0110 I2). Owned-tool termination for the async spawn
- * seam: on timeout the direct child dies via the abort signal, but children
- * it spawned (e.g. a `spur agent run` stage) would survive and keep writing
- * artifacts. Depth-first pgrep walk; SIGKILL throughout.
- *
- * Two sweeps with a settle window: a spawn that was in flight during sweep 1
- * registers under the — still alive — root pid within microseconds; sweep 2
- * reaps it. Killing the root before that window turns late registrations into
- * orphans reparented to launchd, unreachable by any pgrep -P walk (0110 I2b).
- *
- * ponytail: POSIX only (`pgrep -P` walk). A Windows kk executor would use
- * `taskkill /T /F /PID <pid>` — add when one exists.
- */
+/** Settle window between tree-kill sweeps; late spawn registrations need it (see killProcessTree). */
 const KILL_TREE_SETTLE_MS = 100;
 
 function listChildren(pid: number): number[] {
@@ -213,6 +196,21 @@ function killSubtree(pid: number): void {
     }
 }
 
+/**
+ * Kill a process and all of its descendants, children first so nothing
+ * respawns a parent (0110 I2). Owned-tool termination for the async spawn
+ * seam: on timeout the direct child dies via the abort signal, but children
+ * it spawned (e.g. a `spur agent run` stage) would survive and keep writing
+ * artifacts. Depth-first pgrep walk; SIGKILL throughout.
+ *
+ * Two sweeps with a settle window: a spawn that was in flight during sweep 1
+ * registers under the — still alive — root pid within microseconds; sweep 2
+ * reaps it. Killing the root before that window turns late registrations into
+ * orphans reparented to launchd, unreachable by any pgrep -P walk (0110 I2b).
+ *
+ * ponytail: POSIX only (`pgrep -P` walk). A Windows kk executor would use
+ * `taskkill /T /F /PID <pid>` — add when one exists.
+ */
 async function killProcessTree(pid: number): Promise<void> {
     const sweep = () => {
         for (const child of listChildren(pid)) {
@@ -280,6 +278,14 @@ export async function spawnPluginEntryAsync(opts: PluginEntryAsyncSpawnOptions):
     };
 }
 
+/** True when both paths exist and name the same file (dev+ino; follows symlinks). */
+function isSameFile(a: string, b: string): boolean {
+    if (!existsSync(b)) return false;
+    const sa = statSync(a);
+    const sb = statSync(b);
+    return sa.dev === sb.dev && sa.ino === sb.ino;
+}
+
 /**
  * Execute a discovered plugin with file IO and contract validation.
  * @returns exit code (0 on success, non-zero on error)
@@ -305,10 +311,12 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     const absInPath = resolve(opts.inPath);
     const absOutPath = resolve(opts.outPath);
 
-    // 0110 I5: an aliased --in/--out cannot pass freshness handling — the stale-output
-    // clear below would delete the input before the child reads it. Reject before any
-    // mutation or spawn; sidecar semantics stay intact because nothing is renamed.
-    if (existsSync(absInPath) && absInPath === absOutPath) {
+    // 0110 I5 + 0157 R1: an aliased --in/--out cannot pass freshness handling — the stale-output
+    // clear below would delete the input before the child reads it. Path strings miss aliases
+    // (case-insensitive APFS, symlinked dirs, hard links), so compare file identity when both
+    // exist. Reject before any mutation or spawn; sidecar semantics stay intact because nothing
+    // is renamed.
+    if (existsSync(absInPath) && (absInPath === absOutPath || isSameFile(absInPath, absOutPath))) {
         echoError(`--in and --out alias the same path (${absInPath}); refusing to overwrite the input`);
         return 1;
     }
@@ -350,18 +358,16 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
             }
             const docs = DocListSchema.safeParse(json);
             if (!docs.success) {
-                const issues = docs.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-                echoError(`Input schema violation for the declared doc-list operation of '${record.name}': ${issues}`);
+                echoError(
+                    `Input schema violation for the declared doc-list operation of '${record.name}': ${formatIssues(docs.error)}`,
+                );
                 return 1;
             }
             artifactOutput = op.output === 'markdown';
         } else {
             const parseResult = contract.input.safeParse(json);
             if (!parseResult.success) {
-                const issues = parseResult.error.issues
-                    .map((i) => `${i.path.join('.') || 'root'}: ${i.message}`)
-                    .join('; ');
-                echoError(`Input schema violation for kind '${record.kind}': ${issues}`);
+                echoError(`Input schema violation for kind '${record.kind}': ${formatIssues(parseResult.error)}`);
                 return 1;
             }
         }
@@ -407,8 +413,7 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
     if (proc.exitCode !== 0) {
         const errMsg = proc.stderr || proc.stdout || `Plugin entry exited with code ${proc.exitCode}`;
         echoError(`Plugin entry '${record.name}' failed (exit code ${proc.exitCode}): ${errMsg}`);
-        const exitCode = proc.exitCode !== 0 ? proc.exitCode : 1;
-        return exitCode;
+        return proc.exitCode;
     }
 
     if (!existsSync(absOutPath)) {
@@ -446,8 +451,7 @@ export async function runInvoke(opts: InvokeOptions): Promise<number> {
 
     const outResult = contract.output.safeParse(outJson);
     if (!outResult.success) {
-        const issues = outResult.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-        echoError(`Output schema violation for kind '${record.kind}': ${issues}`);
+        echoError(`Output schema violation for kind '${record.kind}': ${formatIssues(outResult.error)}`);
         return 1;
     }
 

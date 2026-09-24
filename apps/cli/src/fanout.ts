@@ -1,6 +1,8 @@
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import {
+    type AggregateResult,
+    AggregateResultSchema,
     type Content,
     ContentSchema,
     type DiscoveryResult,
@@ -8,10 +10,12 @@ import {
     getByName,
     type Result,
     ResultSchema,
+    type TargetOutcome,
 } from '@gobing-ai/kk-core';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { spawnPluginEntry } from './invoke';
+import { formatIssues, readPluginJson } from './plugin-output';
 
 /** A publish target: the name of a publish-kind plugin (spec §1.3). */
 export type Target = string;
@@ -19,31 +23,8 @@ export type Target = string;
 /** Single-target publish outcome returned by a dispatch (kk-core Result). */
 export type ResultEntry = Result;
 
-/** Per-target outcome in the aggregate result (spec §3.1). */
-export interface TargetOutcome {
-    target: string;
-    ok: boolean;
-    status: 'published' | 'failed' | 'skipped';
-    url?: string;
-    id?: string;
-    error?: string;
-    durationMs?: number;
-    /** Transport-provided passthrough (e.g. surfdash-pub postPath) for downstream steps. */
-    metadata?: Record<string, unknown>;
-}
-
-/** Aggregate partial-success result written to `--out` (spec §3.1). */
-export interface AggregateResult {
-    ok: boolean;
-    summary: {
-        total: number;
-        succeeded: number;
-        failed: number;
-        skipped: number;
-    };
-    targets: TargetOutcome[];
-    metadata?: Record<string, unknown>;
-}
+/** Per-target outcome and aggregate result contracts live in kk-core (`TargetOutcomeSchema` / `AggregateResultSchema`); re-exported for existing consumers. */
+export type { AggregateResult, TargetOutcome };
 
 /** Parsed `kk fanout` CLI arguments. */
 export interface FanoutOptions {
@@ -167,12 +148,31 @@ async function readContent(fs: FileSystem, path: string): Promise<Content | null
 
     const result = ContentSchema.safeParse(json);
     if (!result.success) {
-        const issues = result.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-        echoError(`Content file ${path} violates the Content schema: ${issues}`);
+        echoError(`Content file ${path} violates the Content schema: ${formatIssues(result.error)}`);
         return null;
     }
 
     return result.data;
+}
+
+/** Map the first aggregate-schema issue back to the message tail the hand parser used (kept byte-identical for existing assertions). */
+function describeAggregateIssue(json: unknown, issue: { path: PropertyKey[] } | undefined): string {
+    if (issue === undefined) return ' (ok/summary/targets)';
+    const path = issue.path.map(String);
+    const targets = (json as { targets?: unknown }).targets;
+    const targetName = (index: number): string => {
+        const entry = Array.isArray(targets) ? targets[index] : undefined;
+        if (typeof entry !== 'object' || entry === null) return 'undefined';
+        return String((entry as Record<string, unknown>).target);
+    };
+    if (path[0] === 'targets' && path.length >= 2) {
+        const index = Number(path[1]);
+        if (path.length === 2) return ' (target entry)';
+        if (path[2] === 'metadata') return `: target '${targetName(index)}' metadata must be an object`;
+        return ` (target ${targetName(index)})`;
+    }
+    if (path[0] === 'summary' && path.length >= 2) return ` (summary.${path[1]})`;
+    return ' (ok/summary/targets)';
 }
 
 /** Read and validate one prior aggregate result (spec §3.1). @returns the parsed result, or null (with an error logged) on failure */
@@ -198,74 +198,18 @@ async function readAggregateResult(fs: FileSystem, path: string): Promise<Aggreg
         return null;
     }
 
-    if (typeof json !== 'object' || json === null) {
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) {
         echoError(`Result file ${path} is not an aggregate result object`);
         return null;
     }
-    const obj = json as Record<string, unknown>;
-    const summary = obj.summary;
-    if (typeof obj.ok !== 'boolean' || typeof summary !== 'object' || summary === null || !Array.isArray(obj.targets)) {
-        echoError(`Result file ${path} violates the aggregate result schema (ok/summary/targets)`);
+    const parsed = AggregateResultSchema.safeParse(json);
+    if (!parsed.success) {
+        echoError(
+            `Result file ${path} violates the aggregate result schema${describeAggregateIssue(json, parsed.error.issues[0])}`,
+        );
         return null;
     }
-    const sum = summary as Record<string, unknown>;
-    for (const key of ['total', 'succeeded', 'failed', 'skipped']) {
-        if (typeof sum[key] !== 'number') {
-            echoError(`Result file ${path} violates the aggregate result schema (summary.${key})`);
-            return null;
-        }
-    }
-
-    const targets: TargetOutcome[] = [];
-    for (const entry of obj.targets) {
-        if (typeof entry !== 'object' || entry === null) {
-            echoError(`Result file ${path} violates the aggregate result schema (target entry)`);
-            return null;
-        }
-        const t = entry as Record<string, unknown>;
-        if (
-            typeof t.target !== 'string' ||
-            typeof t.ok !== 'boolean' ||
-            (t.status !== 'published' && t.status !== 'failed' && t.status !== 'skipped')
-        ) {
-            echoError(`Result file ${path} violates the aggregate result schema (target ${String(t.target)})`);
-            return null;
-        }
-        // 0110 I4: metadata is an optional object and must round-trip (Surfdash postPath
-        // survives deserialization and later retries). A primitive metadata value is a
-        // named input error — dropped fields would silently strand downstream consumers.
-        let metadata: Record<string, unknown> | undefined;
-        if (t.metadata !== undefined) {
-            if (typeof t.metadata !== 'object' || t.metadata === null || Array.isArray(t.metadata)) {
-                echoError(
-                    `Result file ${path} violates the aggregate result schema: target '${String(t.target)}' metadata must be an object`,
-                );
-                return null;
-            }
-            metadata = t.metadata as Record<string, unknown>;
-        }
-        targets.push({
-            target: t.target,
-            ok: t.ok,
-            status: t.status,
-            ...(typeof t.url === 'string' ? { url: t.url } : {}),
-            ...(typeof t.id === 'string' ? { id: t.id } : {}),
-            ...(typeof t.error === 'string' ? { error: t.error } : {}),
-            ...(typeof t.durationMs === 'number' ? { durationMs: t.durationMs } : {}),
-            ...(metadata !== undefined ? { metadata } : {}),
-        });
-    }
-
-    return {
-        ok: obj.ok,
-        summary: {
-            total: sum.total as number,
-            succeeded: sum.succeeded as number,
-            failed: sum.failed as number,
-            skipped: sum.skipped as number,
-        },
-        targets,
-    };
+    return parsed.data;
 }
 
 /** Parse `--content <file> [--target <plugin> ...] --out <file> [--retry-from <file>] [--plugins-root <dir>] [--plugins-path <dir> ...]` from an argv slice. */
@@ -389,12 +333,9 @@ async function pluginDispatch(target: string, contentPath: string, discovery: Di
         if (!(await fs.exists(outTmp))) {
             throw new Error(`Plugin '${target}' succeeded but did not write a result file`);
         }
-        const parsed = ResultSchema.safeParse(JSON.parse(await fs.readFile(outTmp)));
-        if (!parsed.success) {
-            const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-            throw new Error(`Plugin '${target}' wrote an invalid Result: ${issues}`);
-        }
-        return parsed.data;
+        // 0157 R5/R10: shared reader names the target on malformed JSON (a bare SyntaxError
+        // used to leak through with no plugin name) and keeps the Result-schema wording.
+        return readPluginJson(fs, outTmp, ResultSchema, `Plugin '${target}'`, 'wrote an invalid Result');
     } finally {
         await fs.deleteFile(outTmp);
     }
@@ -453,7 +394,9 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
 
     let prior: AggregateResult | undefined;
     let skipped: TargetOutcome[] = [];
-    let targets = opts.targets;
+    // 0157 R2: each target is attempted at most once per run (fanout() contract; spec §5.1
+    // dedupe) — a templated duplicate must not publish twice. First-seen order is kept.
+    let targets = [...new Set(opts.targets)];
     // 0110 I7: prior failures not selected for attempt stay in the ledger as failed.
     let retainedFailed: TargetOutcome[] = [];
     if (opts.retryFromPath !== undefined) {

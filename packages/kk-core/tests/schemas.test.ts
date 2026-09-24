@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { ContentSchema, DocSchema, omniVoiceGenContentSchema, ResultSchema } from '../src/index';
+import { AggregateResultSchema, ContentSchema, DocSchema, omniVoiceGenContentSchema, ResultSchema } from '../src/index';
 
 describe('DocSchema', () => {
     it('parses a well-formed Doc', () => {
@@ -90,6 +90,60 @@ describe('ResultSchema', () => {
         if (!parsed.success) {
             const paths = parsed.error.issues.map((i) => i.path.join('.'));
             expect(paths).toContain('target');
+        }
+    });
+});
+
+describe('AggregateResultSchema', () => {
+    const validAggregate = {
+        ok: true,
+        summary: { total: 2, succeeded: 1, failed: 1, skipped: 0 },
+        targets: [
+            {
+                target: 'surfdash',
+                ok: true,
+                status: 'published',
+                url: 'https://surfdash.io/posts/1',
+                id: 'surf_1',
+                durationMs: 1420,
+                metadata: { postPath: 'collab/posts/abc' },
+            },
+            { target: 'qiita', ok: false, status: 'failed', error: '429' },
+        ],
+    };
+
+    it('0157 R11 — accepts a valid aggregate including per-target metadata', () => {
+        const parsed = AggregateResultSchema.safeParse(validAggregate);
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+            expect(parsed.data.targets[0]?.metadata).toEqual({ postPath: 'collab/posts/abc' });
+            expect(parsed.data.summary.total).toBe(2);
+        }
+    });
+
+    it('0157 R11 — rejects a bad status enum', () => {
+        const bad = structuredClone(validAggregate);
+        (bad.targets[0] as Record<string, unknown>).status = 'exploded';
+        expect(AggregateResultSchema.safeParse(bad).success).toBe(false);
+    });
+
+    it('0157 R11 — rejects primitive metadata on a target', () => {
+        const bad = structuredClone(validAggregate);
+        (bad.targets[0] as Record<string, unknown>).metadata = 'oops';
+        expect(AggregateResultSchema.safeParse(bad).success).toBe(false);
+    });
+
+    it('0157 R11 — strips unknown keys (hand-parser parity)', () => {
+        const extra = {
+            ...validAggregate,
+            extraTop: 'drop-me',
+            targets: [{ ...validAggregate.targets[0], extraField: 1 }, validAggregate.targets[1]],
+        };
+        const parsed = AggregateResultSchema.safeParse(extra);
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+            expect(parsed.data).not.toHaveProperty('extraTop');
+            expect(parsed.data.targets[0]).not.toHaveProperty('extraField');
         }
     });
 });

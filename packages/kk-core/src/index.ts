@@ -38,6 +38,8 @@ export {
 } from './registry';
 export { main, renderContentMarkdown, renderContentMarkdownFile } from './render-md';
 export {
+    type AggregateResult,
+    AggregateResultSchema,
     type Content,
     ContentSchema,
     type Doc,
@@ -47,4 +49,6 @@ export {
     omniVoiceGenContentSchema,
     type Result,
     ResultSchema,
+    type TargetOutcome,
+    TargetOutcomeSchema,
 } from './schemas';

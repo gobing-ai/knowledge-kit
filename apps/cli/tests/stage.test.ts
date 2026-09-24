@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveStagesScript, runStage } from '../src/stage';
@@ -20,7 +20,25 @@ describe('resolveStagesScript', () => {
 
     test('throws with install guidance when neither candidate exists', () => {
         process.chdir(mkdtempSync(join(tmpdir(), 'stage-test-')));
-        expect(() => resolveStagesScript('/nonexistent/kk-entry')).toThrow(/install or refresh the kk package/);
+        expect(() => resolveStagesScript('/nonexistent/kk-entry', '/nonexistent-checkout')).toThrow(
+            /install or refresh the kk package/,
+        );
+    });
+
+    test('ignores a cwd-relative planted script — the checkout root is never the current directory', () => {
+        const planted = mkdtempSync(join(tmpdir(), 'stage-test-'));
+        mkdirSync(join(planted, 'plugins', 'kk', 'scripts'), { recursive: true });
+        writeFileSync(join(planted, 'plugins', 'kk', 'scripts', 'kk-workflow-stages.ts'), 'process.exit(0);\n');
+        process.chdir(planted);
+        expect(() => resolveStagesScript('/nonexistent/kk-entry', '/nonexistent-checkout')).toThrow(
+            /install or refresh the kk package/,
+        );
+    });
+
+    test('defaults the checkout root to this module, independent of the current directory', () => {
+        process.chdir(mkdtempSync(join(tmpdir(), 'stage-test-')));
+        const script = resolveStagesScript('/nonexistent/kk-entry');
+        expect(script.endsWith(join('plugins', 'kk', 'scripts', 'kk-workflow-stages.ts'))).toBe(true);
     });
 });
 

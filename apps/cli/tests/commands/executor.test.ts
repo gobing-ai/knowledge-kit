@@ -7,6 +7,27 @@ import { registerExecutorCommand } from '../../src/commands/executor';
 import { main } from '../../src/main';
 import { captureOutput, silenceOutput } from '../capture';
 
+/** Write a minimal ingestion fixture plugin that writes one Doc to --out. */
+async function writeIngestionFixture(pluginsRoot: string, name: string, docId: string): Promise<void> {
+    const dir = join(pluginsRoot, collectionForKind('ingestion'), name);
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(
+        join(dir, 'plugin.json'),
+        JSON.stringify({ name, kind: 'ingestion', entry: './src/index.ts', version: '1.0.0' }),
+        'utf-8',
+    );
+    await writeFile(
+        join(dir, 'src', 'index.ts'),
+        [
+            "import { writeFileSync } from 'node:fs';",
+            'const argv = process.argv.slice(2);',
+            "const outPath = argv[argv.indexOf('--out') + 1];",
+            `writeFileSync(outPath, JSON.stringify([{ id: '${docId}', body: 'doc from ${name}' }]));`,
+        ].join('\n'),
+        'utf-8',
+    );
+}
+
 describe('registerExecutorCommand', () => {
     it('registers the executor group with run, fan-in, fan-out and hidden invoke/fanin/fanout aliases', () => {
         const program = new Command();
@@ -84,6 +105,33 @@ describe('registerExecutorCommand', () => {
             expect(cmd?.options.find((o) => o.long === required)?.mandatory).toBe(true);
         }
         expect(cmd?.options.find((o) => o.long === '--target')?.mandatory).toBe(false);
+    });
+
+    it('R9 — each verb and its hidden alias render an identical options block', () => {
+        const program = new Command();
+        registerExecutorCommand(program);
+
+        const optionsBlock = (cmd: Command | undefined): string[] => {
+            const lines = (cmd?.helpInformation() ?? '').split('\n');
+            const start = lines.findIndex((l) => l.trim() === 'Options:');
+            return start === -1 ? [] : lines.slice(start);
+        };
+
+        const executor = program.commands.find((c) => c.name() === 'executor');
+        const pairs: Array<[string, string]> = [
+            ['run', 'invoke'],
+            ['fan-in', 'fanin'],
+            ['fan-out', 'fanout'],
+        ];
+        for (const [verb, alias] of pairs) {
+            const canonical = executor?.commands.find((c) => c.name() === verb);
+            const hidden = program.commands.find((c) => c.name() === alias);
+            expect(hidden).toBeDefined();
+            // The alias declares its flags through the same registrar, so the blocks
+            // cannot drift; a bare options list would silently pass this.
+            expect(optionsBlock(hidden).length).toBeGreaterThan(1);
+            expect(optionsBlock(hidden)).toEqual(optionsBlock(canonical));
+        }
     });
 
     it('kk help executor names the hyphenated verbs fan-in and fan-out', async () => {
@@ -231,6 +279,81 @@ describe('registerExecutorCommand', () => {
             expect(code).toBe(1);
         } finally {
             restoreSilence();
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('R3 — executor fan-in --plugins-root discovers the source plugin and merges its docs', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-cmd-fanin-root');
+        const pluginsRoot = join(tmpDir, 'plugins');
+        await writeIngestionFixture(pluginsRoot, 'cmd-src-a', 'cmd-a1');
+        const inFile = join(tmpDir, 'in.json');
+        const outFile = join(tmpDir, 'merged.json');
+        await writeFile(inFile, '[]', 'utf-8');
+
+        try {
+            const code = await main([
+                'node',
+                'test',
+                'executor',
+                'fan-in',
+                '--source',
+                `cmd-src-a:${inFile}`,
+                '--out',
+                outFile,
+                '--plugins-root',
+                pluginsRoot,
+            ]);
+            expect(code).toBe(0);
+            const docs = JSON.parse(await readFile(outFile, 'utf-8'));
+            expect(docs.map((d: { id: string }) => d.id)).toEqual(['cmd-a1']);
+        } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('R3 — the hidden fanin alias accepts --plugins-root and runFaninAction forwards --plugins-path', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-cmd-fanin-alias-root');
+        const pluginsRoot = join(tmpDir, 'plugins');
+        await writeIngestionFixture(pluginsRoot, 'cmd-src-b', 'cmd-b1');
+        const inFile = join(tmpDir, 'in.json');
+        await writeFile(inFile, '[]', 'utf-8');
+
+        try {
+            const rootOut = join(tmpDir, 'root.json');
+            const aliasCode = await main([
+                'node',
+                'test',
+                'fanin',
+                '--source',
+                `cmd-src-b:${inFile}`,
+                '--out',
+                rootOut,
+                '--plugins-root',
+                pluginsRoot,
+            ]);
+            expect(aliasCode).toBe(0);
+            const rootDocs = JSON.parse(await readFile(rootOut, 'utf-8'));
+            expect(rootDocs.map((d: { id: string }) => d.id)).toEqual(['cmd-b1']);
+
+            // --plugins-path is rebuilt into the runFanin argv by runFaninAction.
+            const pathOut = join(tmpDir, 'path.json');
+            const pathCode = await main([
+                'node',
+                'test',
+                'executor',
+                'fan-in',
+                '--source',
+                `cmd-src-b:${inFile}`,
+                '--out',
+                pathOut,
+                '--plugins-path',
+                pluginsRoot,
+            ]);
+            expect(pathCode).toBe(0);
+            const pathDocs = JSON.parse(await readFile(pathOut, 'utf-8'));
+            expect(pathDocs.map((d: { id: string }) => d.id)).toEqual(['cmd-b1']);
+        } finally {
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

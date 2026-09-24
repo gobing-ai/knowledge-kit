@@ -4,6 +4,7 @@ import { type DiscoveryResult, type Doc, DocListSchema, discoverAllPlugins, getB
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { spawnPluginEntryAsync } from './invoke';
+import { formatIssues, readPluginJson } from './plugin-output';
 
 /** One provenance entry per originating source file (spec §2.2). */
 export interface SourceEntry {
@@ -37,6 +38,10 @@ export interface FaninOptions {
     sourceTimeoutMs?: number;
     /** `--source-timeout-override` entries, keyed by plugin; wins over `--source-timeout` and the default for that source. */
     sourceTimeoutOverrides?: Record<string, number>;
+    /** `--plugins-root`; exclusive single-root override for source discovery. */
+    pluginsRoot?: string;
+    /** `--plugins-path` entries; unioned with the default roots for source discovery. */
+    pluginsPath?: string[];
 }
 
 /**
@@ -139,8 +144,7 @@ async function readDocList(fs: FileSystem, path: string): Promise<Doc[] | null> 
 
     const result = DocListSchema.safeParse(json);
     if (!result.success) {
-        const issues = result.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-        echoError(`Input file ${path} violates the Doc list schema: ${issues}`);
+        echoError(`Input file ${path} violates the Doc list schema: ${formatIssues(result.error)}`);
         return null;
     }
 
@@ -157,6 +161,8 @@ function parseArgs(argv: string[]): FaninOptions {
     let outPath: string | undefined;
     let sourceTimeoutMs: number | undefined;
     const sourceTimeoutOverrides: Record<string, number> = {};
+    let pluginsRoot: string | undefined;
+    const pluginsPath: string[] = [];
 
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
@@ -218,6 +224,21 @@ function parseArgs(argv: string[]): FaninOptions {
                 throw new Error('--out may be specified only once');
             }
             outPath = value;
+        } else if (arg === '--plugins-root') {
+            const value = argv[++i];
+            if (value === undefined) {
+                throw new Error('--plugins-root requires a directory path');
+            }
+            if (pluginsRoot !== undefined) {
+                throw new Error('--plugins-root may be specified only once');
+            }
+            pluginsRoot = value;
+        } else if (arg === '--plugins-path') {
+            const value = argv[++i];
+            if (value === undefined) {
+                throw new Error('--plugins-path requires a directory path');
+            }
+            pluginsPath.push(value);
         } else {
             throw new Error(`Unknown argument: ${arg}`);
         }
@@ -249,6 +270,8 @@ function parseArgs(argv: string[]): FaninOptions {
         ...(sources.length > 0 ? { sources } : {}),
         ...(sourceTimeoutMs !== undefined ? { sourceTimeoutMs } : {}),
         ...(Object.keys(sourceTimeoutOverrides).length > 0 ? { sourceTimeoutOverrides } : {}),
+        ...(pluginsRoot !== undefined ? { pluginsRoot } : {}),
+        ...(pluginsPath.length > 0 ? { pluginsPath } : {}),
     };
 }
 
@@ -300,20 +323,14 @@ async function collectSourceDocs(discovery: DiscoveryResult, source: FaninSource
             throw new Error(`Plugin '${source.plugin}' succeeded but did not write an output file`);
         }
 
-        let json: unknown;
-        try {
-            json = JSON.parse(await fs.readFile(outTmp));
-        } catch (err: unknown) {
-            throw new Error(
-                `Plugin '${source.plugin}' wrote invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
-            );
-        }
-        const parsed = DocListSchema.safeParse(json);
-        if (!parsed.success) {
-            const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
-            throw new Error(`Plugin '${source.plugin}' output violates the Doc list schema: ${issues}`);
-        }
-        return parsed.data;
+        // 0157 R10: shared reader — same invalid-JSON and Doc-list-schema wording as before.
+        return readPluginJson(
+            fs,
+            outTmp,
+            DocListSchema,
+            `Plugin '${source.plugin}'`,
+            'output violates the Doc list schema',
+        );
     } finally {
         await fs.deleteFile(outTmp);
     }
@@ -321,7 +338,7 @@ async function collectSourceDocs(discovery: DiscoveryResult, source: FaninSource
 
 /**
  * Run the `kk fanin` CLI handler.
- * @param argv `--in <path> [--in <path> ...] [--source <plugin>:<inputFile> ...] [--source-timeout <ms>] [--source-timeout-override <plugin>:<ms> ...] --out <path>` (no subcommand name)
+ * @param argv `--in <path> [--in <path> ...] [--source <plugin>:<inputFile> ...] [--source-timeout <ms>] [--source-timeout-override <plugin>:<ms> ...] --out <path> [--plugins-root <dir> | --plugins-path <dir> ...]` (no subcommand name)
  * @returns exit code: 0 success (≥1 source succeeded), 1 file error / all sources failed, 2 usage error
  */
 export async function runFanin(argv: string[]): Promise<number> {
@@ -330,6 +347,11 @@ export async function runFanin(argv: string[]): Promise<number> {
         opts = parseArgs(argv);
     } catch (err: unknown) {
         echoError(`fanin: ${err instanceof Error ? err.message : String(err)}`);
+        return EXIT_USAGE;
+    }
+
+    if (opts.pluginsRoot !== undefined && (opts.pluginsPath?.length ?? 0) > 0) {
+        echoError('fanin: --plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)');
         return EXIT_USAGE;
     }
 
@@ -348,8 +370,9 @@ export async function runFanin(argv: string[]): Promise<number> {
     }
 
     if (opts.sources !== undefined && opts.sources.length > 0) {
-        // Same discovery entry point as runInvoke: the merged multi-root registry.
-        const discovery = discoverAllPlugins({});
+        // Same discovery entry point as runInvoke: the merged multi-root registry,
+        // honouring --plugins-root / --plugins-path (ADR-012 R6).
+        const discovery = discoverAllPlugins({ pluginsRoot: opts.pluginsRoot, extraPaths: opts.pluginsPath });
 
         // One concurrent run per --source; declaration order is preserved by
         // allSettled so the merge output stays deterministic. A failed or

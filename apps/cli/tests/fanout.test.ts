@@ -265,6 +265,26 @@ describe('runFanout', () => {
         });
     });
 
+    it('0157 R2 — a repeated --target is deduped on fresh runs (each target attempted once)', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+            const { dispatch, called } = makeDispatch([]);
+
+            const code = await runFanout(
+                ['--content', contentFile, '--target', 'a', '--target', 'a', '--target', 'b', '--out', outFile],
+                { dispatch },
+            );
+
+            expect(code).toBe(0);
+            expect(called).toEqual(['a', 'b']);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.summary.total).toBe(2);
+            expect(outData.targets.map((t: TargetOutcome) => t.target)).toEqual(['a', 'b']);
+        });
+    });
+
     it('R2 — --retry-from dispatches only the prior failures and carries successes as skipped', async () => {
         await withTempDir(async (root) => {
             const contentFile = join(root, 'content.json');
@@ -811,6 +831,33 @@ describe('runFanout', () => {
             const outData = JSON.parse(await Bun.file(outFile).text());
             expect(outData.targets[0]).toMatchObject({ target: 'fake-pub', status: 'failed', ok: false });
             expect(outData.targets[0].error).toContain('did not write a result file');
+        });
+    });
+
+    it('0157 R5 — names the target when its plugin writes invalid JSON (real dispatch)', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFakePublishPlugin(
+                pluginsRoot,
+                [
+                    "import { readFileSync, writeFileSync } from 'node:fs';",
+                    'const argv = process.argv.slice(2);',
+                    "readFileSync(argv[argv.indexOf('--in') + 1], 'utf-8');",
+                    "writeFileSync(argv[argv.indexOf('--out') + 1], 'not json');",
+                ].join('\n'),
+            );
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            const code = await runFanout(['--content', contentFile, '--target', 'fake-pub', '--out', outFile], {
+                pluginsRoot,
+            });
+
+            expect(code).toBe(1);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.targets[0]).toMatchObject({ target: 'fake-pub', status: 'failed', ok: false });
+            expect(outData.targets[0].error).toContain("Plugin 'fake-pub' wrote invalid JSON");
         });
     });
 

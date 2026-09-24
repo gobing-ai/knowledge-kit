@@ -302,6 +302,19 @@ async function withPluginPath<T>(pluginsRoot: string, fn: () => Promise<T>): Pro
     }
 }
 
+/** Run `fn` with KK_PLUGIN_PATH cleared (asserts discovery comes from --plugins-root alone). */
+async function withoutPluginPath<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = process.env.KK_PLUGIN_PATH;
+    delete process.env.KK_PLUGIN_PATH;
+    try {
+        return await fn();
+    } finally {
+        if (prev !== undefined) {
+            process.env.KK_PLUGIN_PATH = prev;
+        }
+    }
+}
+
 describe('runFanin source-runner mode (--source)', () => {
     // Source failures echo via echoError intentionally; capture ts-utils stderr
     // (instead of monkey-patching a logger) and keep the dots reporter clean.
@@ -316,6 +329,100 @@ describe('runFanin source-runner mode (--source)', () => {
     });
 
     const errLog = (): string => cap.readErr();
+
+    it('R3 — --plugins-root selects the discovery root for --source without KK_PLUGIN_PATH', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'src-a', { docId: 'root-1' });
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, '[]');
+            const outFile = join(root, 'merged.json');
+
+            const code = await withoutPluginPath(() =>
+                runFanin(['--source', `src-a:${inFile}`, '--out', outFile, '--plugins-root', pluginsRoot]),
+            );
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['root-1']);
+        });
+    });
+
+    it('R3 — --plugins-path unions the extra root into --source discovery', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'src-b', { docId: 'path-1' });
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, '[]');
+            const outFile = join(root, 'merged.json');
+
+            const code = await withoutPluginPath(() =>
+                runFanin(['--source', `src-b:${inFile}`, '--out', outFile, '--plugins-path', pluginsRoot]),
+            );
+
+            expect(code).toBe(0);
+            const outData = JSON.parse(await Bun.file(outFile).text());
+            expect(outData.map((d: { id: string }) => d.id)).toEqual(['path-1']);
+        });
+    });
+
+    it('R3 — --plugins-root with --plugins-path is a usage error and writes no output', async () => {
+        await withTempDir(async (root) => {
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, '[]');
+            const outFile = join(root, 'merged.json');
+
+            const code = await runFanin([
+                '--source',
+                `src-a:${inFile}`,
+                '--out',
+                outFile,
+                '--plugins-root',
+                join(root, 'p1'),
+                '--plugins-path',
+                join(root, 'p2'),
+            ]);
+
+            expect(code).toBe(2);
+            expect(errLog()).toContain('mutually exclusive');
+            expect(existsSync(outFile)).toBe(false);
+        });
+    });
+
+    it('R3 — a second --plugins-root is a usage error', async () => {
+        await withTempDir(async (root) => {
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, '[]');
+            const outFile = join(root, 'merged.json');
+
+            const code = await runFanin([
+                '--source',
+                `src-a:${inFile}`,
+                '--out',
+                outFile,
+                '--plugins-root',
+                root,
+                '--plugins-root',
+                root,
+            ]);
+
+            expect(code).toBe(2);
+            expect(errLog()).toContain('may be specified only once');
+        });
+    });
+
+    it('R3 — --plugins-root with no value is a usage error', async () => {
+        await withTempDir(async (root) => {
+            const inFile = join(root, 'in.json');
+            writeFileSync(inFile, '[]');
+            const outFile = join(root, 'merged.json');
+
+            const code = await runFanin(['--source', `src-a:${inFile}`, '--out', outFile, '--plugins-root']);
+
+            expect(code).toBe(2);
+            expect(errLog()).toContain('requires a directory path');
+        });
+    });
 
     it('R1 — spawns --source plugins concurrently (wall time ≈ slowest source, not the sum)', async () => {
         await withTempDir(async (root) => {

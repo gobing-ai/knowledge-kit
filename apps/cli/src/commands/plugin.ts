@@ -81,9 +81,9 @@ function printDiagnostics(report: PluginStatusJson): void {
     for (const p of report.plugins) {
         all.push(...p.diagnostics);
     }
-    echoError(`Found ${all.length} diagnostic issue(s):\n`);
+    echoError(`Found ${all.length} diagnostic issue(s):`);
     for (const d of all) {
-        echoError(`  [${d.code}] ${d.path}: ${d.reason}\n`);
+        echoError(`  [${d.code}] ${d.path}: ${d.reason}`);
     }
 }
 
@@ -97,7 +97,7 @@ function printDiagnostics(report: PluginStatusJson): void {
  */
 function statusAction(options: StatusOptions): void {
     if (options.pluginsRoot !== undefined && (options.pluginsPath?.length ?? 0) > 0) {
-        echoError('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)\n');
+        echoError('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)');
         throw new CommanderError(
             2,
             'kk.plugin.root-path-conflict',
@@ -109,7 +109,7 @@ function statusAction(options: StatusOptions): void {
     let records = report.plugins;
     if (options.kind) {
         if (!isPluginKind(options.kind)) {
-            echoError(`Invalid plugin kind: ${options.kind}\n`);
+            echoError(`Invalid plugin kind: ${options.kind}`);
             throw new CommanderError(1, 'kk.plugin.invalid-kind', `invalid plugin kind: ${options.kind}`);
         }
         records = report.plugins.filter((p) => p.kind === options.kind);

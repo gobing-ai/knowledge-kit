@@ -18,6 +18,8 @@ interface FaninOptions {
     source?: string[];
     sourceTimeout?: string;
     sourceTimeoutOverride?: string[];
+    pluginsRoot?: string;
+    pluginsPath?: string[];
 }
 
 /** Options accepted by the `executor fan-out` verb (and its hidden `fanout` alias). */
@@ -30,8 +32,8 @@ interface FanoutOptions {
     pluginsPath?: string[];
 }
 
-/** Collect repeated `--plugins-path` values into an array (commander last-wins otherwise). */
-function collectPath(value: string, acc: string[]): string[] {
+/** Accumulate a repeatable option into an array (commander keeps only the last value otherwise). */
+function collectRepeatable(value: string, acc: string[]): string[] {
     acc.push(value);
     return acc;
 }
@@ -57,18 +59,6 @@ async function runInvokeAction(plugin: string, options: RunOptions): Promise<voi
     }
 }
 
-/** Collect repeated `--in` values into an array (commander last-wins otherwise). */
-function collectIn(value: string, acc: string[]): string[] {
-    acc.push(value);
-    return acc;
-}
-
-/** Collect repeated `--source` values into an array (commander last-wins otherwise). */
-function collectSource(value: string, acc: string[]): string[] {
-    acc.push(value);
-    return acc;
-}
-
 /** Rebuild the flag slice so runFanin owns the CLI contract. */
 async function runFaninAction(options: FaninOptions): Promise<void> {
     const argv: string[] = [];
@@ -85,23 +75,17 @@ async function runFaninAction(options: FaninOptions): Promise<void> {
         argv.push('--source-timeout-override', override);
     }
     argv.push('--out', options.out);
+    if (options.pluginsRoot !== undefined) {
+        argv.push('--plugins-root', options.pluginsRoot);
+    }
+    for (const path of options.pluginsPath ?? []) {
+        argv.push('--plugins-path', path);
+    }
 
     const code = await runFanin(argv);
     if (code !== 0) {
         throw new CommanderError(code, 'kk.executor.fanin.failed', `fan-in failed with exit code ${code}`);
     }
-}
-
-/** Collect repeated `--target` values into an array (commander last-wins otherwise). */
-function collectTarget(value: string, acc: string[]): string[] {
-    acc.push(value);
-    return acc;
-}
-
-/** Collect repeated `--source-timeout-override` values into an array (commander last-wins otherwise). */
-function collectOverride(value: string, acc: string[]): string[] {
-    acc.push(value);
-    return acc;
 }
 
 /** Rebuild the flag slice so runFanout owns the CLI contract. */
@@ -126,100 +110,95 @@ async function runFanoutAction(options: FanoutOptions): Promise<void> {
     }
 }
 
+/** Declare the `run` flag contract once for `executor run` and the hidden `invoke` alias. */
+function withRunOptions(cmd: Command): Command {
+    return cmd
+        .requiredOption('--in <path>', 'Input file path (or source path for ingestion)')
+        .requiredOption('--out <path>', 'Output file path')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectRepeatable, []);
+}
+
+/** Declare the `fan-in` flag contract once for `executor fan-in` and the hidden `fanin` alias. */
+function withFaninOptions(cmd: Command): Command {
+    return cmd
+        .option('--in <path>', 'Input Doc[] JSON file (repeatable)', collectRepeatable, [])
+        .option(
+            '--source <plugin>:<file>',
+            'Ingestion source to spawn concurrently: plugin name and its input file (repeatable)',
+            collectRepeatable,
+            [],
+        )
+        .option('--source-timeout <ms>', 'Per-source timeout in milliseconds (default 1800000)')
+        .option(
+            '--source-timeout-override <plugin>:<ms>',
+            'Per-source timeout override for one named --source plugin, e.g. horizon-ingest:2700000 (repeatable; wins over --source-timeout/default)',
+            collectRepeatable,
+            [],
+        )
+        .requiredOption('--out <path>', 'Output merged Doc[] JSON file path')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectRepeatable, []);
+}
+
+/** Declare the `fan-out` flag contract once for `executor fan-out` and the hidden `fanout` alias. */
+function withFanoutOptions(cmd: Command): Command {
+    return cmd
+        .requiredOption('--content <path>', 'Source ContentSchema JSON file path')
+        .option('--target <plugin>', 'Target publish plugin name (repeatable)', collectRepeatable, [])
+        .requiredOption('--out <path>', 'Aggregate Result JSON file path')
+        .option('--retry-from <path>', 'Prior Result JSON file to retry only previously failed targets')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectRepeatable, []);
+}
+
 /**
  * Register the `executor` command group (run + fan-in + fan-out) and the
  * hidden one-release top-level aliases `invoke` / `fanin` / `fanout`
  * (ADR-011 R4). Hyphenated verb names are canonical; aliases reach the same
- * action functions — no second implementation.
+ * action functions — no second implementation. Each verb declares its flags
+ * once in a registrar, so a verb and its alias cannot drift apart.
  */
 export function registerExecutorCommand(program: Command): void {
     const executor = program
         .command('executor')
         .description('Run knowledge-kit plugin steps (invoke, fan-in, fan-out)');
 
-    executor
-        .command('run')
-        .description('Invoke a plugin with input/output files and contract validation')
-        .argument('<plugin>', 'Name of the plugin to invoke')
-        .requiredOption('--in <path>', 'Input file path (or source path for ingestion)')
-        .requiredOption('--out <path>', 'Output file path')
-        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
-        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
-        .action(runInvokeAction);
+    withRunOptions(
+        executor
+            .command('run')
+            .description('Invoke a plugin with input/output files and contract validation')
+            .argument('<plugin>', 'Name of the plugin to invoke'),
+    ).action(runInvokeAction);
 
-    executor
-        .command('fan-in')
-        .alias('fanin')
-        .description('Merge N Doc[] JSON inputs into one deduplicated Doc[] output')
-        .option('--in <path>', 'Input Doc[] JSON file (repeatable)', collectIn, [])
-        .option(
-            '--source <plugin>:<file>',
-            'Ingestion source to spawn concurrently: plugin name and its input file (repeatable)',
-            collectSource,
-            [],
-        )
-        .option('--source-timeout <ms>', 'Per-source timeout in milliseconds (default 1800000)')
-        .option(
-            '--source-timeout-override <plugin>:<ms>',
-            'Per-source timeout override for one named --source plugin, e.g. horizon-ingest:2700000 (repeatable; wins over --source-timeout/default)',
-            collectOverride,
-            [],
-        )
-        .requiredOption('--out <path>', 'Output merged Doc[] JSON file path')
-        .action(runFaninAction);
+    withFaninOptions(
+        executor
+            .command('fan-in')
+            .alias('fanin')
+            .description('Merge N Doc[] JSON inputs into one deduplicated Doc[] output'),
+    ).action(runFaninAction);
 
-    executor
-        .command('fan-out')
-        .alias('fanout')
-        .description('Publish one Content JSON to N targets, aggregating per-target results')
-        .requiredOption('--content <path>', 'Source ContentSchema JSON file path')
-        .option('--target <plugin>', 'Target publish plugin name (repeatable)', collectTarget, [])
-        .requiredOption('--out <path>', 'Aggregate Result JSON file path')
-        .option('--retry-from <path>', 'Prior Result JSON file to retry only previously failed targets')
-        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
-        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
-        .action(runFanoutAction);
+    withFanoutOptions(
+        executor
+            .command('fan-out')
+            .alias('fanout')
+            .description('Publish one Content JSON to N targets, aggregating per-target results'),
+    ).action(runFanoutAction);
 
     // Hidden one-release aliases (ADR-011 R4): same engines, same flags, not
     // listed in `kk --help`.
-    program
-        .command('invoke', { hidden: true })
-        .description('Alias for `executor run` (deprecated)')
-        .argument('<plugin>', 'Name of the plugin to invoke')
-        .requiredOption('--in <path>', 'Input file path (or source path for ingestion)')
-        .requiredOption('--out <path>', 'Output file path')
-        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
-        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
-        .action(runInvokeAction);
+    withRunOptions(
+        program
+            .command('invoke', { hidden: true })
+            .description('Alias for `executor run` (deprecated)')
+            .argument('<plugin>', 'Name of the plugin to invoke'),
+    ).action(runInvokeAction);
 
-    program
-        .command('fanin', { hidden: true })
-        .description('Alias for `executor fan-in` (deprecated)')
-        .option('--in <path>', 'Input Doc[] JSON file (repeatable)', collectIn, [])
-        .option(
-            '--source <plugin>:<file>',
-            'Ingestion source to spawn concurrently: plugin name and its input file (repeatable)',
-            collectSource,
-            [],
-        )
-        .option('--source-timeout <ms>', 'Per-source timeout in milliseconds (default 1800000)')
-        .option(
-            '--source-timeout-override <plugin>:<ms>',
-            'Per-source timeout override for one named --source plugin, e.g. horizon-ingest:2700000 (repeatable; wins over --source-timeout/default)',
-            collectOverride,
-            [],
-        )
-        .requiredOption('--out <path>', 'Output merged Doc[] JSON file path')
-        .action(runFaninAction);
+    withFaninOptions(
+        program.command('fanin', { hidden: true }).description('Alias for `executor fan-in` (deprecated)'),
+    ).action(runFaninAction);
 
-    program
-        .command('fanout', { hidden: true })
-        .description('Alias for `executor fan-out` (deprecated)')
-        .requiredOption('--content <path>', 'Source ContentSchema JSON file path')
-        .option('--target <plugin>', 'Target publish plugin name (repeatable)', collectTarget, [])
-        .requiredOption('--out <path>', 'Aggregate Result JSON file path')
-        .option('--retry-from <path>', 'Prior Result JSON file to retry only previously failed targets')
-        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
-        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
-        .action(runFanoutAction);
+    withFanoutOptions(
+        program.command('fanout', { hidden: true }).description('Alias for `executor fan-out` (deprecated)'),
+    ).action(runFanoutAction);
 }

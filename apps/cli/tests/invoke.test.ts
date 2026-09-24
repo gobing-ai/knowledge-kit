@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
@@ -404,6 +404,99 @@ describe('runInvoke', () => {
             }
             // Input untouched.
             expect(JSON.parse(await Bun.file(sameFile).text())).toEqual({ body: 'Article content' });
+        });
+    });
+
+    /**
+     * Fixture publish plugin for the 0157 R1 alias tests: its entry writes a marker when
+     * spawned, so a test asserting the marker is absent proves the run stopped before any spawn.
+     */
+    function writeAliasPubPlugin(root: string, marker: string): void {
+        const pluginDir = pluginDirOf(root, 'publish', 'alias-pub');
+        const scriptsDir = join(pluginDir, 'scripts');
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(
+            join(pluginDir, 'plugin.json'),
+            JSON.stringify({ name: 'alias-pub', kind: 'publish', entry: 'scripts/run.ts' }),
+        );
+        writeFileSync(
+            join(scriptsDir, 'run.ts'),
+            `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'ran');\n`,
+        );
+    }
+
+    const ALIAS_INPUT = JSON.stringify({ body: 'Article content' });
+
+    it('0157 R1 — --out differing only by letter case is rejected as an alias (case-insensitive fs)', async () => {
+        await withTempDir(async (root) => {
+            // Guard: on a case-sensitive file system the lower-case spelling is a distinct
+            // (non-existent) path, so there is no alias to detect — the body is a no-op there.
+            const inPath = join(root, 'In.json');
+            const outPath = join(root, 'in.json');
+            writeFileSync(inPath, ALIAS_INPUT);
+            if (!existsSync(outPath)) return;
+
+            const marker = join(root, 'entry-ran.marker');
+            writeAliasPubPlugin(root, marker);
+            const cap = captureOutput();
+            try {
+                const res = await runInvoke({ plugin: 'alias-pub', inPath, outPath, pluginsRoot: root });
+                expect(res).toBe(1);
+                expect(cap.readErr()).toContain('alias the same path');
+            } finally {
+                cap.restore();
+            }
+            // Input untouched, entry never spawned.
+            expect(readFileSync(inPath, 'utf-8')).toBe(ALIAS_INPUT);
+            expect(existsSync(marker)).toBe(false);
+        });
+    });
+
+    it('0157 R1 — --out through a symlinked parent directory is rejected as an alias', async () => {
+        await withTempDir(async (root) => {
+            const dir = join(root, 'd');
+            mkdirSync(dir);
+            const inPath = join(dir, 'in.json');
+            writeFileSync(inPath, ALIAS_INPUT);
+            symlinkSync(dir, join(root, 'ld'));
+            const outPath = join(root, 'ld', 'in.json');
+
+            const marker = join(root, 'entry-ran.marker');
+            writeAliasPubPlugin(root, marker);
+            const cap = captureOutput();
+            try {
+                const res = await runInvoke({ plugin: 'alias-pub', inPath, outPath, pluginsRoot: root });
+                expect(res).toBe(1);
+                expect(cap.readErr()).toContain('alias the same path');
+            } finally {
+                cap.restore();
+            }
+            // Input untouched, entry never spawned.
+            expect(readFileSync(inPath, 'utf-8')).toBe(ALIAS_INPUT);
+            expect(existsSync(marker)).toBe(false);
+        });
+    });
+
+    it('0157 R1 — --out symlinked to the input file is rejected as an alias', async () => {
+        await withTempDir(async (root) => {
+            const inPath = join(root, 'in.json');
+            writeFileSync(inPath, ALIAS_INPUT);
+            const outPath = join(root, 'out-link.json');
+            symlinkSync(inPath, outPath);
+
+            const marker = join(root, 'entry-ran.marker');
+            writeAliasPubPlugin(root, marker);
+            const cap = captureOutput();
+            try {
+                const res = await runInvoke({ plugin: 'alias-pub', inPath, outPath, pluginsRoot: root });
+                expect(res).toBe(1);
+                expect(cap.readErr()).toContain('alias the same path');
+            } finally {
+                cap.restore();
+            }
+            // Input untouched, entry never spawned.
+            expect(readFileSync(inPath, 'utf-8')).toBe(ALIAS_INPUT);
+            expect(existsSync(marker)).toBe(false);
         });
     });
 

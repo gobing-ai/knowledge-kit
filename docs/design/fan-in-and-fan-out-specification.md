@@ -28,6 +28,11 @@ This specification defines the CLI surface, data contracts, exit codes, deduplic
 > union). Repeatable `--plugins-path <dir>` unions extra roots (tree, kind collection, or single
 > `plugin.json` directory) with the defaults. Combining `--plugins-root` with `--plugins-path`
 > is a usage error → exit `2` (extends §4's CLI/Input Error row). Retry semantics unchanged.
+>
+> **Dated correction (2026-09-24).** `fan-in` gains the same root flags for `--source` discovery:
+> `--plugins-root <dir>` (exclusive single root) and `--plugins-path <dir>` (repeatable union with
+> the defaults), with the same mutual-exclusion usage error → exit `2`. Previously fan-in always
+> used the default merged registry, so a pipeline could not isolate its ingestion sources.
 
 ---
 
@@ -166,6 +171,10 @@ item 4 stands — only prior failed targets are retried by default, and an expli
 selection narrows that set (deduped); previously unattempted names in an explicit selection
 remain eligible and are dispatched fresh. The aggregate always carries every outstanding
 outcome. No new flags.
+
+**2026-09-24 clarification (shipped — task 0157 R2).** Repeated `--target` names are deduped on
+fresh runs too, not only when `--retry-from` supplies the set: each distinct target is dispatched
+once and appears once in the aggregate.
 
 ---
 
