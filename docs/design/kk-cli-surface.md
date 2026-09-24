@@ -81,7 +81,7 @@ kk help <command>
 kk --version | -V
 kk --verbose | -v <command> …
 kk executor run     <plugin> --in <path> --out <path> [--plugins-root <dir>] [--plugins-path <dir> …]
-kk executor fan-in  --in <f>… --out <path>
+kk executor fan-in  --in <f>… --out <path> [--plugins-root <dir> | --plugins-path <dir> …]
 kk executor fan-out --content <path> --target <p>… --out <path> [--retry-from <path>] [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status    [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
 ```

@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.24.0
+version: 1.25.0
 created_at: 2026-05-28
-updated_at: 2026-09-17
+updated_at: 2026-09-24
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -594,6 +594,12 @@ repeatable `--plugins-path` lands on `kk executor run` / `kk executor fan-out` /
 status`; `KK_PLUGIN_PATH` is honored; `--plugins-root` is the exclusive single-root override and
 combining it with `--plugins-path` exits `2`. The B3 workflow template injects
 `--plugins-path ${vars.plugins_path}`. Status moves from `Accepted (design)` to `Accepted`.
+
+### Amendment — 2026-09-24 (fan-in honours the root flags)
+
+`kk executor fan-in` also accepts `--plugins-root` (exclusive) and `--plugins-path` (union) for
+its `--source` discovery; combining them is a usage error (exit `2`). Task 0157 R3. The ADR-012
+decision is unchanged — R4/R6 now apply to the sibling verb too.
 
 ---
 

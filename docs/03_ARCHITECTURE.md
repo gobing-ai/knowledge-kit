@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.23.0
+version: 2.24.0
 created_at: 2026-07-22
-updated_at: 2026-09-17
+updated_at: 2026-09-24
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -141,7 +141,7 @@ the shipped kind contract, so a brief object is rejected as invalid `Doc[]`.
 Siblings of `executor run`, so the single-plugin invoker contract stays intact (ADR-006):
 
 ```text
-kk executor fan-in  --in <f1> [--in <f2> …] --out <merged.json>
+kk executor fan-in  --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                     --out <result.json> [--retry-from <prior-result.json>]
                     [--plugins-root <dir>] [--plugins-path <dir> …]
@@ -153,7 +153,9 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
 - **Concurrent collect (`--source`):** the daily workflow's single collect state passes
   `--source "<plugin>:<config-file>"` pairs instead of pre-materialized `--in` files; fan-in spawns
   each plugin (executor `run` contract, plugin resolved by name) and merges the outputs, so
-  per-source documents never land in the workspace (0097).
+  per-source documents never land in the workspace (0097). `--source` discovery uses the merged
+  registry by default; `--plugins-root` (exclusive) / `--plugins-path` (union) narrow it, and
+  combining them is a usage error (0157 R3).
 - **Fan-out (1→N):** dispatch `Content` to N publishers **in sequence**; emit one aggregate `Result`
   with a per-target entry (`published | failed | skipped`) plus summary counters.
 - **Partial success:** successful targets stay published and are individually re-runnable via
@@ -191,8 +193,8 @@ implemented them with regression coverage. The executor now enforces:
 | Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Product entries are Bun-bundled to `dist/index.js` at staging; manifests rewritten to `./dist/index.js`; `node_modules` is pruned so workspace symlinks do not ship; missing entry / failed build / zero plugins fail loud (I1, 0111) |
 | Cancellation / `apps/cli/src/invoke.ts` | Source timeout terminates and reaps owned descendants without affecting siblings | `killProcessTree` (descendants first, then entry) on a self-managed `timeoutMs` timer so the walk runs while the entry is alive (I2) |
 | Kind contract / `kk-core` + executor | Plugin-specific render operations preserve generic kind validation | Publish input is `Content` again; non-`Content` inputs require a manifest-declared `operations` entry, validated and dispatched by declaration (I3) |
-| Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | `TargetOutcome.metadata` round-trips; primitive metadata in a prior ledger is a named input error, exit 2 (I4) |
-| Invocation completion / `apps/cli/src/invoke.ts` | Only output produced by this invocation can establish success | `--in`/`--out` aliasing rejected pre-mutation; stale `--out` unlinked before spawn (delete-or-verify) (I5) |
+| Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | Prior ledgers validate through kk-core `AggregateResultSchema`/`TargetOutcomeSchema` (0157 R11); `TargetOutcome.metadata` round-trips; a wrong-typed or primitive field is a named input error, exit 2 (I4) |
+| Invocation completion / `apps/cli/src/invoke.ts` | Only output produced by this invocation can establish success | `--in`/`--out` aliasing rejected pre-mutation by file identity (dev+ino, not path string — 0157 R1); stale `--out` unlinked before spawn (delete-or-verify) (I5) |
 | Publish completion / `apps/cli/src/invoke.ts` | A valid `Result` with `ok: false` yields non-zero exit | Single invocations reject `ok: false` with `reported failure: <reason>`, exit 1, artifact kept (I6) |
 | Retry aggregation / `apps/cli/src/fanout.ts` | Retain failures excluded from the selected retry subset | Prior failures outside the explicit selection stay `failed` in the aggregate; `ok: false` and exit 1 preserved (I7) |
 
@@ -298,7 +300,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | Module | Package name | Responsibility | May depend on |
 | -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
-| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result schemas, `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
+| `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result + fan-out aggregate schemas (`TargetOutcomeSchema` / `AggregateResultSchema`, 0157 R11), `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
 | `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` / `FakeBrowserTransport`; browser session helpers (`resolveBrowserProfileDir`, `trySelectors`, `launchPersistentBrowser`) | `@gobing-ai/kk-core` |
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
@@ -384,7 +386,7 @@ single-root: tests and isolation only). Combining the two flags is a usage error
 
 Built-ins are the `bundle-plugins` staged tree next to the published `kk` package, not a
 static import table and not spur PluginHost / workflow action kinds. Workflow YAML still
-shells `kk executor run|fan-out <name>` — composition stays in spur; discovery stays in kk.
+shells `kk executor run|fan-in|fan-out <name>` — composition stays in spur; discovery stays in kk.
 
 Full signatures: `docs/design/multi-root-plugin-discovery.md`.
 

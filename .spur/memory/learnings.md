@@ -796,3 +796,80 @@ daily workflow artifact is unchanged" refers to the markdown deliverable through
 **Pattern — project convention: 04 content edits bump `updated_at` but not `version`** (matches
 `53ce3e51`); satellite `docs/design/*.md` specs carry no frontmatter but are T3 surface — the
 audit sweep must grep them, not just `04` (constitution lesson 2026-08-12).
+Doc-evolve `wrapup` complete for task **0157**. Repairs are surgical, constitution-cited, and limited to the four named docs; no task/feature corpus written.
+
+## Drift report (0157 blast radius)
+
+| # | Doc | Code/shipped says | Doc said | Authority | Repair |
+|---|-----|-------------------|----------|-----------|--------|
+| 1 | `docs/04_DESIGN.md:56` | `fan-in` accepts `--plugins-root`/`--plugins-path` (0157 R3) | §1 summary line had no root flags (only §1.5 did) | §6.5 T3 | added `[--plugins-root <dir> \| --plugins-path <dir> …]` |
+| 2 | `docs/04_DESIGN.md:99,307` | alias rejected by file identity, `dev`+`ino` (R1) | "aliasing the same path" (string) | §6.5 | reworded to "same file — identity, not path string" |
+| 3 | `docs/04_DESIGN.md:393` | `TargetOutcomeSchema`/`AggregateResultSchema` + types are public kk-core exports (R11) | §4 export table omitted them | §6.5 T3 | added Zod-schema + type rows |
+| 4 | `docs/04_DESIGN.md:640` | `kk stage` checkout fallback = module path, never cwd (R4) | "explicit checkout fallback `plugins/kk/...`" (cwd) | §6.5 | corrected to module-derived checkout root |
+| 5 | `docs/04_DESIGN.md` frontmatter | edited 2026-09-24 by 0157 | `updated_at: 2026-09-17`, `version: 2.29.0` | §4.3 r3 | `2.30.0` / `2026-09-24` |
+| 6 | `docs/03_ARCHITECTURE.md:144` | fan-in CLI shape | fan-in line had no root flags | §6.4 | added flags; added `--source` discovery clause (R3) |
+| 7 | `docs/03_ARCHITECTURE.md:197` | identity-based alias guard (R1) | "aliasing rejected pre-mutation" | §6.4 r4 | named file identity |
+| 8 | `docs/03_ARCHITECTURE.md:196` | kk-core `AggregateResultSchema` validation (R11) | "primitive metadata … exit 2" only | §6.4 r4 | named schema validation |
+| 9 | `docs/03_ARCHITECTURE.md:303` | kk-core owns fan-out aggregate schemas | module row omitted them | §6.4 r4 | added to responsibility |
+| 10 | `docs/03_ARCHITECTURE.md:389` | fan-in resolves plugins too | "shells `run\|fan-out`" | §6.4 | `run\|fan-in\|fan-out` |
+| 11 | `docs/00_ADR.md` ADR-012 | fan-in honours the flags | B7 list named only run/fan-out/plugin | §6.1 r3 | dated `**Amendment — 2026-09-24**` |
+| 12 | `docs/design/kk-cli-surface.md:84` | current surface | fan-in line had no root flags | §6.5 T3 | added flags |
+
+**Checks run (deterministic):** `rg "kk executor fan-in"` across `00/03/04/design/*/AGENTS.md`; `rg "TargetOutcomeSchema|AggregateResultSchema"`; `rg "aliasing the same path"` → 0; `rg "explicit checkout fallback"` → 0; `git show 29bf6447` diff vs doc edits. **No residual drift found.**
+
+**Deliberately not edited:** `docs/design/fan-in-and-fan-out-specification.md` §1.1/§1.2 — it uses the satellite convention (original text + dated correction block); 0157's dated correction already carries the flags. `AGENTS.md` — it names no `kk` flags, so T3's surface-block clause has nothing to sync.
+
+**Reported, not repaired (pre-existing, needs operator call):** `kk stage` is a shipped top-level verb (0144) missing from `04` §1's command index, while ADR-011 R1 states first-layer nouns are "exactly `executor` and `plugin`". Deciding whether `stage` is a machine-facing orchestration seam (amend ADR-011, dated) or should be hidden is a governance call outside 0157.
+
+**Verification:** `bun run lint` → exit 0 (biome + typecheck). `git status`: only the 4 doc files changed by me; the pre-existing `0156` task-file edit and untracked `.spur/context/answers/0156.yaml` were preserved untouched. Artifact written: `.spur/run/91c853eb-1aa1-4a49-8c54-7a5037176835-wrapup-learnings.md` (7734 bytes).
+
+# Wrapup learnings — run 91c853eb-1aa1-4a49-8c54-7a5037176835
+
+Task set (normalized capture `.spur/run/91c853eb-1aa1-4a49-8c54-7a5037176835-wrapup-tasks.json`): 0157.
+Doc-drift repairs applied this wrapup: `docs/00_ADR.md` (ADR-012 dated amendment), `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`, `docs/design/kk-cli-surface.md`.
+
+## 2026-09-24 — 0157 · invoke input-deletion alias, fan-out duplicate publish, fan-in plugin roots + CLI hardening
+
+### Conventions
+
+- Same-commit doc sync (constitution T3 / §6.5) covers **every** surface index, not just the section the change touches. 0157 updated `04` §1.5/§1.6 + the fan-in/fan-out spec, but left four indexes stale: the `04` §1 summary CLI block, the `04` §4 `kk-core` public-export table, ADR-012's committed-surface verb list, and `docs/design/kk-cli-surface.md`. A new flag or schema must be grepped across `04`, `03`, `00`'s committed-surface lists, and `docs/design/*` in the same commit.
+- Numbered-doc frontmatter is a contract (§4.3 rule 3): bump `version` (minor) and refresh `updated_at` on any substantive edit. 0157 edited `04` on 2026-09-24 but left `updated_at: 2026-09-17` — stale-frontmatter drift the audit catches.
+- Design satellites (`docs/design/*`) keep original text and layer **dated correction blocks** at the top; do not rewrite historical §1.x tables in place. 0157's spec edit correctly added a dated correction instead of editing §1.2.
+- ADRs are append-only (§6.1 rule 3). Extending an existing decision to a sibling verb is a dated `**Amendment (YYYY-MM-DD)**` block inside the entry, not a new ADR. 0157's fan-in root flags re-use ADR-012 R4/R6 → no new ADR, but ADR-012's shipped verb list needed the dated note.
+- Keep one option registrar per executor verb, shared by the hidden aliases (R9) — prevents `--help` drift between `fan-out` and `fanout`.
+- Wire formats belong in `@gobing-ai/kk-core` Zod schemas, not hand-written interfaces (R11).
+- Shared code with a cross-package consumer goes to `kk-core`; `apps/cli` has no direct `zod` dependency, so a local schema there would force a new dependency (C3 placement decision).
+
+### Errors fixed (root causes)
+
+- **R1 — silent input deletion.** `path.resolve` is lexical: no case folding, no symlink resolution. On case-insensitive APFS or with a symlinked parent or `--out`, `--in` and `--out` differ as strings but are the same file, so the stale-output `unlinkSync` deleted the input before the child read it. Fix: compare file identity (`statSync().dev` + `.ino`, follows symlinks) behind an `existsSync` guard, before the clear. Root-cause class: a destructive-boundary "same path" guard must use file identity, never string equality.
+- **R2 — duplicate dispatch.** Dedupe existed only in the `--retry-from` branch; the fresh path passed `opts.targets` straight through, so repeated `--target x` published twice, contradicting the function's own docstring ("exactly once per run"). Fix: `[...new Set(opts.targets)]` on the fresh path. A documented invariant needs a test on **every** branch that can violate it.
+- **R3 — sibling-verb parity gap.** When `run`/`fan-out` gained the ADR-012 root flags (B7), `fan-in`'s `--source` discovery was left calling `discoverAllPlugins({})` even though a comment claimed it used "the same discovery entry point as runInvoke". Tests only exercised `KK_PLUGIN_PATH`, so the gap never failed. A comment asserting parity is not parity — grep every sibling verb that resolves plugins when adding a cross-cutting flag.
+- **R4 — cwd-anchored trusted script.** `kk stage`'s dev-tier fallback used `resolve(STAGES_REL)` = current directory; tests `chdir`'d into the repo root, hiding it, and a planted `plugins/kk/scripts/kk-workflow-stages.ts` in cwd would be executed. Fix: anchor to `resolve(import.meta.dir, '../../..')` (CHECKOUT_ROOT). Never resolve a trusted script relative to cwd. Note: `bun build` keeps `import.meta.dir` a runtime expression equal to the bundle dir, so one anchor serves both `src` and `dist`.
+- **R5 — copy drifted from its twin.** fan-in's source runner had a JSON-parse `try`; fan-out's original read never got it back-ported, so a plugin writing invalid JSON threw a `SyntaxError` that was caught per-target but named no plugin. Fix: one shared `readPluginJson`. When a read/parse block is copied between runners, back-port the hardening.
+- **R6 — double newline.** `echoError` already appends `\n`; `commands/plugin.ts` added another, yielding blank lines between diagnostics. Know the writer's framing before adding newlines.
+- **R10 — five duplicated zod-issue formatters** drifted apart (and caused R5's inconsistency). Fix: a single `formatIssues` in `apps/cli/src/plugin-output.ts`.
+- **R11 — hand-rolled wire validation.** The aggregate wire format (spec §3.1) existed only as a TS interface; `readAggregateResult` hand-validated ~90 lines field by field while every other wire format used a kk-core Zod schema. Fix: `TargetOutcomeSchema`/`AggregateResultSchema` in kk-core; map the first Zod issue back to the legacy message tails so asserted substrings stay byte-identical.
+
+### Patterns
+
+- **Test-first red evidence per AC** on the pre-fix tree (`main@d4dd562d`), recorded as an AC → command → result table, then green after the fix.
+- **Message-tail preservation across a schema migration:** `describeAggregateIssue` maps the first Zod `issue.path` (`root`, `targets.<i>.metadata`, `targets.<i>.*`, other) back to the exact legacy strings, so four existing assertions stayed green unedited. Migrate the validator, not the tests.
+- **Surface-neutral refactor proof:** capture `--help` before/after and diff (R9 registrar refactor).
+- **Static red/green counts via `rg`** for pure refactors (e.g. `function collect` 5→1, `'--plugins-root <dir>'` 4→3) — cheap deterministic evidence without a runtime test.
+- **Trust-boundary strictness accepted:** a wrong-typed optional field (`url: 5`) in a prior ledger now rejects (exit 2) instead of being silently dropped, because the ledger is kk-written. No existing test relied on dropping, so no `.catch(undefined)` escape hatch was needed.
+
+### Gotchas
+
+- `path.resolve` ≠ file identity. `statSync` follows symlinks (`lstatSync` does not). `unlink` removes one name only, so a symlinked or hard-linked `--out` does not lose data but still aliases the write.
+- A case-variant alias test is non-deterministic on case-sensitive Linux CI; the early-return `existsSync` guard keeps it green there while the symlink cases still fail on the old code.
+- `rg -l "AggregateResult|TargetOutcome"` before moving the interfaces to kk-core — find every importer first.
+- Coverage gate is ≥90/90 line/function aggregate; R11 reached 100% on the touched files.
+- `spur task check` on a task with no `feature_id` emits an expected `L4.missing-feature-id` warning, not a failure.
+- Project gate order: `bun run format` then `bun run gate` (format + build + lint + rules + tests).
+
+### Wrapup-level lesson (doc drift)
+
+The drift audit must diff the whole surface-index set, not just the section the implementing task edited: the `04` §1 summary block, `04` §4 public-export tables, `00` ADR committed-surface lists, and `docs/design/*` satellites. 0157 passed its own T3 check for §1.5/§1.6 and still left four stale indexes — "I updated the docs" is not the same as "every index that names the changed surface is current".
+
+Open/pre-existing (reported, not repaired): `kk stage` is a shipped top-level verb (0144) absent from `04` §1's command index, while ADR-011 R1 says first-layer nouns are "exactly `executor` and `plugin`". Needs an operator call — treat `stage` as a machine-facing orchestration verb (amend ADR-011 with a dated note) or hide it. Not 0157-introduced, so left untouched.

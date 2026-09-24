@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.29.0
+version: 2.30.0
 created_at: 2026-07-22
-updated_at: 2026-09-17
+updated_at: 2026-09-24
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -53,7 +53,7 @@ Package: `@gobing-ai/knowledge-kit` · Binary: `kk` (alias `knowledge-kit`) · P
 kk --help
 kk --version
 kk executor run <plugin> --in <path> --out <path> [--plugins-root <dir>] [--plugins-path <dir> …]
-kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json>
+kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                    --out <result.json> [--retry-from <prior-result.json>]
                    [--plugins-root <dir>] [--plugins-path <dir> …]
@@ -96,7 +96,7 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
    Manifest-declared `operations` dispatch (0110 I3) validates input/output per declaration;
    undeclared array dispatch is rejected pre-spawn.
 6. `--plugins-root` and `--plugins-path` are mutually exclusive (usage error, exit 2).
-7. Rejects `--in`/`--out` aliasing the same path pre-mutation (0110 I5) and unlinks the stale
+7. Rejects `--in`/`--out` naming the same file — identity (dev+ino), not path string — pre-mutation (0110 I5, hardened 0157 R1) and unlinks the stale
    `--out` file before spawn, so only output produced by this invocation can establish success.
 
 **Implementation:** `apps/cli/src/invoke.ts` (engine). Shipped in task 0110: the publisher input
@@ -304,7 +304,7 @@ check artifact existence/non-empty only, `doc-list` ops validate the array. Ordi
 invocations bypass operations entirely and validate against `kindContract('publish').input`/`.output`
 as before; a publish whose `Result` parses but carries `ok: false` fails the invocation
 (`reported failure: <reason>`, exit 1, artifact kept for inspection, 0110 I6). `--in` and `--out`
-aliasing the same path is rejected pre-mutation (0110 I5); the exact `--out` path is unlinked
+naming the same file (dev+ino identity, not path string — 0157 R1) is rejected pre-mutation (0110 I5); the exact `--out` path is unlinked
 before spawn, so success always reflects fresh output (delete-or-verify).
 
 ## 2. Configuration keys
@@ -390,6 +390,8 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
 | `DocSchema`, `ContentSchema`, `ResultSchema`, `DocListSchema`, `omniVoiceGenContentSchema` | Zod schemas | Pure data contract schemas; `omniVoiceGenContentSchema` pins omni-voice-gen audio output (`format: "audio"`, `metadata.generator: "kk:omni-voice-gen"`, F611/0121) |
+| `TargetOutcomeSchema`, `AggregateResultSchema` | Zod schemas | Fan-out aggregate `Result` (spec §3.1): per-target `published \| failed \| skipped` outcomes + summary counters; prior-ledger reads validate through it (0110 I4, 0157 R11) |
+| `TargetOutcome`, `AggregateResult` | types | Inferred from the two schemas above (0157 R11) |
 | `BriefSchema`, `GeneratorInputSchema` | Zod schemas | **Specified, not implemented** (ADR-007 R3; feature D) |
 | `Doc`, `Content`, `Result` | types | Inferred TypeScript types |
 | `Brief`, `GeneratorInput` | types | **Specified, not implemented** (ADR-007 R3; feature D) |
@@ -635,7 +637,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
 - Source missing from all roots → exit 1, stderr lists every searched root.
-- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty delegated actions) runs `kk stage <stage> [args…]` (0144): the `stage` verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` from the installed package (two levels up from the running `kk` entry) with the explicit checkout fallback `plugins/kk/scripts/kk-workflow-stages.ts`, then spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
+- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty delegated actions) runs `kk stage <stage> [args…]` (0144): the `stage` verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` from the installed package (two levels up from the running `kk` entry) with the checkout-root fallback derived from this module's own path — never the current directory (0157 R4), then spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
 
 ### 7.2 `/workflow-run` command surface
 
