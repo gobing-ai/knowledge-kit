@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: gemini-tts replicated-voice creation helper and operator runbook
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-09-24T17:58:49.694Z
-updated_at: "2026-09-24T18:07:09.997Z"
+updated_at: "2026-09-24T19:48:20.451Z"
 feature_id: F612
 priority: P2
 tags:
@@ -71,15 +71,23 @@ Then run a one-segment VoiceScript through `kk executor run gemini-tts --in … 
 
 ### Plan
 
-- [ ] validateVoiceWav (reuse voice-gen parseWav) + tests
-- [ ] createReplicatedVoice + CLI main + fetch-stub tests
-- [ ] README runbook (Voicebox sample export, ffmpeg fallback, create, wire, renew, git hygiene)
-- [ ] bun run gate
+- [x] validateVoiceWav (reuse voice-gen parseWav) + tests
+- [x] createReplicatedVoice + CLI main + fetch-stub tests
+- [x] README runbook (Voicebox sample export, ffmpeg fallback, create, wire, renew, git hygiene)
+- [x] bun run gate
 - [ ] operator run: create voice from Voicebox consent sample + robin-news.wav; write operator profile map + GEMINI_TTS_PROFILES; one live render per model variant
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Bun CLI beside the adapter. WAV checks reuse voice-gen `parseWav`. No new audio dependency and no Voicebox client inside the helper.
+
+- `plugins/generations/gemini-tts/src/voice-create.ts:23` `validateVoiceWav` requires RIFF PCM 24 kHz mono 16-bit and, for `source` only, 10–30s. The error names the measured rate, channels, bits, and duration.
+- `plugins/generations/gemini-tts/src/voice-create.ts:67` `createReplicatedVoice` POSTs `{base}/v1beta/voices` with `store`, `type: replicated`, base64 WAV parts, and `x-goog-api-key`. The id is the first `voice_` / `voicekey_` string in `name`, `id`, `key`, or nested `voice`. Errors redact the key.
+- `plugins/generations/gemini-tts/src/voice-create.ts:126` `main` reads `--source`, `--consent`, `--name`, `--store` (default true), and `--model` (`GEMINI_TTS_MODEL` or `gemini-3.8-flash-tts`).
+- `plugins/generations/gemini-tts/README.md` is the runbook: consent statement, Voicebox sample export, ffmpeg conversion, create, operator profile map, renewal, and git hygiene.
+- Tests: `plugins/generations/gemini-tts/tests/voice-create.test.ts` (fetch stub, no live API in the suite). This run: 8 tests pass. `voice-create.ts` coverage 100% functions / 99.27% lines.
+
+**R4 operator run did not produce a voice id.** Consent sample `50d17c43-817b-4408-9900-ee93cc0d29c3` probed as pcm_s16le, 24000 Hz, 1 channel, 7.13s. `robin-news.wav` is pcm_s16le, 24000 Hz, mono, 28.39s. `POST /v1beta/voices` to `generativelanguage.googleapis.com` with `gemini-3.8-flash-tts` returned HTTP 500 `Error translating server response to JSON` for the full clip, a 16s re-encode, a 12s slice from 1s, and `store=false`. `gemini-3.8-flash-lite-tts` returned HTTP 400: that model does not support voice replication. `GET /v1beta/voices` showed no custom replicated voice afterward. No operator profile map was written.
 
 ### Testing
 
@@ -94,3 +102,6 @@ Then run a one-segment VoiceScript through `kk executor run gemini-tts --in … 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-24T19:48:20.451Z todo → wip (system)
+
