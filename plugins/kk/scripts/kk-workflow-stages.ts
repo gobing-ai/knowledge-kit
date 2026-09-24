@@ -965,7 +965,11 @@ function dailyGenerate(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', vdriver = ''] = args;
     // 20260917 review: the workflow picks a voice driver by short name; both drivers' envs are
     // passed unconditionally so switching `vdriver` needs no shell changes. Unknown -> fail loud.
-    const VOICE_DRIVERS: Record<string, string> = { ominivoice: 'omni-voice-gen', voicebox: 'voice-gen' };
+    const VOICE_DRIVERS: Record<string, string> = {
+        ominivoice: 'omni-voice-gen',
+        voicebox: 'voice-gen',
+        gemini: 'gemini-tts',
+    };
     const voiceGenerator = VOICE_DRIVERS[vdriver];
     if (!voiceGenerator) {
         failWith(

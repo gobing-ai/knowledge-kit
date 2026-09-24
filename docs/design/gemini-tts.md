@@ -1,6 +1,6 @@
 # gemini-tts — Gemini 3.8 TTS voice generator (hosted)
 
-Status: accepted design (F612). Companion to `voice-gen.md`: gemini-tts **is** voice-gen's pipeline
+Status: shipped (F612). Companion to `voice-gen.md`: gemini-tts **is** voice-gen's pipeline
 with a different backend client, so only the client, profile map, and operator runbook are specified
 here. Where this doc and `voice-gen.md` disagree, this doc wins for gemini-tts.
 

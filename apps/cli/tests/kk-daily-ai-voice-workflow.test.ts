@@ -247,6 +247,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         for (const [vdriver, qcPassed] of [
             [undefined, true],
             ['ominivoice', true],
+            ['gemini', true],
             [undefined, false],
         ] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
@@ -400,6 +401,16 @@ if (plugin === 'aihot-ingest') {
         format: 'audio',
         metadata: { audioPath: wavPath, generator: 'kk:omni-voice-gen', qc },
     }));
+} else if (plugin === 'gemini-tts') {
+    readFileSync(inPath, 'utf8');
+    const wavPath = join(dirname(outPath), 'content.wav');
+    writeFileSync(wavPath, 'RIFF-fake-wave');
+    writeFileSync(outPath, JSON.stringify({
+        title: 'Daily AI News',
+        body: wavPath,
+        format: 'audio',
+        metadata: { audioPath: wavPath, generator: 'kk:gemini-tts', qc },
+    }));
 } else {
     process.exit(4);
 }
@@ -473,15 +484,16 @@ if (plugin === 'aihot-ingest') {
                 expect(existsSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`))).toBe(true);
                 expect(existsSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`))).toBe(true);
                 expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
-                if (vdriver === 'ominivoice') {
-                    const swapped = JSON.parse(
-                        readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
-                    );
-                    expect(swapped.metadata.generator).toBe('kk:omni-voice-gen');
-                }
                 const generated = JSON.parse(
                     readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
                 );
+                const generatorByDriver: Record<string, string> = {
+                    ominivoice: 'kk:omni-voice-gen',
+                    gemini: 'kk:gemini-tts',
+                };
+                if (typeof vdriver === 'string' && generatorByDriver[vdriver]) {
+                    expect(generated.metadata.generator).toBe(generatorByDriver[vdriver]);
+                }
                 expect(generated.metadata.qc.passed).toBe(qcPassed);
 
                 const calls = readFileSync(callLog, 'utf8')
@@ -498,7 +510,7 @@ if (plugin === 'aihot-ingest') {
                     'episode-plan-gen',
                     'daily-article-gen',
                     'dailynews-gen',
-                    vdriver === 'ominivoice' ? 'omni-voice-gen' : 'voice-gen',
+                    vdriver === 'ominivoice' ? 'omni-voice-gen' : vdriver === 'gemini' ? 'gemini-tts' : 'voice-gen',
                 ]);
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).
@@ -534,9 +546,9 @@ if (plugin === 'aihot-ingest') {
                 rmSync(testRoot, { recursive: true, force: true });
             }
         }
-        // 3 real workflow executions (spur engine + bun subprocesses per state): the old 30s
-        // budget tripped under load (30985ms timeout flake). 120s leaves headroom.
-    }, 120_000);
+        // 4 real workflow executions (spur engine + bun subprocesses per state): the old 30s
+        // budget tripped under load (30985ms timeout flake). 160s leaves headroom for the gemini row.
+    }, 160_000);
 
     // --- 0128 R3: the flattening enumeration ---------------------------------
 

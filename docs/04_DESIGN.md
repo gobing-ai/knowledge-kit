@@ -44,7 +44,7 @@ sync: [T3]
 | [article-publish-fanout-brief.md](design/article-publish-fanout-brief.md) | Article generator home, podcast show notes, and fan-out shape brief | research (F61) |
 | [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | shipped (F611) |
 | [kk-itc-end-to-end.md](design/kk-itc-end-to-end.md) | kk-itc idea → research → judge-gated draft → per-platform drafts (HITL + auto) | shipped (F41) |
-| [gemini-tts.md](design/gemini-tts.md) | Gemini 3.8 TTS voice generator: hosted backend adapter over voice-gen, drop-in via `vdriver: gemini` | accepted design (F612, ADR-023) |
+| [gemini-tts.md](design/gemini-tts.md) | Gemini 3.8 TTS voice generator: hosted backend adapter over voice-gen, drop-in via `vdriver: gemini` | shipped (F612) |
 
 ## 1. CLI commands
 
@@ -338,11 +338,11 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `VOICEBOX_URL` | no (voice-gen) | Origin for Voicebox REST API (default: `http://127.0.0.1:17493`). Local origins (`127.0.0.1`/`localhost`/`::1`) are **auto-started** when not already healthy (0146): voice-gen spawns the server binary detached, polls `/health` for 30s (500ms interval, fixed defaults), logs stderr to `/tmp/voicebox-server.log`. Non-local URLs and a missing binary (`VOICEBOX_SERVER_BIN`, default `/Applications/Voicebox.app/Contents/MacOS/voicebox-server`; data dir `VOICEBOX_DATA_DIR`) are configuration errors — fail loud, never spawn |
 | `DAILYNEWS_LANGUAGE` | no (dailynews-gen) | Broadcast language passed through `kk executor run`; `zh` (default) or `en` |
 | `DAILYNEWS_TITLE` | no (dailynews-gen) | Optional broadcast title passed through `kk executor run` |
-| `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen) | Default profile name/ID when the news workflow or segment/doc omits profile |
+| `VOICEBOX_DEFAULT_PROFILE` | no (dailynews-gen/voice-gen/omni-voice-gen/gemini-tts) | Default profile name/ID when the news workflow or segment/doc omits profile |
 | `VOICEBOX_TIMEOUT_MS` | no (voice-gen) | Per-request timeout in ms (default: `600000`) — bounds both the generation poll and every Voicebox HTTP call (`/health`, `/profiles`, `/generate`, `/history/<id>`, `/audio/<id>`, `/transcribe`) |
 | `VOICEBOX_POLL_MS` | no (voice-gen) | Poll interval in ms (default: `1000`) |
 | `VOICEBOX_ENGINE` | no (voice-gen) | TTS engine override when script/profile omit it (`qwen` default; `qwen_custom_voice` has no clone support) |
-| `VOICE_GEN_FAIL_ON_QC` | no (voice-gen, omni-voice-gen) | `true` fails generation when the QC audit fails (fidelity/duration/repetition); the daily workflow does **not** route on `metadata.qc.passed` — degradation-class audits publish warn-only and surface in the run report's `## 音频 QC` block (0140), while the credibility-damaging `repetition_detected` class is hard-failed upstream by 0139 R5a |
+| `VOICE_GEN_FAIL_ON_QC` | no (voice-gen, omni-voice-gen, gemini-tts) | `true` fails generation when the QC audit fails (fidelity/duration/repetition); the daily workflow does **not** route on `metadata.qc.passed` — degradation-class audits publish warn-only and surface in the run report's `## 音频 QC` block (0140), while the credibility-damaging `repetition_detected` class is hard-failed upstream by 0139 R5a |
 | — (per-segment verify) | no (voice-gen) | Unconditional post-generation check: each segment's audio is transcribed back and compared against the source text (`transcriptionFidelity`); below `TRANSCRIPTION_FIDELITY_FLOOR` (0.15) the segment is regenerated (≤2 retries) with a varied seed and halved `max_chunk_chars` (floor 100). Final attempt always accepted; the QC audit (which reuses the stored transcription) remains the backstop. Catches contiguous loop garbage the server's gap-based runaway detector misses (dogfood 2026-09-03) |
 | `EPISODE_PLAN_MAX_ITEMS` | no (episode-plan-gen) | Caps selected episode items (default `20`); the daily workflow passes `plan_max_items` through |
 | `EPISODE_PLAN_DATE` | no (episode-plan-gen) | Optional run date stamped into the plan Content metadata (`planDate`) |
@@ -356,8 +356,16 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `SURFDASH_URL` | no (surfdash-pub) | Base URL for the live-URL poll and `url` in the Result (default `https://surfing.salty.vip`); article derived as `<base>/<locale>/posts/<slug>` |
 | `VOICEBOX_MAX_CHUNK_CHARS` | no (voice-gen) | Max chunk characters (default: `800`, range 100–5000) |
 | `VOICEBOX_CROSSFADE_MS` | no (voice-gen) | Crossfade duration in ms (default: `50`, range 0–500) |
-| `VOICE_GEN_MP3` | no (voice-gen, omni-voice-gen) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
-| `VOICE_GEN_MAX_RUN_MS` | no (voice-gen, omni-voice-gen) | Total render budget in ms, checked between segments (default: unset = unlimited); exceeded → fail loud before the next segment. Guard against a wedged TTS backend crawling for hours (voice-gen D14; omni-voice-gen D6) |
+| `VOICE_GEN_MP3` | no (voice-gen, omni-voice-gen, gemini-tts) | When `true`/`1`/`yes`/`on`, transcode sibling WAV to `<outStem>.mp3` with ffmpeg (`libmp3lame`); `metadata.mp3Path` is the absolute MP3. Default off. Missing ffmpeg or transcode failure → fail-loud, no `--out` |
+| `VOICE_GEN_MAX_RUN_MS` | no (voice-gen, omni-voice-gen, gemini-tts) | Total render budget in ms, checked between segments (default: unset = unlimited); exceeded → fail loud before the next segment. Guard against a wedged TTS backend crawling for hours (voice-gen D14; omni-voice-gen D6) |
+| `GEMINI_API_KEY` | yes (gemini-tts) | API key sent as `x-goog-api-key` on Gemini TTS and voice-create requests. Missing → exit 1 before any network call |
+| `GOOGLE_BASE_URL` | no (gemini-tts) | Gemini API origin (default `https://generativelanguage.googleapis.com`) |
+| `GEMINI_TTS_MODEL` | no (gemini-tts) | `gemini-3.8-flash-tts` (default) or `gemini-3.8-flash-lite-tts`; anything else exits 1 naming both |
+| `GEMINI_TTS_PROFILES` | no (gemini-tts) | Path to the profile map (`name → {voice}`). Default is the plugin `profiles.json` placeholder |
+| `GEMINI_TTS_ASR` | no (gemini-tts) | `off` omits transcription and leaves fidelity/repetition unmeasured; any other value or unset runs ASR |
+| `GEMINI_TTS_ASR_MODEL` | no (gemini-tts) | Text model for verbatim transcription (default `gemini-3.8-flash`) |
+| `GEMINI_TTS_MAX_ATTEMPTS` | no (gemini-tts) | Retry cap for 429, 5xx, and network errors (default 4) |
+| `GEMINI_TTS_TIMEOUT_MS` | no (gemini-tts) | Per-request `AbortSignal.timeout` in ms (default `120000`) |
 | `OMNIVOICE_PROFILE_REGISTRY` | no (omni-voice-gen) | Path to the JSON profile registry (profile name → `{ref_audio, ref_text}` clone / `{prompt}` saved clone prompt / `{instruct}` voice design); default `<plugin>/profiles.json`. Unknown profile name → exit 1 naming the profile (D4) |
 | `OMNIVOICE_MODEL` | no (omni-voice-gen) | HuggingFace model id loaded via `OmniVoice.from_pretrained` (default: `k2-fsa/OmniVoice`) |
 | `OMNIVOICE_DEVICE` | no (omni-voice-gen) | Torch device map override (default: auto — CUDA > MPS > CPU) |
