@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.25.0
+version: 1.26.0
 created_at: 2026-05-28
 updated_at: 2026-09-24
 edit_rules: 99 §6.1
@@ -857,6 +857,19 @@ The daily workflow's `voice_generator` var now defaults to `omni-voice-gen`; `vo
 (Voicebox REST) remains shipped and selectable via `--vars`. The shipped `robin-news` registry
 entry is an instruct placeholder (voice identity changes until a real clone clip lands in an
 operator-private registry via `OMNIVOICE_PROFILE_REGISTRY`).
+
+### Amendment — 2026-09-24 (driver selection is `vdriver`; the default is back to `voicebox`)
+
+> **Status:** Accepted · **Supersedes:** the 2026-09-13 amendment's `voice_generator` var name and
+> its `omni-voice-gen` default.
+
+kk-daily-ai-voice selects the voice generator through the **`vdriver`** var (renamed from
+`voice_generator` on 2026-09-17, commit `91ef8bc9`). Its values are driver aliases resolved by
+`dailyGenerate`'s `VOICE_DRIVERS` map, not plugin names: `voicebox` → `voice-gen` (default),
+`ominivoice` → `omni-voice-gen`, `gemini` → `gemini-tts` (F612, ADR-023). An unknown alias still
+fails loud, naming the accepted keys. The default flipped back to `voicebox` on 2026-09-20 after an
+operator A/B at matched speech rate (~5.2 chars/s): omni-voice-gen carried ~1 min of dead air over
+a 16-min episode plus an ASR-garble class.
 
 ---
 

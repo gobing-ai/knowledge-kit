@@ -7,7 +7,8 @@ specified here. Where this doc and `voice-gen.md` disagree, this doc wins for om
 
 - **D1 — Drop-in generator plugin.** Same executor surface as voice-gen: `--in Doc[]` → `--out Content`,
   sibling `<outStem>.wav`, optional `<outStem>.mp3`, identical `metadata` shape. The only pipeline change
-  to swap backends is the plugin name (`voice_generator` var in kk-daily-ai-voice).
+  to swap backends is the driver alias (`vdriver` var in kk-daily-ai-voice: `ominivoice` selects this
+  plugin; default `voicebox`).
 - **D2 — Python, make + uv.** The only non-TypeScript plugin in the repo (operator-approved). Build/test
   via `make` targets over `uv`. pytest + coverage; per-file line AND function coverage >= 90%.
 - **D3 — PyPI `omnivoice` backend.** `vendors/OmniVoice` is reference-only: never written to, never

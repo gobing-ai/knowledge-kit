@@ -78,15 +78,26 @@ Needed once before the first `vdriver: gemini` run, and again when the stored vo
 
 1. **Source clip** (10–30 s, clean speech): `plugins/generations/omni-voice-gen/voices/robin-news.wav`
    (already 24 kHz mono s16, 28.4 s — usable as-is).
-2. **Consent clip**: the same speaker reads, verbatim:
-   「我是此声音的拥有者并授权谷歌使用此声音创建语音合成模型」
-   Recorded in Voicebox as the profile `gemini-consent-clip`; export its sample:
+2. **Consent clip**: the same speaker reads the consent statement verbatim — zh-CN
+   「我是此声音的拥有者并授权谷歌使用此声音创建语音合成模型」 or en-US "I am the owner of this
+   voice and I consent to Google using it to create a synthetic voice model."
+   **Source and consent must be the same language** (shipped 2026-09-24): Google's verification
+   penalizes cross-lingual acoustic drift, so the zh-CN source clip paired with an en-US consent
+   clip fails with `Voice mismatch detected`. What replicates cleanly is one clean 10–30 s en-US
+   recording of the consent statement passed as **both** `--source` and `--consent`; the resulting
+   voice still synthesizes Chinese and English.
+   Recorded in Voicebox as a cloned-voice profile (`gemini-consent-clip-en`); export its sample:
    `GET /profiles` → match name → `GET /profiles/{id}/samples` → `GET /samples/{sample_id}` (24 kHz mono s16 WAV).
+   (`GET /history` 500s on the current Voicebox build — do not use it.)
 3. **Convert** only a clip that is not already 24 kHz mono 16-bit WAV:
    `ffmpeg -i consent.m4a -ar 24000 -ac 1 -sample_fmt s16 consent.wav`
 4. **Create**: `GEMINI_API_KEY=… bun plugins/generations/gemini-tts/src/voice-create.ts --source robin-news.wav --consent consent.wav --name robin-news`
    — validates format/length, `POST /v1beta/voices` with `store: true`, `type: "replicated"`,
-   prints the `voice_…` id. (UI alternative: Google AI Studio → Generate speech.)
+   prints the `voice_…` id. Upstream returns HTTP **500** (not 400) when server-side validation
+   rejects an argument or the consent pairing — re-record both clips in one session and retry;
+   Google AI Studio's voice-replication UI is the manual fallback. A stored voice is **not**
+   model-bound: the same id renders on `gemini-3.8-flash-tts` and `gemini-3.8-flash-lite-tts`
+   (verified live 2026-09-24, closing D3's open question).
 5. **Wire**: write the id into an operator-private map (`~/.config/kk/gemini-tts-profiles.json`,
    `{"robin-news":{"voice":"voice_…"}}`) and set `GEMINI_TTS_PROFILES` to it under
    `plugins.generations.gemini-tts.env` in `~/.config/kk/config.yaml`; the committed `profiles.json`

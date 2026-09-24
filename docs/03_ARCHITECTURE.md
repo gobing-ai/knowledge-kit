@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.24.0
+version: 2.25.0
 created_at: 2026-07-22
 updated_at: 2026-09-24
 derived_from: [00_ADR, 01_PRD]
@@ -33,6 +33,7 @@ plugins/
     dailynews-gen/    # @gobing-ai/dailynews-gen — Doc[] → markdown Content carrying VoiceScript YAML (F6)
     voice-gen/        # @gobing-ai/voice-gen — generator plugin: Voicebox TTS audio output (D5)
     omni-voice-gen/   # Python (uv) generator plugin: OmniVoice TTS, drop-in for voice-gen (F611, ADR-020 — the only non-TypeScript plugin)
+    gemini-tts/       # @gobing-ai/gemini-tts — generator plugin: hosted Gemini 3.8 TTS over voice-gen's pipeline (F612, ADR-023)
   publishings/
     surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
     zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
@@ -308,7 +309,8 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/generations/content-gen` | `@gobing-ai/content-gen` | Owned STORM pipeline → markdown `Content` (D4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/generations/dailynews-gen` | `@gobing-ai/dailynews-gen` | News `Doc[]` → validated VoiceScript YAML in markdown `Content` (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/voice-gen` | `@gobing-ai/voice-gen` | VoiceScript/plain-text `Doc[]` → Voicebox WAV/optional MP3 audio `Content` (D5) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
-| `plugins/generations/omni-voice-gen` | — (Python, uv — not a Bun workspace) | VoiceScript/plain-text `Doc[]` → OmniVoice WAV/optional MP3 audio `Content`; drop-in for voice-gen via the `voice_generator` workflow var (F611, ADR-020) | PyPI `omnivoice` (torch stack), stdlib |
+| `plugins/generations/omni-voice-gen` | — (Python, uv — not a Bun workspace) | VoiceScript/plain-text `Doc[]` → OmniVoice WAV/optional MP3 audio `Content`; drop-in for voice-gen via the `vdriver` workflow var (F611, ADR-020) | PyPI `omnivoice` (torch stack), stdlib |
+| `plugins/generations/gemini-tts` | `@gobing-ai/gemini-tts` | VoiceScript/plain-text `Doc[]` → hosted Gemini 3.8 TTS WAV/optional MP3 audio `Content`; supplies a Gemini-backed `VoiceboxClient` to voice-gen's `processGeneratorIO` rather than porting the pipeline (F612, ADR-023), plus the one-time replicated-voice creation CLI | `@gobing-ai/voice-gen`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |

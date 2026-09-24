@@ -873,3 +873,132 @@ Doc-drift repairs applied this wrapup: `docs/00_ADR.md` (ADR-012 dated amendment
 The drift audit must diff the whole surface-index set, not just the section the implementing task edited: the `04` §1 summary block, `04` §4 public-export tables, `00` ADR committed-surface lists, and `docs/design/*` satellites. 0157 passed its own T3 check for §1.5/§1.6 and still left four stale indexes — "I updated the docs" is not the same as "every index that names the changed surface is current".
 
 Open/pre-existing (reported, not repaired): `kk stage` is a shipped top-level verb (0144) absent from `04` §1's command index, while ADR-011 R1 says first-layer nouns are "exactly `executor` and `plugin`". Needs an operator call — treat `stage` as a machine-facing orchestration verb (amend ADR-011 with a dated note) or hide it. Not 0157-introduced, so left untouched.
+**Verification & confidence**
+
+| Claim | Confidence | Basis |
+| --- | --- | --- |
+| `voice_generator` is a dead var; `vdriver` is the live one, default `voicebox` | **HIGH** | `rg "voice_generator"` returns zero hits in `plugins/kk/workflows/*.yaml` and `plugins/kk/scripts/*.ts`; `kk-daily-ai-voice.yaml:25` reads `vdriver: "voicebox"`; `kk-workflow-stages.ts:968-972` holds the `VOICE_DRIVERS` map (read today) |
+| Rename landed in commit `91ef8bc9`, 2026-09-17; default flipped 2026-09-20 | **MEDIUM** | Commit identified by `git log -S vdriver` (HIGH); the two dates come from the yaml's own `# 20260917` / `# 20260920` comments, not from commit timestamps |
+| `gemini-tts` absent from `03` tree + module table and `04` §4 before this pass | **HIGH** | `rg "gemini"` over both files returned only the `04` env/design-index rows; `ls plugins/generations` confirms the dir exists |
+| `processGeneratorIO` takes 5 params | **HIGH** | Signature transcribed from `voice-gen/src/index.ts:46` per §6.5 r4 |
+| gemini-tts exports, deps, CLI flags in the new `04` section | **HIGH** | Transcribed from `package.json`, `plugin.json`, and `rg '^export'` over `src/*.ts`; `voice-create.ts:126-176` read directly |
+| Cross-lingual consent failure, HTTP 500 semantics, model-agnostic stored voice | **MEDIUM** | Operator-run evidence recorded in task 0159 + `gemini-tts/README.md:66-70`; I did not re-run the live API, so this is sourced, not independently reproduced |
+| ADR-023 already `Accepted` (no status drift) | **HIGH** | `docs/00_ADR.md:902` read directly |
+| `03` module table missing 6 generations + 2 ingestions | **HIGH** | Set difference of `ls plugins/generations plugins/ingestions` against the table rows at `03:305-311` |
+| Docs-only diff does not affect `bun run gate` | **MEDIUM** | Biome/tsc target TS sources and no doc file is in the lint/test path; I did not run the gate this pass |
+
+## 2026-09-24
+
+### 0158 — gemini-tts plugin: Gemini VoiceboxClient adapter over the voice-gen pipeline
+
+- **Adapter, not port (ADR-023).** A second TTS backend costs one `VoiceboxClient` implementation
+  when the pipeline already injects its client. The whole VoiceScript/verify-retry/loudness/speed/
+  concat/QC/MP3 chain stayed voice-gen's; only three seam edits were needed: `exports { ".": "./src/index.ts" }`
+  in `package.json`, `transcribe?` made optional on the interface, and a trailing `generator = 'kk:voice-gen'`
+  param on `processGeneratorIO` stamped into `metadata.generator`. Contrast omni-voice-gen (F611),
+  which had to port the pipeline to Python.
+- **Optional interface methods need guarded call sites, not a null object.** `transcribe?` works
+  because both call sites already used `typeof client.transcribe === 'function'`
+  (`voice-gen/src/index.ts:261`, `qc.ts:228`). Check the guards exist *before* loosening the type.
+- **Verify the live wire shape before designing around a fallback.** A live probe closed the
+  transcription-response question (`steps[]` → `model_output` step → `content[{type:"audio"|"text"}]`),
+  which deleted a planned "fall back to soft-skip" branch from the design. One probe removed a branch.
+- **Error identity is bounded by what the caller can see.** The client is called per segment with no
+  index, so the actionable error is a ≤30-char text excerpt plus HTTP status plus API message —
+  not a segment number it cannot know. The feature AC was reworded to match reality rather than the
+  other way round.
+- **Don't duplicate a test that belongs to the shared layer.** MP3 transcode lives in voice-gen's
+  `processGeneratorIO`; gemini-tts passes the default transcoder and adds no MP3 test.
+- **Test-only imports belong in `devDependencies`.** `@gobing-ai/kk-core` is a devDep of gemini-tts
+  (tests import `ContentSchema`/`Doc`); runtime code never imports it.
+- **Gotcha — flaky gate vs. real failure.** The first `bun run gate` exited 1 on two unrelated 5 s
+  timeouts in `apps/cli/tests/kk-itc-workflow.test.ts` (0149, 0152); both passed in isolation
+  (1542 ms, 1969 ms). Re-run in isolation before treating a timeout as a regression of your diff.
+- **Gotcha — bundled-layout path resolution.** `DEFAULT_PROFILES_PATH` resolves `../profiles.json`
+  from `import.meta.url`, which is valid from both `src/` and the bundled `dist/` layout — but that
+  must be verified in `apps/cli/plugins/generations/gemini-tts/` after `bun run build`, not assumed.
+- **Pitfall — "R#" label namespace collision.** Test titles cited F612 *feature-scenario* IDs while
+  the task file used its own R1–R7 (task R4 = feature R6), and `voice-gen.test.ts` now carries two
+  different "R1" meanings. Pick one ID namespace per test file or add a mapping comment block.
+- **Deferred with a named trigger.** A second retry/backoff implementation now coexists with
+  voicebox-client's (Retry-After handling is Gemini-specific). Accepted under ADR-023; the upgrade
+  trigger is a *third* backend → extract the pipeline into `packages/`. Likewise
+  `processGeneratorIO` now has 3 trailing optional positionals — a 4th means switch to an options object.
+
+### 0159 — gemini-tts replicated-voice creation helper and operator runbook
+
+- **Cross-lingual consent pairing fails voice replication.** Google's verification model penalizes
+  cross-lingual acoustic drift: the zh-CN source clip + en-US consent clip returns
+  `Voice mismatch detected`. What replicates cleanly is one clean 10–30 s **en-US** recording of the
+  consent statement passed as **both** `--source` and `--consent`; the resulting voice still
+  synthesizes Chinese and English. The original zh-CN-only runbook was wrong on the shipped path.
+- **Upstream returns 500 for what is a 400.** `POST /v1beta/voices` answers HTTP **500** when
+  server-side validation rejects an argument or the consent pairing — so a 5xx from this endpoint is
+  not automatically retryable-transient. Re-record both clips in one session and retry; Google AI
+  Studio's replication UI is the manual fallback. This blocked R4 until the en-US pairing was found.
+- **A stored replicated voice is not model-bound.** The same `voice_…` id rendered on both
+  `gemini-3.8-flash-tts` and `gemini-3.8-flash-lite-tts` (verified live), closing a MEDIUM-confidence
+  open question in the design — no second voice per model variant is needed.
+- **Operator-bound identifiers are not repo data.** The created voice id is tied to the operator's
+  Google project and a 1-year TTL, so it lives in `~/.config/kk/gemini-tts-profiles.json` with
+  `GEMINI_TTS_PROFILES` pointing at it from `~/.config/kk/config.yaml`; the committed `profiles.json`
+  keeps `voice_REPLACE_ME`, which fails closed with a remediation pointer.
+- **Reuse the existing parser instead of writing a validator.** WAV validation reuses voice-gen's
+  exported `parseWav` (`ParsedWav`: `audioFormat`, `numChannels`, `sampleRate`, `bitsPerSample`,
+  `byteRate`, `dataBytes`; duration = `dataBytes.length / byteRate`) — no new audio code, no new dep.
+- **A validation error must name the actual values.** `validateVoiceWav` reports the observed
+  rate/channels/bits/duration, not just "invalid WAV" — the operator fixes it with one ffmpeg call.
+- **Gotcha — Voicebox discovery path.** The consent clip is a cloned-voice *profile*, not a history
+  entry, and `GET /history` returns 500 on the current build. Use
+  `GET /profiles` → match by name → `GET /profiles/{id}/samples` → `GET /samples/{sample_id}`.
+- **Secret hygiene in an operator runbook.** Key read from env (or piped out of `config.yaml` into a
+  shell var without echoing); never printed, never written to a file, never in task evidence; error
+  paths redact it. Biometric source/consent clips go to a scratch dir outside the repo.
+
+### 0160 — Wire vdriver gemini into kk-daily-ai-voice and sync docs
+
+- **A well-placed map turns a backend into a one-line change.** Adding `gemini: 'gemini-tts'` to
+  `dailyGenerate`'s `VOICE_DRIVERS` is the entire wiring: the same
+  `kk executor run <plugin> --in <docs> --out <content>` call serves all three drivers, and
+  downstream stages already read `metadata.audioPath` / `mp3Path` / `qc`. Unknown aliases still fail
+  loud, now listing `gemini`.
+- **Ship the selector, defer the default.** The default `vdriver` stays `voicebox`; flipping it needs
+  an operator listening A/B (deferred I7). New capability behind an opt-in alias, no behavior change.
+- **Integration tests can front-run the real plugin.** The matrix test uses a fake `kk` shim, so 0160
+  only needed 0158's `metadata.generator` tag to exist — the shim emits `kk:gemini-tts`, mirroring
+  the ominivoice branch. Test-shim parity is what decoupled the two tasks.
+- **Generalize the lookup, not the assertion.** Adding a driver to the `[vdriver, qcPassed]` matrix
+  meant replacing two hardcoded expectations with the same `{voicebox, ominivoice, gemini}` lookup
+  the shim uses — otherwise every new driver edits three places.
+- **Feature status is tool-owned.** The F61x voice-driver family has no `docs/05_FEATURES.md` rows;
+  status lives in the spur-generated `docs/features/INDEX.md`. Update it with
+  `spur feature update F612 <status>`, never by hand-editing `05` or `INDEX.md`.
+
+### Wrap-up doc sync (00 / 03 / 04 / docs/design)
+
+- **Recurrence — a new shipped plugin package is T3 surface (3rd time: zenn-pub/qiita-pub 2026-08-12,
+  web-search 2026-08-13, gemini-tts now).** `plugins/generations/gemini-tts` shipped with env rows
+  and a design-index status in `04`, but no `03` tree entry, no `03` module-boundary row, and no
+  `04` §4 package/export section. The env table is the part people remember; the package section and
+  the architecture tree are the part that rots. Sync all four in the shipping commit.
+- **A shared-function signature change is T3 surface too.** `processGeneratorIO` gained a 5th
+  parameter in 0158 while `04`'s export row still documented four — a signature is transcribed from
+  the registration (§6.5 rule 4), and adding a param counts.
+- **Renaming a workflow var leaves a long tail.** `voice_generator` → `vdriver` (commit `91ef8bc9`,
+  2026-09-17) plus the 2026-09-20 default flip back to `voicebox` never reached the docs: the dead
+  name survived in `00` (ADR-020's 2026-09-13 amendment), `03:311`, `04:569-570`, `04`'s design-index
+  workflow row, `docs/design/kk-daily-ai-voice.md` ×2, and `docs/design/omni-voice-gen.md`. Repaired
+  by a new dated ADR-020 amendment (append-only — history is never rewritten) then the derived docs.
+  When a var is renamed, grep the *old* name repo-wide in the same commit; an alias-valued var is a
+  second break (values changed from plugin names to aliases, not just the key).
+- **A design doc's operator runbook is a claim, not a fact, until someone runs it.** `gemini-tts.md`
+  §4 prescribed a zh-CN consent clip; the operator run proved that path fails. Research/design
+  satellites need the same post-run sync as code surfaces — updated §4 with the same-language
+  constraint, the HTTP 500 behavior, the AI Studio fallback, and the model-agnostic stored voice.
+- **Open, out-of-scope drift (noted, not repaired here):** `docs/03_ARCHITECTURE.md`'s module-boundary
+  table is missing 6 shipped generations (`core-facts-gen`, `daily-article-gen`, `episode-plan-gen`,
+  `image-gen`, `news-report-gen` — `gemini-tts` added this pass) and 2 ingestions (`horizon-ingest`,
+  `last30days-ingest`); the dead `voice_generator` name also survives in
+  `plugins/generations/omni-voice-gen/README.md` and in the tool-owned `docs/features/F611_*` corpus.
+  Both need their own task — the README is outside this pass's doc scope and feature corpus is
+  CLI-gated.

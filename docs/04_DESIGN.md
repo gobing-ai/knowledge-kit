@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.30.0
+version: 2.31.0
 created_at: 2026-07-22
 updated_at: 2026-09-24
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -539,7 +539,7 @@ Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-t
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `processGeneratorIO(in, out, client?, transcodeMp3?)` | function | Read Doc[], generate Voicebox audio Content, write out JSON + sibling WAV; optional ffmpeg MP3 when `VOICE_GEN_MP3` is set (D5/D13) |
+| `processGeneratorIO(in, out, client?, transcodeMp3?, generator?)` | function | Read Doc[], generate Voicebox audio Content, write out JSON + sibling WAV; optional ffmpeg MP3 when `VOICE_GEN_MP3` is set (D5/D13); `generator` (default `kk:voice-gen`) is stamped into `metadata.generator` so a sibling plugin can reuse the pipeline under its own tag (ADR-023) |
 | `isMp3Requested(env?)` | function | Parse `VOICE_GEN_MP3` truthy values |
 | `transcodeWavToMp3(wav, mp3)` | function | ffmpeg WAV → MP3 (`libmp3lame` `-qscale:a 2`) |
 | `parseDocToVoiceScript(doc, envDefaultProfile?)` | function | Parse plain text or VoiceScript structure from Doc |
@@ -548,6 +548,11 @@ Daily workflow wiring: `plan_max_items` (default `"20"`) caps selection; `plan-t
 | `concatWavs(wavs, gapsMs?)` | function | Concat RIFF WAV buffers with optional gap silence |
 | `createVoiceboxClient(opts?)` | function | Client factory for local Voicebox REST API |
 | `main()` | function | CLI `--in`/`--out` entry point; exit 0 success / 1 failure |
+
+`VoiceboxClient.transcribe` is optional (`transcribe?`); both call sites guard with
+`typeof client.transcribe === 'function'` (ADR-023). `package.json` declares
+`"exports": { ".": "./src/index.ts" }` so a sibling plugin can import the pipeline as a workspace
+dependency.
 
 ### `omni-voice-gen` (`plugins/generations/omni-voice-gen`, kind `generator`)
 
@@ -566,8 +571,32 @@ executable `bin/omni-voice-gen` shebang wrapper is the whole spawn seam (§1.7).
 
 Quality gate: `make coverage` (pytest + per-file line/function >= 90% via `scripts/coverage_gate.py`);
 `make lint` (ruff). All pipeline modules shipped (tasks 0121–0125). The `kk-daily-ai-voice` workflow
-selects the generator via `voice_generator` var (default `voice-gen`; swap to `omni-voice-gen` via
-`--vars '{"voice_generator":"omni-voice-gen"}'`); see `docs/design/omni-voice-gen.md`.
+selects the generator via the `vdriver` var (default `voicebox`; swap to omni-voice-gen with
+`--vars '{"vdriver":"ominivoice"}'`); see `docs/design/omni-voice-gen.md`.
+
+### `@gobing-ai/gemini-tts` (`plugins/generations/gemini-tts`, kind `generator`)
+
+Hosted backend adapter over voice-gen's pipeline (ADR-023): the only backend-specific code is the
+`VoiceboxClient` implementation; VoiceScript parsing, verify-retry, speed, concat, QC, and MP3 stay
+voice-gen's. Depends on `@gobing-ai/voice-gen` (`workspace:*`); `scripts/bundle-plugins.ts` inlines
+that import into the shipped `dist/index.js`.
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `main(argv?)` | function | CLI `--in`/`--out` entry; calls `processGeneratorIO(in, out, geminiClient, undefined, 'kk:gemini-tts')`; missing args exit 1 |
+| `createGeminiVoiceClient(opts?)` | function | `VoiceboxClient` over `POST {GOOGLE_BASE_URL}/v1beta/interactions` (`x-goog-api-key`); `health()` asserts the key + model allowlist with no network; `resolveProfile` passes `voice_…`/`voicekey_…` through and maps names via `GEMINI_TTS_PROFILES`/`profiles.json`; `generate` sends `speech_config` voice + `speech_metadata` style and buffers the decoded 24 kHz mono s16 WAV; `waitUntilDone` completes immediately; `downloadAudio` returns and evicts; `transcribe` omitted when `GEMINI_TTS_ASR=off` |
+| `GEMINI_TTS_MODELS` / `GEMINI_TTS_DEFAULT_MODEL` / `GEMINI_ASR_DEFAULT_MODEL` | constants | `['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts']`; defaults `gemini-3.8-flash-tts` / `gemini-3.8-flash` |
+
+Operator helper `src/voice-create.ts` (run directly with `bun`, not a `kk` subcommand):
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `main(argv?, deps?)` | function | `--source --consent --name` plus optional `--store` (`true`\|`false`, default `true`) and `--model` (default `GEMINI_TTS_MODEL`, else `gemini-3.8-flash-tts`); prints the created `voice_…` id on stdout, exit 1 on any validation/API failure without echoing the key |
+| `validateVoiceWav(bytes, role)` | function | Throws unless RIFF PCM 24 kHz mono 16-bit; `source` must also be 10–30 s. The message names the actual rate/channels/bits/duration |
+| `createReplicatedVoice(opts)` | function | `POST {GOOGLE_BASE_URL}/v1beta/voices` `{store, voice:{model, type:'replicated', display_name, replicated:{source_audio, consent_audio}}}` with base64 WAV; returns `{ id }` |
+
+Runbook (consent clip, renewal, profile-map wiring): `plugins/generations/gemini-tts/README.md`,
+`docs/design/gemini-tts.md` §4.
 
 ### `@gobing-ai/podcast-pub` (`plugins/publishings/podcast-pub`, kind `publish`)
 
@@ -615,7 +644,7 @@ File: `.spur/config.yaml`
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
-| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + `${vars.voice_generator}` (default voice-gen; swap to omni-voice-gen via `--vars '{"voice_generator":"omni-voice-gen"}'`) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial) (F61 destination; restructured 2026-09-06 by 0097) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`voicebox` -> voice-gen default, `ominivoice` -> omni-voice-gen, `gemini` -> gemini-tts; unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial) (F61 destination; restructured 2026-09-06 by 0097) |
 | Daily AI voice gap analysis | `docs/design/kk-daily-ai-voice-gap-analysis.md` | Gap analysis vs ideal 3-stage daily pipeline (F61 task 0088) |
 | Ingestion source adapters | `docs/design/ingestion-source-adapters.md` | last30days + Horizon external-CLI adapter briefs to Doc[] (F61 task 0089) |
 | Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |
