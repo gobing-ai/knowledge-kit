@@ -1,0 +1,51 @@
+task: "0156"
+verified_at: "2026-09-23"
+verdict: "PASS"
+shippable: "N/A"
+notes: "No feature_id on task — shippable gate not applicable (documented, not a failure)."
+results:
+  AC1: { status: PASS, evidence: "image-gen.test.ts:296 — proxy password absent from curl argv; key via 0o600 config file / -d @- stdin" }
+  AC2: { status: PASS, evidence: "podcast-pub.test.ts:1117/1124/1142 — javascript: literal, onerror escaped, &lt;script&gt;" }
+  AC3: { status: PASS, evidence: "surfdash-pub.test.ts:646/662 — frontmatter-scoped rewrite, body occurrence preserved" }
+  AC4: { status: PASS, evidence: "map.test.ts:15 traversal; surfdash-pub.test.ts:256/301/313/323 validation set" }
+  AC5: { status: PASS, evidence: "image-gen.test.ts:354 timeout table; static backstop 45/45 fetch sites carry signal" }
+  AC6: { status: PASS, evidence: "kk-workflow-stages.test.ts:1024/1034/1076/1090" }
+  AC7: { status: PASS, evidence: "surfdash-pub.test.ts:726/740 'Invalid Content input'; :756 nested preserved" }
+  AC8: { status: PASS, evidence: "presets.test.ts:99; docs/04_DESIGN.md:637" }
+  AC9: { status: PASS, evidence: "wechatmp-pub.test.ts:41/90/95" }
+  AC10: { status: PASS, evidence: "zenn-pub.test.ts:310/317/331/339; ZENN_TOKEN never in URL" }
+  AC11: { status: PASS, evidence: "kk-workflow-stages.test.ts:591-615 adversarial it's title, body untouched, YAML round-trip" }
+  AC12: { status: PASS, evidence: "bun run gate PASS — 1285/1285 tests, 50 rules, typecheck/build/format" }
+coverage:
+  requirements_total: 11
+  requirements_covered: 11
+  ac_total: 12
+  ac_covered: 12
+  solution_steps: "R1–R11 in commit 927d0cc3"
+  solution_steps_covered: "all verified against HEAD"
+gaps: []
+open_questions: []
+needs_human: false
+suggested_next_action: "done"
+code_review:
+  blockers: []
+  majors: []
+  minors:
+    - "Advisory: R1 probe deviated from task text (fake-transport assertion instead of ps/argv0) — documented in task Testing section; security intent met"
+    - "Advisory: R1 uses 0o600 mkstemp curl config file instead of Design's stdin config — equivalent secret-off-argv guarantee; documented in Solution"
+  coverage_gap: "none — 1285/1285 pass; 1 pre-existing kk-core skip unrelated"
+  ready_to_ship: true
+  quality_gate: "bun run gate PASS"
+fixes:
+  applied: []
+  deferred: []
+  blocked: []
+  mode: "fix-all — no actionable findings; advisories only"
+next:
+  action: "none"
+  reason: "Task already terminal (status: done at verification start); --next is a no-op per contract."
+ship:
+  decision: "skip — already done and committed (927d0cc3); no fix commits needed"
+  commits: []
+next_hop: "none — chain complete"
+timestamp: "2026-09-23"

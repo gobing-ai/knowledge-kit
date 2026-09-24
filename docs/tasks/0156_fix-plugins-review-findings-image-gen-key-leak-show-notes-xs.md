@@ -4,7 +4,7 @@ name: "Fix plugins review findings: image-gen key leak, show-notes XSS, surfdash
 status: done
 template: issue
 created_at: 2026-09-23T23:27:38.141Z
-updated_at: "2026-09-24T05:31:27.832Z"
+updated_at: "2026-09-24T06:05:07.111Z"
 
 priority: P1
 ac_altitude: task-local
@@ -375,32 +375,32 @@ Fixed each defect where it originated; no new dependencies. One new source file 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/generations/image-gen/src/providers/google.ts:150-205` — curl reads the proxy + `x-goog-api-key` from a config file (`-K <path>`) with the body on stdin (`-d @-`); the error redacts the key, the decoded proxy password and the raw proxy URL. AC1 test: `providers/google.test.ts` (failing proxied request leaks neither secret; config temp file removed) |
-| R2 | MET | `plugins/publishings/podcast-pub/src/show-notes.ts:106-135,196-215` — `isGeneratedTimeline` validates a marker block against the generator's grammar before passing it through and escapes anything else; a non-http(s) `sourceUri` gets no link. AC2 test: `podcast-pub.test.ts` |
-| R3 | MET | `plugins/publishings/surfdash-pub/src/index.ts:377-392` — frontmatter-only rewrite, body preserved byte-for-byte. AC3 test asserts `toBe` on the whole document |
-| R4 | MET | `surfdash-pub/src/index.ts:22,443-470` (runDate `^\d{8}$`, dirname-equality containment, `COVER_EXTS`), `podcast-pub/src/map.ts:6,110-119` + `podcast-pub/src/index.ts:79-90,338-352` (basename + real MIME). AC4 tests on both plugins |
-| R5 | MET | `providers/timeouts.ts:14` + 12 providers; `voice-gen/{voicebox-client,voicebox-server}.ts`; `aihot-ingest`, `web-search`, `emdash-pub`, `medium-pub`, `qiita-pub`, `wechatmp-pub`, `x-pub`. AC5: parameterised signal assertion + 50 ms abort-override test; static `rg` backstop shows all 45 call sites carrying `signal` |
-| R6 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:1342-1350,1401-1420` — branch check before any write, `written` paths only, `commit -- <paths>`, `push origin main`. AC6 test |
-| R7 | MET | `surfdash-pub/src/index.ts:124-134,566-585` — invalid input writes the spec §2.5 `ok:false` Result and then throws. AC7 test |
-| R8 | MET | `plugins/generations/image-gen/src/presets.ts:2,269` — `delimiter` + empty-entry filter. AC8 test |
-| R9 | MET | `plugins/publishings/wechatmp-pub/src/index.ts:38-44,62-69` — `"` escaped; scheme allowlist drops `javascript:`. AC9 test |
-| R10 | MET | `plugins/publishings/zenn-pub/src/index.ts:15,170-190,205-215` — pinned `zenn-cli@0.5.4` via `--package`, main-only scoped git, `ZENN_USERNAME` URL. AC10 test |
-| R11 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:1379-1397` — frontmatter-scoped upsert, `''` escaping, function replacement. AC11 test parses the frontmatter back with `Bun.YAML.parse` |
+| R1 | MET | plugins/generations/image-gen/src/providers/google.ts:123 proxy branch writes mkstemp config (0o600, try/finally rm, no shell=True); curl argv = [-sS, --fail-with-body, -K <cfg>] — apiKey/proxy creds only in config file or stdin body (-d @- at :151); curlQuote retains only redaction at :168; image-gen.test.ts:296 asserts proxy password absent from spawned argv |
+| R2 | MET | podcast-pub/src/show-notes.ts:20 isHttpUrl, :25 isGeneratedTimeline; timeline <style>/<data-timeline> gated by isGeneratedTimeline at :76/:146; description chapters link only http(s) at :224; marker shows literal text when unsafe at :202; tests: podcast-pub.test.ts:1117 javascript: literal, :1124 onerror escaped, :1142 &lt;script&gt; |
+| R3 | MET | surfdash-pub/src/index.ts:336 normalizeLocaleFrontmatter frontmatter-scoped (frontmatterEnd :346, starts with '--- ' at :343, skips covered fields); test :646 rewrites title/description inside frontmatter but preserves body occurrence at :662 ('Para one' stays) |
+| R4 | MET | surfdash-pub: runDate /^\d{8}$/ at index.ts:244, COVER_EXTS :283, cover inside localeRoot at :289, post inside posts dir at :258; podcast-pub map.ts:22 COVER_MIME, :165 extname lookup, :166 basename before join; map.test.ts:15 path traversal test |
+| R5 | MET | Static backstop: all 45 fetch call sites in plugins/{ingestions,generations,publishings} src carry a signal option (script-checked; zai.ts:226 carries signal: AbortSignal.timeout(timeoutMs)); timeouts.ts leaf exports startTimeout; 11 per-plugin constants (10000/15000/30000/120000/600000 per Solution); kk-core + publish-harness untouched |
+| R6 | MET | kk-workflow-stages.ts:1318 dailyPatchSurfdash: branch check git rev-parse --abbrev-ref HEAD at :1342 with 'refusing to commit' at :1346, staged probe, git add -- <written paths> :1428, commit -- <paths> :1430-1435, push origin main at :1436 guarded by the main-only branch check (equivalent to HEAD:main; literal-text deviation accepted by original review), written summary :1349-1416; tests at kk-workflow-stages.test.ts:1024/1034/1076/1090; apps/cli copy is byte-identical (diff clean), tests spawn the canonical plugins copy (test :25) |
+| R7 | MET | writePublishResult at surfdash-pub/src/index.ts:196 replaces JSON.parse+writeFileSync; explicit 'Invalid Content input' at :199; non-object/non-json tests at surfdash-pub.test.ts:726/:740; nested body written at :756; payload.json :758; publish.txt :763 |
+| R8 | MET | presets.ts:49 splits KK_IMAGE_PRESET_PATH on delimiter() from 'node:path'; docs/04_DESIGN.md:637 documents delimiter semantics; presets.test.ts:99 two-dir delimiter test; stale-split grep only hits pre-existing kk-core/tests fixtures (untouched per Solution) |
+| R9 | MET | wechatmp-pub/src/index.ts:82 escapeHtml adds ' → &quot;; :123 markdown-link replacer href-allowing only http(s), fallback literal text; tests: wechatmp-pub.test.ts:41 quote escapes to &quot;hi&quot;, :90 javascript: link → literal, :95 https link survives with escaped title |
+| R10 | MET | zenn-pub/src/index.ts:86 ZENN_CLI_VERSION = '0.5.4', npx --package zenn-cli@${ZENN_CLI_VERSION} at :97/:102; rev-parse --abbrev-ref HEAD + push origin HEAD:main at :288-293; commit paths '--', 'articles/', 'images/', 'books/', 'package.json', 'package-lock.json' at :291; ZENN_USERNAME required at :115, article URL https://zenn.dev/${username}/articles/${slug} at :139; docs/04_DESIGN.md:640; tests at zenn-pub.test.ts:310-346 |
+| R11 | MET | kk-workflow-stages.ts:1379 upsertKey: quoteForYaml double-quote + escape, function replacer (no $-interpolation), frontmatter-scoped (frontmatterEnd), comment stripped, original spacing preserved; test 'updates frontmatter title to it\'s and leaves all body text alone' at kk-workflow-stages.test.ts:591-615 round-trips via Bun.YAML.parse |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `image-gen/tests/providers/google.test.ts` — "a failing proxied request leaks neither the key nor the proxy password" + config temp-file removal. Probe deviates from the task text: Bun 1.3.14 `execFileSync` ignores a mutated `PATH`, so the message channel is asserted instead of argv (documented in Review → Residual risk) |
-| AC2 | MET | test | `podcast-pub/tests/podcast-pub.test.ts` — show-notes HTML safety (a)-(d): javascript: `sourceUri`, `<script>`/forged `<a>`/`<img>` inside markers, generator round-trip. Existing byte-match tests pass unmodified |
-| AC3 | MET | test | `surfdash-pub/tests/surfdash-pub.test.ts` `normalizeLocaleFrontmatter` — byte-for-byte body, no-frontmatter, unterminated |
-| AC4 | MET | test | `surfdash-pub.test.ts` (runDate, locale escape, non-image cover, no-extension cover; nothing written) + `podcast-pub.test.ts` (`/etc/passwd` → ok:false with zero presigns; `.jpg` → basename + `image/jpeg`); the existing runDate + `.png` cover test still passes |
-| AC5 | MET | test | `image-gen/tests/providers.test.ts` — parameterised over all 12 fetching providers, every recorded init `instanceof AbortSignal`; plus the 50 ms abort-override behaviour test. `voice-gen/tests/voice-gen.test.ts` + `voicebox-server.test.ts`. Static backstop: `rg` shows every `fetch(Fn)?(` call site carries `signal` |
-| AC6 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts` — temp repo on `main` with a bare `origin`: only the patched `index.md` is committed, `other.txt` remains staged, `origin/main` == local HEAD; on `feature` the run exits non-zero with HEAD unchanged and a message naming `main` |
-| AC7 | MET | test | `surfdash-pub.test.ts` processPublishIO — `{not json` and `{"body": 42}` both reject and write `ok:false` with the nested out dir created |
-| AC8 | MET | test | `image-gen/tests/presets.test.ts` — `resolvePresetRoots` with `[dirA, '', dirB].join(delimiter)`; imports `delimiter` from `node:path` |
-| AC9 | MET | test | `wechatmp-pub/tests/wechatmp-pub.test.ts` — four inline cases through `markdownToWechatHtml` |
-| AC10 | MET | test | `zenn-pub/tests/zenn-pub.test.ts` — mock `npx`/`git` bins recording argv: pinned `--package` prefix, `rev-parse`/`commit -- <path>`/`push origin main`, non-main refusal with no commit/push, username URL, and the unset-var message |
-| AC11 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts` — `image: 'https://cdn.example/it''s-$&-cover.png'` (and `og_image:`) parses back to the original URL; body `image: keep-me` untouched |
-| AC12 | MET | command | `bun run spur-check` PASS (Biome 2.5.5 + typecheck + `spur rule run --preset recommended-pre-check` → all 48 rules passed + 1275 tests, 0 fail; coverage 98.64 % funcs / 98.18 % lines). `git status --short` lists only the AC12-permitted paths (42 entries), nothing under `apps/cli/plugins/` or `plugins/sp/`. The three edited existing assertions are the zenn URL, the zenn git args, and the podcast cover MIME/basename |
+| AC1 | MET | test | image-gen.test.ts:296 asserts proxy password absent from spawned curl argv; API key conveyed via config file/-d @- stdin; file 0o600 deleted in finally |
+| AC2 | MET | test | podcast-pub.test.ts:1117 javascript: literal, :1124 onerror escaped, :1142 &lt;script&gt; in rendered notes |
+| AC3 | MET | test | surfdash-pub.test.ts:646 body occurrence at :662 preserved; only frontmatter title/description rewritten |
+| AC4 | MET | test | map.test.ts:15 traversal rejection; surfdash-pub.test.ts:256 runDate/:301 cover-ext/:313 escape-locale/:323 escape-posts |
+| AC5 | MET | test+static-backstop | image-gen.test.ts:354 per-provider timeout table; script backstop: 45/45 fetch call sites carry signal; kk-core/publish-harness untouched |
+| AC6 | MET | test | kk-workflow-stages.test.ts:1024 non-main, :1034 no-staged, :1076 scoped-paths, :1090 no-changes |
+| AC7 | MET | test | surfdash-pub.test.ts:726/:740 'Invalid Content input'; :756 nested object preserved |
+| AC8 | MET | test | presets.test.ts:99 two-dir both consulted; docs/04_DESIGN.md:637 |
+| AC9 | MET | test | wechatmp-pub.test.ts:41 &quot;hi&quot;, :90 javascript: literal, :95 https survives escaped |
+| AC10 | MET | test | zenn-pub.test.ts:310 pinned CLI, :317/:331 rev-parse + HEAD:main + scoped commit, :339 alice URL; ZENN_TOKEN never in URL |
+| AC11 | MET | test | kk-workflow-stages.test.ts:591 adversarial title; body untouched; keep-me comment kept; Bun.YAML.parse round-trip |
+| AC12 | MET | gate | bun run gate PASS: format + build + lint/typecheck + 48 pre-rules + 1285/1285 tests (0 fail; 1 pre-existing skip in kk-core unrelated) + 2 post-rules; tree clean, changes committed in 927d0cc3 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
