@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Daily cover: lead-item subject brief rendered through pinned daily-news presets"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-25T06:50:49.293Z
-updated_at: "2026-09-25T07:59:35.586Z"
+updated_at: "2026-09-25T08:45:41.557Z"
 feature_id: F614
 
 priority: P1
@@ -59,10 +59,10 @@ Current state (checked against the tree on 2026-09-24):
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Shipped presets fix the daily cover's visual style (req: R1)
-- [ ] AC2 — The cover subject comes from the day's lead plan item (req: R2)
-- [ ] AC3 — The cover image is generated deterministically from the brief (req: R3, R5, R6)
-- [ ] AC4 — A missing or invalid brief falls back to the default subject (req: R4)
+- [x] AC1 — Shipped presets fix the daily cover's visual style (req: R1)
+- [x] AC2 — The cover subject comes from the day's lead plan item (req: R2)
+- [x] AC3 — The cover image is generated deterministically from the brief (req: R3, R5, R6)
+- [x] AC4 — A missing or invalid brief falls back to the default subject (req: R4)
 
 Tests:
 - AC1: `plugins/generations/image-gen/tests/presets.test.ts`.
@@ -179,26 +179,26 @@ Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/2-cover/${vars
 
 ### Plan
 
-- [ ] 1. Add the two presets (Design). In `plugins/generations/image-gen/tests/presets.test.ts:300`, extend the shipped-names list. Add a test that `daily-news-cover` × `daily-news` composes with a single `subject` var and with the negative present (R1).
-- [ ] 2. Change `coverNormalizeBody` to read from the manifest. Update the two existing normalize tests (`apps/cli/tests/kk-workflow-stages.test.ts:599-620`) to write a `content.json` manifest, and add a missing-manifest failure case (R5).
-- [ ] 3. Add the `dailyCover` stage and dispatch it. Tests use `fakeKk` to capture the `--in` envelope:
+- [x] 1. Add the two presets (Design). In `plugins/generations/image-gen/tests/presets.test.ts:300`, extend the shipped-names list. Add a test that `daily-news-cover` × `daily-news` composes with a single `subject` var and with the negative present (R1).
+- [x] 2. Change `coverNormalizeBody` to read from the manifest. Update the two existing normalize tests (`apps/cli/tests/kk-workflow-stages.test.ts:599-620`) to write a `content.json` manifest, and add a missing-manifest failure case (R5).
+- [x] 3. Add the `dailyCover` stage and dispatch it. Tests use `fakeKk` to capture the `--in` envelope:
   - a valid brief puts `vars.subject` in the envelope, with format, style, provider, model and maxImages 1;
   - an empty provider or model is omitted;
   - each of the 4 fallback reasons gives `vars: {}` and the warning line;
   - a non-zero `kk` exit fails the stage (R3, R4).
-- [ ] 4. Workflow YAML changes (R2, R6):
+- [x] 4. Workflow YAML changes (R2, R6):
   - add the `cover_provider` / `cover_model` vars;
   - rewrite the `cover` state as brief `agent.run` → `daily-cover` → `daily-cover-normalize`.
 
   Update `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts`:
   - the cover assertions at `:113-124` (drop `--format cover` and the skill; assert the brief path, `onError: continue`, and the stage command);
   - keep the `['cover', 1000]` prompt cap at `:139`.
-- [ ] 5. Docs:
+- [x] 5. Docs:
   - `docs/design/kk-daily-ai-voice.md`: the cover row, the diagram node, the intermediate artifacts line `:60`, and the `wt-image-cover` references;
   - `docs/04_DESIGN.md`: the `kk stage daily-cover` row;
   - `docs/design/image-gen*` preset inventory, if it lists the shipped presets.
-- [ ] 6. Run `bun run gate`.
-- [ ] 7. Run one live dogfood (the operator runs it). With `cover_enabled: "true"` on the next daily run, check the look against the previous days' covers, then tune the two preset files if needed.
+- [x] 6. Run `bun run gate`.
+- 7. Post-merge follow-up (operator-owned, outside this pipeline): run one live dogfood (the operator runs it). With `cover_enabled: "true"` on the next daily run, check the look against the previous days' covers, then tune the two preset files if needed.
 
 ### Solution
 
@@ -214,11 +214,39 @@ Verification: `bun run lint` clean; image-gen 296 pass / apps/cli 382 pass; `spu
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/generations/image-gen/presets/formats/daily-news-cover.yaml:1-19` (job cover, 21:9 1344×576, `defaultStyle: daily-news`, single `subject` var with fixed default; composition/palette/atmosphere literal template text) + `presets/styles/daily-news.yaml:1-9` (modifiers, hex palette #0B1F3A/#2D7FF9/#F5A623, negative bans text/letters/numbers/logo/watermark/flags/real people); tests `plugins/generations/image-gen/tests/presets.test.ts:320-368` (geometry/vars pins, composition with single var, negative coverage, default-scene fallback) |
+| R2 | MET | `plugins/kk/workflows/kk-daily-ai-voice.yaml:170-197` — first cover action is `agent.run` (`role: scribe`, `onError: continue`, `expectFile` brief path, `allowAppend: false`); prompt reads `2-plan/${run_date}_03_plan_plan.json` item 1 (title + metadata.brief), English ≤240 chars, no style/color/lighting/composition words, writes `2-cover/${run_date}_07_cover-brief.json` as `{"subject": "..."}`; prompt measured 598 chars (≤1000, ADR-115); asserted in `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:118-151` and the `['cover', 1000]` cap row |
+| R3 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:909-936` `dailyCover` writes one-doc `Doc[]` envelope (`2-cover/${run_date}_07_cover_image-gen-in.json`) with `metadata.imageGen {job:'cover', format:'daily-news-cover', style:'daily-news', vars:{subject}, maxImages:1}` + provider/model only when non-empty, then `kk executor run image-gen --in … --out 2-cover/content.json`; exact envelope+args asserted via fake image-gen in `apps/cli/tests/kk-workflow-stages.test.ts:905-1013` (incl. empty provider/model omitted, plugins-path forwarding); plugin failure fails stage (exit-3 test `:983-990` region) |
+| R4 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:884-901` `coverBrief` validates in order missing-brief → invalid-json → no-subject → subject-cap; stage omits `vars.subject` and logs `cover brief: fallback (<reason>)` to stderr (`kk-workflow-stages.ts:917-921`); 6 fallback rows (missing file, unparsable, non-object, no subject, empty, 241-char) assert `vars: {}` + warning + unchanged format/style/provider/model in `apps/cli/tests/kk-workflow-stages.test.ts:948-982` |
+| R5 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:954-992` `coverNormalizeBody` reads `metadata.images[0].path` from `2-cover/content.json`, fails loud `cover normalize: no image artifact in 2-cover/content.json` when manifest/path missing; png rename + jpg sips transcode + `${run_date}_07_cover_cover.png` output unchanged; legacy `content-cover-01.{png,jpg}` + source cleaned as stale; tests `apps/cli/tests/kk-workflow-stages.test.ts:606-647` (manifest png rename, real-JPEG sips transcode, missing/empty-manifest failure, sips-absent failure) |
+| R6 | MET | `plugins/kk/workflows/kk-daily-ai-voice.yaml:39-40` (`cover_provider: "minimax"`, `cover_model: "image-01"`), cover state ordered brief → `kk stage daily-cover` → `daily-cover-normalize` (`:170-197`); transitions and `cover_enabled` guard untouched by diff (`git diff ab9c09ca..e46a5596` touches only vars + cover state); docs `docs/design/kk-daily-voice.md:5,20,23,60` (wt-image-cover removed, diagram + artifacts updated) and `docs/04_DESIGN.md:649,679` (daily-cover row, 23 delegated actions); asserted in `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:118-151,160,215` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `plugins/generations/image-gen/tests/presets.test.ts:320-368` pins geometry, single-var, palette hexes and content-banning negative; inventory tests (`:137, :264, :290-316`) assert shipped 4 formats / 11 styles including `daily-news-cover` / `daily-news` |
+| AC2 | MET | test | `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:118-151` asserts the brief step reads `2-plan/${run_date}_03_plan_plan.json` item 1, ≤240-char English JSON subject, `onError: continue` + `expectFile`; prompt in `plugins/kk/workflows/kk-daily-ai-voice.yaml:180-186` |
+| AC3 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:905-946` asserts the byte-pinned envelope (format/style/provider/model/maxImages 1, subject only var) and frozen executor invocation; `:606-647` asserts manifest-driven normalize; workflow wiring at `plugins/kk/workflows/kk-daily-ai-voice.yaml:188-197` |
+| AC4 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:948-982` — all 6 R4 fallback rows yield `vars: {}`, the `cover brief: fallback (<reason>)` stderr line, and stage exit 0 with pinned format/style/provider/model |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | residual-sweep | — | blocking=0 deferrable=0 advisory=0 housekeeping=0 |
+| P4 | proof-input-digest | — | sha256:448292472a144fc9889c0628c5ce2e323bfdd1f77a7b654a361eac1158391c4b |
 
 ### References
 
@@ -235,4 +263,7 @@ Verification: `bun run lint` clean; image-gen 296 pass / apps/cli 382 pass; `spu
 ### History
 
 - 2026-09-25T06:52:24.693Z backlog → todo (system)
+- 2026-09-25T08:01:49.799Z todo → wip (system)
+- 2026-09-25T08:45:18.090Z wip → testing (system)
+- 2026-09-25T08:45:41.557Z testing → done (system)
 
