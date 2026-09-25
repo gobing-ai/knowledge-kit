@@ -995,6 +995,14 @@ describe('podcast-pub show-notes rendering (L1 R6)', () => {
         expect(chineseOnly).toContain(
             '详情见本期完整文章：[ 每日要闻 ](https://surfing.salty.vip/zh/posts/2026-01-02-post)',
         );
+        // en postPath → site-root URL (surfdash localePathPrefix: en has no /en prefix).
+        const enPost = renderShowNotesMarkdown([], {
+            title: '每日要闻',
+            runDate: '2026-01-02',
+            articlePostPath: '/srv/surfdash/content/posts/articles/en/20260906-ai-daily/index.md',
+        });
+        expect(enPost).toContain('详情见本期完整文章：[ 每日要闻 ](https://surfing.salty.vip/posts/20260906-ai-daily)');
+        expect(enPost).not.toContain('/en/posts/');
 
         const customBase = renderShowNotesMarkdown([], {
             title: 'Sora 2!',

@@ -449,6 +449,11 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
     }
 
     const locale = process.env.SURFDASH_LOCALE ?? 'zh';
+    // Fail loud on legacy locale codes ('cn' is the pre-migration name for zh) —
+    // they'd write a content dir no route serves.
+    if (!['zh', 'en', 'ja'].includes(locale)) {
+        return fail(`SURFDASH_LOCALE must be one of zh/en/ja, got '${locale}'`);
+    }
     // Date-stamped slug (metadata.runDate, e.g. 20260904) keeps same-title daily posts
     // from colliding; Chinese titles slugify to '' and fall back to the bare date.
     const runDate = typeof payload.content.metadata?.runDate === 'string' ? payload.content.metadata.runDate : '';
@@ -504,7 +509,11 @@ async function publishPost(payload: PublishTransportPayload): Promise<Result> {
         // Deploy seam: commit + push the post so deploy.yml builds it, then wait for
         // the live URL — downstream show-notes advertise a real page, not a 404.
         // Tests (and offline runs) opt out via SURFDASH_AUTO_PUSH=0.
-        const articleUrl = `${(process.env.SURFDASH_URL ?? 'https://surfing.salty.vip').replace(/\/$/, '')}/${locale}/posts/${slug}`;
+        // URL shape mirrors surfdash's localePathPrefix (surfdash/src/lib/seo.ts):
+        // en is served at the site root, zh/ja carry a /<locale> prefix. Composing
+        // /<locale>/posts/<slug> unconditionally 404s en posts.
+        const baseUrl = (process.env.SURFDASH_URL ?? 'https://surfing.salty.vip').replace(/\/$/, '');
+        const articleUrl = `${baseUrl}${locale === 'en' ? '' : `/${locale}`}/posts/${slug}`;
         if (process.env.SURFDASH_AUTO_PUSH === '0') {
             return ResultSchema.parse({
                 ok: true,

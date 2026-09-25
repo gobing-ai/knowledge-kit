@@ -309,9 +309,14 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
     const segments = opts.articlePostPath?.split(/[\\/]/).filter((s) => s.length > 0) ?? [];
     const postSlug = segments.length >= 2 ? (segments[segments.length - 2] ?? '') : '';
     const postLocale = segments.find((s) => ['zh', 'en', 'ja'].includes(s)) ?? 'zh';
+    // URL shape mirrors surfdash's localePathPrefix (surfdash/src/lib/seo.ts):
+    // en is served at the site root, zh/ja carry a /<locale> prefix. A bare
+    // /<locale>/posts/<slug> 404s en posts. Fallback stays zh — the podcast
+    // is zh-only today.
+    const localePrefix = postLocale === 'en' ? '' : `/${postLocale}`;
     const articleUrl =
         postSlug.length > 0
-            ? `${baseUrl}/${postLocale}/posts/${postSlug}`
+            ? `${baseUrl}${localePrefix}/posts/${postSlug}`
             : `${baseUrl}/zh/posts/${opts.runDate}-${slugify(opts.title)}`;
     const briefMode = opts.briefMode === true && postSlug.length > 0;
     const sourceLabel = (d: Doc): string => {

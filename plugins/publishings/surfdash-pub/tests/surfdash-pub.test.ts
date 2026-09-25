@@ -948,7 +948,37 @@ describe('path-derived metadata validation (R4)', () => {
         try {
             const result = await withRoot(tmpDir, { runDate: '20260904' }, '../../x');
             expect(result.ok).toBe(false);
-            expect(result.error).toContain('escapes');
+            // The zh/en/ja allowlist (added for the locale-prefix URL fix) now
+            // rejects traversal locales before the path-escape check runs.
+            expect(result.error).toContain('SURFDASH_LOCALE');
+        } finally {
+            if (orig.bin !== undefined) process.env.POSTSURFING_BIN = orig.bin;
+            else delete process.env.POSTSURFING_BIN;
+            if (orig.root !== undefined) process.env.SURFDASH_ROOT = orig.root;
+            else delete process.env.SURFDASH_ROOT;
+            if (orig.locale !== undefined) process.env.SURFDASH_LOCALE = orig.locale;
+            else delete process.env.SURFDASH_LOCALE;
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('(b2) en publishes at the site root — no /en prefix (surfdash localePathPrefix)', async () => {
+        const tmpDir = join(process.cwd(), '.tmp-test-surfdash-en-url');
+        await mkdir(tmpDir, { recursive: true });
+        const orig = {
+            bin: process.env.POSTSURFING_BIN,
+            root: process.env.SURFDASH_ROOT,
+            locale: process.env.SURFDASH_LOCALE,
+        };
+        try {
+            // en: localePathPrefix is "" — /en/posts/… 404s on the deployed site.
+            const en = await withRoot(tmpDir, { runDate: '20260904' }, 'en');
+            expect(en.ok).toBe(true);
+            if (en.ok) expect(en.url).toBe('https://surfing.salty.vip/posts/20260904-daily-ai');
+            // zh/ja keep the /<locale> prefix.
+            const zh = await withRoot(tmpDir, { runDate: '20260904' }, 'zh');
+            expect(zh.ok).toBe(true);
+            if (zh.ok) expect(zh.url).toBe('https://surfing.salty.vip/zh/posts/20260904-daily-ai');
         } finally {
             if (orig.bin !== undefined) process.env.POSTSURFING_BIN = orig.bin;
             else delete process.env.POSTSURFING_BIN;
