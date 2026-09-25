@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.26.0
+version: 2.27.0
 created_at: 2026-07-22
 updated_at: 2026-09-25
 derived_from: [00_ADR, 01_PRD]
@@ -28,18 +28,32 @@ plugins/
     aihot-ingest/     # @gobing-ai/aihot-ingest — curated Aihot news → Doc[] (F6)
     karakeep-local/   # @gobing-ai/karakeep-local — ingestion plugin: rclone-synced folder → Doc[]
     web-search/       # @gobing-ai/web-search — ingestion plugin: topic → Doc[] (live Firecrawl client + offline fixture stub; C4)
+    horizon-ingest/   # @gobing-ai/horizon-ingest — Horizon CLI (`uv run horizon`) digest items → Doc[] (F61)
+    last30days-ingest/ # @gobing-ai/last30days-ingest — last30days skill CLI JSON → Doc[] (F61)
   generations/
     content-gen/      # @gobing-ai/content-gen — generator plugin, owned STORM engine (D4)
     dailynews-gen/    # @gobing-ai/dailynews-gen — Doc[] → markdown Content carrying VoiceScript YAML (F6)
     voice-gen/        # @gobing-ai/voice-gen — generator plugin: Voicebox TTS audio output (D5)
     omni-voice-gen/   # Python (uv) generator plugin: OmniVoice TTS, drop-in for voice-gen (F611, ADR-020 — the only non-TypeScript plugin)
     gemini-tts/       # @gobing-ai/gemini-tts — generator plugin: hosted Gemini 3.8 TTS over voice-gen's pipeline (F612, ADR-023)
+    core-facts-gen/   # @gobing-ai/core-facts-gen — merged Doc[] → dated core-facts markdown (mechanical, no LLM; F61)
+    daily-article-gen/ # @gobing-ai/daily-article-gen — merged Doc[] → daily AI-news article with per-item links (mechanical, no LLM)
+    episode-plan-gen/ # @gobing-ai/episode-plan-gen — scores/dedups/selects blended Doc[] into the episode plan (mechanical, no LLM; F61)
+    image-gen/        # @gobing-ai/image-gen — free / cover / illustration image jobs; 12 provider adapters (K)
+    news-report-gen/  # @gobing-ai/news-report-gen — per-run report from existing run artifacts (output-only; 0117)
   publishings/
     surfdash-pub/     # @gobing-ai/surfdash-pub — publish channel, file-cli (postsurfing CLI) (E3)
     zenn-pub/         # @gobing-ai/zenn-pub — publish channel, file-cli (Zenn CLI + git) (E4)
     qiita-pub/        # @gobing-ai/qiita-pub — publish channel, file-cli (Qiita API v2 token) (E4)
     emdash-pub/       # @gobing-ai/emdash-pub — publish channel, file-cli (EmDash REST token) (E5)
     podcast-pub/      # @gobing-ai/podcast-pub — publish channel, file-cli (microfeed REST + presigned upload) (E6)
+    medium-pub/       # @gobing-ai/medium-pub — publish channel, file-cli (Medium integration-token REST) (E7)
+    wechatmp-pub/     # @gobing-ai/wechatmp-pub — publish channel, file-cli (WeChat `draft/add`) (E7)
+    x-pub/            # @gobing-ai/x-pub — publish channel: post via tweets API, article via browser/agent (E7)
+    juejin-pub/       # @gobing-ai/juejin-pub — publish channel, browser/agent (Juejin) (E7)
+    infoq-pub/        # @gobing-ai/infoq-pub — publish channel, browser/agent (InfoQ CN) (E7)
+    substack-pub/     # @gobing-ai/substack-pub — publish channel, browser/agent (Substack) (E7)
+    xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/agent (Xiaohongshu) (E7)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
                       # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
@@ -226,7 +240,9 @@ through the locale-scaffolding selector.
 Canonical paths are `kk executor run` / `kk executor fan-in` / `kk executor fan-out` /
 `kk plugin status`. Engines and file contracts above are unchanged. Hidden one-release aliases
 (`invoke` / `fanin` / `fanout` / `plugins *`) keep the old names working but are not listed in
-`kk --help`.
+`kk --help`. ADR-011's "exactly two first-layer nouns" was amended 2026-09-18: `kk stage <stage>
+[args…]` is a **third** first-layer noun that runs a `kk-workflow-stages.ts` stage for workflow
+shell steps (`docs/04_DESIGN.md` §1.8). It is a deterministic step runner, not a plugin operation.
 
 ### Output and diagnostics foundation (ADR-014/ADR-015)
 
@@ -312,11 +328,18 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
 | `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
+| `plugins/ingestions/horizon-ingest` | `@gobing-ai/horizon-ingest` | Ingestion plugin: Horizon CLI (`uv run horizon`) digest items → `Doc[]` (F61) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
+| `plugins/ingestions/last30days-ingest` | `@gobing-ai/last30days-ingest` | Ingestion plugin: `last30days` skill CLI JSON → `Doc[]` (F61) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/content-gen` | `@gobing-ai/content-gen` | Owned STORM pipeline → markdown `Content` (D4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/generations/dailynews-gen` | `@gobing-ai/dailynews-gen` | News `Doc[]` → validated VoiceScript YAML in markdown `Content` (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/voice-gen` | `@gobing-ai/voice-gen` | VoiceScript/plain-text `Doc[]` → Voicebox WAV/optional MP3 audio `Content` (D5) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/generations/omni-voice-gen` | — (Python, uv — not a Bun workspace) | VoiceScript/plain-text `Doc[]` → OmniVoice WAV/optional MP3 audio `Content`; drop-in for voice-gen via the `vdriver` workflow var (F611, ADR-020) | PyPI `omnivoice` (torch stack), stdlib |
 | `plugins/generations/gemini-tts` | `@gobing-ai/gemini-tts` | VoiceScript/plain-text `Doc[]` → hosted Gemini 3.8 TTS WAV/optional MP3 audio `Content`; supplies a Gemini-backed `VoiceboxClient` to voice-gen's `processGeneratorIO` rather than porting the pipeline (F612, ADR-023), plus the one-time replicated-voice creation CLI | `@gobing-ai/voice-gen`, `@gobing-ai/ts-utils` |
+| `plugins/generations/core-facts-gen` | `@gobing-ai/core-facts-gen` | Merged `Doc[]` → one dated core-facts markdown `Content` (mechanical, no LLM; F61) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
+| `plugins/generations/daily-article-gen` | `@gobing-ai/daily-article-gen` | Merged `Doc[]` → readable daily AI-news article with per-item source links (mechanical template, no LLM) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
+| `plugins/generations/episode-plan-gen` | `@gobing-ai/episode-plan-gen` | Scores/dedups/selects blended `Doc[]` into the daily episode plan, plus the `--mode filter` quality gate (mechanical, no LLM; F61) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
+| `plugins/generations/image-gen` | `@gobing-ai/image-gen` | `free` / `cover` / `illustration` image jobs over the generator `Doc[]` → `Content` contract; 12 provider adapters (K) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
+| `plugins/generations/news-report-gen` | `@gobing-ai/news-report-gen` | Assembles the per-run report from existing run artifacts (QC aggregates, rejects, step timing) — output-only (0117) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/publishings/surfdash-pub` | `@gobing-ai/surfdash-pub` | Publish channel: `postsurfing` CLI transport, Surfdash mapping (E3) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/zenn-pub` | `@gobing-ai/zenn-pub` | Publish channel: Zenn CLI + git transport, Zenn mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/qiita-pub` | `@gobing-ai/qiita-pub` | Publish channel: Qiita API v2 token transport, Qiita mapping (E4) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
@@ -356,7 +379,7 @@ agent-default channels sequence as workflow steps. Channel plugins (`medium-pub`
 
 Full design: `docs/design/remaining-wt-publish-harvest.md`.
 
-## kk-itc end-to-end (ADR-021/ADR-022, accepted design — F41)
+## kk-itc end-to-end (ADR-021/ADR-022, shipped — F41)
 
 `kk-itc` runs the whole path from idea to platform drafts in one state machine, because spur has
 no sub-workflow action. The authoring states stay as they are. A var-gated tail follows:

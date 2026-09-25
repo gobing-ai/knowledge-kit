@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.33.0
+version: 2.34.0
 created_at: 2026-07-22
 updated_at: 2026-09-25
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -37,7 +37,7 @@ sync: [T3]
 | [episode-plan-gen.md](design/episode-plan-gen.md) | Episode plan generator: score, dedup, select, translate flag — single upstream for article/script/show notes | shipped (F61, 2026-09-05) |
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
 | [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | shipped (E6) |
-| [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | accepted design (E7) |
+| [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | shipped (E7) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
@@ -309,6 +309,15 @@ as before; a publish whose `Result` parses but carries `ok: false` fails the inv
 naming the same file (dev+ino identity, not path string — 0157 R1) is rejected pre-mutation (0110 I5); the exact `--out` path is unlinked
 before spawn, so success always reflects fresh output (delete-or-verify).
 
+### 1.8 `stage` — shipped (F8; task 0133)
+
+`kk stage <stage> [args…]` runs one stage of the shared workflow stage runner
+(`plugins/kk/scripts/kk-workflow-stages.ts`) with positional pass-through, so workflow shell steps
+do not re-resolve the script path themselves. Unknown options are allowed and forwarded. The exit
+code is the stage's own; a non-zero code throws `CommanderError` (`kk.stage.failed`). It is a
+first-layer noun **in addition to** `executor` / `plugin` (ADR-011 amendment 2026-09-18). Runner and
+sidecar resolution, and the delegated stage names, are in §7.
+
 ## 2. Configuration keys
 
 Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness config stays under
@@ -351,6 +360,9 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `QC_CATEGORIES` | no (episode-plan-gen `--mode filter`) | Comma-list category allowlist for the quality controller (default `ai-news,ai-industry`); unknown category → exit 1 (fail loud) |
 | `QC_MIN_QUALITY` / `QC_MIN_IMPORTANCE` / `QC_MIN_URGENCY` / `QC_MIN_IMPACT` | no (episode-plan-gen `--mode filter`) | Inclusive per-dimension minimums, integers 0–5 (defaults `2`/`3`/`2`/`1` — 0099 calibration from 0098 dogfood: 3/3/2/2 rejected 20/20 live candidates); non-integer or out-of-range → exit 1, never clamped |
 | `CONTENT_LANGUAGE` | no (content-gen) | Writing language directive for STORM outline/article/polish (`zh` = Simplified Chinese incl. title); the daily workflow passes `language` through |
+| `KK_IMAGE_MAX_IMAGES` | no (image-gen) | Per-run image budget cap (compiled default `4`). Precedence `spec.maxImages` → this → default; non-integer or `< 1` → exit 1 naming the value |
+| `KK_IMAGE_DRY_RUN` | no (image-gen) | `1` composes every prompt and selects the provider but spends nothing (`metadata.dryRun: true`). The illustration anchor-plan check still runs on this branch (0169) |
+| `KK_IMAGE_PRESET_PATH` | no (image-gen) | `path.delimiter`-separated extra preset roots, lowest → highest after builtin → `~/.config/kk/image-presets` → `<KNOWLEDGE_KIT_PROJECT_ROOT>/.kk/image-presets` (ADR-012 root order); non-directory entries are skipped |
 | `SURFDASH_ROOT` | no (surfdash-pub) | Surfdash checkout root; default derives from `POSTSURFING_BIN` (`<root>/scripts/<cli>`). The article markdown must land at `content/posts/articles/<locale>/<slug>/index.md` |
 | `SURFDASH_LOCALE` | no (surfdash-pub) | Content locale directory for the published post (default `zh`) |
 | `SURFDASH_AUTO_PUSH` | no (surfdash-pub) | `0` disables the post-publish deploy seam (git commit/push of the post path + live-URL poll); any other value or unset auto-pushes. Production deploys run from surfdash's `deploy.yml` on every push to `main` — without the seam the article 404s until a manual commit (dogfood 2026-09-12) |
@@ -375,6 +387,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `MICROFEED_BASE_URL` | yes (podcast-pub) | Base URL for self-hosted microfeed REST API (e.g. `https://<instance>.workers.dev`) |
 | `MICROFEED_API_KEY` | yes (podcast-pub) | microfeed named API key (`mf_…`) with write scope |
 | `MICROFEED_TIMEOUT_MS` | no (podcast-pub) | Request / upload timeout in ms (default: `300000`) |
+| `KK_BROWSER_PROFILE_DIR` | no (x-pub `article`, xhs-pub, juejin-pub, infoq-pub, substack-pub) | Shared fallback browser profile dir for the agent/script browser transports; a per-channel override wins (`X_PROFILE_DIR` / `XHS_PROFILE_DIR` / `JUEJIN_PROFILE_DIR` / `INFOQ_PROFILE_DIR` / `SUBSTACK_PROFILE_DIR`). Default `~/.config/kk/browser-profiles/<channel>` (`resolveBrowserProfileDir`) |
 
 ### Request timeouts
 

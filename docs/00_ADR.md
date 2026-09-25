@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.27.0
+version: 1.28.0
 created_at: 2026-05-28
 updated_at: 2026-09-25
 edit_rules: 99 §6.1
@@ -365,7 +365,7 @@ boundaries), `docs/04_DESIGN.md` §3–§4, feature E4.
 
 ### Amendment — 2026-09-17 (browser drivers; E7)
 
-> **Status:** Accepted (design) · **Amends:** this entry's deferred-browser clause.
+> **Status:** Accepted (shipped — E7, tasks 0141–0147) · **Amends:** this entry's deferred-browser clause.
 
 - **Browser is no longer deferred.** Leftover wt channels that have no official write API
   (`juejin-pub`, `substack-pub`, `infoq-pub`, `xhs-pub`, `x-pub` `article`) implement
@@ -512,6 +512,15 @@ Feature A21 shipped with task 0052: `kk executor run|fan-in|fan-out` and `kk plu
 live in `apps/cli` (`registerExecutorCommand` / `registerPluginCommand`). Hidden one-release
 aliases `invoke` / top-level `fanin` / `fanout` / `plugins *` reach the same engines and are not
 listed in `kk --help`; `kk add` is removed. Status moves from `Accepted (design)` to `Accepted`.
+
+### Amendment — 2026-09-18 (`stage` is a third first-layer noun)
+
+The shared workflow stage runner landed as a first-layer verb: `kk stage <stage> [args…]`
+(commit `1eb6c8d6`, release 0.0.19; feature F8, task 0133). Workflow shell steps call it to reach
+`plugins/kk/scripts/kk-workflow-stages.ts` without re-resolving the script path themselves. R1's
+"exactly `executor` and `plugin`" is **amended, not superseded**: `stage` runs deterministic
+workflow steps, so `executor` remains the uniform single-plugin step and no plugin operation moves
+to it. Detail: `docs/04_DESIGN.md` §1.8 and §7.
 
 ---
 

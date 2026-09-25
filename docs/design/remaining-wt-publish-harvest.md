@@ -1,6 +1,6 @@
 # Remaining wt-publish harvest
 
-Feature **E7** (accepted design — not yet built). Harvest the leftover wt publish
+Feature **E7** (**shipped**; tasks 0141–0147). Harvest the leftover wt publish
 channels as `kind: publish` plugins on `@gobing-ai/publish-harness`, with a shared
 browser/session layer and a transport policy that prefers official APIs.
 
