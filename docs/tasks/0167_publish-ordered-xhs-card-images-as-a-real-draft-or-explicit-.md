@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Publish ordered XHS card images as a real draft or explicit live post
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-09-25T18:16:35.413Z
-updated_at: "2026-09-25T18:30:34.008Z"
+updated_at: "2026-09-25T22:53:37.447Z"
 feature_id: E8
 priority: P2
 estimate_hours: 12
@@ -91,3 +91,6 @@ Invariant: no browser opens for invalid input; no live side effect without `publ
 - Consumer: task 0168 (`kk:xhs-images` writes the Content this plugin reads)
 
 ### History
+
+- 2026-09-25T22:53:37.447Z todo → wip (system)
+
