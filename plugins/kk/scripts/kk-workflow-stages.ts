@@ -478,6 +478,12 @@ function pluginsArgs(pluginsPath: string): string[] {
 }
 
 /** `kk <args>` with the caller's env overrides; `soft` mirrors the shell's `|| true`. */
+// spur --async exports SPUR_EXPECTED_DEFINITION_DIGEST (its own worker's identity binding) into
+// every descendant env; a nested `spur workflow run` — postsurfing's publishing workflow under
+// surfdash-pub — resolves a DIFFERENT digest and refuses to start. Strip both launcher vars at
+// the nested-spur boundary (SPUR_WORKFLOW_RUN_ACTIVE is the older sibling guard, task 0133-era).
+const NESTED_SPUR_UNSET = ['SPUR_WORKFLOW_RUN_ACTIVE', 'SPUR_EXPECTED_DEFINITION_DIGEST'] as const;
+
 function kk(
     args: string[],
     options: { env?: Record<string, string>; unset?: readonly string[]; soft?: boolean } = {},
@@ -1172,7 +1178,7 @@ function dailyPublishSurfdash(args: string[]): void {
                 ...pluginsArgs(pluginsPath),
             ],
             {
-                unset: ['SPUR_WORKFLOW_RUN_ACTIVE'],
+                unset: NESTED_SPUR_UNSET,
                 soft: true,
             },
         );
@@ -1580,7 +1586,9 @@ function dailyTranslateSync(args: string[]): void {
         sted('write', sync, () =>
             writeJqText(sync, { body: '', options: { operation: 'sync', postPath: zhPostPath } }),
         );
-        kk(['executor', 'run', 'surfdash-pub', '--in', sync, '--out', syncResult, ...pluginsArgs(pluginsPath)]);
+        kk(['executor', 'run', 'surfdash-pub', '--in', sync, '--out', syncResult, ...pluginsArgs(pluginsPath)], {
+            unset: NESTED_SPUR_UNSET,
+        });
     });
 }
 

@@ -100,8 +100,11 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain(`\${vars.run_date}_07_cover_cover.png`);
         // Audio is cached when the day's content.json exists and QC passed (daily-generate).
         expect(runnerSource).toContain('qc?.passed === true');
-        // Publish fan-out shells into postsurfing's own spur workflow — the runner unsets the guard.
-        expect(runnerSource).toContain("unset: ['SPUR_WORKFLOW_RUN_ACTIVE']");
+        // Publish fan-out shells into postsurfing's own spur workflow — the runner unsets both
+        // async-launcher vars (run-active guard + digest binding) at the nested-spur boundary.
+        expect(runnerSource).toContain('const NESTED_SPUR_UNSET = [');
+        expect(runnerSource).toContain("'SPUR_WORKFLOW_RUN_ACTIVE', 'SPUR_EXPECTED_DEFINITION_DIGEST'");
+        expect(runnerSource).toContain('unset: NESTED_SPUR_UNSET');
     });
 
     it('R1/R2 (N) — cover state invokes kk:image-authoring under the non-interactive contract and normalizes the artifact', () => {
