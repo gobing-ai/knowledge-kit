@@ -33,6 +33,11 @@ vars:
   skip_review: "false"
   transcode_mp3: "false"
   cover_enabled: "true"
+  # F614: the daily cover pins provider+model in vars — each provider has its own look, so the
+  # pin is part of the style contract; it stays a var because the right value depends on which
+  # credentials the machine has (2026-09-24 run: minimax/image-01).
+  cover_provider: "minimax"
+  cover_model: "image-01"
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
@@ -163,19 +168,28 @@ states:
             kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
 
   - id: cover
-    description: "Generate the article cover image via the kk:image-authoring skill (agent.run)"
+    description: "Render the daily cover from the lead plan item through the pinned daily-news presets (brief agent.run -> pinned stage render -> normalize, F614)"
     onEnter:
       - kind: agent.run
+        # A bad or failed brief must never halt the run: the stage falls back to the format's
+        # default subject (F614 R4) and keeps the same pinned format/style/provider/model.
+        onError: continue
         options:
           role: scribe
           agent: ${vars.agent}
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
-            Invoke the kk:image-authoring skill (generate operation).
-            Non-interactive step: run every image command with KK_NONINTERACTIVE=1 and KK_IMAGE_AUTO_CONFIRM=1 — never prompt (cover_enabled is the spend approval).
-            Command: --format cover --content ${vars.work_dir}/2-article/${vars.run_date}_06_article_article.md --out ${vars.work_dir}/2-cover
-            Template variables (title, subtitle, topics) come from the article as the skill owns; do not pass --style.
-            The plugin writes ${vars.work_dir}/2-cover/content.json plus ${vars.work_dir}/2-cover/content-cover-01.<ext> (ext follows the elected provider: minimax → .jpg, google/ark → .png). On failure report the error verbatim and stop — no procedural fallback.
-          expectFile: ${vars.work_dir}/2-cover/content-cover-01.jpg
+            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+            Take item 1 only (its "title" and "metadata.brief") — the episode's lead story.
+            Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
+            No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
+            Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/2-cover/${vars.run_date}_07_cover-brief.json.
+          expectFile: ${vars.work_dir}/2-cover/${vars.run_date}_07_cover-brief.json
+          allowAppend: false
+      - kind: shell
+        options:
+          command: >-
+            kk stage daily-cover "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cover_provider}" "${vars.cover_model}"
       - kind: shell
         options:
           command: >-

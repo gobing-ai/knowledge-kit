@@ -1,0 +1,9 @@
+name: daily-news
+description: House style for the kk-daily-ai-voice cover series — flat editorial vector, navy/blue/amber
+modifiers: flat editorial vector illustration, bold simple geometric shapes, subtle paper grain, soft even lighting, limited palette
+palette:
+    - { role: background, name: deep navy, hex: '#0B1F3A' }
+    - { role: primary, name: electric blue, hex: '#2D7FF9' }
+    - { role: accent, name: warm amber, hex: '#F5A623' }
+negative: text, letters, words, numbers, captions, watermark, logo, brand marks, flags, real people, recognizable faces, photorealism, clutter
+source: { kind: authored }

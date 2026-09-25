@@ -24,6 +24,13 @@ import { join, resolve } from 'node:path';
  */
 const runner = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
 
+// A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
+// test exercises sips with data it can actually decode.
+const JPEG_BYTES = Buffer.from(
+    '/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAaADAAQAAAABAAAAAQAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAQABAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+mKKKK/Kz/QA/9k=',
+    'base64',
+);
+
 function withTempDir<T>(fn: (dir: string) => T): T {
     const dir = mkdtempSync(join(tmpdir(), 'kk-workflow-stages-'));
     try {
@@ -596,23 +603,58 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
-    it('daily-cover-normalize renames a png cover and clears the stale artifacts', () => {
+    it('daily-cover-normalize renames the manifest-recorded png cover and clears the stale artifacts', () => {
         withTempDir((dir) => {
             const cover = join(dir, '2-cover');
             mkdirSync(cover, { recursive: true });
-            writeFileSync(join(cover, 'content-cover-01.png'), 'png');
-            writeFileSync(join(cover, 'content-cover-01.jpg'), 'jpg');
+            // F614: the artifact name follows the format preset; normalize follows the manifest.
+            const artifact = join(cover, 'content-daily-news-cover-01.png');
+            writeFileSync(artifact, 'png');
+            writeFileSync(join(cover, 'content-cover-01.png'), 'stale-png');
+            writeFileSync(join(cover, 'content-cover-01.jpg'), 'stale-jpg');
+            writeFileSync(join(cover, 'content.json'), JSON.stringify({ metadata: { images: [{ path: artifact }] } }));
             expect(run(['daily-cover-normalize', dir, '20260101']).status).toBe(0);
             expect(readFileSync(join(cover, '20260101_07_cover_cover.png'), 'utf-8')).toBe('png');
+            expect(existsSync(artifact)).toBe(false);
             expect(existsSync(join(cover, 'content-cover-01.png'))).toBe(false);
             expect(existsSync(join(cover, 'content-cover-01.jpg'))).toBe(false);
         });
     });
 
-    it('daily-cover-normalize fails loud when sips is absent for a jpg cover', () => {
+    it('daily-cover-normalize transcodes a manifest-recorded jpg cover via sips', () => {
+        withTempDir((dir) => {
+            const cover = join(dir, '2-cover');
+            mkdirSync(cover, { recursive: true });
+            const artifact = join(cover, 'content-daily-news-cover-01.jpg');
+            writeFileSync(artifact, JPEG_BYTES);
+            writeFileSync(join(cover, 'content.json'), JSON.stringify({ metadata: { images: [{ path: artifact }] } }));
+            expect(run(['daily-cover-normalize', dir, '20260101']).status).toBe(0);
+            expect(existsSync(join(cover, '20260101_07_cover_cover.png'))).toBe(true);
+            expect(existsSync(artifact)).toBe(false);
+        });
+    });
+
+    it('daily-cover-normalize fails loud when the manifest is missing or carries no image path', () => {
         withTempDir((dir) => {
             mkdirSync(join(dir, '2-cover'), { recursive: true });
-            writeFileSync(join(dir, '2-cover/content-cover-01.jpg'), 'jpg');
+            const missing = run(['daily-cover-normalize', dir, '20260101']);
+            expect(missing.status).toBe(1);
+            expect(missing.stderr).toContain('cover normalize: no image artifact in 2-cover/content.json');
+
+            writeFileSync(join(dir, '2-cover/content.json'), JSON.stringify({ metadata: { images: [] } }));
+            const empty = run(['daily-cover-normalize', dir, '20260101']);
+            expect(empty.status).toBe(1);
+            expect(empty.stderr).toContain('cover normalize: no image artifact in 2-cover/content.json');
+        });
+    });
+
+    it('daily-cover-normalize fails loud when sips is absent for a jpg cover', () => {
+        withTempDir((dir) => {
+            const cover = join(dir, '2-cover');
+            mkdirSync(cover, { recursive: true });
+            const artifact = join(cover, 'content-daily-news-cover-01.jpg');
+            writeFileSync(artifact, 'jpg');
+            writeFileSync(join(cover, 'content.json'), JSON.stringify({ metadata: { images: [{ path: artifact }] } }));
             // Keep `bun` resolvable but drop `sips` from PATH: a bin dir holding only a bun symlink.
             const bin = join(dir, 'only-bun');
             mkdirSync(bin, { recursive: true });
@@ -856,6 +898,189 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             );
             expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
             expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
+        });
+    });
+});
+
+describe('F614 (0163) — daily-cover stage', () => {
+    function fakeImageGen(dir: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                'const args = process.argv.slice(2);',
+                "if (process.env.KK_TEST_CALL_LOG) fs.appendFileSync(process.env.KK_TEST_CALL_LOG, JSON.stringify(args) + '\\n');",
+                "if (process.env.KK_TEST_ENV_LOG) fs.appendFileSync(process.env.KK_TEST_ENV_LOG, JSON.stringify(JSON.parse(fs.readFileSync(args[args.indexOf('--in') + 1], 'utf8'))) + '\\n');",
+                "fs.writeFileSync(args[args.indexOf('--out') + 1], JSON.stringify({ metadata: { images: [{ path: 'unused.png' }] } }));",
+                '',
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    function imageGens(envLog: string): Array<Record<string, unknown>> {
+        return envLog
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line) as Array<{ metadata?: { imageGen?: Record<string, unknown> } }>)
+            .map((docs) => docs[0]?.metadata?.imageGen ?? {});
+    }
+
+    const briefSubject = 'a robot reading the morning news at a breakfast table';
+
+    function runDailyCover(
+        dir: string,
+        env: Record<string, string>,
+        provider = 'minimax',
+        model = 'image-01',
+    ): {
+        status: number;
+        stdout: string;
+        stderr: string;
+    } {
+        return run(['daily-cover', dir, '20260101', 'plugins', provider, model], env);
+    }
+
+    it('daily-cover writes the brief subject into the pinned image-gen envelope and invokes the plugin', () => {
+        withTempDir((dir) => {
+            const cover = join(dir, '2-cover');
+            mkdirSync(cover, { recursive: true });
+            writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
+            const env = fakeImageGen(dir);
+            const envLog = join(dir, 'envs.log');
+            const callLog = join(dir, 'calls.log');
+            const result = runDailyCover(dir, { ...env, KK_TEST_ENV_LOG: envLog, KK_TEST_CALL_LOG: callLog });
+
+            expect(result.status).toBe(0);
+            // The plugin call is the frozen executor invocation; non-empty plugins path forwards.
+            const calls = readFileSync(callLog, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            expect(calls).toEqual([
+                [
+                    'executor',
+                    'run',
+                    'image-gen',
+                    '--in',
+                    join(cover, '20260101_07_cover_image-gen-in.json'),
+                    '--out',
+                    join(cover, 'content.json'),
+                    '--plugins-path',
+                    'plugins',
+                ],
+            ]);
+
+            const [imageGen] = imageGens(readFileSync(envLog, 'utf-8'));
+            expect(imageGen).toEqual({
+                job: 'cover',
+                format: 'daily-news-cover',
+                style: 'daily-news',
+                vars: { subject: briefSubject },
+                maxImages: 1,
+                provider: 'minimax',
+                model: 'image-01',
+            });
+        });
+    });
+
+    it('daily-cover omits empty provider/model keys and forwards a non-empty plugins path', () => {
+        withTempDir((dir) => {
+            const cover = join(dir, '2-cover');
+            mkdirSync(cover, { recursive: true });
+            writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
+            const env = fakeImageGen(dir);
+            const envLog = join(dir, 'envs.log');
+            const callLog = join(dir, 'calls.log');
+            const options = { ...env, KK_TEST_ENV_LOG: envLog, KK_TEST_CALL_LOG: callLog };
+
+            // Empty provider/model/plugins path: keys omitted, no --plugins-path flag.
+            expect(run(['daily-cover', dir, '20260101', '', '', ''], options).status).toBe(0);
+            let calls = readFileSync(callLog, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            expect(calls[0]).toEqual([
+                'executor',
+                'run',
+                'image-gen',
+                '--in',
+                join(cover, '20260101_07_cover_image-gen-in.json'),
+                '--out',
+                join(cover, 'content.json'),
+            ]);
+            let imageGensOut = imageGens(readFileSync(envLog, 'utf-8'));
+            expect(imageGensOut[0]).toEqual({
+                job: 'cover',
+                format: 'daily-news-cover',
+                style: 'daily-news',
+                vars: { subject: briefSubject },
+                maxImages: 1,
+            });
+
+            // A non-empty plugins path forwards as the trailing --plugins-path flag.
+            expect(run(['daily-cover', dir, '20260101', 'plugins', '', ''], options).status).toBe(0);
+            calls = readFileSync(callLog, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            expect(calls[1]?.slice(-2)).toEqual(['--plugins-path', 'plugins']);
+            imageGensOut = imageGens(readFileSync(envLog, 'utf-8'));
+            expect(imageGensOut[1]).toEqual(imageGensOut[0]);
+        });
+    });
+
+    it('daily-cover falls back to empty vars for each R4 brief failure and logs the reason', () => {
+        const cases: Array<[string, string | null, string]> = [
+            ['missing file', null, 'missing-brief'],
+            ['unparsable json', 'not-json{', 'invalid-json'],
+            ['non-object json', '[1, 2]', 'invalid-json'],
+            ['no subject key', '{}', 'no-subject'],
+            ['empty subject', JSON.stringify({ subject: '   ' }), 'subject-cap'],
+            ['over-cap subject', JSON.stringify({ subject: 'x'.repeat(241) }), 'subject-cap'],
+        ];
+        for (const [name, briefText, reason] of cases) {
+            withTempDir((dir) => {
+                const cover = join(dir, '2-cover');
+                mkdirSync(cover, { recursive: true });
+                if (briefText !== null) writeFileSync(join(cover, '20260101_07_cover-brief.json'), briefText);
+                const env = fakeImageGen(dir);
+                const envLog = join(dir, 'envs.log');
+                const result = runDailyCover(dir, { ...env, KK_TEST_ENV_LOG: envLog });
+
+                expect(result.status, name).toBe(0);
+                expect(result.stderr, name).toContain(`cover brief: fallback (${reason})`);
+                const [imageGen] = imageGens(readFileSync(envLog, 'utf-8'));
+                expect(imageGen, name).toEqual({
+                    job: 'cover',
+                    format: 'daily-news-cover',
+                    style: 'daily-news',
+                    vars: {},
+                    maxImages: 1,
+                    provider: 'minimax',
+                    model: 'image-01',
+                });
+            });
+        }
+    });
+
+    it('daily-cover fails the stage when the image-gen plugin fails', () => {
+        withTempDir((dir) => {
+            const cover = join(dir, '2-cover');
+            mkdirSync(cover, { recursive: true });
+            writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
+            // A fake kk that exits non-zero: a plugin failure is a real failure (no fallback).
+            const bin = join(dir, 'bin');
+            mkdirSync(bin, { recursive: true });
+            writeFileSync(join(bin, 'kk'), '#!/usr/bin/env bun\nprocess.exit(3);\n');
+            chmodSync(join(bin, 'kk'), 0o755);
+            const result = runDailyCover(dir, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+            expect(result.status).toBe(3);
         });
     });
 });

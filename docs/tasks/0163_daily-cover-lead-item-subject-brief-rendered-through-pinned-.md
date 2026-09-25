@@ -4,7 +4,7 @@ name: "Daily cover: lead-item subject brief rendered through pinned daily-news p
 status: todo
 template: feature-impl
 created_at: 2026-09-25T06:50:49.293Z
-updated_at: "2026-09-25T06:52:24.693Z"
+updated_at: "2026-09-25T07:59:35.586Z"
 feature_id: F614
 
 priority: P1
@@ -202,7 +202,15 @@ Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/2-cover/${vars
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented R1–R6.
+
+- **R1 (presets):** new shipped image-gen presets `plugins/generations/image-gen/presets/formats/daily-news-cover.yaml:1` (21:9 1344×576, `job: cover`, single `subject` variable with the fixed-default fallback scene) and `plugins/generations/image-gen/presets/styles/daily-news.yaml:1` (flat editorial vector modifiers, navy/blue/amber palette, text/logo/flag/real-people negative). Composition, palette and visual approach live in the files; callers cannot drift them.
+- **R2 (workflow):** `cover` state rewritten in `plugins/kk/workflows/kk-daily-ai-voice.yaml:170` — a scribe `agent.run` (onError: continue, prompt ≤1000 chars, 240-char subject cap) reads plan item 1 from `${run_date}_03_plan_plan.json` and writes `2-cover/${run_date}_07_cover-brief.json` (`{"subject": "..."}`); then `kk stage daily-cover` with the new pinned vars `cover_provider: "minimax"` / `cover_model: "image-01"`; `daily-cover-normalize` unchanged. The old `kk:image-authoring` invocation is gone (single path invariant).
+- **R3/R4 (stage):** `dailyCover` (`plugins/kk/scripts/kk-workflow-stages.ts:909`) validates the brief via `coverBrief` (`plugins/kk/scripts/kk-workflow-stages.ts:884`) — `missing-brief` / `invalid-json` / `no-subject` / `subject-cap` — logs `cover brief: fallback (<reason>)` to stderr, and writes the pinned image-gen envelope `2-cover/${run_date}_07_cover_image-gen-in.json` (`job: cover`, `format: daily-news-cover`, `style: daily-news`, `vars.subject` or empty vars, `maxImages: 1`, provider/model only when set) before `kk executor run image-gen --out 2-cover/content.json`. Plugin failure still fails the stage.
+- **R5 (normalize):** `coverNormalizeBody` (`plugins/kk/scripts/kk-workflow-stages.ts:954`) now reads the artifact path from the `2-cover/content.json` manifest (`metadata.images[0].path`) instead of hard-coded `content-cover-01.{png,jpg}`; fails loud `cover normalize: no image artifact in 2-cover/content.json` when the manifest or recorded path is missing; png→rename, jpg→sips transcode unchanged; legacy names cleaned as stale. `${run_date}_07_cover_cover.png` output name preserved.
+- **R6 (tests/docs):** presets inventory + composition tests (`plugins/generations/image-gen/tests/presets.test.ts`); 4 new stage tests in `apps/cli/tests/kk-workflow-stages.test.ts` (envelope pins, provider/model/plugins-path forwarding, 6 fallback rows, plugin-failure); normalize tests moved to the manifest contract + missing-manifest failure; workflow tests assert the new cover state, 23 `kk stage daily-` call sites, and the pinned vars (`apps/cli/tests/kk-daily-ai-voice-workflow.test.ts`); docs updated (`docs/design/kk-daily-ai-voice.md`, `docs/04_DESIGN.md` daily-cover row + delegated-action count).
+
+Verification: `bun run lint` clean; image-gen 296 pass / apps/cli 382 pass; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice.yaml` valid.
 
 ### Testing
 

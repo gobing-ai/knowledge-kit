@@ -134,7 +134,7 @@ describe('R1 — preset schemas', () => {
         const { formats, diagnostics } = loadPresets();
 
         expect(formats.has('cover')).toBe(true); // the built-in still loads
-        expect([...formats.keys()].sort()).toEqual(['cover', 'free', 'illustration']);
+        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration']);
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
         expect(invalid[0]?.path).toBe(brokenPath);
@@ -261,7 +261,7 @@ describe('R4 — resolution order and shadowing', () => {
 
         const { styles, diagnostics } = loadPresets(); // must not throw
 
-        expect(styles.size).toBe(10);
+        expect(styles.size).toBe(11);
         expect(styles.has('broken')).toBe(false);
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
@@ -287,20 +287,24 @@ describe('R4 — resolution order and shadowing', () => {
 });
 
 describe('R5 — the v1 inventory', () => {
-    test('every shipped format declares a distinct job', () => {
+    test('every shipped format declares a job, and the cover job has the generic plus the pinned daily preset', () => {
         const { formats } = loadShipped();
         expect(formats.get('free')?.job).toBe('free');
         expect(formats.get('cover')?.job).toBe('cover');
         expect(formats.get('illustration')?.job).toBe('illustration');
+        // F614: daily-news-cover drives the same cover job through a pinned look.
+        expect(formats.get('daily-news-cover')?.job).toBe('cover');
     });
 
-    test('the v1 inventory is exactly three formats and ten styles', () => {
+    test('the shipped inventory is four formats and eleven styles', () => {
         const { formats, styles, diagnostics } = loadShipped();
         expect(diagnostics).toEqual([]);
-        expect([...formats.keys()].sort()).toEqual(['cover', 'free', 'illustration']);
+        // F614 0163 joins daily-news-cover beside the three v1 formats.
+        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration']);
         expect([...styles.keys()].sort()).toEqual([
             'clean-webapp-ui',
             'cute',
+            'daily-news',
             'editorial',
             'fresh',
             'minimalist',
@@ -310,6 +314,55 @@ describe('R5 — the v1 inventory', () => {
             'vibrant',
             'warm',
         ]);
+    });
+});
+
+describe('daily-news cover presets (F614 R1)', () => {
+    test('daily-news-cover pins the cover geometry and the daily-news default style', () => {
+        const { formats, styles } = loadShipped();
+        const format = formats.get('daily-news-cover');
+        const style = styles.get('daily-news');
+        if (format === undefined || style === undefined) {
+            throw new Error('shipped daily-news-cover format or daily-news style missing');
+        }
+        expect(format.job).toBe('cover');
+        expect(format.aspectRatio).toBe('21:9');
+        expect(format.width).toBe(1344);
+        expect(format.height).toBe(576);
+        expect(format.defaultStyle).toBe('daily-news');
+        // Exactly one declared variable: the subject is the only per-run input — composition,
+        // palette and visual approach are literal template text no caller can override.
+        expect(Object.keys(format.variables)).toEqual(['subject']);
+        // The house style carries a structured palette and the content-banning negative.
+        expect(style.palette?.map((entry) => entry.hex)).toEqual(['#0B1F3A', '#2D7FF9', '#F5A623']);
+        for (const banned of ['text', 'letters', 'numbers', 'watermark', 'logo', 'flags', 'real people']) {
+            expect(style.negative, `${banned} in the daily-news negative`).toContain(banned);
+        }
+    });
+
+    test('daily-news-cover × daily-news composes from a single subject var', () => {
+        const { formats, styles } = loadShipped();
+        const format = formats.get('daily-news-cover');
+        const style = styles.get('daily-news');
+        if (format === undefined || style === undefined) {
+            throw new Error('shipped daily-news-cover format or daily-news style missing');
+        }
+        const subject = 'a delivery drone stacking morning newspapers on a doorstep';
+        const prompt = composePrompt(format, style, { subject });
+
+        expect(prompt).toContain(subject);
+        expect(prompt).not.toContain('{{');
+        // Literal template segments survive beside the subject, and the frozen segment order
+        // still appends keywords then style modifiers.
+        expect(prompt).toContain('Composition: one central focal subject, generous negative space in the upper third');
+        expect(prompt).toContain('deep navy background with electric blue and warm amber accents');
+        expect(prompt).toContain('clean composition, high detail, consistent series look');
+        expect(prompt).toContain('flat editorial vector illustration');
+
+        // Omitting vars resolves the fixed default scene (the R4 fallback path).
+        expect(composePrompt(format, style, {})).toContain(
+            'a glowing network of connected nodes rising above a quiet city at dawn',
+        );
     });
 });
 

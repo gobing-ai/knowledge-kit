@@ -69,6 +69,12 @@ const REVISE_COUNT = '.revise-count';
 // pair measures 0.417 zh title-only Jaccard, the nearest distinct pair 0.1 (4x margin). Character
 // bigrams need same-language input — pre-translate dedup over the mixed-language blend cannot work.
 const DEDUP_TITLE_THRESHOLD = 0.4;
+// F614: the daily cover renders through the shipped daily-news presets; the brief's subject is
+// the only per-run var. The format/style pins and the subject cap are part of the style
+// contract — changing the look means editing the preset files, not this stage.
+const COVER_FORMAT = 'daily-news-cover';
+const COVER_STYLE = 'daily-news';
+const COVER_SUBJECT_CAP = 240;
 
 function fail(message: string): never {
     console.error(message);
@@ -871,6 +877,64 @@ function dailyArticle(args: string[]): void {
     });
 }
 
+/**
+ * F614 R2/R4: validate the agent-written cover brief in the order R4 names — the first failing
+ * check is the fallback reason; `reason: null` carries the trimmed subject.
+ */
+function coverBrief(briefPath: string): { reason: string | null; subject: string } {
+    if (!isFile(briefPath)) return { reason: 'missing-brief', subject: '' };
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(briefPath, 'utf-8'));
+    } catch {
+        return { reason: 'invalid-json', subject: '' };
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { reason: 'invalid-json', subject: '' };
+    }
+    const subject = (parsed as Record<string, unknown>).subject;
+    if (typeof subject !== 'string') return { reason: 'no-subject', subject: '' };
+    const trimmed = subject.trim();
+    if (trimmed === '' || trimmed.length > COVER_SUBJECT_CAP) return { reason: 'subject-cap', subject: '' };
+    return { reason: null, subject: trimmed };
+}
+
+/**
+ * F614 R3: build the image-gen envelope from the day's cover brief and render it. The subject is
+ * the only model-authored input (the workflow's brief agent.run wrote it); format, style,
+ * provider and model are pinned by this stage so no caller can drift the look. A missing or
+ * invalid brief degrades to the format's default subject (R4) — a plugin failure still fails
+ * the stage, matching the pre-F614 cover behavior.
+ */
+function dailyCover(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = ''] = args;
+    const briefPath = join(workDir, '2-cover', `${runDate}_07_cover-brief.json`);
+    const envPath = join(workDir, '2-cover', `${runDate}_07_cover_image-gen-in.json`);
+    const contentOut = join(workDir, '2-cover', 'content.json');
+    timed(workDir, 'cover', () => {
+        const brief = coverBrief(briefPath);
+        const vars: Record<string, string> = {};
+        if (brief.reason !== null) {
+            console.error(`cover brief: fallback (${brief.reason})`);
+        } else {
+            vars.subject = brief.subject;
+        }
+        const imageGen: Record<string, unknown> = {
+            job: 'cover',
+            format: COVER_FORMAT,
+            style: COVER_STYLE,
+            vars,
+            maxImages: 1,
+        };
+        if (provider !== '') imageGen.provider = provider;
+        if (model !== '') imageGen.model = model;
+        sted('write', envPath, () =>
+            writeJsonText(envPath, [{ id: 'daily-cover', title: runDate, body: '', metadata: { imageGen } }]),
+        );
+        kk(['executor', 'run', 'image-gen', '--in', envPath, '--out', contentOut, ...pluginsArgs(pluginsPath)]);
+    });
+}
+
 function dailyCoverNormalize(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
     // The pre-0133 shell had no timing trap, so this stage is not `timed`; it still fails through
@@ -888,15 +952,26 @@ function dailyCoverNormalize(args: string[]): void {
 }
 
 function coverNormalizeBody(workDir: string, runDate: string): void {
-    const png = join(workDir, '2-cover', 'content-cover-01.png');
-    const jpg = join(workDir, '2-cover', 'content-cover-01.jpg');
+    // F614 R5: the artifact name follows the format preset (`<stem>-<format>-NN.<ext>`,
+    // paths.ts), so normalize reads the path the plugin itself recorded in the manifest instead
+    // of a hard-coded name. The legacy content-cover-01.{png,jpg} paths stay as stale cleanup.
+    const legacyPng = join(workDir, '2-cover', 'content-cover-01.png');
+    const legacyJpg = join(workDir, '2-cover', 'content-cover-01.jpg');
     // Must match the name dailyPublishPrep and the article->cover workflow guard read:
     // `${runDate}_07_cover_cover.png` (a plain `cover-${runDate}.png` left options.coverPath
     // undefined and silently dropped the cover from both podcast and surfdash — 2026-09-16 run).
     const out = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
-    const source = isFile(png) ? png : isFile(jpg) ? jpg : '';
-    if (source === '') failWith(1, 'cover normalize: no content-cover-01.{png,jpg} artifact');
-    if (source === jpg) {
+    const images = metadataOf(readJson(join(workDir, '2-cover', 'content.json'))).images;
+    const first = Array.isArray(images) ? images[0] : undefined;
+    const recorded =
+        first !== null && typeof first === 'object' && typeof (first as Record<string, unknown>).path === 'string'
+            ? ((first as Record<string, unknown>).path as string)
+            : '';
+    if (recorded === '' || !isFile(recorded)) {
+        failWith(1, 'cover normalize: no image artifact in 2-cover/content.json');
+    }
+    const source = recorded;
+    if (source.endsWith('.jpg') || source.endsWith('.jpeg')) {
         const sips = spawnSync('sips', ['-s', 'format', 'png', source, '--out', out], { stdio: 'ignore' });
         // Bun reports a missing binary as `status: undefined` (older versions: `null`) plus an
         // `error` object — the pre-0133 shell's `command -v sips` failed the same way.
@@ -909,11 +984,11 @@ function coverNormalizeBody(workDir: string, runDate: string): void {
     } else {
         sted('mv', source, () => renameSync(source, out));
     }
-    for (const stale of [jpg, png]) {
+    for (const stale of new Set([legacyJpg, legacyPng, source])) {
         try {
             unlinkSync(stale);
         } catch {
-            // `rm -f` is silent when the file is already gone.
+            // `rm -f` is silent when the file is already gone (a renamed source lands here too).
         }
     }
     console.log(`cover normalized: ${runDate}_07_cover_cover.png`);
@@ -1696,6 +1771,9 @@ if (import.meta.main)
             break;
         case 'daily-article':
             dailyArticle(rest);
+            break;
+        case 'daily-cover':
+            dailyCover(rest);
             break;
         case 'daily-cover-normalize':
             dailyCoverNormalize(rest);

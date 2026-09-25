@@ -1,0 +1,19 @@
+name: daily-news-cover
+description: Daily AI news episode cover — fixed composition and palette; subject is the only per-run input
+job: cover
+aspectRatio: '21:9'
+width: 1344
+height: 576
+defaultStyle: daily-news
+keywords: [clean composition, high detail, consistent series look]
+outputFilename: 'daily-news-cover.png'
+variables:
+    subject:
+        description: One concrete visual scene for the day's lead story (objects, settings, symbols)
+        default: a glowing network of connected nodes rising above a quiet city at dawn
+template: |-
+    Ultrawide editorial cover illustration for a daily AI news podcast episode.
+    Scene: {{subject | a glowing network of connected nodes rising above a quiet city at dawn}}.
+    Composition: one central focal subject, generous negative space in the upper third, uncluttered background.
+    Color palette: deep navy background with electric blue and warm amber accents.
+    Atmosphere: calm, intelligent, forward-looking.

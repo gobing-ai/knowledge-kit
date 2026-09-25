@@ -73,6 +73,11 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('skip_review: "false"');
         expect(yaml).toContain('transcode_mp3: "false"');
         expect(yaml).toContain('cover_enabled: "true"');
+        // F614 0163: the cover render pins provider+model in vars — the pin is part of the style
+        // contract (each provider has its own look), and stays a var because the right value
+        // depends on which credentials the machine has.
+        expect(yaml).toContain('cover_provider: "minimax"');
+        expect(yaml).toContain('cover_model: "image-01"');
         // F613 0162 R3: script-write authors the per-item plan; "false" routes straight to script.
         expect(yaml).toContain('script_write_enabled: "true"');
         expect(yaml).toContain('publish_enabled: "false"');
@@ -98,7 +103,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(runnerSource).toContain("EPISODE_PLAN_MODE: 'filter'");
         // Step-output naming convention: {run_date}_{NN}_{step_name}_{artifact}.{ext} (redo-by-delete;
         // see docs/design/kk-daily-ai-voice.md section 4).
-        expect(yaml).toContain(`\${vars.run_date}_06_article_article.md`);
+        expect(yaml).toContain(`\${vars.run_date}_06_article-write_body.md`);
         expect(yaml).toContain(`\${vars.run_date}_08_script_voicescript.yaml`);
         expect(yaml).toContain(`\${vars.run_date}_07_cover_cover.png`);
         // Audio is cached when the day's content.json exists and QC passed (daily-generate).
@@ -110,30 +115,44 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(runnerSource).toContain('unset: NESTED_SPUR_UNSET');
     });
 
-    it('R1/R2 (N) — cover state invokes kk:image-authoring under the non-interactive contract and normalizes the artifact', () => {
-        expect(yaml).toContain('kk:image-authoring');
-        expect(yaml).toContain('KK_NONINTERACTIVE=1');
-        expect(yaml).toContain('KK_IMAGE_AUTO_CONFIRM=1');
-        expect(yaml).toContain('--format cover');
+    it('R2/R6 (F614 0163) — cover state writes the lead-item brief then renders through the pinned daily-cover stage', () => {
+        // F614: the agent authors ONLY the subject brief; format/style/provider/model are pinned
+        // by the stage, so the old kk:image-authoring skill invocation must be gone entirely —
+        // keeping it would leave a second, style-drifting path to the same cover.
+        expect(yaml).not.toContain('kk:image-authoring');
+        expect(yaml).not.toContain('--format cover');
+        expect(yaml).not.toContain('KK_IMAGE_AUTO_CONFIRM=1');
         const workDir = '$' + '{vars.work_dir}';
         const runDate = '$' + '{vars.run_date}';
-        expect(yaml).toContain(`--content ${workDir}/2-article/${runDate}_06_article_article.md`);
-        expect(yaml).toContain(`--out ${workDir}/2-cover`);
-        expect(yaml).toContain(`expectFile: ${workDir}/2-cover/content-cover-01.jpg`);
-        expect(yaml).toContain(`${runDate}_07_cover_cover.png`); // canonical downstream artifact stays PNG (sips-normalized from jpg)
+        const block = yaml.match(/- id: cover\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        expect(block).not.toBe('');
+        // R2: the brief step reads the lead plan item, caps itself at 240 chars, writes JSON.
+        expect(block).toContain('onError: continue');
+        expect(block).toContain('allowAppend: false');
+        expect(block).toContain(`expectFile: ${workDir}/2-cover/${runDate}_07_cover-brief.json`);
+        expect(block).toContain(`2-plan/\${vars.run_date}_03_plan_plan.json`);
+        expect(block).toContain('≤240 characters');
+        expect(block).toContain('{"subject": "..."}');
+        // R3: the stage owns the pinned render; normalize is unchanged.
+        expect(block).toContain(
+            `kk stage daily-cover "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.cover_provider}" "${'$'}{vars.cover_model}"`,
+        );
+        expect(block).toContain(`kk stage daily-cover-normalize "${workDir}" "${runDate}"`);
+        // The canonical downstream artifact keeps its name (podcast + surfdash read it).
+        expect(yaml).toContain(`${runDate}_07_cover_cover.png`);
         expect(yaml).not.toContain('wt-image-cover');
     });
 
     it('R2/R3 (0144) — every delegated action is a one-line `kk stage` call and the prompts stay under the cap', () => {
         // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
         // which resolves the shipped stages script from the installed package. The YAML must carry no
-        // prelude remnants and exactly one delegation call per stage (21 -> 22 sites: daily-script-style
-        // joined in F613 0162 R1).
+        // prelude remnants and exactly one delegation call per stage (22 -> 23 sites: daily-cover
+        // joined in F614 0163 R3).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(22);
-        // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (script-write: F613 0162).
+        expect(yaml.split('kk stage daily-').length - 1).toBe(23);
+        // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
             ['cover', 1000],
@@ -187,6 +206,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-plan "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.plan_max_items}"`,
             `kk stage daily-qc-content "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_categories}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `kk stage daily-article "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-cover "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.cover_provider}" "\${vars.cover_model}"`,
             `kk stage daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-script-style "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,
