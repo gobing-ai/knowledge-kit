@@ -65,6 +65,7 @@ rm -rf "$T"
 Stdout is the `voice_…` id. A non-zero exit prints the HTTP status and API message and does not
 print the key. Note on HTTP 500 / Voice mismatch errors:
 - Upstream `POST /v1beta/voices` can return HTTP 500 when server-side validation serializes an invalid argument or consent mismatch.
+- 2026-09-24: the zh pair that created the original voice (28 s zh source + 7 s zh consent) started returning HTTP 500 "Error translating server response to JSON" on both accounts. The en-pair path (below) succeeded first try — prefer it for renewals.
 - A Chinese source paired with an English consent fails with `Voice mismatch detected`.
 - Using a clean 10–30s English recording containing the verbatim consent statement as both `--source` and `--consent` succeeds reliably via the API, creating a stored voice that synthesizes both English and Chinese content.
 - Google AI Studio's interactive voice replication UI is also available as a manual fallback.
