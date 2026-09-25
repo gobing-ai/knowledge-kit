@@ -26,7 +26,6 @@ const POLL_MS = 500;
  */
 const SELECTORS = {
     editor: ['div[contenteditable="true"]', '.ql-editor', 'textarea[placeholder]'],
-    login: ['text=扫码登录', 'text=登录', '.login-container'],
     imageTab: ['text=上传图文', '.creator-tab:has-text("图文")'],
     fileInput: ['input[type="file"]'],
     thumbnail: ['.img-preview img', '[class*="preview"] img', '[class*="thumb"] img'],
@@ -52,7 +51,7 @@ export interface XhsLocator {
 /** Structural subset of the Playwright page the script driver uses. */
 export interface XhsPage {
     goto(url: string, options?: { timeout?: number }): Promise<void>;
-    locator(selector: string): { first(): XhsLocator };
+    locator(selector: string): { first(): XhsLocator; count(): Promise<number> };
     setInputFiles(selector: string, paths: readonly string[]): Promise<void>;
     waitForSelector(selector: string, options?: { timeout?: number }): Promise<unknown>;
     url(): string;
@@ -106,7 +105,10 @@ export async function validatePublishInput(content: Content): Promise<Validation
 export function wrapPlaywrightPage(raw: unknown): XhsPage {
     const pw = raw as {
         goto(url: string, options?: Record<string, unknown>): Promise<unknown>;
-        locator(selector: string): { first(): Record<string, (...args: unknown[]) => unknown> & Promise<unknown> };
+        locator(selector: string): {
+            count(): Promise<number>;
+            first(): Record<string, (...args: unknown[]) => unknown> & Promise<unknown>;
+        };
         setInputFiles(selector: string, paths: readonly string[]): Promise<void>;
         waitForSelector(selector: string, options?: Record<string, unknown>): Promise<unknown>;
         url(): string;
@@ -114,6 +116,7 @@ export function wrapPlaywrightPage(raw: unknown): XhsPage {
     return {
         goto: (url, options) => pw.goto(url, options) as Promise<void>,
         locator: (selector) => ({
+            count: () => pw.locator(selector).count(),
             first: () => {
                 const loc = pw.locator(selector).first() as unknown as {
                     count(): Promise<number>;
@@ -214,8 +217,15 @@ export class XhsBrowserTransport implements PublishTransport {
             return fail(error instanceof Error ? error.message : String(error));
         }
         const { page, close } = opened;
+        const act = async <T>(what: string, fn: () => Promise<T>): Promise<T> => {
+            try {
+                return await fn();
+            } catch (error) {
+                throw new Error(`${what}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        };
         try {
-            await page.goto(PUBLISH_URL, { timeout: this.loginTimeoutMs });
+            await act('creator page goto', () => page.goto(PUBLISH_URL, { timeout: this.loginTimeoutMs }));
             const editor = await findSelector(page, SELECTORS.editor, 'login/editor wait', this.loginTimeoutMs).catch(
                 () => null,
             );
@@ -228,38 +238,40 @@ export class XhsBrowserTransport implements PublishTransport {
             const step = (selectors: readonly string[], what: string) =>
                 findSelector(page, selectors, what, this.stepTimeoutMs);
             await step(SELECTORS.imageTab, 'image-post tab');
-            await step(SELECTORS.fileInput, 'file input');
-            await page.setInputFiles(SELECTORS.fileInput[0], paths);
+            const fileSelector = await step(SELECTORS.fileInput, 'file input');
+            await act('image upload', () => page.setInputFiles(fileSelector, paths));
 
             const thumbSelector = await step(SELECTORS.thumbnail, 'thumbnail wait');
             const countMatches = await waitUntil(
                 () =>
-                    page
-                        .locator(thumbSelector)
-                        .first()
-                        .count()
-                        .then((n) => n >= paths.length),
+                    act('thumbnail count read', () => page.locator(thumbSelector).count()).then(
+                        (n) => n >= paths.length,
+                    ),
                 this.stepTimeoutMs,
             );
-            const thumbCount = await page.locator(thumbSelector).first().count();
+            const thumbCount = await act('thumbnail count read', () => page.locator(thumbSelector).count());
             if (!countMatches || thumbCount !== paths.length) {
                 return fail(`thumbnail count: expected ${paths.length}, observed ${thumbCount}`);
             }
 
-            await step(SELECTORS.title, 'title input');
-            await page
-                .locator(SELECTORS.title[0])
-                .first()
-                .fill(payload.content.title ?? '');
-            await step(SELECTORS.body, 'note body');
-            await page
-                .locator(SELECTORS.body[0])
-                .first()
-                .fill(payload.content.body ?? '');
+            const titleSelector = await step(SELECTORS.title, 'title input');
+            await act('title fill', () =>
+                page
+                    .locator(titleSelector)
+                    .first()
+                    .fill(payload.content.title ?? ''),
+            );
+            const bodySelector = await step(SELECTORS.body, 'note body');
+            await act('body fill', () =>
+                page
+                    .locator(bodySelector)
+                    .first()
+                    .fill(payload.content.body ?? ''),
+            );
 
             if (publishStatus === 'draft') {
-                await step(SELECTORS.saveDraft, 'save-draft button');
-                await page.locator(SELECTORS.saveDraft[0]).first().click();
+                const saveSelector = await step(SELECTORS.saveDraft, 'save-draft button');
+                await act('save-draft click', () => page.locator(saveSelector).first().click());
                 const confirmed = await waitUntil(
                     () => trySelectors(page, SELECTORS.draftConfirm).then((r) => r.found),
                     this.stepTimeoutMs,
@@ -275,8 +287,8 @@ export class XhsBrowserTransport implements PublishTransport {
                 });
             }
 
-            await step(SELECTORS.publish, 'publish button');
-            await page.locator(SELECTORS.publish[0]).first().click();
+            const publishSelector = await step(SELECTORS.publish, 'publish button');
+            await act('publish click', () => page.locator(publishSelector).first().click());
             const confirmed = await waitUntil(
                 () => trySelectors(page, SELECTORS.publishConfirm).then((r) => r.found),
                 this.stepTimeoutMs,
@@ -294,6 +306,8 @@ export class XhsBrowserTransport implements PublishTransport {
                 message: `${TARGET} post published`,
                 metadata: base,
             });
+        } catch (error) {
+            return fail(error instanceof Error ? error.message : String(error));
         } finally {
             await close();
         }

@@ -495,7 +495,9 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 
 ### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
 
-Each is `kind: publish`, `PublishTransport.kind: 'browser'`, default `driver: 'agent'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout. Optional `script` driver returns the same `ok`/`target`/`id` for the same Content.
+Each is `kind: publish`, `PublishTransport.kind: 'browser'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout.
+
+`xhs-pub` (image cards) defaults to `driver: 'script'` — ordered card images are uploaded with Playwright `setInputFiles` (`Upload ordered card images` in `docs/design/xhs-image-cards.md`); the `agent` driver fails fast (`unsupported driver … requires the script driver`). Selectors in `SELECTORS` are best-known constants and must be verified against the live XHS creator UI before first production use.
 
 ### `@gobing-ai/web-search` (`plugins/ingestions/web-search`, kind `ingestion`)
 

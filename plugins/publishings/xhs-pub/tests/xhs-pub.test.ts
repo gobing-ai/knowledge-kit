@@ -38,6 +38,7 @@ function makeFakePage(state: FakeState) {
             calls.push({ op: 'goto', args: [url] });
         },
         locator: (selector) => ({
+            count: async () => (selector.includes('img') && !selector.includes('file') ? (state.thumbCount ?? 0) : 1),
             first: () => {
                 const isThumb = selector.includes('img') && !selector.includes('file');
                 const isDraftConfirm = selector.includes('草稿已保存') || selector.includes('已保存至草稿箱');
@@ -52,7 +53,7 @@ function makeFakePage(state: FakeState) {
                             ? state.publishConfirm
                             : true);
                 return {
-                    count: async () => (isThumb ? (state.thumbCount ?? 0) : visible ? 1 : 0),
+                    count: async () => (isThumb ? ((state.thumbCount ?? 0) > 0 ? 1 : 0) : visible ? 1 : 0),
                     isVisible: async () => visible,
                     fill: async (text) => {
                         calls.push({ op: 'fill', args: [selector, text] });
