@@ -1002,3 +1002,75 @@ Open/pre-existing (reported, not repaired): `kk stage` is a shipped top-level ve
   `plugins/generations/omni-voice-gen/README.md` and in the tool-owned `docs/features/F611_*` corpus.
   Both need their own task — the README is outside this pass's doc scope and feature corpus is
   CLI-gated.
+Wrapup done. One drift repaired, three named docs verified clean, artifact written.
+
+**Repair:** `docs/04_DESIGN.md` — `version: 2.31.0 → 2.32.0`, `updated_at: 2026-09-24 → 2026-09-25`. Root cause: `e46a5596` (0163) edited the body (new `kk stage daily-cover` row, delegated-action count 20→23) but left the frontmatter untouched — §4.3 rule 3 violation.
+
+**Clean (no delta):** `00_ADR.md` (0163 is a feature impl, not a decision — no ADR entry owed), `03_ARCHITECTURE.md` (new code lives inside existing modules), `docs/design/kk-daily-ai-voice.md` (already synced in-commit), preset inventory (no doc enumerates presets).
+
+**Deliberately untouched:** the gap-analysis snapshot (§4.2 — records, don't govern) and `docs/features/F61_*.md` (tool-owned) both still say `wt-image-cover`; that is correct history, not drift. Reported out-of-scope: `docs/05_FEATURES.md:90-91` L/L1 rows are stale (last edited 2026-09-22) — T4 sync owed by `spur feature sync`.
+
+**Verification:** `bun run lint` exit 0; `bun run test` 1379 pass / 0 fail, exit 0. `git status`: only `docs/04_DESIGN.md`.
+
+Artifact: `/Users/robin/xprojects/knowledge-kit/.spur/run/e57eb897-d9a2-436d-977e-92de57474039-wrapup-learnings.md` (9590 bytes).
+
+Doc-evolve `wrapup` complete for task **0163** (F614). Repairs are surgical, constitution-cited, and limited to the named docs; no task/feature corpus written.
+
+## Drift report (0163 blast radius)
+
+| # | Doc | Code/shipped says | Doc said | Authority | Repair |
+|---|-----|-------------------|----------|-----------|--------|
+| 1 | `docs/04_DESIGN.md` frontmatter | body edited 2026-09-25 by `e46a5596` (0163) | `version: 2.31.0`, `updated_at: 2026-09-24` | §4.3 r3 | `2.32.0` / `2026-09-25` |
+| 2 | `docs/04_DESIGN.md:649` | `kk stage daily-cover <work_dir> <run_date> <plugins_path> <provider> <model>` shipped, pinned `daily-news-cover` × `daily-news` | row present (added in `e46a5596`) | §6.5 T3 | no delta |
+| 3 | `docs/04_DESIGN.md:679` | kk-daily-ai-voice delegates **23** stage actions | "twenty-three" present | §6.5 T3 | no delta |
+| 4 | `docs/03_ARCHITECTURE.md` | new code lives inside existing modules (`plugins/kk/scripts/kk-workflow-stages.ts`, `plugins/generations/image-gen/presets/`) | no cover/image-gen/preset claims to contradict | §6.4 r4 | no delta |
+| 5 | `docs/00_ADR.md` | 0163 is a feature implementation, not a cross-cutting decision or a reversal | no cover/image-gen claims | §6.1 T1 | no delta — no ADR entry owed |
+| 6 | `docs/design/kk-daily-ai-voice.md` | cover row, diagram node, artifacts section, `wt-image-cover` removal all match the YAML + stage | updated in `e46a5596` | §4.2 | no delta |
+| 7 | preset inventory | 4 formats (`cover`, `daily-news-cover`, `free`, `illustration`), 11 styles (incl. `daily-news`) | no doc enumerates presets | — | no delta |
+
+**Checks run (deterministic):** `git log -1 --format='%ci' -- docs/04_DESIGN.md` → 2026-09-25 vs frontmatter `2026-09-24`; `git show e46a5596 -- docs/04_DESIGN.md` → body-only hunk, frontmatter untouched (root cause); `rg "daily-cover" docs/ --glob '!docs/tasks/**' --glob '!docs/features/**'`; `rg "cover|image-gen" docs/03_ARCHITECTURE.md`; `rg "cover|image-gen|daily-news" docs/00_ADR.md`; `ls plugins/generations/image-gen/presets/{formats,styles}/`; `rg -ln "daily-news|presets/styles|presets/formats" docs/`; `rg -n "case '(daily-cover|daily-cover-normalize)'" plugins/kk/scripts/kk-workflow-stages.ts`; `git log -1 --format='%ci' -- docs/00_ADR.md docs/03_ARCHITECTURE.md` → 2026-09-24, matching their frontmatter; `git show 85a7e5da -- docs/04_DESIGN.md` → prior wrapup bumped `2.30.0 → 2.31.0` and set `updated_at`, confirming the convention. **No residual drift.**
+
+**Deliberately not edited:** `docs/design/kk-daily-ai-voice-gap-analysis.md:34,60` — dated Task-0088 research companion; §4.2 makes working-layer docs records that do not govern, immutable once concluded except dated corrections. Its `wt-image-cover` / "cover **missing**" lines were true at authoring time; rewriting them would falsify the snapshot. `docs/features/F61_daily-ai-news-end-to-end-pipeline-wayfinder-map.md:54,63` — tool-owned corpus (§4.2/§3), never raw-edited; its `wt-image-cover` references are historical recon notes. `AGENTS.md` — it names no `kk` command surface, so T3's surface-block clause has nothing to sync. `docs/design/kk-itc-end-to-end.md` — carries frontmatter but was not touched by 0163.
+
+**Reported, not repaired (outside the requested write scope):** `docs/05_FEATURES.md:90-91` — the `L` / `L1` rows still read "7 tasks `0092`–`0098`" and 🔧 active, predating the F612/F613/F614 children; `05` was last edited 2026-09-22 (`4be68cfe`) with `updated_at: 2026-09-17`. The T4 status sync is owed by the harness (`spur feature sync`) or a `05`-scoped pass, not by this doc-evolve run.
+
+**Verification:** `bun run lint` → exit 0 (Biome 2.5.5 + typecheck, every workspace `code 0`). `bun run test` → **1379 pass / 0 fail** across 86 files, exit 0. `git status`: only `docs/04_DESIGN.md` modified.
+
+---
+
+# Wrapup learnings — run e57eb897-d9a2-436d-977e-92de57474039
+
+Task set (normalized capture `.spur/run/e57eb897-d9a2-436d-977e-92de57474039-wrapup-tasks.json`): **0163**.
+Doc-drift repairs applied this wrapup: `docs/04_DESIGN.md` (frontmatter `version` / `updated_at`, §4.3 rule 3).
+
+## 2026-09-25 — 0163 · Daily cover: lead-item subject brief rendered through pinned daily-news presets
+
+### Conventions
+
+- **Agent supplies words; checked-in files own the look.** The F613 → F614 family pattern: the model writes exactly one short string (`subject`), while format, style, palette, composition, provider and model are file-pinned (`presets/formats/daily-news-cover.yaml` × `presets/styles/daily-news.yaml`, `cover_provider` / `cover_model` vars). New work on this pipeline keeps the model's surface at one field.
+- **A new image style is two preset files, not a plugin or a module.** `presets/formats/<name>.yaml` + `presets/styles/<name>.yaml` under the existing `image-gen` generator — no new package, no new plugin, no `04` module row. Reuse before create.
+- **New stage verbs get a `04` §6 table row pointing at the owning design spec** — not a new design doc. 0163's `kk stage daily-cover` row cites `docs/design/kk-daily-ai-voice.md`, which stayed the single owner and was extended in place (purpose line, diagram node, artifacts section).
+- **ADR-115 error tier caps workflow agent prompts at ≤1000 chars**, and a test asserts it (`['cover', 1000]`). The brief prompt measured 598 chars. Terse prompts are the enforcement mechanism, not a style preference.
+- **Provider/model enter the envelope only when non-empty** — omit rather than send `''`, so image-gen's own default resolves; both paths are tested.
+
+### Errors fixed (root causes)
+
+- **Artifact lookup was coupled to a filename, not the manifest.** `coverNormalizeBody` looked for `content-cover-01.{png,jpg}`; image-gen actually names artifacts after the format preset (`content-daily-news-cover-01.<ext>`). Any format change silently broke normalize. Root-cause fix: read `metadata.images[0].path` from `2-cover/content.json` and fail loud (`cover normalize: no image artifact in 2-cover/content.json`) when the manifest or path is missing. A hard-coded artifact name is a latent break waiting for the next preset rename — read the contract's manifest instead.
+- **Frontmatter bookkeeping skipped while the body was synced.** `e46a5596` edited `docs/04_DESIGN.md`'s body (new stage row, delegated-action count 20 → 23) but left `version: 2.31.0` / `updated_at: 2026-09-24` — a §4.3 rule 3 violation, repaired here to `2.32.0` / `2026-09-25`. The T3 same-commit rule gets remembered for the body and forgotten for the frontmatter; check both.
+- **`docs/design/kk-daily-ai-voice.md` still described the retired `wt-image-cover` skill path.** The cover state had moved to `agent.run` brief → `kk stage daily-cover`; the spec's cover row, diagram node and artifacts line were corrected in the same commit. A retired surface must be swept out of every spec that named it.
+
+### Patterns
+
+- **Fallback-with-reason, never a failed run, for model output.** `coverBrief` validates in a fixed order — missing-brief → invalid-json → no-subject → subject-cap — logs `cover brief: fallback (<reason>)` to stderr, and emits `vars: {}` so the format's `default` subject renders. `onError: continue` on the `agent.run` mirrors that at the workflow layer.
+- **Degraded model input ≠ degraded transport.** A bad or missing brief falls back and the cover still generates; a *provider* failure still fails the stage (exit 3, covered by a test). Keep the two failure classes distinct.
+- **The preset's `default` is the fallback payload.** Pinning `subject.default` in the format file is what makes the empty-`vars` path produce a usable image in the same style — the fallback lives in the preset, not in a code branch that picks a scene.
+- **Shipped-preset inventory is test-pinned.** `image-gen/tests/presets.test.ts` asserts the shipped format/style set and that `daily-news-cover` × `daily-news` composes with a single `subject` var plus the negatives. Adding a preset means extending that list; inventory drift fails the suite instead of shipping silently.
+- **Prompt bans double as look stability.** Banning style/color/lighting/composition words and text/letters/logos/real people in the brief prompt keeps the prompt short *and* stops the model from fighting the preset.
+
+### Gotchas
+
+- **Prose counts rot.** `04` §7.1's "kk-daily-ai-voice's twenty delegated actions" became "twenty-three" by hand when the cover state gained steps. Every stage addition is a T3 obligation on that sentence — prefer a pointer over a number, or accept the maintenance.
+- **A dated research doc is not drift.** `docs/design/kk-daily-ai-voice-gap-analysis.md` still reads "cover **missing**" / "`wt-image-cover` skill", and that is correct history: §4.2 makes working-layer docs records, immutable once concluded except dated corrections. Do not "fix" a snapshot.
+- **`docs/features/*` is tool-owned** — the F61 map's stale `wt-image-cover` recon notes must not be raw-edited; they age out with the feature file's own lifecycle.
+- **Nothing enforces doc frontmatter.** `.spur/rules/` covers structure/surface/quality/boundary but no rule checks `updated_at` / `version`, so the §4.3 contract is memory-enforced — which is why it drifted twice (0157, 0163). A frontmatter-check rule is the systemic fix if this recurs a third time.
+- **Live visual dogfood is operator-owned.** 0163 shipped the deterministic path; the look needs a real image backend and human judgment, so step 7 (dogfood) was scoped post-merge and the two preset YAML files are the only knob.
