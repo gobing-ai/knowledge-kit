@@ -4,7 +4,7 @@ name: image-gen validates illustration anchors before the first paid call
 status: done
 template: issue
 created_at: 2026-09-25T18:52:58.637Z
-updated_at: "2026-09-25T21:09:45.140Z"
+updated_at: "2026-09-25T22:32:59.411Z"
 
 feature_id: D7
 ac_altitude: graduating
@@ -141,9 +141,9 @@ Estimate: about 1h. Blast radius: the illustration branch of `image-gen` only.
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | 7 bad plans × {paid, dry-run} = 14 tests pass (69ms): absent anchor (/exactly once.*found 0/), duplicated (/found 2/), not supplied (/anchor missing/), empty (/found 0/) each assert rejects.toThrow + genCalls===0 + resolveCalls===0 + no --out + empty artifact dir (tests/image-gen.test.ts:299-351); guard placed before resolveProvider on both branches (src/index.ts:206, :209, :248). |
-| AC2 | MET | test | Overlap rows of the same 14-test matrix pass: contained anchor errors /overlap.*foo bar.*foo/ (both anchors named), partial overlap /overlap/, duplicate entry /overlap/ (tests/image-gen.test.ts:307-316); pairwise-disjoint throw at src/index.ts:149-155. |
-| AC3 | MET | test | Repo-wide bun run test: 1393 pass, 0 fail (matches stamped proof digest sha256:c68df18e… in .spur/run/0169-test-gate.log:150); plugin suite 310 pass, 0 fail including all pre-existing R6/budget/boundary tests and the paid-path illustration provider test asserting output written beside --out (tests/image-gen.test.ts:288-291). |
+| Scenario: R1 — Bad anchors fail before any provider call | MET | test | 7 bad plans × {paid, dry-run} = 14 tests pass (69ms): absent anchor (/exactly once.*found 0/), duplicated (/found 2/), not supplied (/anchor missing/), empty (/found 0/) each assert rejects.toThrow + genCalls===0 + resolveCalls===0 + no --out + empty artifact dir (tests/image-gen.test.ts:299-351); guard placed before resolveProvider on both branches (src/index.ts:206, :209, :248). |
+| Scenario: R2 — Overlapping anchors fail before any provider call | MET | test | Overlap rows of the same 14-test matrix pass: contained anchor errors /overlap.*foo bar.*foo/ (both anchors named), partial overlap /overlap/, duplicate entry /overlap/ (tests/image-gen.test.ts:307-316); pairwise-disjoint throw at src/index.ts:149-155. |
+| Scenario: R3 — Valid anchor plans are unchanged | MET | test | Repo-wide bun run test: 1393 pass, 0 fail (matches stamped proof digest sha256:c68df18e… in .spur/run/0169-test-gate.log:150); plugin suite 310 pass, 0 fail including all pre-existing R6/budget/boundary tests and the paid-path illustration provider test asserting output written beside --out (tests/image-gen.test.ts:288-291). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
