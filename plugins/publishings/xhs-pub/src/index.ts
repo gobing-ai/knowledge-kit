@@ -168,12 +168,13 @@ async function findSelector(
     what: string,
     timeoutMs = STEP_TIMEOUT_MS,
 ): Promise<string> {
-    const result = await waitUntil(() => trySelectors(page, selectors).then((r) => r.found), timeoutMs);
-    if (!result) throw new Error(`${what}: no matching element observed`);
-    const found = await trySelectors(page, selectors);
-    const fallback = selectors[0];
-    if (!fallback) throw new Error(`${what}: selector list is empty`);
-    return found.selector ?? fallback;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const found = await trySelectors(page, selectors);
+        if (found.found && found.selector) return found.selector;
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
+    throw new Error(`${what}: no matching element observed`);
 }
 
 export class XhsBrowserTransport implements PublishTransport {

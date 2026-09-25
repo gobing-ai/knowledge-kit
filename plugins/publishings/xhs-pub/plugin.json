@@ -3,5 +3,5 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Xiaohongshu (xhs) via browser/agent transport"
+    "description": "Publish plugin for Xiaohongshu (xhs): ordered card images to draft or live post via Playwright script transport"
 }
