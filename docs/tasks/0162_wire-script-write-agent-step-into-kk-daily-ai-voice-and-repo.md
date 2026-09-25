@@ -4,7 +4,7 @@ name: Wire script-write agent step into kk-daily-ai-voice and report the script 
 status: todo
 template: feature-impl
 created_at: 2026-09-25T03:51:45.351Z
-updated_at: "2026-09-25T04:00:55.073Z"
+updated_at: "2026-09-25T04:08:31.152Z"
 feature_id: F613
 priority: P1
 tags:

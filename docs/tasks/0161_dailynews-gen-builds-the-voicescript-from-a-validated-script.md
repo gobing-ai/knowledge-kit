@@ -4,7 +4,7 @@ name: dailynews-gen builds the VoiceScript from a validated script plan under a 
 status: todo
 template: feature-impl
 created_at: 2026-09-25T03:51:45.346Z
-updated_at: "2026-09-25T04:00:02.741Z"
+updated_at: "2026-09-25T04:08:30.976Z"
 feature_id: F613
 priority: P1
 tags:
