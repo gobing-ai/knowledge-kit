@@ -135,3 +135,8 @@ Conventions / decisions discovered the hard way. Newest first.
 - Feature `verifying → done` L4 gate matches verdict rows by **normalized feature-scenario title** (or `AC-<ordinal>` dashed alias), never bare `R#`/`AC#` ids. Key verify-answer Req row ids to the feature scenario titles (evidence unchanged) or the scenario is "linked but unverified" forever. Matcher: `feature-check.ts` `rowMatchesScenario`.
 - `feature sync`'s verifying onEnter shells `plugins/sp/scripts/feature-verification-steps.ts` → needs upstream files (`feature-verification-steps.ts`, `lib/env.ts`, `lib/inline-run.generated.mjs`) **and** a project `.spur/workflows/feature-verification.yaml` (resolver is project-layer only; set `verificationCmd` to a script the repo actually has, e.g. `bun run spur-check`). Never copy the `.mjs` twin — Biome errors on it.
 - jq verdict enrichment (proof/checks) must run AFTER every `task verdict --from-answer` re-derive + fold — re-deriving wipes it.
+
+## 2026-09-25 runall-e8-5a30 — task 0167
+- Playwright `locator(sel).first().count()` is 0/1, never the set size — thumbnail-count checks need set-level `locator(sel).count()`. Fakes must mirror this or tests pass while live breaks.
+- Post-open browser flows: wrap every action in a step-named `act()` helper + outer catch → guaranteed named `ok:false` Result; raw throws leak "no Result written" states.
+- Structural page seams for browser plugins: keep the seam minimal (goto/locator/setInputFiles/url/close); inject timeouts (`stepTimeoutMs`/`loginTimeoutMs`) so failure-path tests don't sleep.
