@@ -36,6 +36,9 @@ vars:
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
+  # F613 R3: script-write authors the per-item plan the zh builder consumes; "false" routes
+  # article/cover straight to script (template build, no plan file is written).
+  script_write_enabled: "true"
   plugins_path: ""
   # Projected by the publish state from 3-publish/<run_date>_17_publish_publish-status.txt;
   # guards test this var instead of cat-ing the file (state at decision time).
@@ -177,6 +180,33 @@ states:
         options:
           command: >-
             kk stage daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
+
+  - id: script-write
+    description: "Author the per-item script plan (intro/outro + lead/insight per doc id) from the show-notes plan source via agent.run; onError: continue — a failed plan falls back to templates (F613)"
+    onEnter:
+      - kind: shell
+        options:
+          # Spur has no workflow-dir var, so the prompt cannot name the shipped sidecar: this
+          # stage snapshots it into the work dir (idempotent; a missing sidecar is a broken
+          # install and fails loud). The snapshot also freezes the contract the plan was
+          # written against, per run, for audit.
+          command: >-
+            kk stage daily-script-style "${vars.work_dir}" "${vars.run_date}"
+      - kind: agent.run
+        # A rejected or failed plan must never halt the unattended daily run: the builder
+        # decides plan-vs-template from the file itself and falls back to templates.
+        onError: continue
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; use each doc's `id`; don't edit it. Also read the style contract ${vars.work_dir}/2-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
+            For each doc write a `lead` (a spoken bridge into the title, not containing it) and an `insight` (why it matters, grounded only in that doc's facts).
+            Write an `intro` hooking today's actual themes and an `outro`; no greeting or sign-off — the builder adds both.
+            Output only the JSON object {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}]} with one item per doc id to ${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json.
+          expectFile: ${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json
+          allowAppend: false
 
   - id: script
     description: "Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content"
@@ -416,6 +446,17 @@ transitions:
       options:
         command: 'test "${vars.cover_enabled}" = "true" && test ! -f "${vars.work_dir}/2-cover/${vars.run_date}_07_cover_cover.png"'
 
+  # F613 R3: first match wins — the cover edge stays above script-write so the cover still
+  # generates before the plan is authored; script-write sits above the always `-> script` edges
+  # and skips itself when disabled, non-zh, or the plan/YAML already exists (resume cost).
+  - from: article
+    to: script-write
+    description: "script_write_enabled, zh, and neither today's plan nor VoiceScript exists -> author the script plan"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.script_write_enabled}" = "true" && test "${vars.language}" = "zh" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml"'
+
   - from: article
     to: script
     description: "cover disabled or today's cover cached -> skip to script"
@@ -423,8 +464,22 @@ transitions:
       kind: always
 
   - from: cover
+    to: script-write
+    description: "script_write_enabled, zh, and neither today's plan nor VoiceScript exists -> author the script plan"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.script_write_enabled}" = "true" && test "${vars.language}" = "zh" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml"'
+
+  - from: cover
     to: script
     description: "Cover generated -> build broadcast script"
+    guard:
+      kind: always
+
+  - from: script-write
+    to: script
+    description: "Script plan authored (ok or failed: onError continue) -> build the broadcast script"
     guard:
       kind: always
 

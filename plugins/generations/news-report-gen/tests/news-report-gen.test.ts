@@ -10,6 +10,7 @@ import {
     readBlendedCorpus,
     readQcSummary,
     readRejectedAudit,
+    readScriptSource,
     readTiming,
     rejectedCounts,
     renderReportMarkdown,
@@ -348,6 +349,106 @@ describe('news-report-gen QC block (0139 R5b)', () => {
             expect(content.body).toContain('| 通过 | 否 |');
         } finally {
             delete process.env.NEWS_REPORT_QC_FILE;
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('news-report-gen script source (F613 R5)', () => {
+    const contentWith = (metadata: unknown) => JSON.stringify({ metadata });
+
+    async function withScriptFile<T>(text: string, fn: (path: string) => Promise<T>): Promise<T> {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-script-'));
+        const path = join(dir, '20260925_08_script_content.json');
+        await writeFile(path, text);
+        try {
+            return await fn(path);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    }
+
+    test('reads the plan verdict and the template fallback with itemId:rule errors', async () => {
+        await withScriptFile(contentWith({ scriptSource: 'plan', scriptPlanErrors: [] }), async (path) => {
+            expect(await readScriptSource(path)).toEqual({ source: 'plan', errors: [] });
+        });
+        await withScriptFile(
+            contentWith({
+                scriptSource: 'template',
+                scriptPlanErrors: [
+                    { itemId: 'episode', rule: 'missing-plan' },
+                    { itemId: 'd1', rule: 'banned:首先' },
+                ],
+            }),
+            async (path) => {
+                expect(await readScriptSource(path)).toEqual({
+                    source: 'template',
+                    errors: [
+                        { itemId: 'episode', rule: 'missing-plan' },
+                        { itemId: 'd1', rule: 'banned:首先' },
+                    ],
+                });
+            },
+        );
+    });
+
+    test('absent/unreadable/malformed/metadata-less -> null, never throws', async () => {
+        expect(await readScriptSource(undefined)).toBeNull();
+        expect(await readScriptSource('/nonexistent/script.json')).toBeNull();
+        expect(await withScriptFile('{ truncated', (path) => readScriptSource(path))).toBeNull();
+        expect(await withScriptFile(contentWith({}), (path) => readScriptSource(path))).toBeNull();
+        expect(await withScriptFile(JSON.stringify([]), (path) => readScriptSource(path))).toBeNull();
+        expect(
+            await withScriptFile(contentWith({ scriptSource: 'bogus', scriptPlanErrors: [] }), (path) =>
+                readScriptSource(path),
+            ),
+        ).toBeNull();
+        expect(
+            await withScriptFile(
+                contentWith({ scriptSource: 'template', scriptPlanErrors: [{ itemId: 'd1' }] }),
+                (path) => readScriptSource(path),
+            ),
+        ).toBeNull();
+    });
+
+    test('renders the 脚本来源 line: plan bare, template plus each itemId:rule', async () => {
+        const plan = renderReportMarkdown([candidate({})], '2026-09-25', {
+            scriptSource: { source: 'plan', errors: [] },
+        });
+        expect(plan).toContain('**脚本来源**: plan');
+        const fallback = renderReportMarkdown([candidate({})], '2026-09-25', {
+            scriptSource: {
+                source: 'template',
+                errors: [
+                    { itemId: 'episode', rule: 'missing-plan' },
+                    { itemId: 'd1', rule: 'banned:首先' },
+                ],
+            },
+        });
+        expect(fallback).toContain('**脚本来源**: template（episode:missing-plan, d1:banned:首先）');
+        // absent file or missing metadata omits the line entirely
+        expect(renderReportMarkdown([candidate({})], '2026-09-25', {})).not.toContain('脚本来源');
+    });
+
+    test('processGeneratorIO reads it through NEWS_REPORT_SCRIPT_FILE', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'nr-script-io-'));
+        const inPath = join(dir, 'episode-plan.json');
+        const outPath = join(dir, 'run-report-content.json');
+        const scriptPath = join(dir, 'script.json');
+        await writeFile(inPath, JSON.stringify([candidate({})]));
+        await writeFile(
+            scriptPath,
+            contentWith({
+                scriptSource: 'template',
+                scriptPlanErrors: [{ itemId: 'episode', rule: 'missing-plan' }],
+            }),
+        );
+        process.env.NEWS_REPORT_SCRIPT_FILE = scriptPath;
+        try {
+            const content = (await processGeneratorIO(inPath, outPath)) as Content;
+            expect(content.body).toContain('**脚本来源**: template（episode:missing-plan）');
+        } finally {
+            delete process.env.NEWS_REPORT_SCRIPT_FILE;
             await rm(dir, { recursive: true, force: true });
         }
     });

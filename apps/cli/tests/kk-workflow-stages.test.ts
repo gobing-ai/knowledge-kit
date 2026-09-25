@@ -1047,6 +1047,106 @@ describe('0139 R3 — voicescript content gate wiring', () => {
     });
 });
 
+describe('F613 (0162) — script-write stage wiring', () => {
+    const STYLE_SIDECAR = join(import.meta.dir, '../../../plugins/kk/scripts/daily-voice-style.zh.md');
+
+    /** Writes a `kk` stub that logs the selected plugin env vars as one JSON line, then echoes a body. */
+    function fakeKkLoggingEnv(dir: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                "const out = process.argv[process.argv.indexOf('--out') + 1];",
+                "fs.appendFileSync(process.env.KK_TEST_ENV_LOG, JSON.stringify(process.env) + '\\n');",
+                "fs.writeFileSync(out, JSON.stringify({ title: 'T', body: 'language: en\\nsegments:\\n  - text: \"Hello and welcome to the episode.\"\\n' }));",
+                '',
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    function lastEnv(envLog: string): Record<string, string> {
+        const lines = readFileSync(envLog, 'utf-8').trim().split('\n');
+        return JSON.parse(lines[lines.length - 1] ?? '{}') as Record<string, string>;
+    }
+
+    it('daily-script-style snapshots the shipped style sidecar and is idempotent (R1)', () => {
+        withTempDir((dir) => {
+            const stamp = '20260925';
+            const snapshot = join(dir, `2-script/${stamp}_08_script-write_style.md`);
+            expect(run(['daily-script-style', dir, stamp]).status).toBe(0);
+            expect(existsSync(snapshot)).toBe(true);
+            expect(readFileSync(snapshot, 'utf-8')).toBe(readFileSync(STYLE_SIDECAR, 'utf-8'));
+            // Idempotent: the second run keeps whatever is on disk (an operator-edited snapshot
+            // is the audit record for the plan already written against it).
+            writeFileSync(snapshot, 'operator-edited');
+            const again = run(['daily-script-style', dir, stamp]);
+            expect(again.status).toBe(0);
+            expect(again.stdout).toContain('cached');
+            expect(readFileSync(snapshot, 'utf-8')).toBe('operator-edited');
+        });
+    });
+
+    it('daily-script-style fails loud naming the sidecar when no copy resolves (R1)', () => {
+        withTempDir((dir) => {
+            // A lone copy of the runner: its directory holds no sibling sidecars, so the
+            // whole chain misses and `requireSidecar` must name the remediation.
+            const loneRunner = join(dir, 'kk-workflow-stages.ts');
+            copyFileSync(runner, loneRunner);
+            const result = run(
+                ['daily-script-style', dir, '20260925'],
+                { HOME: dir, KK_WORKFLOWS_DIR: '' },
+                loneRunner,
+            );
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('daily-voice-style not found');
+            expect(result.stderr).toContain('install or refresh the kk package');
+        });
+    });
+
+    it('daily-script always passes the absolute plan and style paths (R4)', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260925';
+            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            const envLog = join(dir, 'env.jsonl');
+            const result = run(['daily-script', dir, stamp, '', 'zh', 'T', 'Robin'], {
+                KK_TEST_ENV_LOG: envLog,
+                ...fakeKkLoggingEnv(dir),
+            });
+            expect(result.status).toBe(0);
+            const env = lastEnv(envLog);
+            expect(env.DAILYNEWS_SCRIPT_PLAN).toBe(resolve(dir, '2-script', `${stamp}_08_script-write_plan.json`));
+            expect(env.DAILYNEWS_STYLE_FILE).toBe(resolve(STYLE_SIDECAR));
+        });
+    });
+
+    it('daily-run-report passes NEWS_REPORT_SCRIPT_FILE for the 脚本来源 read (R5)', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260925';
+            writeFileSync(
+                join(dir, `2-plan/${stamp}_04_quality-control-content_candidates.json`),
+                JSON.stringify({ metadata: { docs: [] } }),
+            );
+            const envLog = join(dir, 'env.jsonl');
+            const result = run(['daily-run-report', dir, stamp, '', '2', '3', '2', '1'], {
+                KK_TEST_ENV_LOG: envLog,
+                ...fakeKkLoggingEnv(dir),
+            });
+            expect(result.status).toBe(0);
+            expect(lastEnv(envLog).NEWS_REPORT_SCRIPT_FILE).toBe(
+                resolve(dir, '2-script', `${stamp}_08_script_content.json`),
+            );
+        });
+    });
+});
+
 describe('kk workflow stage runner — daily-prepare work_dir composition (0139)', () => {
     // The anchor and composed paths are cwd-relative, so these tests run the stages
     // script with the temp dir as cwd instead of the repo root.

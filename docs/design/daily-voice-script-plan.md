@@ -1,6 +1,6 @@
 # Daily voice script plan — news-driven coverage with a fixed style contract
 
-Feature **F613** (parent F61). Status: proposed 2026-09-24.
+Feature **F613** (parent F61). Status: proposed 2026-09-24; **shipped 2026-09-25** (task 0161: builder + style contract; task 0162: workflow wiring + run-report surfacing).
 
 ## Problem
 
@@ -90,7 +90,7 @@ The builder falls back to templates when the plan is missing, is not parseable, 
 2. Logs `warn` with the rule list.
 3. Stamps `Content.metadata.scriptSource: 'plan' | 'template'` and `scriptPlanErrors` on the output. These are always present, so the run report can tell which path ran.
 
-`dailyRunReport` adds `NEWS_REPORT_SCRIPT_FILE` (the `_08_script_content.json`). `news-report-gen` renders one line, 脚本来源, and lists any rejection reasons. The fallback is visible in the run report and never silent.
+`dailyRunReport` passes `NEWS_REPORT_SCRIPT_FILE` (the absolute `_08_script_content.json`). `news-report-gen` renders one line, 脚本来源, and lists any rejection reasons (`template（itemId:rule, …）`). The fallback is visible in the run report and never silent.
 
 ### 5. Regression (R6)
 

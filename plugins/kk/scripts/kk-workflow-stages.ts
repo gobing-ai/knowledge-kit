@@ -60,6 +60,10 @@ const SCRIPTS_DIR = import.meta.dir;
 const VALIDATE_SIDECAR = 'validate-voicescript.ts';
 const WRAP_SIDECAR = 'wrap-voicescript-doc.ts';
 const RENDER_SIDECAR = 'render-md.ts';
+// F613: the zh style contract the script-write prompt reads (snapshot stage) and dailynews-gen
+// consumes (DAILYNEWS_STYLE_FILE); no workflow var carries an override, so the chain is
+// $KK_WORKFLOWS_DIR -> package copy -> $HOME.
+const STYLE_SIDECAR = 'daily-voice-style.zh.md';
 const REVISE_COUNT = '.revise-count';
 // Post-translation title-dedup threshold (task 0138 R3). ponytail: the 2026-09-16 Gemini 3.8 Live
 // pair measures 0.417 zh title-only Jaccard, the nearest distinct pair 0.1 (4x margin). Character
@@ -915,6 +919,26 @@ function coverNormalizeBody(workDir: string, runDate: string): void {
     console.log(`cover normalized: ${runDate}_07_cover_cover.png`);
 }
 
+/**
+ * F613 R1: snapshot the shipped style contract into the run's work dir. Spur workflows have no
+ * workflow-dir var, so the script-write prompt reads this copy — and the snapshot freezes the
+ * exact contract the run's plan was written against. Idempotent (an existing snapshot is kept);
+ * a missing sidecar is a broken install, so `requireSidecar` fails loud.
+ */
+function dailyScriptStyle(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const snapshot = join(workDir, '2-script', `${runDate}_08_script-write_style.md`);
+    if (isFile(snapshot)) {
+        console.log(`script style cached: ${snapshot}`);
+        return;
+    }
+    const sidecar = requireSidecar('', STYLE_SIDECAR, 'daily-voice-style');
+    const scriptDir = join(workDir, '2-script');
+    sted('mkdir', scriptDir, () => mkdirSync(scriptDir, { recursive: true }));
+    sted('cp', snapshot, () => copyFileSync(sidecar, snapshot));
+    console.log(`script style snapshot: ${snapshot}`);
+}
+
 function dailyScript(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', language = '', title = '', voiceProfile = ''] = args;
     const yamlOut = join(workDir, '2-script', `${runDate}_08_script_voicescript.yaml`);
@@ -926,7 +950,16 @@ function dailyScript(args: string[]): void {
             return;
         }
         kk(['executor', 'run', 'dailynews-gen', '--in', planIn, '--out', contentOut, ...pluginsArgs(pluginsPath)], {
-            env: { DAILYNEWS_LANGUAGE: language, DAILYNEWS_TITLE: title, VOICEBOX_DEFAULT_PROFILE: voiceProfile },
+            env: {
+                DAILYNEWS_LANGUAGE: language,
+                DAILYNEWS_TITLE: title,
+                VOICEBOX_DEFAULT_PROFILE: voiceProfile,
+                // F613 R4: always passed as absolute paths — spawnPluginEntry runs plugins with
+                // cwd = the plugin package dir, so a relative workDir would silently miss the
+                // plan; a plan file absent at build time reports missing-plan (template fallback).
+                DAILYNEWS_SCRIPT_PLAN: resolve(join(workDir, '2-script', `${runDate}_08_script-write_plan.json`)),
+                DAILYNEWS_STYLE_FILE: resolve(resolveSidecar('', STYLE_SIDECAR)),
+            },
         });
         const body = readJson(contentOut)?.body;
         if (typeof body !== 'string') failWith(1, `script: ${contentOut} has no string body`);
@@ -1497,6 +1530,8 @@ function dailyRunReport(args: string[]): void {
                 // 20260917 funnel: the blended fan-in input, rendered as the 语料构成
                 // source/category composition (absent -> omitted).
                 NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '1-ingest', `${runDate}_02_collect_blended.json`),
+                // F613 R5: the script stage's Content, read best-effort (absent -> 脚本来源 omitted).
+                NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '2-script', `${runDate}_08_script_content.json`),
                 NEWS_REPORT_DATE: runDate,
             },
         });
@@ -1664,6 +1699,9 @@ if (import.meta.main)
             break;
         case 'daily-cover-normalize':
             dailyCoverNormalize(rest);
+            break;
+        case 'daily-script-style':
+            dailyScriptStyle(rest);
             break;
         case 'daily-script':
             dailyScript(rest);

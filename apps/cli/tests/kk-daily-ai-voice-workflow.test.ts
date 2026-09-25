@@ -38,6 +38,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'article-write',
             'article',
             'cover',
+            'script-write',
             'script',
             'review',
             'wrap-docs',
@@ -72,6 +73,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('skip_review: "false"');
         expect(yaml).toContain('transcode_mp3: "false"');
         expect(yaml).toContain('cover_enabled: "true"');
+        // F613 0162 R3: script-write authors the per-item plan; "false" routes straight to script.
+        expect(yaml).toContain('script_write_enabled: "true"');
         expect(yaml).toContain('publish_enabled: "false"');
         expect(yaml).toContain('last30days_enabled: "false"');
         expect(yaml).toContain('run_date: ""');
@@ -124,15 +127,17 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
     it('R2/R3 (0144) — every delegated action is a one-line `kk stage` call and the prompts stay under the cap', () => {
         // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
         // which resolves the shipped stages script from the installed package. The YAML must carry no
-        // prelude remnants and exactly one delegation call per stage (21 sites).
+        // prelude remnants and exactly one delegation call per stage (21 -> 22 sites: daily-script-style
+        // joined in F613 0162 R1).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(21);
-        // ADR-115 R3: the two trimmed prompts stay under the 1000-char error tier.
+        expect(yaml.split('kk stage daily-').length - 1).toBe(22);
+        // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (script-write: F613 0162).
         for (const [step, cap] of [
             ['plan-translate', 1000],
             ['cover', 1000],
+            ['script-write', 1000],
         ] as const) {
             const block = yaml.match(new RegExp(`- id: ${step}\\n[\\s\\S]*?(?=\\n  - id: )`))?.[0] ?? '';
             const input = block.split('input: |')[1]?.split('expectFile:')[0] ?? '';
@@ -183,6 +188,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-qc-content "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_categories}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `kk stage daily-article "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `kk stage daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-script-style "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,
             `kk stage daily-wrap-docs "\${vars.work_dir}" "\${vars.run_date}" "\${vars.voice_profile}"`,
             `OMNIVOICE_SPEED=1.06 kk stage daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.vdriver}"`,
@@ -233,6 +239,44 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(qcState).toContain('  - from: quality-control\n    to: publish-prep');
         expect(qcState).toContain('  - from: quality-control\n    to: done');
         expect(qcState).not.toContain('  - from: quality-control\n    to: failed');
+    });
+
+    it('F613 (0162) — script-write state and first-match transitions sit behind the enabled/zh/resume guards', () => {
+        const block = yaml.match(/- id: script-write\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        // R1/R2: the shell snapshots the shipped style sidecar into the work dir; the agent
+        // authors the plan and never halts the run on failure (the builder falls back to
+        // templates), and its artifact is pinned.
+        expect(block).toContain(`kk stage daily-script-style "\${vars.work_dir}" "\${vars.run_date}"`);
+        expect(block).toContain('onError: continue');
+        expect(block).toContain('allowAppend: false');
+        expect(block).toContain(`expectFile: \${vars.work_dir}/2-script/\${vars.run_date}_08_script-write_plan.json`);
+
+        const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
+        // First match wins: cover stays the first article edge, script-write sits above the
+        // always `-> script` edges on both parents, and script-write always drains into script.
+        expect(edges.indexOf('article->cover')).toBeLessThan(edges.indexOf('article->script-write'));
+        expect(edges.indexOf('article->script-write')).toBeLessThan(edges.indexOf('article->script'));
+        expect(edges.indexOf('cover->script-write')).toBeLessThan(edges.indexOf('cover->script'));
+        expect(edges).toContain('script-write->script');
+
+        // R3: each script-write edge requires enabled+zh AND a clean resume state — neither
+        // today's plan file nor the VoiceScript YAML may exist yet.
+        const guardFor = (edge: string) => {
+            const [from, to] = edge.split('->');
+            const m = yaml.match(new RegExp(`from: ${from}\\n\\s+to: ${to}\\n[\\s\\S]*?command: '([^']+)'`));
+            return m?.[1] ?? '';
+        };
+        for (const edge of ['article->script-write', 'cover->script-write']) {
+            const guard = guardFor(edge);
+            expect(guard, `${edge} guard`).toContain(`test "\${vars.script_write_enabled}" = "true"`);
+            expect(guard, `${edge} guard`).toContain(`test "\${vars.language}" = "zh"`);
+            expect(guard, `${edge} guard`).toContain(
+                `test ! -f "\${vars.work_dir}/2-script/\${vars.run_date}_08_script-write_plan.json"`,
+            );
+            expect(guard, `${edge} guard`).toContain(
+                `test ! -f "\${vars.work_dir}/2-script/\${vars.run_date}_08_script_voicescript.yaml"`,
+            );
+        }
     });
 
     it('R5 — executes all plugin commands and creates pipeline artifacts', () => {

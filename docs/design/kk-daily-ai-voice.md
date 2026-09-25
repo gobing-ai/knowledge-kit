@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (wt-image-cover) + spoken broadcast script (dailynews-gen) + audio (voice driver selected by the `vdriver` var: `voicebox` → voice-gen default, `ominivoice` → omni-voice-gen, `gemini` → gemini-tts) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`. Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (wt-image-cover) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `voicebox` → voice-gen default, `ominivoice` → omni-voice-gen, `gemini` → gemini-tts) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
 
 ## 2. Architecture & Data Flow
 
@@ -18,8 +18,11 @@ flowchart TD
     P0 -->|translate disabled| F
     P1 -->|2-plan/plan.json| F[article: content-gen]
     F -->|cover_enabled| G[cover: wt-image-cover agent.run]
-    F -->|cover disabled| H[script: dailynews-gen]
-    G -->|2-cover/cover.png| H
+    F -->|cover disabled| G2[script-write]
+    G -->|2-cover/cover.png| G2
+    G2 -->|script_write_enabled+zh, no plan/YAML yet| SW[script-write: daily-script-style + agent.run, onError continue]
+    G2 -->|disabled/non-zh/cached| H
+    SW -->|2-script/{run_date}_08_script-write_plan.json| H[script: dailynews-gen]
     H -->|2-script/{run_date}_08_script_content.json & {run_date}_08_script_voicescript.yaml| I{skip_review?}
     I -->|false| J[review: hitl.confirm]
     I -->|true| K[wrap-docs]
@@ -62,7 +65,8 @@ Convention-named artifacts:
 - `${run_date}_04_quality-control-content_annotated.json` / `${run_date}_04_quality-control-content_candidates.json`: QC filter input/output; `episode-plan-gen` derives `${run_date}_04_quality-control-content_candidates.rejected.json` from the candidates `--out` path (the `run-report` state's `NEWS_REPORT_REJECTED_FILE` points at the same file).
 - `${run_date}_06_article_content.json` / `${run_date}_06_article_article.md`: Generated article Content and markdown (skipped when the day's `.md` exists).
 - `${run_date}_07_cover_cover.png`: Cover image (cover state skipped when the day's file exists).
-- `${run_date}_08_script_content.json` / `${run_date}_08_script_voicescript.yaml`: Generator `Content` with VoiceScript YAML body and the human-readable VoiceScript (skipped when the day's `.yaml` exists).
+- `${run_date}_08_script-write_style.md` / `${run_date}_08_script-write_plan.json`: the style contract snapshot (idempotent copy of the shipped `daily-voice-style.zh.md` sidecar) and the agent-authored per-item plan (F613 0162; a failed/rejected plan is simply absent — the script step then builds from templates).
+- `${run_date}_08_script_content.json` / `${run_date}_08_script_voicescript.yaml`: Generator `Content` with VoiceScript YAML body and the human-readable VoiceScript (skipped when the day's `.yaml` exists; Content.metadata stamps `scriptSource`/`scriptPlanErrors`, surfaced by run-report's `脚本来源` line — see `docs/design/daily-voice-script-plan.md`).
 - `${run_date}_10_wrap-docs_docs.json`: VoiceScript wrapped as a single `Doc` for the voice driver selected by `vdriver` (default `voicebox` → voice-gen).
 - `${run_date}_11_generate_content.json`: Synthesized audio `Content` metadata (generate state skipped when the file exists and `metadata.qc.passed` is true).
 - `${run_date}_13_publish-prep_content.json`: Article + audio merged for the publish seam.

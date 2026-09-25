@@ -456,6 +456,18 @@ describe('F613 R4 — processGeneratorIO plan handling and explicit fallback', (
         });
     });
 
+    it('en ignores a present plan env and stamps template with no errors (builder template-builds en)', async () => {
+        // 0161-review P2: script-builder's isZh guard drops the plan on en, so stamping 'plan'
+        // there would report a path that never ran. Resolution is skipped entirely for en.
+        writeFileSync(planPath, JSON.stringify(twoDocPlan()));
+        await withPlanEnv({ DAILYNEWS_SCRIPT_PLAN: planPath, DAILYNEWS_STYLE_FILE: STYLE_SIDECAR }, async () => {
+            const content = await processGeneratorIO(inPath, outPath, { date, language: 'en' as const });
+            expect(content.metadata?.scriptSource).toBe('template');
+            expect(content.metadata?.scriptPlanErrors).toEqual([]);
+            expect(content.body).not.toContain('今天我们聊两件事');
+        });
+    });
+
     it('the CLI still exits 0 when the plan is rejected (fallback is not a failure)', async () => {
         const rejected = twoDocPlan();
         rejected.items[0] = {

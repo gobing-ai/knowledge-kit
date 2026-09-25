@@ -24,6 +24,9 @@ import { echoError } from '@gobing-ai/ts-utils';
  * - `NEWS_REPORT_QC_FILE` — the generate stage's QC audit path
  *   (`3-audio/<date>_11_generate_content.json`); absent -> the 音频 QC block is omitted;
  *   absent or unreadable -> reject counts render as 0, never throw.
+ * - `NEWS_REPORT_SCRIPT_FILE` — the script stage's Content path
+ *   (`2-script/<date>_08_script_content.json`, F613 R5); absent or metadata-less -> the
+ *   脚本来源 line is omitted, never throw.
  * - `NEWS_REPORT_TIMING_FILE` — `<work_dir>/step-timing.json` JSONL of
  *   {step, startedAt, endedAt} appended by the workflow shell steps; missing
  *   or unreadable -> the timing section is omitted, never throw.
@@ -194,6 +197,44 @@ export async function readQcSummary(path: string | undefined): Promise<QcSummary
     }
 }
 
+/**
+ * Script-source verdict from the script stage's Content metadata (F613 R5): which path built the
+ * VoiceScript, and — when the plan fell back to templates — the builder's per-item rejection rules.
+ */
+export interface ScriptSource {
+    source: 'plan' | 'template';
+    errors: { itemId: string; rule: string }[];
+}
+
+/**
+ * Read the script stage's Content (`<run_date>_08_script_content.json`) for the 脚本来源 verdict
+ * (F613 R5).
+ *
+ * Best-effort by contract: an absent, unreadable, or malformed file — or Content whose metadata
+ * carries no `scriptSource`/`scriptPlanErrors` pair (pre-F613 artifacts) — returns `null` and the
+ * report omits the line. A run report must never fail a run.
+ */
+export async function readScriptSource(path: string | undefined): Promise<ScriptSource | null> {
+    if (!path || path.trim() === '') return null;
+    try {
+        const parsed = JSON.parse(await Bun.file(path).text()) as { metadata?: unknown } | null;
+        const meta = parsed?.metadata;
+        if (meta === null || typeof meta !== 'object') return null;
+        const record = meta as { scriptSource?: unknown; scriptPlanErrors?: unknown };
+        if (record.scriptSource !== 'plan' && record.scriptSource !== 'template') return null;
+        if (!Array.isArray(record.scriptPlanErrors)) return null;
+        const errors: { itemId: string; rule: string }[] = [];
+        for (const error of record.scriptPlanErrors) {
+            const entry = error as { itemId?: unknown; rule?: unknown } | null;
+            if (typeof entry?.itemId !== 'string' || typeof entry?.rule !== 'string') return null;
+            errors.push({ itemId: entry.itemId, rule: entry.rule });
+        }
+        return { source: record.scriptSource, errors };
+    } catch {
+        return null;
+    }
+}
+
 /** Parse the timing JSONL; unreadable/missing -> [] (never throw). Last entry per step wins. */
 export async function readTiming(path: string | undefined): Promise<TimingEntry[]> {
     if (!path || path.trim() === '') return [];
@@ -234,6 +275,7 @@ export function renderReportMarkdown(
         rejected?: { doc: Doc; reasons: string[] }[];
         timing?: TimingEntry[];
         qc?: QcSummary | null;
+        scriptSource?: ScriptSource | null;
         planAudit?: PlanAuditRow[] | null;
         blended?: BlendedDoc[] | null;
     } = {},
@@ -309,6 +351,17 @@ export function renderReportMarkdown(
             );
         }
         lines.push('');
+    }
+
+    const scriptSource = options.scriptSource ?? null;
+    if (scriptSource !== null) {
+        // F613 R5: plan-versus-template is otherwise invisible once the VoiceScript is rendered —
+        // one line names the path, and a template fallback lists every itemId:rule rejection.
+        const detail =
+            scriptSource.source === 'template' && scriptSource.errors.length > 0
+                ? `（${scriptSource.errors.map((error) => `${error.itemId}:${error.rule}`).join(', ')}）`
+                : '';
+        lines.push(`**脚本来源**: ${scriptSource.source}${detail}`, '');
     }
 
     const qc = options.qc ?? null;
@@ -442,6 +495,7 @@ export function docsToContent(
         rejected?: { doc: Doc; reasons: string[] }[];
         timing?: TimingEntry[];
         qc?: QcSummary | null;
+        scriptSource?: ScriptSource | null;
         planAudit?: PlanAuditRow[] | null;
         blended?: BlendedDoc[] | null;
     },
@@ -464,9 +518,11 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
     const rejected = await readRejectedAudit(process.env.NEWS_REPORT_REJECTED_FILE);
     const timing = await readTiming(process.env.NEWS_REPORT_TIMING_FILE);
     const qc = await readQcSummary(process.env.NEWS_REPORT_QC_FILE);
+    // F613 R5: the script stage's Content, read best-effort (absent/metadata-less -> line omitted).
+    const scriptSource = await readScriptSource(process.env.NEWS_REPORT_SCRIPT_FILE);
     const planAudit = await readPlanAudit(process.env.NEWS_REPORT_PLAN_AUDIT_FILE);
     const blended = await readBlendedCorpus(process.env.NEWS_REPORT_BLENDED_FILE);
-    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc, planAudit, blended });
+    const content = docsToContent(docs, dateFromEnv(), { rejected, timing, qc, scriptSource, planAudit, blended });
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);

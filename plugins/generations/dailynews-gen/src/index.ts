@@ -94,7 +94,13 @@ export async function processGeneratorIO(
 
     // F613: env-handled plan (validated against the capped docs — the same items that are spoken)
     // with explicit template fallback; the outcome is always stamped into Content.metadata.
-    const planOutcome = await resolveScriptPlan(fs, docs);
+    // 0161-review P2: the builder template-builds en regardless of any plan (script-builder.ts's
+    // isZh guard), so en must never stamp scriptSource 'plan' — skip resolution entirely so the
+    // stamp and the fallback warn channel stay zh-only.
+    const isZh = (options?.language || 'zh').toLowerCase() === 'zh';
+    const planOutcome = isZh
+        ? await resolveScriptPlan(fs, docs)
+        : { scriptSource: 'template' as const, scriptPlanErrors: [] as ScriptPlanError[] };
     const script = buildNewsVoiceScript(docs, { ...options, scriptPlan: planOutcome.scriptPlan });
     const yamlBody = formatVoiceScriptToYaml(script);
 
