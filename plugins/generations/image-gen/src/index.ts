@@ -126,6 +126,35 @@ function composePrompts(
     return [composePrompt(format, style, vars, spec.extra)];
 }
 
+/** Task 0169: validate the illustration anchor plan against the original body before any provider work. */
+function assertAnchorPlan(body: string, positions: string[] | undefined, count: number): void {
+    const ranges: { anchor: string; start: number; end: number }[] = [];
+    for (let index = 0; index < count; index++) {
+        const anchor = positions?.[index];
+        if (anchor === undefined) {
+            throw new Error('Illustration anchor missing from metadata.positions');
+        }
+        const found = anchor === '' ? 0 : body.split(anchor).length - 1;
+        if (found !== 1) {
+            throw new Error(
+                `Illustration anchor must occur exactly once in the source body, found ${found}: '${anchor.slice(0, 50)}'`,
+            );
+        }
+        const start = body.indexOf(anchor);
+        ranges.push({ anchor, start, end: start + anchor.length });
+    }
+    // ponytail: O(n²) pair scan; n ≤ maxImages (default 4), so sorting is not worth it.
+    for (const [i, a] of ranges.entries()) {
+        for (const b of ranges.slice(i + 1)) {
+            if (a.start < b.end && b.start < a.end) {
+                throw new Error(
+                    `Illustration anchors overlap in the source body: '${a.anchor.slice(0, 50)}' and '${b.anchor.slice(0, 50)}'`,
+                );
+            }
+        }
+    }
+}
+
 /**
  * Read validated `Doc[]` input and emit the image-gen `Content` (R1/R3/R6).
  *
@@ -174,6 +203,7 @@ export async function processGeneratorIO(
                 `Image count ${prompts.length} exceeds the budget cap ${cap} (raise ImageJobSpec.maxImages or KK_IMAGE_MAX_IMAGES)`,
             );
         }
+        if (spec.job === 'illustration') assertAnchorPlan(doc?.body ?? '', positions, prompts.length);
 
         // Selection must succeed (or fail loud naming the provider) even when nothing is spent.
         const resolveProvider: ProviderResolver = options.providerResolver ?? defaultProviderResolver;
@@ -220,7 +250,7 @@ export async function processGeneratorIO(
             };
             provider.validate?.(request);
             const result = await provider.generate(request);
-            // Illustration: the anchor must occur exactly once before we spend image 1.
+            // Re-check against the spliced body; the pre-spend plan check is assertAnchorPlan (0169).
             let anchor: string | undefined;
             if (spec.job === 'illustration') {
                 anchor = positions?.[index];

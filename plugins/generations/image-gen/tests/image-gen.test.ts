@@ -141,7 +141,7 @@ describe('R6 — the dry run composes prompts and spends nothing', () => {
             [
                 {
                     id: 'art-1',
-                    body: 'article',
+                    body: 'intro anchor one middle anchor two end',
                     metadata: { imageGen: { job: 'illustration' }, positions: ['anchor one', 'anchor two'] },
                 },
             ],
@@ -188,7 +188,13 @@ describe('R6 — the budget cap refuses before spending', () => {
         process.env.KK_IMAGE_MAX_IMAGES = '10';
         process.env.KK_IMAGE_DRY_RUN = '1';
         const { resolver } = stubProvider();
-        const doc: Doc = { id: 'a', body: 'x', metadata: { imageGen: { job: 'illustration', count: 9 } } };
+        // 0169: even a dry run validates the anchor plan, so the fixture carries a valid one.
+        const positions = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+        const doc: Doc = {
+            id: 'a',
+            body: positions.join(' '),
+            metadata: { imageGen: { job: 'illustration', count: 9 }, positions },
+        };
 
         writeFileSync(IN, JSON.stringify([doc]));
         await processGeneratorIO(IN, OUT, { providerResolver: resolver });
@@ -254,24 +260,29 @@ describe('preset and provider resolution fail loud before any spend', () => {
 
 describe('the three job branches cross the money-spending boundary (0107)', () => {
     let genCalls = 0;
+    let resolveCalls = 0;
     beforeEach(() => {
         genCalls = 0;
+        resolveCalls = 0;
     });
-    const generatingResolver: ProviderResolver = () => ({
-        name: 'generating-stub',
-        defaultModel: () => 'stub-model',
-        isAvailable: () => true,
-        supportsReferenceImages: () => true,
-        generate: (req) => {
-            genCalls += 1;
-            return Promise.resolve({
-                bytes: new Uint8Array([9]),
-                extension: 'png',
-                provider: 'generating-stub',
-                model: req.model,
-            });
-        },
-    });
+    const generatingResolver: ProviderResolver = () => {
+        resolveCalls += 1;
+        return {
+            name: 'generating-stub',
+            defaultModel: () => 'stub-model',
+            isAvailable: () => true,
+            supportsReferenceImages: () => true,
+            generate: (req) => {
+                genCalls += 1;
+                return Promise.resolve({
+                    bytes: new Uint8Array([9]),
+                    extension: 'png',
+                    provider: 'generating-stub',
+                    model: req.model,
+                });
+            },
+        };
+    };
     for (const job of ['free', 'cover', 'illustration'] as const) {
         test(`a ${job} job calls the provider and writes its artefact beside --out`, async () => {
             await runWith([{ id: 'a', body: 'anchor', metadata: { imageGen: { job }, positions: ['anchor'] } }], {
@@ -281,6 +292,63 @@ describe('the three job branches cross the money-spending boundary (0107)', () =
             expect(readdirSync(join(TMP, 'out')).filter((name) => name.includes(`-${job}-0`))).toHaveLength(1);
             expect(existsSync(OUT)).toBe(true);
         });
+    }
+
+    // 0169: the anchor plan is validated pre-provider, on the paid AND the dry-run branch.
+    for (const dryRun of [false, true] as const) {
+        for (const plan of [
+            {
+                name: 'absent anchor',
+                body: 'text',
+                positions: ['missing'] as string[] | undefined,
+                error: /exactly once.*found 0/,
+            },
+            { name: 'duplicated in body', body: 'twin twin', positions: ['twin'], error: /found 2/ },
+            { name: 'anchor not supplied', body: 'text', positions: undefined, error: /anchor missing/ },
+            { name: 'empty anchor', body: 'text', positions: [''], error: /found 0/ },
+            {
+                name: 'contained anchor',
+                body: 'foo bar',
+                positions: ['foo bar', 'foo'],
+                maxImages: 2,
+                error: /overlap.*foo bar.*foo/,
+            },
+            { name: 'partial overlap', body: 'a b c', positions: ['a b', 'b c'], error: /overlap/ },
+            { name: 'duplicate entry', body: 'x', positions: ['x', 'x'], error: /overlap/ },
+        ]) {
+            test(`a bad illustration plan (${plan.name}${dryRun ? ', dry run' : ''}) is rejected before any provider call`, async () => {
+                if (dryRun) {
+                    process.env.KK_IMAGE_DRY_RUN = '1';
+                }
+                // Clear prior artefacts but keep TMP/out itself: later tests seed a stale --out there.
+                const outDir = join(TMP, 'out');
+                for (const name of existsSync(outDir) ? readdirSync(outDir) : []) {
+                    rmSync(join(outDir, name), { force: true });
+                }
+                await expect(
+                    runWith(
+                        [
+                            {
+                                id: 'a',
+                                body: plan.body,
+                                metadata: {
+                                    imageGen: {
+                                        job: 'illustration',
+                                        ...(plan.maxImages !== undefined ? { maxImages: plan.maxImages } : {}),
+                                    },
+                                    ...(plan.positions !== undefined ? { positions: plan.positions } : {}),
+                                },
+                            },
+                        ],
+                        { providerResolver: generatingResolver },
+                    ),
+                ).rejects.toThrow(plan.error);
+                expect(genCalls).toBe(0);
+                expect(resolveCalls).toBe(0);
+                expect(existsSync(OUT)).toBe(false);
+                expect(existsSync(join(TMP, 'out')) ? readdirSync(join(TMP, 'out')) : []).toEqual([]);
+            });
+        }
     }
 });
 
