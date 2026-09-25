@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: ["wayfinder-map"]
 created_at: "2026-09-09T18:22:49.655Z"
-updated_at: "2026-09-11T21:39:35.878Z"
+updated_at: "2026-09-25T19:46:39.687Z"
 ---
 
 # K: kk image pipeline — migrate wt image skills to a TypeScript generator plugin (wayfinder map)
@@ -90,4 +90,7 @@ Wayfinder map. Destination = **shipped implementation** (code lands, `Shippable:
 - 2026-09-09T22:21:02.544Z backlog → active (system)
 - 2026-09-11T21:39:35.707Z active → verifying (system)
 - 2026-09-11T21:39:35.878Z verifying → done (system)
+- 2026-09-25T19:23:31.495Z done → active (system)
+- 2026-09-25T19:46:39.439Z active → verifying (system)
+- 2026-09-25T19:46:39.687Z verifying → done (system)
 
