@@ -108,6 +108,15 @@ GEMINI_TTS_STYLE: calm professional podcast host, steady pace, natural conversat
 When set it replaces every segment's own instruct; per-segment instructions still apply when
 unset.
 
+### Daily quota (Tier 1: ~100 requests/day)
+
+`gemini-3.8-flash-tts` on a Tier 1 key allows ~100 requests/day (UTC reset — quota 429s quote
+a retry-in horizon into the next UTC midnight). A full episode (~31 segments + QC regens ≈
+35–45 calls) essentially spends the day's budget, and the daily workflow shares it with any
+tuning run. The client caps transient 429 backoff at 120s and fails loudly when `retry-after`
+exceeds that (it used to sleep out the ~19h horizon, which looked like a wedged run —
+2026-09-24). For style/voice tuning, synthesize 2–3 segments instead of the full episode.
+
 ## Renewal
 
 A stored voice lasts 1 year (200 stored voices per project, shared with prompted voices). Before

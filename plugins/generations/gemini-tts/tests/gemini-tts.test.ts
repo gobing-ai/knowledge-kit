@@ -202,6 +202,26 @@ describe('createGeminiVoiceClient', () => {
         expect(waits).toEqual([3000, 4000]);
     });
 
+    it('R6b — fails loudly instead of sleeping out a multi-hour quota retry-after', async () => {
+        const sleeps: number[] = [];
+        const { fn, calls } = stubFetch(() =>
+            Response.json(
+                { error: { message: 'Rate limit exceeded (limit: 100 requests per day on Tier 1).' } },
+                { status: 429, headers: { 'retry-after': '69857' } },
+            ),
+        );
+        const client = createGeminiVoiceClient({
+            env: { GEMINI_API_KEY: 'k' },
+            fetch: fn,
+            sleep: async (ms) => {
+                sleeps.push(ms);
+            },
+        });
+        await expect(client.generate(body())).rejects.toThrow(/retry-after 69857s ≈ 19.4h.*requests per day/s);
+        expect(calls).toHaveLength(1);
+        expect(sleeps).toEqual([]);
+    });
+
     it('R6 — gives up after the attempt cap naming status, API message, and text excerpt', async () => {
         const { fn, calls } = stubFetch(
             () => new Response(JSON.stringify({ error: { message: 'quota exhausted' } }), { status: 429 }),

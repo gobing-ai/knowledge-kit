@@ -6,6 +6,8 @@ export const GEMINI_ASR_DEFAULT_MODEL = 'gemini-3.8-flash';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
 const DEFAULT_PROFILES_PATH = new URL('../profiles.json', import.meta.url).pathname;
 const TRANSCRIBE_PROMPT = 'Transcribe this audio verbatim. Output only the transcript, no commentary.';
+/** retry-after above this (Google daily-quota 429s: ~70_000s) is never actionable inside a run. */
+const RETRY_AFTER_CAP_SEC = 120;
 const PLACEHOLDER_VOICE = 'voice_REPLACE_ME';
 
 type Env = Record<string, string | undefined>;
@@ -48,6 +50,18 @@ function excerpt(text: string): string {
 }
 
 /**
+ * Deadline every network phase so a stalled connection or response body fails loudly instead of
+ * hanging forever (AbortSignal.timeout alone left the event loop parked mid-run, 2026-09-24).
+ */
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`response body timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
  * VoiceboxClient over the Gemini 3.8 TTS REST API, so voice-gen's `processGeneratorIO` pipeline
  * (verify-retry, speed, concat, QC, MP3) runs unchanged against a hosted backend (ADR-023).
  * Synthesis is unary: `generate` buffers the WAV and `waitUntilDone` completes immediately.
@@ -73,12 +87,15 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
         for (let attempt = 1; ; attempt++) {
             let res: Response;
             try {
-                res = await doFetch(`${baseUrl}/v1beta/interactions`, {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-                    body: JSON.stringify(body),
-                    signal: AbortSignal.timeout(timeoutMs),
-                });
+                res = await withDeadline(
+                    doFetch(`${baseUrl}/v1beta/interactions`, {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+                        body: JSON.stringify(body),
+                        signal: AbortSignal.timeout(timeoutMs),
+                    }),
+                    timeoutMs,
+                );
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 if (attempt >= maxAttempts)
@@ -86,20 +103,28 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
                 await sleep(2000 * 2 ** (attempt - 1));
                 continue;
             }
-            if (res.ok) return (await res.json()) as InteractionResponse;
-            const raw = await res.text();
+            if (res.ok) return withDeadline(res.json(), timeoutMs) as Promise<InteractionResponse>;
+            const raw = await withDeadline(res.text(), timeoutMs);
             let apiMessage = raw.slice(0, 300);
             try {
                 apiMessage = (JSON.parse(raw) as InteractionResponse).error?.message ?? apiMessage;
             } catch {
                 // non-JSON error body — keep the raw excerpt
             }
+            const retryAfter = Number(res.headers.get('retry-after'));
+            // 2026-09-24: three generate runs silently slept ~19h on a daily-quota 429's
+            // retry-after 69857 — indistinguishable from a wedge. Cap transient backoff;
+            // anything beyond the cap (per-day quota, org throttle) fails the run loudly.
+            if (retryAfter > RETRY_AFTER_CAP_SEC) {
+                throw new Error(
+                    `${label}: HTTP ${res.status} quota/reset horizon too far out (retry-after ${retryAfter}s ≈ ${(retryAfter / 3600).toFixed(1)}h): ${apiMessage}`,
+                );
+            }
             const retryable = res.status === 429 || res.status >= 500;
             if (!retryable || attempt >= maxAttempts) {
                 throw new Error(`${label}: HTTP ${res.status} after ${attempt} attempt(s): ${apiMessage}`);
             }
-            const retryAfter = Number(res.headers.get('retry-after'));
-            await sleep(retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** (attempt - 1));
+            await sleep(retryAfter > 0 ? Math.min(retryAfter, RETRY_AFTER_CAP_SEC) * 1000 : 2000 * 2 ** (attempt - 1));
         }
     }
 
