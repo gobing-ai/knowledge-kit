@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: image-gen validates illustration anchors before the first paid call
-status: todo
+status: done
 template: issue
 created_at: 2026-09-25T18:52:58.637Z
-updated_at: "2026-09-25T19:47:03.756Z"
+updated_at: "2026-09-25T21:09:45.140Z"
 
 feature_id: D7
 ac_altitude: graduating
@@ -25,15 +25,15 @@ The fix is deterministic string validation. It adds no provider behavior and no 
 
 ### Requirements
 
-- [ ] R1. For `job: 'illustration'`, validate the anchor plan in the "fail before any provider work" block (`index.ts:168`), after `composePrompts` and the cap check and before `resolveProvider` (`:179`), so it runs on both the dry-run and the paid branch. Every prompt index must have a supplied anchor; otherwise throw the existing `Illustration anchor missing from metadata.positions`. A count/positions mismatch is already rejected by `composePrompts` (`index.ts:113`). Each anchor must occur exactly once in the original `doc.body`; otherwise throw the existing `Illustration anchor must occur exactly once in the source body, found <n>: '<anchor[0..50]>'`. An empty-string anchor counts as found 0.
-- [ ] R2. Anchor occurrence ranges `[indexOf, indexOf + length)` in the original body must be pairwise disjoint. This covers duplicate entries in `positions`, containment (`foo` / `foo bar`), and partial overlap (`a b` / `b c`). Otherwise throw `Illustration anchors overlap in the source body: '<a[0..50]>' and '<b[0..50]>'`.
-- [ ] R3. Valid plans behave byte-identically: prompts, bodies, captions, and metadata are unchanged, and all existing image-gen tests pass except the one fixture whose body lacks its anchors (Plan step 3). Keep the in-loop check (`index.ts:224-236`) as a defensive guard for the spliced body, and correct its comment. See Q&A for the alt-text/path residual.
+- [x] R1. For `job: 'illustration'`, validate the anchor plan in the "fail before any provider work" block (`index.ts:168`), after `composePrompts` and the cap check and before `resolveProvider` (`:179`), so it runs on both the dry-run and the paid branch. Every prompt index must have a supplied anchor; otherwise throw the existing `Illustration anchor missing from metadata.positions`. A count/positions mismatch is already rejected by `composePrompts` (`index.ts:113`). Each anchor must occur exactly once in the original `doc.body`; otherwise throw the existing `Illustration anchor must occur exactly once in the source body, found <n>: '<anchor[0..50]>'`. An empty-string anchor counts as found 0.
+- [x] R2. Anchor occurrence ranges `[indexOf, indexOf + length)` in the original body must be pairwise disjoint. This covers duplicate entries in `positions`, containment (`foo` / `foo bar`), and partial overlap (`a b` / `b c`). Otherwise throw `Illustration anchors overlap in the source body: '<a[0..50]>' and '<b[0..50]>'`.
+- [x] R3. Valid plans behave byte-identically: prompts, bodies, captions, and metadata are unchanged, and all existing image-gen tests pass except the one fixture whose body lacks its anchors (Plan step 3). Keep the in-loop check (`index.ts:224-236`) as a defensive guard for the spliced body, and correct its comment. See Q&A for the alt-text/path residual.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Bad anchors fail before any provider call (req: R1)
-- [ ] AC2 — Overlapping anchors fail before any provider call (req: R2)
-- [ ] AC3 — Valid anchor plans are unchanged (req: R3)
+- [x] AC1 — Bad anchors fail before any provider call (req: R1)
+- [x] AC2 — Overlapping anchors fail before any provider call (req: R2)
+- [x] AC3 — Valid anchor plans are unchanged (req: R3)
 
 ### Q&A
 
@@ -121,13 +121,63 @@ Estimate: about 1h. Blast radius: the illustration branch of `image-gen` only.
 
 ### Solution
 
-- Not yet implemented. The target is the pre-provider block at `plugins/generations/image-gen/src/index.ts:168`; see Design and Plan. Replace this section with the implementation citations when done.
+- **Gate helper** `assertAnchorPlan` next to `composePrompts` (`plugins/generations/image-gen/src/index.ts:130`): per-prompt anchor presence (existing `Illustration anchor missing from metadata.positions` verbatim), exactly-once in the original body (empty anchor = found 0; existing `must occur exactly once` message verbatim), and pairwise-disjoint `[indexOf, indexOf+length)` ranges (new `Illustration anchors overlap in the source body: 'a' and 'b'`).
+- **Call site** in the pre-provider block after the cap check, before `resolveProvider` (`index.ts:206`) — the gate runs on the paid branch AND the dry run, so a bad plan can never reach `provider.validate`/`generate` nor a doomed operator confirmation.
+- **In-loop check kept** as the spliced-body backstop; comment now names the pre-spend gate (`index.ts:253`).
+- **Tests** (`plugins/generations/image-gen/tests/image-gen.test.ts`): red-first 14-case table (7 bad plans × paid/dry-run) in the 0107 describe asserting reject + `genCalls===0` + `resolveCalls===0` + empty out dir; `generatingResolver` counts `resolveCalls`. Fixture updates where the new gate exposed anchor-less illustration test data (Q&A: test data, not a supported use): the R6 dry-run illustration body → `intro anchor one middle anchor two end`, and the budget-cap count-9 doc → a valid 9-anchor plan (cap check still fires before the gate, `/cap 2/` intact). The table clears out-dir files but keeps the dir so the later stale-`--out` cleanup test keeps its precondition.
+- **Verified:** red first (14 fail / 20 pass in the file), then green — 310 pass / 0 fail across the plugin's 18 test files, adapter suite included; `bun run format` applied.
 
 ### Testing
 
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/generations/image-gen/src/index.ts:130-148 — assertAnchorPlan throws 'Illustration anchor missing from metadata.positions' (:136-137) for unsupplied anchors, and 'Illustration anchor must occur exactly once in the source body, found <n>' (:139-141) when occurrences != 1; empty-string anchor counts as found 0 (:138). Called at index.ts:206 inside the pre-provider block — after composePrompts and the cap check (:202-205), before resolveProvider (:208) — so it runs on both the dry-run (:209) and paid (:248) branches. count/positions mismatch already rejected by composePrompts (index.ts:113). Tests: absent/duplicated/not-supplied/empty anchors rejected pre-provider, tests/image-gen.test.ts:299-351. |
+| R2 | MET | plugins/generations/image-gen/src/index.ts:149-155 — occurrence ranges [indexOf, indexOf+length) must be pairwise disjoint (a.start < b.end && b.start < a.end, :152-153); throws 'Illustration anchors overlap in the source body: <a> and <b>' naming both anchors. Covers duplicate entries, containment, and partial overlap. Tests: 'contained anchor' (foo bar/foo, maxImages 2), 'partial overlap' (a b/b c), 'duplicate entry' (x/x) all reject with /overlap/, tests/image-gen.test.ts:307-315, 316. |
+| R3 | MET | Valid plans unchanged: assertAnchorPlan is a pure guard that throws on bad plans only; prompts/bodies/captions/metadata paths untouched (index.ts:206 is a single guard line; the spliced-body re-check kept as defensive guard at index.ts:253-267 with corrected comment :253). Dry-run fixtures updated only to carry valid anchors (tests/image-gen.test.ts:144, :191-195); all paid-path job tests pass unchanged (3/3 at :288-291 region). Full suite green: 310 pass (plugin) / 1393 pass (repo-wide), 0 fail. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | 7 bad plans × {paid, dry-run} = 14 tests pass (69ms): absent anchor (/exactly once.*found 0/), duplicated (/found 2/), not supplied (/anchor missing/), empty (/found 0/) each assert rejects.toThrow + genCalls===0 + resolveCalls===0 + no --out + empty artifact dir (tests/image-gen.test.ts:299-351); guard placed before resolveProvider on both branches (src/index.ts:206, :209, :248). |
+| AC2 | MET | test | Overlap rows of the same 14-test matrix pass: contained anchor errors /overlap.*foo bar.*foo/ (both anchors named), partial overlap /overlap/, duplicate entry /overlap/ (tests/image-gen.test.ts:307-316); pairwise-disjoint throw at src/index.ts:149-155. |
+| AC3 | MET | test | Repo-wide bun run test: 1393 pass, 0 fail (matches stamped proof digest sha256:c68df18e… in .spur/run/0169-test-gate.log:150); plugin suite 310 pass, 0 fail including all pre-existing R6/budget/boundary tests and the paid-path illustration provider test asserting output written beside --out (tests/image-gen.test.ts:288-291). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0169 (remediation re-run, run 8edcf6cf)
+
+**Scope:** `git diff 485e433c` — `plugins/generations/image-gen/src/index.ts`, `plugins/generations/image-gen/tests/image-gen.test.ts` (+ doc-only status ticks in 0165/0166/0169 task files)
+**Dimensions:** functional, security, efficiency, correctness, usability, architecture
+**Verdict:** PASS
+
+**Remediation delta:** none in code or tests. The only change since the prior PASS review is that the task spec's R1–R3 and AC1–AC3 checkboxes are now ticked (all certified MET by verification). The proof digest re-stamped accordingly: fingerprint `sha256:c68df18eaf14d660b49e068efe143158c67022653277085d78d52b7d28efd076` recomputed this run over the current task+feature files and matches the `.spur/run/0169-test-gate.log` trailer (the run's older `…d3bc21a9…` capture predates the ticks; the fingerprint hashes task/feature content, so ticking boxes changes it — no code implication).
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location |
+|---|----------|-----------|---------|----------|
+| 1 | P4 (advisory) | correctness | No P1–P3 findings: diff re-reviewed this run across all six dimensions; R1–R3 and AC1–AC3 traceable with fresh test evidence. Known accepted ceilings stand: O(n²) anchor pair scan (bounded by maxImages cap, `ponytail:`-noted) and the deliberate two-pass insertion residual (out of scope per D7). | `plugins/generations/image-gen/src/index.ts:130-155,206` |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `index.ts:130-143` — `assertAnchorPlan` throws the missing-anchor error (`:135`) and the exactly-once error (`:138-143`, empty anchor → found 0); invoked at `:206` before provider resolution (`:209`) and before the dry-run branch (`:212`), so it guards both branches pre-spend. Tests: 7 bad-plan cases × paid/dry-run assert rejection, `genCalls===0`, `resolveCalls===0`, no OUT artefact. |
+| R2 | MET | `index.ts:146-155` — half-open-range pairwise overlap scan names both anchors in the error; covers duplicates, containment (`foo`/`foo bar`), partial overlap (`a b`/`b c`). Tests: contained-anchor, partial-overlap, duplicate-entry cases. |
+| R3 | MET | Valid-plan path untouched: only the assert call was added; the in-loop spliced-body check is kept as a defensive guard with a corrected comment (`:253`). R6 dry-run fixture now carries a valid anchor plan (Plan step 3). Fresh full-suite run: 1393 pass / 0 fail. |
+| AC1–AC3 | MET | Ticked in task spec this remediation; each backed by R1/R2/R3 evidence above and the regression tests in `tests/image-gen.test.ts:296-351`. |
+
+##### Fresh verification evidence (this run, not inherited)
+
+- `bun test` (plugins/generations/image-gen): 310 pass / 0 fail.
+- `bun run test` (repo): 1393 pass / 0 fail, 5502 expect() calls — identical to the stamped gate log.
+- Proof fingerprint recomputed: `sha256:c68df18eaf14d660b49e068efe143158c67022653277085d78d52b7d28efd076` — matches `.spur/run/0169-test-gate.log` trailer.
+
+**Next:** none — gate may approve; no remediation required.
 
 ### References
 
@@ -146,3 +196,8 @@ Estimate: about 1h. Blast radius: the illustration branch of `image-gen` only.
 - Related: D6 / 0166 (the fallback loop wraps only `validate`/`generate`; land 0169 first, which makes anchor errors pre-spend). K: the done wayfinder map where 0107 shipped.
 
 ### History
+
+- 2026-09-25T20:36:56.428Z todo → wip (system)
+- 2026-09-25T21:08:55.945Z wip → testing (system)
+- 2026-09-25T21:09:45.140Z testing → done (system)
+

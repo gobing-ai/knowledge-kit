@@ -1078,3 +1078,121 @@ Doc-drift repairs applied this wrapup: `docs/04_DESIGN.md` (frontmatter `version
 ### Operator directives
 
 - **2026-09-25 — image generation goes through kk config.** When generating images (esp. daily-news-cover × daily-news), use the kk path (`kk executor run image-gen`), which resolves provider/env from `~/.config/kk/config.yaml` (currently Minimax `image-01`). Harness image tools (image_gen/generate_image = Grok/Antigravity) bypass that config — do not use them for kk pipeline artifacts. Multi-engine + runtime fallback is the acknowledged next step (0103 AUTO_ORDER covers selection-time only).
+## Drift repaired (5 files, all in the authorized scope)
+
+Ran `sp:doc-evolve` drift-audit (§7) on `00`, `03`, `04`, `docs/design/*` for batch WBS **0169**. Task corpus (`docs/tasks/*`, `docs/features/*`) untouched — the modified files there are the harness's own writes.
+
+| # | Doc | Code/reality | Doc said | Repair |
+|---|---|---|---|---|
+| 1 | `docs/design/generator-plugin-specification.md:57` | 0169 validates the **whole** anchor plan pre-provider, on paid **and** dry-run | 0107 wording (per-image, paid only) | Dated 0169 amendment; fixed stray `..` |
+| 2 | `docs/design/remaining-wt-publish-harvest.md:3` | E7 ✅ done (0141–0147) | "accepted design — not yet built" | → shipped |
+| 3 | `docs/00_ADR.md:368` | Browser drivers shipped (E7) | `Accepted (design)` | → `Accepted (shipped — E7)` |
+| 4 | `docs/00_ADR.md` (ADR-011) | `kk stage` is a registered top-level noun (`1eb6c8d6`, 2026-09-18) | "exactly `executor` and `plugin`" | New dated amendment (R1 amended, not superseded) |
+| 5 | `docs/03_ARCHITECTURE.md` tree | 27 real plugins | 14 absent from tree | Added, sourced from `plugin.json` |
+| 6 | `docs/03_ARCHITECTURE.md` module table | 27 real plugins | 7 absent | Added with deps from manifests |
+| 7 | `docs/03_ARCHITECTURE.md:224` | `kk stage` noun | not mentioned | Added note |
+| 8 | `docs/03_ARCHITECTURE.md:359` | F41 ✅ done | "accepted design — F41" | → shipped |
+| 9 | `docs/04_DESIGN.md:40` | E7 ✅ done | "accepted design (E7)" | → shipped |
+| 10 | `docs/04_DESIGN.md` §3 | image-gen seam vars + shared browser-profile var | absent | 4 rows added |
+| 11 | `docs/04_DESIGN.md` §1 | `kk stage` shipped | no §1 entry | New §1.8 (signature from `stage.ts`) |
+
+Frontmatter versions bumped per §4.3 r3: `00` 1.27.0→1.28.0, `03` 2.26.0→2.27.0, `04` 2.33.0→2.34.0.
+
+**Deliberately not flipped** (verified still true): `03`'s "generator input dispatch (accepted design — not yet built)" — `GeneratorInputSchema`/`BriefSchema`/`accepts` are genuinely unimplemented. `ADR-115` in `docs/design/*` is Spur's ADR, not a missing local one.
+
+**Verification:** `bun run lint` (Biome 2.5.5 + typecheck) all workspaces exit 0 · `bun run test` **1393 pass / 0 fail** (86 files) · coverage lines 97.98% / functions 97.91% (threshold 90%) · post-repair drift re-run: 0 missing plugins in tree/table, 0 code `KK_*` vars missing from `04` §3.
+
+Artifact written: `/Users/robin/xprojects/knowledge-kit/.spur/run/3e8e18d4-4c9f-4b5d-97f5-21eb0f9c90ad-wrapup-learnings.md`
+
+# Wrap-up learnings — knowledge-kit, 2026-09-25 (batch WBS 0169)
+
+## 2026-09-25 · 0169 — image-gen validates illustration anchors before the first paid call
+
+### Conventions
+
+- Pre-spend validation belongs in the "fail before any provider work" block: after
+  `composePrompts` + the budget-cap check and before `resolveProvider`
+  (`plugins/generations/image-gen/src/index.ts:203-206`). One call site there covers the paid
+  branch **and** the `KK_IMAGE_DRY_RUN=1` preview branch, instead of only the branch that spends.
+- Validate the whole plan, not the item about to be spent. `assertAnchorPlan` checks every
+  `metadata.positions` anchor up front — present, occurring exactly once in the source body, and
+  resolving to non-overlapping ranges — rather than per-image inside the loop.
+- Reuse existing error strings verbatim when strengthening a check; add new text only for genuinely
+  new conditions. Callers and skills match on those strings.
+
+### Errors fixed
+
+- The anchor check was coupled to the insertion step, so it ran **after** `provider.generate` had
+  already spent for the preceding images — a malformed plan cost money before failing. Root cause:
+  reusing the same `body.split(anchor)` inside the loop, so the check could only exist where bytes
+  already existed.
+- A dry run skipped the anchor check entirely, so a doomed plan could survive operator spend
+  confirmation.
+- Task 0107's Solution recorded "validates the anchor occurs exactly once before spending provider
+  work" while the code checked after `generate`. The stale claim in a `done` task shipped the
+  defect: a done task's prose is not evidence — read the code.
+
+### Patterns
+
+- Keep the in-loop check as a documented backstop for the **spliced** body (the inserted reference
+  text is only known after `generate`), and name the pre-spend plan check as the real gate:
+  `// Re-check against the spliced body; the pre-spend plan check is assertAnchorPlan (0169)`.
+- Prove the money boundary by counting resolver calls (`resolveCalls`), not just by asserting no
+  output file — `resolveCalls === 0` is what "never selected the provider" actually means.
+- Red-first table test: 7 malformed plans × `{ paid, dry-run }` = 14 cases in one table; confirm the
+  table fails before the fix and passes after.
+- Mark a deliberate complexity ceiling with a `ponytail:` note and its bound
+  (`// ponytail: O(n²) pair scan; n ≤ maxImages (default 4), so sorting is not worth it`).
+
+### Gotchas
+
+- A new pre-provider gate invalidates fixtures whose data was never valid input: two existing
+  fixtures used `body: 'article'` / `body: 'x'` with the anchors absent. Fix the fixture data; never
+  weaken the gate to keep a fixture green.
+- Verification fingerprints hash task+feature content, so ticking AC checkboxes changes the
+  fingerprint and the receipt must be re-stamped.
+
+## 2026-09-25 · 0169 (wrapup doc-sync) — key-doc drift repaired
+
+### Conventions
+
+- A shipped first-layer CLI noun is a T1 surface for `00`, not just `04`: `kk stage` shipped
+  2026-09-18 (`1eb6c8d6`) and its docs-sync commit touched only `04_DESIGN.md`, leaving ADR-011's
+  "exactly two first-layer nouns" and `03`'s CLI-nouns section false until this audit.
+- `docs/design/*` satellites and their status labels are T3 surface: `remaining-wt-publish-harvest.md`
+  still read "accepted design — not yet built" while E7 was `done`, and ADR-008's 2026-09-17 browser
+  amendment stayed `Accepted (design)` after the drivers shipped.
+- A substantive edit to `00`/`03`/`04` bumps `version` (minor) and refreshes `updated_at` in the same
+  edit (constitution §4.3 rule 3).
+
+### Errors fixed
+
+- `03`'s System-shape tree was missing 14 real plugins and its module table 7; `04` §3 omitted
+  image-gen's runtime seam env vars (`KK_IMAGE_MAX_IMAGES`, `KK_IMAGE_DRY_RUN`,
+  `KK_IMAGE_PRESET_PATH`) and the shared `KK_BROWSER_PROFILE_DIR`; `04` §1's CLI inventory had no
+  `stage` entry. Every repair was transcribed from `plugin.json`, manifests, and command
+  registrations — never from memory.
+
+### Patterns
+
+- Detect tree/table completeness mechanically: diff the real `plugins/<kind>/*` directory listing
+  against the doc text in a script, then repair. A doc that claims a complete inventory is
+  drift-checkable that way, and the re-run afterwards is the zero-finding evidence.
+- A one-sentence contract amendment belongs in the owning satellite spec
+  (`generator-plugin-specification.md`), dated and task-cited, rather than a new design doc.
+
+### Gotchas
+
+- `03`'s "generator input dispatch (accepted design — not yet built)" is **correct** —
+  `GeneratorInputSchema` / `BriefSchema` / manifest `accepts` are still unimplemented. Never flip a
+  "not yet built" label without checking the code.
+- `ADR-115` references inside `docs/design/*.md` are **Spur's** ADR, not knowledge-kit's. They are
+  not broken links to a missing local ADR.
+
+## Verification (2026-09-25, batch 0169)
+
+- `bun run lint` — Biome 2.5.5 check + typecheck, all workspaces exit 0.
+- `bun run test` — 1393 pass / 0 fail across 86 files; coverage lines 97.98%, functions 97.91%
+  (threshold 90%).
+- Post-repair drift checks re-run: 0 plugins missing from `03`'s tree, 0 missing from its module
+  table, 0 code `KK_*` vars missing from `04` §3.

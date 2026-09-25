@@ -27,7 +27,7 @@
     ├── [done] **D4**: Own STORM generator ([D4_own-storm-generator.md](./D4_own-storm-generator.md))
     ├── [done] **D5**: Voice generator (Voicebox) ([D5_voice-generator-voicebox.md](./D5_voice-generator-voicebox.md))
     ├── [backlog] **D6**: image-gen-runtime-fallback ([D6_image-gen-runtime-fallback.md](./D6_image-gen-runtime-fallback.md))
-    └── [backlog] **D7**: image-gen pre-spend illustration anchor validation ([D7_image-gen-pre-spend-illustration-anchor-validation.md](./D7_image-gen-pre-spend-illustration-anchor-validation.md))
+    └── [active] **D7**: image-gen pre-spend illustration anchor validation ([D7_image-gen-pre-spend-illustration-anchor-validation.md](./D7_image-gen-pre-spend-illustration-anchor-validation.md))
 [done] **E**: Multi-channel publish ([E_publishplugin-surfdash.md](./E_publishplugin-surfdash.md))
     ├── [done] **E1**: wt-publish audit ([E1_wt-publish-audit.md](./E1_wt-publish-audit.md))
     ├── [done] **E2**: Publish design and test harness ([E2_publishplugin-contract-and-test-harness.md](./E2_publishplugin-contract-and-test-harness.md))

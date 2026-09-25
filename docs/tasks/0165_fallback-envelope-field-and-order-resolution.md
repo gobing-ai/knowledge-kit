@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: fallback envelope field and order resolution
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-25T18:06:10.765Z
-updated_at: "2026-09-25T18:52:45.829Z"
+updated_at: "2026-09-25T20:37:40.394Z"
 feature_id: D6
 
 dependencies: []
@@ -93,3 +93,6 @@ The function stays pure: availability and reference support come in through `ski
 - Consumer: task 0166. Task 0164 is not needed here, so this task can be built in parallel with it.
 
 ### History
+
+- 2026-09-25T20:37:40.394Z backlog → todo (system)
+
