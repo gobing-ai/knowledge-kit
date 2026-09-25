@@ -48,10 +48,14 @@ generation, `EXTEND.md` chain. Layout catalog:
    `references/providers.md` marks the provider/model reference-capable.
 3. **Dry-run + one confirmation** — run each envelope with `KK_IMAGE_DRY_RUN=1`;
    save the emitted `Content.body` as `<out>/cards/NN.prompt.txt` (the exact
-   composed prompt; it must equal `ImageArtifact.prompt` after render). Show
-   **one** spend preview for the series (provider, model, style, N, cover
-   prompt, per-card copy list) and follow the `kk:image-authoring` Confirmation
-   policy once before any paid render.
+   composed prompt; it must equal `ImageArtifact.prompt` after render). Resolve
+   provider/model via `kk:image-authoring`'s preference chain (arguments >
+   env > `$KK_CONFIG` > defaults). Show **one** spend preview for the series
+   (provider, model, style, N, cover prompt, per-card copy list, plus the
+   consistency path: cover-reference chain when the provider is
+   reference-capable per `kk:image-authoring` `references/providers.md`, or an
+   explicit weaker-consistency disclosure when it is not) and follow the
+   `kk:image-authoring` Confirmation policy once before any paid render.
 4. **Render sequentially** — card 01, then 02..N, each via
    `kk executor run image-gen --in cards/NN.in.json --out cards/NN.json`.
    On the first failure: stop spending, mark the card `failed`, later cards
@@ -69,7 +73,9 @@ generation, `EXTEND.md` chain. Layout catalog:
 
 Re-running with the same `--out` reuses the existing `cards.json` and
 `cards/NN.in.json` (no replanning) and renders only cards without an existing
-image file. Replanning requires a new `--out`.
+image file — check existence via the artifact path recorded in the prior run's
+`cards/NN.json` (or a `cards/card-NN-*` glob), since the provider decides the
+extension. Replanning requires a new `--out`.
 
 ## Checks and limits
 
