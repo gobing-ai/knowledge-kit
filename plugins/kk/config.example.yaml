@@ -94,6 +94,15 @@ plugins:
         # -- 0104 R6 runtime seams (behavior, not credentials; placeholder values only) --
         KK_IMAGE_MAX_IMAGES: ""                # optional — per-run budget cap; default 4 (OPEN for the operator to set)
         KK_IMAGE_DRY_RUN: ""                   # optional — "1" composes every prompt, selects the provider, spends nothing
+    gemini-tts:
+      env:
+        GEMINI_API_KEY: ""
+        GOOGLE_BASE_URL: "https://generativelanguage.googleapis.com"
+        GEMINI_TTS_MODEL: "gemini-3.8-flash-tts"
+        GEMINI_TTS_PROFILES: "/Users/robin/.config/kk/gemini-tts-profiles.json"
+        # A/B 2026-09-24 (robin confirmed): pinned style beats per-segment emotions —
+        # no cross-segment persona drift / mood swings on the 30s-cloned voice.
+        GEMINI_TTS_STYLE: "calm professional podcast host, steady pace, natural conversational tone"
   publishings:
     qiita-pub:
       env:
@@ -104,6 +113,10 @@ plugins:
     surfdash-pub:
       env:
         POSTSURFING_BIN: ""    # optional — delete if unused; defaults to `postsurfing` on PATH
+    podcast-pub:
+      env:
+        MICROFEED_BASE_URL: ""
+        MICROFEED_API_KEY: ""  # mf_… key with write scope — created in microfeed dashboard → API
 
 # Image-authoring preferences (task 0106) — read by the kk:image-authoring skill,
 # not by the plugin; the plugin sees only the resolved winners in its --in envelope.
