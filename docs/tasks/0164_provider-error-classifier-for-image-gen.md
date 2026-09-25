@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: provider error classifier for image-gen
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-09-25T18:06:10.483Z
-updated_at: "2026-09-25T18:48:17.707Z"
+updated_at: "2026-09-25T20:02:21.255Z"
 feature_id: D6
 
 ---
@@ -94,3 +94,6 @@ Rejected: typed `ProviderError` across adapters (see Q&A), and a per-provider cl
 - Consumer: task 0166
 
 ### History
+
+- 2026-09-25T20:02:21.255Z backlog → todo (system)
+

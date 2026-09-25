@@ -4,10 +4,10 @@ name: fallback envelope field and order resolution
 status: backlog
 template: feature-impl
 created_at: 2026-09-25T18:06:10.765Z
-updated_at: "2026-09-25T18:48:19.050Z"
+updated_at: "2026-09-25T18:52:45.829Z"
 feature_id: D6
 
-dependencies: ["0164"]
+dependencies: []
 ---
 
 ## 0165. fallback envelope field and order resolution
