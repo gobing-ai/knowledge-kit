@@ -7,7 +7,15 @@
     },
     "files": {
         "ignoreUnknown": true,
-        "includes": ["**", "!**/.claude", "!**/dist", "!**/.coverage", "!**/node_modules", "!**/vendors"]
+        "includes": [
+            "**",
+            "!**/.claude",
+            "!**/dist",
+            "!**/.coverage",
+            "!**/node_modules",
+            "!**/vendors",
+            "!**/*.generated.mjs"
+        ]
     },
     "formatter": {
         "enabled": true,
