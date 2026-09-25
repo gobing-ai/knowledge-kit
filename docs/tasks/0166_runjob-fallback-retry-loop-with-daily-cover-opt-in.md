@@ -4,8 +4,8 @@ name: runJob fallback retry loop with daily-cover opt-in
 status: backlog
 template: feature-impl
 created_at: 2026-09-25T18:06:11.062Z
-updated_at: "2026-09-25T18:07:41.010Z"
-feature_id: R
+updated_at: "2026-09-25T18:17:45.873Z"
+feature_id: D6
 
 dependencies: ["0164", "0165"]
 ---

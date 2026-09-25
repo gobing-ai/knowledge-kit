@@ -4,8 +4,8 @@ name: fallback envelope field and order resolution
 status: backlog
 template: feature-impl
 created_at: 2026-09-25T18:06:10.765Z
-updated_at: "2026-09-25T18:07:40.750Z"
-feature_id: R
+updated_at: "2026-09-25T18:17:45.873Z"
+feature_id: D6
 
 dependencies: ["0164"]
 ---

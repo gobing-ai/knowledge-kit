@@ -4,8 +4,8 @@ name: provider error classifier for image-gen
 status: backlog
 template: feature-impl
 created_at: 2026-09-25T18:06:10.483Z
-updated_at: "2026-09-25T18:07:40.502Z"
-feature_id: R
+updated_at: "2026-09-25T18:17:45.873Z"
+feature_id: D6
 
 ---
 
