@@ -134,7 +134,7 @@ describe('R1 — preset schemas', () => {
         const { formats, diagnostics } = loadPresets();
 
         expect(formats.has('cover')).toBe(true); // the built-in still loads
-        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration']);
+        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration', 'xhs-card']);
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
         expect(invalid[0]?.path).toBe(brokenPath);
@@ -261,7 +261,7 @@ describe('R4 — resolution order and shadowing', () => {
 
         const { styles, diagnostics } = loadPresets(); // must not throw
 
-        expect(styles.size).toBe(11);
+        expect(styles.size).toBe(12);
         expect(styles.has('broken')).toBe(false);
         const invalid = diagnostics.filter((d) => d.code === 'invalid');
         expect(invalid).toHaveLength(1);
@@ -296,11 +296,11 @@ describe('R5 — the v1 inventory', () => {
         expect(formats.get('daily-news-cover')?.job).toBe('cover');
     });
 
-    test('the shipped inventory is four formats and eleven styles', () => {
+    test('the shipped inventory is five formats and twelve styles', () => {
         const { formats, styles, diagnostics } = loadShipped();
         expect(diagnostics).toEqual([]);
         // F614 0163 joins daily-news-cover beside the three v1 formats.
-        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration']);
+        expect([...formats.keys()].sort()).toEqual(['cover', 'daily-news-cover', 'free', 'illustration', 'xhs-card']);
         expect([...styles.keys()].sort()).toEqual([
             'clean-webapp-ui',
             'cute',
@@ -313,7 +313,49 @@ describe('R5 — the v1 inventory', () => {
             'technical-diagram',
             'vibrant',
             'warm',
+            'xhs-knowledge',
         ]);
+    });
+});
+
+describe('xhs card presets (E8 0168)', () => {
+    test('xhs-card pins the 3:4 card geometry and the xhs-knowledge default style', () => {
+        const { formats, styles } = loadShipped();
+        const format = formats.get('xhs-card');
+        const style = styles.get('xhs-knowledge');
+        if (format === undefined || style === undefined) {
+            throw new Error('shipped xhs-card format or xhs-knowledge style missing');
+        }
+        expect(format.job).toBe('free');
+        expect(format.aspectRatio).toBe('3:4');
+        expect(format.width).toBe(1080);
+        expect(format.height).toBe(1440);
+        expect(format.defaultStyle).toBe('xhs-knowledge');
+        for (const key of ['role', 'layout', 'headline', 'points', 'subject', 'language']) {
+            expect(format.variables[key], `${key} variable declared`).toBeDefined();
+        }
+        expect(format.variables['language']?.default).toBe('简体中文');
+        expect(style.modifiers).toContain('large legible Chinese typography');
+    });
+
+    test('xhs-card composes role, headline and points into the rendered prompt', () => {
+        const { formats, styles } = loadShipped();
+        const format = formats.get('xhs-card');
+        const style = styles.get('xhs-knowledge');
+        if (format === undefined || style === undefined) {
+            throw new Error('shipped xhs-card format or xhs-knowledge style missing');
+        }
+        const prompt = composePrompt(format, style, {
+            role: 'cover',
+            layout: 'cover',
+            headline: '微服务拆分',
+            points: '先按业务边界\n再按团队规模',
+            subject: 'flat illustration of service boundaries',
+        });
+        expect(prompt).toContain('Card role: cover');
+        expect(prompt).toContain('"微服务拆分"');
+        expect(prompt).toContain('先按业务边界');
+        expect(prompt).toContain('xiaohongshu-style');
     });
 });
 
