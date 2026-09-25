@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.26.0
+version: 1.27.0
 created_at: 2026-05-28
-updated_at: 2026-09-24
+updated_at: 2026-09-25
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -930,6 +930,18 @@ change there must update gemini-tts in the same commit. If a third consumer appe
 shared pipeline into a `packages/` library rather than chaining plugin-to-plugin imports.
 
 **Detail:** `docs/design/gemini-tts.md` D1.
+
+---
+
+## ADR-024: XHS card planning stays in an agent skill; existing plugins render and publish
+
+**Status:** Accepted (design) · **Date:** 2026-09-25 (feature E8)
+
+**Decision.** `kk:xhs-images` owns content analysis, ordered card planning, and prompt authoring. It invokes `image-gen` with XHS presets for each card and passes ordered image artifacts to `xhs-pub`. `xhs-pub` uses the existing browser transport and an explicit draft/public switch; it reports only browser-observed outcomes. For `xhs` the default driver becomes `script`, which overrides E7's agent default (ADR-008 amendment 2026-09-17; `remaining-wt-publish-harvest.md` D4) for this channel only, because an `agent`-driven page gives the plugin no evidence to build a truthful `Result`. No XHS-specific generator plugin is added.
+
+**Why.** Card planning needs model judgment, while image rendering and publishing already have product plugin seams; a second generator would duplicate the provider stack.
+
+**Detail:** `docs/design/xhs-image-cards.md`; mechanism in `docs/03_ARCHITECTURE.md` → XHS image-card path. Complements ADR-008 browser drivers and ADR-022 draft defaults.
 
 ---
 

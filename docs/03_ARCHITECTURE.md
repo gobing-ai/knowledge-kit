@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.25.0
+version: 2.26.0
 created_at: 2026-07-22
-updated_at: 2026-09-24
+updated_at: 2026-09-25
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -96,6 +96,12 @@ documents deliberate per-run serialization. **Authoring a `parallel` node does n
 
 Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary sequential steps
 (ADR-007 R4). Engine-level concurrency is deferred, not rejected.
+
+### XHS image-card path (ADR-024, design)
+
+`kk:xhs-images` reads source content and writes an ordered card plan and saved prompts. Each card is one `image-gen` job using an XHS preset; the skill collects the resulting `metadata.images[]` entries into one `Content` carrying the XHS note. `xhs-pub` validates the ordered local paths, attaches them through its browser transport, and returns a `Result` from observed draft or publication state. The agent handles content judgment and spend confirmation; product plugins retain image bytes, browser actions, and result validation. A failed card can resume from its saved prompt without repeating successful paid jobs.
+
+The XHS path keeps draft as the default. An explicit public switch is required before the browser submits a live post (ADR-022). The existing `xhs-pub` placeholder `sessionReady` result is not publication evidence and must be replaced before the feature can ship. Surface and artifact shapes live in `docs/design/xhs-image-cards.md`.
 
 ### Plugin kinds
 

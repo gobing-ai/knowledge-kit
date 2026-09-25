@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.32.0
+version: 2.33.0
 created_at: 2026-07-22
 updated_at: 2026-09-25
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -45,6 +45,7 @@ sync: [T3]
 | [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | shipped (F611) |
 | [kk-itc-end-to-end.md](design/kk-itc-end-to-end.md) | kk-itc idea → research → judge-gated draft → per-platform drafts (HITL + auto) | shipped (F41) |
 | [gemini-tts.md](design/gemini-tts.md) | Gemini 3.8 TTS voice generator: hosted backend adapter over voice-gen, drop-in via `vdriver: gemini` | shipped (F612) |
+| [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | accepted design (E8, ADR-024) |
 
 ## 1. CLI commands
 

@@ -1,0 +1,27 @@
+# Xiaohongshu image cards (feature E8, accepted design)
+
+## Decision and boundary
+
+`kk:xhs-images` is the content planner and operator surface. `image-gen` remains the only image renderer; `xhs-pub` remains the publish transport and `Result` owner. No new product generator or provider adapter is needed. The vendored `baoyu-xhs-images` skill informs card flow, layout, and prompt guidance; this feature keeps `kk:image-authoring`'s provider selection, preset roots, spend preview, and preference order. Adapt guidance rather than copying the vendor's backend and `EXTEND.md` lifecycle.
+
+## Flow
+
+1. Read article or note; propose 1–10 ordered cards with cover, content, and optional closing card. Record each card's source point, role, short Chinese copy, layout, and visual subject. The original source is never mutated.
+2. Resolve `image-gen` format `xhs-card` (`job: free`, portrait `3:4`) and an existing or shipped XHS style. Save each card's `image-gen` envelope (`cards/NN.in.json`) and its exact composed prompt (the `KK_IMAGE_DRY_RUN=1` `Content.body`, `cards/NN.prompt.txt`) before spending. The cover is rendered first; when the selected provider supports reference images, subsequent cards use its artifact as their reference. Otherwise the plan keeps one style/palette and the preview discloses the weaker consistency path. Explicit user reference images keep the existing provider-capability refusal rule.
+3. The series total N must not exceed the resolved `KK_IMAGE_MAX_IMAGES` / `image.max_images`. The skill enforces this, because `image-gen`'s cap is per invocation. After one series spend preview and the existing confirmation policy, invoke `kk executor run image-gen` once per card with `maxImages: 1` and a unique output stem. Each call retains its own output and cleanup boundary; the skill stops at the first failed card; rerunning on the same `--out` reuses the saved plan and envelopes and renders only cards without an image.
+4. Write `cards.json` and a `Content` payload. `Content.title` and `body` are the XHS title and Chinese note. `Content.metadata.images` is an array of the existing `ImageArtifact` objects in card order; the publisher reads each `.path`. `Content.metadata.publishStatus` is `draft` by default or `public` only for an explicit live request. Prompt paths, source points, and layout stay in `cards.json`, not in the publish DTO.
+5. The skill hands `content.json` to `kk:publish xhs`, which owns the live confirmation; the skill never spawns `xhs-pub` directly. `xhs-pub` validates the ordered paths and image files before opening the browser. Its default driver is `script` (ADR-024; `agent` fails loud for this channel). The script driver uses the existing persistent profile and Playwright seam in `@gobing-ai/publish-harness`, attaches files in order, fills the note, and saves a real draft or submits only when `publishStatus: public`. Browser-observed completion determines the `Result`; no synthetic draft ID or session-ready success. An ambiguous UI state yields `ok: false` with the action named. `Result.metadata.publishStatus` distinguishes `draft` from `public`; platform ID/URL appears only when observed.
+
+## Surface
+
+- Agent entry: `kk:xhs-images <source> [--style <preset>] [--count <1..10>] [--out <dir>] [--live]`. The skill defaults to a draft and uses `kk:image-authoring`'s preview and payment controls. `--live` is an explicit operator instruction; unattended workflow mode still needs a separate launch-time live switch per ADR-022.
+- Shipped presets: `image-gen/presets/formats/xhs-card.yaml` and one XHS knowledge-card style under `presets/styles/`. Existing styles remain selectable. Format variables cover card role, layout, source-grounded copy, and scene; output is one image per call.
+- `cards.json`: `{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, status }] }` (`status: pending | rendered | failed`) in display order. The authoring skill checks prompt and image existence before packaging.
+- `Content.metadata.images[]`: existing `ImageArtifact` objects; `xhs-pub` requires non-empty ordered absolute paths. `Content.metadata.publishStatus`: `draft | public`, default `draft`. Unknown status fails before browser action.
+
+## Checks and limits
+
+- Offline checks cover plan-to-card mapping, preset parsing, ordered artifact packaging, path validation, draft/public routing, and browser success/failure with a fake page/transport. One representative Chinese article should be rendered and inspected for legibility before calling the feature shippable.
+- Runtime prerequisite: `playwright` and Chromium are available to the kk install (the bundler keeps `playwright` external). If either is missing, the result is `Result.ok: false` with the install hint.
+- The implementation must verify current XHS upload UI and accepted file constraints when the browser path is built; selectors and platform limits are not frozen by this design.
+- Generated Chinese text can be misspelled. A weak card is regenerated from an edited prompt; bitmap text repair is outside scope. Saved prompts preserve the reproduction path.
