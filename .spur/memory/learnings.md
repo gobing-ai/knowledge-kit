@@ -1074,3 +1074,7 @@ Doc-drift repairs applied this wrapup: `docs/04_DESIGN.md` (frontmatter `version
 - **`docs/features/*` is tool-owned** — the F61 map's stale `wt-image-cover` recon notes must not be raw-edited; they age out with the feature file's own lifecycle.
 - **Nothing enforces doc frontmatter.** `.spur/rules/` covers structure/surface/quality/boundary but no rule checks `updated_at` / `version`, so the §4.3 contract is memory-enforced — which is why it drifted twice (0157, 0163). A frontmatter-check rule is the systemic fix if this recurs a third time.
 - **Live visual dogfood is operator-owned.** 0163 shipped the deterministic path; the look needs a real image backend and human judgment, so step 7 (dogfood) was scoped post-merge and the two preset YAML files are the only knob.
+
+### Operator directives
+
+- **2026-09-25 — image generation goes through kk config.** When generating images (esp. daily-news-cover × daily-news), use the kk path (`kk executor run image-gen`), which resolves provider/env from `~/.config/kk/config.yaml` (currently Minimax `image-01`). Harness image tools (image_gen/generate_image = Grok/Antigravity) bypass that config — do not use them for kk pipeline artifacts. Multi-engine + runtime fallback is the acknowledged next step (0103 AUTO_ORDER covers selection-time only).
