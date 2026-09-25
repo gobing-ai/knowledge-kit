@@ -140,6 +140,22 @@ describe('createGeminiVoiceClient', () => {
         expect((await client.waitUntilDone(id)).status).toBe('failed');
     });
 
+    it('GEMINI_TTS_STYLE overrides every segment instruct with one stable persona style', async () => {
+        const { calls, fn } = stubFetch(() => audioResponse());
+        const client = createGeminiVoiceClient({
+            env: { GEMINI_API_KEY: 'secret', GEMINI_TTS_STYLE: 'calm professional podcast host, steady pace' },
+            fetch: fn,
+        });
+        await client.generate(body({ instruct: 'thoughtful, personal' }));
+        await client.generate(body({}));
+        for (const call of calls as Call[]) {
+            const content = (call.body.input as { content: { annotations?: { style: string } }[] }[])[0].content[0];
+            expect(content.annotations).toEqual([
+                { type: 'speech_metadata', style: 'calm professional podcast host, steady pace' },
+            ]);
+        }
+    });
+
     it('R3 — resolves profiles through the map, passes raw ids through, and rejects unknown or placeholder', async () => {
         const map = join(dir, 'profiles.json');
         writeFileSync(

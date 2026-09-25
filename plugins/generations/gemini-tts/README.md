@@ -94,6 +94,20 @@ when you explicitly want a lite-specific id.
 Run the daily workflow with `--vars '{"vdriver":"gemini"}'`. The default `vdriver` remains
 `voicebox`.
 
+### Stable persona across segments (`GEMINI_TTS_STYLE`)
+
+Gemini re-interprets its short-clip custom voice per style annotation. A script that varies
+`emotion` per segment (intro warm, news clear, commentary thoughtful, …) therefore drifts the
+persona across segment boundaries — audible as voice-identity loss and mood swings (2026-09-24
+episode review). Set one style for the whole episode to pin the persona:
+
+```yaml
+GEMINI_TTS_STYLE: calm professional podcast host, steady pace, natural conversational tone
+```
+
+When set it replaces every segment's own instruct; per-segment instructions still apply when
+unset.
+
 ## Renewal
 
 A stored voice lasts 1 year (200 stored voices per project, shared with prompted voices). Before

@@ -58,6 +58,10 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
     const sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
     const baseUrl = (env.GOOGLE_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
     const model = env.GEMINI_TTS_MODEL || GEMINI_TTS_DEFAULT_MODEL;
+    // Fixed persona style sent for every segment. Gemini re-interprets its short-clip custom voice
+    // per style annotation, so per-segment emotions make the persona drift across boundaries
+    // (2026-09-24 episode review). When set, this replaces each segment's own instruct.
+    const styleOverride = env.GEMINI_TTS_STYLE;
     const maxAttempts = positiveInt(env.GEMINI_TTS_MAX_ATTEMPTS, 4);
     const timeoutMs = positiveInt(env.GEMINI_TTS_TIMEOUT_MS, 120_000);
     const buffered = new Map<string, Uint8Array>();
@@ -136,7 +140,8 @@ export function createGeminiVoiceClient(options: GeminiVoiceClientOptions = {}):
 
         async generate(body: VoiceboxGenerateBody): Promise<{ id: string }> {
             const part: Record<string, unknown> = { type: 'text', text: body.text };
-            if (body.instruct) part.annotations = [{ type: 'speech_metadata', style: body.instruct }];
+            const style = styleOverride ?? body.instruct;
+            if (style) part.annotations = [{ type: 'speech_metadata', style }];
             const json = await post(
                 {
                     model,
