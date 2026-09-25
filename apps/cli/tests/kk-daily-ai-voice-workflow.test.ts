@@ -437,9 +437,11 @@ if (plugin === 'aihot-ingest') {
                     plugins_path: join(testRoot, 'plugin root'),
                     vdriver,
                     // 0149: generate now really routes into daily-intro; the stub's wav is fake
-                    // bytes no ffprobe can read, so point the intro var at empty (= skip) and
-                    // exercise the merge itself only in live runs.
-                    intro_music: '',
+                    // bytes no ffprobe can read, so point the intro var at the stage's blank
+                    // skip branch and exercise the merge itself only in live runs. A bare ''
+                    // override is rejected by spur (blanking a declared non-empty default), so
+                    // the skip rides the runner's trim-based blank check instead.
+                    intro_music: ' ',
                 });
                 const result = Bun.spawnSync(
                     ['spur', 'workflow', 'run', workflowPath, '--vars', vars, '--run-id', runId, '--json'],

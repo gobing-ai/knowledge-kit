@@ -1,15 +1,69 @@
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
-import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { buildNewsVoiceScript, formatVoiceScriptToYaml, type ScriptBuilderOptions } from './script-builder';
+import {
+    parseStyleContract,
+    type ScriptPlan,
+    type ScriptPlanError,
+    type StyleContract,
+    validateScriptPlan,
+} from './script-plan';
 
 export * from './script-builder';
+export * from './script-plan';
 
 export interface GeneratorOptions extends ScriptBuilderOptions {
     in: string;
     out: string;
+}
+
+/** `Content.metadata` stamp describing which script path ran (F613 R4). */
+interface ScriptPlanOutcome {
+    scriptPlan?: ScriptPlan;
+    scriptSource: 'plan' | 'template';
+    scriptPlanErrors: ScriptPlanError[];
+}
+
+/**
+ * Resolve the optional VoiceScript plan (F613). `DAILYNEWS_SCRIPT_PLAN` / `DAILYNEWS_STYLE_FILE`
+ * are absolute paths owned by the caller (the workflow wires them; plugin cwd is the package dir,
+ * so a relative path is the caller's bug). All-or-nothing: any failure — absent plan, unreadable
+ * style, unparseable plan, rejected content — falls back to templates with one warn line naming
+ * every `itemId`/`rule`. Fallback is never silent; the exit code stays 0.
+ */
+async function resolveScriptPlan(fs: FileSystem, docs: Doc[]): Promise<ScriptPlanOutcome> {
+    const planPath = process.env.DAILYNEWS_SCRIPT_PLAN;
+    if (!planPath) {
+        return { scriptSource: 'template', scriptPlanErrors: [] };
+    }
+    const fallback = (errors: ScriptPlanError[]): ScriptPlanOutcome => {
+        const reason = errors.map((error) => `${error.itemId}:${error.rule}`).join(', ');
+        echoError(`dailynews-gen: script plan rejected, falling back to templates (${reason})`);
+        return { scriptSource: 'template', scriptPlanErrors: errors };
+    };
+    if (!(await fs.exists(planPath))) {
+        return fallback([{ itemId: 'episode', rule: 'missing-plan' }]);
+    }
+    let style: StyleContract;
+    try {
+        style = parseStyleContract(await fs.readFile(process.env.DAILYNEWS_STYLE_FILE ?? ''));
+    } catch {
+        return fallback([{ itemId: 'episode', rule: 'no-style' }]);
+    }
+    let planJson: unknown;
+    try {
+        planJson = JSON.parse(await fs.readFile(planPath));
+    } catch {
+        return fallback([{ itemId: 'episode', rule: 'schema' }]);
+    }
+    const validated = validateScriptPlan(planJson, docs, style);
+    if (!validated.ok) {
+        return fallback(validated.errors);
+    }
+    return { scriptPlan: validated.plan, scriptSource: 'plan', scriptPlanErrors: [] };
 }
 
 export async function processGeneratorIO(
@@ -38,7 +92,10 @@ export async function processGeneratorIO(
         }
     }
 
-    const script = buildNewsVoiceScript(docs, options);
+    // F613: env-handled plan (validated against the capped docs — the same items that are spoken)
+    // with explicit template fallback; the outcome is always stamped into Content.metadata.
+    const planOutcome = await resolveScriptPlan(fs, docs);
+    const script = buildNewsVoiceScript(docs, { ...options, scriptPlan: planOutcome.scriptPlan });
     const yamlBody = formatVoiceScriptToYaml(script);
 
     const content: Content = {
@@ -61,6 +118,8 @@ export async function processGeneratorIO(
                 title: d.title,
                 sourceUri: d.sourceUri,
             })),
+            scriptSource: planOutcome.scriptSource,
+            scriptPlanErrors: planOutcome.scriptPlanErrors,
         },
     };
 

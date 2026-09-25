@@ -1,5 +1,6 @@
 import type { Doc } from '@gobing-ai/kk-core';
 import { z } from 'zod';
+import type { ScriptPlan } from './script-plan';
 
 export const EffectConfigSchema = z.object({
     type: z.string().min(1),
@@ -74,6 +75,8 @@ export interface ScriptBuilderOptions {
     emotion?: string;
     effectPreset?: string;
     speakers?: Record<string, VoiceSpeaker>;
+    /** LLM-authored spoken plan (F613). Substituted on the zh path only; en ignores it. */
+    scriptPlan?: ScriptPlan;
 }
 
 const ZH_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
@@ -353,6 +356,11 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         hostName = hostName.charAt(0).toUpperCase() + hostName.slice(1);
     }
 
+    // F613: the plan owns the words on the zh path; en keeps templates (design: substitution is
+    // zh-only). Items are matched to docs by id and doc order wins; plan item order is ignored.
+    const scriptPlan = isZh ? options?.scriptPlan : undefined;
+    const planItems = new Map((scriptPlan?.items ?? []).map((item) => [item.id, item]));
+
     // 1. Opening segment: Conversational podcast hook + overview
     const countText = isZh ? `${formatChineseCount(docs.length)}条` : `${docs.length}`;
     const titlesSummary = docs
@@ -362,7 +370,11 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         .join('、');
 
     const introText = isZh
-        ? `大家好，今天是${dateStr}，欢迎收听由${hostName}为您带来的今日AI科技漫谈。今天科技圈有几条非常有看点的大消息，我精选了${countText}最值得关注的重点动态来和大家聊一聊${titlesSummary ? `，包括${titlesSummary}` : ''}。话不多说，我们马上进入今天的正题。`
+        ? scriptPlan
+            ? // F613: fixed greeting stays builder-owned; the plan only fills the slot between
+              // greeting and first story (the template tail 从「今天科技圈有几条…正题。」 is replaced).
+              `大家好，今天是${dateStr}，欢迎收听由${hostName}为您带来的今日AI科技漫谈。${scriptPlan.intro}`
+            : `大家好，今天是${dateStr}，欢迎收听由${hostName}为您带来的今日AI科技漫谈。今天科技圈有几条非常有看点的大消息，我精选了${countText}最值得关注的重点动态来和大家聊一聊${titlesSummary ? `，包括${titlesSummary}` : ''}。话不多说，我们马上进入今天的正题。`
         : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with your AI Daily Briefing. In today's episode, we have ${countText} fascinating stories from the AI world. Let's dive straight in.`;
 
     segments.push({
@@ -380,22 +392,28 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         // 【title】 is the only place the title is spoken for this item.
         const cleanBody = stripLeadingTitleEcho(stripTagMetadataLines((doc.body ?? '').trim()), cleanTitle);
 
-        // Conversational lead
-        const lead = isZh
-            ? idx === 0
-                ? `首先来聊聊大家非常关注的【${cleanTitle}】。`
+        // Conversational lead. F613: the plan lead is a bridge that keeps 【title】 spoken exactly
+        // once (0139 R1) and must not contain the title itself (style contract, R1).
+        const planItem = planItems.get(doc.id);
+        const lead = planItem
+            ? `${planItem.lead}【${cleanTitle}】。`
+            : isZh
+              ? idx === 0
+                  ? `首先来聊聊大家非常关注的【${cleanTitle}】。`
+                  : isLast
+                    ? `最后，来看看今天的最后一条资讯，【${cleanTitle}】。`
+                    : `接着我们把目光转向另一条重要进展，【${cleanTitle}】。`
+              : idx === 0
+                ? `First up today, let's look at ${cleanTitle}.`
                 : isLast
-                  ? `最后，来看看今天的最后一条资讯，【${cleanTitle}】。`
-                  : `接着我们把目光转向另一条重要进展，【${cleanTitle}】。`
-            : idx === 0
-              ? `First up today, let's look at ${cleanTitle}.`
-              : isLast
-                ? `And finally today, let's wrap up with ${cleanTitle}.`
-                : `Next, turning our attention to ${cleanTitle}.`;
+                  ? `And finally today, let's wrap up with ${cleanTitle}.`
+                  : `Next, turning our attention to ${cleanTitle}.`;
 
         const normalizedLead = normalizeBroadcastText(lead, isZh);
         const normalizedBody = cleanBody === '' ? '' : normalizeBroadcastText(cleanBody, isZh);
-        const insight = synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh, usedInsights);
+        // F613: the plan insight is grounded in this item and always spoken; the keyword-bucket
+        // synthesizer (and its uniqueness set) only runs on the template path.
+        const insight = planItem?.insight ?? synthesizePersonalUnderstanding(cleanTitle, cleanBody, isZh, usedInsights);
         const normalizedInsight = insight === null ? null : normalizeBroadcastText(insight, isZh);
 
         const factText = isZh ? `${normalizedLead}${normalizedBody}` : `${normalizedLead} ${normalizedBody}`;
@@ -420,9 +438,12 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         }
     });
 
-    // 3. Outro segment: Warm, conversational wrap-up
+    // 3. Outro segment: Warm, conversational wrap-up. F613: the plan outro replaces the template
+    // wrap-up head; the fixed sign-off stays builder-owned.
     const outroText = isZh
-        ? `好了，以上就是今天AI科技漫谈的全部内容。不知道今天这几条消息有没有给您带来一些新的启发？感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+        ? scriptPlan
+            ? `${scriptPlan.outro}感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+            : `好了，以上就是今天AI科技漫谈的全部内容。不知道今天这几条消息有没有给您带来一些新的启发？感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
         : `That wraps up today's AI Daily Briefing. I hope today's highlights gave you some useful takeaways. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
 
     segments.push({

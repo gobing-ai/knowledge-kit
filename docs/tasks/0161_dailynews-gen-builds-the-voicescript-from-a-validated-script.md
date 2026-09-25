@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: dailynews-gen builds the VoiceScript from a validated script plan under a style contract
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-25T03:51:45.346Z
-updated_at: "2026-09-25T04:08:30.976Z"
+updated_at: "2026-09-25T05:19:43.820Z"
 feature_id: F613
 priority: P1
 tags:
@@ -31,11 +31,11 @@ Every spoken line in the kk-daily-ai-voice VoiceScript is a template. The intro 
 
 ### Requirements
 
-- [ ] R1. Add the style contract `plugins/kk/scripts/daily-voice-style.zh.md` with these parts:
+- [x] R1. Add the style contract `plugins/kk/scripts/daily-voice-style.zh.md` with these parts:
   - persona and register: spoken Mandarin, first person, calm and informed, no hype
   - segment roles: intro, lead, insight, outro
   - one fenced `json` block `{"caps":{"intro":120,"outro":120,"lead":60,"insight":160},"banned":[…]}` whose `banned` list includes every current `zhInsightFor` return string, the openers 首先/接着/最后, and the 0133 hedges and scaffold labels (可做角度, 背景, 潜在影响, 读者宜另行核实, 仍待验证)
-- [ ] R2. `validateScriptPlan(plan, docs, style)` returns `{ok:true, plan}` or `{ok:false, errors:[{itemId, rule}]}`. Rules:
+- [x] R2. `validateScriptPlan(plan, docs, style)` returns `{ok:true, plan}` or `{ok:false, errors:[{itemId, rule}]}`. Rules:
   - `missing-plan`: the plan file does not exist
   - `schema`: wrong shape or version
   - `unknown-id`: a plan item id that is not a doc
@@ -44,21 +44,21 @@ Every spoken line in the kk-daily-ai-voice VoiceScript is a template. The intro 
   - `banned:<phrase>`: a field containing a banned phrase
   - `duplicate-insight`
   - For episode-level fields (intro/outro/schema), `itemId` is `episode`.
-- [ ] R3. With `DAILYNEWS_SCRIPT_PLAN` and `DAILYNEWS_STYLE_FILE` set (absolute paths), and after the `DAILYNEWS_MAX_ITEMS` cap, a valid plan fills the text slots per Design § Substitution. Segment count and order, `emotion`, `speed`, `gap_ms` and `splitFactText` chunking are identical to the template path for the same docs. The YAML passes `plugins/kk/scripts/validate-voicescript.ts`.
-- [ ] R4. `Content.metadata` always carries `scriptSource` (`'plan'` | `'template'`) and `scriptPlanErrors` (`[]` when none). When `DAILYNEWS_SCRIPT_PLAN` is unset the build uses templates with `scriptPlanErrors: []`. A plan file that is absent (`missing-plan`), unreadable, or rejected also falls back to templates:
+- [x] R3. With `DAILYNEWS_SCRIPT_PLAN` and `DAILYNEWS_STYLE_FILE` set (absolute paths), and after the `DAILYNEWS_MAX_ITEMS` cap, a valid plan fills the text slots per Design § Substitution. Segment count and order, `emotion`, `speed`, `gap_ms` and `splitFactText` chunking are identical to the template path for the same docs. The YAML passes `plugins/kk/scripts/validate-voicescript.ts`.
+- [x] R4. `Content.metadata` always carries `scriptSource` (`'plan'` | `'template'`) and `scriptPlanErrors` (`[]` when none). When `DAILYNEWS_SCRIPT_PLAN` is unset the build uses templates with `scriptPlanErrors: []`. A plan file that is absent (`missing-plan`), unreadable, or rejected also falls back to templates:
   - an unreadable style file counts as rejected, with rule `no-style`
   - the template output is byte-identical to today's builder
   - one `echoError` warn line names every `itemId`/`rule`
   - the exit code is still 0
-- [ ] R5. Regression test using the fixture doc `520246ce54c2a6e6`, with a plan whose insight is about the talks: the plan insight is spoken, and the substring `硬件层承担的安全与算力责任` is absent. The same doc without a plan still produces that line, which pins the bug the plan fixes.
+- [x] R5. Regression test using the fixture doc `520246ce54c2a6e6`, with a plan whose insight is about the talks: the plan insight is spoken, and the substring `硬件层承担的安全与算力责任` is absent. The same doc without a plan still produces that line, which pins the bug the plan fixes.
 - Out of scope: en plan path (en always builds from templates), cross-episode similarity, workflow wiring, run-report rendering, and the script-write prompt (all 0162).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — A checked-in style contract defines the daily host voice (req: R1)
-- [ ] AC2 — dailynews-gen builds the VoiceScript from a valid script plan (req: R3)
-- [ ] AC3 — Script-plan text that breaks the style contract is rejected (req: R2)
-- [ ] AC4 — Commentary is grounded in each item instead of keyword buckets (req: R5)
+- [x] AC1 — A checked-in style contract defines the daily host voice (req: R1)
+- [x] AC2 — dailynews-gen builds the VoiceScript from a valid script plan (req: R3)
+- [x] AC3 — Script-plan text that breaks the style contract is rejected (req: R2)
+- [x] AC4 — Commentary is grounded in each item instead of keyword buckets (req: R5)
 
 Task-only: R4 (fallback metadata and warn) is observed in `tests/script-plan.test.ts` through `processGeneratorIO` on temp files, because the real IO layer carries that behaviour. Every AC is observable in `plugins/generations/dailynews-gen/tests/script-plan.test.ts`.
 
@@ -126,30 +126,66 @@ Task-only: R4 (fallback metadata and warn) is observed in `tests/script-plan.tes
 
 ### Plan
 
-- [ ] 1. Write `plugins/kk/scripts/daily-voice-style.zh.md` (R1), with the banned list copied from the current `zhInsightFor` returns (`script-builder.ts:174-194`).
-- [ ] 2. Add the fixture `plugins/generations/dailynews-gen/tests/fixtures/20260924-us-china-doc.json`, copied from `.works/kk-daily-ai-voice/20260924/2-plan/20260924_03_plan_plan.json` id `520246ce54c2a6e6` with the body trimmed but still mentioning 出口管制/芯片.
-- [ ] 3. Write the tests first in `tests/script-plan.test.ts`:
+- [x] 1. Write `plugins/kk/scripts/daily-voice-style.zh.md` (R1), with the banned list copied from the current `zhInsightFor` returns (`script-builder.ts:174-194`).
+- [x] 2. Add the fixture `plugins/generations/dailynews-gen/tests/fixtures/20260924-us-china-doc.json`, copied from `.works/kk-daily-ai-voice/20260924/2-plan/20260924_03_plan_plan.json` id `520246ce54c2a6e6` with the body trimmed but still mentioning 出口管制/芯片.
+- [x] 3. Write the tests first in `tests/script-plan.test.ts`:
   - parseStyleContract on the real sidecar
   - each validator rule (R2)
   - plan-path vs template-path segment parity on emotion/speed/gap_ms/count (R3)
   - fallback metadata and warn for unset, missing, bad-JSON, rejected, and no-style plans (R4)
   - the 20260924 regression, positive and negative (R5)
-- [ ] 4. Implement `src/script-plan.ts`, add the `scriptPlan` substitution in `buildNewsVoiceScript`, and the env handling and metadata in `processGeneratorIO`.
-- [ ] 5. Run `validate-voicescript.ts` on a plan-path YAML inside the test (R3).
-- [ ] 6. Update the `docs/design/dailynews-gen.md` inputs table (the two env vars, the metadata keys) in the same commit (T3).
-- [ ] 7. Run `bun run lint` and `bun run test`.
+- [x] 4. Implement `src/script-plan.ts`, add the `scriptPlan` substitution in `buildNewsVoiceScript`, and the env handling and metadata in `processGeneratorIO`.
+- [x] 5. Run `validate-voicescript.ts` on a plan-path YAML inside the test (R3).
+- [x] 6. Update the `docs/design/dailynews-gen.md` inputs table (the two env vars, the metadata keys) in the same commit (T3).
+- [x] 7. Run `bun run lint` and `bun run test`.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implements 0161 (F613): dailynews-gen builds the VoiceScript from an LLM-authored, validated script plan under a style contract. Design satellite: `docs/design/daily-voice-script-plan.md` — the plan supplies the words; the builder keeps structure, pacing, and validation.
+
+- **R1 — style sidecar** `plugins/kk/scripts/daily-voice-style.zh.md` (new): zh persona/register, fixed greeting/sign-off, segment roles (intro/lead/insight/outro), and one fenced ```json block — `caps` (intro 120, outro 120, lead 60, insight 160) and `banned` (all 6 current `zhInsightFor` canned lines verbatim + 首先/接着/最后 + 可做角度/背景/潜在影响/读者宜另行核实/仍待验证).
+- **R2 — validator** new `plugins/generations/dailynews-gen/src/script-plan.ts`: `ScriptPlan`/`StyleContract`/`ScriptPlanError` contracts (`:10`/`:21`/`:27`), `parseStyleContract` (`:68`, first ```json fence; throws on missing/invalid), `validateScriptPlan` (`:97`) — zod schema (zod 4.4.3), `unknown-id`, `missing-item`, `cap:<field>`, `banned:<phrase>`, `duplicate-insight`; errors accumulate, all-or-nothing; episode-level errors use `itemId: episode`.
+- **R3 — substitution** `plugins/generations/dailynews-gen/src/script-builder.ts`: `scriptPlan` option (`:79`), zh-only gate + id map (`:361`), intro = builder greeting + plan intro (`:372`), lead = plan bridge + 【title】。 (`:397`), insight = plan insight with `synthesizePersonalUnderstanding` skipped (`:416`), outro = plan outro + fixed sign-off (`:443`). Doc order wins; all plan text flows through `normalizeBroadcastText`; segment count/order, `emotion`/`speed`/`gap_ms`, and `splitFactText` chunking untouched.
+- **R4 — explicit fallback** `plugins/generations/dailynews-gen/src/index.ts`: `resolveScriptPlan` (`:37`) — unset env → template (byte-identical); absent plan → `missing-plan`; unreadable/unparsable style → `no-style`; bad JSON → `schema`; rejected → single `echoError` warn naming every `itemId`/`rule` (`:44`), exit code stays 0. `scriptSource`/`scriptPlanErrors` stamped on every path (`:121`-`:122`).
+- **R5 — regression** fixture `tests/fixtures/20260924-us-china-doc.json` (doc `520246ce54c2a6e6`, body trimmed but keeping 出口管制/芯片 so the hardware bucket still fires on the template path) + regression tests in `tests/script-plan.test.ts`: with a talks-grounded plan the plan insight is spoken and 硬件层承担的安全与算力责任 is absent; without a plan the same doc still emits that canned line.
+- Plan types re-exported from `src/index.ts:16`; env inputs (`DAILYNEWS_SCRIPT_PLAN`, `DAILYNEWS_STYLE_FILE`) and metadata keys documented in `docs/design/dailynews-gen.md` §2/§2.1 (T3, same commit).
+
+Template path is byte-identical — existing `tests/dailynews-gen.test.ts` passes unchanged. Out of scope, untouched: en plan substitution, workflow wiring/run report/script-write prompt (0162), `daily-voice-style.en.md`.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/scripts/daily-voice-style.zh.md:5-9,17-20,28-44; script-builder.ts:179-198; tests/script-plan.test.ts:85-110 |
+| R2 | MET | script-plan.ts:32,97-143; src/index.ts:48; tests/script-plan.test.ts:112-247 |
+| R3 | MET | script-builder.ts:361-362,373-377,397-399,416-417,443-445; src/index.ts:90-97; tests/script-plan.test.ts:253-322,451 |
+| R4 | MET | src/index.ts:37-67,121-122; tests/script-plan.test.ts:357-371,399-432,459-478; gate log 1360/0 |
+| R5 | MET | tests/fixtures/20260924-us-china-doc.json:2-6; tests/script-plan.test.ts:486-508,510-512 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | tests/script-plan.test.ts:85-110; daily-voice-style.zh.md:26-44 |
+| AC2 | MET | test | tests/script-plan.test.ts:253-322,434-457 |
+| AC3 | MET | test | tests/script-plan.test.ts:112-247,349-432 |
+| AC4 | MET | test | tests/script-plan.test.ts:483-512 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | residual-sweep | — | blocking=0 deferrable=0 advisory=0 housekeeping=0 |
+| P4 | proof-input-digest | — | sha256:d04d1e0235e04c1330d97e5de950d04444309261a9529ee406761aedd83dc52b |
 
 ### References
 
@@ -160,3 +196,8 @@ Task-only: R4 (fallback metadata and warn) is observed in `tests/script-plan.tes
 - Evidence: `.works/kk-daily-ai-voice/20260924/` (local, gitignored)
 
 ### History
+
+- 2026-09-25T04:46:58.286Z todo → wip (system)
+- 2026-09-25T05:19:03.145Z wip → testing (system)
+- 2026-09-25T05:19:43.820Z testing → done (system)
+

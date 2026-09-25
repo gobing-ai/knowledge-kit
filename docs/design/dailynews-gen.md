@@ -18,9 +18,22 @@ DAILYNEWS_LANGUAGE=zh DAILYNEWS_TITLE='AI Today' VOICEBOX_DEFAULT_PROFILE=Robin 
 | `DAILYNEWS_LANGUAGE` | No | `zh` | `zh` or `en` |
 | `DAILYNEWS_TITLE` | No | Auto-derived | Episode title |
 | `VOICEBOX_DEFAULT_PROFILE` | No | `Robin` | Voice profile carried into the VoiceScript |
+| `DAILYNEWS_SCRIPT_PLAN` | No | unset | Absolute path to a `ScriptPlan` JSON (`version: 1`, intro/outro, per-item lead/insight, `docs/design/daily-voice-script-plan.md`). zh only; absent/unreadable/rejected plans fall back to templates |
+| `DAILYNEWS_STYLE_FILE` | No | unset | Absolute path to the style contract (kk sidecar `daily-voice-style.zh.md`); read only when `DAILYNEWS_SCRIPT_PLAN` is set |
 
 The directly executable plugin entry also accepts `--language`, `--title`, and `--voice-profile`;
 direct flags override environment values.
+
+### 2.1 Script plan and metadata (F613)
+
+When `DAILYNEWS_SCRIPT_PLAN` is set, the plan is validated against the (capped) docs and the style
+contract; on success it fills the intro/lead/insight/outro text slots. Segment count and order,
+`emotion`/`speed`/`gap_ms` tokens, and `splitFactText` chunking stay identical to the template path,
+and the greeting and sign-off remain builder-owned. Any failure falls back to templates with one
+`echoError` warn line naming every `itemId`/`rule`. `Content.metadata` always carries:
+
+- `scriptSource`: `'plan'` (valid plan applied) or `'template'` (unset env or any fallback)
+- `scriptPlanErrors`: `[{ itemId, rule }]` — empty on the plan path and when the env var is unset
 
 ## 3. VoiceScript Structure
 
