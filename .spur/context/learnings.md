@@ -140,3 +140,10 @@ Conventions / decisions discovered the hard way. Newest first.
 - Playwright `locator(sel).first().count()` is 0/1, never the set size — thumbnail-count checks need set-level `locator(sel).count()`. Fakes must mirror this or tests pass while live breaks.
 - Post-open browser flows: wrap every action in a step-named `act()` helper + outer catch → guaranteed named `ok:false` Result; raw throws leak "no Result written" states.
 - Structural page seams for browser plugins: keep the seam minimal (goto/locator/setInputFiles/url/close); inject timeouts (`stepTimeoutMs`/`loginTimeoutMs`) so failure-path tests don't sleep.
+
+## runall-e8-5a30 / 0168 (2026-09-25)
+
+- Direct `bun plugins/generations/image-gen/src/index.ts` does NOT read `~/.config/kk/config.yaml` `plugins.*.env` — export the provider key (`MINIMAX_API_KEY`) for worktree-preset paid runs; `kk executor run` reads config but resolves its own (possibly stale) plugin set. Attribution: paid dogfood needed both worktree presets AND user config key.
+- image-gen `--in` envelope is a **DocList array** (`[{ metadata.imageGen: {...} }]`), not a bare Doc — script `env[0]`, not `env`.
+- minimax emits `.jpg` (provider-decided extension); the resume-glob hardening (`cards/card-NN-*` or recorded path) is validated by the paid run.
+- Verdict PARTIAL from an operator-gated spend carve-out can be closed in-session by asking once (ask_user_question) — paid 4-card dogfood ~85s wall, trivial cost, upgrades R2/R3/R7 to MET with mechanical evidence (prompt==body, ContentSchema pass).
