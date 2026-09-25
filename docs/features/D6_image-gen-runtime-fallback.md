@@ -6,7 +6,7 @@ status: backlog
 priority: P3
 tags: []
 created_at: "2026-09-25T18:04:51.295Z"
-updated_at: "2026-09-25T18:17:45.873Z"
+updated_at: "2026-09-25T18:48:29.567Z"
 ---
 
 # D6: image-gen-runtime-fallback
@@ -39,41 +39,51 @@ Make image generation survive a configured provider failing mid-flight, under ex
 Feature: image-gen runtime fallback — opt-in multi-provider retry
 
   @core
-  Scenario: No fallback field keeps today's strict failure
+  Scenario: R1 — No fallback field keeps today's strict failure
     Given a cover job with provider "minimax" and no fallback field
     When the provider call fails with an auth error
-    Then the job fails with the original error
+    Then the job fails with the original, unwrapped error
     And no other provider is attempted or charged
 
   @core
-  Scenario: fallback true retries down AUTO_ORDER after a loud log
+  Scenario: R2 — fallback true retries down AUTO_ORDER after a loud log
     Given a job with fallback true and provider "minimax"
     When minimax fails with an auth or quota error
     Then a WARN log names minimax, the error class, and the next provider before any retry
-    And the next provider in AUTO_ORDER (never one in NEVER_AUTO) is attempted
-    And success records the winning provider and the failed attempts in artifact metadata
+    And the next configured provider in AUTO_ORDER (never one in NEVER_AUTO) is attempted with its own default model
+    And success records the winning provider in the image artifact and the failed attempts in metadata.attempts
 
   @core
-  Scenario: Explicit fallback list is honored in order
+  Scenario: R3 — Explicit fallback list is honored in order
     Given a job with fallback ["google", "zai"]
-    When the requested provider fails with a retryable error
+    When the requested provider fails with a fallback-eligible error
     Then providers are attempted in exactly the listed order
+    And an unknown name in the list fails the job before any provider is called
 
   @core
-  Scenario: Content-policy rejections never fall back
+  Scenario: R4 — Content-policy rejections never fall back
     Given a job with fallback true
     When the provider returns a content-policy rejection
     Then the job fails with the classified reason and no second provider is called
 
   @core
-  Scenario: Exhausted fallback order fails loudly
-    Given a job whose fallback order is exhausted
+  Scenario: R5 — Exhausted fallback order fails loudly
+    Given a job with fallback true
+    When every provider in the resolved order fails with a fallback-eligible error
     Then the job fails listing every attempted provider with its error class
 
   @core
-  Scenario: Explicit unknown or unconfigured provider still throws at selection
+  Scenario: R6 — Explicit unknown or unconfigured provider still throws at selection
     Given a job requesting a provider that is unknown or not configured
+    When image-gen selects the provider
     Then selection throws naming the provider and its required env (unchanged by this feature)
+
+  @core
+  Scenario: R7 — Daily cover opts into fallback through a workflow var
+    Given kk-daily-ai-voice with cover_fallback "true"
+    When the daily-cover stage builds the image-gen envelope
+    Then the envelope carries fallback true
+    And with cover_fallback empty the envelope has no fallback field
 ```
 
 ## Tasks
@@ -87,6 +97,12 @@ Feature: image-gen runtime fallback — opt-in multi-provider retry
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+- 2026-09-25 refinement: there is no `runJob` — the paid loop is `processGeneratorIO` (`plugins/generations/image-gen/src/index.ts`). Task 0166's title keeps the old name.
+- Providers throw plain `Error`s with inconsistent messages, so the classifier (0164) works on `err.name` plus the message text, and its fixtures copy the real adapter throw strings.
+- `spec.model` is provider-specific (daily-cover pins minimax `image-01`), so fallback attempts use each candidate's `defaultModel()`.
+- `cover_fallback` trades F614's pinned look for availability; this is why it defaults to absent.
+- Dependencies: 0165 does not use the classifier, so 0164 and 0165 can be built in parallel. 0166 needs both.
 
 ## History
 
