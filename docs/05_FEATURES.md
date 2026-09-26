@@ -65,6 +65,8 @@ sync: [T4]
 | D3 | Generator plugin design | ✅ done | 1 | tasks `0016`/`0017` done; cites C1 generic contract §1 |
 | D4 | Own STORM generator | ✅ done | 3 | tasks `0046` + `0047` done; owned STORM pipeline shipped behind the generator contract |
 | D5 | Voice generator (Voicebox) | ✅ done | 3 | task `0070` done; `plugins/generations/voice-gen` REST `/generate` + VoiceScript multi-speaker concat + `format: "audio"`; satellite `docs/design/voice-gen.md`; verify PASS |
+| D6 | image-gen runtime fallback | ⏳ backlog | 3 | runtime provider fallback loop for image-gen |
+| D7 | image-gen pre-spend illustration anchor validation | ✅ done | 3 | task `0169` done; pre-provider validation of illustration anchors in `image-gen` on paid and dry-run branches |
 | **E** | Multi-channel publish | ✅ done | 1 | kind parent (renamed from "Publish", 0035); AC rolled up from E2+E3 (DD-09); suite in scope → **E4**; new XHS follow-on **E8** planned |
 | E1 | wt-publish audit | ✅ done | 1 | task `0002` done (transports mapped; Surfdash simplest); wrapall 2026-08-19 — `spur feature sync E1` verifying→done |
 | E2 | Publish design and test harness | ✅ done | 1 | tasks `0018`/`0019` done; transport abstraction + `packages/publish-harness`; verifyall re-audit PASS + shippable; commit `2195d14` |
