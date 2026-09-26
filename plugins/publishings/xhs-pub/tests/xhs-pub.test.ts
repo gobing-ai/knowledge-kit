@@ -127,6 +127,9 @@ function makeFakePage(initial: FakeState) {
         setInputFiles: async (selector, paths) => {
             calls.push({ op: 'setInputFiles', args: [selector, [...paths]] });
             state.thumbCount = state.uploadThumbCount ?? paths.length;
+            // Measured live: the note editor (and its header swap) appears once an image is
+            // uploaded, not when the tab is clicked — so a pre-upload editor wait is unsatisfiable.
+            state.inEditor = true;
         },
         waitForSelector: async () => null,
         url: () =>
@@ -135,8 +138,6 @@ function makeFakePage(initial: FakeState) {
                 : 'https://creator.xiaohongshu.com/publish/publish',
         clickInViewport: async (selector) => {
             calls.push({ op: 'clickInViewport', args: [selector] });
-            // Entering the image tab replaces the landing header, taking the counter with it.
-            state.inEditor = true;
             return state.loggedIn;
         },
         findShadowControl: async (labels) => {
@@ -1054,5 +1055,35 @@ describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (
         const result = await publishDraft({ ...happy, draftSaveIsSilent: true, draftSavedStamp: true });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('draft confirmation');
+    });
+});
+
+describe('xhs-pub in-viewport tab selection requires a viewport (0174 review P4)', () => {
+    test('does not click a candidate when the viewport cannot be read', async () => {
+        const clicks: number[] = [];
+        const stub = {
+            goto: async () => {},
+            locator: () => ({
+                count: async () => 1,
+                nth: (index: number) => ({
+                    boundingBox: async () => ({ x: 10, y: 10, width: 40, height: 20 }),
+                    click: async () => void clicks.push(index),
+                }),
+                first: () => ({
+                    count: async () => 0,
+                    isVisible: async () => false,
+                    fill: async () => {},
+                    click: async () => {},
+                }),
+            }),
+            setInputFiles: async () => {},
+            waitForSelector: async () => null,
+            url: () => 'about:blank',
+            // No viewportSize: the duplicate tabs cannot be told apart, so the step must fail loud.
+            mouse: { click: async () => {} },
+        };
+        const page = wrapPlaywrightPage(stub);
+        expect(await page.clickInViewport?.('div.creator-tab')).toBe(false);
+        expect(clicks).toEqual([]);
     });
 });
