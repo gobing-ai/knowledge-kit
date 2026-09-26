@@ -4,7 +4,7 @@ name: Publish ordered XHS card images as a real draft or explicit live post
 status: done
 template: feature-impl
 created_at: 2026-09-25T18:16:35.413Z
-updated_at: "2026-09-25T23:20:39.834Z"
+updated_at: "2026-09-26T03:56:02.647Z"
 feature_id: E8
 priority: P2
 estimate_hours: 12
@@ -86,29 +86,33 @@ Review loop: initial BLOCK (P0 set-count semantics, P1 unnamed failures + discar
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R4 — ordered draft publish with N-thumbnail wait, confirmation gate, no synthesized id | MET | plugins/publishings/xhs-pub/src/index.ts:73 validatePublishInput (absolute/exists/png\|jpg\|jpeg\|webp, pre-browser); :243 single ordered setInputFiles; :246-255 set-level thumbnail wait + exact-N check; :257-260 title/body fill; :273-281 draft-confirm gate then ok:true Result without id |
-| R5 — public-only live switch, observed success, url/id only from page | MET | src/index.ts:211 only publishStatus==='public' goes live; :290-302 submit then success-state wait; url emitted only when page.url() left PUBLISH_URL; id only when read from page (never synthesized) |
-| R6 — failure taxonomy, five pre-browser failures, duplicate-risk warning | MET | src/index.ts:208-213 validation failures; :199-201 unsupported agent driver; :146-149 playwright/Chromium launch hint; :235 login timeout; :255 thumbnail count; :281 draft confirmation; :297-300 publish state-unknown + retry-duplicate warning; post-open act() wrapper guarantees named ok:false Results |
-| Supports — default script driver, agent fails fast, deleted sessionReady/draftId/draftResult | MET | getPublishTransport default 'script'; agent → ok:false naming driver (src/index.ts:200); grep clean for sessionReady/draftId/draftResult |
-| Preserved contract — Content→Result, CLI, profile chain, fake env, draft-by-default | MET | ResultSchema.parse envelope; --in/--out CLI unchanged; profile chain options.profileDir → XHS_PROFILE_DIR → KK_BROWSER_PROFILE_DIR; KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake; default publishStatus 'draft' (src/index.ts:211) |
-| AC1 — draft with ordered images (R4) | MET | tests/xhs-pub.test.ts fake-page draft flow: ordered single setInputFiles call asserted, draft confirm gate, ok:true metadata.publishStatus 'draft', no id |
-| AC2 — explicit live publish (R5) | MET | tests/xhs-pub.test.ts public flow: publish click only for publishStatus 'public', success state observed, url from page.url() delta |
-| AC3 — missing/failed images prevent false publish (R6) | MET | tests/xhs-pub.test.ts validation matrix asserts fail before openPage via spy; thumbnail-mismatch / missing confirmations / login timeout each assert ok:false naming the step |
+| R4 — XHS publisher creates a draft with the ordered images | PARTIAL | Offline MET: src/index.ts:243 single ordered setInputFiles(fileSelector, paths); :246-255 set-level wait + exact-N thumbnail check; :273-281 draft-confirm gate -> ok:true Result with no id (:283-288); tests tests/xhs-pub.test.ts:182-205 assert captured.calls === 1 and uploaded === [img0,img1,img2], :168-181 asserts ok:true, no id, imageCount 2. UNVERIFIED for a real session: bun test plugins/publishings/xhs-pub/tests -> 21 pass / 0 fail, all through the injected fake page; SELECTORS (src/index.ts:27-38) are constants never exercised against live creator UI (docs/04_DESIGN.md:500). No operator dogfood draft exists. |
+| R5 — Explicit live request publishes the XHS post | PARTIAL | Offline MET: public-only gate at src/index.ts:209 (publishStatus === 'public' ? 'public' : 'draft'); :290-302 submit then success-state wait; :303-309 url only when page.url() !== PUBLISH_URL, no synthesized id. Test tests/xhs-pub.test.ts:206-216 observes url https://www.xiaohongshu.com/explore/abc123. UNVERIFIED: no live browser submission to a real XHS account was performed, so "browser confirms success" (publishConfirm selector src/index.ts:37) and the emitted identity/URL are fake-harness-only. |
+| R6 — Missing or failed images prevent a false publish result | MET | Pre-browser validation src/index.ts:73-103 (non-empty, absolute, exists, png/jpg/jpeg/webp) returns ok:false before openPage — test :157-165 asserts closed length 0 with spy; thumbnail mismatch -> ok:false naming step :247-255, test :229-240 (expected 2); missing draft confirmation -> ok:false :278-280, test :241-251; ambiguous public submit -> ok:false + duplicate-post warning :293-297, test :252-264; no ok:true path without an observed confirmation; sessionReady/draftId/draftResult removed. |
+| Req 0167-1 — default driver script; agent fails ok:false naming the driver; sessionReady + synthetic draft removed | MET | src/index.ts:180-199 (driver = 'script', early unsupported driver ... requires the script driver); getPublishTransport default 'script' :320; tests :113-117, :119-126. |
+| Req 0167-2 — preserve Content->Result, --in/--out, profile resolution, fake env, draft-by-default | MET | processPublishIO :333-356 (ContentSchema parse, --out written, non-zero on ok:false); profile override chain :203-207; KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake :321; tests :322-396 (CLI + runInvoke) pass. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — XHS publisher creates a draft with the ordered images (R4) | PARTIAL | test | bun test plugins/publishings/xhs-pub/tests -> 21 pass/0 fail: tests/xhs-pub.test.ts:168-181 (draft ok, no id, imageCount 2), :182-205 (one ordered setInputFiles call) — fake page only; no live draft dogfood |
+| AC2 — Explicit live request publishes the XHS post (R5) | PARTIAL | test | tests/xhs-pub.test.ts:206-216 public publishStatus -> ok:true + observed url (fake page); live submission to a real account not performed |
+| AC3 — Missing or failed images prevent a false publish result (R6) | MET | test | tests/xhs-pub.test.ts:127-165 (validation matrix, openPage never called), :229-264 (thumbnail/draft-confirm/submit failures all ok:false) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PASS)
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | — | — | No P1–P3 findings; verify verdict PASS |
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
 
 ### References
 

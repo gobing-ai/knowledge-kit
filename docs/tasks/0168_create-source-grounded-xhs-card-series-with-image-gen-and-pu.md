@@ -4,7 +4,7 @@ name: Create source-grounded XHS card series with image-gen and publishable Cont
 status: done
 template: feature-impl
 created_at: 2026-09-25T18:16:35.417Z
-updated_at: "2026-09-25T23:53:59.585Z"
+updated_at: "2026-09-26T03:56:02.419Z"
 feature_id: E8
 priority: P2
 estimate_hours: 12
@@ -86,10 +86,30 @@ Invariant: prompts are saved before paid calls; the source text is not mutated; 
 
 ### Testing
 
-- Gate: `bun run spur-check` green at `babcf9b5` — 1407→1409 tests, 0 fail; 48 pre + 2 post rules pass; image-gen coverage 100% funcs / 99.43% lines.
-- Targeted: `bun test plugins/generations/image-gen/tests/presets.test.ts` — 24 pass / 0 fail (incl. 2 new xhs card tests).
-- Dry-run dogfood (agent-run): one envelope + `KK_IMAGE_DRY_RUN=1` → composed prompt emitted, exit 0, zero spend.
-- Paid dogfood (operator-approved 2026-09-25, minimax image-01): 4/4 cards rendered sequentially from the worktree presets (57.6/85.9/119.3/93.4 KB jpgs); cards 02–04 reference the rendered cover; `NN.prompt.txt` == `ImageArtifact.prompt` == envelope body for all 4; `cards.json` statuses → rendered; `content.json` validates against `ContentSchema` (title 8 chars, Chinese body, `metadata.images` 4 artifacts in order, `publishStatus: draft`). Evidence: `.spur/run/runall-e8-5a30-0168-paid-dogfood/`. Known limitation: invoked via direct image-gen entry (worktree presets), not installed `kk executor run`; live xhs-pub browser dogfood remains operator-owned (0167).
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — Source content becomes an ordered XHS card plan | MET | .spur/run/runall-e8-5a30-0168-paid-dogfood/cards.json: 01 cover, 02-03 content, 04 closing, each with index/role/sourcePoint (verbatim)/copy/layout; source.md mtime unchanged |
+| R2 — Existing image generator renders the planned card series | MET | paid-dogfood cards/: 4 jpgs 57.6/85.9/119.3/93.4 KB + NN.json each (minimax image-01); prompt.txt == Content.body == ImageArtifact.prompt for 01-04; 02-04 carry referenceImages:[cover] |
+| R3 — Card series becomes a publishable XHS payload | MET | ContentSchema.safeParse(content.json) -> true; title 8 chars, format text, body 86 chars, metadata.publishStatus draft, metadata.images 4 in index order == each cards.json imagePath |
+| R7 — Rendering failure preserves the successful card prompts | MET | skill-dogfood: cards/01.prompt.txt (943 chars) preserved; no cards/02.json; card 03 never attempted; cards.json = 01 rendered / 02 failed / 03 pending |
+| 0168 R1 cap clause — N ≤ min(10, image.max_images), refusal names the cap | MET | skill-dogfood/TRANSCRIPT.md §1: plan N=4 vs cap 3 -> REFUSED naming min(10, image.max_images/KK_IMAGE_MAX_IMAGES); 0 envelopes, no provider call; plugin half plugins/generations/image-gen/src/index.ts:227 + tests/image-gen.test.ts:172-208 |
+| 0168 R2 sequential render + single series confirmation | MET | paid-dogfood: 02-04 referenceImages point at the rendered card-01 jpg, so order is provable; one series approval then renders 16:49-16:51 |
+| 0168 R7 resume clause — same --out reuses cards.json + NN.in.json, renders only cards without an image | MET | .spur/run/runall-e8-5a30-0168-skill-dogfood/RESUME-TRANSCRIPT.txt: one card image deleted -> resume reused the plan (no replanning) and rendered ONLY card 03 (01/02/04 SKIP image exists; 03 RENDER exit=0) |
+| Handoff — never spawns xhs-pub; hands content.json to kk:publish channel xhs | MET | plugins/kk/skills/xhs-images/SKILL.md:9,29,68-70; no xhs-pub invocation under the skill |
+| Presets — xhs-card + xhs-knowledge shipped with attribution, Baoyu backend/batch/EXTEND not imported | MET | presets/formats/xhs-card.yaml (job free, 3:4, 1080x1440, defaultStyle xhs-knowledge, vars role/layout/headline/points/subject/language=简体中文); presets/styles/xhs-knowledge.yaml; MIT notice in both + references/card-layouts.md |
+| Tests — preset inventory/geometry/composition + image-gen cap refusal | MET | bun test plugins/generations/image-gen/tests/{presets,image-gen}.test.ts -> 58 pass / 0 fail; presets.test.ts:137,303,316,322-333,341-352; image-gen.test.ts:172-208 |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Source content becomes an ordered XHS card plan (req: R1) | MET | command | python3 -c "json.load(cards.json)" -> [(01,cover),(02,content),(03,content),(04,closing)] with per-card sourcePoint/layout; cap refusal: KK_IMAGE_MAX_IMAGES=3 bash run.sh -> "REFUSED ... 0 envelopes" |
+| AC2 — Existing image generator renders the planned card series (req: R2) | MET | test | 4 jpgs + 4 NN.json (minimax image-01); prompt equality for 01-04; one series approval |
+| AC3 — Card series becomes a publishable XHS payload (req: R3) | MET | command | ContentSchema.safeParse(content.json) -> true; 4 images in index order; publishStatus draft |
+| AC4 — Rendering failure preserves the successful card prompts (req: R7) | MET | command | cards/01.prompt.txt preserved (943 chars); no cards/02.json; 03 pending; resume transcript renders only the missing card |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
