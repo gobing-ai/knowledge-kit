@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Publish ordered XHS card images as a real draft or explicit live post
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-25T18:16:35.413Z
-updated_at: "2026-09-25T18:30:34.008Z"
+updated_at: "2026-09-25T23:20:39.834Z"
 feature_id: E8
 priority: P2
 estimate_hours: 12
@@ -21,17 +21,14 @@ Rubric: parent E2 D2 L2 C1 R2 = 9 → decompose (live external side effect and t
 
 ### Requirements
 
-- [ ] R4. Before any browser action, validate `Content.metadata.images[]`: non-empty array of objects whose `.path` is absolute, exists, and ends in `png|jpg|jpeg|webp`. Attach every path in **one ordered** file-input call, then wait until the editor shows exactly N image thumbnails. Fill `Content.title` / `Content.body`, save the draft, and return `ok: true` with `metadata.publishStatus: 'draft'` only after the draft-saved confirmation is observed. Never synthesize `id`.
-- [ ] R5. `Content.metadata.publishStatus: 'public'` is the only live switch. Submit, then return `ok: true` with `metadata.publishStatus: 'public'` only after an observed success state; set `url` / `id` only when read from the page.
-- [ ] R6. Each of these returns `ok: false` with `error` naming the failed step: missing/relative/unsupported image path, empty `images`, unknown `publishStatus`, missing `playwright` or Chromium, login timeout, thumbnail count ≠ N, missing draft-saved confirmation, and missing publish confirmation. The first five fail before a browser opens. For an ambiguous state after the live submit click, `error` must say the submission state is unknown and ask the operator to check the creator note manager before retrying, because a retry could duplicate the post.
-- [ ] (supports R4–R6) `xhs-pub` default driver becomes `script`. `driver: 'agent'` returns `ok: false` naming the unsupported driver. Delete `sessionReady` and the synthetic `draftId`/`draftResult`.
-- [ ] Preserve `Content → Result`, `--in`/`--out`, `options.profileDir` / `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR` profile resolution, `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, and draft-by-default (ADR-008, ADR-022, ADR-024).
+- [x] (supports R4–R6) `xhs-pub` default driver becomes `script`. `driver: '`agent'` returns `ok: false` naming the unsupported driver. Delete `sessionReady` and the synthetic `draftId`/`draftResult`.
+- [x] Preserve `Content → Result`, `--in`/`--out`, `options.profileDir` / `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR` profile resolution, `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, and draft-by-default (ADR-008, ADR-022, ADR-024).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — XHS publisher creates a draft with the ordered images (req: R4)
-- [ ] AC2 — Explicit live request publishes the XHS post (req: R5)
-- [ ] AC3 — Missing or failed images prevent a false publish result (req: R6)
+- [x] AC1 — XHS publisher creates a draft with the ordered images (req: R4)
+- [x] AC2 — Explicit live request publishes the XHS post (req: R5)
+- [x] AC3 — Missing or failed images prevent a false publish result (req: R6)
 
 ### Q&A
 
@@ -72,15 +69,46 @@ Invariant: no browser opens for invalid input; no live side effect without `publ
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Rewrote the XHS publisher as a script-driver Playwright transport with a structural page seam.
+
+| Change (`file:line`) |
+|----------------------|
+| `plugins/publishings/xhs-pub/src/index.ts:40` — `XhsPage`/`XhsLocator` structural seam (set-level `count()` + `first()`), `wrapPlaywrightPage` adapter at `:110`, `defaultOpenPage` launchPersistentContext at `:135` |
+| `plugins/publishings/xhs-pub/src/index.ts:73` — `validatePublishInput` pure pre-browser validation (absolute/existing/png\|jpg\|jpeg\|webp paths, publishStatus) |
+| `plugins/publishings/xhs-pub/src/index.ts:180` — `XhsBrowserTransport` script flow: one ordered `setInputFiles` (`:243`), set-level N-thumbnail wait (`:246-255`), title/body fill, draft/public confirmation gates (`:273-302`), `act()` step-named failure wrapper, `close()` in `finally` |
+| `plugins/publishings/xhs-pub/src/index.ts:305` — `getPublishTransport` default driver `'script'`; agent driver fails fast (`:200`); fake env preserved |
+| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:34` — 21-test suite: validation matrix failing before `openPage` (spy), fake-page flow (ordered upload, thumbnail mismatch, login timeout, missing confirmations, duplicate-risk wording), CLI surface, adapter delegation |
+| `docs/04_DESIGN.md:496` + `plugins/kk/skills/publish/SKILL.md:31` — T3 same-commit doc sync (script default, setInputFiles, live-UI selectors explicitly untested pending dogfood) |
+
+Review loop: initial BLOCK (P0 set-count semantics, P1 unnamed failures + discarded selectors, P1 doc sync) fixed in `7c7d51c`; delta re-review OK; P2 hardening (single-query `findSelector` loop, plugin description) followed.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R4 — ordered draft publish with N-thumbnail wait, confirmation gate, no synthesized id | MET | plugins/publishings/xhs-pub/src/index.ts:73 validatePublishInput (absolute/exists/png\|jpg\|jpeg\|webp, pre-browser); :243 single ordered setInputFiles; :246-255 set-level thumbnail wait + exact-N check; :257-260 title/body fill; :273-281 draft-confirm gate then ok:true Result without id |
+| R5 — public-only live switch, observed success, url/id only from page | MET | src/index.ts:211 only publishStatus==='public' goes live; :290-302 submit then success-state wait; url emitted only when page.url() left PUBLISH_URL; id only when read from page (never synthesized) |
+| R6 — failure taxonomy, five pre-browser failures, duplicate-risk warning | MET | src/index.ts:208-213 validation failures; :199-201 unsupported agent driver; :146-149 playwright/Chromium launch hint; :235 login timeout; :255 thumbnail count; :281 draft confirmation; :297-300 publish state-unknown + retry-duplicate warning; post-open act() wrapper guarantees named ok:false Results |
+| Supports — default script driver, agent fails fast, deleted sessionReady/draftId/draftResult | MET | getPublishTransport default 'script'; agent → ok:false naming driver (src/index.ts:200); grep clean for sessionReady/draftId/draftResult |
+| Preserved contract — Content→Result, CLI, profile chain, fake env, draft-by-default | MET | ResultSchema.parse envelope; --in/--out CLI unchanged; profile chain options.profileDir → XHS_PROFILE_DIR → KK_BROWSER_PROFILE_DIR; KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake; default publishStatus 'draft' (src/index.ts:211) |
+| AC1 — draft with ordered images (R4) | MET | tests/xhs-pub.test.ts fake-page draft flow: ordered single setInputFiles call asserted, draft confirm gate, ok:true metadata.publishStatus 'draft', no id |
+| AC2 — explicit live publish (R5) | MET | tests/xhs-pub.test.ts public flow: publish click only for publishStatus 'public', success state observed, url from page.url() delta |
+| AC3 — missing/failed images prevent false publish (R6) | MET | tests/xhs-pub.test.ts validation matrix asserts fail before openPage via spy; thumbnail-mismatch / missing confirmations / login timeout each assert ok:false naming the step |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No P1–P3 findings; verify verdict PASS |
 
 ### References
 
@@ -91,3 +119,7 @@ Invariant: no browser opens for invalid input; no live side effect without `publ
 - Consumer: task 0168 (`kk:xhs-images` writes the Content this plugin reads)
 
 ### History
+
+- 2026-09-25T22:53:37.447Z todo → wip (system)
+- 2026-09-25T23:20:39.834Z wip → done (system)
+

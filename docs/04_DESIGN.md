@@ -45,7 +45,7 @@ sync: [T3]
 | [omni-voice-gen.md](design/omni-voice-gen.md) | OmniVoice-backed (PyPI) Python voice generator plugin, drop-in for voice-gen | shipped (F611) |
 | [kk-itc-end-to-end.md](design/kk-itc-end-to-end.md) | kk-itc idea → research → judge-gated draft → per-platform drafts (HITL + auto) | shipped (F41) |
 | [gemini-tts.md](design/gemini-tts.md) | Gemini 3.8 TTS voice generator: hosted backend adapter over voice-gen, drop-in via `vdriver: gemini` | shipped (F612) |
-| [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | accepted design (E8, ADR-024) |
+| [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | shipped (E8, ADR-024; 0167 xhs-pub script transport, 0168 xhs-images skill + presets) |
 
 ## 1. CLI commands
 
@@ -495,7 +495,9 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 
 ### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
 
-Each is `kind: publish`, `PublishTransport.kind: 'browser'`, default `driver: 'agent'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout. Optional `script` driver returns the same `ok`/`target`/`id` for the same Content.
+Each is `kind: publish`, `PublishTransport.kind: 'browser'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout.
+
+`xhs-pub` (image cards) defaults to `driver: 'script'` — ordered card images are uploaded with Playwright `setInputFiles` (`Upload ordered card images` in `docs/design/xhs-image-cards.md`); the `agent` driver fails fast (`unsupported driver … requires the script driver`). Selectors in `SELECTORS` are best-known constants and must be verified against the live XHS creator UI before first production use.
 
 ### `@gobing-ai/web-search` (`plugins/ingestions/web-search`, kind `ingestion`)
 

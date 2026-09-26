@@ -28,7 +28,7 @@ not add a `kk publish` noun.
 | juejin | `juejin-pub` | `browser` / `agent` | workflow `agent.run` |
 | infoq | `infoq-pub` | `browser` / `agent` | workflow `agent.run` |
 | substack | `substack-pub` | `browser` / `agent` | workflow `agent.run` |
-| xhs | `xhs-pub` | `browser` / `agent` | workflow `agent.run` |
+| xhs | `xhs-pub` | `browser` / `script` | workflow `agent.run` (script driver: Playwright `setInputFiles` card upload) |
 
 Already-harvested file-cli channels (`qiita-pub`, `zenn-pub`, `surfdash-pub`,
 `emdash-pub`, `podcast-pub`) compose the same way.

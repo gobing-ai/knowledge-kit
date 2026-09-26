@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Create source-grounded XHS card series with image-gen and publishable Content
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-25T18:16:35.417Z
-updated_at: "2026-09-25T18:30:34.206Z"
+updated_at: "2026-09-25T23:53:59.585Z"
 feature_id: E8
 priority: P2
 estimate_hours: 12
@@ -22,19 +22,19 @@ Rubric: parent E2 D2 L2 C1 R2 = 9 → decompose; this authoring slice E2 D1 L1 C
 
 ### Requirements
 
-- [ ] R1. From supplied text, plan N ordered cards: card 01 `role: cover`, then `content` cards in source order, then an optional `closing` card. Each card records `index`, `role`, `sourcePoint` (verbatim heading or sentence from the source), `copy` (short Chinese on-image text), `layout`, and `subject` (visual scene). `1 ≤ N ≤ min(10, resolved max-images cap)`. A larger `--count` is refused and the refusal names `KK_IMAGE_MAX_IMAGES` / `image.max_images`. The source file is never written.
-- [ ] R2. For each card, write `<out>/cards/NN.in.json`: the `image-gen` envelope with `job: free`, `format: xhs-card`, `style`, `vars`, `provider`, `model`, `maxImages: 1`, and `outputStem: card-NN`, plus `referenceImages: [<cover path>]` for NN ≥ 02 only when `references/providers.md` of `kk:image-authoring` marks the provider/model reference-capable. Run each envelope once with `KK_IMAGE_DRY_RUN=1` and save its `Content.body` as `<out>/cards/NN.prompt.txt`. That is the exact composed prompt, and it must equal `ImageArtifact.prompt` after rendering. Show **one** spend preview for the series (provider, model, style, N, the cover prompt, a per-card copy list) and follow the `kk:image-authoring` Confirmation policy once. Then render card 01, then 02..N, sequentially via `kk executor run image-gen --in cards/NN.in.json --out cards/NN.json`.
-- [ ] R3. Write `<out>/content.json`, a valid `Content` with: `title` (XHS title; authoring target ≤ 20 chars), `body` (Chinese note with hashtags; target ≤ 1000 chars), `format: 'text'`, `metadata.images` = each card's `cards/NN.json` `metadata.images[0]` in index order, and `metadata.publishStatus: 'draft'`. Write `<out>/cards.json` per the design (`{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, status }] }`, `status ∈ pending|rendered|failed`). Packaging refuses while any card is not `rendered` or its prompt/image file is missing.
-- [ ] R7. On the first failed card, stop spending, mark it `failed` and later cards `pending`, and report the retry. Re-running with the same `--out` reuses the existing `cards.json` and `cards/NN.in.json` (no replanning) and renders only the cards without an existing image file. Replanning requires a new `--out`.
-- [ ] Handoff: the skill never spawns `xhs-pub` directly. After packaging, it hands `content.json` to `kk:publish` channel `xhs`, which owns the draft/live confirmation. `--live` is passed through as the operator's live request.
-- [ ] Presets: ship `presets/formats/xhs-card.yaml` (`job: free`, `aspectRatio: '3:4'`, 1080×1440, `defaultStyle: xhs-knowledge`, variables `role`, `layout`, `headline`, `points`, `subject`, `language` defaulting to `简体中文`) and `presets/styles/xhs-knowledge.yaml`. Adapt Baoyu's layout, typography, and consistency guidance with attribution, and import none of its backend selection, batch/parallel generation, or `EXTEND.md` chain.
+- [x] R1. From supplied text, plan N ordered cards: card 01 `role: cover`, then `content` cards in source order, then an optional `closing` card. Each card records `index`, `role`, `sourcePoint` (verbatim heading or sentence from the source), `copy` (short Chinese on-image text), `layout`, and `subject` (visual scene). `1 ≤ N ≤ min(10, resolved max-images cap)`. A larger `--count` is refused and the refusal names `KK_IMAGE_MAX_IMAGES` / `image.max_images`. The source file is never written.
+- [x] R2. For each card, write `<out>/cards/NN.in.json`: the `image-gen` envelope with `job: free`, `format: xhs-card`, `style`, `vars`, `provider`, `model`, `maxImages: 1`, and `outputStem: card-NN`, plus `referenceImages: [<cover path>]` for NN ≥ 02 only when `references/providers.md` of `kk:image-authoring` marks the provider/model reference-capable. Run each envelope once with `KK_IMAGE_DRY_RUN=1` and save its `Content.body` as `<out>/cards/NN.prompt.txt`. That is the exact composed prompt, and it must equal `ImageArtifact.prompt` after rendering. Show **one** spend preview for the series (provider, model, style, N, the cover prompt, a per-card copy list) and follow the `kk:image-authoring` Confirmation policy once. Then render card 01, then 02..N, sequentially via `kk executor run image-gen --in cards/NN.in.json --out cards/NN.json`.
+- [x] R3. Write `<out>/content.json`, a valid `Content` with: `title` (XHS title; authoring target ≤ 20 chars), `body` (Chinese note with hashtags; target ≤ 1000 chars), `format: 'text'`, `metadata.images` = each card's `cards/NN.json` `metadata.images[0]` in index order, and `metadata.publishStatus: 'draft'`. Write `<out>/cards.json` per the design (`{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, status }] }`, `status ∈ pending|rendered|failed`). Packaging refuses while any card is not `rendered` or its prompt/image file is missing.
+- [x] R7. On the first failed card, stop spending, mark it `failed` and later cards `pending`, and report the retry. Re-running with the same `--out` reuses the existing `cards.json` and `cards/NN.in.json` (no replanning) and renders only the cards without an existing image file. Replanning requires a new `--out`.
+- [x] Handoff: the skill never spawns `xhs-pub` directly. After packaging, it hands `content.json` to `kk:publish` channel `xhs`, which owns the draft/live confirmation. `--live` is passed through as the operator's live request.
+- [x] Presets: ship `presets/formats/xhs-card.yaml` (`job: free`, `aspectRatio: '3:4'`, 1080×1440, `defaultStyle: xhs-knowledge`, variables `role`, `layout`, `headline`, `points`, `subject`, `language` defaulting to `简体中文`) and `presets/styles/xhs-knowledge.yaml`. Adapt Baoyu's layout, typography, and consistency guidance with attribution, and import none of its backend selection, batch/parallel generation, or `EXTEND.md` chain.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Source content becomes an ordered XHS card plan (req: R1)
-- [ ] AC2 — Existing image generator renders the planned card series (req: R2)
-- [ ] AC3 — Card series becomes a publishable XHS payload (req: R3)
-- [ ] AC4 — Rendering failure preserves the successful card prompts (req: R7)
+- [x] AC1 — Source content becomes an ordered XHS card plan (req: R1)
+- [x] AC2 — Existing image generator renders the planned card series (req: R2)
+- [x] AC3 — Card series becomes a publishable XHS payload (req: R3)
+- [x] AC4 — Rendering failure preserves the successful card prompts (req: R7)
 
 ### Q&A
 
@@ -75,15 +75,37 @@ Invariant: prompts are saved before paid calls; the source text is not mutated; 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| Concern | Where |
+| ------- | ----- |
+| Skill surface: plan → envelopes → dry-run+single confirmation → sequential render → package → handoff | `plugins/kk/skills/xhs-images/SKILL.md:23-96` |
+| Layout catalog, typography + consistency rules (baoyu attribution) | `plugins/kk/skills/xhs-images/references/card-layouts.md:1-42` |
+| `xhs-card` format preset (free, 3:4 1080×1440, vars role/layout/headline/points/subject/language) | `plugins/generations/image-gen/presets/formats/xhs-card.yaml:1-53` |
+| `xhs-knowledge` style preset (notion-like card aesthetic, modifiers) | `plugins/generations/image-gen/presets/styles/xhs-knowledge.yaml:1-10` |
+| Inventory + geometry + composition tests (5 formats / 12 styles) | `plugins/generations/image-gen/tests/presets.test.ts:264-352` |
+| Doc sync: design status → shipped | `docs/04_DESIGN.md:48`, `docs/design/xhs-image-cards.md:1,31` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- Gate: `bun run spur-check` green at `babcf9b5` — 1407→1409 tests, 0 fail; 48 pre + 2 post rules pass; image-gen coverage 100% funcs / 99.43% lines.
+- Targeted: `bun test plugins/generations/image-gen/tests/presets.test.ts` — 24 pass / 0 fail (incl. 2 new xhs card tests).
+- Dry-run dogfood (agent-run): one envelope + `KK_IMAGE_DRY_RUN=1` → composed prompt emitted, exit 0, zero spend.
+- Paid dogfood (operator-approved 2026-09-25, minimax image-01): 4/4 cards rendered sequentially from the worktree presets (57.6/85.9/119.3/93.4 KB jpgs); cards 02–04 reference the rendered cover; `NN.prompt.txt` == `ImageArtifact.prompt` == envelope body for all 4; `cards.json` statuses → rendered; `content.json` validates against `ContentSchema` (title 8 chars, Chinese body, `metadata.images` 4 artifacts in order, `publishStatus: draft`). Evidence: `.spur/run/runall-e8-5a30-0168-paid-dogfood/`. Known limitation: invoked via direct image-gen entry (worktree presets), not installed `kk executor run`; live xhs-pub browser dogfood remains operator-owned (0167).
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Fresh-session reviewer (sp-super-reviewer) on `babcf9b5`: **VERDICT OK** — full artifact `.spur/run/runall-e8-5a30-review-answer.txt`. Priority table:
+
+| Priority | Finding | Disposition |
+| -------- | ------- | ----------- |
+| P2 | Task-record state open at review time (record/done pending) | Closes via record/done flow (this transition) |
+| P3 | Spend preview omitted weaker-consistency disclosure (SKILL.md vs design flow item 2) | Fixed in `0dba7935` (consistency path disclosed) |
+| P3 | Provider/model resolution unstated vs image-authoring preference chain | Fixed in `0dba7935` (arguments > env > $KK_CONFIG > defaults) |
+| P3 | Resume check did not pin provider-decided artifact extension — double-spend risk (paths.ts:22-30) | Fixed in `0dba7935` (recorded path or `cards/card-NN-*` glob) |
+| P4 | Dead `outputFilename` `.png` default (xhs-card.yaml:19) | Record-and-move-on |
+| P4 | Dangling "Bullet points" header when points empty (xhs-card.yaml:49-50) | Record-and-move-on |
+| P4 | Attribution cites gitignored `vendors/` path | Record-and-move-on (repo-conventional; MIT © Jim Liu notice preserved in all four shipped files) |
+
+Traceability: R1–R3/R7 + handoff + presets MET; targeted presets tests 24 pass / 0 fail.
 
 ### References
 
@@ -95,3 +117,7 @@ Invariant: prompts are saved before paid calls; the source text is not mutated; 
 - Prerequisite: task 0167 (only for the end-to-end draft handoff)
 
 ### History
+
+- 2026-09-25T23:21:06.742Z todo → wip (system)
+- 2026-09-25T23:53:59.585Z wip → done (system)
+

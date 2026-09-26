@@ -1,0 +1,55 @@
+name: xhs-card
+description: >-
+  Xiaohongshu (XHS) knowledge card — 3:4 portrait image-text card with large
+  Chinese headline and short bullet points. Adapted from baoyu-xhs-images
+  (MIT © Jim Liu); see plugins/kk/skills/xhs-images/references/card-layouts.md.
+job: free
+aspectRatio: '3:4'
+width: 1080
+height: 1440
+defaultStyle: xhs-knowledge
+keywords:
+    - xiaohongshu-style
+    - image-text card layout
+    - large-font title (Chinese-friendly)
+    - fresh clean design
+    - flat illustration accents with geometric decorations
+    - crisp legible text hierarchy
+    - professional color grading
+outputFilename: 'card-{{index | 01}}.png'
+variables:
+    role:
+        description: Card role in the series (cover, content, closing)
+        default: content
+    layout:
+        description: Layout name from xhs-images references (see references/card-layouts.md)
+        default: definition
+    headline:
+        description: Short on-card headline (Chinese, ≤ 12 chars recommended)
+        default: 核心概念
+    points:
+        description: 2–4 short on-card bullet points, one per line
+        default: ''
+    subject:
+        description: Visual scene or metaphor illustrated on the card
+        default: clean flat illustration of the core concept
+    language:
+        description: On-card text language
+        default: 简体中文
+    index:
+        description: Card number in the series (zero-padded)
+        default: '01'
+    content:
+        description: Additional context (use --content)
+        default: ''
+template: |-
+    Xiaohongshu-style knowledge card, portrait 3:4, for a card series.
+    Card role: {{role | content}}. Layout: {{layout | definition}}.
+    On-card headline in {{language | 简体中文}}, extra-large bold type: "{{headline}}".
+    Bullet points (short lines, generous line spacing, keep on-card text minimal):
+    {{points}}
+    Visual scene: {{subject | clean flat illustration of the core concept}},
+    rendered as flat illustration accents with subtle geometric decorations.
+    Fresh clean design, strong text hierarchy, comfortable margins, no watermark,
+    no extra UI chrome. 8K quality, crisp details, professional color grading.
+    {{content}}

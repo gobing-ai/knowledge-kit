@@ -1,0 +1,7 @@
+name: xhs-knowledge
+description: >-
+  Notion-like knowledge card aesthetic for XHS image-text series — simple light
+  background, clean information layout, soft accent colors, rounded card zones.
+  Adapted from baoyu-xhs-images "knowledge card" style guidance (MIT © Jim Liu);
+  see plugins/kk/skills/xhs-images/references/card-layouts.md.
+modifiers: simple clean light background, rounded rectangle card zones, soft pastel accent colors, large legible Chinese typography, generous whitespace, flat geometric decorations, subtle drop shadows, fresh and professional

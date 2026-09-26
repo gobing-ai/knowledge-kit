@@ -1,4 +1,4 @@
-# Xiaohongshu image cards (feature E8, accepted design)
+# Xiaohongshu image cards (feature E8, shipped — 0167 publisher, 0168 skill + presets)
 
 ## Decision and boundary
 
@@ -15,7 +15,7 @@
 ## Surface
 
 - Agent entry: `kk:xhs-images <source> [--style <preset>] [--count <1..10>] [--out <dir>] [--live]`. The skill defaults to a draft and uses `kk:image-authoring`'s preview and payment controls. `--live` is an explicit operator instruction; unattended workflow mode still needs a separate launch-time live switch per ADR-022.
-- Shipped presets: `image-gen/presets/formats/xhs-card.yaml` and one XHS knowledge-card style under `presets/styles/`. Existing styles remain selectable. Format variables cover card role, layout, source-grounded copy, and scene; output is one image per call.
+- Shipped presets: `image-gen/presets/formats/xhs-card.yaml` and `presets/styles/xhs-knowledge.yaml` (layout/typography/consistency guidance adapted from `baoyu-xhs-images`, MIT © Jim Liu, via `plugins/kk/skills/xhs-images/references/card-layouts.md`). Existing styles remain selectable. Format variables cover card role, layout, source-grounded copy, and scene; output is one image per call.
 - `cards.json`: `{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, status }] }` (`status: pending | rendered | failed`) in display order. The authoring skill checks prompt and image existence before packaging.
 - `Content.metadata.images[]`: existing `ImageArtifact` objects; `xhs-pub` requires non-empty ordered absolute paths. `Content.metadata.publishStatus`: `draft | public`, default `draft`. Unknown status fails before browser action.
 
