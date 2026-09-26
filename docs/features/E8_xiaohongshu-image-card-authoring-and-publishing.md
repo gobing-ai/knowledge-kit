@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E8"
 name: "Xiaohongshu image-card authoring and publishing"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-25T17:55:29.129Z"
-updated_at: "2026-09-26T03:58:47.406Z"
+updated_at: "2026-09-26T07:37:17.720Z"
 ---
 
 # E8: Xiaohongshu image-card authoring and publishing
@@ -116,4 +116,5 @@ Feature: Create and publish Xiaohongshu image-card posts from source content
 - 2026-09-25T18:13:56.389Z moved Q → E8 (system)
 - 2026-09-26T02:47:12.619Z backlog → active (system)
 - 2026-09-26T03:58:47.406Z active → verifying (system)
+- 2026-09-26T07:37:17.720Z verifying → done (system)
 
