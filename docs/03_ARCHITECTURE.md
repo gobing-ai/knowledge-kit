@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.27.0
+version: 2.28.0
 created_at: 2026-07-22
 updated_at: 2026-09-25
 derived_from: [00_ADR, 01_PRD]
@@ -53,7 +53,7 @@ plugins/
     juejin-pub/       # @gobing-ai/juejin-pub — publish channel, browser/agent (Juejin) (E7)
     infoq-pub/        # @gobing-ai/infoq-pub — publish channel, browser/agent (InfoQ CN) (E7)
     substack-pub/     # @gobing-ai/substack-pub — publish channel, browser/agent (Substack) (E7)
-    xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/agent (Xiaohongshu) (E7)
+    xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/script (Xiaohongshu) (E7/E8)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
                       # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
@@ -111,11 +111,11 @@ documents deliberate per-run serialization. **Authoring a `parallel` node does n
 Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary sequential steps
 (ADR-007 R4). Engine-level concurrency is deferred, not rejected.
 
-### XHS image-card path (ADR-024, design)
+### XHS image-card path (ADR-024)
 
 `kk:xhs-images` reads source content and writes an ordered card plan and saved prompts. Each card is one `image-gen` job using an XHS preset; the skill collects the resulting `metadata.images[]` entries into one `Content` carrying the XHS note. `xhs-pub` validates the ordered local paths, attaches them through its browser transport, and returns a `Result` from observed draft or publication state. The agent handles content judgment and spend confirmation; product plugins retain image bytes, browser actions, and result validation. A failed card can resume from its saved prompt without repeating successful paid jobs.
 
-The XHS path keeps draft as the default. An explicit public switch is required before the browser submits a live post (ADR-022). The existing `xhs-pub` placeholder `sessionReady` result is not publication evidence and must be replaced before the feature can ship. Surface and artifact shapes live in `docs/design/xhs-image-cards.md`.
+The XHS path keeps draft as the default. An explicit public switch is required before the browser submits a live post (ADR-022). Task 0167 replaced the placeholder `sessionReady` stub with a Playwright script driver, verifying ordered uploads via `setInputFiles`, thumbnail counts, and browser-confirmed draft or public outcomes. Surface and artifact shapes live in `docs/design/xhs-image-cards.md`.
 
 ### Plugin kinds
 
@@ -351,7 +351,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/publishings/juejin-pub` | `@gobing-ai/juejin-pub` | Publish channel: Juejin browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/infoq-pub` | `@gobing-ai/infoq-pub` | Publish channel: InfoQ CN browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/substack-pub` | `@gobing-ai/substack-pub` | Publish channel: Substack browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
-| `plugins/publishings/xhs-pub` | `@gobing-ai/xhs-pub` | Publish channel: Xiaohongshu browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/xhs-pub` | `@gobing-ai/xhs-pub` | Publish channel: Xiaohongshu browser/script (E7/E8) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**

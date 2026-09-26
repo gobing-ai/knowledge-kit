@@ -22,6 +22,7 @@
 ## Checks and limits
 
 - Offline checks cover plan-to-card mapping, preset parsing, ordered artifact packaging, path validation, draft/public routing, and browser success/failure with a fake page/transport. One representative Chinese article should be rendered and inspected for legibility before calling the feature shippable.
+- **Verification state (2026-09-25).** Scenario `R7` was executed against real renderer runs (dry-run capture, cap refusal, failure-path stop-spend, resume of a single missing card) and `R1`–`R3` against the operator-approved paid 4-card dogfood. Scenarios `R4`–`R6` rest on the injected fake transport only: the live XHS upload/draft/public path has **not** been exercised against a real account, so `0167`'s durable verdict is `PARTIAL` and E8 stays `active` until an operator live-session dogfood (draft, then public) is performed.
 - Runtime prerequisite: `playwright` and Chromium are available to the kk install (the bundler keeps `playwright` external). If either is missing, the result is `Result.ok: false` with the install hint.
 - The implementation must verify current XHS upload UI and accepted file constraints when the browser path is built; selectors and platform limits are not frozen by this design.
 - Generated Chinese text can be misspelled. A weak card is regenerated from an edited prompt; bitmap text repair is outside scope. Saved prompts preserve the reproduction path.

@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.28.0
+version: 1.29.0
 created_at: 2026-05-28
 updated_at: 2026-09-25
 edit_rules: 99 §6.1
@@ -944,7 +944,7 @@ shared pipeline into a `packages/` library rather than chaining plugin-to-plugin
 
 ## ADR-024: XHS card planning stays in an agent skill; existing plugins render and publish
 
-**Status:** Accepted (design) · **Date:** 2026-09-25 (feature E8)
+**Status:** Accepted · **Date:** 2026-09-25 (feature E8)
 
 **Decision.** `kk:xhs-images` owns content analysis, ordered card planning, and prompt authoring. It invokes `image-gen` with XHS presets for each card and passes ordered image artifacts to `xhs-pub`. `xhs-pub` uses the existing browser transport and an explicit draft/public switch; it reports only browser-observed outcomes. For `xhs` the default driver becomes `script`, which overrides E7's agent default (ADR-008 amendment 2026-09-17; `remaining-wt-publish-harvest.md` D4) for this channel only, because an `agent`-driven page gives the plugin no evidence to build a truthful `Result`. No XHS-specific generator plugin is added.
 

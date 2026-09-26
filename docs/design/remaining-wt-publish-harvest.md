@@ -46,7 +46,7 @@ ADR-008 (amdt 2026-09-17). Feature: E7.
 | `juejin-pub` | `browser` | `agent` (script optional) | No official public write API |
 | `substack-pub` | `browser` | `agent` (script optional) | No official public write API |
 | `infoq-pub` | `browser` | `agent` (script optional) | No official public write API |
-| `xhs-pub` | `browser` | `agent` (script optional) | No official public write API |
+| `xhs-pub` | `browser` | `script` (E8/ADR-024 override from `agent` for ordered image upload) | No official public write API |
 
 Already harvested, **not** in E7: `qiita-pub`, `zenn-pub`, `surfdash-pub`.
 

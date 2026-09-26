@@ -1255,3 +1255,56 @@ Artifact written: `/Users/robin/xprojects/knowledge-kit/.spur/run/3e8e18d4-4c9f-
   candidates only, so the order is never empty — that is the invariant 0166's exhaustion error
   (`all providers failed for image <n>: …`) depends on.
 
+Repaired documentation drift across `docs/00_ADR.md`, `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`, and `docs/design/remaining-wt-publish-harvest.md` per project constitution rules (§6.0, §6.1, §6.4, §6.5, §7), without touching the task or feature corpus. Extracted working learnings for tasks 0167 and 0168 and written the artifact to `.spur/run/7bcd766d-c3ae-4023-9394-81e855fb44ae-wrapup-learnings.md`.
+
+### Drift Repairs Summary
+
+1. [docs/00_ADR.md:947](file:///Users/robin/xprojects/knowledge-kit/docs/00_ADR.md#L947):
+   - Flipped ADR-024 status from `Accepted (design)` to `Accepted` following completion and delivery of Feature E8 (tasks 0167 and 0168). Bumped frontmatter version `1.28.0` → `1.29.0` ([docs/00_ADR.md:6](file:///Users/robin/xprojects/knowledge-kit/docs/00_ADR.md#L6)).
+2. [docs/03_ARCHITECTURE.md:56](file:///Users/robin/xprojects/knowledge-kit/docs/03_ARCHITECTURE.md#L56), [114](file:///Users/robin/xprojects/knowledge-kit/docs/03_ARCHITECTURE.md#L114), [354](file:///Users/robin/xprojects/knowledge-kit/docs/03_ARCHITECTURE.md#L354):
+   - Updated system shape tree and module boundary table to reflect `xhs-pub`'s driver as `browser/script (Xiaohongshu) (E7/E8)` instead of `browser/agent`.
+   - Updated section heading `### XHS image-card path (ADR-024)` dropping the unbuilt design tag, and updated the narrative to record that task 0167 replaced the `sessionReady` stub with the Playwright script driver. Bumped frontmatter version `2.27.0` → `2.28.0` ([docs/03_ARCHITECTURE.md:6](file:///Users/robin/xprojects/knowledge-kit/docs/03_ARCHITECTURE.md#L6)).
+3. [docs/04_DESIGN.md:672](file:///Users/robin/xprojects/knowledge-kit/docs/04_DESIGN.md#L672):
+   - Added `docs/design/xhs-image-cards.md` specification row to §6 Design specifications table covering the shipped card skill, presets, Content image array, and script-driver publish flow. Bumped frontmatter version `2.34.0` → `2.35.0` ([docs/04_DESIGN.md:6](file:///Users/robin/xprojects/knowledge-kit/docs/04_DESIGN.md#L6)).
+4. [docs/design/remaining-wt-publish-harvest.md:49](file:///Users/robin/xprojects/knowledge-kit/docs/design/remaining-wt-publish-harvest.md#L49):
+   - Recorded the E8 / ADR-024 script driver override for `xhs-pub` in the per-channel policy table.
+
+---
+
+# Working Learnings: 0167, 0168
+
+## 2026-09-25 — Task 0167: Publish ordered XHS card images as a real draft or explicit live post
+
+### Conventions
+- **Driver policy for deterministic CMS**: Default to `driver: 'script'` for channels where automated file uploads and UI confirmations provide deterministic evidence. Reserve `agent` driver only for flows where an LLM agent interacts with rich text editors that lack a reliable script surface.
+- **Fail-loud step naming**: Wrap all post-open browser operations in an `act()` wrapper with step names so that failure paths emit structured `ok: false` Results naming the exact failed step instead of unhandled exceptions or generic errors.
+
+### Errors Fixed
+- **Playwright locator set count vs single locator**: Calling `locator(sel).first().count()` returns 0 or 1, not the full matching set count. Fixed thumbnail count check to use set-level `locator(sel).count()` to accurately verify that all N uploaded card images are rendered.
+- **Browser leak on failure**: Raw exceptions before context teardown risked orphaned browser instances. Fixed by ensuring `close()` runs in a guaranteed `finally` block on every code path.
+
+### Patterns
+- **Structural page seam for browser testing**: Decouple browser transport logic from Playwright by defining a minimal structural `XhsPage` interface (methods: `goto`, `locator`, `setInputFiles`, `url`, `close`). This allows 100% offline fake-page testing with mockable UI events and injected step/login timeouts without relying on real browser spin-up in unit tests.
+- **Pre-browser validation barrier**: Run pure validation (`validatePublishInput`) on image file paths (must exist, must be absolute, extensions in `.png`/`.jpg`/`.jpeg`/`.webp`), non-empty image lists, and valid `publishStatus` before acquiring or launching a browser context.
+
+### Gotchas
+- **Ambiguous live publish duplicate risk**: If the publish button is clicked but the network or navigation state times out before an unequivocal success confirmation, return `ok: false` with an explicit duplicate-risk warning so the operator does not trigger accidental double-posts.
+- **Dynamic browser loading & bundling**: Playwright must remain an external dependency in plugin bundles (`scripts/bundle-plugins.ts`). If Playwright or Chromium is absent at runtime, return `ok: false` with clear remediation commands (`bunx playwright install chromium`).
+
+## 2026-09-25 — Task 0168: Create source-grounded XHS card series with image-gen and publishable Content
+
+### Conventions
+- **Series budget cap before execution**: Enforce `KK_IMAGE_MAX_IMAGES` / `image.max_images` against the total series card count `N` before generating any prompts or calling providers, preventing multiple single-image calls from bypassing per-invocation limits.
+- **Dry-run prompt freeze**: Obtain the exact composed prompt via `KK_IMAGE_DRY_RUN=1` and write it to `<out>/cards/NN.prompt.txt` before executing paid generation, ensuring prompt reproducibility and parity with `ImageArtifact.prompt`.
+
+### Errors Fixed
+- **Double-spend on retry from assumed file extensions**: Image providers choose their own output extension (e.g. Minimax generates `.jpg` while default templates specify `.png`). Checking only for `.png` on resume caused re-rendering of existing cards. Fixed by checking the recorded artifact path or `cards/card-NN-*` glob before invoking generation.
+- **Config resolution mismatch in direct plugin execution**: Direct execution via `bun plugins/generations/image-gen/src/index.ts` bypasses CLI config loading (`~/.config/kk/config.yaml`). Fixed by ensuring required provider environment variables (`MINIMAX_API_KEY`) are exported into the shell environment during development dogfooding.
+
+### Patterns
+- **Per-card artifact isolation**: Assign each card an independent input and output stem (`cards/NN.in.json`, `cards/NN.json`, stem `card-NN`). This cleanly scopes `image-gen` failure cleanup to only the failed card, allowing safe resume without re-rendering previously generated cards or re-planning.
+- **Two-phase spend preview & confirmation**: Present one consolidated spend preview (provider, model, style preset, card count N, cover prompt, per-card copy) and require a single confirmation before initiating any paid API calls. Disclose consistency trade-offs if the selected provider lacks reference image capabilities.
+
+### Gotchas
+- **DocList input envelope format**: `image-gen` expects a DocList array (`[{ metadata.imageGen: {...} }]`), not a bare Doc object. Passing a bare Doc causes envelope validation failure.
+- **Single-point publish handoff**: Authoring skills should package `Content` and hand off to `kk:publish` rather than directly invoking transport plugins like `xhs-pub`. This ensures central enforcement of publish confirmation and draft-by-default policies.

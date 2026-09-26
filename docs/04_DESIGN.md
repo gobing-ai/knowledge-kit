@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.34.0
+version: 2.35.0
 created_at: 2026-07-22
 updated_at: 2026-09-25
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -669,6 +669,7 @@ File: `.spur/config.yaml`
 | Core-facts template & blend contract | `docs/design/core-facts-template.md` | Core-facts markdown template and fan-in merge contract prototype (F61 task 0090) |
 | Article & publish fan-out brief | `docs/design/article-publish-fanout-brief.md` | content-gen home, podcast show notes, and single-state fan-out brief (F61 task 0091) |
 | kk-itc end-to-end | `docs/design/kk-itc-end-to-end.md` | kk-itc auto/HITL path, `kk stage itc-*` publish tail, target profile table, draft-default switch per target (F41 **shipped** 2026-09-22, ADR-021/ADR-022) |
+| XHS image cards | `docs/design/xhs-image-cards.md` | XHS card series skill (`kk:xhs-images`), format `xhs-card`, style `xhs-knowledge`, ordered Content images, `xhs-pub` script-driver draft/public (E8 **shipped** 2026-09-25, ADR-024) |
 
 ## 7. Workflow resolution (run-anywhere) and `/workflow-run` surface
 
