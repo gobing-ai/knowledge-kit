@@ -441,17 +441,42 @@ export class XhsBrowserTransport implements PublishTransport {
      * value. Anything else stays an explicit failure — XHS autosave means "no signal" is not
      * evidence of a saved draft.
      */
-    private async isDraftSaved(page: XhsPage, before: number | null): Promise<boolean> {
-        // Attachment, not visibility: the saved-draft list can sit in a collapsed panel.
+    /**
+     * Which candidate save stamps are already on the page — the baseline a later check diffs
+     * against, so a pre-existing entry can never be read as this run's save.
+     */
+    private async readDraftStamps(page: XhsPage): Promise<string[]> {
+        const present: string[] = [];
         for (const stamp of XhsBrowserTransport.draftSavedStamps()) {
             const attached = await page
                 .locator(`text=${stamp}`)
                 .count()
                 .catch(() => 0);
-            if (attached > 0) return true;
+            if (attached > 0) present.push(stamp);
         }
+        return present;
+    }
+
+    /** Draft evidence captured before the editor opens (the counter only exists on that view). */
+    private async readDraftBaseline(page: XhsPage): Promise<{ count: number | null; stamps: string[] }> {
+        return { count: await this.readDraftCount(page), stamps: await this.readDraftStamps(page) };
+    }
+
+    /**
+     * A draft counts as observed only from a DELTA against the pre-entry baseline: the console's
+     * draft counter moved, or a save timestamp appeared that was not already there. A readable
+     * counter with no usable baseline is NOT evidence — XHS autosaves uploads, so "the counter
+     * exists" says nothing about this save. No delta ⇒ the caller fails loud.
+     */
+    private async isDraftSaved(
+        page: XhsPage,
+        baseline: { count: number | null; stamps: readonly string[] },
+    ): Promise<boolean> {
+        const stamps = await this.readDraftStamps(page);
+        if (stamps.some((stamp) => !baseline.stamps.includes(stamp))) return true;
         const after = await this.readDraftCount(page);
-        return after !== null && (before === null || after > before);
+        if (baseline.count === null || after === null) return false;
+        return after > baseline.count;
     }
 
     /**
@@ -529,9 +554,10 @@ export class XhsBrowserTransport implements PublishTransport {
 
             const step = (selectors: readonly string[], what: string) =>
                 findSelector(page, selectors, what, this.stepTimeoutMs);
-            // The draft counter lives on the landing view only, so it is read before the tab
-            // switch replaces the header with the image editor.
-            const draftCountBefore = publishStatus === 'draft' ? await this.readDraftCount(page) : null;
+            // The draft counter and any save timestamps exist only on the landing view, so the
+            // baseline is captured before the tab switch replaces the header with the editor.
+            const draftBaseline =
+                publishStatus === 'draft' ? await this.readDraftBaseline(page) : { count: null, stamps: [] };
             const tabSelector = await step(SELECTORS.imageTab, 'image-post tab');
             const clickInViewport = page.clickInViewport;
             if (clickInViewport) {
@@ -596,12 +622,12 @@ export class XhsBrowserTransport implements PublishTransport {
                     const clicked = await this.clickShadowControl(page, SHADOW_CONTROLS.draft);
                     if (!clicked.ok) return fail(clicked.error);
                     submitted = clicked;
-                    confirmed = await waitUntil(() => this.isDraftSaved(page, draftCountBefore), this.submitSettleMs);
+                    confirmed = await waitUntil(() => this.isDraftSaved(page, draftBaseline), this.submitSettleMs);
                 }
                 const draftCountAfter = await this.readDraftCount(page);
                 if (!confirmed || submitted === null) {
                     return fail(
-                        `draft confirmation: '${submitted?.label ?? SHADOW_CONTROLS.draft[0]}' was clicked ${attempts}× but neither a fresh ${CHANNEL} save timestamp nor a moved draft counter was observed (before=${String(draftCountBefore)}, after=${String(draftCountAfter)})`,
+                        `draft confirmation: '${submitted?.label ?? SHADOW_CONTROLS.draft[0]}' was clicked ${attempts}× but neither a fresh ${CHANNEL} save timestamp nor a moved draft counter was observed (before=${String(draftBaseline.count)}, after=${String(draftCountAfter)})`,
                     );
                 }
                 return ResultSchema.parse({
@@ -613,7 +639,7 @@ export class XhsBrowserTransport implements PublishTransport {
                         draftControl: submitted.label,
                         draftClick: `${submitted.x},${submitted.y}`,
                         draftAttempts: attempts,
-                        draftCountBefore,
+                        draftCountBefore: draftBaseline.count,
                         draftCountAfter,
                     },
                 });

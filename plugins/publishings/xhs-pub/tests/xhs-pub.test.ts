@@ -42,6 +42,10 @@ interface FakeState {
     draftSavedStamp: boolean;
     /** When true the counter is never readable, leaving the timestamp as the only signal. */
     counterUnreadable: boolean;
+    /** The counter appears only after the first submit click (a save can expose it). */
+    counterHiddenAtBaseline: boolean;
+    /** Set after any draft-control click. */
+    draftClicked: boolean;
 }
 
 /** Labels XHS uses for the draft control, inside the closed shadow publish bar. */
@@ -54,39 +58,51 @@ function makeFakePage(initial: FakeState) {
     const calls: Array<{ op: string; args: unknown[] }> = [];
     let lastShadowLabel: string | null = null;
     let bodyTyped = false;
-    const draftBoxText = () => (state.counterUnreadable || state.inEditor ? '' : `草稿箱(${state.draftCount})`);
+    // The counter lives on the landing view; the editor replaces the header.
+    const counterAttached = () =>
+        !state.counterUnreadable && !state.inEditor && !(state.counterHiddenAtBaseline && !state.draftClicked);
+    const draftBoxText = () => (counterAttached() ? `草稿箱(${state.draftCount})` : '');
     const page: XhsPage = {
         goto: async (url) => {
             calls.push({ op: 'goto', args: [url] });
         },
         locator: (selector) => {
             calls.push({ op: 'locator', args: [selector] });
+            // Faithful to the live console (task 0174): only the live preview class renders, the
+            // legacy thumbnail classes match nothing, and note-editor selectors exist only once
+            // the image editor is open — so a pre-upload editor wait is not satisfiable.
+            const isLiveThumb = selector.includes('img.preivew-image');
+            const isLegacyThumb = !isLiveThumb && selector.includes('img') && !selector.includes('file');
+            const isFileInput = selector.includes('file');
+            const isDraftBox = selector.includes('草稿箱');
+            const isStamp = selector.startsWith('text=保存于');
+            const isEditor = /contenteditable|ql-editor|post-textarea/.test(selector);
+            const isPublishConfirm = selector.includes('发布成功') || selector === 'text=已发布';
             return {
                 count: async () => {
-                    // Attachment model: the counter exists only on the landing view, the save
-                    // timestamp only once a save printed it, the file input always (hidden).
-                    if (selector.includes('img') && !selector.includes('file')) return state.thumbCount ?? 0;
-                    if (selector.startsWith('text=保存于')) return state.draftSavedStamp ? 1 : 0;
-                    if (selector.includes('草稿箱')) return state.counterUnreadable || state.inEditor ? 0 : 1;
+                    if (isLiveThumb) return state.thumbCount ?? 0;
+                    if (isLegacyThumb) return 0;
+                    if (isStamp) return state.draftSavedStamp ? 1 : 0;
+                    if (isDraftBox) return counterAttached() ? 1 : 0;
+                    if (isEditor) return state.inEditor ? 1 : 0;
                     return state.loggedIn ? 1 : 0;
                 },
                 first: () => {
-                    const isThumb = selector.includes('img') && !selector.includes('file');
-                    // Upload widgets hide the real file input behind a drop zone: attached, never visible.
-                    const isFileInput = selector.includes('file');
-                    const isDraftBox = selector.includes('草稿箱');
-                    const isPublishConfirm = selector.includes('发布成功') || selector === 'text=已发布';
-                    const isStamp = selector.startsWith('text=保存于');
+                    const isThumb = isLiveThumb;
                     const visible =
                         state.loggedIn &&
                         !isFileInput &&
                         (isThumb
                             ? (state.thumbCount ?? 0) > 0
-                            : isStamp
-                              ? state.draftSavedStamp
-                              : isPublishConfirm
-                                ? state.publishConfirm
-                                : true);
+                            : isEditor
+                              ? state.inEditor
+                              : isStamp
+                                ? state.draftSavedStamp
+                                : isDraftBox
+                                  ? counterAttached()
+                                  : isPublishConfirm
+                                    ? state.publishConfirm
+                                    : true);
                     return {
                         count: async () => (isThumb ? ((state.thumbCount ?? 0) > 0 ? 1 : 0) : visible ? 1 : 0),
                         isVisible: async () => visible,
@@ -134,6 +150,7 @@ function makeFakePage(initial: FakeState) {
             // Only the draft control moves the console's draft counter and closes the editor,
             // and only once the TipTap body actually registered content.
             if (lastShadowLabel === null || !DRAFT_LABELS.has(lastShadowLabel)) return;
+            state.draftClicked = true;
             if (state.draftSaveIsSilent || !bodyTyped) return;
             state.draftCount += 1;
             state.draftSavedStamp = true;
@@ -180,6 +197,8 @@ const happy: FakeState = {
     inEditor: false,
     draftSavedStamp: false,
     counterUnreadable: false,
+    counterHiddenAtBaseline: false,
+    draftClicked: false,
 };
 
 describe('xhs-pub validation (no browser opens)', () => {
@@ -972,5 +991,34 @@ describe('xhs-pub resilient probes (task 0174)', () => {
         expect(result.ok).toBe(false);
         expect(result.error).toContain('draft confirmation');
         expect(result.error).toContain('before=null');
+    });
+});
+
+describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (0174 review P2)', () => {
+    const publishDraft = async (state: FakeState) => {
+        await seedImages();
+        const { open } = makeOpenPage(state);
+        const t = new XhsBrowserTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 200,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+            submitAttempts: 2,
+        });
+        return t.publish({ content: cardContent() });
+    };
+
+    test('a counter that only appears after the click cannot confirm a save', async () => {
+        // The counter is unreadable before entry (no baseline) and readable but unmoved after.
+        const result = await publishDraft({ ...happy, draftSaveIsSilent: true, counterHiddenAtBaseline: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('draft confirmation');
+        expect(result.error).toContain('before=null');
+    });
+
+    test('a pre-existing save timestamp from the same minute cannot confirm a save', async () => {
+        const result = await publishDraft({ ...happy, draftSaveIsSilent: true, draftSavedStamp: true });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('draft confirmation');
     });
 });
