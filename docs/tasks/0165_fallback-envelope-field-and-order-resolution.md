@@ -4,7 +4,7 @@ name: fallback envelope field and order resolution
 status: done
 template: feature-impl
 created_at: 2026-09-25T18:06:10.765Z
-updated_at: "2026-09-25T23:27:02.616Z"
+updated_at: "2026-09-26T02:23:57.886Z"
 feature_id: D6
 
 dependencies: []
@@ -95,8 +95,8 @@ Rationale: pure function with availability injected via `skipReason` keeps `type
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | Req1 — `fallback?: true | string[]` on the envelope; non-empty list of non-empty strings; absent = strict; `false`/`[]`/non-string/`''` fail parse | MET | Type: `src/job.ts:34`; zod shape `z.union([z.literal(true), z.array(z.string().min(1)).min(1)]).optional()`: `src/job.ts:55-56`; table `tests/job.test.ts:78-102` — `true` (78), `['google','zai']` (82-84), absent (87-88), `false` (91-92), `[]` (95-96), `[1]`/`['']` (99-101) |
-| Req2 (feature R3) — `resolveFallbackOrder` contract | MET | `src/providers/types.ts:336-375`: absent → `[requested]` (341-343; test 189-191); `true` → requested then AUTO_ORDER minus NEVER_AUTO minus requested in AUTO_ORDER order (346-347; expected 12-name list matches AUTO_ORDER at types.ts:218-231, test 193-210); list → requested-first, first-occurrence dedupe via `seen` Set seeded with requested, minus requested (348-361; test 219-222); unknown name throws `Unknown fallback provider '<x>'. Valid providers: …` (353-355; mirrors `selectProvider`'s convention at types.ts:284; test 224-231) before the `skipReason` walk, i.e. before any provider call; explicit NEVER_AUTO kept — the list branch never consults `NEVER_AUTO` (test 233-235); `skipReason` consulted for candidates only, never requested (363-371; tests 237-254, 257-268, 270-279) |
-| Req3 (feature R6) — selection unchanged | MET | `git diff` vs base on `types.ts` is two purely-additive hunks (errors re-export 0164 scope; append after line 302) — `selectProvider` body (types.ts:259-304) byte-untouched; both test-file diffs are purely additive (zero removed lines); all existing `selectProvider` tests green in the 61-pass run |
+| R3 — Explicit fallback list is honored in order | MET | `src/providers/types.ts:336-375`: absent → `[requested]` (341-343; test 189-191); `true` → requested then AUTO_ORDER minus NEVER_AUTO minus requested in AUTO_ORDER order (346-347; expected 12-name list matches AUTO_ORDER at types.ts:218-231, test 193-210); list → requested-first, first-occurrence dedupe via `seen` Set seeded with requested, minus requested (348-361; test 219-222); unknown name throws `Unknown fallback provider '<x>'. Valid providers: …` (353-355; mirrors `selectProvider`'s convention at types.ts:284; test 224-231) before the `skipReason` walk, i.e. before any provider call; explicit NEVER_AUTO kept — the list branch never consults `NEVER_AUTO` (test 233-235); `skipReason` consulted for candidates only, never requested (363-371; tests 237-254, 257-268, 270-279) |
+| R6 — Explicit unknown or unconfigured provider still throws at selection | MET | `git diff` vs base on `types.ts` is two purely-additive hunks (errors re-export 0164 scope; append after line 302) — `selectProvider` body (types.ts:259-304) byte-untouched; both test-file diffs are purely additive (zero removed lines); all existing `selectProvider` tests green in the 61-pass run |
 | AC1 — explicit fallback list honored in order (R3) | MET | `tests/providers.test.ts:212-217` — "an explicit list is honored in exactly the given order (AC1)": `['google','zai']` → `['minimax','google','zai']` |
 | AC2 — explicit unknown/unconfigured provider still throws at selection (R6) | MET | Unmodified throw tests pass: unknown name lists all 13 valid names (`tests/providers.test.ts:150-157`), known-but-unconfigured names provider + env (`165-168`); source untouched per additive-only diff |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
