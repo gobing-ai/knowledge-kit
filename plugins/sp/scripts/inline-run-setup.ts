@@ -336,9 +336,25 @@ const TERMINAL_REASONS = new Set([
 /** Finalize statuses — a finish emission is terminal, so only done|failed are valid (0868 #4). */
 const ACTION_STATUSES = new Set(['done', 'failed']);
 
-/** Input for the ADR-117 emission modes (`--action` / `--close`). */
-import type { WorkflowActionTraceWriter } from '@gobing-ai/spur-app';
+/**
+ * Structural shape of the shared ADR-117 trace writer as this script uses it. Declared locally,
+ * never imported: this script ships to user projects that have no `@gobing-ai/*` in node_modules
+ * (`shipped-script-isolation`), so the concrete type arrives with the dynamically imported app
+ * entry at runtime instead.
+ */
+interface InlineActionTraceWriter {
+    recordAction(action: {
+        readonly runId: string;
+        readonly node: string;
+        readonly kind: string;
+        readonly status: string;
+        readonly ok: boolean;
+        readonly durationMs: number;
+    }): Promise<unknown>;
+    closeRun(runId: string, status: string, detail: unknown, reason?: string): Promise<unknown>;
+}
 
+/** Input for the ADR-117 emission modes (`--action` / `--close`). */
 interface TraceModeInput {
     readonly runId: string;
     readonly close: boolean;
@@ -414,7 +430,7 @@ async function runTraceMode(input: TraceModeInput): Promise<number> {
             createWorkflowActionTraceWriter: (
                 db: unknown,
                 recordFailure?: (failure: unknown) => void,
-            ) => WorkflowActionTraceWriter;
+            ) => InlineActionTraceWriter;
         };
 
         projectDb = await app.openInlineRunProjectDb(process.cwd());
