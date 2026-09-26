@@ -4,7 +4,7 @@ name: runJob fallback retry loop with daily-cover opt-in
 status: done
 template: feature-impl
 created_at: 2026-09-25T18:06:11.062Z
-updated_at: "2026-09-26T00:15:47.721Z"
+updated_at: "2026-09-26T05:54:17.632Z"
 feature_id: D6
 
 dependencies: ["0164", "0165", "0169"]
@@ -139,9 +139,9 @@ Each entry cites the first changed line per file (`file:line`).
 |-------------|--------|----------|
 | R1 | MET | Strict rethrow of the original error: `plugins/generations/image-gen/src/index.ts:327-328`; absent `fallback` → single-entry order: `plugins/generations/image-gen/src/providers/types.ts:341-343`; test proves same Error instance, zero second-provider calls, silent stderr, `--out` removed: `plugins/generations/image-gen/tests/fallback.test.ts:142-163`; `adapter.test.ts`/`image-gen.test.ts` unmodified (not in `git status`) and all 356 image-gen tests pass unmodified |
 | R2 | MET | WARN emitted before the hop: `plugins/generations/image-gen/src/index.ts:348`; candidate uses its own `defaultModel()` (`index.ts:312-314`); failed attempt pushed as `{image, provider, model, errorClass, message}` (`index.ts:338`, type `plugins/generations/image-gen/src/job.ts:98-112`), `attempts?` present only when non-empty (`job.ts:121`, `index.ts:407`); winner lands in `images[i].provider/.model` via `result.provider/model` (`index.ts:369-377`); test asserts WARN text precedes stub 2's call (onCall probe), candidate's own model, and `attempts[0]`: `plugins/generations/image-gen/tests/fallback.test.ts:165-190`; winning-provider assertion also at `fallback.test.ts:243-262`; AUTO_ORDER walk (`true`): `plugins/generations/image-gen/src/providers/types.ts:218-231,347` |
-| R4 | MET | Non-eligible class (policy) throws the exact R4 message and no further provider is called: `plugins/generations/image-gen/src/index.ts:333-336`; classifier checks policy first (`plugins/generations/image-gen/src/providers/errors.ts:88-96`, `isFallbackEligible` at `errors.ts:101-103`); test: one stub call, zero google calls, exact message, `--out` removed: `plugins/generations/image-gen/tests/fallback.test.ts:215-226` |
+| R4 | MET | Non-eligible class (policy) throws the exact R4 message and no further provider is called: `plugins/generations/image-gen/src/index.ts:333-336`; classifier checks policy first (`plugins/generations/image-gen/src/providers/errors.ts:69-83`, `isFallbackEligible` at `errors.ts:89-91`); test: one stub call, zero google calls, exact message, `--out` removed: `plugins/generations/image-gen/tests/fallback.test.ts:215-226` |
 | R5 | MET | Exhausted order throws `image-gen: all providers failed for image <n>: <p> (<class>), …; <last message>` built from this image's attempt slice: `plugins/generations/image-gen/src/index.ts:339-347`; test pre-seeds a stale `--out` and asserts the exact message plus deletion: `plugins/generations/image-gen/tests/fallback.test.ts:228-241` |
-| R7 | MET | 6th positional `<fallback>`: `plugins/kk/scripts/kk-workflow-stages.ts:910`; `''`→no field / `true`→`fallback: true` / else comma-split, trimmed list: `kk-workflow-stages.ts:931-941`; workflow var `cover_fallback: ""` and pass-through arg: `plugins/kk/workflows/kk-daily-ai-voice.yaml:44,196`; stage test asserts envelopes `undefined`/`true`/`['google','zai']`: `apps/cli/tests/kk-workflow-stages.test.ts:993-1014`; exact command strings + `cover_fallback: ""`: `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:82,140,211` |
+| R7 | MET | 6th positional `<fallback>`: `plugins/kk/scripts/kk-workflow-stages.ts:910`; `''`→no field / `true`→`fallback: true` / else comma-split, trimmed list: `kk-workflow-stages.ts:931-941`; workflow var `cover_fallback: ""` and pass-through arg: `plugins/kk/workflows/kk-daily-ai-voice.yaml:50,202`; stage test asserts envelopes `undefined`/`true`/`['google','zai']`: `apps/cli/tests/kk-workflow-stages.test.ts:1122-1143`; exact command strings + `cover_fallback: ""`: `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:87,145,216` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
@@ -149,7 +149,7 @@ Each entry cites the first changed line per file (`file:line`).
 | AC2 — fallback true retries down AUTO_ORDER after a loud log (req: R2) | MET | test | `plugins/generations/image-gen/tests/fallback.test.ts:165` — WARN `falling back to google` captured before stub 2's `onCall`, candidate sends own default model, `metadata.attempts[0]` recorded; AUTO_ORDER minus NEVER_AUTO filter at `plugins/generations/image-gen/src/providers/types.ts:347` |
 | AC3 — Content-policy rejections never fall back (req: R4) | MET | test | `plugins/generations/image-gen/tests/fallback.test.ts:215` — rejects with `(policy)` message; `google.requests` length 0; `--out` removed |
 | AC4 — Exhausted fallback order fails loudly (req: R5) | MET | test | `plugins/generations/image-gen/tests/fallback.test.ts:228` — exact `all providers failed for image 1: minimax (auth), google (quota); <msg>`; both stubs called once; `--out` removed |
-| AC5 — Daily cover opts into fallback through a workflow var (req: R7) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:993` — `''`/`true`/`'google, zai'` map to `undefined`/`true`/`['google','zai']` on the built envelope; `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:82,140,211` — var ships `""` and reaches the stage command |
+| AC5 — Daily cover opts into fallback through a workflow var (req: R7) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1122` — `''`/`true`/`'google, zai'` map to `undefined`/`true`/`['google','zai']` on the built envelope; `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:87,145,216` — var ships `""` and reaches the stage command |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -162,7 +162,6 @@ Each entry cites the first changed line per file (`file:line`).
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
 | P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
-| P4 | proof-input-digest | — | sha256:c8597aa0cea650bc2dfd9eb89f7b508ef6d080cc3d14a4435c36efa43395f30d |
 
 ### References
 
