@@ -69,6 +69,14 @@ export interface ImageProvider {
     generate(req: ImageRequest): Promise<ImageResult>;
 }
 
+/**
+ * Provider error classification for the runtime fallback loop (task 0164; consumed by 0166).
+ * Declared in `./errors`, a leaf module like `./timeouts`, so adapters can classify throw sites
+ * later without entering the registry import cycle.
+ */
+export type { ProviderErrorClass } from './errors';
+export { classifyProviderError, isFallbackEligible } from './errors';
+
 /** Injection seam for tests — mirrors `VoiceboxClientOptions.fetch` (voice-gen). */
 /**
  * Default per-request timeout for every image-gen provider HTTP call. Defined in `./timeouts` (a
@@ -293,4 +301,75 @@ export function selectProvider(
         })
         .join('; ');
     throw new Error(`No image provider is configured. Credentials wanted — ${wanted}`);
+}
+
+/**
+ * D6 runtime fallback (task 0165) — the envelope's `fallback` field as the schema admits it:
+ * absent (strict), `true` (AUTO_ORDER), or an explicit ordered list. Shape-only; name validation
+ * happens in {@link resolveFallbackOrder}, because `job.ts` must not import this registry.
+ */
+export type FallbackSpec = true | readonly string[] | undefined;
+
+/** The ordered candidate list the retry loop (task 0166) walks, plus every dropped candidate. */
+export interface FallbackOrder {
+    /** Invariant: non-empty, no duplicates, `order[0] === requested`. */
+    order: string[];
+    /** Candidates dropped because `skipReason` returned a string; never contains `requested`. */
+    skipped: { provider: string; reason: string }[];
+}
+
+/**
+ * Turn the envelope's `fallback` field into the candidate order for the retry loop (task 0166).
+ * Pure: availability and reference support arrive through `skipReason`, which 0166 builds from
+ * provider instances — nothing here constructs or calls a provider. Behaviour:
+ *
+ * - absent → `[requested]` (strict, today's fail-fast).
+ * - `true` → `requested`, then AUTO_ORDER minus NEVER_AUTO minus `requested`, in AUTO_ORDER order.
+ * - list → `requested`, then the list in the given order, deduped and minus `requested`.
+ *
+ * An unknown name in a list throws before any provider call, because a typo must fail loud, not
+ * silently shrink the chain. An explicitly listed NEVER_AUTO provider is allowed: NEVER_AUTO
+ * governs automatic choice only (mirrors selectProvider's explicit pin rule). `skipReason` is
+ * consulted for candidates only — never `requested`, so `order` always keeps the already-selected
+ * provider first.
+ */
+export function resolveFallbackOrder(
+    requested: string,
+    fallback: FallbackSpec,
+    options?: { skipReason?: (name: string) => string | undefined },
+): FallbackOrder {
+    if (fallback === undefined) {
+        return { order: [requested], skipped: [] };
+    }
+
+    let candidates: readonly string[];
+    if (fallback === true) {
+        candidates = AUTO_ORDER.filter((name) => !NEVER_AUTO.has(name) && name !== requested);
+    } else {
+        const names = Object.keys(PROVIDERS).sort();
+        const seen = new Set<string>([requested]);
+        const listed: string[] = [];
+        for (const name of fallback) {
+            if (PROVIDERS[name] === undefined) {
+                throw new Error(`Unknown fallback provider '${name}'. Valid providers: ${names.join(', ')}`);
+            }
+            if (!seen.has(name)) {
+                seen.add(name);
+                listed.push(name);
+            }
+        }
+        candidates = listed;
+    }
+
+    const order = [requested];
+    const skipped: { provider: string; reason: string }[] = [];
+    for (const name of candidates) {
+        const reason = options?.skipReason?.(name);
+        if (reason === undefined) {
+            order.push(name);
+        } else {
+            skipped.push({ provider: name, reason });
+        }
+    }
+    return { order, skipped };
 }

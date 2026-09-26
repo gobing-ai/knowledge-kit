@@ -38,6 +38,10 @@ vars:
   # credentials the machine has (2026-09-24 run: minimax/image-01).
   cover_provider: "minimax"
   cover_model: "image-01"
+  # D6 0166: runtime-fallback opt-in for the cover render — "" (default) keeps strict fail-fast,
+  # "true" retries down AUTO_ORDER, anything else is a comma-separated provider list. The empty
+  # default keeps F614's pinned look the default; availability trades against it only on opt-in.
+  cover_fallback: ""
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
@@ -189,7 +193,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kk stage daily-cover "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cover_provider}" "${vars.cover_model}"
+            kk stage daily-cover "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cover_provider}" "${vars.cover_model}" "${vars.cover_fallback}"
       - kind: shell
         options:
           command: >-

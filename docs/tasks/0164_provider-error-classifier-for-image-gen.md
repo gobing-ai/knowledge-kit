@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: provider error classifier for image-gen
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-25T18:06:10.483Z
-updated_at: "2026-09-25T20:02:21.255Z"
+updated_at: "2026-09-25T23:05:49.567Z"
 feature_id: D6
 
 ---
@@ -19,13 +19,13 @@ This task adds one pure classifier over those shapes. It changes no provider and
 
 ### Requirements
 
-- [ ] R4. `classifyProviderError(err: unknown): ProviderErrorClass` returns `policy` for content-policy, safety, or moderation rejections. `isFallbackEligible(cls)` is `false` for `policy` only. Policy is checked first because such rejections often arrive as HTTP 400/403.
-- [ ] (supports R2, R5) The other classes follow the Design rule table in the order auth → quota → transient, and anything unmatched is `unknown`. Non-`Error` values classify as `unknown`, and the function never throws.
-- [ ] The classifier is pure (no I/O, no env, no provider imports) and lives in a leaf module, so any provider can import it later without a registry cycle.
+- [x] R4. `classifyProviderError(err: unknown): ProviderErrorClass` returns `policy` for content-policy, safety, or moderation rejections. `isFallbackEligible(cls)` is `false` for `policy` only. Policy is checked first because such rejections often arrive as HTTP 400/403.
+- [x] (supports R2, R5) The other classes follow the Design rule table in the order auth → quota → transient, and anything unmatched is `unknown`. Non-`Error` values classify as `unknown`, and the function never throws.
+- [x] The classifier is pure (no I/O, no env, no provider imports) and lives in a leaf module, so any provider can import it later without a registry cycle.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Content-policy rejections never fall back (req: R4)
+- [x] AC1 — Content-policy rejections never fall back (req: R4)
 
 ### Q&A
 
@@ -76,15 +76,44 @@ Rejected: typed `ProviderError` across adapters (see Q&A), and a per-provider cl
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Pure leaf classifier, exactly the frozen Design; no provider or runtime behavior touched (0166 consumes it).
+
+- `plugins/generations/image-gen/src/providers/errors.ts:25` — `ProviderErrorClass` union (`auth | quota | transient | policy | unknown`), no imports (leaf, like `timeouts.ts`).
+- `plugins/generations/image-gen/src/providers/errors.ts:69` — `classifyProviderError(err: unknown)`: parses statuses from the three adapter shapes (`(NNN)`, `HTTP NNN`, trailing `: NNN`), reads `err.name`/`message` duck-typed (never throws; non-objects → `unknown`), first matching row wins in the load-bearing order policy → auth → quota → transient → unknown, regexes verbatim from the Design table.
+- `plugins/generations/image-gen/src/providers/errors.ts:89` — `isFallbackEligible(cls)` = `cls !== 'policy'` (D6 R4/AC1).
+- `plugins/generations/image-gen/src/providers/types.ts:73-78` — re-exports `ProviderErrorClass` + both functions so `types.ts` stays the public surface; placed alphabetically before the existing `./timeouts` re-export per Biome's export sort (no other types.ts change).
+- `plugins/generations/image-gen/tests/provider-errors.test.ts:9-31` — fixture table copying real adapter throw strings (seedream 401 / missing ARK key, MiniMax 429 / insufficient balance / no-image-data, HuggingFace 503 model-loading, Google 400 SAFETY / 403 permission denied, OpenAI content_policy_violation body, DOMException `TimeoutError`, trailing-status download 401, plain-string `'boom'`); precedence rows (policy>auth, auth>quota, quota>transient, abort-name and 408 transient), never-throws junk sweep, and `isFallbackEligible` per class incl. AC1.
+
+Rationale: message+name matching over a typed `ProviderError` retyping of 13 adapters, per closed Q&A; `unknown` stays fallback-eligible (Q&A, operator may override via 0166 config).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R4 — classifyProviderError returns policy for content-policy/safety/moderation; isFallbackEligible false for policy only; policy checked first | MET | `plugins/generations/image-gen/src/providers/errors.ts:28` (POLICY_RE matches Design regex verbatim), `:72` (policy row first), `:90` (`cls !== 'policy'`); precedence test `plugins/generations/image-gen/tests/provider-errors.test.ts:49` (safety rejection on 403 → policy, never falls back) — all pass this run |
+| (supports R2, R5) — other classes follow Design table order auth → quota → transient; unmatched → unknown; non-Error → unknown; never throws | MET | `plugins/generations/image-gen/src/providers/errors.ts:73-74` (auth → quota rows), `:75-82` (transient: name set / 408+5xx / TRANSIENT_RE, then unknown); junk sweep test `tests/provider-errors.test.ts:38` (null/undefined/42/true/Symbol/{}/[]/Date → unknown); precedence tests `tests/provider-errors.test.ts:55,59,63,67` — all pass this run |
+| Classifier is pure (no I/O, no env, no provider imports) and lives in a leaf module | MET | `plugins/generations/image-gen/src/providers/errors.ts` has zero import/require statements (grep count 0 this run); leaf placement mirrors `src/providers/timeouts.ts:1-13` registry-cycle rationale; re-exported via `plugins/generations/image-gen/src/providers/types.ts:77-78` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Content-policy rejections never fall back (req: R4) | MET | test | `plugins/generations/image-gen/tests/provider-errors.test.ts:80` ("classified policy rejections are never fallback-eligible (AC1)") + `:77`; `bun test tests/provider-errors.test.ts` → 22 pass, 0 fail this run |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | spur task check | — | task check passed |
+| P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
+| P4 | proof-input-digest | — | sha256:12dcfb9f60f7d53670b45eaac90db629c8438dc03cfe6ddb71c889992bc083ce |
 
 ### References
 
@@ -96,4 +125,7 @@ Rejected: typed `ProviderError` across adapters (see Q&A), and a per-provider cl
 ### History
 
 - 2026-09-25T20:02:21.255Z backlog → todo (system)
+- 2026-09-25T22:48:54.143Z todo → wip (system)
+- 2026-09-25T23:05:34.459Z wip → testing (system)
+- 2026-09-25T23:05:49.567Z testing → done (system)
 

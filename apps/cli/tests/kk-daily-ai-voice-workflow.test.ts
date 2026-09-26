@@ -78,6 +78,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // depends on which credentials the machine has.
         expect(yaml).toContain('cover_provider: "minimax"');
         expect(yaml).toContain('cover_model: "image-01"');
+        // D6 0166: the runtime-fallback opt-in ships absent — strict fail-fast stays the default.
+        expect(yaml).toContain('cover_fallback: ""');
         // F613 0162 R3: script-write authors the per-item plan; "false" routes straight to script.
         expect(yaml).toContain('script_write_enabled: "true"');
         expect(yaml).toContain('publish_enabled: "false"');
@@ -135,7 +137,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(block).toContain('{"subject": "..."}');
         // R3: the stage owns the pinned render; normalize is unchanged.
         expect(block).toContain(
-            `kk stage daily-cover "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.cover_provider}" "${'$'}{vars.cover_model}"`,
+            `kk stage daily-cover "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.cover_provider}" "${'$'}{vars.cover_model}" "${'$'}{vars.cover_fallback}"`,
         );
         expect(block).toContain(`kk stage daily-cover-normalize "${workDir}" "${runDate}"`);
         // The canonical downstream artifact keeps its name (podcast + surfdash read it).
@@ -206,7 +208,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-plan "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.plan_max_items}"`,
             `kk stage daily-qc-content "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_categories}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `kk stage daily-article "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `kk stage daily-cover "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.cover_provider}" "\${vars.cover_model}"`,
+            `kk stage daily-cover "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.cover_provider}" "\${vars.cover_model}" "\${vars.cover_fallback}"`,
             `kk stage daily-cover-normalize "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-script-style "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-script "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.language}" "\${vars.title}" "\${vars.voice_profile}"`,

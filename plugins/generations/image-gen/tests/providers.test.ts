@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
     AUTO_ORDER,
+    type FallbackOrder,
     type ImageProvider,
     type ImageRequest,
     type ImageResult,
     PROVIDERS,
     type ProviderFactory,
+    resolveFallbackOrder,
     selectProvider,
 } from '../src/providers/types';
 
@@ -180,6 +182,100 @@ describe('selectProvider resolution order (R3)', () => {
         expect(selectProvider('codex-cli', { env: {}, isAvailable: (name) => name === 'codex-cli' })).toBe('codex-cli');
         const unavailable = (): string => selectProvider('codex-cli', { env: {} });
         expect(unavailable).toThrow("Provider 'codex-cli' is not available: requires the 'codex' CLI");
+    });
+});
+
+describe('resolveFallbackOrder (0165, feature D6 R3)', () => {
+    test('absent fallback resolves to just the selected provider — strict behaviour preserved', () => {
+        expect(resolveFallbackOrder('minimax', undefined)).toEqual({ order: ['minimax'], skipped: [] });
+    });
+
+    test('true follows AUTO_ORDER after requested, excluding codex-cli, keeping AUTO_ORDER order', () => {
+        const { order, skipped } = resolveFallbackOrder('minimax', true);
+        expect(order).toEqual([
+            'minimax',
+            'huggingface',
+            'google',
+            'openai',
+            'replicate',
+            'openrouter',
+            'dashscope',
+            'seedream',
+            'zai',
+            'jimeng',
+            'azure',
+            'agnes',
+        ]);
+        expect(skipped).toEqual([]);
+    });
+
+    test('an explicit list is honored in exactly the given order (AC1)', () => {
+        expect(resolveFallbackOrder('minimax', ['google', 'zai'])).toEqual({
+            order: ['minimax', 'google', 'zai'],
+            skipped: [],
+        });
+    });
+
+    test('a list keeps first-occurrence order, dedupes, and drops requested', () => {
+        const { order } = resolveFallbackOrder('google', ['zai', 'google', 'openai', 'zai']);
+        expect(order).toEqual(['google', 'zai', 'openai']);
+    });
+
+    test('an unknown list name throws naming it and the valid set', () => {
+        const action = (): FallbackOrder => resolveFallbackOrder('minimax', ['google', 'imagen', 'zai']);
+        expect(action).toThrow("Unknown fallback provider 'imagen'");
+        expect(action).toThrow('Valid providers:');
+        for (const valid of ['zai', 'codex-cli', 'minimax']) {
+            expect(action).toThrow(valid);
+        }
+    });
+
+    test('an explicitly listed NEVER_AUTO provider is kept — NEVER_AUTO governs automatic choice only', () => {
+        expect(resolveFallbackOrder('minimax', ['codex-cli', 'zai']).order).toEqual(['minimax', 'codex-cli', 'zai']);
+    });
+
+    test('skipReason drops a candidate into skipped, in walk order, and never touches requested', () => {
+        const { order, skipped } = resolveFallbackOrder('minimax', true, {
+            skipReason: (name) => (name === 'huggingface' ? 'missing HUGGINGFACE_API_TOKEN' : undefined),
+        });
+        expect(order).toEqual([
+            'minimax',
+            'google',
+            'openai',
+            'replicate',
+            'openrouter',
+            'dashscope',
+            'seedream',
+            'zai',
+            'jimeng',
+            'azure',
+            'agnes',
+        ]);
+        expect(skipped).toEqual([{ provider: 'huggingface', reason: 'missing HUGGINGFACE_API_TOKEN' }]);
+    });
+
+    test('requested is never asked of skipReason — the order always starts with the selected provider', () => {
+        const asked: string[] = [];
+        const { order, skipped } = resolveFallbackOrder('google', ['google', 'zai'], {
+            skipReason: (name) => {
+                asked.push(name);
+                return 'unconfigured';
+            },
+        });
+        expect(order).toEqual(['google']);
+        expect(skipped).toEqual([{ provider: 'zai', reason: 'unconfigured' }]);
+        expect(asked).toEqual(['zai']);
+    });
+
+    test('every candidate skipped still leaves a non-empty order led by requested (R5 exhaustion input)', () => {
+        const { order, skipped } = resolveFallbackOrder('openai', ['zai', 'minimax'], {
+            skipReason: () => 'no reference support',
+        });
+        expect(order).toEqual(['openai']);
+        expect(skipped).toEqual([
+            { provider: 'zai', reason: 'no reference support' },
+            { provider: 'minimax', reason: 'no reference support' },
+        ]);
     });
 });
 

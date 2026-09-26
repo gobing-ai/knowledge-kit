@@ -938,12 +938,13 @@ describe('F614 (0163) — daily-cover stage', () => {
         env: Record<string, string>,
         provider = 'minimax',
         model = 'image-01',
+        fallback = '',
     ): {
         status: number;
         stdout: string;
         stderr: string;
     } {
-        return run(['daily-cover', dir, '20260101', 'plugins', provider, model], env);
+        return run(['daily-cover', dir, '20260101', 'plugins', provider, model, fallback], env);
     }
 
     it('daily-cover writes the brief subject into the pinned image-gen envelope and invokes the plugin', () => {
@@ -986,6 +987,29 @@ describe('F614 (0163) — daily-cover stage', () => {
                 provider: 'minimax',
                 model: 'image-01',
             });
+        });
+    });
+
+    it('daily-cover maps the 6th fallback arg onto the envelope: absent / true / comma list (D6 0166 R7)', () => {
+        withTempDir((dir) => {
+            const cover = join(dir, '2-cover');
+            mkdirSync(cover, { recursive: true });
+            writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
+            const env = fakeImageGen(dir);
+            const envLog = join(dir, 'envs.log');
+            const options = { ...env, KK_TEST_ENV_LOG: envLog };
+
+            // '' (the shipped var default) keeps strict: no fallback field, F614's pinned look.
+            expect(runDailyCover(dir, options, 'minimax', 'image-01', '').status).toBe(0);
+            // 'true' opts into the AUTO_ORDER retry.
+            expect(runDailyCover(dir, options, 'minimax', 'image-01', 'true').status).toBe(0);
+            // Anything else is a comma-split, trimmed candidate list.
+            expect(runDailyCover(dir, options, 'minimax', 'image-01', 'google, zai').status).toBe(0);
+
+            const envelopes = imageGens(readFileSync(envLog, 'utf-8'));
+            expect(envelopes[0]?.fallback).toBeUndefined();
+            expect(envelopes[1]?.fallback).toBe(true);
+            expect(envelopes[2]?.fallback).toEqual(['google', 'zai']);
         });
     });
 

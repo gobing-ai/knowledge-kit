@@ -1,5 +1,6 @@
 import type { Doc } from '@gobing-ai/kk-core';
 import { z } from 'zod';
+import type { ProviderErrorClass } from './providers/errors';
 
 /**
  * Task 0104 — the frozen `--in` envelope. A plugin's only input channel is the
@@ -25,6 +26,13 @@ export interface ImageJobSpec {
     extra?: string;
     /** 0103 selectProvider's `requested` name. */
     provider?: string;
+    /**
+     * D6 runtime fallback (0165). Absent = strict: one provider, fail fast. `true` = on a
+     * fallback-eligible error retry down AUTO_ORDER (minus NEVER_AUTO). A list = retry in exactly
+     * that order. Name validation lives in resolveFallbackOrder — this file must not import the
+     * provider registry (it pulls in every adapter).
+     */
+    fallback?: true | string[];
     model?: string;
     /** Absolute paths (0105 pass-through). */
     referenceImages?: string[];
@@ -45,6 +53,8 @@ export const ImageJobSpecSchema = z.strictObject({
     vars: z.record(z.string(), z.string()).optional(),
     extra: z.string().optional(),
     provider: z.string().optional(),
+    /** Absent = strict; `true` or a non-empty list of non-empty strings. `false`/`[]` fail so "off" has one spelling. */
+    fallback: z.union([z.literal(true), z.array(z.string().min(1)).min(1)]).optional(),
     model: z.string().optional(),
     referenceImages: z.array(z.string()).optional(),
     count: z.number().int().positive().optional(),
@@ -80,6 +90,24 @@ export interface CaptionEntry {
     anchor: string;
 }
 
+/**
+ * One failed provider try, recorded by the D6 fallback loop (task 0166). The classifier class lives
+ * in `./providers/errors` — a leaf module with no imports — so this file stays clear of the
+ * provider registry (which pulls in every adapter).
+ */
+export interface ProviderAttempt {
+    /** 1-based image number in the run (same scale as `captions[].index` and the `-NN` artefact suffix). */
+    image: number;
+    /** The provider whose validate/generate call failed. */
+    provider: string;
+    /** The model the failed call sent (`spec.model` on the requested provider, else its default). */
+    model: string;
+    /** The 0164 classification that drove the retry decision. */
+    errorClass: ProviderErrorClass;
+    /** The failed call's own error message, unwrapped. */
+    message: string;
+}
+
 /** Typed shape of this plugin's `Content.metadata` (frozen keys, 0104 Design). */
 export interface ImageGenMetadata {
     generator: 'kk:image-gen';
@@ -89,6 +117,8 @@ export interface ImageGenMetadata {
     sourceDocId?: string;
     /** Illustration only: the captions payload. */
     captions?: CaptionEntry[];
+    /** D6 fallback (0166): every failed provider try in attempt order; present only when non-empty. */
+    attempts?: ProviderAttempt[];
     /** Set only when the run spent nothing (R6 dry run). */
     dryRun?: true;
 }

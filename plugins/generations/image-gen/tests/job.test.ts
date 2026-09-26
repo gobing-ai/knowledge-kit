@@ -74,6 +74,34 @@ describe('R1 — the spec fails loud with the frozen path and job list', () => {
     });
 });
 
+describe('D6 — fallback envelope field (0165)', () => {
+    test('fallback true parses', () => {
+        expect(ImageJobSpecSchema.parse({ job: 'cover', fallback: true })).toEqual({ job: 'cover', fallback: true });
+    });
+
+    test('an explicit fallback list parses in the given order', () => {
+        const spec: ImageJobSpec = { job: 'cover', fallback: ['google', 'zai'] };
+        expect(ImageJobSpecSchema.parse(spec)).toEqual(spec);
+    });
+
+    test('absent fallback parses — strict is the default', () => {
+        expect(ImageJobSpecSchema.parse({ job: 'free' })).toEqual({ job: 'free' });
+    });
+
+    test('fallback false fails parse — "off" has one spelling (absent)', () => {
+        expect(() => ImageJobSpecSchema.parse({ job: 'free', fallback: false })).toThrow(/fallback/);
+    });
+
+    test('an empty fallback list fails parse', () => {
+        expect(() => ImageJobSpecSchema.parse({ job: 'free', fallback: [] })).toThrow(/fallback/);
+    });
+
+    test('a non-string entry and an empty-string entry fail parse', () => {
+        expect(() => ImageJobSpecSchema.parse({ job: 'free', fallback: [1] })).toThrow(/fallback/);
+        expect(() => ImageJobSpecSchema.parse({ job: 'free', fallback: [''] })).toThrow(/fallback/);
+    });
+});
+
 describe('R4 handoff — metadata.positions shape', () => {
     test('absent positions read as undefined', () => {
         expect(readPositions([docWith(undefined)])).toBeUndefined();

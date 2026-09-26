@@ -9,12 +9,22 @@ import {
     type ImageArtifact,
     type ImageGenMetadata,
     type ImageJobSpec,
+    type ProviderAttempt,
     parseJobSpec,
     readPositions,
 } from './job';
 import { artifactPath, outStemFor } from './paths';
 import { composePrompt, type FormatPreset, loadPresets, type StylePreset } from './presets';
-import { type ImageProvider, type ImageRequest, PROVIDERS, selectProvider } from './providers/types';
+import {
+    classifyProviderError,
+    type ImageProvider,
+    type ImageRequest,
+    type ImageResult,
+    isFallbackEligible,
+    PROVIDERS,
+    resolveFallbackOrder,
+    selectProvider,
+} from './providers/types';
 
 export * from './job';
 export * from './paths';
@@ -39,6 +49,16 @@ function defaultProviderResolver(spec: ImageJobSpec): ImageProvider {
     const registration = PROVIDERS[name];
     if (registration === undefined) {
         // selectProvider only returns registered names; this guards selector/registry drift.
+        throw new Error(`Provider '${name}' was selected but is missing from the registry`);
+    }
+    return registration.create();
+}
+
+/** Build a fallback candidate from the registry; guards registry drift like defaultProviderResolver. */
+function registeredProvider(name: string): ImageProvider {
+    const registration = PROVIDERS[name];
+    if (registration === undefined) {
+        // resolveFallbackOrder rejects unknown names before this runs; this guards drift only.
         throw new Error(`Provider '${name}' was selected but is missing from the registry`);
     }
     return registration.create();
@@ -168,7 +188,11 @@ function assertAnchorPlan(body: string, positions: string[] | undefined, count: 
 export async function processGeneratorIO(
     inputPath: string,
     outputPath: string,
-    options: { providerResolver?: ProviderResolver } = {},
+    options: {
+        providerResolver?: ProviderResolver;
+        /** D6 0166: builds fallback candidates by name (tests inject stubs); defaults to the registry. */
+        createProvider?: (name: string) => ImageProvider;
+    } = {},
 ): Promise<void> {
     const fs = createNodeFileSystem();
     // voice-gen rule: start clean, and on any failure delete --out plus every
@@ -207,7 +231,40 @@ export async function processGeneratorIO(
 
         // Selection must succeed (or fail loud naming the provider) even when nothing is spent.
         const resolveProvider: ProviderResolver = options.providerResolver ?? defaultProviderResolver;
-        const provider = resolveProvider(spec);
+        const primary = resolveProvider(spec);
+
+        // D6 (0166): the fallback order is resolved once, before the dry-run branch, so a typo'd
+        // name fails with no spend on both branches. Candidates are created once through the
+        // cached `createProvider` seam; `skipReason` consults candidates only, never the primary.
+        const built = new Map<string, ImageProvider>();
+        const createCandidate = (name: string): ImageProvider => {
+            const cached = built.get(name);
+            if (cached !== undefined) {
+                return cached;
+            }
+            const created =
+                options.createProvider !== undefined ? options.createProvider(name) : registeredProvider(name);
+            built.set(name, created);
+            return created;
+        };
+        const skipReason = (name: string): string | undefined => {
+            const prospect = createCandidate(name);
+            if (!prospect.isAvailable()) {
+                return 'not configured';
+            }
+            if (
+                spec.referenceImages !== undefined &&
+                spec.referenceImages.length > 0 &&
+                !prospect.supportsReferenceImages(prospect.defaultModel())
+            ) {
+                return 'no reference-image support';
+            }
+            return undefined;
+        };
+        const { order, skipped } = resolveFallbackOrder(primary.name, spec.fallback, { skipReason });
+        for (const skip of skipped) {
+            echoError(`WARN image-gen: skipping fallback ${skip.provider} (${skip.reason})`);
+        }
 
         if (process.env.KK_IMAGE_DRY_RUN === '1') {
             // R6: compose every prompt, select the provider, spend nothing, write no image.
@@ -234,22 +291,68 @@ export async function processGeneratorIO(
         // The money-spending branch: one provider call per prompt, bytes written
         // beside `--out` via artifactPath (R1/R3 worded as 0104 R3), written[]
         // tracking keeps failure cleanup live (dead-loop advisory closed here).
+        // D6 (0166): the validate+generate pair rides the fallback loop. `at`
+        // advances stickily — an image that fell to candidate i keeps the later
+        // images there — and failed attempts never consume the budget cap,
+        // which counts produced images only.
         await fs.ensureDir(dirname(outputPath));
         const stem = outStemFor(outputPath, spec.outputStem);
         const artifacts: ImageArtifact[] = [];
         const captions: CaptionEntry[] = [];
+        const attempts: ProviderAttempt[] = [];
+        let at = 0; // sticky index into `order`
+        const generateWithFallback = async (image: number, prompt: string): Promise<ImageResult> => {
+            const start = attempts.length; // this image's failed attempts begin here (R5 summarises the slice)
+            for (;;) {
+                const name = order[at];
+                if (name === undefined) {
+                    // Unreachable: `at` advances only after order[at + 1] was just proven defined.
+                    throw new Error(`image-gen: fallback order exhausted before image ${image} was decided`);
+                }
+                const provider = at === 0 ? primary : createCandidate(name);
+                // spec.model is provider-specific (D6): only the requested provider receives it.
+                const model = at === 0 ? (spec.model ?? provider.defaultModel()) : provider.defaultModel();
+                const request: ImageRequest = {
+                    prompt,
+                    model,
+                    aspectRatio: format.aspectRatio,
+                    ...(spec.referenceImages !== undefined && spec.referenceImages.length > 0
+                        ? { referenceImages: spec.referenceImages }
+                        : {}),
+                };
+                try {
+                    provider.validate?.(request);
+                    return await provider.generate(request);
+                } catch (err: unknown) {
+                    if (spec.fallback === undefined) {
+                        throw err; // D6 R1: strict mode propagates the original error, unwrapped.
+                    }
+                    const cls = classifyProviderError(err);
+                    const message = err instanceof Error ? err.message : String(err);
+                    if (!isFallbackEligible(cls)) {
+                        // D6 R4: a rejected prompt is never re-asked to a second vendor.
+                        throw new Error(
+                            `image-gen: ${provider.name} rejected the prompt (policy): ${message}; fallback does not apply`,
+                        );
+                    }
+                    attempts.push({ image, provider: provider.name, model, errorClass: cls, message });
+                    const next = order[at + 1];
+                    if (next === undefined) {
+                        // D6 R5: every candidate failed — name each with its class, then the last message.
+                        const detail = attempts
+                            .slice(start)
+                            .map((attempt) => `${attempt.provider} (${attempt.errorClass})`)
+                            .join(', ');
+                        throw new Error(`image-gen: all providers failed for image ${image}: ${detail}; ${message}`);
+                    }
+                    echoError(`WARN image-gen: ${provider.name} failed (${cls}): ${message}; falling back to ${next}`);
+                    at += 1;
+                }
+            }
+        };
         let body = doc?.body ?? '';
         for (const [index, prompt] of prompts.entries()) {
-            const request: ImageRequest = {
-                prompt,
-                model: spec.model ?? provider.defaultModel(),
-                aspectRatio: format.aspectRatio,
-                ...(spec.referenceImages && spec.referenceImages.length > 0
-                    ? { referenceImages: spec.referenceImages }
-                    : {}),
-            };
-            provider.validate?.(request);
-            const result = await provider.generate(request);
+            const result = await generateWithFallback(index + 1, prompt);
             // Re-check against the spliced body; the pre-spend plan check is assertAnchorPlan (0169).
             let anchor: string | undefined;
             if (spec.job === 'illustration') {
@@ -301,6 +404,7 @@ export async function processGeneratorIO(
             images: artifacts,
             ...(spec.job !== 'free' && doc?.id !== undefined ? { sourceDocId: doc.id } : {}),
             ...(captions.length > 0 ? { captions } : {}),
+            ...(attempts.length > 0 ? { attempts } : {}),
         };
         const content = ContentSchema.parse({
             // free/cover: the body is the prompt trail (same as dry run); illustration: the

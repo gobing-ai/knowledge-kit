@@ -907,7 +907,7 @@ function coverBrief(briefPath: string): { reason: string | null; subject: string
  * the stage, matching the pre-F614 cover behavior.
  */
 function dailyCover(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = ''] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = '', fallback = ''] = args;
     const briefPath = join(workDir, '2-cover', `${runDate}_07_cover-brief.json`);
     const envPath = join(workDir, '2-cover', `${runDate}_07_cover_image-gen-in.json`);
     const contentOut = join(workDir, '2-cover', 'content.json');
@@ -928,6 +928,18 @@ function dailyCover(args: string[]): void {
         };
         if (provider !== '') imageGen.provider = provider;
         if (model !== '') imageGen.model = model;
+        // D6 0166 R7: runtime-fallback opt-in. '' (the shipped var default) keeps strict fail-fast —
+        // F614's pinned look stays the default; 'true' = retry down AUTO_ORDER; anything else is a
+        // comma-split, trimmed candidate list. Unknown names are rejected by image-gen, not here.
+        if (fallback !== '') {
+            imageGen.fallback =
+                fallback === 'true'
+                    ? true
+                    : fallback
+                          .split(',')
+                          .map((s) => s.trim())
+                          .filter(Boolean);
+        }
         sted('write', envPath, () =>
             writeJsonText(envPath, [{ id: 'daily-cover', title: runDate, body: '', metadata: { imageGen } }]),
         );
