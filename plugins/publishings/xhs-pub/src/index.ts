@@ -655,6 +655,7 @@ export class XhsBrowserTransport implements PublishTransport {
             const submitted = await this.clickShadowControl(page, SHADOW_CONTROLS.publish);
             if (!submitted.ok) return fail(submitted.error);
 
+            const urlBeforeSubmit = page.url();
             const confirmed = await waitUntil(async () => {
                 // The console rewrites its URL to `…published=true` once the post is accepted;
                 // the text hints stay as fallbacks for console variants.
@@ -665,7 +666,7 @@ export class XhsBrowserTransport implements PublishTransport {
             }, this.stepTimeoutMs);
             if (!confirmed) {
                 return fail(
-                    `publish submission: state unknown — the '${submitted.label}' click was sent but no success state was observed. Check the ${CHANNEL} creator note manager before retrying: a retry could duplicate the post.`,
+                    `publish submission: state unknown — the '${submitted.label}' click at ${submitted.x},${submitted.y} was sent from ${urlBeforeSubmit} but no success state was observed (now ${page.url()}). Check the ${CHANNEL} creator note manager before retrying: a retry could duplicate the post.`,
                 );
             }
             const url = page.url();
