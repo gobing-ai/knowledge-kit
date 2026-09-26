@@ -31,7 +31,13 @@ vars:
   cursor: ""
   state_file: ""
   skip_review: "false"
-  transcode_mp3: "false"
+  # 0171 R1: podcast-pub publishes metadata.mp3Path, so "false" fell back to the WAV render — an
+  # enclosure Apple Podcasts rejects and no ID3 tag can ride.
+  transcode_mp3: "true"
+  # 0171 R3/R4: ID3 artist/album stamped onto the published MP3 (title comes from the article,
+  # date from run_date); an empty var omits that tag.
+  podcast_artist: "Robin Min"
+  podcast_album: "咸话咸说"
   cover_enabled: "true"
   # F614: the daily cover pins provider+model in vars — each provider has its own look, so the
   # pin is part of the style contract; it stays a var because the right value depends on which
@@ -272,12 +278,12 @@ states:
             kk stage daily-quality-report "${vars.work_dir}" "${vars.run_date}"
 
   - id: publish-prep
-    description: "Merge article Content with audio (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
+    description: "Merge article Content with the MP3 (rejects a non-.mp3 enclosure) and stamp its ID3 tags (podcast assembly facts ride the content options channel for podcast-pub's absorbed assembly; runDate kept for surfdash slug)"
     onEnter:
       - kind: shell
         options:
           command: >-
-            kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}"
+            kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}" "${vars.podcast_artist}" "${vars.podcast_album}"
 
   - id: publish-surfdash
     description: "Publish the merged Content to surfdash (single target); result lands in result.json — surfdash publishes first so show-notes can link the article (task 0118 seam reorder)"

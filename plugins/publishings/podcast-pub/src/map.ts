@@ -40,13 +40,27 @@ export interface EpisodeMapping {
 const AUDIO_MIME_BY_EXTENSION: Record<string, string> = {
     '.mp3': 'audio/mpeg',
     '.wav': 'audio/wav',
-    '.m4a': 'audio/mp4',
+    '.m4a': 'audio/x-m4a',
     '.aac': 'audio/aac',
     '.ogg': 'audio/ogg',
     '.oga': 'audio/ogg',
     '.flac': 'audio/flac',
     '.opus': 'audio/opus',
 };
+
+/**
+ * Audio MIME types Apple Podcasts accepts for an enclosure. microfeed stores and serves
+ * whatever MIME it is given, so anything outside this set must be refused here — before
+ * any network call — rather than shipping an enclosure Apple cannot ingest.
+ */
+const APPLE_AUDIO_MIME: ReadonlySet<string> = new Set([
+    'audio/mpeg',
+    'audio/x-m4a',
+    'audio/mp4',
+    'video/mp4',
+    'video/quicktime',
+    'video/x-m4v',
+]);
 
 /**
  * Resolves the audio MIME type from `metadata.mimeType` or the file extension
@@ -65,9 +79,9 @@ export function resolveAudioMimeType(reference: string, mimeType?: unknown): str
 
 /**
  * Maps Content + episode metadata into microfeed item fields (design D6).
- * Validates only the plugin's own requirements — title resolvable and exactly one
- * audio reference — before any network call (R5); microfeed's `validate` endpoint
- * and server 400s surface everything else (R4 error path).
+ * Validates only the plugin's own requirements — title resolvable, exactly one audio
+ * reference, and an Apple-compatible audio MIME — before any network call (R5);
+ * microfeed's `validate` endpoint and server 400s surface everything else (R4 error path).
  * Throws with a diagnostic when the Content is not publishable.
  */
 export function mapContentToEpisode(content: Content): EpisodeMapping {
@@ -150,6 +164,16 @@ export function mapContentToEpisode(content: Content): EpisodeMapping {
         };
     }
 
+    // Resolved once so the Apple-compatibility guard also covers a `metadata.mimeType`
+    // override; `AUDIO_MIME_BY_EXTENSION` still says what a file is, the allowlist decides
+    // what is publishable.
+    const audioMimeType = resolveAudioMimeType(audioFile ?? (audioUrl as string), metadata.mimeType);
+    if (!APPLE_AUDIO_MIME.has(audioMimeType)) {
+        throw new Error(
+            `unsupported audio MIME type "${audioMimeType}" for Apple Podcasts: expected one of ${[...APPLE_AUDIO_MIME].join(', ')}`,
+        );
+    }
+
     return {
         title,
         contentHtml:
@@ -160,12 +184,8 @@ export function mapContentToEpisode(content: Content): EpisodeMapping {
                   : renderShowNotesHtml(content.body),
         status,
         audio: audioFile
-            ? { kind: 'file', path: audioFile, mimeType: resolveAudioMimeType(audioFile, metadata.mimeType) }
-            : {
-                  kind: 'url',
-                  url: audioUrl as string,
-                  mimeType: resolveAudioMimeType(audioUrl as string, metadata.mimeType),
-              },
+            ? { kind: 'file', path: audioFile, mimeType: audioMimeType }
+            : { kind: 'url', url: audioUrl as string, mimeType: audioMimeType },
         durationSeconds: duration as number | undefined,
         ...(imageUrl ? { imageUrl } : {}),
         ...(imagePath ? { imagePath } : {}),

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "podcast-pub: reject non-Apple-compatible audio MIME before any network call"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-25T23:01:10.927Z
-updated_at: "2026-09-25T23:10:39.787Z"
+updated_at: "2026-09-26T02:49:06.000Z"
 feature_id: E61
 priority: P0
 tags:
@@ -29,17 +29,17 @@ The live 2026-09-24 episode shipped as audio/wav (castfeedvalidator FATAL: inval
 
 ### Requirements
 
-- [ ] R1. `mapContentToEpisode` throws when the resolved audio MIME type (after any `metadata.mimeType` override) is outside the Apple-accepted set: audio/mpeg, audio/x-m4a, audio/mp4, video/mp4, video/quicktime, video/x-m4v.
-- [ ] R2. The error names the offending MIME type and the accepted set; `publish` surfaces it as `Invalid Content: …` (existing wrapper, `src/index.ts:291`).
-- [ ] R3. Publish and Content-mapped validate fail before any microfeed request, presign, or upload.
-- [ ] R4. `.m4a` resolves to audio/x-m4a.
-- [ ] R5. `docs/04_DESIGN.md` podcast-pub surface (§ `@gobing-ai/podcast-pub`, line ~615) and `docs/design/podcast-pub.md` list the new error in the same commit (T3).
+- [x] R1. `mapContentToEpisode` throws when the resolved audio MIME type (after any `metadata.mimeType` override) is outside the Apple-accepted set: audio/mpeg, audio/x-m4a, audio/mp4, video/mp4, video/quicktime, video/x-m4v.
+- [x] R2. The error names the offending MIME type and the accepted set; `publish` surfaces it as `Invalid Content: …` (existing wrapper, `src/index.ts:291`).
+- [x] R3. Publish and Content-mapped validate fail before any microfeed request, presign, or upload.
+- [x] R4. `.m4a` resolves to audio/x-m4a.
+- [x] R5. `docs/04_DESIGN.md` podcast-pub surface (§ `@gobing-ai/podcast-pub`, line ~615) and `docs/design/podcast-pub.md` list the new error in the same commit (T3).
 
 Out of scope: transcoding or probing audio in the plugin; guarding `update`/`validate` calls that pass a raw `options.item` (caller-owned passthrough); `AUDIO_MIME_BY_EXTENSION` entries other than `.m4a`.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — podcast-pub refuses non-Apple-compatible audio before any network call (req: R1, R2, R3, R4)
+- [x] AC1 — podcast-pub refuses non-Apple-compatible audio before any network call (req: R1, R2, R3, R4)
 
 ### Q&A
 
@@ -73,18 +73,90 @@ Handoff: 0171 relies on this guard as the backstop (a WAV that slips past publis
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| Concern | Where |
+| ------- | ----- |
+| `APPLE_AUDIO_MIME` allowlist (`audio/mpeg`, `audio/x-m4a`, `audio/mp4`, `video/mp4`, `video/quicktime`, `video/x-m4v`) (R1) | `plugins/publishings/podcast-pub/src/map.ts:56-62` |
+| `.m4a` → `audio/x-m4a` in `AUDIO_MIME_BY_EXTENSION` (R4) | `plugins/publishings/podcast-pub/src/map.ts:43` |
+| Resolved-MIME guard inside `mapContentToEpisode`, after any `metadata.mimeType` override (R1) | `plugins/publishings/podcast-pub/src/map.ts:170-175` |
+| Error text `unsupported audio MIME type "<type>" for Apple Podcasts: expected one of <list>` (R2) | `plugins/publishings/podcast-pub/src/map.ts:173` |
+| Audio branch reuses the one resolved MIME (file and url) | `plugins/publishings/podcast-pub/src/map.ts:187-188` |
+| `publish` maps pre-network → surfaces `Invalid Content: …` (R2/R3; call site unchanged, now covered by the guard) | `plugins/publishings/podcast-pub/src/index.ts:290` |
+| Content-mapped `validate` maps pre-network (R3; call site unchanged) | `plugins/publishings/podcast-pub/src/index.ts:483` |
+| Test: `.wav` reference rejected, message names the offending type and the accepted set (R1/R2) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:205` |
+| Test: `metadata.mimeType: audio/wav` override cannot bypass the guard (R1) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:218` |
+| Test: publish with a `.wav` audioFile makes zero microfeed requests (`api.requests.length === 0`) (R3) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:419-436` |
+| Test: Content-mapped `validate` with a `.wav` audioUrl makes zero requests (R3) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:724` |
+| Test: `.m4a` resolves to `audio/x-m4a` (R4) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:256` |
+| Fixtures: `makeAudioFile` default → `episode.mp3`; the former wav-acceptance fixture at the old `:202` now maps mp3 (its wav case became the rejection test above) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:85,197` |
+| Fixtures: WAV publish assertions switched to `audio/mpeg` (ITEM01 presign + attachment, ITEM02 presign, ASM01 attachment) | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:387,406,460,1359` |
+| Fixtures: cover-image tests pinned to `.mp3` audio so they isolate cover validation | `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:1490,1511` |
+| Doc: `mapContentToEpisode` row lists the new error + Apple allowlist (R5) | `docs/04_DESIGN.md:622` |
+| Doc: §4.2 Apple Podcasts audio MIME guard — error text, allowlist, `.m4a` change, out-of-scope (R5) | `docs/design/podcast-pub.md:125-142` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Guard at `plugins/publishings/podcast-pub/src/map.ts:170-175` tests the single resolved MIME against `APPLE_AUDIO_MIME` (`map.ts:56-62` = exactly the six Apple types); the value is resolved once at `:170` from `resolveAudioMimeType` (`map.ts:71-78`), which prefers a `metadata.mimeType` override (`:72-74`), so an override cannot bypass it. Repo tests this run: `plugins/publishings/podcast-pub/tests/podcast-pub.test.ts:205` (`.wav` refused, message names type + full set) and `:218` (override `audio/wav` refused) — 55 pass / 0 fail. Own probe (`bun -e` from repo root): accepted = `.mp3`, `.m4a`, `.M4A`, override `audio/mp4`, override `video/mp4`, override `video/quicktime`, override `video/x-m4v`; refused = `.wav`, `.flac`, override `audio/wav`, extension-less `https://cdn/ep`, `https://cdn/ep.mp3?token=1`, and `Audio/MPEG`. |
+| R2 | MET | Frozen text at `map.ts:173`: `unsupported audio MIME type "<type>" for Apple Podcasts: expected one of audio/mpeg, audio/x-m4a, audio/mp4, video/mp4, video/quicktime, video/x-m4v` (offending type + full accepted set). `publish` wrapper `plugins/publishings/podcast-pub/src/index.ts:290-292` returns `Invalid Content: <message>`. Own probe output through `PodcastPubTransport.publish`: `Invalid Content: unsupported audio MIME type "audio/wav" for Apple Podcasts: expected one of audio/mpeg, audio/x-m4a, audio/mp4, video/mp4, video/quicktime, video/x-m4v`. Test `tests/podcast-pub.test.ts:427-429` asserts both substrings. |
+| R3 | MET | Ordering in `src/index.ts` (podcast-pub): `publish` maps at `:290` before `createItem` `:300` and before `readFile` / `prepareUpload` / `uploadBytes` `:338-346`; Content-mapped `validate` maps at `:483` before `client.validateItem` `:490`; `resolveClient` `:56-76` reads env only (no fetch). Executable zero-network proof: `tests/podcast-pub.test.ts:419-436` (publish with a `.wav` audioFile) asserts `api.requests.length === 0` at `:431`, and `:724-739` (validate with a `.wav` audioUrl) asserts it at `:735`, against the global-fetch spy installed at `:31-48` that records every fetch. Own probe with a fetch stub that throws when reached: `publish(.wav)` → ok=false, 0 fetch calls; `validate(.wav url)` → ok=false, 0 fetch calls; also `publish({options.audioFile: '.../episode.wav'})` (assembly channel) → ok=false with `Invalid Content: ...`, 0 fetch calls. |
+| R4 | MET | `map.ts:43`: `'.m4a': 'audio/x-m4a'` (was `audio/mp4`); extension lowercased before lookup at `map.ts:75`. Test `tests/podcast-pub.test.ts:256` passes this run. Own probe: `resolveAudioMimeType('/a/ep.m4a')` → `audio/x-m4a`, `resolveAudioMimeType('/a/ep.M4A')` → `audio/x-m4a`. |
+| R5 | MET | `docs/04_DESIGN.md:622` (`mapContentToEpisode` row) now names the new error and the six-type Apple allowlist; `docs/design/podcast-pub.md:125-143` §4.2 records the error text, allowlist, `.m4a` change, and the out-of-scope note. Both sit in the same uncommitted change set as `src/map.ts` + the tests (working-tree delta vs base `e8b07e70`), so T3 same-commit containment holds at commit time; no commit exists yet in this tree (HEAD `5b438a48`, staged: none). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `bun test plugins/publishings/podcast-pub/tests/podcast-pub.test.ts` (repo root) → 55 pass / 0 fail, 217 expect() calls: `:205` `.wav` reference refused and message names type + full set, `:218` `metadata.mimeType` override cannot bypass, `:256` `.m4a` → `audio/x-m4a`, `:419-431` publish with `.wav` refused with `api.requests.length === 0`, `:724-735` Content-mapped validate with `.wav` refused with `api.requests.length === 0`. Independent probe (`bun -e`, fetch stub throwing on any call): `publish(.wav)` and `publish(validate, .wav audioUrl)` and `publish({options.audioFile: .wav})` each returned the guard error with 0 fetch calls, while `.mp3` / `.m4a` / `audio/mp4` / `video/mp4` / `video/quicktime` / `video/x-m4v` (file, URL, and `metadata.mimeType` override forms) pass the guard. Cross-check: `bun run lint` exit 0 (Biome 2.5.5 + every workspace typecheck; the 9 reported infos are pre-existing and outside the 0170 change set), full `bun test` 1413 pass / 0 fail. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Reviewed the working-tree diff vs base `e8b07e70` — `plugins/publishings/podcast-pub/src/map.ts`, `tests/podcast-pub.test.ts`, `docs/04_DESIGN.md`, `docs/design/podcast-pub.md` — across functional traceability, SECUA, and architectural depth. Fresh evidence this run: plugin test file **55 pass / 0 fail** (217 `expect()` calls, run from repo root); `bun run lint` (Biome 2.5.5 + all workspace typechecks) exit 0; ad-hoc `mapContentToEpisode` probe of the accept/reject matrix below. Note: the same test file run with cwd inside the plugin dir fails 1 test because the plugin-discovery test hardcodes `join(process.cwd(), 'plugins')` (`tests/podcast-pub.test.ts:1008`) — pre-existing cwd coupling, not this change.
+
+**Functional traceability**
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `src/map.ts:56-63` `APPLE_AUDIO_MIME` = exactly the six Apple types; guard on the resolved MIME at `src/map.ts:170-175`, after the `metadata.mimeType` override (`resolveAudioMimeType` `src/map.ts:71-78`, resolved once at `:170`). Tests `tests/podcast-pub.test.ts:205` (`.wav` refused; message names the type and the full set), `:218` (override `audio/wav` refused). |
+| R2 | MET | Frozen text `src/map.ts:172-174`; `publish` wraps it as `Invalid Content: …` at `src/index.ts:288-292`; `tests/podcast-pub.test.ts:419-436` asserts both substrings. |
+| R3 | MET | `publish` maps at `src/index.ts:290`, before `createItem` (`:296`/`:329`) and before `readFile` + `prepareUpload` (`:341-347`); Content-mapped `validate` maps at `src/index.ts:483`, before `client.validateItem` (`:490`). Nothing I/O-bound precedes either — `resolveClient` (`:56-76`) reads env only and `MicrofeedClient`'s constructor does no fetch. Zero-request assertions at `tests/podcast-pub.test.ts:431` and `:735`. |
+| R4 | MET | `src/map.ts:43` `.m4a` → `audio/x-m4a`; `tests/podcast-pub.test.ts:256`; probe confirms uppercase `.M4A` too (extension lowercased `src/map.ts:75`). |
+| R5 | MET | `docs/04_DESIGN.md:622` (error + allowlist on the `mapContentToEpisode` row) and `docs/design/podcast-pub.md:125-142` (§4.2) changed in the same tree as the code (T3). |
+
+AC1 — podcast-pub refuses non-Apple-compatible audio before any network call (req: R1, R2, R3, R4): **MET** (R1–R4 MET; the `api.requests.length === 0` assertions are the "before any network call" proof for both publish and Content-mapped validate).
+
+**Findings**
+
+| P | Dimension | Location | Finding | Disposition |
+| --- | --- | --- | --- | --- |
+| P3 (minor) | Functional traceability | `src/index.ts:449-455` | `update` with a raw `options.item` still forwards `attachments[].mime_type` unchecked (e.g. `audio/wav`); `mapContentToEpisode` is not on that path, so the guard cannot refuse it. E61's parent scenario names "publish **or update**" (`docs/features/E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md:54-58`). | Accepted as scoped: 0170 R3 names publish + Content-mapped validate only; the refinement Q&A (2026-09-25T23:10:24) closed raw-`item` `update`/`validate` as caller-owned passthrough and `docs/design/podcast-pub.md:140-142` records it. No 0170 code change; E61 closure should record the narrowing (or raise a guarded `update` as new work). |
+| P4 (advisory) | Correctness | `src/map.ts:170-175`, `src/index.ts:249-263` | The guard validates the *declared* MIME, not the file: `.wav` + `metadata.mimeType: 'audio/mpeg'` passes and publishes WAV bytes labelled `audio/mpeg` (probe-verified), and the assembly merge preserves an upstream `metadata.mimeType` while swapping in `options.audioFile`. No in-repo producer sets `Content.metadata.mimeType` (`rg` clean) and probing audio is the stated design anti-pattern (`src/map.ts:66-69`). | Accepted by design (R1 defines the guard on the resolved MIME). Carry into 0171: assert the `.mp3` sibling by path and do not emit `metadata.mimeType`. |
+| P4 (advisory) | Usability | `src/map.ts:172-174` | The allowlist is exact-match: `Audio/MPEG` and `audio/mpeg; codecs=mp3` are refused (probe-verified). | Accepted — fail-loud, and the message names the offending string; no in-repo producer emits case/parameter variants. |
+| P4 (advisory) | Usability (behaviour change) | `src/map.ts:77`, `:170-175` | A hosted `audioUrl` whose last dot segment is not a known extension (`…/ep.mp3?token=…`, extension-less CDN URL) resolves to `application/octet-stream` and is now refused; before this change it published an octet-stream enclosure — the same Apple-FATAL class the task fixes, so the refusal is an improvement, but it is caller-visible and unstated in §4.2. | Accepted; optionally one line in `docs/design/podcast-pub.md` §4.2 naming query-string/extension-less URLs as requiring `metadata.mimeType`. |
+| P4 (advisory) | Architecture / maintenance | `src/map.ts:40-49` | `.wav`, `.aac`, `.ogg`, `.oga`, `.flac`, `.opus` now resolve to types the guard always refuses; the entries' remaining value is diagnostic (`audio/flac` named rather than `application/octet-stream`). | Accepted — matches the stated invariant at `src/map.ts:168-169` ("the table describes what a file is; the allowlist decides what is publishable"). |
+| P4 (advisory) | Test coverage | `src/index.ts:249-263`, `tests/podcast-pub.test.ts:205,419` | The guard is covered directly and through `publish` / Content-validate, but no test drives the assembly channel (`options.audioFile`) — the route the daily workflow uses and 0171 depends on (the merge writes `metadata.audioFile`, then the mapper guards). | Advisory: one negative assertion for `options.audioFile: '…wav'` would lock 0171's backstop claim; not required for AC1. |
+| P4 (advisory) | Process / scope | `git diff e8b07e70` → `plugins/sp/scripts/inline-run-setup.ts` | The base-vs-HEAD delta also carries commit `5b438a48` (vendored harness; the test gate's root-cause fix), outside 0170's declared 4-file change set; and the task's `Testing` section is still the unfilled placeholder although `.spur/run/0170-test-gate.log` records 1413 pass / 0 fail. | `5b438a48` is already its own `fix(sp):` commit — keep it out of the 0170 product commit; verify/record stages should stamp the Testing evidence. |
+
+No P1 (blocker) and no P2 (major) findings.
+
+**SECUA.** Security: the guard narrows an agent-steerable field (`metadata.mimeType`) from "any string" to the six Apple types, so a hostile or erroneous value can no longer reach microfeed as an enclosure type; it is a feed-validity gate, not an auth boundary, and nothing new reaches a shell or a network call before validation (the error text is caller metadata interpolated into a JSON `Result`/stderr — no injection surface; the show-notes HTML path is untouched). Efficiency: the MIME is now resolved once instead of twice (`:170` reused at `:187-188`) and the allowlist join runs only on the throw path — no added I/O on the happy path. Correctness: set membership on the resolved value, exactly the requirement's six types and their order in the message, evaluated after the ambiguity/duration/status/coverImage/itunes pre-checks and before the return, so it fails fast and before `renderShowNotesHtml`. Usability: the message names the offending type and the full accepted set, surfaced as `Invalid Content: …` by `publish` and as an error `Result` by `validate`. Architecture: one guard at the single Content→episode seam, module-private constant co-located with the extension table — no per-operation duplication, no new options/flags, no transcoding, exactly the frozen design (D1) and its invariants.
+
+**Architecture depth.** The policy/question split is clean: `resolveAudioMimeType` answers "what is this file" and stays permissive; `APPLE_AUDIO_MIME` plus the mapper answer "what may be published". Callers reach the guard through one deep seam rather than three shallow per-operation checks, and `update`'s deliberate exclusion is documented rather than duplicated — no responsibility leak across operations.
+
+**Residual risk.** (1) Declared-not-actual MIME: a caller asserting `audio/mpeg` for a WAV still publishes a WAV enclosure; 0171 must not emit `metadata.mimeType`. (2) Raw-`item` `update`/`validate` remain unguarded — the only remaining route by which non-Apple audio can reach microfeed, now caller-owned and operator-driven. (3) Strictness increase for hosted URLs without a resolvable extension/with query strings — no in-repo caller affected today. (4) Coverage: `map.ts` reports 100 % lines in the gate log and the new error branch is covered directly (`tests:205,218`) and at integration level (`:419-436`, `:721-739`).
+
+**Disposition: PASS.** R1–R5 and AC1 are MET with `file:line` and executable evidence; the sole P3 is the task's own closed scope decision (raw-`item` update) and does not affect AC1, and the P4s are advisory records, not remediation. No fix stage required for 0170; carry the declared-vs-actual note and the optional `options.audioFile` negative test into 0171, and record the E61 R2 `update`-arm narrowing at E61 closure.
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-09-26T00:39:14.563Z todo → wip (system)
+- 2026-09-26T02:48:14.441Z wip → testing (system)
+- 2026-09-26T02:49:06.000Z testing → done (system)
+

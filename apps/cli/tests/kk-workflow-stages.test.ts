@@ -487,6 +487,31 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         return { PATH: `${bin}:${process.env.PATH ?? ''}` };
     }
 
+    /**
+     * 0171: a fake `ffmpeg` on PATH. Records its argv to `record` and (exit 0 only) writes the
+     * tagged file at the last argv entry, so the stage's tmp-write + rename is observable
+     * without shelling out to a real encoder.
+     */
+    function fakeFfmpeg(dir: string, record: string, exitCode = 0): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'ffmpeg');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                'const argv = process.argv.slice(2);',
+                `fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify(argv));`,
+                exitCode === 0
+                    ? 'fs.writeFileSync(argv[argv.length - 1], "tagged");'
+                    : `process.stderr.write('ffmpeg: boom'); process.exit(${exitCode});`,
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
     it('daily-publish-classify derives full/partial/none and writes the status file', () => {
         withTempDir((dir) => {
             const publish = join(dir, '3-publish');
@@ -557,26 +582,130 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
-    it('daily-publish-prep merges the voice metadata and drops an absent cover path', () => {
+    it('daily-publish-prep stamps the ID3 tags on the MP3 enclosure and drops an absent cover path', () => {
         withTempDir((dir) => {
             for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
+            const audio = join(dir, '3-audio/content.mp3');
+            const record = join(dir, 'ffmpeg-argv.json');
+            writeFileSync(audio, 'mp3-bytes');
             writeFileSync(
                 join(dir, `2-article/${stamp}_06_article_content.json`),
                 JSON.stringify({ title: 'T', body: 'B' }),
             );
             writeFileSync(
                 join(dir, `3-audio/${stamp}_11_generate_content.json`),
-                JSON.stringify({ metadata: { audioPath: 'audio.wav', duration: 12 } }),
+                JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
             );
-            expect(run(['daily-publish-prep', dir, stamp]).status).toBe(0);
+            expect(
+                run(['daily-publish-prep', dir, stamp, 'Robin Min', '咸话咸说'], fakeFfmpeg(dir, record)).status,
+            ).toBe(0);
+            // R3: ID3v2.3 title/artist/album/date copy-stamped onto the MP3 (title from the
+            // article, date from the digits-only run_date) — no re-encode.
+            expect(JSON.parse(readFileSync(record, 'utf-8'))).toEqual([
+                '-y',
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-i',
+                audio,
+                '-c',
+                'copy',
+                '-id3v2_version',
+                '3',
+                '-metadata',
+                'title=T',
+                '-metadata',
+                'artist=Robin Min',
+                '-metadata',
+                'album=咸话咸说',
+                '-metadata',
+                'date=2026-01-01',
+                `${audio}.id3.tmp.mp3`,
+            ]);
+            // temp-then-rename: the tagged bytes land on the original path and the tmp is gone.
+            expect(readFileSync(audio, 'utf-8')).toBe('tagged');
+            expect(existsSync(`${audio}.id3.tmp.mp3`)).toBe(false);
             const merged = JSON.parse(
                 readFileSync(join(dir, `3-publish/${stamp}_13_publish-prep_content.json`), 'utf-8'),
             ) as { metadata: Record<string, unknown>; options: Record<string, unknown> };
-            expect(merged.metadata.audioFile).toBe(resolve('audio.wav'));
+            expect(merged.metadata.audioFile).toBe(audio);
             expect(merged.metadata.runDate).toBe(stamp);
             expect(merged.options.durationSec).toBe(12);
             expect('coverPath' in merged.options).toBe(false);
+        });
+    });
+
+    it('daily-publish-prep omits the artist/album tags when those vars are empty', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            const audio = join(dir, '3-audio/content.mp3');
+            const record = join(dir, 'ffmpeg-argv.json');
+            writeFileSync(audio, 'mp3-bytes');
+            writeFileSync(
+                join(dir, `2-article/${stamp}_06_article_content.json`),
+                JSON.stringify({ title: 'T', body: 'B' }),
+            );
+            writeFileSync(
+                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                JSON.stringify({ metadata: { mp3Path: audio, duration: 12 } }),
+            );
+            expect(run(['daily-publish-prep', dir, stamp, '', ''], fakeFfmpeg(dir, record)).status).toBe(0);
+            const argv = JSON.parse(readFileSync(record, 'utf-8')) as string[];
+            expect(argv.filter((arg) => arg.startsWith('artist=') || arg.startsWith('album='))).toEqual([]);
+            expect(argv).toContain('title=T');
+        });
+    });
+
+    it('daily-publish-prep rejects a non-MP3 enclosure naming transcode_mp3', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            const wav = join(dir, '3-audio/content.wav');
+            writeFileSync(wav, 'RIFF-fake-wave');
+            writeFileSync(
+                join(dir, `2-article/${stamp}_06_article_content.json`),
+                JSON.stringify({ title: 'T', body: 'B' }),
+            );
+            writeFileSync(
+                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                JSON.stringify({ metadata: { audioPath: wav, duration: 12 } }),
+            );
+            const result = run(
+                ['daily-publish-prep', dir, stamp, 'Robin Min', '咸话咸说'],
+                fakeFfmpeg(dir, join(dir, 'ffmpeg-argv.json')),
+            );
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('publish-prep: resolved audio is not an MP3');
+            expect(result.stderr).toContain('transcode_mp3');
+            expect(existsSync(join(dir, `3-publish/${stamp}_13_publish-prep_content.json`))).toBe(false);
+        });
+    });
+
+    it('daily-publish-prep fails the stage when the ffmpeg ID3 stamp fails, leaving the audio untouched', () => {
+        withTempDir((dir) => {
+            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            const audio = join(dir, '3-audio/content.mp3');
+            writeFileSync(audio, 'mp3-bytes');
+            writeFileSync(
+                join(dir, `2-article/${stamp}_06_article_content.json`),
+                JSON.stringify({ title: 'T', body: 'B' }),
+            );
+            writeFileSync(
+                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
+            );
+            const result = run(
+                ['daily-publish-prep', dir, stamp, 'Robin Min', '咸话咸说'],
+                fakeFfmpeg(dir, join(dir, 'ffmpeg-argv.json'), 1),
+            );
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('publish-prep: ffmpeg ID3 stamp failed: ffmpeg: boom');
+            expect(readFileSync(audio, 'utf-8')).toBe('mp3-bytes');
+            expect(existsSync(`${audio}.id3.tmp.mp3`)).toBe(false);
+            expect(existsSync(join(dir, `3-publish/${stamp}_13_publish-prep_content.json`))).toBe(false);
         });
     });
 

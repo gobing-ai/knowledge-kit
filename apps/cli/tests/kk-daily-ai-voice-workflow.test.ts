@@ -71,7 +71,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('limit: "10"');
         expect(yaml).toContain('language: "zh"');
         expect(yaml).toContain('skip_review: "false"');
-        expect(yaml).toContain('transcode_mp3: "false"');
+        // 0171 R1: the enclosure is published from metadata.mp3Path, so the MP3 transcode is on by
+        // default; "false" fell back to the WAV render Apple Podcasts rejects.
+        expect(yaml).toContain('transcode_mp3: "true"');
+        // 0171 R4: ID3 artist/album for the published MP3.
+        expect(yaml).toContain('podcast_artist: "Robin Min"');
+        expect(yaml).toContain('podcast_album: "咸话咸说"');
         expect(yaml).toContain('cover_enabled: "true"');
         // F614 0163: the cover render pins provider+model in vars — the pin is part of the style
         // contract (each provider has its own look), and stays a var because the right value
@@ -214,7 +219,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `OMNIVOICE_SPEED=1.06 kk stage daily-generate "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.transcode_mp3}" "\${vars.vdriver}"`,
             `kk stage daily-intro "\${vars.work_dir}" "\${vars.run_date}" "\${vars.intro_music}"`,
             `kk stage daily-quality-report "\${vars.work_dir}" "\${vars.run_date}"`,
-            `kk stage daily-publish-prep "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-publish-prep "\${vars.work_dir}" "\${vars.run_date}" "\${vars.podcast_artist}" "\${vars.podcast_album}"`,
             `kk stage daily-publish-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `kk stage daily-show-notes "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.title}"`,
             `kk stage daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
