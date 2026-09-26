@@ -1,5 +1,5 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
-# Shipped plugin scripts must be node-builtin-only.
+# Shipped plugin scripts must be node-builtin-only (VALUE imports).
 #
 # `plugins/<name>/scripts/**` ships inside the Claude Code plugin (superskill install)
 # and inside the published npm package, then runs in the USER's project as
@@ -16,33 +16,76 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # Duplicating logic (see the SYNC note in render-md.ts) is the accepted cost of
 # shipping a runner with no dependency footprint. Mirrors spur-new's
 # `plugins/sp/scripts/*.ts` ("stays node-builtin-only — no workspace imports").
-include:
-  - "plugins/*/scripts/**/*.ts"
-exclude:
-  - "**/node_modules/**"
-  - "**/dist/**"
-  # Gitignored build artifact: bundle-plugins.ts copies plugins/ -> apps/cli/plugins/.
-  - "apps/cli/plugins/**"
-
+#
+# ── 2026-09-25: type-only imports are exempt (false positive fixed) ──────────────
+# This rule previously used the `forbidden-import` evaluator with the textual
+# pattern `from\s+['"]@gobing-ai/`, which cannot distinguish `import type { A } from
+# '@gobing-ai/x'` from a value import. It therefore flagged
+# `plugins/sp/scripts/inline-run-setup.ts` (`import type { WorkflowActionTraceWriter }
+# from '@gobing-ai/spur-app'`) and turned `bun run spur-check` red on main.
+#
+# A type-only import is erased before bundling and creates no runtime dependency, so
+# there is nothing to guard against. spur-new's authoritative rule
+# (`.spur/rules/boundary/sp-plugin-standalone.yaml`) says so explicitly — "`import
+# type` / `export type` from any package is fine — erased before bundling (e.g.
+# inline-run-setup.ts's type-only import from @gobing-ai/app)" — and its pattern set
+# matches value import forms only. This file now does the same, for both bounds.
+#
+# The patterns below are line-anchored value-import forms (`^import {`, `^import X from`,
+# `^import * as X from`, `^import '…'`, `^import('…'`, and a `^} from '…'` tail for
+# multi-line statement endings). `import type { … }` matches none of them, because the
+# `type` keyword sits where the pattern expects `{` or an identifier followed by `from`.
+#
+# `^import(` is anchored ON PURPOSE: unanchored, it also matches the type-position
+# `typeof import('…')` used in `interface` declarations (e.g.
+# feature-verification-steps.ts:48-53), which is erased and must not be flagged. The
+# cost is that a runtime dynamic import in expression position (`await import('@gobing-ai/x')`)
+# is not caught textually — the previous `forbidden-import` form did not catch it either
+# (it required a `from '…'` clause), so this is parity, not a regression. Upstream's rule
+# anchors it the same way.
+#
+# Residual (accepted; identical to upstream): a MULTI-LINE type-only import whose
+# `} from '@gobing-ai/x';` lands on its own line still matches the `^} from '…'`
+# alternative — rg matches per line and cannot see the `import type` that opened the
+# statement. Write such imports on one line, or vendor the type into the script.
 rules:
   - id: shipped-script-isolation
     description: >
-      Scripts under plugins/*/scripts/ ship to user projects and must import only
-      node builtins. No @gobing-ai/* package (including the ts-utils output seam,
-      hence raw console.* here), and no relative path escaping the plugin directory.
+      Scripts under plugins/*/scripts/ ship to user projects and must import only node
+      builtins. No VALUE import of an @gobing-ai/* package (including the ts-utils
+      output seam, hence raw console.* here). `import type` / `export type` are exempt —
+      erased before bundling.
     severity: error
     evaluator:
-      type: forbidden-import
+      type: rg
       config:
-        forbidden:
-          - pattern: "from\\s+['\"]@gobing-ai/"
-            matchMode: usage
-          - pattern: "from\\s+['\"]\\.\\./\\.\\./"
-            matchMode: usage
-        scope:
-          include:
-            - "plugins/*/scripts/**/*.ts"
-          exclude:
-            - "**/node_modules/**"
-            - "**/dist/**"
-            - "apps/cli/plugins/**"
+        # Alternatives: named single-line | default or namespace | default + named |
+        # side-effect | dynamic | multi-line tail. Value forms only (see header).
+        pattern: "^import\\s*\\{[^}]*\\}\\s*from\\s*['\"]@gobing-ai/|^import\\s+([A-Za-z_$][\\w$]*|\\*\\s+as\\s+[A-Za-z_$][\\w$]*)\\s+from\\s*['\"]@gobing-ai/|^import\\s+[A-Za-z_$][\\w$]*\\s*,\\s*\\{[^}]*\\}\\s*from\\s*['\"]@gobing-ai/|^import\\s*['\"]@gobing-ai/|^import\\(\\s*['\"]@gobing-ai/|^}\\s*from\\s*['\"]@gobing-ai/"
+    include:
+      - "plugins/*/scripts/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/dist/**"
+      # Gitignored build artifact: bundle-plugins.ts copies plugins/ -> apps/cli/plugins/.
+      - "apps/cli/plugins/**"
+
+  - id: shipped-script-no-relative-escape
+    description: >
+      Scripts under plugins/*/scripts/ must not VALUE-import a path escaping the plugin
+      directory — a shipped script may only reach its own sibling files (or vendored
+      helpers inside plugins/<name>/lib/, reached by a non-escaping relative path).
+      `import type` / `export type` are exempt, as above.
+    severity: error
+    evaluator:
+      type: rg
+      config:
+        # Same alternatives as shipped-script-isolation, bounded to `../../` (a single
+        # `../` stays legal: sibling files and the plugin's own lib/).
+        pattern: "^import\\s*\\{[^}]*\\}\\s*from\\s*['\"]\\.\\./\\.\\.|^import\\s+([A-Za-z_$][\\w$]*|\\*\\s+as\\s+[A-Za-z_$][\\w$]*)\\s+from\\s*['\"]\\.\\./\\.\\.|^import\\s+[A-Za-z_$][\\w$]*\\s*,\\s*\\{[^}]*\\}\\s*from\\s*['\"]\\.\\./\\.\\.|^import\\s*['\"]\\.\\./\\.\\.|^import\\(\\s*['\"]\\.\\./\\.\\.|^}\\s*from\\s*['\"]\\.\\./\\.\\."
+    include:
+      - "plugins/*/scripts/**/*.ts"
+    exclude:
+      - "**/node_modules/**"
+      - "**/dist/**"
+      - "apps/cli/plugins/**"
