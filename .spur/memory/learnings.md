@@ -1196,3 +1196,62 @@ Artifact written: `/Users/robin/xprojects/knowledge-kit/.spur/run/3e8e18d4-4c9f-
   (threshold 90%).
 - Post-repair drift checks re-run: 0 plugins missing from `03`'s tree, 0 missing from its module
   table, 0 code `KK_*` vars missing from `04` §3.
+# Working learnings — batch runall-d6-4440 (feature D6, tasks 0164–0166, 2026-09-25)
+
+## Inline-host proof bracket (the expensive lesson)
+
+- **`proof.fingerprint` has no CLI surface.** The pipeline action resolves to
+  `computeProofInputFingerprint` / `readProofInputContents` in the engine
+  (`packages/app/src/workflow/proof-input-fingerprint.ts`, spur checkout). The project's
+  `plugins/sp/scripts/inline-run-setup.ts` does **not** implement `--fingerprint` (it only takes
+  `--run-id/--file`). An inline host must call the engine module directly — a ~10-line bun runner
+  (`computeProofInputFingerprint({cwd, taskContent, featureContent})`, both filesystem/executor
+  params defaulting to `createNodeFileSystem()`) reproduces the action exactly.
+- **Record-stage writes split into two classes (0166, measured):** backfilling `### Solution` and
+  `### Testing` at record time does **not** move the digest (R6 scopes the fingerprint to
+  Background/Requirements/AC/Design/Plan) — verified: same `sha256:c8597aa0…` before and after.
+  Ticking Requirements/AC **checkboxes does** move it (0164/0165 measured a new digest after the
+  flip). So an inline host either ticks boxes *before* the quality-gate capture, or re-captures and
+  rebinds the verdict proof block afterwards (R4 re-capture pattern).
+- `spur task record` has no checkbox flag: ticking boxes is `spur task update <wbs> --section
+  Requirements|"Acceptance Criteria" --from-file <file>`; the record→done guard is
+  `spur task check <wbs> --as done`, which fails on open boxes.
+
+## CLI failure modes worth keeping
+
+- **Task section headings are `### …` (h3).** An `awk '/^## Solution$/'` extractor yields an empty
+  file and `spur task update --section Solution` fails closed with `[invalid-solution] Solution must
+  contain at least one file:line citation` — a good guard, but the symptom reads as "my section was
+  rejected" rather than "my extractor was wrong".
+- **`spur task check <wbs> --as done` is the honest completion gate**: it projects Plan/AC
+  checkboxes onto the done target, so open boxes fail *before* the transition.
+
+## Delegation
+
+- **A rate-limited subagent can still have landed its artifact.** The 0166 verify dispatch returned
+  `failed (rate_limit_error 1308)` yet `.spur/run/0166-verify-answer.txt` was complete (42 lines,
+  `Verdict: PASS`, full traceability). Check the declared `answerFile` before re-dispatching — the
+  failure was in the summary reply, not the work.
+
+## Batch isolation
+
+- **`git merge --ff-only` is the tripwire that catches a moving base.** While the D6 worktree ran,
+  the invoking tree advanced 9 commits from parallel sessions (E8 xhs-images, E61 podcast,
+  0167/0168) and held another writer's 8 staged paths. The ff-only merge failed by construction —
+  correct outcome is **retain** (worktree + branch + marker `retained`), never force or rebase onto
+  another writer's dirty tree.
+- Per-task commits were **not** separable here: 0164/0165/0166 hunks interleave in
+  `plugins/generations/image-gen/src/providers/types.ts`, so the batch landed as one commit
+  (`16d985e3`) naming all three tasks. Worth flagging against the project's "commit per task"
+  convention when a later wrap reads the history.
+
+## Feature D6 shape (useful for the next fallback-ish feature)
+
+- 0164/0165 are pure code+test (no CLI/config surface → no `docs/04_DESIGN.md` row owed);
+  0166 owns the surface (`metadata.imageGen.fallback`, `metadata.attempts`, `cover_fallback` var)
+  and carried the T3 doc rows in the same change set (`docs/04_DESIGN.md:663-664`,
+  `docs/design/kk-daily-ai-voice.md:67`).
+- `resolveFallbackOrder` keeps the requested provider first and consults `skipReason` for
+  candidates only, so the order is never empty — that is the invariant 0166's exhaustion error
+  (`all providers failed for image <n>: …`) depends on.
+
