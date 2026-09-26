@@ -69,8 +69,8 @@ Convention-named artifacts:
 - `${run_date}_08_script-write_style.md` / `${run_date}_08_script-write_plan.json`: the style contract snapshot (idempotent copy of the shipped `daily-voice-style.zh.md` sidecar) and the agent-authored per-item plan (F613 0162; a failed/rejected plan is simply absent — the script step then builds from templates).
 - `${run_date}_08_script_content.json` / `${run_date}_08_script_voicescript.yaml`: Generator `Content` with VoiceScript YAML body and the human-readable VoiceScript (skipped when the day's `.yaml` exists; Content.metadata stamps `scriptSource`/`scriptPlanErrors`, surfaced by run-report's `脚本来源` line — see `docs/design/daily-voice-script-plan.md`).
 - `${run_date}_10_wrap-docs_docs.json`: VoiceScript wrapped as a single `Doc` for the voice driver selected by `vdriver` (default `voicebox` → voice-gen).
-- `${run_date}_11_generate_content.json`: Synthesized audio `Content` metadata (generate state skipped when the file exists and `metadata.qc.passed` is true).
-- `${run_date}_13_publish-prep_content.json`: Article + audio merged for the publish seam.
+- `${run_date}_11_generate_content.json`: Synthesized audio `Content` metadata (generate state skipped when the file exists and `metadata.qc.passed` is true). Carries `metadata.mp3Path` since 0171 — `transcode_mp3` defaults to `"true"` and rides the `VOICE_GEN_MP3` env channel.
+- `${run_date}_13_publish-prep_content.json`: Article + audio merged for the publish seam. 0171: `publish-prep` publishes the MP3 (`metadata.mp3Path ?? audioPath`), fails loud when that file is not `.mp3` (naming `transcode_mp3`), and stamps the enclosure's ID3v2.3 tags in place (§6).
 - `${run_date}_14_publish-surfdash_result.json` / `${run_date}_16_publish-podcast_result.json`: per-target fan-out results; `${run_date}_15_show-notes_show-notes.md`: rendered show notes.
 - `${run_date}_17_publish_result.json` / `${run_date}_17_publish_publish-status.txt`: merged publish result and the `full|partial|none` routing flag (read by the publish/locales transition guards).
 - `${run_date}_19_run-report_report.json` / `${run_date}_19_run-report_report.md` (work-dir root) plus inputs `${run_date}_19_run-report_episode-plan.json` and the shared rejected audit in `2-plan/`.
@@ -79,6 +79,7 @@ Convention-named artifacts:
 The workflow passes only the generic executor flags (`--in`, `--out`, optional `--plugins-path`).
 
 ## 5. Stage ownership (0133, ADR-115)
+
 
 Every over-cap stage body lives in `plugins/kk/scripts/kk-workflow-stages.ts` (the `daily-*` verbs,
 shared with the kk-solo-podcast / kk-itc / kk-storm-research stages); each delegated YAML action keeps
@@ -95,3 +96,20 @@ channels and every artifact path it reaches; the publish/locale tail is not cove
 the runner suite's per-verb tests cover `classify` / `publish-prep` / `publish-partial` /
 `translate-en`, and `show-notes` (task 0137), while the remaining tail verbs
 (`publish-surfdash`, `publish-podcast`, `run-report`) stay tracked from task 0137.
+
+## 6. Enclosure format & ID3 (0171)
+
+Apple Podcasts validates the enclosure and shows its ID3 tags, so the daily run publishes an MP3
+carrying tags — never the WAV render (`ffmpeg -c copy`, no re-encode):
+
+- `transcode_mp3` defaults to `"true"`; the `generate` state forwards it to the voice driver as
+  `VOICE_GEN_MP3`, so the voice `Content` records `metadata.mp3Path` alongside the WAV
+  `metadata.audioPath`.
+- `kk stage daily-publish-prep <work_dir> <run_date> [artist] [album]` rejects a resolved audio
+  file that is not `.mp3` (exit 1, message names `transcode_mp3`), then stamps ID3v2.3 `title`
+  (article `title`), `artist`, `album` and `date` (the digits-only `run_date` as `YYYY-MM-DD`) into
+  `<audio>.id3.tmp.mp3` and renames it over the original; an ffmpeg failure fails the stage and
+  leaves the episode untouched. The stage runs after `intro-music` because that state re-transcodes
+  the MP3 and would strip tags stamped earlier.
+- The two tag vars are `podcast_artist` (default `Robin Min`) and `podcast_album` (default
+  `咸话咸说`); an empty value omits that tag rather than failing.

@@ -82,7 +82,7 @@ function episodeContent(metadata: Record<string, unknown> = {}): Content {
 }
 
 /** Creates a throwaway local audio file for the two-phase publish test. */
-async function makeAudioFile(dir: string, name = 'episode.wav'): Promise<string> {
+async function makeAudioFile(dir: string, name = 'episode.mp3'): Promise<string> {
     await mkdir(dir, { recursive: true });
     const path = join(dir, name);
     await writeFile(path, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
@@ -194,12 +194,36 @@ describe('podcast-pub mapping', () => {
             title: 'Explicit Title',
             body: 'Body without a heading.',
             format: 'markdown',
-            metadata: { audioFile: '/tmp/ep.wav', status: 'unpublished', durationSeconds: 1262.5 },
+            metadata: { audioFile: '/tmp/ep.mp3', status: 'unpublished', durationSeconds: 1262.5 },
         } as Content);
         expect(episode.title).toBe('Explicit Title');
         expect(episode.status).toBe('unpublished');
         expect(episode.durationSeconds).toBe(1262.5);
-        expect(episode.audio).toEqual({ kind: 'file', path: '/tmp/ep.wav', mimeType: 'audio/wav' });
+        expect(episode.audio).toEqual({ kind: 'file', path: '/tmp/ep.mp3', mimeType: 'audio/mpeg' });
+    });
+
+    test('mapContentToEpisode rejects a .wav audio reference as unsupported by Apple Podcasts (R1/R2)', () => {
+        expect(() =>
+            mapContentToEpisode({
+                title: 'Explicit Title',
+                body: 'Body without a heading.',
+                format: 'markdown',
+                metadata: { audioFile: '/tmp/ep.wav' },
+            } as Content),
+        ).toThrow(
+            /unsupported audio MIME type "audio\/wav" for Apple Podcasts: expected one of audio\/mpeg, audio\/x-m4a, audio\/mp4, video\/mp4, video\/quicktime, video\/x-m4v/,
+        );
+    });
+
+    test('mapContentToEpisode rejects a non-Apple MIME even when metadata.mimeType overrides the extension (R1)', () => {
+        expect(() =>
+            mapContentToEpisode({
+                title: 'Explicit Title',
+                body: 'Body without a heading.',
+                format: 'markdown',
+                metadata: { audioFile: '/tmp/ep.mp3', mimeType: 'audio/wav' },
+            } as Content),
+        ).toThrow(/unsupported audio MIME type "audio\/wav"/);
     });
 
     test('mapContentToEpisode rejects a missing title, missing/ambiguous audio, and a bad duration', () => {
@@ -229,7 +253,7 @@ describe('podcast-pub mapping', () => {
         expect(resolveAudioMimeType('/a/ep.wav', 'audio/x-custom')).toBe('audio/x-custom');
         expect(resolveAudioMimeType('/a/ep.wav')).toBe('audio/wav');
         expect(resolveAudioMimeType('/a/ep.mp3')).toBe('audio/mpeg');
-        expect(resolveAudioMimeType('/a/ep.m4a')).toBe('audio/mp4');
+        expect(resolveAudioMimeType('/a/ep.m4a')).toBe('audio/x-m4a');
         expect(resolveAudioMimeType('/a/ep.unknown')).toBe('application/octet-stream');
     });
 
@@ -360,7 +384,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                     full_local_file_path: audioPath,
                     item_id: 'ITEM01',
                     size: 8,
-                    type: 'audio/wav',
+                    type: 'audio/mpeg',
                 });
 
                 expect(bytes?.method).toBe('PUT');
@@ -379,7 +403,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                         {
                             category: 'audio',
                             url: 'https://media.example.com/media/audio/ITEM01.wav',
-                            mime_type: 'audio/wav',
+                            mime_type: 'audio/mpeg',
                             size_in_bytes: 8,
                         },
                     ],
@@ -388,6 +412,25 @@ describe('podcast-pub publish (R1/R3)', () => {
             } finally {
                 api.restore();
                 await rm(join(process.cwd(), '.tmp-test-podcast'), { recursive: true, force: true });
+            }
+        });
+    });
+
+    test('a .wav audioFile is refused before any microfeed request (R3)', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const api = installFakeApi([]);
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioFile: join(process.cwd(), '.tmp-test-podcast-wav/episode.wav') }),
+                });
+
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('Invalid Content');
+                expect(result.error).toContain('unsupported audio MIME type "audio/wav"');
+                // No create, no presign, no byte upload: the guard precedes the client.
+                expect(api.requests.length).toBe(0);
+            } finally {
+                api.restore();
             }
         });
     });
@@ -414,7 +457,7 @@ describe('podcast-pub publish (R1/R3)', () => {
                     full_local_file_path: audioPath,
                     item_id: 'ITEM02',
                     size: 8,
-                    type: 'audio/wav',
+                    type: 'audio/mpeg',
                 });
                 // R4: only the basename is sent as `full_local_file_path`; the MIME follows the
                 // real extension (cover.png here) instead of assuming PNG.
@@ -672,6 +715,24 @@ describe('podcast-pub management operations (R2/R3)', () => {
                 expect(invalid.ok).toBe(false);
                 expect(invalid.error).toContain('HTTP 400');
                 expect(invalid.error).toContain('Invalid item.');
+            } finally {
+                api.restore();
+            }
+        });
+    });
+
+    test('validate of Content-mapped audio refuses a non-Apple MIME before any request (R3)', async () => {
+        await withEnv({ ...VALID_ENV }, async () => {
+            const api = installFakeApi([]);
+            try {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent({ audioUrl: 'https://cdn.example.com/ep.wav' }),
+                    options: { operation: 'validate' },
+                });
+                expect(result.ok).toBe(false);
+                expect(result.error).toContain('unsupported audio MIME type "audio/wav"');
+                // The guard runs in the mapper, so no /items/validate request is made.
+                expect(api.requests.length).toBe(0);
             } finally {
                 api.restore();
             }
@@ -1313,7 +1374,7 @@ describe('podcast-pub publish assembly options (L1 R6)', () => {
                     {
                         category: 'audio',
                         url: 'https://media.example.com/media/audio/ASM01.wav',
-                        mime_type: 'audio/wav',
+                        mime_type: 'audio/mpeg',
                         size_in_bytes: 8,
                         duration_in_seconds: 1234.5,
                     },
@@ -1444,7 +1505,7 @@ describe('cover-image validation (R4)', () => {
     test('(f) coverImage: /etc/passwd is rejected before any read or upload', async () => {
         await withEnv(VALID_ENV, async () => {
             const dir = join(process.cwd(), '.tmp-test-podcast-r4-passwd');
-            const audioPath = await makeAudioFile(dir, 'episode.wav');
+            const audioPath = await makeAudioFile(dir, 'episode.mp3');
             const api = installFakeApi(twoPhaseRoutesWithCover('ITEM04'));
             try {
                 const result = await new PodcastPubTransport().publish({
@@ -1465,7 +1526,7 @@ describe('cover-image validation (R4)', () => {
     test('(g) a .jpg cover sends the basename and image/jpeg', async () => {
         await withEnv(VALID_ENV, async () => {
             const dir = join(process.cwd(), '.tmp-test-podcast-r4-jpg');
-            const audioPath = await makeAudioFile(dir, 'episode.wav');
+            const audioPath = await makeAudioFile(dir, 'episode.mp3');
             const coverPath = await makeAudioFile(dir, 'cover.jpg');
             const api = installFakeApi(twoPhaseRoutesWithCover('ITEM05'));
             try {

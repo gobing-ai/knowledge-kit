@@ -1240,8 +1240,50 @@ function dailyQualityReport(args: string[]): void {
     });
 }
 
+/**
+ * 0171 R3: Apple Podcasts reads the enclosure's ID3 tags, so the published MP3 carries
+ * title/artist/album/date. `-c copy` moves the audio frames without a re-encode, and the temp
+ * file + rename keeps a failed ffmpeg from truncating the episode in place. An empty value
+ * omits that tag rather than failing. The caller runs this after intro-music, whose mp3
+ * re-transcode would otherwise strip tags stamped earlier.
+ */
+function stampId3Tags(audioFile: string, title: string, runDate: string, artist: string, album: string): void {
+    const tmpFile = `${audioFile}.id3.tmp.mp3`;
+    const metadata: string[] = [];
+    const addTag = (name: string, value: string): void => {
+        if (value.trim() !== '') metadata.push('-metadata', `${name}=${value}`);
+    };
+    addTag('title', title);
+    addTag('artist', artist);
+    addTag('album', album);
+    // run_date is a digits-only stamp (`20260924`); ID3 wants `YYYY-MM-DD`.
+    const isoDate = /^\d{8}$/.test(runDate)
+        ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`
+        : runDate;
+    addTag('date', isoDate);
+    const stamp = spawnSync('ffmpeg', [
+        '-y',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        audioFile,
+        '-c',
+        'copy',
+        '-id3v2_version',
+        '3',
+        ...metadata,
+        tmpFile,
+    ]);
+    if (stamp.status !== 0 || !existsSync(tmpFile)) {
+        if (existsSync(tmpFile)) unlinkSync(tmpFile); // never leave a partial file beside the episode
+        failWith(1, `publish-prep: ffmpeg ID3 stamp failed: ${stamp.stderr?.toString().trim()}`);
+    }
+    sted('rename', audioFile, () => renameSync(tmpFile, audioFile));
+}
+
 function dailyPublishPrep(args: string[]): void {
-    const [workDir = '', runDate = ''] = args;
+    const [workDir = '', runDate = '', artist = '', album = ''] = args;
     const articlePath = join(workDir, '2-article', `${runDate}_06_article_content.json`);
     const audioPath = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
     const prepPath = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
@@ -1254,6 +1296,12 @@ function dailyPublishPrep(args: string[]): void {
             failWith(1, 'publish-prep: voice content carries no mp3Path/audioPath');
         }
         const audioFile = resolve(rawFile);
+        // 0171 R2: publish-prep publishes metadata.mp3Path ?? audioPath, so a WAV here means
+        // transcode_mp3 was turned off — the run would ship an enclosure Apple Podcasts rejects.
+        if (!audioFile.endsWith('.mp3')) {
+            failWith(1, `publish-prep: resolved audio is not an MP3 (transcode_mp3 must be "true"): ${audioFile}`);
+        }
+        stampId3Tags(audioFile, typeof article.title === 'string' ? article.title : '', runDate, artist, album);
         const resolvedCover = resolve(coverPath);
         const hasCover = existsSync(resolvedCover);
         // podcast-pub's documented contract reads metadata.coverImage (map.ts); options.coverPath
