@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +21,11 @@ import {
 } from '../src/index';
 
 const tmpRoot = join(process.cwd(), '.tmp-test-xhs');
+// The scratch tree must not survive the run: an untracked directory created DURING a
+// feature-verification pass changes the tree mid-pass and fails its evidence binding.
+afterAll(async () => {
+    await rm(tmpRoot, { recursive: true, force: true });
+});
 const img = (n: number) => join(tmpRoot, `card-${n}.png`);
 const PROFILE = join(homedir(), '.config', 'kk', 'browser-profiles', 'xhs');
 
