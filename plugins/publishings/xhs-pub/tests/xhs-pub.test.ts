@@ -34,6 +34,8 @@ interface FakeState {
     draftCount: number;
     /** When true the draft control is clicked but the counter never moves. */
     draftSaveIsSilent: boolean;
+    /** A save that closes the editor but prints NO 保存于 entry (counter-only signal). */
+    draftSaveStampsNothing: boolean;
     /** When false the closed-shadow publish bar exposes no control at all. */
     shadowBar: boolean;
     /** True while the image editor is open: the landing view's draft counter is gone. */
@@ -151,10 +153,14 @@ function makeFakePage(initial: FakeState) {
             // and only once the TipTap body actually registered content.
             if (lastShadowLabel === null || !DRAFT_LABELS.has(lastShadowLabel)) return;
             state.draftClicked = true;
-            if (state.draftSaveIsSilent || !bodyTyped) return;
-            state.draftCount += 1;
-            state.draftSavedStamp = true;
+            // Nothing to persist (an untyped TipTap body) leaves the editor open.
+            if (!bodyTyped) return;
+            // `暂存离开` dismisses the editor whether or not the save registers, which is what
+            // makes the counter/stamp delta the only usable signal.
             state.inEditor = false;
+            if (state.draftSaveIsSilent) return;
+            state.draftCount += 1;
+            if (!state.draftSaveStampsNothing) state.draftSavedStamp = true;
         },
     };
     return { page, calls };
@@ -193,6 +199,7 @@ const happy: FakeState = {
     publishedUrl: 'https://www.xiaohongshu.com/explore/abc123',
     draftCount: 0,
     draftSaveIsSilent: false,
+    draftSaveStampsNothing: false,
     shadowBar: true,
     inEditor: false,
     draftSavedStamp: false,
@@ -1008,9 +1015,36 @@ describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (
         return t.publish({ content: cardContent() });
     };
 
+    test('a counter-only save (no save timestamp) confirms from the counter delta', async () => {
+        // Mirrors the live run: the console's counter moves and no stamp is printed.
+        const result = await publishDraft({ ...happy, draftCount: 17, draftSaveStampsNothing: true });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.draftControl).toBe('暂存离开');
+        expect(result.metadata?.draftCountBefore).toBe(17);
+        expect(result.metadata?.draftCountAfter).toBe(18);
+    });
+
+    test('a counter-only save with an unmoved counter does not confirm', async () => {
+        const result = await publishDraft({
+            ...happy,
+            draftCount: 17,
+            draftSaveStampsNothing: true,
+            draftSaveIsSilent: true,
+        });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('draft confirmation');
+        expect(result.error).toContain('before=17');
+    });
+
     test('a counter that only appears after the click cannot confirm a save', async () => {
-        // The counter is unreadable before entry (no baseline) and readable but unmoved after.
-        const result = await publishDraft({ ...happy, draftSaveIsSilent: true, counterHiddenAtBaseline: true });
+        // No baseline (the counter was unreadable on entry), readable but unmoved after the save.
+        const result = await publishDraft({
+            ...happy,
+            draftCount: 17,
+            draftSaveStampsNothing: true,
+            draftSaveIsSilent: true,
+            counterHiddenAtBaseline: true,
+        });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('draft confirmation');
         expect(result.error).toContain('before=null');

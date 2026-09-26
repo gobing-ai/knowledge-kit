@@ -196,15 +196,17 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
         waitForSelector: (selector, options) => pw.waitForSelector(selector, options),
         url: () => pw.url(),
         clickInViewport: async (selector) => {
+            // The console renders the image tab several times; only the in-viewport instance is
+            // the live control. Without a readable viewport those duplicates cannot be told
+            // apart, so the step fails loud instead of clicking a maybe-off-screen copy.
             const viewport = pw.viewportSize?.() ?? null;
+            if (viewport === null) return false;
             const total = await pw.locator(selector).count();
             for (let index = 0; index < total; index += 1) {
                 const candidate = pw.locator(selector).nth(index);
                 const box = await candidate.boundingBox().catch(() => null);
                 if (!box || box.width === 0) continue;
-                const outside =
-                    viewport !== null &&
-                    (box.x < 0 || box.y < 0 || box.x >= viewport.width || box.y >= viewport.height);
+                const outside = box.x < 0 || box.y < 0 || box.x >= viewport.width || box.y >= viewport.height;
                 if (outside) continue;
                 // The tab's inner span intercepts the hit test, so the click must be forced.
                 await candidate.click({ force: true });
