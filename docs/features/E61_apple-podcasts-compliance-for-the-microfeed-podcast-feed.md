@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-09-25T22:41:30.242Z"
-updated_at: "2026-09-25T23:03:39.055Z"
+updated_at: "2026-09-26T00:29:32.646Z"
 ---
 
 # E61: Apple Podcasts compliance for the microfeed podcast feed
@@ -22,7 +22,7 @@ Make the 咸话咸说 microfeed feed (`https://podcast.salty.vip/rss/`) acceptab
 - `kk-daily-ai-voice` publishes MP3 by default (`transcode_mp3` default flipped; existing voice-gen / omni-voice-gen ffmpeg transcode reused).
 - `podcast-pub` refuses audio whose MIME type is not Apple-compatible (e.g. `audio/wav`) before any network call — fail loud, no silent transcode.
 - Minimal ID3 tags (title, artist, album, date) written into the published MP3.
-- Republish the existing 2026-09-24 episode (`IdDo7yGVKuP`) with a compliant MP3 enclosure.
+- Publish the 2026-09-25 episode through the fixed path as the first compliant enclosure (supersedes the 2026-09-24 republish, dropped by operator decision 2026-09-25).
 - A compliant channel artwork file (square, 1400–3000 px, correct extension, ≤ 512 KB target) produced from the current cover.
 - An operator checklist for microfeed-admin channel settings Apple requires (description, owner name/email, categories + subcategory, artwork upload) — kk does not automate these (one-off settings); they apply via the microfeed admin UI or `PUT /api/v1/channels/primary`, and `<itunes:owner>` only renders when `itunes:email` is set.
 
@@ -33,6 +33,7 @@ Make the 咸话咸说 microfeed feed (`https://podcast.salty.vip/rss/`) acceptab
 - Subscribe links on the website — post-approval, once the Apple Podcasts URL exists.
 - A `kk` feed-lint command — castfeedvalidator covers this until a second show exists.
 - Transcoding inside `podcast-pub` (design anti-pattern: the plugin never probes or transcodes audio).
+- Repairing the existing 2026-09-24 item (`IdDo7yGVKuP`, `audio/wav`) — recorded as a known residual in Notes, not repaired by this feature.
 
 ## Acceptance Criteria
 
@@ -64,10 +65,10 @@ Feature: Apple Podcasts compliance for the microfeed podcast feed
 
   @core
   # covers: I14
-  Scenario: R4 — The 2026-09-24 episode is republished with a compliant enclosure
-    Given microfeed item IdDo7yGVKuP whose enclosure is audio/wav
-    When the operator re-uploads the episode audio as MP3 through podcast-pub
-    Then the live RSS item enclosure for IdDo7yGVKuP has type audio/mpeg and a .mp3 URL
+  Scenario: R4 — The 2026-09-25 episode is published with a compliant enclosure
+    Given the daily AI-voice run for 2026-09-25 publishes through the fixed path
+    When kk-daily-ai-voice publishes the episode to microfeed
+    Then the live RSS item enclosure for 2026-09-25 has type audio/mpeg and a .mp3 URL
     And castfeedvalidator reports no FATAL media error for the feed
 
   @core
@@ -106,5 +107,13 @@ Feature: Apple Podcasts compliance for the microfeed podcast feed
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+- **2026-09-25 residual — the 2026-09-24 item.** microfeed item `IdDo7yGVKuP`
+  (https://podcast.salty.vip/i/ai-2026-09-24-IdDo7yGVKuP/) still serves a 52 MB `audio/wav`
+  enclosure. The 2026-09-25 operator decision redirected the compliance deliverable to the
+  2026-09-25 episode (task 0172), so this item was **not** repaired. Apple requires every episode
+  to be playable, so this remains a known feed gap; the upgrade path is the superseded 0172 design
+  (transcode the cached `20260924` intro WAV → MP3, republish via podcast-pub, delete the WAV item)
+  if the feed is submitted to Apple.
 
 ## History
