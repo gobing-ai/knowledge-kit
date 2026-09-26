@@ -15,6 +15,8 @@ import { echoError } from '@gobing-ai/ts-utils';
 const CHANNEL = 'xhs';
 const TARGET = 'xhs';
 const PUBLISH_URL = 'https://creator.xiaohongshu.com/publish/publish';
+/** The console marks a completed publish in its own URL (measured live 2026-09-26). */
+const PUBLISHED_MARKER = 'published=true';
 const LOGIN_TIMEOUT_MS = 120_000;
 const STEP_TIMEOUT_MS = 30_000;
 const POLL_MS = 500;
@@ -647,13 +649,20 @@ export class XhsBrowserTransport implements PublishTransport {
                 });
             }
 
+            // Publish: ONE click, no retry — an unobserved publish must never be repeated, and the
+            // console drops a click that lands while the note is still settling (measured live).
+            await new Promise((resolve) => setTimeout(resolve, this.submitSettleMs));
             const submitted = await this.clickShadowControl(page, SHADOW_CONTROLS.publish);
             if (!submitted.ok) return fail(submitted.error);
 
-            const confirmed = await waitUntil(
-                () => trySelectors(page, SELECTORS.publishConfirm).then((r) => r.found),
-                this.stepTimeoutMs,
-            );
+            const confirmed = await waitUntil(async () => {
+                // The console rewrites its URL to `…published=true` once the post is accepted;
+                // the text hints stay as fallbacks for console variants.
+                if (page.url().includes(PUBLISHED_MARKER)) return true;
+                return trySelectors(page, SELECTORS.publishConfirm)
+                    .then((r) => r.found)
+                    .catch(() => false);
+            }, this.stepTimeoutMs);
             if (!confirmed) {
                 return fail(
                     `publish submission: state unknown — the '${submitted.label}' click was sent but no success state was observed. Check the ${CHANNEL} creator note manager before retrying: a retry could duplicate the post.`,
@@ -665,7 +674,12 @@ export class XhsBrowserTransport implements PublishTransport {
                 target: TARGET,
                 ...(url !== PUBLISH_URL ? { url } : {}),
                 message: `${TARGET} post published`,
-                metadata: base,
+                metadata: {
+                    ...base,
+                    publishControl: submitted.label,
+                    publishClick: `${submitted.x},${submitted.y}`,
+                    publishSignal: url.includes(PUBLISHED_MARKER) ? `url:${PUBLISHED_MARKER}` : 'text',
+                },
             });
         } catch (error) {
             return fail(error instanceof Error ? error.message : String(error));

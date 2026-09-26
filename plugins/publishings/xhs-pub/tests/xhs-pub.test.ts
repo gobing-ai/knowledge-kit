@@ -48,6 +48,8 @@ interface FakeState {
     counterHiddenAtBaseline: boolean;
     /** Set after any draft-control click. */
     draftClicked: boolean;
+    /** The console marks a completed publish in its own URL (`…published=true`). */
+    publishUrlMarker: boolean;
 }
 
 /** Labels XHS uses for the draft control, inside the closed shadow publish bar. */
@@ -133,9 +135,11 @@ function makeFakePage(initial: FakeState) {
         },
         waitForSelector: async () => null,
         url: () =>
-            state.publishConfirm && state.publishedUrl
-                ? state.publishedUrl
-                : 'https://creator.xiaohongshu.com/publish/publish',
+            state.publishUrlMarker
+                ? 'https://creator.xiaohongshu.com/publish/publish?source=&published=true'
+                : state.publishConfirm && state.publishedUrl
+                  ? state.publishedUrl
+                  : 'https://creator.xiaohongshu.com/publish/publish',
         clickInViewport: async (selector) => {
             calls.push({ op: 'clickInViewport', args: [selector] });
             return state.loggedIn;
@@ -207,6 +211,7 @@ const happy: FakeState = {
     counterUnreadable: false,
     counterHiddenAtBaseline: false,
     draftClicked: false,
+    publishUrlMarker: false,
 };
 
 describe('xhs-pub validation (no browser opens)', () => {
@@ -1085,5 +1090,39 @@ describe('xhs-pub in-viewport tab selection requires a viewport (0174 review P4)
         const page = wrapPlaywrightPage(stub);
         expect(await page.clickInViewport?.('div.creator-tab')).toBe(false);
         expect(clicks).toEqual([]);
+    });
+});
+
+describe('xhs-pub live publish confirmation (0174 R5, measured 2026-09-26)', () => {
+    const publishPublic = async (state: FakeState) => {
+        await seedImages();
+        const { open, calls } = makeOpenPage(state);
+        const t = new XhsBrowserTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 300,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent({ publishStatus: 'public' }) });
+        return { result, log: calls[0] ?? [] };
+    };
+
+    test('confirms a published post from the console URL marker alone', async () => {
+        // The live console rewrites its URL to `…published=true`; no light-DOM text appears.
+        const { result } = await publishPublic({ ...happy, publishConfirm: false, publishUrlMarker: true });
+        expect(result.ok).toBe(true);
+        expect(result.url).toContain('published=true');
+        expect(result.metadata?.publishStatus).toBe('public');
+        expect(result.metadata?.publishControl).toBe('发布');
+        expect(result.metadata?.publishSignal).toBe('url:published=true');
+    });
+
+    test('an unobserved publish fails loud and is never retried', async () => {
+        const { result, log } = await publishPublic({ ...happy, publishConfirm: false, publishUrlMarker: false });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('state unknown');
+        expect(result.error).toContain('duplicate');
+        // Exactly one submit click: a retry could publish twice.
+        expect(log.filter((entry) => entry.op === 'clickAt')).toHaveLength(1);
     });
 });
