@@ -1308,3 +1308,47 @@ Repaired documentation drift across `docs/00_ADR.md`, `docs/03_ARCHITECTURE.md`,
 ### Gotchas
 - **DocList input envelope format**: `image-gen` expects a DocList array (`[{ metadata.imageGen: {...} }]`), not a bare Doc object. Passing a bare Doc causes envelope validation failure.
 - **Single-point publish handoff**: Authoring skills should package `Content` and hand off to `kk:publish` rather than directly invoking transport plugins like `xhs-pub`. This ensures central enforcement of publish confirmation and draft-by-default policies.
+`sp:doc-evolve wrapup` is complete. I repaired the stale live-state claims in [podcast-pub.md](/Users/robin/xprojects/knowledge-kit/docs/design/podcast-pub.md), documented the 0176 audio-path fix in [kk-daily-ai-voice.md](/Users/robin/xprojects/knowledge-kit/docs/design/kk-daily-ai-voice.md), and synced [04_DESIGN.md](/Users/robin/xprojects/knowledge-kit/docs/04_DESIGN.md). The audit found no ADR or architecture drift, so `00_ADR.md` and `03_ARCHITECTURE.md` remain unchanged. No task or feature corpus files were written. `git diff --check` passed; I did not run tests for these documentation-only changes.
+
+Learnings artifact: [.spur/run/badc0f49-dabc-4587-85ba-93ee194798a7-wrapup-learnings.md](/Users/robin/xprojects/knowledge-kit/.spur/run/badc0f49-dabc-4587-85ba-93ee194798a7-wrapup-learnings.md)
+
+# Working learnings — wrapup run badc0f49
+
+## 2026-09-25
+
+### 0170 — podcast-pub rejects non-Apple audio MIME
+
+- Put cross-operation policy at the shared Content-to-episode mapper after resolving extension and metadata overrides; one guard there covers publish and Content-mapped validate before network activity.
+- Keep MIME detection separate from publish policy: the extension map describes the file, while the allowlist describes what Apple accepts. Raw `options.item` update/validate paths deliberately bypass the mapper and must remain documented as caller-owned passthrough.
+- A field override is part of the trust path: validate the final resolved MIME after applying `metadata.mimeType`, so the override cannot bypass the guard.
+- Changing a previously accepted fixture format requires updating all fixture callers and assertions; isolate cover-validation fixtures on valid audio so each test still checks its intended behavior.
+
+### 0171 — daily AI voice publishes MP3 with ID3 tags
+
+- Enforce the publish format at the workflow publish-prep seam and keep the plugin MIME guard as a backstop. A WAV fallback should fail with the controlling workflow var named in the error.
+- Stamp metadata after every audio stage that can re-encode the MP3; intro-music runs later and would strip earlier ID3 tags. Use the existing `ffmpeg -c copy` path and temp-file rename to avoid a new dependency and leave the original untouched on failure.
+- Extending generated audio metadata with `mp3Path` changes assumptions in downstream stages. Search every consumer when adding a sibling artifact, especially stages that derive output names from the old extension.
+- Existing fake-binary-on-PATH tests provide a small deterministic seam for external `ffmpeg` behavior; update command-string assertions when workflow stage arguments change.
+
+## 2026-09-27
+
+### 0172 — live MP3 episode verification
+
+- For a publish-path task, verify the emitted live enclosure (MIME, URL extension, and RSS item) after the workflow completes; a successful local stage alone does not prove the feed contract.
+- Keep an explicit residual when the task intentionally publishes a new compliant item instead of repairing old live data. The older WAV item still blocks submission because the criterion applies to every item.
+- A late workflow-stage failure can strand expensive upstream artifacts. Use the existing run artifacts to reproduce and repair the failing stage, then launch a fresh cached run when the orchestration engine cannot resume at a failed node.
+
+### 0173 — Apple-compliant channel artwork and feed checklist
+
+- Separate implementation limits from live state. The microfeed API can update channel description/author/owner/icon, while categories remain admin-only; verify each field against the actual schema and mapper before describing it as unsupported.
+- Image extension and served MIME are independent: microfeed stores the supplied upload `type` as object content type, while the path supplies the key extension. Verify both after upload; the admin cropper re-encodes to PNG and does not enforce the target size cap.
+- Treat operator-applied settings as external state that invalidates old snapshots. After a successful live apply, refresh descriptions of missing fields and artwork, but retain the exact remaining feed blocker.
+- Keep live identifiers and credentials out of repo docs. Record only the evidence needed to establish compliance (description length, owner presence, extension, MIME, and byte size).
+- Pin vendor-source line anchors to the vendored revision and call out deployed-version skew; source anchors can drift even when the documented behavior is correct.
+
+### 0176 — daily-intro MP3 input/output collision
+
+- Fix path collisions where the path is derived, not at the caller: select the existing raw render first, use MP3 only as fallback, and always write to a distinct extension-normalized sibling.
+- When a pipeline adds a derived artifact, audit downstream ordering and filename transformations. The 0171 `mp3Path` addition exposed a latent `.wav`-only rewrite that previously happened to work.
+- Check both WAV-only and MP3-present workspaces, plus the idempotent short-circuit and preservation of the source render. Real failed-run artifacts can reproduce the bug without paying the upstream generation cost again.
+- The CLI may execute a gitignored packaged plugin copy instead of the source tree. Sync that runtime copy before validating a script fix, or the test run may execute stale code.

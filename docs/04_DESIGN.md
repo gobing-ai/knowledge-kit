@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.35.0
+version: 2.36.0
 created_at: 2026-07-22
-updated_at: 2026-09-25
+updated_at: 2026-09-26
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -36,7 +36,7 @@ sync: [T3]
 | [dailynews-gen.md](design/dailynews-gen.md) | Generator plugin for daily news VoiceScript Content | shipped (F6) |
 | [episode-plan-gen.md](design/episode-plan-gen.md) | Episode plan generator: score, dedup, select, translate flag — single upstream for article/script/show notes | shipped (F61, 2026-09-05) |
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
-| [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy | shipped (E6) |
+| [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy; Apple enclosure MIME gate and channel compliance checklist | shipped (E6; 0170/0173) |
 | [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | shipped (E7) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
@@ -660,7 +660,7 @@ File: `.spur/config.yaml`
 | Solo-podcast workflow | `docs/design/kk-solo-podcast.md` | Product state-machine over voice-gen: HITL outline + VoiceScript + WAV (F5 **shipped** 2026-08-20) |
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
-| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`voicebox` -> voice-gen default, `ominivoice` -> omni-voice-gen, `gemini` -> gemini-tts; unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial) (F61 destination; restructured 2026-09-06 by 0097) |
+| Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`voicebox` -> voice-gen default, `ominivoice` -> omni-voice-gen, `gemini` -> gemini-tts; unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial); daily audio defaults to MP3 with ID3 tags (0171), and `intro-music` joins from the raw render to a distinct `.intro.wav` output (0176) (F61 destination; restructured 2026-09-06 by 0097) |
 | Daily voice script plan | `docs/design/daily-voice-script-plan.md` | `script-write` agent.run -> per-item script plan (intro/outro/lead/insight) under a checked-in style contract; dailynews-gen validates + builds from it, template fallback stamped `scriptSource` in the run report (F613 **shipped** 2026-09-25 by 0161+0162: `kk stage daily-script-style` snapshot, `script_write_enabled`+zh guarded `script-write` state with `onError: continue`, `NEWS_REPORT_SCRIPT_FILE` -> `脚本来源` line) |
 | Image-gen runtime fallback | `docs/features/D6_image-gen-runtime-fallback.md` | Opt-in `metadata.imageGen.fallback` on the image-gen envelope: absent = strict fail-fast (one provider, original error), `true` = retry down AUTO_ORDER (minus NEVER_AUTO), a list = retry in exactly that order; `metadata.attempts` records every failed provider try `{image, provider, model, errorClass, message}` (present only when non-empty), policy rejections never fall back, and each paid retry is WARN-logged on stderr first (D6 **shipped** 2026-09-25 by 0164–0166) |
 | Daily news cover stage | `docs/design/kk-daily-ai-voice.md` | `kk stage daily-cover <work_dir> <run_date> <plugins_path> <provider> <model> <fallback>`: reads the lead-item subject brief, writes the image-gen `--in` envelope pinned to the shipped `daily-news-cover` format x `daily-news` style (subject is the only per-run var, `maxImages: 1`), and runs `kk executor run image-gen`; a missing/invalid brief logs a fallback reason and renders the format's default subject (F614 **shipped** 2026-09-25 by 0163); an empty `<fallback>` (the `cover_fallback` var default) keeps strict fail-fast, `true`/a comma list opts into D6 runtime fallback (0166) |

@@ -206,7 +206,7 @@ ever exists.
 | Apple requirement | Emitted by | Live value (`https://podcast.salty.vip/rss/`) |
 | ------------------ | ---------- | --------------------------------------------- |
 | Channel `<itunes:author>` | channel `publisher` → `authors[0].name` (`src/server/feed/FeedPublicRssBuilder.ts:158`) | `Robin Min` |
-| Channel `<itunes:image>` + `<image>` | channel `icon` (`src/server/feed/FeedPublicRssBuilder.ts:161`) | set — holds the non-compliant artwork of §8.1 |
+| Channel `<itunes:image>` + `<image>` | channel `icon` (`src/server/feed/FeedPublicRssBuilder.ts:161`) | compliant 1400×1400 JPEG; `.jpg` URL served as `image/jpeg` (verified 0173) |
 | `<language>`, `<itunes:type>`, `<itunes:explicit>` | channel fields (`src/server/feed/FeedPublicRssBuilder.ts:102-105`) | `zh-cn`, `episodic`, `false` |
 | `<copyright>` | `_microfeed.copyright` (`src/server/feed/FeedPublicRssBuilder.ts:171`) | `©2026` |
 | `<itunes:category>` (one to three) | channel `categories`, `"Parent/Sub"` strings (`src/server/feed/FeedPublicRssBuilder.ts:196`, `src/server/feed/FeedPublicJsonBuilder.ts:128`) | `News` → `Tech News` |
@@ -222,12 +222,12 @@ recorded in this repo.
 
 | Setting | Required value | Why |
 | -------- | -------------- | --- |
-| Description | show description, non-empty | Apple requires the channel `<description>`; live channel content is empty (`/json/` → `"description": ""`), so the RSS channel element is absent (`src/server/feed/FeedPublicRssBuilder.ts:153`) |
-| Owner email | `_microfeed["itunes:email"]` | `<itunes:owner>` renders **only** when it is set (`src/server/feed/FeedPublicRssBuilder.ts:176`); the live feed has no `<itunes:owner>`. This address is published in the public RSS — use one you are willing to expose |
+| Description | show description, non-empty | Apple requires the channel `<description>`; configured and verified non-empty (34 chars) after 0173 (`src/server/feed/FeedPublicRssBuilder.ts:153`) |
+| Owner email | `_microfeed["itunes:email"]` | `<itunes:owner>` renders **only** when it is set (`src/server/feed/FeedPublicRssBuilder.ts:176`); email and owner name are present in the live feed after 0173. This address is published in the public RSS — use one you are willing to expose |
 | Owner name | channel `publisher` | becomes `<itunes:owner><itunes:name>`, copied from the channel `<itunes:author>` (`src/server/feed/FeedPublicRssBuilder.ts:180`); already `Robin Min` |
 | Author | channel `publisher` | channel `<itunes:author>` (`src/server/feed/FeedPublicRssBuilder.ts:158`); already set |
 | Categories | one to three `Parent/Sub` entries | `<itunes:category>` comes from channel `categories` (`src/server/feed/FeedPublicRssBuilder.ts:196`); `News / Tech News` already set; the admin UI accepts up to three (`src/components/admin/channel/EditChannelApp/index.tsx:247`), but Apple recognises only the **first** category + subcategory (`src/components/admin/channel/EditChannelApp/AdminHelpContent.ts:64`) — keep the primary pair first |
-| Artwork upload | `docs/design/assets/podcast-channel-artwork-1400.jpg` — presign it with `"type":"image/jpeg"`, PUT the bytes, then use the returned `media_url` as the channel `icon` (API path below) | replaces the 1024² PNG of §8.1. The stored key must keep a `.jpg` extension **and** the object must be served `content-type: image/jpeg` (§8.4). Do **not** use the admin-UI channel image upload: its cropper re-encodes the cropped canvas to PNG (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:248`, `src/components/admin/shared/AdminImageUploaderApp/index.tsx:291`) and presigns that blob's type (`src/client/requests.ts:20-25`) while the stored key keeps the selected file's extension (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:220-233`), so the artwork is served `image/png` under a `.jpg` name — the exact mismatch §8.1 exists to fix — with no check on the re-encoded size against the 512 KB cap (`isInvalidImage()` is a stub, `src/components/admin/shared/AdminImageUploaderApp/index.tsx:72-80`) |
+| Artwork upload | `docs/design/assets/podcast-channel-artwork-1400.jpg` — presign it with `"type":"image/jpeg"`, PUT the bytes, then use the returned `media_url` as the channel `icon` (API path below) | Applied via the API path in 0173; live `.jpg` artwork is served as `image/jpeg`. If replaced, keep the `.jpg` key extension and verify the served type (§8.4). Do **not** use the admin-UI channel image upload: its cropper re-encodes the cropped canvas to PNG (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:248`, `src/components/admin/shared/AdminImageUploaderApp/index.tsx:291`) and presigns that blob's type (`src/client/requests.ts:20-25`) while the stored key keeps the selected file's extension (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:220-233`), so the artwork is served `image/png` under a `.jpg` name — the exact mismatch §8.1 exists to fix — with no check on the re-encoded size against the 512 KB cap (`isInvalidImage()` is a stub, `src/components/admin/shared/AdminImageUploaderApp/index.tsx:72-80`) |
 | **Blocking pre-submission** — episode enclosures | every published item serves an Apple-ingestible enclosure MIME; none is `audio/wav` | no channel setting fixes this. **Partly cleared 2026-09-27**: the newest item is now `每日 AI 资讯 — 2026-09-25`, `audio/mpeg`, a `.mp3` URL, 9,380,635 B, `itunes:duration 00:17:14` — the fixed daily path publishes MP3 by default since 0171, and the feed's newest item is compliant (run `05d2535a`). **Still blocking:** the 2026-09-24 item remains live serving a ~52 MB `audio/wav`, and this row's criterion is *every* item, so the feed must not be submitted until that item is deleted or republished as MP3 (the residual 0172 records but does not repair). Apply this row after the settings above, immediately before submitting |
 
 **Submit gate.** The last row is not a channel setting — the settings above do not
@@ -244,8 +244,8 @@ offers a channel image upload
 produce a compliant artwork**: the uploader forces a PNG re-encode of the cropped
 canvas (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:291`), so the
 object is served `image/png` whatever extension the selected file had — the mismatch
-of §8.1, and the artwork row above therefore routes around it. Use path B's media
-upload for the artwork. Categories are
+of §8.1, and the artwork row above therefore routes around it. Keep using path B's media
+upload for any artwork replacement. Categories are
 admin-only: `PUT /api/v1/channels/primary` has no `categories` field
 (`apiChannelInputSchema`, `src/shared/ApiSchemas.ts:378`) and the public→internal channel
 mapper copies a fixed field set that excludes categories
@@ -296,7 +296,7 @@ Step 2 — PUT the JPEG bytes to the returned `presigned_url`, then pass the ret
 route stores it as the object's R2 `httpMetadata.contentType`
 (`src/pages/media-upload/[...key].ts:52`). `full_local_file_path` only supplies the
 stored key's `.jpg` extension (`src/server/api/handlers.ts:809-816`). The two are
-independent — live proof: today's artwork is served `content-type: image/png` from a
+independent — before 0173 the live artwork was served `content-type: image/png` from a
 `.jpeg` URL (§8.1). Omit `type` and the object falls back to the PUT request's own
 headers (`src/pages/media-upload/[...key].ts:52`), reintroducing exactly that
 mismatch — so send `"type":"image/jpeg"` and verify it in §8.4.
@@ -347,6 +347,12 @@ castfeedvalidator` → 404) and no documented API, so it cannot be scripted from
 the operator runs it. The script above is the machine-checkable part of this gate;
 treat a `MISSING or wrong` enclosure line as blocking even though the browser
 validator could not be automated.
+
+Last live verification (0173, 2026-09-27): description (34 chars), owner email/name,
+`.jpg` artwork served as `image/jpeg` (179,427 B), and the newest episode's `.mp3`
+`audio/mpeg` enclosure passed. The 2026-09-24 `audio/wav` item remains a submission
+blocker; re-run this check after any channel or feed change and inspect every item before
+submission.
 
 ### 8.5 Known microfeed-template gaps (0173 R4)
 

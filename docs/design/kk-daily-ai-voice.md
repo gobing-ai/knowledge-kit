@@ -113,3 +113,8 @@ carrying tags — never the WAV render (`ffmpeg -c copy`, no re-encode):
   the MP3 and would strip tags stamped earlier.
 - The two tag vars are `podcast_artist` (default `Robin Min`) and `podcast_album` (default
   `咸话咸说`); an empty value omits that tag rather than failing.
+- `kk stage daily-intro` joins the intro to the raw `audioPath` when that file exists,
+  falling back to `mp3Path` only when no raw render is available. It writes a distinct `<stem>.intro.wav`
+  sibling, updates `audioPath`, preserves the source render, and re-transcodes `mp3Path`
+  when present; this prevents ffmpeg from receiving the same path as input and output
+  (0176).
