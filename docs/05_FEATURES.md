@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.24.0
+version: 2.25.0
 created_at: 2026-07-22
-updated_at: 2026-09-25
+updated_at: 2026-09-26
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -75,6 +75,7 @@ sync: [T4]
 | E5 | EmDash CMS publisher | ✅ done | 2 | task `0061` done; `plugins/publishings/emdash-pub` REST PAT transport + markdown→Portable Text mapper; satellite `docs/design/emdash-pub.md`; verify PASS + Shippable PASS (12/12 scenarios MET) |
 | E7 | Remaining wt-publish harvest | ✅ done | 3 | tasks `0141`–`0147` done; harness browser drivers + `medium-pub`/`wechatmp-pub`/`x-pub`/`juejin-pub`/`infoq-pub`/`substack-pub`/`xhs-pub` + thin `kk:publish` skill; satellite `docs/design/remaining-wt-publish-harvest.md`; TCC remainder deferred to F41 |
 | E8 | Xiaohongshu image-card authoring and publishing | ✅ done | 3 | tasks `0167`, `0168`, `0174` done; content-grounded card series via `image-gen`; ordered XHS draft and explicit live path through `xhs-pub`; ADR-024 and `docs/design/xhs-image-cards.md`; verifyall PASS + Shippable PASS |
+| E9 | Reusable browser sessions for publish channels | ⏳ backlog | 3 | task `0177` todo after ts-libs task `0088`; XHS is the first consumer of the planned shared browser-profile package; feature satellite `docs/features/E9_reusable-browser-sessions-for-publish-channels.md` |
 | **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for agent capabilities and product workflows; F1–F9 children done; parent stays open for intake |
 | F1 | LLM-as-judge agent skills | ✅ done | 2 | home for 0034/0037: fat skill `content-judge` (was `judge`); persona subagents retired 2026-08-19 — rubric is an `agent.run` field; `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 / 2026-08-19 |
 | F2 | Topic-core authoring skill | ✅ done | 3 | task `0048` done; one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |
