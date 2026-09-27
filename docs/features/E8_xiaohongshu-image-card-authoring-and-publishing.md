@@ -102,6 +102,7 @@ Feature: Create and publish Xiaohongshu image-card posts from source content
 | --- | ---- | ------ |
 | 0167 | Publish ordered XHS card images as a real draft or explicit live post | done |
 | 0168 | Create source-grounded XHS card series with image-gen and publishable Content | done |
+| 0174 | Fix xhs-pub live creator-UI flow: tab switch, TipTap body, thumbnail selector, closed-shadow publish bar | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

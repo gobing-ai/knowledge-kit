@@ -4,7 +4,7 @@ name: Publish ordered XHS card images as a real draft or explicit live post
 status: done
 template: feature-impl
 created_at: 2026-09-25T18:16:35.413Z
-updated_at: "2026-09-26T07:29:59.380Z"
+updated_at: "2026-09-26T16:08:24.953Z"
 feature_id: E8
 priority: P2
 estimate_hours: 12
@@ -21,8 +21,8 @@ Rubric: parent E2 D2 L2 C1 R2 = 9 → decompose (live external side effect and t
 
 ### Requirements
 
-- [x] (supports R4–R6) `xhs-pub` default driver becomes `script`. `driver: '`agent'` returns `ok: false` naming the unsupported driver. Delete `sessionReady` and the synthetic `draftId`/`draftResult`.
-- [x] Preserve `Content → Result`, `--in`/`--out`, `options.profileDir` / `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR` profile resolution, `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, and draft-by-default (ADR-008, ADR-022, ADR-024).
+- [x] R1. (supports R4–R6) `xhs-pub` default driver becomes `script`. `driver: 'agent'` returns `ok: false` naming the unsupported driver. Delete `sessionReady` and the synthetic `draftId`/`draftResult`.
+- [x] R2. Preserve `Content → Result`, `--in`/`--out`, `options.profileDir` / `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR` profile resolution, `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, and draft-by-default (ADR-008, ADR-022, ADR-024).
 
 ### Acceptance Criteria
 
@@ -90,17 +90,17 @@ Review loop: initial BLOCK (P0 set-count semantics, P1 unnamed failures + discar
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R4 — XHS publisher creates a draft with the ordered images | MET | Offline MET: src/index.ts:243 single ordered setInputFiles(fileSelector, paths); :246-255 set-level wait + exact-N thumbnail check; :273-281 draft-confirm gate -> ok:true Result with no id (:283-288); tests tests/xhs-pub.test.ts:182-205 assert captured.calls === 1 and uploaded === [img0,img1,img2], :168-181 asserts ok:true, no id, imageCount 2. UNVERIFIED for a real session: bun test plugins/publishings/xhs-pub/tests -> 21 pass / 0 fail, all through the injected fake page; SELECTORS (src/index.ts:27-38) are constants never exercised against live creator UI (docs/04_DESIGN.md:500). LIVE VERIFIED 2026-09-25 with the fixed driver (task 0174): the driver created a real draft for the 4 ordered cards and the console confirmed it — .spur/run/xhs-live-preflight/result.draft8.json (ok:true, driver script, publishStatus draft, imageCount 4, draftControl 暂存离开, draftAttempts 1, draftCountBefore 18 -> draftCountAfter 19). Earlier live attempt failed at the editor gate; root cause and fix in task 0174. |
-| R5 — Explicit live request publishes the XHS post | MET | LIVE VERIFIED 2026-09-26 (operator-approved live post, then removed): `bun apps/cli/src/index.ts executor run xhs-pub --in content.public.json` → ok:true, message "xhs post published", url https://creator.xiaohongshu.com/publish/success…, imageCount 4, publishControl 发布 (.spur/run/xhs-live-preflight/result.public3.json). The post was then observed in the note manager as 审核中微服务拆分三原则 and deleted through the manager (verified absent: published notes matching the title = 0). Draft stays the default; `public` is required to reach the submit path (src/index.ts:417, :500-527). |
-| R6 — Missing or failed images prevent a false publish result | MET | Pre-browser validation src/index.ts:73-103 (non-empty, absolute, exists, png/jpg/jpeg/webp) returns ok:false before openPage — test :157-165 asserts closed length 0 with spy; thumbnail mismatch -> ok:false naming step :247-255, test :229-240 (expected 2); missing draft confirmation -> ok:false :278-280, test :241-251; ambiguous public submit -> ok:false + duplicate-post warning :293-297, test :252-264; no ok:true path without an observed confirmation; sessionReady/draftId/draftResult removed. |
-| Req 0167-1 — default driver script; agent fails ok:false naming the driver; sessionReady + synthetic draft removed | MET | src/index.ts:180-199 (driver = 'script', early unsupported driver ... requires the script driver); getPublishTransport default 'script' :320; tests :113-117, :119-126. |
-| Req 0167-2 — preserve Content->Result, --in/--out, profile resolution, fake env, draft-by-default | MET | processPublishIO :333-356 (ContentSchema parse, --out written, non-zero on ok:false); profile override chain :203-207; KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake :321; tests :322-396 (CLI + runInvoke) pass. |
+| R4 — XHS publisher creates a draft with the ordered images | MET | Offline MET: src/index.ts:580 single ordered setInputFiles(fileSelector, paths); :582-593 set-level wait + exact-N thumbnail check; :620-650 draft-confirm gate -> ok:true Result with no id (:637-649); tests tests/xhs-pub.test.ts:392-419 assert captured.calls === 1 and uploaded === [img0,img1,img2], :278-301 asserts ok:true, no id, imageCount 2. UNVERIFIED for a real session: bun test plugins/publishings/xhs-pub/tests -> 43 pass / 0 fail, all through the injected fake page; SELECTORS (src/index.ts:27-38) are constants never exercised against live creator UI (docs/04_DESIGN.md:500). LIVE VERIFIED 2026-09-25 with the fixed driver (task 0174): the driver created a real draft for the 4 ordered cards and the console confirmed it — .spur/run/xhs-live-preflight/result.draft8.json (ok:true, driver script, publishStatus draft, imageCount 4, draftControl 暂存离开, draftAttempts 1, draftCountBefore 18 -> draftCountAfter 19). Earlier live attempt failed at the editor gate; root cause and fix in task 0174. |
+| R5 — Explicit live request publishes the XHS post | MET | LIVE VERIFIED 2026-09-26 (operator-approved live post, then removed): `bun apps/cli/src/index.ts executor run xhs-pub --in content.public.json` → ok:true, message "xhs post published", url https://creator.xiaohongshu.com/publish/success…, imageCount 4, publishControl 发布 (.spur/run/xhs-live-preflight/result.public3.json). The post was then observed in the note manager as 审核中微服务拆分三原则 and deleted through the manager (verified absent: published notes matching the title = 0). Draft stays the default; `public` is required to reach the submit path (src/index.ts:526, :654-684); tests tests/xhs-pub.test.ts:421-435. |
+| R6 — Missing or failed images prevent a false publish result | MET | Pre-browser validation src/index.ts:122-152 (non-empty, absolute, exists, png/jpg/jpeg/webp) returns ok:false before openPage — test :267-275 asserts closed length 0 with spy; thumbnail mismatch -> ok:false naming step :582-593, test :449-464 (expected 2); missing draft confirmation -> ok:false :632-636, test :466-482; ambiguous public submit -> ok:false + duplicate-post warning :667-671, test :501-517; no ok:true path without an observed confirmation; sessionReady/draftId/draftResult removed. |
+| Req 0167-1 — default driver script; agent fails ok:false naming the driver; sessionReady + synthetic draft removed | MET | src/index.ts:513-517 (driver !== 'script', early unsupported driver ... requires the script driver); getPublishTransport default 'script' :695-700; tests :223-227, :229-235. |
+| Req 0167-2 — preserve Content->Result, --in/--out, profile resolution, fake env, draft-by-default | MET | processPublishIO :708-730 (ContentSchema parse, --out written, non-zero on ok:false); profile override chain :518-522; KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake :696; tests :745-824 (CLI + runInvoke) pass. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — XHS publisher creates a draft with the ordered images (R4) | MET | command | bun test plugins/publishings/xhs-pub/tests -> 21 pass/0 fail: tests/xhs-pub.test.ts:168-181 (draft ok, no id, imageCount 2), :182-205 (one ordered setInputFiles call) — superseded by the live draft run result.draft8.json (ok:true, 18 -> 19) |
-| AC2 — Explicit live request publishes the XHS post (R5) | MET | command | result.public3.json (ok:true, console success page, post observed then deleted) |
-| AC3 — Missing or failed images prevent a false publish result (R6) | MET | test | tests/xhs-pub.test.ts:127-165 (validation matrix, openPage never called), :229-264 (thumbnail/draft-confirm/submit failures all ok:false) |
+| AC1 — XHS publisher creates a draft with the ordered images (R4) | MET | command | bun test plugins/publishings/xhs-pub/tests -> 43 pass/0 fail: tests/xhs-pub.test.ts:278-301 (draft ok, no id, imageCount 2), :392-419 (one ordered setInputFiles call) — confirmed by the live draft run result.draft8.json (ok:true, 18 -> 19) |
+| AC2 — Explicit live request publishes the XHS post (R5) | MET | command | result.public3.json (ok:true, console success page, post observed then deleted); tests/xhs-pub.test.ts:421-435 |
+| AC3 — Missing or failed images prevent a false publish result (R6) | MET | test | tests/xhs-pub.test.ts:222-275 (validation matrix, openPage never called), :449-517 (thumbnail/draft-confirm/submit failures all ok:false) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
