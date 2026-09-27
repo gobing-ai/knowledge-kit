@@ -1694,3 +1694,99 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
         });
     });
 });
+
+describe('daily-intro (0176)', () => {
+    // Regression net for the concat-collision bug: pre-fix the join read `mp3Path` first and
+    // rewrote only a `.wav` suffix, so with transcode_mp3=true the output equalled input #1 and
+    // ffmpeg aborted with "same as Input #1". These tests pin audioPath-first selection and the
+    // extension-agnostic `<stem>.intro.wav` derivation. Requires ffmpeg/ffprobe on PATH (the same
+    // pipeline dependency the stage itself shells out to).
+    const INTRO_SECS = '0.3';
+    const MAIN_SECS = '0.5';
+    const RUN_DATE = '20260925';
+
+    function makeAudio(path: string, secs: string, codec: 'wav' | 'mp3'): void {
+        const args = ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono', '-t', secs];
+        if (codec === 'wav') args.push('-c:a', 'pcm_s16le');
+        else args.push('-codec:a', 'libmp3lame', '-qscale:a', '2');
+        args.push(path);
+        const res = spawnSync('ffmpeg', args, { encoding: 'utf-8' });
+        expect(res.status, `ffmpeg fixture ${path}: ${res.stderr}`).toBe(0);
+    }
+
+    function probeDuration(path: string): number {
+        const out = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path], {
+            encoding: 'utf-8',
+        }).stdout;
+        return Number.parseFloat((out ?? '').trim());
+    }
+
+    function setupWorkDir(dir: string, metadata: Record<string, unknown>): string {
+        const workDir = join(dir, 'work');
+        mkdirSync(join(workDir, '3-audio'), { recursive: true });
+        writeFileSync(join(workDir, '3-audio', `${RUN_DATE}_11_generate_content.json`), JSON.stringify({ metadata }));
+        return workDir;
+    }
+
+    function readMeta(workDir: string): Record<string, unknown> {
+        const content = JSON.parse(
+            readFileSync(join(workDir, '3-audio', `${RUN_DATE}_11_generate_content.json`), 'utf-8'),
+        );
+        return content.metadata as Record<string, unknown>;
+    }
+
+    it('merges from the raw render, keeps inputs intact, and is idempotent (R1, R3)', () => {
+        withTempDir((dir) => {
+            const wav = join(dir, 'main.wav');
+            const mp3 = join(dir, 'main.mp3');
+            const intro = join(dir, 'intro.wav');
+            makeAudio(wav, MAIN_SECS, 'wav');
+            makeAudio(mp3, MAIN_SECS, 'mp3');
+            makeAudio(intro, INTRO_SECS, 'wav');
+            const wavBefore = createHash('sha256').update(readFileSync(wav)).digest('hex');
+            const workDir = setupWorkDir(dir, { audioPath: wav, mp3Path: mp3, duration: 0.5 });
+
+            const res = run(['daily-intro', workDir, RUN_DATE, intro]);
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stdout).toContain('intro-music: merged');
+
+            const merged = join(dir, 'main.intro.wav');
+            expect(existsSync(merged)).toBe(true);
+            const mergedDur = probeDuration(merged);
+            expect(mergedDur).toBeGreaterThan(0.6);
+            expect(mergedDur).toBeLessThan(1.2);
+            // R3: raw render preserved byte-for-byte; mp3 re-transcoded to carry the intro.
+            expect(createHash('sha256').update(readFileSync(wav)).digest('hex')).toBe(wavBefore);
+            expect(probeDuration(mp3)).toBeGreaterThan(0.6);
+
+            const meta = readMeta(workDir);
+            expect(meta.audioPath).toBe(merged);
+            expect(meta.introMerged).toBe(true);
+            expect(meta.duration as number).toBeGreaterThan(0.6);
+
+            const again = run(['daily-intro', workDir, RUN_DATE, intro]);
+            expect(again.status).toBe(0);
+            expect(again.stdout).toContain('intro-music cached');
+        });
+    });
+
+    it('never collides output with input when only an mp3 primary exists (R2 — the 0176 bug)', () => {
+        withTempDir((dir) => {
+            const mp3 = join(dir, 'main.mp3');
+            const intro = join(dir, 'intro.wav');
+            makeAudio(mp3, MAIN_SECS, 'mp3');
+            makeAudio(intro, INTRO_SECS, 'wav');
+            const workDir = setupWorkDir(dir, { mp3Path: mp3, duration: 0.5 });
+
+            const res = run(['daily-intro', workDir, RUN_DATE, intro]);
+            expect(res.status, res.stderr).toBe(0);
+
+            const merged = join(dir, 'main.intro.wav');
+            expect(merged).not.toBe(mp3);
+            expect(existsSync(merged)).toBe(true);
+            expect(probeDuration(merged)).toBeGreaterThan(0.6);
+            const meta = readMeta(workDir);
+            expect(meta.audioPath).toBe(merged);
+        });
+    });
+});

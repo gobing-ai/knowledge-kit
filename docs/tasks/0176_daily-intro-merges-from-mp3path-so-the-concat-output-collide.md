@@ -4,7 +4,7 @@ name: daily-intro merges from mp3Path so the concat output collides with its inp
 status: done
 template: issue
 created_at: 2026-09-27T03:08:11.635Z
-updated_at: "2026-09-27T03:15:25.079Z"
+updated_at: "2026-09-27T05:01:09.273Z"
 feature_id: E61
 
 ac_altitude: task-local
@@ -123,37 +123,34 @@ where publishing the mp3 **is** the intent (0171 R2) — deliberately unchanged.
 
 ### Testing
 
-No new automated test. The only existing coverage for this pipeline is YAML string
-assertions (`apps/cli/tests/kk-daily-ai-voice-workflow.test.ts`) — no stage-behavior harness
-exists for `daily-intro` (needs ffmpeg + audio fixtures), which is why the regression shipped.
-Recorded as a carried gap rather than built here; `rg "dailyIntro|intro\.wav" apps/cli/tests`
-returns only the workflow-edge assertions.
+**Pipeline verify results**
 
-Manual repro + fix verification on the real failed artifacts:
+- Verdict: PASS (from verdict artifact)
 
-| Step | Command | Result |
-| --- | --- | --- |
-| Repro (pre-fix) | `kk stage daily-intro .works/kk-daily-ai-voice/20260925 20260925 "...片头.mp3"` | exit 1 — `ffmpeg concat failed: ...same as Input #1` |
-| Post-fix | same command after `rsync -a --delete plugins/ apps/cli/plugins/` | exit 0 — `intro-music: merged 8.8s intro -> ..._11_generate_content.intro.wav (1034.5s total)` |
-| Artifact | `ls -l ..._11_generate_content.intro.wav` | 49,658,032 bytes (main 49,234,792 B + intro) |
-| Metadata | `..._11_generate_content.json` | `audioPath=...intro.wav`, `mp3Path=...mp3`, `duration=1034.537417`, `introMerged=True` |
-| mp3 re-transcode | `ffprobe` on `..._11_generate_content.mp3` | `1034.537417,72538` — duration matches the merged wav, so the publish artifact carries the intro |
-| Idempotence | re-run the same command | `intro-music cached: ...` (short-circuit) |
-| Gate | `bun run lint` (biome + typecheck, all workspaces) | exit 0 |
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Re-verified 2026-09-27 at HEAD 2fb560e1: plugins/kk/scripts/kk-workflow-stages.ts:1140-1147 — candidates = [meta.audioPath, meta.mp3Path] filtered to non-empty, first-existing wins, undefined keeps the fail-loud path. New regression test asserts the merged output derives from the raw render with the raw wav preserved byte-for-byte (sha256 before/after). |
+| R2 | MET | mergedPath = mainPath.replace(/\.(wav\|mp3)$/i, '') + '.intro.wav' (:1156) — distinct sibling for either extension. New test 'never collides output with input when only an mp3 primary exists' reproduces the exact 0176 failure shape and passes on the fixed code. |
+| R3 | MET | New fixture-driven tests (ffmpeg-generated wav/mp3) run the real stage end to end: default transcode_mp3=true shape (audioPath+mp3Path both set) merges, re-transcodes the mp3, updates metadata (audioPath→intro.wav, introMerged, extended duration); re-run short-circuits with 'intro-music cached'. 2 tests, 22 assertions, pass. bun run lint exit 0. |
 
-Raw render preserved (`.wav` untouched, still 49,234,792 B) per the documented contract.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | bun test apps/cli/tests/kk-workflow-stages.test.ts -t 'daily-intro' → 2 pass / 0 fail (2026-09-27). Covers audioPath-first selection, collision-free derivation for .wav and .mp3 primaries, raw-render preservation, idempotence. |
+| AC2 | MET | test | The default-configuration work-dir shape (both audioPath and mp3Path set) completes daily-intro in the new end-to-end test; the live 2026-09-25 episode additionally proves it in production (enclosure audio/mpeg length 9380635 carries the intro, per ffprobe evidence recorded in this task's Testing and the 2026-09-27 live feed check). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-| Priority | Finding | Location |
-| --- | --- | --- |
-| P3 | The ordering fix has no regression test, so a future edit could restore `mp3Path` first without any gate failing; cheapest closure is a fixture-driven `daily-intro` stage test, the same harness gap already carried by 0171 P3. | `plugins/kk/scripts/kk-workflow-stages.ts:1145-1156`; `apps/cli/tests/` (no stage-behavior harness) |
-| P4 | `mergedPath` keeps the `<stem>.intro.wav` name, so a `.mp3`-primary work dir yields a `.intro.wav` whose stem no longer ends in the publish extension — harmless because the stage writes `audioPath` and re-transcodes `mp3Path` explicitly, but it is naming rather than a contract. | `plugins/kk/scripts/kk-workflow-stages.ts:1156` |
-| P4 | The failure was misattributed for a full run cycle because the stage's guard reports `ffmpeg concat failed` for what is a path-derivation defect; the run log then truncates the real ffmpeg text, so the actual cause ("same as Input #1") is only visible by re-running the stage in the foreground. | `plugins/kk/scripts/kk-workflow-stages.ts:1190-1192` |
-| P4 | The fix only takes effect after `rsync -a --delete plugins/ apps/cli/plugins/`, because the CLI resolves stage scripts from that gitignored packaged copy — a silent stale-bundle hazard that costs a full debugging cycle when forgotten. | `resolveStagesScript()` → `apps/cli/plugins/` |
+| Priority | Finding | Location | Disposition |
+| --- | --- | --- | --- |
+| P3 | The ordering fix has no regression test, so a future edit could restore `mp3Path` first without any gate failing; cheapest closure is a fixture-driven `daily-intro` stage test, the same harness gap already carried by 0171 P3. | `plugins/kk/scripts/kk-workflow-stages.ts:1145-1156`; `apps/cli/tests/` (no stage-behavior harness) | FIXED 2026-09-27 — `describe('daily-intro (0176)')` in `apps/cli/tests/kk-workflow-stages.test.ts`: ffmpeg-fixture tests pin audioPath-first merge (raw render preserved, mp3 re-transcoded), mp3-only-primary join with no input/output collision (the exact 0176 failure), and `introMerged` idempotence. 2 tests, 22 assertions, pass. |
+| P4 | `mergedPath` keeps the `<stem>.intro.wav` name, so a `.mp3`-primary work dir yields a `.intro.wav` whose stem no longer ends in the publish extension — harmless because the stage writes `audioPath` and re-transcodes `mp3Path` explicitly, but it is naming rather than a contract. | `plugins/kk/scripts/kk-workflow-stages.ts:1156` | |
+| P4 | The failure was misattributed for a full run cycle because the stage's guard reports `ffmpeg concat failed` for what is a path-derivation defect; the run log then truncates the real ffmpeg text, so the actual cause ("same as Input #1") is only visible by re-running the stage in the foreground. | `plugins/kk/scripts/kk-workflow-stages.ts:1190-1192` | |
+| P4 | The fix only takes effect after `rsync -a --delete plugins/ apps/cli/plugins/`, because the CLI resolves stage scripts from that gitignored packaged copy — a silent stale-bundle hazard that costs a full debugging cycle when forgotten. | `resolveStagesScript()` → `apps/cli/plugins/` | |
 
 **Residual risk:** low — the change is confined to one function, the stage is `introMerged`-guarded,
-and it is exercised end to end by the 2026-09-25 run that reached `done`.
+it is exercised end to end by the 2026-09-25 run that reached `done`, and the 2026-09-27 re-verify
+added the automated regression net (P3 FIXED above).
 
 **Disposition:** fix accepted; the publish tail is unblocked. The `done` transition was taken with
 `--provenance-bypass` (no pipeline run exists for this task) on the strength of a PASS verdict plus
