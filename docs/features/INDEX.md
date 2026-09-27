@@ -35,7 +35,7 @@
     ├── [done] **E4**: Multi-channel suite harvest ([E4_multi-channel-suite-harvest.md](./E4_multi-channel-suite-harvest.md))
     ├── [done] **E5**: EmDash CMS publisher ([E5_emdash-cms-publisher.md](./E5_emdash-cms-publisher.md))
     ├── [done] **E6**: microfeed podcast publisher ([E6_microfeed-podcast-publisher.md](./E6_microfeed-podcast-publisher.md))
-        └── [backlog] **E61**: Apple Podcasts compliance for the microfeed podcast feed ([E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md](./E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md))
+        └── [done] **E61**: Apple Podcasts compliance for the microfeed podcast feed ([E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md](./E61_apple-podcasts-compliance-for-the-microfeed-podcast-feed.md))
     ├── [done] **E7**: Remaining wt-publish harvest ([E7_remaining-wt-publish-harvest.md](./E7_remaining-wt-publish-harvest.md))
     └── [verifying] **E8**: Xiaohongshu image-card authoring and publishing ([E8_xiaohongshu-image-card-authoring-and-publishing.md](./E8_xiaohongshu-image-card-authoring-and-publishing.md))
 [backlog] **F**: kk plugin collection ([F_kk-plugin-collection.md](./F_kk-plugin-collection.md))
