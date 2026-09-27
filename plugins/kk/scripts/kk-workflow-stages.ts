@@ -1138,15 +1138,22 @@ function dailyIntro(args: string[]): void {
             console.log(`intro-music cached: ${contentPath}`);
             return;
         }
-        const rawFile = meta.mp3Path ?? meta.audioPath;
-        if (typeof rawFile !== 'string' || rawFile === '') {
+        // Merge from the raw lossless render; mp3Path is the derived publish artifact.
+        // Preferring mp3Path here made `<stem>.mp3` the concat input while the output
+        // suffix rewrite (`.wav` -> `.intro.wav`) no longer matched, so ffmpeg saw one
+        // path as both input #1 and output and aborted with "same as Input #1".
+        const candidates = [meta.audioPath, meta.mp3Path].filter(
+            (candidate): candidate is string => typeof candidate === 'string' && candidate !== '',
+        );
+        const rawFile = candidates.find((candidate) => existsSync(resolve(candidate))) ?? candidates[0];
+        if (rawFile === undefined) {
             failWith(1, 'intro-music: voice content carries no mp3Path/audioPath');
         }
         const introPath = resolve(introSrc);
         if (!existsSync(introPath)) failWith(1, `intro-music: intro file not found: ${introPath}`);
         const mainPath = resolve(rawFile);
         if (!existsSync(mainPath)) failWith(1, `intro-music: generated audio not found: ${mainPath}`);
-        const mergedPath = mainPath.replace(/\.wav$/, '.intro.wav');
+        const mergedPath = `${mainPath.replace(/\.(wav|mp3)$/i, '')}.intro.wav`;
         const probe = (file: string, entries: string): string =>
             spawnSync('ffprobe', [
                 '-v',
