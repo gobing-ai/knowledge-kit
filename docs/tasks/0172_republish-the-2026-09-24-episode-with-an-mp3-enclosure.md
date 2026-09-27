@@ -4,7 +4,7 @@ name: Republish the 2026-09-24 episode with an MP3 enclosure
 status: done
 template: meta
 created_at: 2026-09-25T23:01:10.935Z
-updated_at: "2026-09-27T03:15:10.624Z"
+updated_at: "2026-09-27T03:17:00.754Z"
 feature_id: E61
 priority: P0
 tags:
@@ -168,22 +168,36 @@ refuse it.
 `每日 AI 资讯 — 2026-09-25`, `audio/mpeg`, `itunes:duration 00:17:14` (= 1034 s, matching the
 joined render). The superseded `2026-09-24` `audio/wav` item is now second.
 
-`castfeedvalidator` **remains unavailable** — re-checked this run: `pip3 download
-castfeedvalidator` → *no matching distribution*; `npm view castfeedvalidator` → *404*. The named
-tool does not exist as an installable package, so it cannot report anything. Substituted a
-reproducible structural check of the same surface against Apple's documented requirements
-(`/tmp/e61-validate-feed.py`, 23 assertions: channel title/description/link/language,
-`itunes:owner` email+name, `itunes:image`, `itunes:category`, `itunes:explicit`, and for the
-newest item title/guid/pubDate/description/`itunes:duration`/`itunes:episodeType` plus
-`enclosure@type == audio/mpeg`, `.mp3` URL and byte `length`):
+`castfeedvalidator` **could not be run** — and the earlier note that it is "unreachable" needs
+correcting: it is not a missing package so much as a **browser-only web service**. Re-checked this
+run: `pip3 download castfeedvalidator` → *no matching distribution*; `npm view castfeedvalidator` →
+*404*; and <https://www.castfeedvalidator.com/> is a PHP/Jaxon app whose form posts through a Jaxon
+AJAX RPC with no documented API, so it cannot be scripted from here. The operator must run it in a
+browser.
+
+Substituted the machine-checkable part of the same gate — a reproducible structural check of the
+surface Apple documents (`/tmp/e61-validate-feed.py`, 23 assertions: channel
+title/description/link/language, `itunes:owner` email+name, `itunes:image`, `itunes:category`,
+`itunes:explicit`, and for the newest item title/guid/pubDate/description/`itunes:duration`/
+`itunes:episodeType` plus `enclosure@type == audio/mpeg`, `.mp3` URL and byte `length`):
 
 ```text
 RESULT: PASS — 0 FATAL, 23 ok
 ```
 
 An earlier run of that script reported 1 FATAL from its own `re.match` anchoring bug (the title
-starts with CJK, so a leading-anchored ISO-date regex could not match); fixed to `re.search`,
-which is what the PASS above reflects. The defect was in the checker, not the feed.
+starts with CJK, so a leading-anchored ISO-date regex could not match); fixed to `re.search`, which
+is what the PASS above reflects. The defect was in the checker, not the feed.
+
+The §8.4 verification script in `docs/design/podcast-pub.md` gained the same enclosure assertions and
+was re-run against the live feed — every line reports `OK`, including
+`newest item <enclosure> type: OK (audio/mpeg)`.
+
+**Residual on the §8.3 submit gate.** That row's criterion is *every* item being Apple-ingestible,
+and the 2026-09-24 item still serves a ~52 MB `audio/wav`. So the row is now **partly** cleared
+(newest item compliant) but still blocks Apple submission until that item is deleted or republished
+as MP3 — the residual 0172 records and deliberately does not repair, now stated explicitly in
+`docs/design/podcast-pub.md` §8.3.
 
 **R5 — operator confirmation before the publish request.** The workflow's own `review/hitl.confirm`
 gate paused the run and was answered `yes` (`--answer yes`); the microfeed request happened after

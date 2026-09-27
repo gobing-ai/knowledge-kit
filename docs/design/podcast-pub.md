@@ -228,7 +228,7 @@ recorded in this repo.
 | Author | channel `publisher` | channel `<itunes:author>` (`src/server/feed/FeedPublicRssBuilder.ts:158`); already set |
 | Categories | one to three `Parent/Sub` entries | `<itunes:category>` comes from channel `categories` (`src/server/feed/FeedPublicRssBuilder.ts:196`); `News / Tech News` already set; the admin UI accepts up to three (`src/components/admin/channel/EditChannelApp/index.tsx:247`), but Apple recognises only the **first** category + subcategory (`src/components/admin/channel/EditChannelApp/AdminHelpContent.ts:64`) — keep the primary pair first |
 | Artwork upload | `docs/design/assets/podcast-channel-artwork-1400.jpg` — presign it with `"type":"image/jpeg"`, PUT the bytes, then use the returned `media_url` as the channel `icon` (API path below) | replaces the 1024² PNG of §8.1. The stored key must keep a `.jpg` extension **and** the object must be served `content-type: image/jpeg` (§8.4). Do **not** use the admin-UI channel image upload: its cropper re-encodes the cropped canvas to PNG (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:248`, `src/components/admin/shared/AdminImageUploaderApp/index.tsx:291`) and presigns that blob's type (`src/client/requests.ts:20-25`) while the stored key keeps the selected file's extension (`src/components/admin/shared/AdminImageUploaderApp/index.tsx:220-233`), so the artwork is served `image/png` under a `.jpg` name — the exact mismatch §8.1 exists to fix — with no check on the re-encoded size against the 512 KB cap (`isInvalidImage()` is a stub, `src/components/admin/shared/AdminImageUploaderApp/index.tsx:72-80`) |
-| **Blocking pre-submission** — episode enclosures | every published item serves an Apple-ingestible enclosure MIME; none is `audio/wav` | no channel setting fixes this: the 2026-09-24 item still serves a ~52 MB `audio/wav`, and submitting the feed with it live fails review (§8.5). Apply this row after the settings above, immediately before submitting |
+| **Blocking pre-submission** — episode enclosures | every published item serves an Apple-ingestible enclosure MIME; none is `audio/wav` | no channel setting fixes this. **Partly cleared 2026-09-27**: the newest item is now `每日 AI 资讯 — 2026-09-25`, `audio/mpeg`, a `.mp3` URL, 9,380,635 B, `itunes:duration 00:17:14` — the fixed daily path publishes MP3 by default since 0171, and the feed's newest item is compliant (run `05d2535a`). **Still blocking:** the 2026-09-24 item remains live serving a ~52 MB `audio/wav`, and this row's criterion is *every* item, so the feed must not be submitted until that item is deleted or republished as MP3 (the residual 0172 records but does not repair). Apply this row after the settings above, immediately before submitting |
 
 **Submit gate.** The last row is not a channel setting — the settings above do not
 clear it. Re-check it after applying them, immediately before submitting; §8.5 has
@@ -316,6 +316,12 @@ own, img = ch.find("i:owner", NS), ch.find("i:image", NS)
 print("channel <description>:", "OK (%d chars)" % len(desc) if desc else "MISSING or EMPTY -> fix via §8.3")
 print("<itunes:owner> email+name:", ok(own is not None and own.findtext("i:email", NS) and own.findtext("i:name", NS)))
 print("<itunes:image> .jpg:", ok(img is not None and img.get("href", "").endswith(".jpg")))
+# The §8.3 blocking row's criterion is the enclosure MIME, so assert it here too
+# instead of leaving the submit gate to an eyeball check.
+it = ch.find("item")
+encl = it.find("enclosure") if it is not None else None
+print("newest item <enclosure> type:", "OK (%s)" % encl.get("type") if (encl is not None and encl.get("type") == "audio/mpeg") else "MISSING or wrong -> fix via §8.3 blocking row")
+print("newest item <enclosure> .mp3:", ok(encl is not None and encl.get("url", "").endswith(".mp3")))
 '
 
 # Channel description/icon as the public JSON feed exposes them.
@@ -334,7 +340,13 @@ step did not land. The two artwork lines are assertions on the §8.3 API upload:
 check reads the presign `type`, so a PNG-re-encoded upload from path A passes the
 first and fails the second. Then validate the feed at <https://castfeedvalidator.com> — no
 ERROR/FATAL in its Feed/Artwork/Media sections (its warning/critical findings, if
-any, are the template gaps of §8.5).
+any, are the template gaps of §8.5). That step is **browser-only**: castfeedvalidator
+ships as a web UI whose form is a Jaxon AJAX RPC, with no installable package
+(`pip3 download castfeedvalidator` → no matching distribution; `npm view
+castfeedvalidator` → 404) and no documented API, so it cannot be scripted from here —
+the operator runs it. The script above is the machine-checkable part of this gate;
+treat a `MISSING or wrong` enclosure line as blocking even though the browser
+validator could not be automated.
 
 ### 8.5 Known microfeed-template gaps (0173 R4)
 
