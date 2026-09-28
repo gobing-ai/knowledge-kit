@@ -4,7 +4,7 @@ name: Migrate XHS publisher to ts-browser-automation and dogfood profile reuse
 status: done
 template: feature-impl
 created_at: 2026-09-27T04:10:35.333Z
-updated_at: "2026-09-28T01:17:32.590Z"
+updated_at: "2026-09-28T04:01:20.415Z"
 feature_id: E9
 
 ac_numbering: task-local
@@ -63,32 +63,15 @@ For the new headless capability, test a read-only authenticated probe separately
 
 ### Solution
 
-Change-map (auto-generated — implement step did not record a Solution).
-Each entry cites the first changed line per file (`file:line`).
+The XHS publisher now opens its existing persistent profile through `@gobing-ai/ts-browser-automation@0.5.11`. The injectable launcher function and `OpenPage` contract remain; the production default retains the upstream type (`plugins/publishings/xhs-pub/src/index.ts:311`). Page selection, the XHS wrapper, closed-shadow CDP probe, and context cleanup are preserved (`plugins/publishings/xhs-pub/src/index.ts:318-343`). The force re-audit repaired cleanup when page creation throws; its regression test asserts exactly one close (`plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:880-890`).
 
-| Change (`file:line`) |
-|----------------------|
-| `packages/publish-harness/src/index.ts:196` |
-| `packages/publish-harness/src/index.ts:282` |
-| `packages/publish-harness/tests/harness.test.ts:0` |
-| `packages/publish-harness/tests/harness.test.ts:217` |
-| `plugins/publishings/xhs-pub/src/index.ts:11` |
-| `plugins/publishings/xhs-pub/src/index.ts:15` |
-| `plugins/publishings/xhs-pub/src/index.ts:17` |
-| `plugins/publishings/xhs-pub/src/index.ts:20` |
-| `plugins/publishings/xhs-pub/src/index.ts:298` |
-| `plugins/publishings/xhs-pub/src/index.ts:317` |
-| `plugins/publishings/xhs-pub/src/index.ts:320` |
-| `plugins/publishings/xhs-pub/src/index.ts:5` |
-| `plugins/publishings/xhs-pub/src/index.ts:565` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1143` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:17` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:29` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:4` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:530` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:532` |
-| `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:7` |
-| `scripts/bundle-plugins.ts:74` |
+The harness retains profile resolution and selector probing; its generic browser launcher and launcher test were removed after the sole consumer migrated (`packages/publish-harness/src/index.ts:231-282`). Profile precedence and the headed login deadline remain in the XHS plugin. Image validation, ordered upload, browser-observed draft/public results, and single-attempt public submission remain unchanged.
+
+The source-checkout profile CLI uses upstream headed login and scoped headless reuse with the same XHS-owned readiness predicate (`plugins/publishings/xhs-pub/src/profile-check.ts:55-96`). Offline tests use injected launchers; the manual recipe covers same-profile login/recovery followed by read-only checking (`docs/design/xhs-image-cards.md:15-27`). Live account dogfood is operator-controlled and was not performed by this re-audit; no live public post is part of this task.
+
+The dependency uses the workspace catalog (`plugins/publishings/xhs-pub/package.json:10`, `package.json:19`, `bun.lock:439`). Product entry bundling inlines the shared browser library while keeping Playwright external (`scripts/bundle-plugins.ts:74-77`). Surface documentation describes the actual function seam separately from the profile helpers' `BrowserLauncher` object (`docs/04_DESIGN.md:501`); publish instructions describe profile setup (`plugins/kk/skills/publish/SKILL.md:36-48`).
+
+The re-audit regenerates Testing from fresh executable evidence with AC identifiers matching E9's four scenario titles, repairing the previous linked-but-unverified feature satisfaction.
 
 ### Testing
 
@@ -98,18 +81,18 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | file:line: plugins/publishings/xhs-pub/src/index.ts:11 (`openPersistentBrowser` import from `@gobing-ai/ts-browser-automation`), :311–312 (`defaultLauncher = openPersistentBrowser`), :319–342 (seam preserved: injectable launch :320, headed launch :325, actionable launch-failure message :326–330, `pages()[0] ?? newPage` :337, `createShadowProbe` :338, `wrapPlaywrightPage`+`ctx.close` :339); harness launcher removed — repo-wide grep: zero code refs to `launchPersistentBrowser`, only historical docs; kept `resolveBrowserProfileDir` packages/publish-harness/src/index.ts:231–240 and `trySelectors` :254; old harness test deleted packages/publish-harness/tests/launch.test.ts (diff −26); scripts/bundle-plugins.ts:74–77 peer note updated |
-| R2 | MET | file:line: plugins/publishings/xhs-pub/src/index.ts:534–538 (options.profileDir → XHS_PROFILE_DIR → KK_BROWSER_PROFILE_DIR → `resolveBrowserProfileDir`), harness default `~/.config/kk/browser-profiles/<channel>` packages/publish-harness/src/index.ts:239 (no copy, no creation); login gate via shared `isXhsConsoleReady` index.ts:301–307, waitUntil with `loginTimeoutMs` :563–570; tested: xhs-pub.test.ts `xhs-pub profile precedence (preserved, 0177)` — 4 tests covering all precedence tiers incl. default channel profile |
-| R3 | MET | file:line: validation before launch index.ts:539–547; `driver: 'agent'` hard-fail :529–533; ordered `setInputFiles` :603; thumbnail-count evidence :606–617; title fill :619–626; TipTap type-not-fill body :628–646; draft default, public only on explicit `publishStatus: 'public'` :542; draft success requires observed save (counter/timestamp), no synthetic success :655–668; fake transport untouched. Tested: pre-existing draft/public routing + live-confirmation suites retained in xhs-pub.test.ts (all passing in gate) |
-| R4 | MET | file:line: profile-check.ts:40–70 (`checkProfileSession`: headless reopen, XHS-owned predicate, catch → explicit `refused`, never fabricated — upstream launcher never creates a profile headless), :76–90 (`loginProfile` headed via upstream `loginWithProfile`); shared readiness predicate index.ts:301–307. Tested: `xhs-pub headless profile-session check` (verified/refused/missing-profile/headed-login-recovery/login-timeout, all asserting context closed) + `xhs-pub profile-check CLI` (exit codes, JSON verdict on stdout, refusal detail on stderr, usage errors). Manual recipe: docs/design/xhs-image-cards.md + plugins/kk/skills/publish/SKILL.md:36–47. Automated tests use fake launchers only — no XHS contact, no account data |
-| R5 | MET | file:line: plugins/publishings/xhs-pub/package.json:10 (`@gobing-ai/ts-browser-automation: catalog:` — normal `@gobing-ai/*` dep, no sibling import), root package.json:19 (catalog `^0.5.11`), bun.lock (`@gobing-ai/ts-browser-automation@0.5.11`, peer playwright ^1.55.0); docs/04_DESIGN.md updated (launcher moved/removal note), docs/design/xhs-image-cards.md updated (recipe + bundle note), SKILL.md:36–47 (profile setup, no secrets); scripts/bundle-plugins.ts:74–77. Recorded: .spur/run/0177-test-gate.log (full gate PASS at this digest) |
+| R1 | MET | `plugins/publishings/xhs-pub/src/index.ts:311` binds the typed upstream default; `plugins/publishings/xhs-pub/src/index.ts:318-343` preserves injectable launch, existing/new page selection, XHS wrapper, CDP probe and close. `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:880-890` now proves closure on page creation failure. `packages/publish-harness/src/index.ts:231-282` retains profile and selector helpers. Repository source search finds no remaining harness launcher callers. `bun run gate` exit 0, including the existing opener and new cleanup regression tests. |
+| R2 | MET | `plugins/publishings/xhs-pub/src/index.ts:538-542` preserves options, XHS env, shared env and channel default precedence; `packages/publish-harness/src/index.ts:231-240` resolves without copying profiles. `plugins/publishings/xhs-pub/src/index.ts:564-573` retains headed login readiness and loginTimeoutMs. `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1158-1219` covers all precedence tiers. `bun run gate` exit 0, including profile, expired-login and actionable launch-failure tests. |
+| R3 | MET | `plugins/publishings/xhs-pub/src/index.ts:532-552` validates images before launch, refuses agent driver, defaults to draft and accepts public only explicitly. `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:310-343` covers ordered upload, body typing and CDP submit; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1051-1089` rejects unobserved draft saves; `plugins/publishings/xhs-pub/src/index.ts:686-716` preserves browser-observed public results, context closure and fake transport. `bun run gate` exit 0, including single-click public-submission tests. |
+| R4 | MET | `plugins/publishings/xhs-pub/src/profile-check.ts:55-96` delegates headed login and headless scoped checking to upstream helpers with the XHS-owned predicate. `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1273-1321` covers verified/refused/missing/expired sessions and closure with fake launchers; `bun run gate` exit 0. The actual CLI missing-profile check returned JSON refused and exit 1 without creating the profile. Manual same-profile login/recovery and headless recipe: `docs/design/xhs-image-cards.md:15-27`. Live account dogfood was not run; no public post was made. |
+| R5 | MET | `plugins/publishings/xhs-pub/package.json:10`, `package.json:19`, `bun.lock:439` use catalog dependency 0.5.11; no sibling-repo source import. `scripts/bundle-plugins.ts:74-77` keeps Playwright external while bundling the upstream package. `docs/04_DESIGN.md:443`, `docs/04_DESIGN.md:501`, `docs/design/xhs-image-cards.md:15-27`, `plugins/kk/skills/publish/SKILL.md:36-48` cover boundary and profile setup. `bun run gate` exit 0; `bun run build:bundle` from apps/cli exit 0; isolated bundled-entry fake smoke exit 0; `spur task check 0177 --strict-core --json` exit 0 with no findings. Coverage: functions 98.55%, lines 98.30% aggregate. Fix-pass artifacts: .spur/run/0177-verify-answer.txt lines 1-42 (fresh traceability); .spur/run/0177-verdict.json lines 1-110 (CLI derivation and residual fold); .spur/run/0177-reverify-solution.md lines 1-9; .spur/run/0177-reverify-bundle-smoke.ts lines 1-18; .spur/run/0177-test-gate.log lines 1-540; .spur/run/0177-check-receipt.json lines 1-18. The stale .spur/run/0177-current-run.env was archived unread to /private/tmp/knowledge-kit-0177-run-env.DdzbzW; .spur/run/0177-reverify-env-archive.txt line 1 records the archive path. E9 scenario-keyed Testing and generated task roster are current; spur feature check E9 and spur task check 0177 --strict-core both pass with no findings. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | index.ts:311–312 binds upstream API; :320/:325 preserve seam + headed launch; :534–538 + harness :239 preserve profile path; tested: `default launcher routes through @gobing-ai/ts-browser-automation` (binding + `{profileDir, headless:false}` + close) and the 4 precedence tests — offline, no browser |
-| AC2 | MET | test | Retained draft/public suites in xhs-pub.test.ts (incl. `xhs-pub live publish confirmation (0174 R5)`) assert browser-observed outcomes (thumbnail count, draft timestamp/counter, click coordinates); semantics code unchanged at index.ts:542, 603–668; recorded: 1502/1502 tests pass in gate log |
-| AC3 | MET | test | `openPage failure (missing playwright)` test asserts upstream actionable wording (`npx playwright install chromium`); `loginProfile: expired session times out` asserts `LoginTimeoutError` with context closed; `refused: a missing profile headless never fabricates a session` asserts `BrowserProfileMissingError` surfaces dir name only — no cookies/credentials in any error path (grep: no secret material in messages) |
-| AC4 | MET | test | profile-check.ts:40–70 returns `verified` only on observed authenticated console, else explicit `refused` + exit 1 (CLI tests assert both); upstream launcher cannot create a profile headless (test asserts refusal for missing profile); manual dogfood recipe recorded in docs/design/xhs-image-cards.md and SKILL.md:36–47; live headless check itself is the operator one-time validation (residual risk below) |
+| Scenario: R1 — XHS publisher uses the shared browser package with the existing profile path | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1222-1238` proves upstream default identity, headed launch and closure; profile precedence tests at `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1158-1219`. `bun run gate` exit 0 (1503 pass, 0 fail). |
+| Scenario: R2 — XHS draft and explicit public routing preserve browser-observed results | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:310-343` covers ordered upload/body/CDP; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1051-1089` verifies draft deltas; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1123-1154` and the following public test cover URL confirmation and one submit attempt. `bun run gate` exit 0 (1503 pass, 0 fail). |
+| Scenario: R3 — Login and browser failures remain actionable without leaking profile material | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:529-538` exercises missing-browser errors; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:880-890` closes on page-creation failure; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1314-1321` covers expired-session LoginTimeoutError and closure. `bun run gate` exit 0. Messages contain readiness/install guidance; no credentials are exported. |
+| Scenario: R4 — A later headless read-only profile check reports verified session or explicit site refusal | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1273-1321` tests upstream headed login then headless verified/refused branches with injected launchers; profile CLI tests start at `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1324`. `bun run gate` exit 0. `bun plugins/publishings/xhs-pub/src/profile-check.ts check --profile .spur/run/0177-reverify-absent-profile --timeout 0` exit 1, JSON status refused; no profile was created. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -121,8 +104,15 @@ Each entry cites the first changed line per file (`file:line`).
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
 | P4 | spur task check | — | task check passed |
+| P4 | design-conformance | — | DONE: narrow upstream default migration, injected OpenPage retained, page/CDP wrappers kept, obsolete harness launcher removed, profile helpers separated from headed publishing, dependency bundled with Playwright external. Source-checkout helper scope is explicit in the Solution and surface docs. |
+| P4 | scope-creep | — | All changed tracked files map to R1/R4/R5, task evidence or the generated feature-roster refresh; no other channel migration or publishing action added. |
+| P4 | full-quality-gate | — | `bun run gate` exit 0; lint/typecheck/build plus pre/post rules; 1503 tests passed, 0 failed. Evidence: reverify `.spur/run/0177-test-gate.log` lines 1-540. Full-tier receipt reused at the same input digest. |
+| P4 | coverage | — | Coverage: functions 98.55%, lines 98.30% aggregate; both exceed 90%. Evidence: reverify `.spur/run/0177-test-gate.log` line 440. |
+| P4 | cli-golden-path-present | — | Actual missing-profile CLI returned JSON refused with exit 1; tested refusal is the expected behavior. Evidence: reverify `.spur/run/0177-reverify-cli.log` line 1 and `.spur/run/0177-reverify-cli.stderr` line 1. |
+| P4 | package-runtime | — | `bun run build:bundle` from apps/cli exit 0; `bun .spur/run/0177-reverify-bundle-smoke.ts` exit 0 verifies copied bundle alone under /private/tmp, without repository node_modules, using the fake transport. Evidence: reverify `.spur/run/0177-reverify-bundle-smoke.log` line 1. |
+| P4 | artifact-disclosure | — | Fix pass wrote `.spur/run/0177-verify-answer.txt` lines 1-42 and derived `.spur/run/0177-verdict.json`; Solution source `.spur/run/0177-reverify-solution.md` lines 1-9; isolated smoke `.spur/run/0177-reverify-bundle-smoke.ts` lines 1-18; gate log/receipt under `.spur/run/0177-*`. Archived the forbidden stale `.spur/run/0177-current-run.env` without reading contents to /private/tmp/knowledge-kit-0177-run-env.DdzbzW; archive path recorded in `.spur/run/0177-reverify-env-archive.txt` line 1. |
 | P4 | evidence-rule-pass | — | All behavior-bearing AC rows have executable evidence or are explicitly non-behavioral. |
-| P4 | residual-sweep | — | blocking=0 deferrable=0 advisory=0 housekeeping=0 |
+| P4 | residual-sweep | — | blocking=0 deferrable=0 advisory=10 housekeeping=0 |
 
 ### References
 
