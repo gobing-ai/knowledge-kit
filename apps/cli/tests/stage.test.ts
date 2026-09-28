@@ -1,8 +1,23 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveStagesScript, runStage } from '../src/stage';
+
+/** Fixture checkout: source marker + source runner (exit 17) + divergent staged runner (exit 18). */
+function fixtureCheckout(): string {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'kk-checkout-')));
+    mkdirSync(join(root, 'apps/cli/src'), { recursive: true });
+    mkdirSync(join(root, 'apps/cli/plugins/kk/scripts'), { recursive: true });
+    mkdirSync(join(root, 'plugins/kk/scripts'), { recursive: true });
+    writeFileSync(join(root, 'apps/cli/src/stage.ts'), '// checkout marker\n');
+    writeFileSync(join(root, 'apps/cli/src/index.ts'), '// entry\n');
+    writeFileSync(join(root, 'plugins/kk/scripts/kk-workflow-stages.ts'), 'process.exit(17);\n');
+    writeFileSync(join(root, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts'), 'process.exit(18);\n');
+    return root;
+}
+
+const STAGES_REL = join('plugins', 'kk', 'scripts', 'kk-workflow-stages.ts');
 
 describe('resolveStagesScript', () => {
     const origCwd = process.cwd();
@@ -53,5 +68,66 @@ describe('runStage', () => {
         expect(() => runStage(['--anything'], '/nonexistent/binary-xyz', '/nonexistent/kk-entry')).toThrow(
             /failed to spawn stage runner/,
         );
+    });
+});
+
+describe('resolveStagesScript — checkout source precedence (0178)', () => {
+    const made: string[] = [];
+
+    afterEach(() => {
+        for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+
+    function checkout(): string {
+        const root = fixtureCheckout();
+        made.push(root);
+        return root;
+    }
+
+    test('a checkout entry executes the checked-in source runner, not the divergent staged copy', () => {
+        const root = checkout();
+        expect(resolveStagesScript(join(root, 'apps/cli/src/index.ts'), root)).toBe(join(root, STAGES_REL));
+    });
+
+    test('a symlinked checkout entry resolves the same source runner', () => {
+        const root = checkout();
+        const link = join(root, 'kk-entry-link.ts');
+        symlinkSync(join(root, 'apps/cli/src/index.ts'), link);
+        expect(resolveStagesScript(link, root)).toBe(join(root, STAGES_REL));
+    });
+
+    test('a recognized checkout with its source runner absent fails naming the source path', () => {
+        const root = checkout();
+        rmSync(join(root, STAGES_REL));
+        let message = '';
+        try {
+            resolveStagesScript(join(root, 'apps/cli/src/index.ts'), root);
+        } catch (err) {
+            message = (err as Error).message;
+        }
+        // The staged copy still exists, yet the failure names the source path — never the stale copy.
+        expect(message).toContain(join(root, STAGES_REL));
+        expect(message).toContain('install or refresh the kk package');
+    });
+
+    test('an unresolvable entry still resolves the module-anchored checkout fallback', () => {
+        const root = checkout();
+        expect(resolveStagesScript('/nonexistent/kk-entry', root)).toBe(join(root, STAGES_REL));
+    });
+
+    test('a tree without the source marker never becomes a checkout runner', () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'kk-no-marker-')));
+        made.push(root);
+        mkdirSync(join(root, 'plugins/kk/scripts'), { recursive: true });
+        writeFileSync(join(root, STAGES_REL), 'process.exit(17);\n');
+        expect(() => resolveStagesScript('/nonexistent/kk-entry', root)).toThrow(/install or refresh the kk package/);
+    });
+
+    test('an unstattable checkout root fails loud instead of crashing', () => {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-file-root-')));
+        made.push(dir);
+        const file = join(dir, 'not-a-directory');
+        writeFileSync(file, 'x');
+        expect(() => resolveStagesScript('/nonexistent/kk-entry', file)).toThrow(/install or refresh the kk package/);
     });
 });

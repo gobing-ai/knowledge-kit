@@ -32,8 +32,9 @@
  * comes from `realpath "$(command -v kk)"` (the installed package root), and falls back to the
  * cwd-relative `plugins/kk/scripts/kk-workflow-stages.ts` when that copy is absent — the checkout
  * tier kk-storm-research's render has always relied on, preserved on purpose. The daily-voice
- * workflow reaches the same script through `kk stage` (apps/cli/src/stage.ts), which applies the
- * same two resolution tiers in TypeScript.
+ * workflow reaches the same script through `kk stage` (apps/cli/src/stage.ts), which resolves a
+ * recognized checkout entry to this checked-in copy (never a stale `apps/cli/plugins/` stage) and an
+ * installed entry to its own package-shipped copy.
  *
  * SYNC: plugins/kk/workflows/{kk-solo-podcast,kk-itc,kk-storm-research}.yaml shell this script
  * (kk-daily-ai-voice goes through `kk stage`). Keep message substrings stable —

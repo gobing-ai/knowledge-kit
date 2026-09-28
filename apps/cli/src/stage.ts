@@ -1,33 +1,73 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 /** Checkout/package-relative location of the stages runner this verb executes. */
 const STAGES_REL = 'plugins/kk/scripts/kk-workflow-stages.ts';
 
+/** Source-module marker: shipped only by a checkout (the package files allow-list never includes src). */
+const CHECKOUT_MARKER_REL = 'apps/cli/src/stage.ts';
+
 /** Checkout root: `apps/cli/{src,dist}` are both three levels below it (bun build keeps import.meta.dir = bundle dir). */
 const CHECKOUT_ROOT = resolve(import.meta.dir, '../../..');
 
+const INSTALL_GUIDANCE = 'install or refresh the kk package (bun link in a checkout)';
+
+/** Regular-file probe that never throws on a missing or unstattable path. */
+function isFile(path: string): boolean {
+    try {
+        return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+    } catch {
+        return false;
+    }
+}
+
+/** realpath that yields '' when the path cannot be resolved (missing entry, dangling symlink). */
+function canonical(path: string): string {
+    try {
+        return realpathSync(path);
+    } catch {
+        return '';
+    }
+}
+
 /**
- * Resolve the stages script: package-shipped copy first (two levels up from the
- * running kk entry, mirroring `dirname $(dirname realpath kk)`), then the
- * checkout copy located from this module's own path — never the current directory.
+ * Resolve the stages script for the running entry.
+ *
+ * A recognized checkout entry — the source-module marker exists and the real package root is this
+ * checkout's `apps/cli` — always executes the checked-in runner. A divergent copy staged under
+ * `apps/cli/plugins/` is ignored, so editing the checked-in runner or its helpers takes effect
+ * without restaging. An installed entry keeps its own package-shipped runner regardless of cwd.
+ * The module-anchored source fallback applies only to a genuine checkout whose package copy is
+ * unavailable; an unrelated ancestor `plugins` directory is never selected.
  */
 export function resolveStagesScript(argv1 = process.argv[1], checkoutRoot = CHECKOUT_ROOT): string {
+    const fromCheckout = join(checkoutRoot, STAGES_REL);
+    const checkoutMarker = join(checkoutRoot, CHECKOUT_MARKER_REL);
+
     let fromPkg = '';
+    let entryPkgRoot = '';
     if (argv1) {
-        try {
-            fromPkg = join(dirname(dirname(realpathSync(argv1))), STAGES_REL);
-        } catch {
-            fromPkg = '';
+        const realEntry = canonical(argv1);
+        if (realEntry) {
+            entryPkgRoot = dirname(dirname(realEntry));
+            fromPkg = join(entryPkgRoot, STAGES_REL);
         }
     }
-    if (fromPkg && existsSync(fromPkg)) return fromPkg;
-    const fromCheckout = join(checkoutRoot, STAGES_REL);
-    if (existsSync(fromCheckout)) return fromCheckout;
-    throw new Error(
-        `kk-workflow-stages.ts not found at ${fromPkg || STAGES_REL} — install or refresh the kk package (bun link in a checkout)`,
-    );
+
+    const checkoutEntry =
+        isFile(checkoutMarker) && entryPkgRoot !== '' && canonical(join(checkoutRoot, 'apps/cli')) === entryPkgRoot;
+    if (checkoutEntry) {
+        if (isFile(fromCheckout)) return fromCheckout;
+        throw new Error(`kk-workflow-stages.ts not found at ${fromCheckout} — ${INSTALL_GUIDANCE}`);
+    }
+
+    if (fromPkg && isFile(fromPkg)) return fromPkg;
+
+    // Installed bundle (or unresolvable entry): only a real checkout may fall back to module-anchored source.
+    if (isFile(checkoutMarker) && isFile(fromCheckout)) return fromCheckout;
+
+    throw new Error(`kk-workflow-stages.ts not found at ${fromPkg || STAGES_REL} — ${INSTALL_GUIDANCE}`);
 }
 
 /** Run one stage (`bun <stages.ts> <stage> [args...]`) with inherited stdio; returns its exit code. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command, CommanderError } from 'commander';
@@ -120,4 +121,82 @@ describe('kk stage verb (0144)', () => {
             }
         });
     });
+});
+
+const STAGES_REL = join('plugins', 'kk', 'scripts', 'kk-workflow-stages.ts');
+
+/** Fixture checkout: source marker + source runner (exit 17) + divergent staged runner (exit 18). */
+function fixtureCheckout(): string {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'kk-compiled-checkout-')));
+    mkdirSync(join(root, 'apps/cli/src'), { recursive: true });
+    mkdirSync(join(root, 'apps/cli/plugins/kk/scripts'), { recursive: true });
+    mkdirSync(join(root, 'plugins/kk/scripts'), { recursive: true });
+    writeFileSync(join(root, 'apps/cli/package.json'), '{"name":"kk-fixture","version":"0.0.0"}\n');
+    writeFileSync(join(root, 'apps/cli/src/stage.ts'), '// checkout marker\n');
+    writeFileSync(join(root, 'apps/cli/src/index.ts'), '// entry\n');
+    writeFileSync(join(root, STAGES_REL), 'process.exit(17);\n');
+    writeFileSync(join(root, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts'), 'process.exit(18);\n');
+    return root;
+}
+
+describe('kk stage resolver — installed vs checkout identity (0178)', () => {
+    it('an installed package keeps its own runner when launched inside a foreign checkout', () => {
+        withTempDir((dir) => {
+            const root = fixtureCheckout();
+            const argv1 = fakePkg(dir, 'process.exit(18);\n');
+            const prevCwd = process.cwd();
+            process.chdir(root);
+            try {
+                expect(resolveStagesScript(argv1)).toBe(realpathSync(join(dir, STAGES_REL)));
+            } finally {
+                process.chdir(prevCwd);
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+    });
+
+    it('compiled CLI in a fixture checkout runs the source runner, not the staged bundle (AC4)', async () => {
+        const root = fixtureCheckout();
+        const unrelatedCwd = realpathSync(mkdtempSync(join(tmpdir(), 'kk-unrelated-cwd-')));
+        try {
+            const built = await Bun.build({
+                entrypoints: [join(import.meta.dir, '../../src/index.ts')],
+                target: 'bun',
+                outdir: join(root, 'apps/cli/dist'),
+            });
+            expect(built.success).toBe(true);
+            const entry = join(root, 'apps/cli/dist/index.js');
+            const run = () =>
+                spawnSync(process.execPath, [entry, 'stage', 'fixture', '--future-flag'], {
+                    cwd: unrelatedCwd,
+                    encoding: 'utf8',
+                }).status;
+
+            // Real source entry, staged copy present: the checked-in runner wins.
+            expect(run()).toBe(17);
+
+            // Editing the source runner takes effect with no restaging.
+            writeFileSync(join(root, STAGES_REL), 'process.exit(19);\n');
+            expect(run()).toBe(19);
+
+            // Relocated into a package without the checkout marker: its own runner is used.
+            const pkg = realpathSync(mkdtempSync(join(tmpdir(), 'kk-relocated-pkg-')));
+            try {
+                mkdirSync(join(pkg, 'plugins/kk/scripts'), { recursive: true });
+                writeFileSync(join(pkg, 'package.json'), '{"name":"kk-relocated","version":"0.0.0"}\n');
+                cpSync(join(root, 'apps/cli/dist'), join(pkg, 'dist'), { recursive: true });
+                writeFileSync(join(pkg, STAGES_REL), 'process.exit(18);\n');
+                const relocated = spawnSync(process.execPath, [join(pkg, 'dist/index.js'), 'stage', 'fixture'], {
+                    cwd: unrelatedCwd,
+                    encoding: 'utf8',
+                });
+                expect(relocated.status).toBe(18);
+            } finally {
+                rmSync(pkg, { recursive: true, force: true });
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+            rmSync(unrelatedCwd, { recursive: true, force: true });
+        }
+    }, 30000);
 });

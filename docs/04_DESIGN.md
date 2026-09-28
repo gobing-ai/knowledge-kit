@@ -315,8 +315,14 @@ before spawn, so success always reflects fresh output (delete-or-verify).
 (`plugins/kk/scripts/kk-workflow-stages.ts`) with positional pass-through, so workflow shell steps
 do not re-resolve the script path themselves. Unknown options are allowed and forwarded. The exit
 code is the stage's own; a non-zero code throws `CommanderError` (`kk.stage.failed`). It is a
-first-layer noun **in addition to** `executor` / `plugin` (ADR-011 amendment 2026-09-18). Runner and
-sidecar resolution, and the delegated stage names, are in §7.
+first-layer noun **in addition to** `executor` / `plugin` (ADR-011 amendment 2026-09-18). The runner
+is resolved by entry identity (task 0178): a **checkout entry** — the source marker
+`apps/cli/src/stage.ts` exists and the real package root is that checkout's `apps/cli` — always
+executes the checked-in source runner, so a divergent copy staged under `apps/cli/plugins/` (a
+gitignored artifact) is never loaded and editing the runner takes effect without restaging; an
+**installed entry** keeps its own package-shipped runner regardless of cwd, and the module-anchored
+source fallback applies only to a genuine checkout whose package copy is missing. Runner and sidecar
+resolution, and the delegated stage names, are in §7.
 
 ## 2. Configuration keys
 
@@ -698,7 +704,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
 - Source missing from all roots → exit 1, stderr lists every searched root.
-- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty-three delegated actions) runs `kk stage <stage> [args…]` (0144): the `stage` verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` from the installed package (two levels up from the running `kk` entry) with the checkout-root fallback derived from this module's own path — never the current directory (0157 R4), then spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
+- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty-three delegated actions) runs `kk stage <stage> [args…]` (0144): the `stage` verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` by entry identity (0178) — a recognized checkout entry runs the checked-in source runner (never a stale `apps/cli/plugins/` copy), an installed entry runs its own package-shipped copy, and only a genuine checkout with that copy missing falls back to the module-anchored path derived from this module's own path — never the current directory (0157 R4) — then spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
 
 ### 7.2 `/workflow-run` command surface
 

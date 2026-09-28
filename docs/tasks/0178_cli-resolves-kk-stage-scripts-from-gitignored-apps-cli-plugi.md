@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: CLI resolves kk stage scripts from gitignored apps/cli/plugins — stale-bundle hazard
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-09-27T06:00:25.472Z
-updated_at: "2026-09-28T04:41:21.035Z"
+updated_at: "2026-09-28T17:07:14.088Z"
 feature_id: F8
 
 priority: P3
@@ -53,12 +53,12 @@ Evidence collected 2026-09-27:
 
 ### Requirements
 
-- [ ] R1. When the real running CLI entry belongs to the module's identified knowledge-kit checkout, both src/index.ts and dist/index.js entries (including symlinked entries) execute the checked-in plugins/kk/scripts/kk-workflow-stages.ts even if apps/cli/plugins contains a divergent copy.
-- [ ] R2. An installed CLI continues to execute its own package-shipped runner, including when cwd is a knowledge-kit checkout or contains planted plugins; an unrelated ancestor plugins directory cannot become a checkout runner merely because CHECKOUT_ROOT points above the installed bundle.
-- [ ] R3. A recognized checkout with its source runner absent fails with the attempted source path and install/refresh guidance instead of silently running its staged copy. The module-anchored source fallback remains available for an absent/unresolvable entry only when the module has checkout identity; when no eligible runner exists, resolution fails loud.
-- [ ] R4. The resolver remains the single selection point for kk stage; positional/unknown-option forwarding, inherited stdio, runner-relative helper loading, exit-code passthrough, and spawn-failure errors retain their current behavior.
-- [ ] R5. Hermetic regression tests distinguish live and stale runners, exercise both source and compiled checkout entry modes plus a symlink, and prove an isolated compiled installed package still works with no checkout files.
-- [ ] R6. docs/04_DESIGN.md §1.8/§7 and the resolver/runner resolution comments describe checkout-source selection and installed-package behavior accurately in the implementation change.
+- [x] R1. When the real running CLI entry belongs to the module's identified knowledge-kit checkout, both src/index.ts and dist/index.js entries (including symlinked entries) execute the checked-in plugins/kk/scripts/kk-workflow-stages.ts even if apps/cli/plugins contains a divergent copy.
+- [x] R2. An installed CLI continues to execute its own package-shipped runner, including when cwd is a knowledge-kit checkout or contains planted plugins; an unrelated ancestor plugins directory cannot become a checkout runner merely because CHECKOUT_ROOT points above the installed bundle.
+- [x] R3. A recognized checkout with its source runner absent fails with the attempted source path and install/refresh guidance instead of silently running its staged copy. The module-anchored source fallback remains available for an absent/unresolvable entry only when the module has checkout identity; when no eligible runner exists, resolution fails loud.
+- [x] R4. The resolver remains the single selection point for kk stage; positional/unknown-option forwarding, inherited stdio, runner-relative helper loading, exit-code passthrough, and spawn-failure errors retain their current behavior.
+- [x] R5. Hermetic regression tests distinguish live and stale runners, exercise both source and compiled checkout entry modes plus a symlink, and prove an isolated compiled installed package still works with no checkout files.
+- [x] R6. docs/04_DESIGN.md §1.8/§7 and the resolver/runner resolution comments describe checkout-source selection and installed-package behavior accurately in the implementation change.
 
 Out of scope: product-plugin discovery in kk-core; workflow YAML selection; migration of legacy
 direct `bun "$st"` workflow actions; stage business logic; changing explicit/env sidecar overrides;
@@ -70,22 +70,22 @@ generated `apps/cli/plugins` bytes or GitHub workflows.
 These are task-local regressions below F8's shipping scenarios; set both `ac_altitude`
 and `ac_numbering` to `task-local`.
 
-- [ ] AC1 — Checkout source wins over a divergent staged runner (req: R1, R5)
+- [x] AC1 — Checkout source wins over a divergent staged runner (req: R1, R5)
   Given a temporary checkout with src/index.ts, dist/index.js, the source-module marker and
   different source/staged runner bodies, when each entry is resolved, then the canonical source
   path wins. Cover a symlink to the entry and a changed source body without restaging.
   Observe in apps/cli/tests/stage.test.ts or apps/cli/tests/commands/stage.test.ts.
-- [ ] AC2 — Installed package keeps its own runner from every cwd (req: R2, R5)
+- [x] AC2 — Installed package keeps its own runner from every cwd (req: R2, R5)
   Given an isolated package with a shipped runner and a simultaneously available foreign checkout,
   when its entry resolves from either a planted-script cwd or that checkout, then its own runner wins.
   A fixture lacking the checkout-module marker must ignore a nearby ancestor source candidate.
   Observe in apps/cli/tests/commands/stage.test.ts with explicit fixture roots and in the compiled smoke case.
-- [ ] AC3 — Missing checkout source cannot silently execute staged bytes (req: R3)
+- [x] AC3 — Missing checkout source cannot silently execute staged bytes (req: R3)
   Given a recognized checkout entry with a staged runner but no source runner, when it resolves,
   then it throws naming the source path and remediation. With an unresolvable entry, the genuine
   module-anchored checkout fallback still succeeds; with neither eligible runner, it fails loud.
   Observe in apps/cli/tests/stage.test.ts.
-- [ ] AC4 — Compiled CLI executes live checkout bytes and packaged install bytes (req: R1, R2, R4, R5)
+- [x] AC4 — Compiled CLI executes live checkout bytes and packaged install bytes (req: R1, R2, R4, R5)
   Given the production CLI bundled into a temporary checkout-shaped dist directory with runners
   exiting 17 (source) and 18 (staged), when bun <entry> stage fixture --future-flag executes from
   an unrelated cwd, then exit 17 proves the source was spawned; changing source to exit 19 changes
@@ -93,12 +93,12 @@ and `ac_numbering` to `task-local`.
   package without apps/cli/src/stage.ts, alongside its own runner exiting 18; it exits 18 even
   when launched inside the foreign checkout. Use the real CLI/resolver, not a mocked resolver.
   Observe in apps/cli/tests/commands/stage.test.ts.
-- [ ] AC5 — Stage invocation contracts remain intact (req: R4)
+- [x] AC5 — Stage invocation contracts remain intact (req: R4)
   Given a fixture runner checking its stage and unknown-option arguments, when runStage and
   the Commander stage action execute it, then arguments and exit codes pass through, stdio remains
   inherited and an unavailable executable raises the existing named spawn error.
   Observe via existing tests in apps/cli/tests/commands/stage.test.ts and apps/cli/tests/stage.test.ts.
-- [ ] AC6 — Documentation states the implemented resolution boundary (req: R6)
+- [x] AC6 — Documentation states the implemented resolution boundary (req: R6)
   Given the implementation diff, when docs/04_DESIGN.md §1.8/§7 and resolution comments are read,
   then they distinguish recognized checkout and installed-package modes, retain sidecar override
   precedence, and do not claim legacy direct shell calls are repaired.
@@ -228,15 +228,84 @@ uses kk stage is contradicted by the legacy solo/ITC/storm scripts and must not 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/stage.ts:14` |
+| `apps/cli/src/stage.ts:2` |
+| `apps/cli/src/stage.ts:35` |
+| `apps/cli/src/stage.ts:45` |
+| `apps/cli/src/stage.ts:49` |
+| `apps/cli/src/stage.ts:51` |
+| `apps/cli/src/stage.ts:57` |
+| `apps/cli/src/stage.ts:8` |
+| `apps/cli/tests/commands/stage.test.ts:125` |
+| `apps/cli/tests/commands/stage.test.ts:2` |
+| `apps/cli/tests/stage.test.ts:2` |
+| `apps/cli/tests/stage.test.ts:7` |
+| `apps/cli/tests/stage.test.ts:73` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:35` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/src/stage.ts:57-63` returns the checked-in source runner for a recognized checkout entry before the staged candidate is considered; `apps/cli/tests/stage.test.ts` source-precedence + symlink tests; `apps/cli/tests/commands/stage.test.ts` compiled-fixture test (real CLI bundle → 17, staged copy → 18 ignored) |
+| R2 | MET | `apps/cli/src/stage.ts:65-70` returns the package-shipped runner for an installed entry; the marker gate at `:67`/`:69` blocks an unrelated ancestor tree; installed-in-foreign-checkout test in `apps/cli/tests/commands/stage.test.ts`; relocated-package leg of the compiled test |
+| R3 | MET | `apps/cli/src/stage.ts:60-62` throws naming the source path with install guidance for a recognized checkout with no source runner; module-anchored fallback at `:69`; fail-loud at `:71`; three tests in `apps/cli/tests/stage.test.ts` |
+| R4 | MET | `apps/cli/src/stage.ts:74-83` `runStage` unchanged (stdio inherit, exit-code passthrough, named spawn error); `apps/cli/src/commands/stage.ts` unchanged (variadic pass-through, `kk.stage.failed`); existing AC5 tests pass |
+| R5 | MET | `apps/cli/tests/stage.test.ts` + `apps/cli/tests/commands/stage.test.ts` — hermetic fixtures distinguish live vs stale runners, cover source + symlink + compiled entries, and the relocated isolated package; focused run 20 pass / 0 fail, 100% line coverage on `apps/cli/src/stage.ts` |
+| R6 | MET | `docs/04_DESIGN.md` §1.8 and §7.1 bullet updated; `plugins/kk/scripts/kk-workflow-stages.ts:31-36` header updated; no generated `apps/cli/plugins` bytes touched |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/stage.test.ts` — "a checkout entry executes the checked-in source runner, not the divergent staged copy"; "a symlinked checkout entry resolves the same source runner"; compiled leg of `apps/cli/tests/commands/stage.test.ts` (17 → edit source → 19 without restaging) |
+| AC2 | MET | test | `apps/cli/tests/commands/stage.test.ts` — "an installed package keeps its own runner when launched inside a foreign checkout"; marker-less ancestor fixture in `apps/cli/tests/stage.test.ts` — "a tree without the source marker never becomes a checkout runner"; relocated-package leg of the compiled test |
+| AC3 | MET | test | `apps/cli/tests/stage.test.ts` — "a recognized checkout with its source runner absent fails naming the source path"; "an unresolvable entry still resolves the module-anchored checkout fallback"; "a tree without the source marker never becomes a checkout runner"; "an unstattable checkout root fails loud instead of crashing" |
+| AC4 | MET | test | `apps/cli/tests/commands/stage.test.ts` — "compiled CLI in a fixture checkout runs the source runner, not the staged bundle (AC4)": real `apps/cli/src/index.ts` bundle, unrelated cwd, 17 → 19 after editing source, relocated package → 18 |
+| AC5 | MET | test | `apps/cli/tests/stage.test.ts` runStage tests; `apps/cli/tests/commands/stage.test.ts` exit-code passthrough, spawn-failure, variadic `stage` command + unknown-flag pass-through; `bun run lint` exit 0 |
+| AC6 | MET | command | `rg -n "checkout entry |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0178
+
+**Scope:** task 0178 diff — 6 files (`apps/cli/src/stage.ts`, `apps/cli/tests/stage.test.ts`, `apps/cli/tests/commands/stage.test.ts`, `docs/04_DESIGN.md`, `plugins/kk/scripts/kk-workflow-stages.ts`, task file)
+**Dimensions:** functional, security, efficiency, correctness, usability, architecture
+**Verdict:** PASS
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location |
+|---|----------|-----------|---------|----------|
+| 1 | P4 (advisory) | correctness | `isFile` collapses every stat failure (EACCES/ENOTDIR) into "absent", so a permission error on the checkout marker reports the generic not-found guidance instead of the underlying errno. Accepted: the fallback is fail-closed and the guidance stays actionable. | `apps/cli/src/stage.ts:19-25` |
+| 2 | P4 (advisory) | usability | The recognized-checkout failure names only the source path; the deliberately-skipped staged copy is not mentioned, so a reader may not see why it was ignored. | `apps/cli/src/stage.ts:60-62` |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `apps/cli/src/stage.ts:57-63` — checkout entry returns `fromCheckout` before the staged candidate is considered; source-precedence tests in `apps/cli/tests/stage.test.ts` |
+| R2 | MET | `apps/cli/src/stage.ts:65-70` — installed entry keeps `fromPkg`; the marker gate blocks an unrelated ancestor tree; installed-in-foreign-checkout test in `apps/cli/tests/commands/stage.test.ts` |
+| R3 | MET | `apps/cli/src/stage.ts:60-62` recognized-checkout throw names the source path; module-anchored fallback at `:69`; fail-loud at `:71` |
+| R4 | MET | `docs/04_DESIGN.md` §1.8 + §7.1 bullet and `plugins/kk/scripts/kk-workflow-stages.ts:31-36` header updated in this diff |
+| R5 | MET | `bun run format` clean; `bun run lint` exit 0 (Biome + all workspace typechecks); focused tests 20/20; `quality-gate run` PASS |
+| R6 | MET | `git status` shows only the 5 intended files; no generated plugin copy edited |
+| AC1 | MET | source wins over the divergent staged copy — checkout-entry and symlinked-entry tests in `apps/cli/tests/stage.test.ts` |
+| AC2 | MET | installed runner kept from a foreign-checkout cwd; marker-less tree never a checkout — `apps/cli/tests/commands/stage.test.ts` + `apps/cli/tests/stage.test.ts` |
+| AC3 | MET | missing source throws naming the source path; unresolvable entry falls back; neither tier → fail loud — three tests in `apps/cli/tests/stage.test.ts` |
+| AC4 | MET | compiled-fixture test in `apps/cli/tests/commands/stage.test.ts` (real CLI bundle: 17 → edit source → 19 → relocated package → 18) |
+| AC5 | MET | see R5 |
+| AC6 | MET | see R4 |
+
+**Next:** proceed to verification.
 
 ### References
 
@@ -258,6 +327,9 @@ uses kk stage is contradicted by the legacy solo/ITC/storm scripts and must not 
 ### History
 
 - 2026-09-28T04:41:21.035Z backlog → todo (system)
+- 2026-09-28T07:35:39.930Z todo → wip (system)
+- 2026-09-28T17:04:00.393Z wip → testing (system)
+- 2026-09-28T17:07:14.088Z testing → done (system)
 
 ### Notes
 
