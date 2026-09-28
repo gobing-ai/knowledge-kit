@@ -4,7 +4,7 @@ name: daily-intro merges from mp3Path so the concat output collides with its inp
 status: done
 template: issue
 created_at: 2026-09-27T03:08:11.635Z
-updated_at: "2026-09-27T05:01:09.273Z"
+updated_at: "2026-09-27T06:02:04.507Z"
 feature_id: E61
 
 ac_altitude: task-local
@@ -146,7 +146,7 @@ where publishing the mp3 **is** the intent (0171 R2) — deliberately unchanged.
 | P3 | The ordering fix has no regression test, so a future edit could restore `mp3Path` first without any gate failing; cheapest closure is a fixture-driven `daily-intro` stage test, the same harness gap already carried by 0171 P3. | `plugins/kk/scripts/kk-workflow-stages.ts:1145-1156`; `apps/cli/tests/` (no stage-behavior harness) | FIXED 2026-09-27 — `describe('daily-intro (0176)')` in `apps/cli/tests/kk-workflow-stages.test.ts`: ffmpeg-fixture tests pin audioPath-first merge (raw render preserved, mp3 re-transcoded), mp3-only-primary join with no input/output collision (the exact 0176 failure), and `introMerged` idempotence. 2 tests, 22 assertions, pass. |
 | P4 | `mergedPath` keeps the `<stem>.intro.wav` name, so a `.mp3`-primary work dir yields a `.intro.wav` whose stem no longer ends in the publish extension — harmless because the stage writes `audioPath` and re-transcodes `mp3Path` explicitly, but it is naming rather than a contract. | `plugins/kk/scripts/kk-workflow-stages.ts:1156` | |
 | P4 | The failure was misattributed for a full run cycle because the stage's guard reports `ffmpeg concat failed` for what is a path-derivation defect; the run log then truncates the real ffmpeg text, so the actual cause ("same as Input #1") is only visible by re-running the stage in the foreground. | `plugins/kk/scripts/kk-workflow-stages.ts:1190-1192` | |
-| P4 | The fix only takes effect after `rsync -a --delete plugins/ apps/cli/plugins/`, because the CLI resolves stage scripts from that gitignored packaged copy — a silent stale-bundle hazard that costs a full debugging cycle when forgotten. | `resolveStagesScript()` → `apps/cli/plugins/` | |
+| P4 | The fix only takes effect after `rsync -a --delete plugins/ apps/cli/plugins/`, because the CLI resolves stage scripts from that gitignored packaged copy — a silent stale-bundle hazard that costs a full debugging cycle when forgotten. | `resolveStagesScript()` → `apps/cli/plugins/` | Filed as task 0178 under F8 (2026-09-27): the CLI must resolve the live source of truth or fail loudly when the packaged copy diverges. |
 
 **Residual risk:** low — the change is confined to one function, the stage is `introMerged`-guarded,
 it is exercised end to end by the 2026-09-25 run that reached `done`, and the 2026-09-27 re-verify

@@ -4,7 +4,7 @@ name: Republish the 2026-09-24 episode with an MP3 enclosure
 status: done
 template: meta
 created_at: 2026-09-25T23:01:10.935Z
-updated_at: "2026-09-27T05:01:08.811Z"
+updated_at: "2026-09-27T06:02:32.229Z"
 feature_id: E61
 priority: P0
 tags:
@@ -154,7 +154,7 @@ artifact-cache-guarded).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R4 | MET | Re-verified live 2026-09-27: feed https://podcast.salty.vip/rss/ newest item is guid OeMM0VF7jkh (每日 AI 资讯 — 2026-09-25, pubDate Sun, 27 Sep 2026 03:12:24 GMT) with enclosure type="audio/mpeg" length="9380635"; the enclosure URL serves content-type audio/mpeg (range request). Length differs from the recorded 9378666 — consistent with the 0176 intro merge + re-transcode before the final publish. The older 2026-09-24 item still serves audio/wav, as recorded in E61 notes. castfeedvalidator remains not installable (re-attempted under --fix all: no gem/npm package exists; it is a web service) — substitute structural check stands, DEFERRED in the Review table. |
+| R4 | MET | Re-verified live 2026-09-27: feed newest item guid OeMM0VF7jkh (每日 AI 资讯 — 2026-09-25, pubDate Sun, 27 Sep 2026 03:12:24 GMT) enclosure type="audio/mpeg" length="9380635", served content-type audio/mpeg. Length differs from the recorded 9378666 — consistent with the 0176 intro merge + re-transcode. The older 2026-09-24 item still serves audio/wav (recorded in E61 Notes). castfeedvalidator.com run against the live feed via browser automation (2026-09-27): feed download + XML parse succeed, no FATAL; episode warnings trace to the legacy wav item and missing Content-Length/ETag/Last-Modified headers — all already recorded in E61 Notes / §8.5. No new issues. |
 | R4 — The 2026-09-25 episode is published with a compliant enclosure | MET | Same row as this verdict's R4 (2026-09-27 live re-verify): item OeMM0VF7jkh enclosure audio/mpeg length 9380635, served audio/mpeg; channel metadata + .jpg artwork all present. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
@@ -170,14 +170,15 @@ artifact-cache-guarded).
 | Priority | Finding | Location | Disposition |
 | --- | --- | --- | --- |
 | P3 | Live-only evidence with no automated regression net — R1–R4 were proved against production (feed + enclosure + CDN headers), so nothing fails if the enclosure type or ID3 stamping regresses; same stage-harness gap as 0171 P3, filed as 0176 P3. | `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` (YAML string assertions only) | RESOLVED 2026-09-27 — the net now exists at unit level: podcast-pub MIME-guard tests (55 pass; non-Apple enclosure refused pre-network), ID3-stamp assertions (`apps/cli/tests/kk-workflow-stages.test.ts:614`), and the new `daily-intro` regression tests (0176 P3 FIXED). Live-only proof is inherent to a live-publish task. |
-| P3 | `castfeedvalidator` could not be run and is not installable, so R4's validator half rests on a substitute structural check rather than the named tool; re-check evidence recorded, and R4 should be re-run if the operator knows the tool under another name. | `.spur/run/0172-verdict.json` (R4 evidence); Testing section | DEFERRED 2026-09-27 — re-attempted under --fix all: no gem/npm package exists (`gem install castfeedvalidator` → not found; it is a web service, not an installable tool). Substitute structural check re-run: enclosure `audio/mpeg` length 9380635 served as `audio/mpeg`, channel description/owner/artwork all OK. |
+| P3 | `castfeedvalidator` could not be run and is not installable, so R4's validator half rests on a substitute structural check rather than the named tool; re-check evidence recorded, and R4 should be re-run if the operator knows the tool under another name. | `.spur/run/0172-verdict.json` (R4 evidence); Testing section | RESOLVED 2026-09-27 — ran castfeedvalidator.com against the live feed via browser automation (the service is a session-driven Jaxon app; not scriptable by plain HTTP): feed download + XML parse succeed, no FATAL; the only episode warnings trace to the legacy 2026-09-24 `audio/wav` item and the missing Content-Length/ETag/Last-Modified headers — both already recorded (E61 Notes and §8.5). No new issues. |
 | P4 | The published MP3 carries a stale `TXXX` frame (`made with suno; created=2026-09-17…`) inherited from the intro sting's own tags — harmless metadata, no compliance impact, but a visible artifact of joining the sting. | published enclosure `audio-2a00c95f16bd3d43edb5bfdc6ec456c4.mp3` | |
-| P4 | Task title and the 2026-09-25T23:10 Q&A entry are stale — the frontmatter name still reads "Republish the 2026-09-24 episode…" and the Q&A still says "reuse the cached intro WAV and transcode", both superseded by the operator's 09-25 decision and by what was executed. | `docs/tasks/0172_republish-the-2026-09-24-episode-with-an-mp3-enclosure.md` frontmatter `name`; Q&A | |
+| P4 | Task title and the 2026-09-25T23:10 Q&A entry are stale — the frontmatter name still reads "Republish the 2026-09-24 episode…" and the Q&A still says "reuse the cached intro WAV and transcode", both superseded by the operator's 09-25 decision and by what was executed. | `docs/tasks/0172_republish-the-2026-09-24-episode-with-an-mp3-enclosure.md` frontmatter `name`; Q&A | RESOLVED 2026-09-27 — Q&A carries a superseding entry (2026-09-26T20:15Z) recording what was actually executed; the frontmatter `name` has no CLI edit verb, so the stale string is recorded here rather than rewritten outside the corpus gate. |
 | P4 | The `done` transition was taken with `--provenance-bypass` (no pipeline run exists for 0172) on the strength of a PASS verdict plus live verification; this bypass is recorded, not silent. | `.spur/run/0172-verdict.json`; task frontmatter | |
 
 **Residual risk:** low for the shipped episode — it is live and was verified end to end against the
-feed and the enclosure. The residual is test coverage, not correctness; the 2026-09-27 re-verify
-closed the unit-level net (see dispositions above).
+feed and the enclosure, and corroborated by a full castfeedvalidator run on 2026-09-27 (no FATAL;
+warnings all map to already-recorded gaps). The residual is test coverage, not correctness; the
+2026-09-27 re-verify closed the unit-level net (see dispositions above).
 
 **Disposition:** accepted; E61's live deliverable is met.
 
