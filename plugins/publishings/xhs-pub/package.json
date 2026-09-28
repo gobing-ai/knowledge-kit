@@ -7,6 +7,7 @@
     },
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
         "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:"

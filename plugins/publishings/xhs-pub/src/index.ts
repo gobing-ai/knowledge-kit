@@ -3,21 +3,21 @@ import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
     FakeBrowserTransport,
-    launchPersistentBrowser,
     type PublishTransport,
     type PublishTransportPayload,
     resolveBrowserProfileDir,
     trySelectors,
 } from '@gobing-ai/publish-harness';
+import { openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 
-const CHANNEL = 'xhs';
+export const CHANNEL = 'xhs';
 const TARGET = 'xhs';
-const PUBLISH_URL = 'https://creator.xiaohongshu.com/publish/publish';
+export const PUBLISH_URL = 'https://creator.xiaohongshu.com/publish/publish';
 /** The console marks a completed publish in its own URL (measured live 2026-09-26). */
 const PUBLISHED_MARKER = 'published=true';
-const LOGIN_TIMEOUT_MS = 120_000;
+export const LOGIN_TIMEOUT_MS = 120_000;
 const STEP_TIMEOUT_MS = 30_000;
 const POLL_MS = 500;
 /** The console drops a submit click that lands while the note is still settling (live run 2026-09-25). */
@@ -296,12 +296,28 @@ export async function createShadowProbe(
 }
 
 /**
+ * XHS-owned readiness predicate: the image-post tab renders only for an authenticated
+ * creator console. Shared by the publish login gate and the profile-session capability
+ * (src/profile-check.ts) so both spell the authentication signal exactly once.
+ */
+export async function isXhsConsoleReady(page: XhsPage): Promise<boolean> {
+    return trySelectors(page, SELECTORS.imageTab).then((r) => r.found);
+}
+
+/**
+ * Production launcher: the upstream typed persistent-context opener (0177). Named so the
+ * migration is provable offline — tests assert this binding, never launch a real browser.
+ */
+export const defaultLauncher: (options: { profileDir: string; headless: boolean }) => Promise<unknown> =
+    openPersistentBrowser;
+
+/**
  * Build the default page opener. The launcher is injected so the seam (page wrapping, shadow
  * probe wiring, context close, launch-failure message) is testable without launching a browser;
- * production uses `launchPersistentBrowser`.
+ * production uses the upstream typed `openPersistentBrowser` (@gobing-ai/ts-browser-automation).
  */
 export function makeDefaultOpenPage(
-    launch: (options: { profileDir: string; headless: boolean }) => Promise<unknown> = launchPersistentBrowser,
+    launch: (options: { profileDir: string; headless: boolean }) => Promise<unknown> = defaultLauncher,
 ): OpenPage {
     return async (profileDir) => {
         let context: unknown;
@@ -546,10 +562,7 @@ export class XhsBrowserTransport implements PublishTransport {
             // Login/UI gate: the image-post tab is rendered only for an authenticated
             // creator console, and it is what the driver must switch to before the note
             // editor exists (the console opens on the video tab).
-            const gated = await waitUntil(
-                () => trySelectors(page, SELECTORS.imageTab).then((r) => r.found),
-                this.loginTimeoutMs,
-            );
+            const gated = await waitUntil(() => isXhsConsoleReady(page), this.loginTimeoutMs);
             if (!gated) {
                 return fail(
                     `login timeout after ${this.loginTimeoutMs}ms: no authenticated ${CHANNEL} creator console in ${profileDir}`,

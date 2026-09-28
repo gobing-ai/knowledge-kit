@@ -33,6 +33,20 @@ not add a `kk publish` noun.
 Already-harvested file-cli channels (`qiita-pub`, `zenn-pub`, `surfdash-pub`,
 `emdash-pub`, `podcast-pub`) compose the same way.
 
+## XHS profile setup (0177)
+
+`xhs-pub` reuses the signed-in session at `~/.config/kk/browser-profiles/xhs`; kk stores no
+credentials. Before the first script-driver run (and after any session expiry), do a one-time
+headed login, then verify reuse read-only:
+
+```bash
+bun plugins/publishings/xhs-pub/src/profile-check.ts login   # headed; sign in once in the window
+bun plugins/publishings/xhs-pub/src/profile-check.ts check   # headless; exit 0 = session verified
+```
+
+`check` never signs in — with no saved profile it refuses (exit 1) instead of reporting success.
+Overrides: `--profile <dir>`, `--timeout <ms>`; env fallback `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR`.
+
 ## Do not
 
 - Embed Playwright selectors or reimplement a transport here.

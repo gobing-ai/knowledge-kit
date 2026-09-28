@@ -214,6 +214,29 @@ describe('trySelectors', () => {
         expect(result).toEqual({ found: false, selector: null });
     });
 
+    test('treats a throwing visibility check as not visible and keeps trying (0177)', async () => {
+        const page = {
+            locator(selector: string) {
+                return {
+                    first() {
+                        return {
+                            async count() {
+                                return 1;
+                            },
+                            async isVisible() {
+                                if (selector === '#boom') throw new Error('locator detached');
+                                return selector === '#ok';
+                            },
+                        };
+                    },
+                };
+            },
+        };
+
+        const result = await trySelectors(page, ['#boom', '#ok']);
+        expect(result).toEqual({ found: true, selector: '#ok' });
+    });
+
     test('forwards the caller timeout to isVisible uncapped; default 2000 (0155 R7)', async () => {
         const seen: (number | undefined)[] = [];
         const page = {

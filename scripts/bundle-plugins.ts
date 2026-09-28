@@ -71,9 +71,9 @@ async function bundleStagedEntry(pluginDir: string, sourceDir: string): Promise<
             entrypoints: [entrySrc],
             outdir: join(pluginDir, 'dist'),
             target: 'bun',
-            // Optional peer of `@gobing-ai/publish-harness` (E7 launchPersistentBrowser).
-            // File-cli plugins import the harness barrel; Bun would otherwise try
-            // to inline playwright-core (chromium-bidi / electron) and fail.
+            // Optional peer of `@gobing-ai/ts-browser-automation` (0177 XHS launcher) and the
+            // publish-harness barrel. Bun would otherwise try to inline playwright-core
+            // (chromium-bidi / electron) and fail.
             external: ['playwright'],
         });
     } catch (error) {

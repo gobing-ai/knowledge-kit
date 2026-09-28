@@ -195,18 +195,6 @@ export class FakeBrowserTransport implements PublishTransport {
 }
 
 /**
- * Options for launching a persistent browser profile.
- */
-export interface BrowserSessionOptions {
-    /** Absolute profile directory. */
-    profileDir: string;
-    /** Headless Chromium when true. Default false (operator can complete login). */
-    headless?: boolean;
-    /** How long a caller should wait for login, in milliseconds. */
-    loginTimeoutMs?: number;
-}
-
-/**
  * Minimal locator surface `trySelectors` needs — structural so the harness
  * does not depend on Playwright at import time.
  */
@@ -291,40 +279,4 @@ export async function trySelectors(
     }
 
     return { found: false, selector: null };
-}
-
-/**
- * Launch Chromium with a persistent user-data dir.
- *
- * Dynamically imports `playwright` so `@gobing-ai/publish-harness` stays
- * importable in offline tests without a Playwright install. Callers that
- * actually launch a browser must have `playwright` on their own dependency
- * tree. The plugin process never embeds an LLM.
- *
- * @param opts - Profile directory and launch flags.
- * @returns The Playwright persistent context (typed as unknown at this seam).
- */
-export async function launchPersistentBrowser(opts: BrowserSessionOptions): Promise<unknown> {
-    let chromium: {
-        launchPersistentContext: (userDataDir: string, options: Record<string, unknown>) => Promise<unknown>;
-    };
-    try {
-        const playwright = await import('playwright');
-        chromium = playwright.chromium;
-    } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(
-            `launchPersistentBrowser requires the playwright package on the caller's dependency tree: ${reason}`,
-        );
-    }
-
-    if (typeof chromium?.launchPersistentContext !== 'function') {
-        throw new Error(
-            "launchPersistentBrowser requires the playwright package on the caller's dependency tree: chromium.launchPersistentContext is missing",
-        );
-    }
-
-    return chromium.launchPersistentContext(opts.profileDir, {
-        headless: opts.headless ?? false,
-    });
 }

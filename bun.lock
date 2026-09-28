@@ -343,6 +343,7 @@
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
       },
@@ -434,6 +435,8 @@
     "@gobing-ai/substack-pub": ["@gobing-ai/substack-pub@workspace:plugins/publishings/substack-pub"],
 
     "@gobing-ai/surfdash-pub": ["@gobing-ai/surfdash-pub@workspace:plugins/publishings/surfdash-pub"],
+
+    "@gobing-ai/ts-browser-automation": ["@gobing-ai/ts-browser-automation@0.5.11", "", { "dependencies": { "@gobing-ai/ts-runtime": "^0.5.11" }, "peerDependencies": { "playwright": "^1.55.0" } }, "sha512-FBTvDpvLscp2/Ro0nOYFa4IwPxAO8EJJGiSFqGPnHav9lCIfkbNpCovo04GxNHl16Jrj+d5G68kgJ5hZUUhiZg=="],
 
     "@gobing-ai/ts-infra": ["@gobing-ai/ts-infra@0.5.11", "", { "dependencies": { "@gobing-ai/ts-utils": "^0.5.11", "@logtape/logtape": "^2.0.0" }, "peerDependencies": { "@gobing-ai/ts-db": "^0.5.11", "@gobing-ai/ts-runtime": "^0.5.11", "@opentelemetry/api": "^1.9.0", "@opentelemetry/exporter-metrics-otlp-http": ">=0.200.0", "@opentelemetry/exporter-trace-otlp-http": ">=0.200.0", "@opentelemetry/resources": "^2.0.0", "@opentelemetry/sdk-metrics": "^2.0.0", "@opentelemetry/sdk-trace-node": "^2.0.0", "@opentelemetry/semantic-conventions": "^1.30.0" }, "optionalPeers": ["@gobing-ai/ts-db", "@gobing-ai/ts-runtime", "@opentelemetry/exporter-metrics-otlp-http", "@opentelemetry/exporter-trace-otlp-http", "@opentelemetry/resources", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-node"] }, "sha512-gHMoTCl/jU21rXtL73yaP3xMINRceYvCCeDYCQ8tXEAjdVc2eCbElnCgXHjZ5a6sg2O3j6UTfagvjKmnbP+9pw=="],
 

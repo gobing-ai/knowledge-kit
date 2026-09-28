@@ -1,13 +1,20 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
+import {
+    type BrowserLauncher,
+    BrowserProfileMissingError,
+    LoginTimeoutError,
+    openPersistentBrowser,
+} from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     createShadowProbe,
+    defaultLauncher,
     getPublishTransport,
     main,
     makeDefaultOpenPage,
@@ -19,6 +26,7 @@ import {
     type XhsLocator,
     type XhsPage,
 } from '../src/index';
+import { checkProfileSession, loginProfile, main as profileCheckMain } from '../src/profile-check';
 
 const tmpRoot = join(process.cwd(), '.tmp-test-xhs');
 // The scratch tree must not survive the run: an untracked directory created DURING a
@@ -519,8 +527,9 @@ describe('xhs-pub script flow (fake page)', () => {
     test('openPage failure (missing playwright) fails loud', async () => {
         await seedImages();
         const open: OpenPage = async () => {
+            // Upstream wording (@gobing-ai/ts-browser-automation PlaywrightUnavailableError).
             throw new Error(
-                'launchPersistentBrowser requires the playwright package on the caller dependency tree — install with: bunx playwright install chromium',
+                'The "playwright" peer dependency is not installed. Add playwright@^1.55.0 to your dependencies and run `npx playwright install chromium` to download the browser.',
             );
         };
         const t = new XhsBrowserTransport('script', { openPage: open, stepTimeoutMs: 50, submitSettleMs: 10 });
@@ -1129,5 +1138,253 @@ describe('xhs-pub live publish confirmation (0174 R5, measured 2026-09-26)', () 
         expect(result.error).toContain('duplicate');
         // Exactly one submit click: a retry could publish twice.
         expect(log.filter((entry) => entry.op === 'clickAt')).toHaveLength(1);
+    });
+});
+
+describe('xhs-pub profile precedence (preserved, 0177)', () => {
+    const opened: string[] = [];
+    const probe: OpenPage = async (profileDir) => {
+        opened.push(profileDir);
+        throw new Error('probe-stop');
+    };
+
+    test('options.profileDir wins over both env overrides', async () => {
+        await seedImages();
+        process.env.XHS_PROFILE_DIR = '/tmp/kk-xhs-env';
+        process.env.KK_BROWSER_PROFILE_DIR = '/tmp/kk-shared-env';
+        try {
+            const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+                content: cardContent(),
+                options: { profileDir: '/tmp/kk-xhs-opt' },
+            });
+            expect(result.ok).toBe(false);
+            expect(result.error).toBe('probe-stop');
+            expect(opened.at(-1)).toBe('/tmp/kk-xhs-opt');
+        } finally {
+            delete process.env.XHS_PROFILE_DIR;
+            delete process.env.KK_BROWSER_PROFILE_DIR;
+        }
+    });
+
+    test('XHS_PROFILE_DIR wins over KK_BROWSER_PROFILE_DIR', async () => {
+        await seedImages();
+        process.env.XHS_PROFILE_DIR = '/tmp/kk-xhs-env';
+        process.env.KK_BROWSER_PROFILE_DIR = '/tmp/kk-shared-env';
+        try {
+            const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+                content: cardContent(),
+            });
+            expect(result.ok).toBe(false);
+            expect(opened.at(-1)).toBe(resolve('/tmp/kk-xhs-env'));
+        } finally {
+            delete process.env.XHS_PROFILE_DIR;
+            delete process.env.KK_BROWSER_PROFILE_DIR;
+        }
+    });
+
+    test('KK_BROWSER_PROFILE_DIR is the first fallback', async () => {
+        await seedImages();
+        process.env.KK_BROWSER_PROFILE_DIR = '/tmp/kk-shared-env';
+        try {
+            const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+                content: cardContent(),
+            });
+            expect(result.ok).toBe(false);
+            expect(opened.at(-1)).toBe(resolve('/tmp/kk-shared-env'));
+        } finally {
+            delete process.env.KK_BROWSER_PROFILE_DIR;
+        }
+    });
+
+    test('default is the xhs channel profile dir', async () => {
+        await seedImages();
+        const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+            content: cardContent(),
+        });
+        expect(result.ok).toBe(false);
+        expect(opened.at(-1)).toBe(PROFILE);
+    });
+});
+
+describe('xhs-pub default launcher routes through @gobing-ai/ts-browser-automation (0177)', () => {
+    test('the production default launcher is the upstream openPersistentBrowser, called headed', async () => {
+        // Structural proof of AC1, offline: the production seam binds the upstream typed API.
+        // (mock.module('playwright') does not intercept the published package's dynamic import,
+        // so a behavioral test here would risk a real browser launch — never do that.)
+        expect(defaultLauncher).toBe(openPersistentBrowser);
+
+        const launched: Array<{ profileDir: string; headless: boolean }> = [];
+        const closed: string[] = [];
+        const open = makeDefaultOpenPage(async (options) => {
+            launched.push(options);
+            return { pages: () => [], newPage: async () => ({}), close: async () => void closed.push('closed') };
+        });
+        const opened = await open('/tmp/profile-0177');
+        expect(launched).toEqual([{ profileDir: '/tmp/profile-0177', headless: false }]);
+        await opened.close();
+        expect(closed).toEqual(['closed']);
+    });
+});
+
+/** Fake upstream BrowserLauncher: records launch requests, returns a scripted context. */
+function fakeLauncher(
+    context: unknown,
+    requests: Array<{ profileDir: string; headless: boolean }> = [],
+): BrowserLauncher {
+    return {
+        launch: async (request) => {
+            requests.push({ ...request });
+            return context as never;
+        },
+    };
+}
+
+/** Scripted creator-console context: `authenticated` drives the image-tab readiness gate. */
+function consoleContext(authenticated: boolean, closed: string[] = []): unknown {
+    return {
+        pages: () => [],
+        newPage: async () => ({
+            goto: async () => {},
+            locator: () => ({
+                first: () => ({
+                    count: async () => (authenticated ? 1 : 0),
+                    isVisible: async () => authenticated,
+                }),
+            }),
+            url: () => 'https://creator.xiaohongshu.com/publish/publish',
+        }),
+        close: async () => void closed.push('closed'),
+    };
+}
+
+describe('xhs-pub headless profile-session check (0177, read-only)', () => {
+    test('verified: reopens the profile headless, read-only, and closes the context', async () => {
+        const closed: string[] = [];
+        const requests: Array<{ profileDir: string; headless: boolean }> = [];
+        const launcher = fakeLauncher(consoleContext(true, closed), requests);
+        const outcome = await checkProfileSession({ profileDir: '/tmp/kk-xhs-check', timeoutMs: 500, launcher });
+        expect(outcome.status).toBe('verified');
+        expect(outcome.detail).toContain('authenticated');
+        expect(requests).toEqual([{ profileDir: '/tmp/kk-xhs-check', headless: true }]);
+        expect(closed).toEqual(['closed']);
+    });
+
+    test('refused: a headless site refusal (no authenticated console) is an explicit failure', async () => {
+        const closed: string[] = [];
+        const launcher = fakeLauncher(consoleContext(false, closed));
+        const outcome = await checkProfileSession({ profileDir: '/tmp/kk-xhs-check', timeoutMs: 60, launcher });
+        expect(outcome.status).toBe('refused');
+        expect(outcome.detail).toContain('headless readiness refused');
+        expect(closed).toEqual(['closed']);
+    });
+
+    test('refused: a missing profile headless never fabricates a session', async () => {
+        const launcher: BrowserLauncher = {
+            launch: async () => {
+                throw new BrowserProfileMissingError('/tmp/kk-xhs-absent');
+            },
+        };
+        const outcome = await checkProfileSession({ profileDir: '/tmp/kk-xhs-absent', timeoutMs: 60, launcher });
+        expect(outcome.status).toBe('refused');
+        expect(outcome.detail).toContain('/tmp/kk-xhs-absent');
+    });
+
+    test('loginProfile: headed recovery resolves once authenticated and closes the context', async () => {
+        const closed: string[] = [];
+        const requests: Array<{ profileDir: string; headless: boolean }> = [];
+        const launcher = fakeLauncher(consoleContext(true, closed), requests);
+        await loginProfile({ profileDir: '/tmp/kk-xhs-login', timeoutMs: 500, launcher });
+        expect(requests).toEqual([{ profileDir: '/tmp/kk-xhs-login', headless: false }]);
+        expect(closed).toEqual(['closed']);
+    });
+
+    test('loginProfile: expired session times out with the context closed', async () => {
+        const closed: string[] = [];
+        const launcher = fakeLauncher(consoleContext(false, closed));
+        await expect(loginProfile({ profileDir: '/tmp/kk-xhs-login', timeoutMs: 60, launcher })).rejects.toBeInstanceOf(
+            LoginTimeoutError,
+        );
+        expect(closed).toEqual(['closed']);
+    });
+});
+
+describe('xhs-pub profile-check CLI (0177)', () => {
+    test('check: exit 0 and a JSON verdict on stdout when the session is verified', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const code = await profileCheckMain(
+                ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                fakeLauncher(consoleContext(true)),
+            );
+            expect(code).toBe(0);
+            const verdict = JSON.parse(out.text()) as { status: string; profileDir: string; detail: string };
+            expect(verdict.status).toBe('verified');
+            expect(verdict.profileDir).toBe(resolve('/tmp/kk-xhs-check'));
+        } finally {
+            restore();
+        }
+    });
+
+    test('check: exit 1 naming the refusal when the session is not verified', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const code = await profileCheckMain(
+                ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                fakeLauncher(consoleContext(false)),
+            );
+            expect(code).toBe(1);
+            expect(err.text()).toContain('headless readiness refused');
+        } finally {
+            restore();
+        }
+    });
+
+    test('login: exit 0 when the headed login is confirmed', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const code = await profileCheckMain(
+                ['login', '--profile', '/tmp/kk-xhs-login', '--timeout', '50'],
+                fakeLauncher(consoleContext(true)),
+            );
+            expect(code).toBe(0);
+            expect(out.text()).toContain('login verified');
+        } finally {
+            restore();
+        }
+    });
+
+    test('login: exit 1 on timeout', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const code = await profileCheckMain(
+                ['login', '--profile', '/tmp/kk-xhs-login', '--timeout', '50'],
+                fakeLauncher(consoleContext(false)),
+            );
+            expect(code).toBe(1);
+            expect(err.text()).toContain('login failed');
+        } finally {
+            restore();
+        }
+    });
+
+    test('unknown command and invalid --timeout fail with usage', async () => {
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: err });
+        try {
+            expect(await profileCheckMain(['nonsense'], fakeLauncher(consoleContext(true)))).toBe(1);
+            expect(err.text()).toContain('usage');
+            expect(await profileCheckMain(['check', '--timeout', 'later'])).toBe(1);
+            expect(err.text()).toContain('--timeout');
+        } finally {
+            restore();
+        }
     });
 });
