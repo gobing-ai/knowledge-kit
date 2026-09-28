@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.36.0
+version: 2.37.0
 created_at: 2026-07-22
-updated_at: 2026-09-26
+updated_at: 2026-09-27
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -498,7 +498,7 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 
 Each is `kind: publish`, `PublishTransport.kind: 'browser'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout.
 
-`xhs-pub` (0177) opens its browser through `@gobing-ai/ts-browser-automation`: `makeDefaultOpenPage` defaults to the upstream `openPersistentBrowser` (`defaultLauncher`, exported so the binding is provable offline), with the typed `BrowserLauncher` (`{ launch({ profileDir, headless }) }`) as the injected seam. Headless never fabricates a session — upstream refuses with `BrowserProfileMissingError`. The plugin also ships `src/profile-check.ts`, a standalone operator CLI for profile reuse: `bun plugins/publishings/xhs-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>]` — `login` opens the headed creator console for a one-time sign-in, `check` verifies the saved session read-only and headlessly (exit 0 verified / 1 refused, never a false success). Profile dir precedence: `--profile` > `XHS_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('xhs')`.
+`xhs-pub` (0177) opens its browser through `@gobing-ai/ts-browser-automation`: `makeDefaultOpenPage` defaults to the typed upstream `openPersistentBrowser` (`defaultLauncher`, exported so the binding is provable offline), retaining its injectable launcher function and `OpenPage` seam. It closes the context if page setup fails; otherwise the publish flow owns closure. The profile helpers inject the upstream `BrowserLauncher` object (`{ launch({ profileDir, headless }) }`). Headless never fabricates a session — upstream refuses with `BrowserProfileMissingError`. In a source checkout, `src/profile-check.ts` provides the operator CLI: `bun plugins/publishings/xhs-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>]` — `login` opens the headed creator console for a one-time sign-in, `check` verifies the saved session read-only and headlessly (exit 0 verified / 1 refused). Profile dir precedence: `--profile` > `XHS_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('xhs')`.
 
 `xhs-pub` (image cards) defaults to `driver: 'script'` — ordered card images are uploaded with Playwright `setInputFiles` (`Upload ordered card images` in `docs/design/xhs-image-cards.md`); the `agent` driver fails fast (`unsupported driver … requires the script driver`). The flow follows the live console as measured 2026-09-25 (task 0174): the in-viewport 图文 tab is force-clicked first and doubles as the login gate; the image input is a hidden `input[type="file"][accept*=".jpg"]` found by attachment (not visibility); previews are counted as `img.preivew-image`; the body is TipTap ProseMirror and is typed rather than value-set; and the submit bar's `暂存离开`/`发布` controls live in the **closed** shadow root of `<XHS-PUBLISH-BTN>`, so they are resolved through CDP box models and clicked at the measured centre (a driver without CDP fails loud). Draft completion is confirmed only from a delta against the pre-entry baseline (the console's draft counter moved, or a `保存于<timestamp>` entry appeared that was not already there) — XHS autosaves uploads, so a merely readable counter is not evidence; an unobserved outcome is reported as a failure, never as success.
 

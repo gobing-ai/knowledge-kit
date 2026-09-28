@@ -877,6 +877,19 @@ describe('xhs-pub default page opener (task 0174 wiring)', () => {
         expect(closed).toEqual(['closed']);
     });
 
+    test('closes the launched context when creating its page fails (0177)', async () => {
+        let closed = 0;
+        const open = makeDefaultOpenPage(async () => ({
+            pages: () => [],
+            newPage: async () => {
+                throw new Error('page creation failed');
+            },
+            close: async () => void closed++,
+        }));
+        await expect(open('/tmp/profile')).rejects.toThrow('page creation failed');
+        expect(closed).toBe(1);
+    });
+
     test('opens a page when the context has none, and names the install hint on launch failure', async () => {
         let created = 0;
         const open = makeDefaultOpenPage(async () => ({

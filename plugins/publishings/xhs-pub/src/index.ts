@@ -308,8 +308,7 @@ export async function isXhsConsoleReady(page: XhsPage): Promise<boolean> {
  * Production launcher: the upstream typed persistent-context opener (0177). Named so the
  * migration is provable offline — tests assert this binding, never launch a real browser.
  */
-export const defaultLauncher: (options: { profileDir: string; headless: boolean }) => Promise<unknown> =
-    openPersistentBrowser;
+export const defaultLauncher = openPersistentBrowser;
 
 /**
  * Build the default page opener. The launcher is injected so the seam (page wrapping, shadow
@@ -334,9 +333,14 @@ export function makeDefaultOpenPage(
             close(): Promise<void>;
             newCDPSession?(page: unknown): Promise<CdpSession>;
         };
-        const raw = ctx.pages()[0] ?? (await ctx.newPage());
-        const shadow = await createShadowProbe(ctx, raw);
-        return { page: wrapPlaywrightPage(raw, shadow), close: () => ctx.close() };
+        try {
+            const raw = ctx.pages()[0] ?? (await ctx.newPage());
+            const shadow = await createShadowProbe(ctx, raw);
+            return { page: wrapPlaywrightPage(raw, shadow), close: () => ctx.close() };
+        } catch (error) {
+            await ctx.close();
+            throw error;
+        }
     };
 }
 
