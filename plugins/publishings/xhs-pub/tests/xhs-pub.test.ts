@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -72,6 +72,9 @@ const DRAFT_LABELS = new Set(['暂存离开', '存草稿', '保存草稿']);
 function makeFakePage(initial: FakeState) {
     // Own the state: tests reuse a module-level `happy` fixture and driver steps mutate it.
     const state: FakeState = { ...initial };
+    const saveTimestamp = () => `保存于${new Date().toLocaleString('sv-SE').slice(0, 16)}`;
+    // A saved timestamp stays fixed when the clock crosses a minute boundary.
+    let savedStamp = state.draftSavedStamp ? saveTimestamp() : null;
     const calls: Array<{ op: string; args: unknown[] }> = [];
     let lastShadowLabel: string | null = null;
     let bodyTyped = false;
@@ -99,7 +102,7 @@ function makeFakePage(initial: FakeState) {
                 count: async () => {
                     if (isLiveThumb) return state.thumbCount ?? 0;
                     if (isLegacyThumb) return 0;
-                    if (isStamp) return state.draftSavedStamp ? 1 : 0;
+                    if (isStamp) return selector === `text=${savedStamp}` ? 1 : 0;
                     if (isDraftBox) return counterAttached() ? 1 : 0;
                     if (isEditor) return state.inEditor ? 1 : 0;
                     return state.loggedIn ? 1 : 0;
@@ -114,7 +117,7 @@ function makeFakePage(initial: FakeState) {
                             : isEditor
                               ? state.inEditor
                               : isStamp
-                                ? state.draftSavedStamp
+                                ? selector === `text=${savedStamp}`
                                 : isDraftBox
                                   ? counterAttached()
                                   : isPublishConfirm
@@ -178,7 +181,7 @@ function makeFakePage(initial: FakeState) {
             state.inEditor = false;
             if (state.draftSaveIsSilent) return;
             state.draftCount += 1;
-            if (!state.draftSaveStampsNothing) state.draftSavedStamp = true;
+            if (!state.draftSaveStampsNothing) savedStamp = saveTimestamp();
         },
     };
     return { page, calls };
@@ -1035,9 +1038,8 @@ describe('xhs-pub resilient probes (task 0174)', () => {
 });
 
 describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (0174 review P2)', () => {
-    const publishDraft = async (state: FakeState) => {
+    const publishDraft = async (state: FakeState, open: OpenPage = makeOpenPage(state).open) => {
         await seedImages();
-        const { open } = makeOpenPage(state);
         const t = new XhsBrowserTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
@@ -1083,10 +1085,24 @@ describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (
         expect(result.error).toContain('before=null');
     });
 
-    test('a pre-existing save timestamp from the same minute cannot confirm a save', async () => {
-        const result = await publishDraft({ ...happy, draftSaveIsSilent: true, draftSavedStamp: true });
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('draft confirmation');
+    test('a pre-existing save timestamp cannot confirm a save across a minute boundary', async () => {
+        setSystemTime(new Date(2026, 8, 27, 12, 34, 50));
+        // Calendar time is scripted; polling deadlines must still advance with real timers.
+        const clock = spyOn(Date, 'now').mockImplementation(() => performance.now());
+        try {
+            const state = { ...happy, draftSaveIsSilent: true, draftSavedStamp: true };
+            const { page } = makeFakePage(state);
+            page.clickInViewport = async () => {
+                setSystemTime(new Date(2026, 8, 27, 12, 35));
+                return true;
+            };
+            const result = await publishDraft(state, async () => ({ page, close: async () => {} }));
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('draft confirmation');
+        } finally {
+            clock.mockRestore();
+            setSystemTime();
+        }
     });
 });
 
