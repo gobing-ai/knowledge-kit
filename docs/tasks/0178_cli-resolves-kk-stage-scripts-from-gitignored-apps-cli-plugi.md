@@ -4,7 +4,7 @@ name: CLI resolves kk stage scripts from gitignored apps/cli/plugins — stale-b
 status: done
 template: feature-impl
 created_at: 2026-09-27T06:00:25.472Z
-updated_at: "2026-09-28T17:07:14.088Z"
+updated_at: "2026-09-28T22:39:45.255Z"
 feature_id: F8
 
 priority: P3
@@ -203,50 +203,64 @@ uses kk stage is contradicted by the legacy solo/ITC/storm scripts and must not 
 
 ### Plan
 
-1. [ ] Re-read the current resolver, both stage test files and the runner header; check git status
+1. [x] Re-read the current resolver, both stage test files and the runner header; check git status
    and current task/worktree ownership. Preserve task 0177/xhs edits. Reconfirm source/compiled entry
    selection without syncing apps/cli/plugins. (R1, R2)
-2. [ ] Add hermetic divergent-candidate tests first: checkout source/compiled/symlink identity,
+2. [x] Add hermetic divergent-candidate tests first: checkout source/compiled/symlink identity,
    foreign installed package, planted cwd and ancestor plugins, missing recognized source,
    invalid entry fallback, and missing-everywhere error. Record that checkout-precedence tests
    fail against the old resolver. (R1, R2, R3, R5)
-3. [ ] Apply the frozen identity/precedence algorithm inside resolveStagesScript; retain the public
+3. [x] Apply the frozen identity/precedence algorithm inside resolveStagesScript; retain the public
    signatures and runStage/Commander execution behavior. (R1, R2, R3, R4)
-4. [ ] Add the compiled real-CLI subprocess regression using one temporary Bun bundle:
+4. [x] Add the compiled real-CLI subprocess regression using one temporary Bun bundle:
    source 17 → edited source 19 without restaging, staged 18 ignored in checkout, relocated installed
    package returns 18 even from a foreign checkout. Verify stage/unknown-option forwarding.
    Clean fixtures and restore process state. (R1, R2, R4, R5)
-5. [ ] Read docs/99_PROJECT_CONSTITUTION.md, update docs/04_DESIGN.md §1.8/§7 and the
+5. [x] Read docs/99_PROJECT_CONSTITUTION.md, update docs/04_DESIGN.md §1.8/§7 and the
    resolver/runner comments, preserving accurate legacy YAML and sidecar-override wording. (R6)
-6. [ ] Run bun test apps/cli/tests/stage.test.ts apps/cli/tests/commands/stage.test.ts;
+6. [x] Run bun test apps/cli/tests/stage.test.ts apps/cli/tests/commands/stage.test.ts;
    then bun run lint, bun run test and bun run build. Run spur rule run
    --preset recommended-pre-check --json and spur task check 0178 --json.
    Fix failures without suppressions, skipped tests or force flags. (R1–R6)
-7. [ ] Record implementation, review and verification evidence through the normal Spur pipeline,
+7. [x] Record implementation, review and verification evidence through the normal Spur pipeline,
    obtain a real verify PASS, and inspect git diff/status for intentional changes before completion.
    Check in docs/04_DESIGN.md with the surface code; do not edit generated plugin copies. (R1–R6)
 
 ### Solution
 
-Change-map (auto-generated — implement step did not record a Solution).
-Each entry cites the first changed line per file (`file:line`).
+Task 0178 implements entry-identity resolution at the existing stage seam:
 
-| Change (`file:line`) |
-|----------------------|
-| `apps/cli/src/stage.ts:14` |
-| `apps/cli/src/stage.ts:2` |
-| `apps/cli/src/stage.ts:35` |
-| `apps/cli/src/stage.ts:45` |
-| `apps/cli/src/stage.ts:49` |
-| `apps/cli/src/stage.ts:51` |
-| `apps/cli/src/stage.ts:57` |
-| `apps/cli/src/stage.ts:8` |
-| `apps/cli/tests/commands/stage.test.ts:125` |
-| `apps/cli/tests/commands/stage.test.ts:2` |
-| `apps/cli/tests/stage.test.ts:2` |
-| `apps/cli/tests/stage.test.ts:7` |
-| `apps/cli/tests/stage.test.ts:73` |
-| `plugins/kk/scripts/kk-workflow-stages.ts:35` |
+- `apps/cli/src/stage.ts:44-70`: source-marker plus canonical package-root identity chooses
+  checked-in checkout scripts; installed entries keep their own shipped runner. Missing recognized
+  source fails with its path and install guidance; source fallback is marker-gated.
+- `apps/cli/tests/stage.test.ts:93-137`: divergent source/staged fixtures, symlink identity,
+  absent source, module fallback and markerless/unstattable roots.
+- `apps/cli/tests/commands/stage.test.ts:158-210`: real compiled CLI proof, source 17 → 19 after
+  editing without restaging, then isolated installed copy 18.
+- `docs/04_DESIGN.md:319-325` and `docs/04_DESIGN.md:707`: stage-resolution surface and accurate
+  legacy direct-shell boundary.
+- `plugins/kk/scripts/kk-workflow-stages.ts:35-37`: checkout/installed header explanation.
+
+#### Verification repairs (2026-09-28)
+
+The compiled regression now checks exact stage and unknown-option arguments and launches the
+installed bundle from both a planted-script cwd and the foreign checkout
+(`apps/cli/tests/commands/stage.test.ts:162-202`).
+All cwd-changing resolver fixtures now clean their temporary directories and the stale
+staged-copy-absence comment is corrected (`apps/cli/tests/stage.test.ts:24-62`).
+The false all-workflows-use-stage statement is corrected in §7.1 and doc metadata refreshed.
+No runtime resolver, sidecar override, legacy workflow action or generated plugin copy changed
+during re-verification.
+
+#### Shippable-gate repair (2026-09-28)
+
+The follow-up request expands validation to F8's feature completion gate.
+`.spur/workflows/feature-verification.yaml:75-80` now declares `terminalReason: failed-check`
+on its failure edge, which the installed harness requires. The existing vendored
+`plugins/sp/lib/inline-run.generated.mjs` is regenerated through Spur's `bundleInlineRunLib`
+builder so its workflow schema accepts that same contract. Its bytes match the authoritative
+builder output (SHA-256 `25218b4adc86c57670d1ee0c0ca8042afaf82ab75a3a4da7974f9a143acbfe69`).
+No receipt is hand-authored; the feature-verification workflow writes and registers its evidence.
 
 ### Testing
 
@@ -256,63 +270,90 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/stage.ts:57-63` returns the checked-in source runner for a recognized checkout entry before the staged candidate is considered; `apps/cli/tests/stage.test.ts` source-precedence + symlink tests; `apps/cli/tests/commands/stage.test.ts` compiled-fixture test (real CLI bundle → 17, staged copy → 18 ignored) |
-| R2 | MET | `apps/cli/src/stage.ts:65-70` returns the package-shipped runner for an installed entry; the marker gate at `:67`/`:69` blocks an unrelated ancestor tree; installed-in-foreign-checkout test in `apps/cli/tests/commands/stage.test.ts`; relocated-package leg of the compiled test |
-| R3 | MET | `apps/cli/src/stage.ts:60-62` throws naming the source path with install guidance for a recognized checkout with no source runner; module-anchored fallback at `:69`; fail-loud at `:71`; three tests in `apps/cli/tests/stage.test.ts` |
-| R4 | MET | `apps/cli/src/stage.ts:74-83` `runStage` unchanged (stdio inherit, exit-code passthrough, named spawn error); `apps/cli/src/commands/stage.ts` unchanged (variadic pass-through, `kk.stage.failed`); existing AC5 tests pass |
-| R5 | MET | `apps/cli/tests/stage.test.ts` + `apps/cli/tests/commands/stage.test.ts` — hermetic fixtures distinguish live vs stale runners, cover source + symlink + compiled entries, and the relocated isolated package; focused run 20 pass / 0 fail, 100% line coverage on `apps/cli/src/stage.ts` |
-| R6 | MET | `docs/04_DESIGN.md` §1.8 and §7.1 bullet updated; `plugins/kk/scripts/kk-workflow-stages.ts:31-36` header updated; no generated `apps/cli/plugins` bytes touched |
+| R1 | MET | `apps/cli/src/stage.ts:58-62` selects fromCheckout before staged bytes for recognized entries; `apps/cli/tests/stage.test.ts:93-102` covers source and symlink identity; `apps/cli/tests/commands/stage.test.ts:158-186` executes compiled source 17 then edited source 19 without restaging. `bun test apps/cli/tests/stage.test.ts apps/cli/tests/commands/stage.test.ts` exit 0, 20 pass. |
+| R2 | MET | `apps/cli/src/stage.ts:65-70` preserves the installed package and marker-gates ancestor fallback; `apps/cli/tests/commands/stage.test.ts:188-202` executes the isolated compiled package from a planted-script cwd and a foreign checkout, exit 18 in both. Current full `bun run spur-check` exit 0, 1511 pass. |
+| R3 | MET | `apps/cli/src/stage.ts:60-70` names missing checkout source and install guidance without using stale bytes; `apps/cli/tests/stage.test.ts:105-137` verifies missing source, unresolvable-entry fallback, markerless ancestry and failed filesystem probes. Current full `bun run spur-check` exit 0, 1511 pass. |
+| R4 | MET | `apps/cli/src/stage.ts:74-80` retains inherited stdio, spawn error and exit status; `apps/cli/src/commands/stage.ts:13-18` forwards variadic/unknown arguments. `apps/cli/tests/commands/stage.test.ts:162-201` checks exact stage/flag arguments; `bun .spur/run/0178-golden-path.ts` exit 0 executes real src/dist CLI and confirms runner-relative style bytes. Verification scratch origin: `.spur/run/0178-golden-path.ts` lines 1-35 and `.spur/run/0178-golden-path.log` lines 1-3. |
+| R5 | MET | `apps/cli/tests/commands/stage.test.ts:158-210` bundles the real CLI once and exercises source updates and isolated installed execution; `apps/cli/tests/stage.test.ts:24-28` restores cwd and cleans fixtures. Stage regression: 20 cases; current full `bun run spur-check`: 1511 pass, 0 fail, 5849 assertions. Resolver line/function coverage 100%. Verification scratch origin: `.spur/run/0178-before-fix-probe.ts` lines 1-34 and `.spur/run/0178-before-fix-probe.log` line 1 prove the original resolver exits 18 while the current resolver exits 17; `.spur/run/0178-lint.log` lines 1-224; `.spur/run/0178-tests.log` lines 1-105; `.spur/run/0178-build.log` lines 1-6; `.spur/run/0178-pre-rules.json` lines 1-6; `.spur/run/0178-post-rules.json` lines 1-6; `.spur/run/0178-test-gate.log` lines 1-337; `.spur/run/0178-check-receipt.json` lines 1-18. Full-tier receipt PASS matches the current input digest. |
+| R6 | MET | `docs/04_DESIGN.md:319-325` and `docs/04_DESIGN.md:707` state checkout and installed behavior and legacy direct calls; `plugins/kk/scripts/kk-workflow-stages.ts:35-37` explains stage resolution. `bun .spur/run/0178-golden-path.ts` exit 0 checks the doc boundary and unchanged storm direct shell. Frontmatter version 2.38.0, updated 2026-09-28. Verification scratch origin: `.spur/run/0178-verify-answer.txt` lines 1-57; `.spur/run/0178-verdict.json` lines 1-157; `.spur/run/0178-residuals.json` lines 1-34; `.spur/run/0178-base.sha` line 1; `.spur/run/0178-feature-check.json` lines 1-12; `.spur/run/0178-feature-completion-check.json` lines 1-12; `.spur/run/0178-test-gate.status` line 1; `.spur/run/0178-test-fix-attempt` line 1; `.spur/run/0178-test-gate.findings` is empty (no finding lines). Residual scan covers all four lenses and reports blocking 0, deferrable 0, advisory 2, housekeeping 0. A pre-existing task Background staging file was archived from /tmp to verification scratch origin `.spur/run/0178-original-background-staging.md` lines 1-8; final F1 and F5 command counts both 0. F8 completion readiness PASS: the real final feature-verification workflow reached done and both receipt copies match. Completion scratch origin: `.spur/run/0178-harness-lib/inline-run.generated.mjs` lines 1-1489 and `.spur/run/0178-harness-lib/inline-run.generated.d.mts` lines 1-20 are authoritative generated builder output; `.spur/run/F8-feature-verification.json` lines 1-17; `.spur/run/F8-0178-shippable-final-20260928-feature-verification.json` lines 1-17; `.spur/run/F8-0178-shippable-final-20260928-feature-verification.log` lines 1-334; `.spur/run/F8-0178-shippable-final-20260928.md` lines 1-14; `.spur/run/dogfood/F8-0178-stage-dogfood-20260928.md` lines 1-85 and dogfood report origin `docs/dogfood/2026-09-28-F8-stage-resolution-dogfood.md` lines 1-85. `docs/dogfood/INDEX.md:7` preserves F8 attribution. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `apps/cli/tests/stage.test.ts` — "a checkout entry executes the checked-in source runner, not the divergent staged copy"; "a symlinked checkout entry resolves the same source runner"; compiled leg of `apps/cli/tests/commands/stage.test.ts` (17 → edit source → 19 without restaging) |
-| AC2 | MET | test | `apps/cli/tests/commands/stage.test.ts` — "an installed package keeps its own runner when launched inside a foreign checkout"; marker-less ancestor fixture in `apps/cli/tests/stage.test.ts` — "a tree without the source marker never becomes a checkout runner"; relocated-package leg of the compiled test |
-| AC3 | MET | test | `apps/cli/tests/stage.test.ts` — "a recognized checkout with its source runner absent fails naming the source path"; "an unresolvable entry still resolves the module-anchored checkout fallback"; "a tree without the source marker never becomes a checkout runner"; "an unstattable checkout root fails loud instead of crashing" |
-| AC4 | MET | test | `apps/cli/tests/commands/stage.test.ts` — "compiled CLI in a fixture checkout runs the source runner, not the staged bundle (AC4)": real `apps/cli/src/index.ts` bundle, unrelated cwd, 17 → 19 after editing source, relocated package → 18 |
-| AC5 | MET | test | `apps/cli/tests/stage.test.ts` runStage tests; `apps/cli/tests/commands/stage.test.ts` exit-code passthrough, spawn-failure, variadic `stage` command + unknown-flag pass-through; `bun run lint` exit 0 |
-| AC6 | MET | command | `rg -n "checkout entry |
+| AC1 | MET | test | `apps/cli/tests/stage.test.ts:93-102` source/symlink identity; `apps/cli/tests/commands/stage.test.ts:158-186` compiled runner exits 17 then 19 after a source-only edit. Current full `bun run spur-check` exit 0, 1511 pass. |
+| AC2 | MET | test | `apps/cli/tests/commands/stage.test.ts:188-202` isolated installed bundle exits 18 from planted-script cwd and foreign checkout; `apps/cli/tests/stage.test.ts:124-129` ignores a markerless ancestor candidate. Current full `bun run spur-check` exit 0, 1511 pass. |
+| AC3 | MET | test | `apps/cli/tests/stage.test.ts:105-137` asserts source-path remediation with staged bytes present, invalid-entry fallback, markerless/missing roots and filesystem errors. Current full `bun run spur-check` exit 0, 1511 pass. |
+| AC4 | MET | test | `apps/cli/tests/commands/stage.test.ts:158-210` real CLI bundle selects source 17, source-only edit 19, relocated package 18 from both required cwd modes; fixture scripts also reject missing/incorrect stage or unknown-option arguments with exit 99. Current full `bun run spur-check` exit 0, 1511 pass. |
+| AC5 | MET | test | `apps/cli/tests/stage.test.ts:66-76` and `apps/cli/tests/commands/stage.test.ts:79-119` exercise exit-code passthrough, spawn failures and Commander unknown-option handling; strengthened compiled fixture checks exact arguments. `bun .spur/run/0178-golden-path.ts` exit 0 verifies real CLI/sidecar execution. |
+| AC6 | MET | command | `bun .spur/run/0178-golden-path.ts` exit 0: src/dist styleMatches true, documentation PASS and legacyCallsUnchanged true. Verified `docs/04_DESIGN.md:319-325`, `docs/04_DESIGN.md:707` and `plugins/kk/scripts/kk-workflow-stages.ts:35-37`; no generated plugin content changed. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-#### Review Report — 0178
+#### Re-verification Review — 0178 (2026-09-28)
 
-**Scope:** task 0178 diff — 6 files (`apps/cli/src/stage.ts`, `apps/cli/tests/stage.test.ts`, `apps/cli/tests/commands/stage.test.ts`, `docs/04_DESIGN.md`, `plugins/kk/scripts/kk-workflow-stages.ts`, task file)
-**Dimensions:** functional, security, efficiency, correctness, usability, architecture
-**Verdict:** PASS
+**Scope:** original implementation commit `e75d4674` plus the inline verification repairs to
+the two stage test files and docs/04_DESIGN.md. Runtime resolver and command signatures are unchanged.
+**Dimensions:** functional, security, efficiency, correctness, usability, architecture.
+**Verdict:** PASS.
 
-##### Findings (ranked)
+##### Findings and dispositions
 
-| # | Priority | Dimension | Finding | Location |
-|---|----------|-----------|---------|----------|
-| 1 | P4 (advisory) | correctness | `isFile` collapses every stat failure (EACCES/ENOTDIR) into "absent", so a permission error on the checkout marker reports the generic not-found guidance instead of the underlying errno. Accepted: the fallback is fail-closed and the guidance stays actionable. | `apps/cli/src/stage.ts:19-25` |
-| 2 | P4 (advisory) | usability | The recognized-checkout failure names only the source path; the deliberately-skipped staged copy is not mentioned, so a reader may not see why it was ignored. | `apps/cli/src/stage.ts:60-62` |
+| Priority | Dimension | Location | Finding | Disposition |
+| --- | --- | --- | --- | --- |
+| P2 (major) | correctness | `apps/cli/tests/commands/stage.test.ts:158-202` | Prior compiled test did not exercise installed execution from a foreign checkout and did not assert forwarded arguments. | FIXED — installed bundle now runs from both foreign checkout and planted-script cwd; all fixture runners validate stage and unknown-option arguments. |
+| P2 (major) | usability | `docs/04_DESIGN.md:707` | Prior surface documentation claimed every workflow action used kk stage, contradicting legacy direct shells and R6. | FIXED — names daily voice/ITC tail and the unchanged legacy solo/ITC prepare/storm paths; doc metadata refreshed. |
+| P2 (major) | correctness | Previous task Testing/Review | Prior Review R4–R6 described other requirements, and the AC6 Testing evidence was truncated by a pipe inside a command. | FIXED — this review maps the actual R1–R6 below; the new canonical verify answer and deterministic record replace Testing with complete evidence. |
+| P4 (advisory) | usability | `apps/cli/src/stage.ts:17-22` | Filesystem probes classify inaccessible paths as absent; errors name the attempted runner with generic install guidance instead of errno details. | ACCEPTED — retains the specified probe policy and fail-loud behavior; no requirement asks for errno diagnostics. |
+| P4 (advisory) | usability | `apps/cli/src/stage.ts:62` | Missing recognized source names the source path without mentioning the deliberately ignored staged candidate. | ACCEPTED — requirement R3 asks for the source path and remediation, which the test verifies. |
 
-##### Functional Traceability
+##### Functional traceability
 
 | Req | Status | Evidence |
-|-----|--------|----------|
-| R1 | MET | `apps/cli/src/stage.ts:57-63` — checkout entry returns `fromCheckout` before the staged candidate is considered; source-precedence tests in `apps/cli/tests/stage.test.ts` |
-| R2 | MET | `apps/cli/src/stage.ts:65-70` — installed entry keeps `fromPkg`; the marker gate blocks an unrelated ancestor tree; installed-in-foreign-checkout test in `apps/cli/tests/commands/stage.test.ts` |
-| R3 | MET | `apps/cli/src/stage.ts:60-62` recognized-checkout throw names the source path; module-anchored fallback at `:69`; fail-loud at `:71` |
-| R4 | MET | `docs/04_DESIGN.md` §1.8 + §7.1 bullet and `plugins/kk/scripts/kk-workflow-stages.ts:31-36` header updated in this diff |
-| R5 | MET | `bun run format` clean; `bun run lint` exit 0 (Biome + all workspace typechecks); focused tests 20/20; `quality-gate run` PASS |
-| R6 | MET | `git status` shows only the 5 intended files; no generated plugin copy edited |
-| AC1 | MET | source wins over the divergent staged copy — checkout-entry and symlinked-entry tests in `apps/cli/tests/stage.test.ts` |
-| AC2 | MET | installed runner kept from a foreign-checkout cwd; marker-less tree never a checkout — `apps/cli/tests/commands/stage.test.ts` + `apps/cli/tests/stage.test.ts` |
-| AC3 | MET | missing source throws naming the source path; unresolvable entry falls back; neither tier → fail loud — three tests in `apps/cli/tests/stage.test.ts` |
-| AC4 | MET | compiled-fixture test in `apps/cli/tests/commands/stage.test.ts` (real CLI bundle: 17 → edit source → 19 → relocated package → 18) |
-| AC5 | MET | see R5 |
-| AC6 | MET | see R4 |
+| --- | --- | --- |
+| R1 | MET | `apps/cli/src/stage.ts:58-62` selects fromCheckout before staged bytes for recognized entries; `apps/cli/tests/stage.test.ts:93-102` covers source and symlink identity; `apps/cli/tests/commands/stage.test.ts:158-186` executes compiled source 17 then edited source 19 without restaging. `bun test apps/cli/tests/stage.test.ts apps/cli/tests/commands/stage.test.ts` exit 0, 20 pass. |
+| R2 | MET | `apps/cli/src/stage.ts:65-70` preserves the installed package and marker-gates ancestor fallback; `apps/cli/tests/commands/stage.test.ts:188-202` executes the isolated compiled package from a planted-script cwd and a foreign checkout, exit 18 in both. Focused bun test exit 0. |
+| R3 | MET | `apps/cli/src/stage.ts:60-70` names missing checkout source and install guidance without using stale bytes; `apps/cli/tests/stage.test.ts:105-137` verifies missing source, unresolvable-entry fallback, markerless ancestry and failed filesystem probes. Focused bun test exit 0. |
+| R4 | MET | `apps/cli/src/stage.ts:74-80` retains inherited stdio, spawn error and exit status; `apps/cli/src/commands/stage.ts:13-18` forwards variadic/unknown arguments. `apps/cli/tests/commands/stage.test.ts:162-201` checks exact stage/flag arguments; `bun .spur/run/0178-golden-path.ts` exit 0 executes real src/dist CLI and confirms runner-relative style bytes. |
+| R5 | MET | `apps/cli/tests/commands/stage.test.ts:158-210` bundles the real CLI once and exercises source updates and isolated installed execution; `apps/cli/tests/stage.test.ts:24-28` restores cwd and cleans fixtures. Focused tests: 20 pass, 0 fail, 29 assertions; full `bun run test`: 1511 pass, 0 fail, 5849 assertions. Resolver line/function coverage 100%. |
+| R6 | MET | `docs/04_DESIGN.md:319-325` and `docs/04_DESIGN.md:707` state checkout and installed behavior and legacy direct calls; `plugins/kk/scripts/kk-workflow-stages.ts:35-37` explains stage resolution. `bun .spur/run/0178-golden-path.ts` exit 0 checks the doc boundary and unchanged storm direct shell. Frontmatter version 2.38.0, updated 2026-09-28. |
 
-**Next:** proceed to verification.
+##### Architecture and security
+
+The existing `resolveStagesScript → runStage` seam owns selection and execution.
+No new API, dependency, package boundary, configuration, hash pass or runtime build step.
+Canonical entry/package identity and module-root marker gate source preference; cwd never becomes
+a resolver root. Argument vectors remain direct spawn arguments. Tests exercise the real compiled
+CLI with temporary files, clean fixtures and restore cwd. No blocker or major finding remains.
+
+**Fresh checks:** focused stage tests 20/20; lint exit 0; full tests 1511/1511; build exit 0;
+pre-check rules 51/51 and post-check rules 2/2. The current full-tier receipt and residual fold
+are recorded by the verification step.
+
+**Next:** retain the already-terminal task status; the shippable follow-up below closes F8 completion evidence.
+
+#### Shippable follow-up Review (2026-09-28)
+
+**Authorized scope:** clear every remaining gate before the proposed commit.
+
+| Priority | Dimension | Location | Finding | Disposition |
+| --- | --- | --- | --- | --- |
+| P2 (major) | correctness | `.spur/workflows/feature-verification.yaml:75-80` | The existing project verifier cannot validate under the current harness because its failure edge lacks terminalReason. | FIXED — declares failed-check; workflow validate passes and its dry-run confirms the fail-closed path without evidence. |
+| P2 (major) | architecture | plugins/sp/lib/inline-run.generated.mjs | The vendored inline runtime uses an older transition schema than the installed CLI, rejecting the required terminal metadata. | FIXED — regenerated from the authoritative Spur bundleInlineRunLib builder; bytes match builder output and the real feature-verification run reaches done with a registered PASS receipt. |
+| P2 (major) | traceability | `docs/dogfood/INDEX.md:7` | F8's self-referential workflow gate has no durable dogfood attribution. | FIXED — actual source/compiled CLI and sidecar check PASS; protocol report validator PASS; tracked F8 index survives fresh clones via the ignore exception. |
+
+The public resolver and command contracts stay the same. The regenerated harness artifact uses
+the existing exported operations; no handwritten minified change or weakened gate. Failure
+routing remains explicit and completion still requires matching workflow-written receipts.
+The dogfood report records its one CLI observation live and separates earlier verifier repairs
+as historical context; it does not attribute those repairs to its observe-only driver.
+No blocker or major finding remains. Two original P4 diagnostics remain accepted as specified.
 
 ### References
 
 - Parent: [F8 — Run-anywhere workflow and script resolution](../features/F8_run-anywhere-workflow-and-script-resolution.md).
 - [Task 0176 — daily-intro collision](0176_daily-intro-merges-from-mp3path-so-the-concat-output-collide.md): Root Cause, Plan step 5 and Review P4 document the original staging hazard.
 - Local 0176 advisory artifact: `.spur/run/0176-residuals.json` (verified present 2026-09-27).
-- Resolver: `apps/cli/src/stage.ts:8-40`; command caller: `apps/cli/src/commands/stage.ts:9-24`.
+- Resolver: `apps/cli/src/stage.ts:44-80`; command caller: `apps/cli/src/commands/stage.ts:9-21`.
 - Regression locations: `apps/cli/tests/stage.test.ts`, `apps/cli/tests/commands/stage.test.ts`.
 - Package copy owner: `scripts/bundle-plugins.ts`; build/prepack contract: `apps/cli/package.json`;
   generated-tree ignore: `.gitignore:161`.
@@ -347,4 +388,64 @@ Each entry cites the first changed line per file (`file:line`).
 
 This audit certifies the specification for delegation. It is not an implementation or a product
 verify PASS; Solution, Testing and Review remain for their implementation-pipeline owners.
+
+#### Forced verification (2026-09-28)
+
+Standalone inline `sp-dev-verify 0178 --auto --next --force --agent inline --focus all --fix all`:
+R1–R6 and AC1–AC6 MET; task verdict PASS. Strengthened the real compiled CLI regression for
+foreign-checkout execution and exact argument forwarding, cleaned cwd fixtures, corrected the
+legacy-workflow documentation and replaced stale Solution/Review/Testing evidence through Spur.
+Runtime selection remains the implemented entry-identity algorithm.
+
+Fresh checks: focused tests 20 pass/0 fail/29 assertions; full tests 1511 pass/0 fail/5849
+assertions; aggregate function coverage 98.55%, line coverage 98.30%, stage resolver 100% each;
+lint/build exit 0; pre-check 51 rules and post-check 2 rules with no findings. The full-tier
+`bun run spur-check` receipt is bound to the final specification and worktree digest
+`sha256:1e134892a1ed5722b07729f3b847e6ea19e21010d33191b5a130ff300bec81ee`.
+The deterministic Testing renderer's generic coverage N/A footer does not replace the measured
+coverage recorded in R5 evidence.
+
+The residual scan includes review findings, implementation diff markers, unchecked boxes and
+staging residue: blocking 0, deferrable 0, advisory 2, housekeeping 0. Exact durable ignored
+artifact paths and line ranges are disclosed in Testing R4–R6. Section-input staging files
+were removed after landing. F1 unchecked-box command printed 0; F5 staging scan found no
+`/tmp/0178-*` files.
+
+Shippable: FAIL
+Feature: F8
+The ordinary feature check passes and all linked tasks are done/cancelled, but completion
+check reports `L4.feature-receipt-missing`: `.spur/run/F8-feature-verification.json` is absent.
+Recovery is a feature-scoped verification pass; this task-local pass does not create that receipt.
+`task record` warns that the 12 R/AC rows match no feature scenario: AC1–AC6 are explicitly
+task-local, so their existing keys are retained without assigning false feature-scenario credit.
+
+`--next`: no-op because 0178 was already done; no terminal demotion, duplicate transition or
+force-done override. Verification repairs remain uncommitted.
+
+#### Shippable follow-up completed (2026-09-28)
+
+The request to clear all remaining gates authorized the feature-scoped completion pass.
+Task 0178 remains done with R1–R6 and AC1–AC6 MET. Shippable: PASS (F8).
+
+The project verifier's failure edge now declares failed-check. Its vendored inline runtime is
+regenerated from Spur's authoritative bundleInlineRunLib builder, eliminating schema skew;
+no generated code was edited by hand. The source and compiled CLI dogfood passed with matching
+runner-relative style bytes; its protocol report validator returned ok. The tracked
+[dogfood index](../dogfood/INDEX.md) and its ignore exception preserve F8 attribution in a clone.
+
+The final feature-verification run `F8-0178-shippable-final-20260928` reached done and registered
+matching run-scoped/feature-latest PASS receipts. Its full check log records 1511 pass, 0 fail,
+5849 assertions, clean lint/typechecks, 51 pre-check rules and 2 post-check rules. Build exit 0.
+`spur feature check F8 --as done --json` now reports pass true, findings []. All linked tasks
+are done/cancelled. The earlier missing-receipt and dogfood findings are resolved.
+
+The final 0178 full-tier receipt uses the project-local inline driver's input digest
+`sha256:e4b3fd65514ae89975c8c835682eb167331639f10772e0c640e14f27abd9bf29`.
+Verification scratch paths and exact line ranges, including the generated builder output,
+feature receipts, raw logs and dogfood artifacts, are disclosed in Testing R4–R6.
+The task-local AC keys remain unchanged; no false feature-scenario credit is assigned.
+Original P4 diagnostic observations remain accepted, with no requirement or shipping blocker.
+
+`--next` remains a no-op because the task is already done. Changes are uncommitted for the
+operator's next step; no GitHub workflow, generated apps/cli/plugins copy or product API changed.
 

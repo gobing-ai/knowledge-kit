@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.37.0
+version: 2.38.0
 created_at: 2026-07-22
-updated_at: 2026-09-27
+updated_at: 2026-09-28
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -704,7 +704,7 @@ any cwd — no copy on the happy path. The `kk` package root is resolved from th
 - `--force` → refresh the user override (priority-1 path) from the best available source, then run the override.
 - To customize a workflow, copy it to `$workflows_dir/` (or use `--force`) — the override wins on every later run.
 - Source missing from all roots → exit 1, stderr lists every searched root.
-- Sidecars the machine executes are **not** copied. Every kk workflow action that delegates to the shared stage runner (kk-solo-podcast, kk-itc, kk-storm-research, and kk-daily-ai-voice's twenty-three delegated actions) runs `kk stage <stage> [args…]` (0144): the `stage` verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` by entry identity (0178) — a recognized checkout entry runs the checked-in source runner (never a stale `apps/cli/plugins/` copy), an installed entry runs its own package-shipped copy, and only a genuine checkout with that copy missing falls back to the module-anchored path derived from this module's own path — never the current directory (0157 R4) — then spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. The runner then resolves the sidecar it delegates to (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`): explicit var → `$KK_WORKFLOWS_DIR` → the package scripts dir → `$HOME/.config/kk/workflows`.
+- Sidecars the machine executes are **not** copied. Daily-voice actions and the ITC tail use `kk stage <stage> [args…]`: the verb resolves `plugins/kk/scripts/kk-workflow-stages.ts` by entry identity (0178). A recognized checkout entry runs the checked-in source runner; missing source fails instead of loading the staged `apps/cli/plugins/` copy. An installed entry runs its own package-shipped copy. If the package candidate is absent, only a genuine checkout may use the module-anchored source fallback, never cwd (0157 R4). The verb spawns `bun <script> <stage> [args…]` with inherited stdio and exit-code passthrough. Legacy solo-podcast actions, ITC prepare and storm-research actions still resolve `$pkg/plugins/kk/scripts/kk-workflow-stages.ts` directly, with a cwd-relative fallback; 0178 does not change those calls. The runner resolves sidecars (`validate-voicescript.ts`, `wrap-voicescript-doc.ts`, `render-md.ts`) as explicit var → `$KK_WORKFLOWS_DIR` → the runner's scripts dir → `$HOME/.config/kk/workflows`.
 
 ### 7.2 `/workflow-run` command surface
 
