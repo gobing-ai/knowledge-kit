@@ -153,6 +153,7 @@ dist
 /docs/memo.md
 
 /docs/dogfood/*.md
+!/docs/dogfood/INDEX.md
 # Accidental spur runtime under docs/ (corpus root mis-set); never commit
 /docs/.spur/
 /scratch/
