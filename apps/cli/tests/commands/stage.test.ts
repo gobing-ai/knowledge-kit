@@ -159,6 +159,12 @@ describe('kk stage resolver — installed vs checkout identity (0178)', () => {
         const root = fixtureCheckout();
         const unrelatedCwd = realpathSync(mkdtempSync(join(tmpdir(), 'kk-unrelated-cwd-')));
         try {
+            const checkArgs =
+                "if (process.argv[2] !== 'fixture' || process.argv[3] !== '--future-flag') process.exit(99);\n";
+            writeFileSync(join(root, STAGES_REL), `${checkArgs}process.exit(17);\n`);
+            writeFileSync(join(root, 'apps/cli', STAGES_REL), `${checkArgs}process.exit(18);\n`);
+            mkdirSync(join(unrelatedCwd, 'plugins/kk/scripts'), { recursive: true });
+            writeFileSync(join(unrelatedCwd, STAGES_REL), 'process.exit(98);\n');
             const built = await Bun.build({
                 entrypoints: [join(import.meta.dir, '../../src/index.ts')],
                 target: 'bun',
@@ -176,7 +182,7 @@ describe('kk stage resolver — installed vs checkout identity (0178)', () => {
             expect(run()).toBe(17);
 
             // Editing the source runner takes effect with no restaging.
-            writeFileSync(join(root, STAGES_REL), 'process.exit(19);\n');
+            writeFileSync(join(root, STAGES_REL), `${checkArgs}process.exit(19);\n`);
             expect(run()).toBe(19);
 
             // Relocated into a package without the checkout marker: its own runner is used.
@@ -185,12 +191,15 @@ describe('kk stage resolver — installed vs checkout identity (0178)', () => {
                 mkdirSync(join(pkg, 'plugins/kk/scripts'), { recursive: true });
                 writeFileSync(join(pkg, 'package.json'), '{"name":"kk-relocated","version":"0.0.0"}\n');
                 cpSync(join(root, 'apps/cli/dist'), join(pkg, 'dist'), { recursive: true });
-                writeFileSync(join(pkg, STAGES_REL), 'process.exit(18);\n');
-                const relocated = spawnSync(process.execPath, [join(pkg, 'dist/index.js'), 'stage', 'fixture'], {
-                    cwd: unrelatedCwd,
-                    encoding: 'utf8',
-                });
-                expect(relocated.status).toBe(18);
+                writeFileSync(join(pkg, STAGES_REL), `${checkArgs}process.exit(18);\n`);
+                for (const cwd of [unrelatedCwd, root]) {
+                    const relocated = spawnSync(
+                        process.execPath,
+                        [join(pkg, 'dist/index.js'), 'stage', 'fixture', '--future-flag'],
+                        { cwd, encoding: 'utf8' },
+                    );
+                    expect(relocated.status).toBe(18);
+                }
             } finally {
                 rmSync(pkg, { recursive: true, force: true });
             }

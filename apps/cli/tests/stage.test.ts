@@ -21,20 +21,23 @@ const STAGES_REL = join('plugins', 'kk', 'scripts', 'kk-workflow-stages.ts');
 
 describe('resolveStagesScript', () => {
     const origCwd = process.cwd();
+    const made: string[] = [];
 
     afterEach(() => {
         process.chdir(origCwd);
+        for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
 
     test('falls back to the checkout-relative stages script from the repo root', () => {
-        // argv[1] under bun test lives under apps/cli/tests, whose package-relative
-        // candidate apps/cli/plugins/kk/... does not exist — the checkout copy wins.
+        // An unresolvable entry uses the module-anchored source regardless of staged-copy presence.
         const script = resolveStagesScript('/nonexistent/kk-entry');
         expect(script.endsWith(join('plugins', 'kk', 'scripts', 'kk-workflow-stages.ts'))).toBe(true);
     });
 
     test('throws with install guidance when neither candidate exists', () => {
-        process.chdir(mkdtempSync(join(tmpdir(), 'stage-test-')));
+        const dir = mkdtempSync(join(tmpdir(), 'stage-test-'));
+        made.push(dir);
+        process.chdir(dir);
         expect(() => resolveStagesScript('/nonexistent/kk-entry', '/nonexistent-checkout')).toThrow(
             /install or refresh the kk package/,
         );
@@ -42,6 +45,7 @@ describe('resolveStagesScript', () => {
 
     test('ignores a cwd-relative planted script — the checkout root is never the current directory', () => {
         const planted = mkdtempSync(join(tmpdir(), 'stage-test-'));
+        made.push(planted);
         mkdirSync(join(planted, 'plugins', 'kk', 'scripts'), { recursive: true });
         writeFileSync(join(planted, 'plugins', 'kk', 'scripts', 'kk-workflow-stages.ts'), 'process.exit(0);\n');
         process.chdir(planted);
@@ -51,7 +55,9 @@ describe('resolveStagesScript', () => {
     });
 
     test('defaults the checkout root to this module, independent of the current directory', () => {
-        process.chdir(mkdtempSync(join(tmpdir(), 'stage-test-')));
+        const dir = mkdtempSync(join(tmpdir(), 'stage-test-'));
+        made.push(dir);
+        process.chdir(dir);
         const script = resolveStagesScript('/nonexistent/kk-entry');
         expect(script.endsWith(join('plugins', 'kk', 'scripts', 'kk-workflow-stages.ts'))).toBe(true);
     });
