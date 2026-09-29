@@ -1,37 +1,39 @@
-import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
-import { FakeFileCliTransport, type PublishTransport, type PublishTransportPayload } from '@gobing-ai/publish-harness';
+import {
+    FakeFileCliTransport,
+    type PublishTransport,
+    type PublishTransportPayload,
+    resolveBrowserProfileDir,
+} from '@gobing-ai/publish-harness';
+import { BrowserProfileMissingError, withProfilePage } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import type { Page } from 'playwright';
 
 const TARGET = 'wechatmp';
-const TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token';
+const CONSOLE_URL = 'https://mp.weixin.qq.com/';
 
-/** Per-request timeout (ms) for WeChat HTTP calls — Bun's `fetch` has no default deadline (R5). */
-const REQUEST_TIMEOUT_MS = 120_000;
-const DRAFT_ADD_URL = 'https://api.weixin.qq.com/cgi-bin/draft/add';
-const APP_ID_ENV = 'WECHAT_APP_ID';
-const APP_SECRET_ENV = 'WECHAT_APP_SECRET';
+/** Proven console selectors (ported from the wt-publish-to-wechatmp Playwright flow). */
+const SEL = {
+    // Console home: an authenticated session lands on /cgi-bin/home; logged-out shows the QR scan page.
+    loggedInFragment: '/cgi-bin/home',
+    menuItem: '.new-creation__menu .new-creation__menu-item',
+    titleInput: '#title',
+    authorInput: '#author',
+    editor: '.ProseMirror',
+    summaryInput: '#js_description',
+    saveDraftBtn: '.js_save_draft, button:has-text("保存为草稿"), button:has-text("保存草稿")',
+    publishBtn: '.js_publish, button:has-text("发表"), button:has-text("发布")',
+    confirmBtn: '.weui-desktop-dialog .weui-desktop-btn_primary, button:has-text("确定")',
+    toast: '.weui-desktop-toast',
+} as const;
 
-export interface WechatDraftArticle {
-    article_type: 'news';
-    title: string;
-    author?: string;
-    digest?: string;
-    content: string;
-    content_source_url?: string;
-    thumb_media_id: string;
-    need_open_comment?: number;
-    only_fans_can_comment?: number;
-}
+const CONSOLE_READY_TIMEOUT_MS = 30_000;
+const TOAST_TIMEOUT_MS = 15_000;
 
-export interface WechatDraftArticles {
-    articles: WechatDraftArticle[];
-}
-
-function fail(error: string): Result {
-    return ResultSchema.parse({ ok: false, target: TARGET, error });
+function fail(message: string): never {
+    throw new Error(message);
 }
 
 function escapeHtml(text: string): string {
@@ -121,182 +123,225 @@ export function markdownToWechatHtml(markdown: string): string {
 }
 
 function resolveTitle(content: Content): string {
-    if (content.title && content.title.trim().length > 0) return content.title.trim();
-    const match = content.body.match(/^#\s+(.+)$/m);
-    return match?.[1] ? match[1].trim() : 'Untitled';
+    if (typeof content.title === 'string' && content.title.trim() !== '') return content.title.trim();
+    return fail('wechatmp-pub: content.title is required');
 }
 
-function resolveDigest(content: Content): string {
-    if (typeof content.metadata?.description === 'string' && content.metadata.description.trim().length > 0) {
-        return content.metadata.description.trim().slice(0, 120);
-    }
-    const para = content.body
-        .replace(/^#.+$/m, '')
-        .split(/\n\n+/)
-        .map((p) => p.trim())
-        .find((p) => p.length > 0);
-    return (para ?? '').slice(0, 120);
+function resolveDigest(content: Content): string | undefined {
+    const body = typeof content.body === 'string' ? content.body : '';
+    if (body.trim() === '') return undefined;
+    const first = body
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => line !== '');
+    return first ? first.slice(0, 54) : undefined;
 }
 
-export function mapContentToWechatDraft(content: Content): WechatDraftArticles {
-    const thumb = content.metadata?.thumbMediaId;
-    if (typeof thumb !== 'string' || thumb.trim().length === 0) {
-        throw new Error(
-            'metadata.thumbMediaId is required for WeChat news drafts (cover media_id from material/add_material)',
-        );
-    }
-    const title = resolveTitle(content).slice(0, 32);
-    const author = typeof content.metadata?.author === 'string' ? content.metadata.author.slice(0, 16) : undefined;
-    const source =
-        typeof content.metadata?.canonicalUrl === 'string'
-            ? content.metadata.canonicalUrl
-            : content.references?.[0]?.url;
+// ---------------------------------------------------------------------------
+// Browser flow (ts-browser-automation; pattern mirrors xhs-pub)
+// ---------------------------------------------------------------------------
+
+export interface WechatPage {
+    goto(url: string): Promise<void>;
+    url(): string;
+    fill(selector: string, value: string): Promise<void>;
+    click(selector: string): Promise<void>;
+    setInnerHtml(selector: string, html: string): Promise<void>;
+    waitFor(selector: string, timeoutMs: number): Promise<void>;
+    waitForAny(selectors: readonly string[], timeoutMs: number): Promise<string>;
+}
+
+function isWechatLoggedIn(page: Page): boolean {
+    return page.url().includes(SEL.loggedInFragment);
+}
+
+export type SessionCheck = (profileDir: string) => Promise<void>;
+
+/** Headless session preflight: throws (incl. BrowserProfileMissingError) when the profile cannot drive the console. */
+export async function checkWechatSession(profileDir: string): Promise<void> {
+    await withProfilePage(
+        {
+            profileDir,
+            headless: true,
+            url: CONSOLE_URL,
+            isAuthenticated: isWechatLoggedIn,
+            timeoutMs: CONSOLE_READY_TIMEOUT_MS,
+        },
+        async () => {},
+    );
+}
+
+export interface WechatmpTransportOptions {
+    openPage?: (profileDir: string) => Promise<WechatPage>;
+    checkSession?: SessionCheck;
+}
+
+function wrapPlaywrightPage(page: Page): WechatPage {
     return {
-        articles: [
-            {
-                article_type: 'news',
-                title,
-                ...(author ? { author } : {}),
-                digest: resolveDigest(content),
-                content: markdownToWechatHtml(content.body),
-                ...(source ? { content_source_url: source } : {}),
-                thumb_media_id: thumb.trim(),
-            },
-        ],
+        goto: (url) => page.goto(url, { waitUntil: 'domcontentloaded' }).then(() => undefined),
+        url: () => page.url(),
+        fill: (selector, value) => page.locator(selector).first().fill(value),
+        click: (selector) => page.locator(selector).first().click(),
+        setInnerHtml: (selector, html) =>
+            page
+                .locator(selector)
+                .first()
+                .evaluate((node, value) => {
+                    node.innerHTML = value;
+                    node.dispatchEvent(new Event('input', { bubbles: true }));
+                }, html),
+        waitFor: (selector, timeoutMs) =>
+            page
+                .locator(selector)
+                .first()
+                .waitFor({ state: 'visible', timeout: timeoutMs })
+                .then(() => undefined),
+        waitForAny: async (selectors, timeoutMs) => {
+            const deadline = Date.now() + timeoutMs;
+            while (Date.now() < deadline) {
+                for (const selector of selectors) {
+                    try {
+                        await page.locator(selector).first().waitFor({ state: 'visible', timeout: 250 });
+                        return selector;
+                    } catch {
+                        // try the next candidate
+                    }
+                }
+            }
+            return '';
+        },
     };
 }
 
-function resolveOperation(options?: Record<string, unknown>, content?: Content): string {
-    const raw = options?.operation ?? content?.metadata?.operation ?? 'draft';
-    return typeof raw === 'string' ? raw : 'draft';
+async function defaultOpenPage(profileDir: string): Promise<WechatPage> {
+    return withProfilePage({ profileDir, headless: false, url: CONSOLE_URL }, async (handle) =>
+        wrapPlaywrightPage(handle.page),
+    );
 }
 
-export class WechatDraftApiTransport implements PublishTransport {
-    public readonly kind = 'file-cli';
+export class WechatmpBrowserTransport implements PublishTransport {
+    readonly kind = 'browser';
+    private readonly openPage: (profileDir: string) => Promise<WechatPage>;
+    private readonly checkSession: SessionCheck;
 
-    public async publish(payload: PublishTransportPayload): Promise<Result> {
-        const operation = resolveOperation(payload.options, payload.content);
-        if (operation === 'live' || operation === 'publish' || operation === 'freepublish') {
-            return fail(
-                'WeChat live publish via freepublish/submit is certification-gated; default operation is draft. Confirm with the operator before a live/console path.',
-            );
-        }
-        if (operation !== 'draft') {
-            return fail(`invalid options.operation "${operation}": expected draft (default) or live`);
-        }
+    constructor(options: WechatmpTransportOptions = {}) {
+        this.openPage = options.openPage ?? defaultOpenPage;
+        this.checkSession = options.checkSession ?? ((profileDir) => checkWechatSession(profileDir));
+    }
 
-        const appId = process.env[APP_ID_ENV];
-        const appSecret = process.env[APP_SECRET_ENV];
-        const missing: string[] = [];
-        if (!appId || appId.trim().length === 0) missing.push(APP_ID_ENV);
-        if (!appSecret || appSecret.trim().length === 0) missing.push(APP_SECRET_ENV);
-        if (missing.length > 0) {
-            return fail(
-                `${missing.join(' and ')} environment variable${missing.length > 1 ? 's are' : ' is'} required: WeChat Official Account AppID/AppSecret`,
-            );
+    async publish(payload: PublishTransportPayload): Promise<Result> {
+        const { content, options } = payload;
+        const want =
+            options?.operation === 'live'
+                ? 'public'
+                : ((content.metadata?.publishStatus as string | undefined) ?? 'draft');
+        if (want !== 'draft' && want !== 'public') {
+            return this.failed(`publishStatus "${want}" is not draft|public`);
         }
+        const title = resolveTitle(content);
+        if (typeof content.body !== 'string' || content.body.trim() === '') {
+            return this.failed('wechatmp-pub: content.body is required');
+        }
+        const profileDir = resolveBrowserProfileDir(TARGET, process.env.WECHATMP_PROFILE_DIR);
 
-        let articles: WechatDraftArticles;
         try {
-            articles = mapContentToWechatDraft(payload.content);
+            await this.checkSession(profileDir);
         } catch (error: unknown) {
-            return fail(error instanceof Error ? error.message : String(error));
+            const why =
+                error instanceof BrowserProfileMissingError
+                    ? 'no saved console profile — log in once via `bun src/profile-check.ts login`'
+                    : `console session preflight failed (${error instanceof Error ? error.message : String(error)})`;
+            // Non-blocking contract (mirrors xhs-pub): a sessionless run refuses fast and stays draftless —
+            // it must never open a headed login wall inside an unattended run.
+            return this.failed(`wechatmp-pub: ${why}`);
         }
 
+        const page = await this.openPage(profileDir);
         try {
-            const tokenUrl = `${TOKEN_URL}?grant_type=client_credential&appid=${encodeURIComponent(appId ?? '')}&secret=${encodeURIComponent(appSecret ?? '')}`;
-            const tokenResponse = await fetch(tokenUrl, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-            const tokenJson = (await tokenResponse.json()) as {
-                access_token?: unknown;
-                errmsg?: unknown;
-                errcode?: unknown;
-            };
-            if (typeof tokenJson.access_token !== 'string') {
-                return fail(
-                    `WeChat token request failed: ${typeof tokenJson.errmsg === 'string' ? tokenJson.errmsg : 'missing access_token'}`,
+            await page.waitFor(SEL.menuItem, CONSOLE_READY_TIMEOUT_MS);
+            await page.click(`${SEL.menuItem}:has-text("图文"), ${SEL.menuItem}`);
+            await page.waitFor(SEL.titleInput, CONSOLE_READY_TIMEOUT_MS);
+            await page.fill(SEL.titleInput, title);
+            await this.tryFill(page, SEL.authorInput, String(content.metadata?.author ?? ''));
+            await page.waitFor(SEL.editor, CONSOLE_READY_TIMEOUT_MS);
+            await page.setInnerHtml(SEL.editor, markdownToWechatHtml(content.body));
+            const digest = resolveDigest(content);
+            if (digest) await this.tryFill(page, SEL.summaryInput, digest);
+
+            if (want === 'draft') {
+                await page.click(SEL.saveDraftBtn);
+            } else {
+                await page.click(SEL.publishBtn);
+                await this.tryClick(page, SEL.confirmBtn);
+            }
+            const seen = await page.waitForAny([SEL.toast], TOAST_TIMEOUT_MS);
+            if (seen === '') {
+                return this.failed(
+                    `save was clicked but no confirmation toast appeared within ${TOAST_TIMEOUT_MS}ms — verify the console manually`,
                 );
             }
-            const draftResponse = await fetch(
-                `${DRAFT_ADD_URL}?access_token=${encodeURIComponent(tokenJson.access_token)}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(articles),
-                    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-                },
-            );
-            const draftJson = (await draftResponse.json()) as {
-                media_id?: unknown;
-                errmsg?: unknown;
-                errcode?: unknown;
-            };
-            if (typeof draftJson.media_id !== 'string') {
-                return fail(
-                    `WeChat draft/add failed: ${typeof draftJson.errmsg === 'string' ? draftJson.errmsg : 'missing media_id'}`,
-                );
-            }
-            return ResultSchema.parse({
+            return {
                 ok: true,
                 target: TARGET,
-                id: draftJson.media_id,
-                message: 'WeChat draft created via draft/add',
-                metadata: { operation: 'draft', publishStatus: 'draft' },
-            });
-        } catch (err: unknown) {
-            return fail(`WeChat transport error: ${err instanceof Error ? err.message : String(err)}`);
+                metadata: {
+                    publishStatus: want,
+                    note:
+                        want === 'draft'
+                            ? 'saved to the WeChat MP draft box (草稿箱)'
+                            : 'published via the console 发表 flow',
+                },
+            };
+        } catch (error: unknown) {
+            const why = error instanceof Error ? error.message : String(error);
+            return this.failed(`console flow failed: ${why}`);
         }
+    }
+
+    private async tryFill(page: WechatPage, selector: string, value: string): Promise<void> {
+        if (value === '') return;
+        try {
+            await page.fill(selector, value);
+        } catch {
+            // optional field — the console hides it for some account types
+        }
+    }
+
+    private async tryClick(page: WechatPage, selector: string): Promise<void> {
+        try {
+            await page.click(selector);
+        } catch {
+            // confirm dialogs are not shown for every account type
+        }
+    }
+
+    private failed(error: string): Result {
+        return { ok: false, target: TARGET, error, metadata: { publishStatus: 'draft' } };
     }
 }
 
 export function getPublishTransport(): PublishTransport {
-    if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') {
-        return new FakeFileCliTransport();
-    }
-    return new WechatDraftApiTransport();
+    if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') return new FakeFileCliTransport();
+    return new WechatmpBrowserTransport();
 }
 
-async function writePublishResult(outputPath: string, result: Result): Promise<void> {
-    const outDir = dirname(outputPath);
-    if (outDir && outDir !== '.') {
-        await createNodeFileSystem().ensureDir(outDir);
-    }
-    await createNodeFileSystem().writeFile(outputPath, JSON.stringify(result, null, 2));
+export async function processPublishIO(inPath: string, outPath: string, transport?: PublishTransport): Promise<void> {
+    const fs = createNodeFileSystem();
+    const raw = JSON.parse(await fs.readFile(inPath));
+    const content = ContentSchema.parse(raw);
+    const result = await (transport ?? getPublishTransport()).publish({ content, options: { target: TARGET } });
+    await fs.writeFile(outPath, JSON.stringify(ResultSchema.parse(result), null, 2));
 }
 
-export async function processPublishIO(
-    inputPath: string,
-    outputPath: string,
-    transport: PublishTransport = getPublishTransport(),
-): Promise<void> {
-    await createNodeFileSystem().deleteFile(outputPath);
-    let content: Content;
-    let options: Record<string, unknown> | undefined;
-    try {
-        const raw = JSON.parse(await createNodeFileSystem().readFile(inputPath)) as Record<string, unknown>;
-        content = ContentSchema.parse(raw);
-        if (raw.options !== undefined && typeof raw.options === 'object' && raw.options !== null) {
-            options = raw.options as Record<string, unknown>;
-        }
-    } catch (error: unknown) {
-        const message = `Invalid Content input: ${error instanceof Error ? error.message : String(error)}`;
-        await writePublishResult(outputPath, fail(message));
-        throw new Error(message);
-    }
-    const result = ResultSchema.parse(await transport.publish({ content, options }));
-    await writePublishResult(outputPath, result);
-    if (!result.ok) throw new Error(result.error ?? 'Publish failed');
-}
-
-export async function main(): Promise<number> {
-    let values: { in?: string; out?: string };
-    try {
-        ({ values } = parseArgs({ options: { in: { type: 'string' }, out: { type: 'string' } } }));
-    } catch (error: unknown) {
-        echoError(`Invalid arguments: ${error instanceof Error ? error.message : String(error)}`);
-        return 1;
-    }
+export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+    const { values } = parseArgs({
+        argv,
+        options: {
+            in: { type: 'string' },
+            out: { type: 'string' },
+        },
+    });
     if (!values.in || !values.out) {
-        echoError('Missing required arguments: --in and --out');
+        echoError('Missing required arguments: --in <content.json> --out <result.json>');
         return 1;
     }
     try {

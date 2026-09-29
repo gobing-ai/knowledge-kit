@@ -3,5 +3,5 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for WeChat Official Account drafts via official draft/add"
+    "description": "Publish plugin for the WeChat MP console via ts-browser-automation: draft-box first (ADR-022), headed publish behind a session preflight"
 }

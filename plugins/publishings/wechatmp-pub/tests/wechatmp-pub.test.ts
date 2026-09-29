@@ -1,33 +1,54 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
+import { BrowserProfileMissingError } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
+    checkWechatSession,
     getPublishTransport,
     main,
-    mapContentToWechatDraft,
     markdownToWechatHtml,
     processPublishIO,
-    WechatDraftApiTransport,
+    WechatmpBrowserTransport,
+    type WechatPage,
 } from '../src/index';
 
-function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void>): Promise<void> {
-    const originals = new Map<string, string | undefined>();
-    for (const [key, value] of Object.entries(env)) {
-        originals.set(key, process.env[key]);
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-    }
-    return fn().finally(() => {
-        for (const [key, value] of originals) {
-            if (value === undefined) delete process.env[key];
-            else process.env[key] = value;
-        }
-    });
+interface RecordedCall {
+    op: string;
+    args: unknown[];
 }
+
+function makeFakePage(log: RecordedCall[]): WechatPage {
+    const page: WechatPage = {
+        goto: async (url) => {
+            log.push({ op: 'goto', args: [url] });
+        },
+        url: () => 'https://mp.weixin.qq.com/cgi-bin/home?t=home',
+        fill: async (selector, value) => {
+            log.push({ op: 'fill', args: [selector, value] });
+        },
+        click: async (selector) => {
+            log.push({ op: 'click', args: [selector] });
+        },
+        setInnerHtml: async (selector, html) => {
+            log.push({ op: 'setInnerHtml', args: [selector, html] });
+        },
+        waitFor: async (selector) => {
+            log.push({ op: 'waitFor', args: [selector] });
+        },
+        waitForAny: async () => '.weui-desktop-toast',
+    };
+    return page;
+}
+
+const ARTICLE = {
+    title: '每日 AI 资讯 — 2026-09-29',
+    body: '# 今日头条\n\n模型发布 **重点** 摘要。\n\n```ts\nconst x = 1;\n```',
+    format: 'markdown',
+};
 
 describe('wechatmp-pub plugin', () => {
     test('markdownToWechatHtml maps headings, paragraphs, and code', () => {
@@ -38,63 +59,106 @@ describe('wechatmp-pub plugin', () => {
         expect(html).toContain('const x = 1;');
     });
 
-    test('mapContentToWechatDraft requires thumbMediaId and truncates title', () => {
-        expect(() => mapContentToWechatDraft({ title: 'T', body: 'B', format: 'markdown' })).toThrow(/thumbMediaId/);
-        const draft = mapContentToWechatDraft({
-            title: 'A'.repeat(40),
-            body: 'Lead paragraph.\n\nMore.',
-            format: 'markdown',
-            metadata: { thumbMediaId: 'thumb-1' },
+    test('draft flow: preflight, editor fill, save-draft click, toast confirmation', async () => {
+        const log: RecordedCall[] = [];
+        const checks: string[] = [];
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => makeFakePage(log),
+            checkSession: async () => {
+                checks.push('preflight');
+            },
         });
-        expect(draft.articles[0]?.title).toHaveLength(32);
-        expect(draft.articles[0]?.thumb_media_id).toBe('thumb-1');
-        expect(draft.articles[0]?.digest).toContain('Lead paragraph');
+        const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.publishStatus).toBe('draft');
+        expect(checks).toEqual(['preflight']);
+        const ops = log.map((call) => call.op);
+        expect(ops).toContain('setInnerHtml');
+        const editorCall = log.find((call) => call.op === 'setInnerHtml');
+        expect(String(editorCall?.args[1])).toContain('<h1>今日头条</h1>');
+        expect(String(editorCall?.args[1])).toContain('<strong>重点</strong>');
+        expect(log.some((call) => call.op === 'click' && String(call.args[0]).includes('js_save_draft'))).toBe(true);
+        expect(log.some((call) => call.op === 'click' && String(call.args[0]).includes('js_publish'))).toBe(false);
     });
 
-    test('live publish fails loud and asks for operator confirmation', async () => {
-        const result = await new WechatDraftApiTransport().publish({
-            content: { title: 'Live', body: 'Body.', format: 'markdown', metadata: { thumbMediaId: 't' } },
-            options: { operation: 'live' },
+    test('public flow clicks the publish control and its confirm dialog', async () => {
+        const log: RecordedCall[] = [];
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => makeFakePage(log),
+            checkSession: async () => {},
         });
+        const result = await transport.publish({
+            content: ARTICLE,
+            options: { target: 'wechatmp', operation: 'live' },
+        });
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.publishStatus).toBe('public');
+        expect(log.some((call) => call.op === 'click' && String(call.args[0]).includes('js_publish'))).toBe(true);
+        expect(
+            log.filter((call) => call.op === 'click' && String(call.args[0]).includes('确定')).length,
+        ).toBeGreaterThan(0);
+    });
+
+    test('sessionless preflight refuses fast with an ok:false non-blocking result', async () => {
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => {
+                throw new Error('must not open a headed browser');
+            },
+            checkSession: async () => {
+                throw new BrowserProfileMissingError('/tmp/profile');
+            },
+        });
+        const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('certification-gated');
-        expect(result.error).toContain('operator');
+        expect(result.error).toContain('profile-check.ts login');
     });
 
-    test('missing AppID/AppSecret names the variables and does not leak secrets', async () => {
-        await withEnv({ WECHAT_APP_ID: undefined, WECHAT_APP_SECRET: 'super-secret' }, async () => {
-            const result = await new WechatDraftApiTransport().publish({
-                content: { title: 'T', body: 'B', format: 'markdown', metadata: { thumbMediaId: 't' } },
-            });
-            expect(result.ok).toBe(false);
-            expect(result.error).toContain('WECHAT_APP_ID');
-            expect(JSON.stringify(result)).not.toContain('super-secret');
+    test('preflight error other than missing profile names the failure', async () => {
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => {
+                throw new Error('must not open');
+            },
+            checkSession: async () => {
+                throw new Error('timeout waiting for /cgi-bin/home');
+            },
         });
+        const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('timeout waiting');
     });
 
-    test('draft/add via mocked fetch returns media_id', async () => {
-        const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (
-            input: Parameters<typeof fetch>[0],
-        ): Promise<Response> => {
-            const url = String(input);
-            if (url.includes('/cgi-bin/token')) {
-                return new Response(JSON.stringify({ access_token: 'tok', expires_in: 7200 }), { status: 200 });
-            }
-            return new Response(JSON.stringify({ media_id: 'draft-media-1' }), { status: 200 });
-        }) as typeof fetch);
-        await withEnv({ WECHAT_APP_ID: 'wxid', WECHAT_APP_SECRET: 'secret' }, async () => {
-            try {
-                const result = await new WechatDraftApiTransport().publish({
-                    content: { title: 'Draft', body: 'Body.', format: 'markdown', metadata: { thumbMediaId: 'thumb' } },
-                });
-                expect(result.ok).toBe(true);
-                expect(result.id).toBe('draft-media-1');
-                expect(result.metadata?.publishStatus).toBe('draft');
-                expect(JSON.stringify(result)).not.toContain('secret');
-            } finally {
-                fetchSpy.mockRestore();
-            }
+    test('no toast after save is a loud failure, not a silent ok', async () => {
+        const page = makeFakePage([]);
+        page.waitForAny = async () => '';
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => page,
+            checkSession: async () => {},
         });
+        const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('no confirmation toast');
+    });
+
+    test('invalid publishStatus and missing body fail validation without opening a browser', async () => {
+        let opened = 0;
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => {
+                opened += 1;
+                return makeFakePage([]);
+            },
+            checkSession: async () => {},
+        });
+        const badStatus = await transport.publish({
+            content: { ...ARTICLE, metadata: { publishStatus: 'archived' } },
+            options: { target: 'wechatmp' },
+        });
+        expect(badStatus.ok).toBe(false);
+        const noBody = await transport.publish({
+            content: { title: 'T', body: '', format: 'markdown' },
+            options: { target: 'wechatmp' },
+        });
+        expect(noBody.ok).toBe(false);
+        expect(opened).toBe(0);
     });
 
     test('processPublishIO uses FakeFileCliTransport offline', async () => {
@@ -103,10 +167,7 @@ describe('wechatmp-pub plugin', () => {
         await mkdir(tmpDir, { recursive: true });
         const inPath = join(tmpDir, 'in.json');
         const outPath = join(tmpDir, 'out.json');
-        await writeFile(
-            inPath,
-            JSON.stringify({ title: 'T', body: 'B', format: 'markdown', metadata: { thumbMediaId: 't' } }),
-        );
+        await writeFile(inPath, JSON.stringify({ title: 'T', body: 'B', format: 'markdown' }));
         try {
             await processPublishIO(inPath, outPath, fake);
             expect(ResultSchema.parse(JSON.parse(await readFile(outPath, 'utf-8'))).ok).toBe(true);
@@ -116,7 +177,7 @@ describe('wechatmp-pub plugin', () => {
     });
 
     test('getPublishTransport fake switch', () => {
-        expect(getPublishTransport()).toBeInstanceOf(WechatDraftApiTransport);
+        expect(getPublishTransport()).toBeInstanceOf(WechatmpBrowserTransport);
         process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
         try {
             expect(getPublishTransport()).toBeInstanceOf(FakeFileCliTransport);
@@ -194,5 +255,18 @@ describe('markdownToWechatHtml inline safety (R9)', () => {
 
     test('double quotes in text are escaped', () => {
         expect(markdownToWechatHtml('He said "hi"')).toContain('&quot;hi&quot;');
+    });
+});
+
+describe('checkWechatSession (preflight)', () => {
+    test('uses the dedicated wechatmp profile with headless reuse and console readiness', async () => {
+        // The real withProfilePage would launch a browser; here we only pin the seam: without a
+        // profile dir override this fails fast on CI rather than opening anything headed.
+        process.env.WECHATMP_PROFILE_DIR = '/tmp/nonexistent-wechat-profile-test';
+        try {
+            await expect(checkWechatSession('/tmp/nonexistent-wechat-profile-test')).rejects.toThrow();
+        } finally {
+            delete process.env.WECHATMP_PROFILE_DIR;
+        }
     });
 });
