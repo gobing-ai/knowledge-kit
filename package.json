@@ -16,7 +16,8 @@
             "@gobing-ai/ts-infra": "^0.5.11",
             "@gobing-ai/ts-runtime": "^0.5.11",
             "@gobing-ai/ts-utils": "^0.5.11",
-            "@gobing-ai/ts-browser-automation": "^0.5.11"
+            "@gobing-ai/ts-browser-automation": "^0.5.11",
+            "playwright": "1.55.0"
         }
     },
     "scripts": {
