@@ -1,3 +1,20 @@
+## [0.0.26] - 2026-09-29
+
+### Added
+
+- feat(wechatmp): wire WeChat MP draft target into the daily workflow (9958875a)
+- feat(kk): best-practice defaults for daily-voice drivers (operator 09-29) (4adcf241)
+
+### Changed
+
+- refactor(wechatmp-pub): drive the WeChat MP console via ts-browser-automation (099110f5)
+- refactor(kk): renumber daily-voice workspace stage dirs to unique tens (1b7bfdbd)
+
+### Fixed
+
+- fix(voice-gen): encode MP3 as CBR 64k instead of VBR q2 (855b1a9d)
+- fix(kk): anchor the 标签 metadata-tail gate to the segment end (2c5fe9c7)
+
 ## [0.0.24] - 2026-09-28
 
 ### Added
