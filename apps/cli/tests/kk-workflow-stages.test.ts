@@ -750,7 +750,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
-    it('daily-cover-normalize transcodes a manifest-recorded jpg cover via sips', () => {
+    // sips ships only on macOS; ubuntu CI cannot exercise the real transcode. The
+    // absent-sips failure path stays covered platform-neutrally by the fails-loud test below.
+    const itMacOnly = it.skipIf(process.platform !== 'darwin');
+    itMacOnly('daily-cover-normalize transcodes a manifest-recorded jpg cover via sips', () => {
         withTempDir((dir) => {
             const cover = join(dir, '2-cover');
             mkdirSync(cover, { recursive: true });
