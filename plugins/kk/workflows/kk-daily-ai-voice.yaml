@@ -68,6 +68,14 @@ vars:
   xhs_model: "image-01"
   # ADR-022 rail: draft-box only. "true" posts live and stays a launch-time opt-in.
   xhs_live: "false"
+
+  # WeChat MP (公众号): the daily article is pasted into the MP console editor and saved to the
+  # draft box (草稿箱) through wechatmp-pub's persistent-profile browser transport. The plugin
+  # runs a headless session preflight first: a sessionless run refuses fast (ok:false) and the
+  # stage stays non-blocking. The rail mirrors xhs: an unattended run drafts and never posts
+  # live — 发表 only on an ad-hoc wechat_live="true" run, deliberately, by hand.
+  wechat_enabled: "true"
+  wechat_live: "false"
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
@@ -367,6 +375,15 @@ states:
         options:
           command: >-
             kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}"
+
+  - id: wechat-publish
+    description: "Publish the daily article to the WeChat MP draft box via wechatmp-pub (console browser transport) — draft, or live only when wechat_live=true; independent and non-blocking: its outcome never enters publish_status; a sessionless profile refuses fast (headless preflight) and the run continues"
+    onEnter:
+      - kind: shell
+        onError: continue
+        options:
+          command: >-
+            kk stage daily-publish-wechat "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.wechat_live}"
 
   - id: publish
     description: "Classify the sequenced surfdash → podcast outcomes full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned; task 0118: per-target classification over the merged result.json)"
@@ -670,6 +687,20 @@ transitions:
   - from: xhs-publish
     to: publish
     description: "XHS dispatched (or skipped: onError continue) -> classify the surfdash/podcast outcomes; XHS contributes no target to the classification"
+    guard:
+      kind: always
+
+  - from: publish-podcast
+    to: wechat-publish
+    description: "wechat_enabled -> paste the daily article into the WeChat MP console and save it to the draft box; first-match-wins, so this sits above the classification edge (WeChat is independent and never gates publish_status)"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.wechat_enabled}" = "true"'
+
+  - from: wechat-publish
+    to: publish
+    description: "WeChat draft dispatched (or skipped: onError continue) -> classify the surfdash/podcast outcomes; WeChat contributes no target to the classification"
     guard:
       kind: always
 

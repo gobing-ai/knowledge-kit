@@ -142,3 +142,12 @@ tasks:
 
 features:
   dir: docs/features
+
+# Machine-wide default: bundled workflows shipped in the installed package.
+# TODO: switch to `- bundled:workflows` once the installed spur carries
+# BUNDLED_PATH_PREFIX expansion (monorepo config/config.global.yaml + workflow.ts);
+# 0.3.61 predates it and would list nothing.
+workflows:
+  paths:
+    - /Users/robin/node_modules/@gobing-ai/spur/config/workflows/
+    - plugins/kk/workflows

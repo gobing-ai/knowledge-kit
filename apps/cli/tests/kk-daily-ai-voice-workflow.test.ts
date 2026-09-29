@@ -51,6 +51,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'publish-podcast',
             'xhs-write',
             'xhs-publish',
+            'wechat-publish',
             'publish',
             'patch-surfdash',
             'publish-partial',
@@ -193,15 +194,41 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('xhs_live: "false"');
     });
 
+    it('R2 (2026-09-29) — the wechat target drafts the daily article into the MP console and stays non-blocking', () => {
+        const workDir = '$' + '{vars.work_dir}';
+        const runDate = '$' + '{vars.run_date}';
+        const block = yaml.match(/- id: wechat-publish\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        expect(block).not.toBe('');
+        // Non-blocking + onError continue, exactly like xhs-publish: a sessionless profile or a
+        // changed console never takes the run down.
+        expect(block).toContain('onError: continue');
+        expect(block).toContain(
+            `kk stage daily-publish-wechat "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.wechat_live}"`,
+        );
+        // Draft by default; 发表 only behind the explicit launch-time rail (ADR-022, same as xhs).
+        expect(yaml).toContain('wechat_enabled: "true"');
+        expect(yaml).toContain('wechat_live: "false"');
+        // Independent chain between publish-podcast and the classification state, first-match-wins:
+        // the WeChat outcome can never alter publish_status.
+        const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
+        expect(edges).toContain('publish-podcast->wechat-publish');
+        expect(edges).toContain('wechat-publish->publish');
+        expect(edges).not.toContain('wechat-publish->publish-partial');
+        const wechatEdge = yaml.indexOf('to: wechat-publish');
+        const classifyEdge = yaml.indexOf('- from: publish-podcast\n    to: publish');
+        expect(wechatEdge).toBeGreaterThan(-1);
+        expect(classifyEdge).toBeGreaterThan(wechatEdge);
+    });
+
     it('R2/R3 (0144) — every delegated action is a one-line `kk stage` call and the prompts stay under the cap', () => {
         // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
         // which resolves the shipped stages script from the installed package. The YAML must carry no
-        // prelude remnants and exactly one delegation call per stage (22 -> 23 sites: daily-cover
-        // joined in F614 0163 R3; 23 -> 25: daily-xhs-render + daily-publish-xhs joined in E8).
+        // prelude remnants and exactly one delegation call per stage (25 -> 26: daily-publish-wechat
+        // joined 2026-09-29 with the WeChat MP draft target).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(25);
+        expect(yaml.split('kk stage daily-').length - 1).toBe(26);
         // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
@@ -269,6 +296,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-publish-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `kk stage daily-show-notes "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.title}"`,
             `kk stage daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
+            `kk stage daily-publish-wechat "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.wechat_live}"`,
             `kk stage daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}"`,
             `kk stage daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,

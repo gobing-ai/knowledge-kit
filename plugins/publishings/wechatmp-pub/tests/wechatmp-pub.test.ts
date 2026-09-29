@@ -5,15 +5,18 @@ import { ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
 import { BrowserProfileMissingError } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
+import type { Page } from 'playwright';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     checkWechatSession,
     getPublishTransport,
+    isWechatLoggedIn,
     main,
     markdownToWechatHtml,
     processPublishIO,
     WechatmpBrowserTransport,
     type WechatPage,
+    wrapPlaywrightPage,
 } from '../src/index';
 
 interface RecordedCall {
@@ -255,6 +258,58 @@ describe('markdownToWechatHtml inline safety (R9)', () => {
 
     test('double quotes in text are escaped', () => {
         expect(markdownToWechatHtml('He said "hi"')).toContain('&quot;hi&quot;');
+    });
+});
+
+describe('wrapPlaywrightPage (real adapter, offline via stub page)', () => {
+    type Log = { fills: [string, string][]; clicks: string[]; evals: [string, string][] };
+    function stubRawPage(log: Log, visible: string | null = null): Page {
+        return {
+            url: () => 'https://mp.weixin.qq.com/cgi-bin/home',
+            goto: async () => undefined,
+            locator: (selector: string) => ({
+                first: () => ({
+                    fill: async (value: string) => {
+                        log.fills.push([selector, value]);
+                    },
+                    click: async () => {
+                        log.clicks.push(selector);
+                    },
+                    waitFor: async () => {
+                        if (visible !== selector) throw new Error('not visible');
+                    },
+                    evaluate: async (cb: (node: unknown, value: string) => void, arg: string) => {
+                        cb({ dispatchEvent: () => undefined }, arg);
+                        log.evals.push([selector, arg]);
+                    },
+                }),
+            }),
+        } as unknown as Page;
+    }
+
+    test('delegates goto/url/fill/click/setInnerHtml', async () => {
+        const log: Log = { fills: [], clicks: [], evals: [] };
+        const page = wrapPlaywrightPage(stubRawPage(log, '#js_description'));
+        await page.goto('https://mp.weixin.qq.com/');
+        expect(page.url()).toContain('/cgi-bin/home');
+        await page.fill('#title', 't');
+        await page.click('.js_save_draft');
+        await page.setInnerHtml('.ProseMirror', '<p>hi</p>');
+        await page.waitFor('#js_description', 1);
+        expect(log.fills).toEqual([['#title', 't']]);
+        expect(log.clicks).toEqual(['.js_save_draft']);
+        expect(log.evals).toEqual([['.ProseMirror', '<p>hi</p>']]);
+    });
+
+    test('waitForAny returns the first visible selector, or an empty string when none appears', async () => {
+        const hit = wrapPlaywrightPage(stubRawPage({ fills: [], clicks: [], evals: [] }, '.js_save_draft'));
+        expect(await hit.waitForAny(['.js_publish', '.js_save_draft'], 800)).toBe('.js_save_draft');
+        const miss = wrapPlaywrightPage(stubRawPage({ fills: [], clicks: [], evals: [] }));
+        expect(await miss.waitForAny(['.js_publish'], 300)).toBe('');
+    });
+
+    test('isWechatLoggedIn reads the console home fragment', () => {
+        expect(isWechatLoggedIn(stubRawPage({ fills: [], clicks: [], evals: [] }))).toBe(true);
     });
 });
 

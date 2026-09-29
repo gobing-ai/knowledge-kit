@@ -806,7 +806,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
     function fakeXhsKk(
         dir: string,
         record: string,
-        mode: 'image-gen' | 'xhs-pub',
+        mode: 'image-gen' | 'xhs-pub' | 'wechatmp-pub',
         exitCode = 0,
     ): Record<string, string> {
         const respond =
@@ -1040,6 +1040,62 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const result = run(['daily-publish-xhs', dir, '20260101', '', 'false'], env);
             expect(result.status).toBe(0);
             expect(result.stdout).toContain('WARNING: publish-xhs — xhs-pub exited 1');
+        });
+    });
+
+    it('daily-publish-wechat drafts by default, caches per requested status, and never blocks the run (2026-09-29)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'wechatmp-pub');
+            const article = join(dir, '22-article');
+            const publish = join(dir, '31-publish');
+            mkdirSync(article, { recursive: true });
+            mkdirSync(publish, { recursive: true });
+
+            // No article (generate ran with article_write_enabled=false): skip without a call.
+            const skipped = run(['daily-publish-wechat', dir, '20260101', '', 'false'], env);
+            expect(skipped.status).toBe(0);
+            expect(skipped.stdout).toContain('no article at');
+            expect(existsSync(record)).toBe(false);
+
+            writeFileSync(
+                join(article, '20260101_06_article_content.json'),
+                JSON.stringify({ title: 't', body: 'b', format: 'text' }),
+            );
+            const input = join(publish, '20260101_20_publish-wechat_content.json');
+            const statusOf = (): string =>
+                (JSON.parse(readFileSync(input, 'utf-8')) as { metadata: { publishStatus: string } }).metadata
+                    .publishStatus;
+            const callCount = (): number => readFileSync(record, 'utf-8').trim().split('\n').length;
+
+            // Default is a draft — the article Content is repackaged, never published live by itself.
+            expect(run(['daily-publish-wechat', dir, '20260101', '', 'false'], env).status).toBe(0);
+            expect(statusOf()).toBe('draft');
+            expect(callCount()).toBe(1);
+
+            // Cached on the *requested* status, and a live request re-runs (wechat_live is the rail).
+            expect(run(['daily-publish-wechat', dir, '20260101', '', 'false'], env).status).toBe(0);
+            expect(callCount()).toBe(1);
+            expect(run(['daily-publish-wechat', dir, '20260101', '', 'true'], env).status).toBe(0);
+            expect(statusOf()).toBe('public');
+            expect(callCount()).toBe(2);
+        });
+    });
+
+    it('daily-publish-wechat logs a plugin failure without failing the run (non-blocking target)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            // The plugin refuses (sessionless profile, changed console): the run must survive it.
+            const env = fakeXhsKk(dir, record, 'wechatmp-pub', 1);
+            mkdirSync(join(dir, '22-article'), { recursive: true });
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            writeFileSync(
+                join(dir, '22-article/20260101_06_article_content.json'),
+                JSON.stringify({ title: 't', body: 'b', format: 'text' }),
+            );
+            const result = run(['daily-publish-wechat', dir, '20260101', '', 'false'], env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('WARNING: publish-wechat — wechatmp-pub exited 1');
         });
     });
 

@@ -158,7 +158,7 @@ adapted.
 | `surfdash-pub` | fan-out | source | article | — | `metadata.published` |
 | `zenn-pub` | fan-out | ja | article | — | `metadata.published` (V3: never omitted) |
 | `qiita-pub` | fan-out | ja | article | — | `metadata.published` |
-| `wechatmp-pub` | fan-out | zh | wechat-article | required | `metadata.operation: draft`; the plugin refuses every live operation (`wechatmp-pub/src/index.ts:171`), so it is rejected when `publish_live=true` |
+| `wechatmp-pub` | browser | zh | article (console editor) | required | `kk:publish` default draft (2026-09-29 browser-transport refactor; the old HTTP draft/add path is gone); the console 发表 flow runs only via the launch-time live switch |
 | `juejin-pub` | browser | zh | article | — | `kk:publish` default draft |
 | `infoq-pub` | browser | zh | article | — | `kk:publish` default draft |
 | `xhs-pub` | browser | zh | short-note (≤1000 chars) | required | `kk:publish` default draft |

@@ -151,7 +151,7 @@ export interface WechatPage {
     waitForAny(selectors: readonly string[], timeoutMs: number): Promise<string>;
 }
 
-function isWechatLoggedIn(page: Page): boolean {
+export function isWechatLoggedIn(page: Page): boolean {
     return page.url().includes(SEL.loggedInFragment);
 }
 
@@ -176,7 +176,7 @@ export interface WechatmpTransportOptions {
     checkSession?: SessionCheck;
 }
 
-function wrapPlaywrightPage(page: Page): WechatPage {
+export function wrapPlaywrightPage(page: Page): WechatPage {
     return {
         goto: (url) => page.goto(url, { waitUntil: 'domcontentloaded' }).then(() => undefined),
         url: () => page.url(),

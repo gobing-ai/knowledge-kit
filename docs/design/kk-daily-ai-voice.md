@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (F614 0163: lead-item subject brief agent.run → pinned daily-news presets via `kk stage daily-cover`) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `gemini` → gemini-tts default (2026-09-29 operator override), `voicebox` → voice-gen, `ominivoice` → omni-voice-gen) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes) → xhs draft (E8: lead-item card plan agent.run → pinned `xhs-card` × `xhs-knowledge` presets via `kk stage daily-xhs-render` → `kk stage daily-publish-xhs`). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe); the XHS target only with `xhs_enabled: "true"` — **on by default** since 2026-09-29 (operator decision; daily runs fill the creator draft box — 2026-09-28 had it off after an XHS warning about automated login/publish activity, see §7) — and a live post additionally needs the launch-time `xhs_live` switch, ADR-022). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `10-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (F614 0163: lead-item subject brief agent.run → pinned daily-news presets via `kk stage daily-cover`) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `gemini` → gemini-tts default (2026-09-29 operator override), `voicebox` → voice-gen, `ominivoice` → omni-voice-gen) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes) → xhs draft (E8: lead-item card plan agent.run → pinned `xhs-card` × `xhs-knowledge` presets via `kk stage daily-xhs-render` → `kk stage daily-publish-xhs`). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe); the XHS target only with `xhs_enabled: "true"` — **on by default** since 2026-09-29 (operator decision; daily runs fill the creator draft box — 2026-09-28 had it off after an XHS warning about automated login/publish activity, see §7) — and a live post additionally needs the launch-time `xhs_live` switch, ADR-022); the WeChat MP target only with `wechat_enabled: "true"` (2026-09-29, §8 — draft-only, same launch-time rail via `wechat_live`). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `10-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
 
 ## 2. Architecture & Data Flow
 
@@ -34,8 +34,9 @@ flowchart TD
     O --> P1[publish-surfdash -> show-notes -> publish-podcast]
     P1 -->|xhs_enabled| XW[xhs-write: lead-item card plan agent.run -> kk stage daily-xhs-render]
     XW --> XP[xhs-publish: kk stage daily-publish-xhs, draft unless xhs_live]
-    XP --> P[publish: classify full|partial|none]
-    P1 -->|xhs disabled| P
+    XP --> WC[wechat-publish: kk stage daily-publish-wechat, draft unless wechat_live]
+    WC --> P[publish: classify full|partial|none]
+    P1 -->|xhs disabled| WC
     P --> Q[done]
     N -->|publish disabled| Q
 ```
@@ -165,3 +166,30 @@ follows the cover's split (F614): the agent authors **copy only**, the stage own
   preflight** before any headed visit (so a missing/expired session is a fast refusal, not a 120 s
   headed login wait) and a **24h cap** of one publish cycle plus one session check. A capped or
   sessionless publish returns `ok: false`, which this stage treats as non-blocking.
+
+## 8. WeChat MP draft target (2026-09-29, ADR-026)
+
+The `wechat-publish` state appends the daily article to the WeChat MP console **draft box** — the
+operator's editing surface, not the public feed. The article is already written by `article`
+(`22-article/${run_date}_06_article_content.json`), so this target has no authoring step: the
+stage re-packages that Content with `metadata.publishStatus` (`draft` default, `public` only when
+`wechat_live: "true"` at launch — the ADR-022 rail) into
+`31-publish/${run_date}_20_publish-wechat_content.json` and runs `kk executor run wechatmp-pub`.
+
+- **Console browser transport** (`wechatmp-pub`, ADR-026) — persistent profile at
+  `~/.config/kk/browser-profiles/wechatmp` (`WECHATMP_PROFILE_DIR` overrides). A headless session
+  preflight (readiness = the console landing on `/cgi-bin/home`) refuses a sessionless run fast
+  with `ok:false` — an unattended run can never open a headed QR-code wall. The headed flow then
+  goes: MP home → 图文 menu → `#title` / `#author` / `.ProseMirror` (innerHTML paste of
+  `markdownToWechatHtml(body)` + an `input` event) → summary `#js_description` → save draft (or
+  发表 + confirm when live). A save click without an observed `.weui-desktop-toast` within 15 s is
+  a loud failure — the plugin never reports success it did not see.
+- **One-time login** — `bun plugins/publishings/wechatmp-pub/src/profile-check.ts login|check`
+  (login opens the headed console for the QR scan; `check` verifies headlessly, read-only).
+- **Draft by default; non-blocking; independent.** Same terms as the XHS target (§7): the outcome
+  never enters `publish_status`, the stage is `soft` on the plugin call, and caching is per
+  **requested** status so a cached draft can never satisfy a later `wechat_live=true` re-run.
+- **No automation-guard (conscious).** WeChat has issued no automated-activity warning; the
+  preflight + draft default are the guard. If a warning ever arrives, port the ADR-025 24h cap.
+- Workflow vars: `wechat_enabled: "true"` (on by default, 2026-09-29 operator decision),
+  `wechat_live: "false"`.

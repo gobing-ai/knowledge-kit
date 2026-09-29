@@ -987,6 +987,36 @@ accepted by the operator with the caps as the mitigation.
 
 ---
 
+## ADR-026: WeChat MP joins the daily workflow through the console browser transport
+
+**Status:** Accepted · **Date:** 2026-09-29
+
+**Decision.** `wechatmp-pub` is refactored from the HTTP `draft/add` API (which required
+`WECHAT_APP_ID` / `WECHAT_APP_SECRET` and an uploaded `thumbMediaId`) to a persistent-profile
+browser flow over `@gobing-ai/ts-browser-automation` — the same shape as `xhs-pub`: a headless
+session preflight (readiness = the console lands on `/cgi-bin/home`) refuses a sessionless run
+fast with `ok:false`, and the headed flow pastes the article into the MP console editor and saves
+it to the draft box. The daily workflow gains a `wechat-publish` state (`wechat_enabled: "true"`,
+`wechat_live: "false"`) as a second independent, non-blocking target that never enters
+`publish_status`.
+
+**Why.** The draft box, not the API, is the operator's actual intake surface: drafts are editable
+in the MP UI before any 发表, and the API route needed app credentials + a separately uploaded
+thumbnail that added setup cost without removing the manual step. The console is where the
+operator already works; driving it keeps the xhs-pub muscle (profile dir, preflight, selector
+table, loud no-toast failure) in one pattern.
+
+**Cost / accepted risk.** Selector drift on the WeChat console can break the flow — mitigated by
+the loud no-confirmation failure and non-blocking stage semantics. **No** ADR-025-style
+automation-guard: WeChat has issued no automated-activity warning, and the preflight + draft
+default are the guard; if a warning ever arrives, port the 24h cap as a follow-up. The ADR-022
+rail carries over unchanged: `wechat_live` stays a launch-time switch, so a scheduled run can
+never post live.
+
+**Detail:** `docs/04_DESIGN.md` → `@gobing-ai/wechatmp-pub`; `docs/design/kk-daily-ai-voice.md`.
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.

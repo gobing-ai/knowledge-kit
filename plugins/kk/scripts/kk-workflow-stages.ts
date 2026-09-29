@@ -1176,8 +1176,8 @@ function dailyXhsRender(args: string[]): void {
     });
 }
 
-/** A single-target xhs Result, not the fan-out aggregate: `ok` plus `metadata.publishStatus`. */
-function xhsStatus(path: string): string {
+/** A single-target publish Result, not the fan-out aggregate: `ok` plus `metadata.publishStatus`. */
+function resultPublishStatus(path: string): string {
     const parsed = readJson(path);
     if (parsed?.ok !== true) return '';
     const status = metadataOf(parsed).publishStatus;
@@ -1200,7 +1200,7 @@ function dailyPublishXhs(args: string[]): void {
     timed(workDir, 'publish-xhs', () => {
         // Cache on the *requested* status: a cached draft must not silently satisfy a later
         // xhs_live=true re-run (that would report a live post that never happened).
-        if (xhsStatus(result) === want) {
+        if (resultPublishStatus(result) === want) {
             console.log(`publish-xhs cached: ${want} already recorded in ${result}`);
             return;
         }
@@ -1222,6 +1222,50 @@ function dailyPublishXhs(args: string[]): void {
             status === 0
                 ? `publish-xhs: ${want} dispatched; outcome recorded in ${result}`
                 : `WARNING: publish-xhs — xhs-pub exited ${status}; XHS target skipped (run continues, see ${result})`,
+        );
+    });
+}
+
+/**
+ * WeChat MP: drive the console via `wechatmp-pub`'s browser transport and save the article to the
+ * draft box (草稿箱). Draft by default; the 发表 flow runs only on an explicit launch-time
+ * `wechat_live=true` (ADR-022 rail, same as xhs). Independent and non-blocking like XHS: the
+ * outcome never enters `publish_status` (surfdash + podcast remain the publication contract).
+ */
+function dailyPublishWechat(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', live = 'false'] = args;
+    const article = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+    const input = join(workDir, '31-publish', `${runDate}_20_publish-wechat_content.json`);
+    const result = join(workDir, '31-publish', `${runDate}_20_publish-wechat_result.json`);
+    const want = live === 'true' ? 'public' : 'draft';
+    timed(workDir, 'publish-wechat', () => {
+        // Cache on the *requested* status: a cached draft must not silently satisfy a later
+        // wechat_live=true re-run (that would report a live post that never happened).
+        if (resultPublishStatus(result) === want) {
+            console.log(`publish-wechat cached: ${want} already recorded in ${result}`);
+            return;
+        }
+        if (!isFile(article)) {
+            console.log(`publish-wechat: no article at ${article} — skip`);
+            return;
+        }
+        const packaged = requireJson(article, 'publish-wechat');
+        sted('write', input, () =>
+            writeJsonText(input, { ...packaged, metadata: { ...metadataOf(packaged), publishStatus: want } }),
+        );
+        // `soft` keeps the WeChat target non-blocking: the plugin still writes its own failed Result
+        // and prints the failing step (session preflight, editor paste, save control), which is what
+        // the operator needs to re-run — never a silent skip.
+        const status = kk(
+            ['executor', 'run', 'wechatmp-pub', '--in', input, '--out', result, ...pluginsArgs(pluginsPath)],
+            {
+                soft: true,
+            },
+        );
+        console.log(
+            status === 0
+                ? `publish-wechat: ${want} dispatched; outcome recorded in ${result}`
+                : `WARNING: publish-wechat — wechatmp-pub exited ${status}; WeChat target skipped (run continues, see ${result})`,
         );
     });
 }
@@ -2100,6 +2144,9 @@ if (import.meta.main)
             break;
         case 'daily-publish-xhs':
             dailyPublishXhs(rest);
+            break;
+        case 'daily-publish-wechat':
+            dailyPublishWechat(rest);
             break;
         case 'daily-publish-classify':
             dailyPublishClassify(rest);
