@@ -1250,8 +1250,18 @@ function dailyPublishWechat(args: string[]): void {
             return;
         }
         const packaged = requireJson(article, 'publish-wechat');
+        // MP draft enrichment (operator preference 2026-09-29): 原创+作者, 赞赏, 合集, 原文链接
+        // (the surfdash post), AI 生成声明, cover. The brand strings are this daily show's constants.
+        const cover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+        const wechatmp: Record<string, unknown> = {
+            original: true,
+            aiGenerated: true,
+            author: '冰原奔狼',
+            collection: '每日AI资讯',
+            ...(isFile(cover) ? { coverPath: cover } : {}),
+        };
         sted('write', input, () =>
-            writeJsonText(input, { ...packaged, metadata: { ...metadataOf(packaged), publishStatus: want } }),
+            writeJsonText(input, { ...packaged, metadata: { ...metadataOf(packaged), publishStatus: want, wechatmp } }),
         );
         // `soft` keeps the WeChat target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (session preflight, editor paste, save control), which is what

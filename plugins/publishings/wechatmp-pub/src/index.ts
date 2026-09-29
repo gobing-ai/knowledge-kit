@@ -27,6 +27,11 @@ const SEL = {
     editor: '.ProseMirror:not([data-placeholder])',
     summaryInput: '#js_description',
     saveDraftBtn: 'button:has-text("保存为草稿")',
+    originalSwitch: '.setting-group__switch.js_edit_ori',
+    tagRow: '.allow_click_opr.js_article_tags_label',
+    tagInput: 'input[placeholder*="合集"]',
+    claimSourceCheckbox: '#js_claim_source_area .frm_checkbox_label',
+    coverBtn: '.js_cover_btn_area',
     publishBtn: '.js_publish, button:has-text("发表"), button:has-text("发布")',
     confirmBtn: '.weui-desktop-dialog .weui-desktop-btn_primary, button:has-text("确定")',
     toast: '.weui-desktop-toast',
@@ -148,12 +153,17 @@ export interface WechatPage {
     goto(url: string): Promise<void>;
     url(): string;
     fill(selector: string, value: string): Promise<void>;
-    click(selector: string): Promise<void>;
+    click(selector: string, timeoutMs?: number): Promise<void>;
+    press?(key: string): Promise<void>;
     setInnerHtml(selector: string, html: string): Promise<void>;
     waitFor(selector: string, timeoutMs: number): Promise<void>;
     waitForAny(selectors: readonly string[], timeoutMs: number): Promise<string>;
     /** Resolves when the page URL contains the fragment (real browsers); absent on test fakes. */
     waitForUrlFragment?(fragment: string, timeoutMs: number): Promise<void>;
+    setInputFiles?(selector: string, files: string): Promise<void>;
+    waitForTimeout?(ms: number): Promise<void>;
+    /** Evaluate a JS expression in the page (real browsers) - used for commit verification; absent on fakes. */
+    evalJs?(expression: string): Promise<unknown>;
     /** Click and adopt the tab the console opens for the editor; absent on test fakes (same-page click). */
     clickAndAwaitNewPage?(selector: string): Promise<WechatPage>;
     /** Present on real browser pages; absent on test fakes. publish() closes it in finally. */
@@ -205,7 +215,11 @@ export function wrapPlaywrightPage(page: Page, context?: BrowserContext): Wechat
         goto: (url) => page.goto(url, { waitUntil: 'domcontentloaded' }).then(() => undefined),
         url: () => page.url(),
         fill: (selector, value) => page.locator(selector).first().fill(value),
-        click: (selector) => page.locator(selector).first().click(),
+        click: (selector, timeoutMs) =>
+            page
+                .locator(selector)
+                .first()
+                .click(timeoutMs ? { timeout: timeoutMs } : undefined),
         setInnerHtml: (selector, html) =>
             page
                 .locator(selector)
@@ -238,6 +252,10 @@ export function wrapPlaywrightPage(page: Page, context?: BrowserContext): Wechat
             page
                 .waitForURL(new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: timeoutMs })
                 .then(() => undefined),
+        setInputFiles: (selector, files) => page.locator(selector).first().setInputFiles(files),
+        waitForTimeout: (ms) => page.waitForTimeout(ms),
+        evalJs: (expression) => page.evaluate(expression),
+        press: (key) => page.keyboard.press(key),
         clickAndAwaitNewPage: context
             ? async (selector) => {
                   const popup = context.waitForEvent('page', { timeout: 15000 }).catch(() => undefined);
@@ -323,6 +341,7 @@ export class WechatmpBrowserTransport implements PublishTransport {
         }
 
         const page = await this.openPage(profileDir);
+        let enrichWarnings: string[] = [];
         try {
             await page.waitFor(SEL.menuItem, CONSOLE_READY_TIMEOUT_MS);
             // The console opens the article editor in a new tab — adopt it when it appears.
@@ -339,6 +358,11 @@ export class WechatmpBrowserTransport implements PublishTransport {
             await editor.setInnerHtml(SEL.editor, markdownToWechatHtml(content.body));
             const digest = resolveDigest(content);
             if (digest) await this.tryFill(editor, SEL.summaryInput, digest);
+
+            const enrichMeta = content.metadata?.wechatmp;
+            if (enrichMeta && typeof enrichMeta === 'object' && !Array.isArray(enrichMeta)) {
+                enrichWarnings = await this.enrichDraft(editor, enrichMeta as Record<string, unknown>);
+            }
 
             if (want === 'draft') {
                 await editor.click(SEL.saveDraftBtn);
@@ -368,14 +392,121 @@ export class WechatmpBrowserTransport implements PublishTransport {
                         want === 'draft'
                             ? `saved to the WeChat MP draft box (草稿箱)${appmsgid ? ` as appmsgid ${appmsgid}` : ''}`
                             : 'published via the console 发表 flow',
+                    ...(enrichWarnings.length > 0 ? { enrichWarnings } : {}),
                 },
             };
         } catch (error: unknown) {
             const why = error instanceof Error ? error.message : String(error);
-            return this.failed(`console flow failed: ${why}`);
+            const enrich = enrichWarnings.length > 0 ? ` (enrich warnings: ${enrichWarnings.join(' | ')})` : '';
+            return this.failed(`console flow failed: ${why}${enrich}`);
         } finally {
             await page.close?.();
         }
+    }
+
+    /**
+     * Set the operator's draft metadata (原创/作者/合集/创作来源/封面) in the v2 editor.
+     * Runs on a FRESH draft only - the toggles are not state-aware (no idempotency for re-runs).
+     * Per-field failures are collected into warnings and surfaced in the Result; the draft still saves.
+     * Dialog mapping evidence (probes 2026-09-29, drafts 100000805/808): 原创 + 赞赏 share ONE dialog
+     * (声明类型 radios, 作者 input, 确定) - the 赞赏 switch stays hidden for this account, so 赞赏 is a manual step;
+     * 合集 dialog = 请选择合集 input + 确认; 创作来源 is an inline checkbox (no dialog); the 原文链接 row has
+     * no reachable URL input in headless - also manual; cover accepts a direct input[type=file] set.
+     * Commit verification (evalJs): the original dialog only closes when WeChat's validation passes - the
+     * author is the reward (shang) account and must be picked from its search, which does not resolve for
+     * this account headless; a non-closing dialog is swept and surfaced as a warning. Same for the
+     * creation-source checkbox (DOM re-check).
+     */
+    private async enrichDraft(editor: WechatPage, meta: Record<string, unknown>): Promise<string[]> {
+        const DIALOG = '.weui-desktop-dialog:visible';
+        const CONFIRM = `${DIALOG} button:has-text("确认"), ${DIALOG} button:has-text("确定")`;
+        const warnings: string[] = [];
+        const str = (key: string) => (typeof meta[key] === 'string' ? (meta[key] as string) : '');
+        const on = (key: string) => meta[key] === true;
+        // Sweep any leaked dialog so the next step (especially 保存为草稿) is never overlay-blocked.
+        const sweep = async () => {
+            await this.tryClick(editor, 'button:has-text("取消")', 2000);
+            await editor.press?.('Escape');
+            await editor.waitForTimeout?.(400);
+        };
+        // One retry per step: the settings panel re-renders after dialog confirms and can briefly
+        // detach rows (observed on the tags row right after the original-declaration confirm).
+        const step = async (name: string, fn: () => Promise<void>) => {
+            try {
+                await fn();
+                return;
+            } catch {
+                // retry once below
+            }
+            await sweep();
+            await editor.waitForTimeout?.(1000);
+            try {
+                await fn();
+            } catch (error) {
+                warnings.push(`${name}: ${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`);
+                await sweep();
+            }
+        };
+        if (on('original')) {
+            await step('原创声明', async () => {
+                await editor.click(SEL.originalSwitch, 10000);
+                await editor.click(`${DIALOG} :text("文字原创")`, 8000);
+                const author = str('author');
+                if (author) await this.tryFill(editor, `${DIALOG} input[placeholder*="作者"]`, author);
+                await editor.click(CONFIRM, 8000);
+            });
+            const committed = await editor.evalJs?.(
+                `[...document.querySelectorAll('.weui-desktop-dialog')].every((d) => !d.offsetWidth)`,
+            );
+            if (committed === false) {
+                warnings.push('原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置');
+                await sweep();
+            }
+        }
+        const collection = str('collection');
+        if (collection) {
+            await step('合集', async () => {
+                await editor.click(SEL.tagRow, 8000);
+                await editor.waitFor(SEL.tagInput, 8000);
+                await editor.fill(SEL.tagInput, collection);
+                await editor.waitForTimeout?.(1200);
+                await editor.click(`${DIALOG} :text("${collection}")`, 8000);
+                await editor.click(CONFIRM, 8000);
+            });
+        }
+        if (on('aiGenerated')) {
+            await step('创作来源', async () => {
+                await editor.click(SEL.claimSourceCheckbox, 8000);
+                // Probes show no dialog on current builds — the checkbox alone declares AI generation.
+                const dialog = await editor.waitForAny([DIALOG], 3000);
+                if (dialog) {
+                    await editor.click(`${DIALOG} :text("内容由AI生成")`, 8000);
+                    await editor.click(CONFIRM, 8000);
+                }
+            });
+            const checked = await editor.evalJs?.(`!!document.querySelector('#js_claim_source_area input:checked')`);
+            if (checked === false) warnings.push('创作来源: 勾选未生效，请手动设置');
+        }
+        const coverPath = str('coverPath');
+        const putFile = editor.setInputFiles?.bind(editor);
+        if (coverPath && putFile) {
+            await step('封面', async () => {
+                try {
+                    await putFile('input[type="file"]', coverPath);
+                } catch {
+                    await editor.click(SEL.coverBtn, 8000);
+                    await editor.waitForTimeout?.(1500);
+                    await putFile('input[type="file"]', coverPath);
+                }
+                const cropBtn = await editor.waitForAny(
+                    [`${DIALOG} button:has-text("完成")`, `${DIALOG} button:has-text("确定")`],
+                    5000,
+                );
+                if (cropBtn) await editor.click(cropBtn, 8000);
+            });
+        }
+        await sweep();
+        return warnings;
     }
 
     private async tryFill(page: WechatPage, selector: string, value: string): Promise<void> {
@@ -387,9 +518,9 @@ export class WechatmpBrowserTransport implements PublishTransport {
         }
     }
 
-    private async tryClick(page: WechatPage, selector: string): Promise<void> {
+    private async tryClick(page: WechatPage, selector: string, timeoutMs?: number): Promise<void> {
         try {
-            await page.click(selector);
+            await page.click(selector, timeoutMs);
         } catch {
             // confirm dialogs are not shown for every account type
         }

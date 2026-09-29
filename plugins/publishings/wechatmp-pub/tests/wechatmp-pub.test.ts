@@ -476,3 +476,113 @@ describe('browser seam (stubbed openPersistentBrowser)', () => {
         }
     });
 });
+
+describe('wechatmp-pub draft enrichment (metadata.wechatmp)', () => {
+    const recordingPage = (calls: string[]): WechatPage => ({
+        goto: async () => {},
+        url: () => 'https://mp.weixin.qq.com/',
+        fill: async (selector, value) => {
+            calls.push(`fill ${selector} = ${value}`);
+        },
+        click: async (selector) => {
+            calls.push(`click ${selector}`);
+        },
+        setInnerHtml: async () => {},
+        waitFor: async (selector) => {
+            calls.push(`wait ${selector}`);
+        },
+        waitForAny: async (selectors) => {
+            calls.push(`any ${selectors.join('|')}`);
+            return selectors[0] ?? '';
+        },
+        setInputFiles: async (selector, files) => {
+            calls.push(`files ${selector} = ${files}`);
+        },
+        waitForTimeout: async () => {
+            calls.push('pause');
+        },
+    });
+
+    test('enrichDraft drives 合集/创作来源/封面 and attempts 原创声明 in order', async () => {
+        const calls: string[] = [];
+        const transport = new WechatmpBrowserTransport();
+        const warnings = await (
+            transport as unknown as { enrichDraft: (p: WechatPage, m: Record<string, unknown>) => Promise<string[]> }
+        ).enrichDraft(recordingPage(calls), {
+            original: true,
+            aiGenerated: true,
+            author: '冰原奔狼',
+            collection: '每日AI资讯',
+            coverPath: '/tmp/cover.png',
+        });
+        expect(warnings).toEqual([]);
+        const ops = calls.map((c) => c.split(' ')[0]);
+        expect(ops).toEqual([
+            'click', // originalSwitch
+            'click', // 文字原创
+            'fill', // author
+            'click', // 原创 confirm
+            'click', // tagRow
+            'wait', // tagInput
+            'fill', // tagInput value
+            'pause',
+            'click', // 合集 option
+            'click', // 合集 confirm
+            'click', // claimSourceCheckbox
+            'any', // 来源 dialog probe
+            'click', // AI option
+            'click', // source confirm
+            'files', // cover
+            'any', // crop confirm probe
+            'click', // crop confirm click
+            'click', // final sweep 取消
+            'pause', // final sweep settle
+        ]);
+        expect(calls.filter((c) => c.startsWith('fill'))).toContain('fill input[placeholder*="合集"] = 每日AI资讯');
+        expect(calls.some((c) => c.includes('内容由AI生成'))).toBe(true);
+        expect(calls.filter((c) => c.startsWith('files'))).toEqual(['files input[type="file"] = /tmp/cover.png']);
+    });
+
+    const recordingPageEval = (calls: string[], evalValue: unknown): WechatPage => ({
+        ...recordingPage(calls),
+        evalJs: async () => {
+            calls.push('eval');
+            return evalValue;
+        },
+    });
+
+    test('enrichDraft warns and sweeps when the original dialog does not commit', async () => {
+        const calls: string[] = [];
+        const transport = new WechatmpBrowserTransport();
+        const warnings = await (
+            transport as unknown as { enrichDraft: (p: WechatPage, m: Record<string, unknown>) => Promise<string[]> }
+        ).enrichDraft(recordingPageEval(calls, false), { original: true, author: '冰原奔狼' });
+        expect(warnings).toEqual(['原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置']);
+        const ops = calls.map((c) => c.split(' ')[0]);
+        // switch, 文字原创, author, confirm, verify(eval=false), sweep(取消+pause), final sweep(取消+pause)
+        expect(ops).toEqual(['click', 'click', 'fill', 'click', 'eval', 'click', 'pause', 'click', 'pause']);
+    });
+
+    test('enrichDraft does not warn when the original dialog commits', async () => {
+        const calls: string[] = [];
+        const transport = new WechatmpBrowserTransport();
+        const warnings = await (
+            transport as unknown as { enrichDraft: (p: WechatPage, m: Record<string, unknown>) => Promise<string[]> }
+        ).enrichDraft(recordingPageEval(calls, true), { original: true, author: '冰原奔狼' });
+        expect(warnings).toEqual([]);
+        const ops = calls.map((c) => c.split(' ')[0]);
+        expect(ops).toEqual(['click', 'click', 'fill', 'click', 'eval', 'click', 'pause']);
+    });
+
+    test('enrichDraft warns when the creation-source checkbox does not stick', async () => {
+        const calls: string[] = [];
+        const transport = new WechatmpBrowserTransport();
+        const warnings = await (
+            transport as unknown as { enrichDraft: (p: WechatPage, m: Record<string, unknown>) => Promise<string[]> }
+        ).enrichDraft(recordingPageEval(calls, false), { aiGenerated: true });
+        expect(warnings).toEqual(['创作来源: 勾选未生效，请手动设置']);
+        const ops = calls.map((c) => c.split(' ')[0]);
+        // checkbox, dialog probe, AI option, confirm, verify(eval=false), final sweep(取消+pause)
+        expect(ops).toEqual(['click', 'any', 'click', 'click', 'eval', 'click', 'pause']);
+    });
+});
