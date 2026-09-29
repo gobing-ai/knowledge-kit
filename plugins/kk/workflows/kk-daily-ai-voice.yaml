@@ -5,7 +5,8 @@ kind: state-machine
 description: >-
   Daily AI news end-to-end pipeline (F61 destination): collect (fan-in --source: aihot + last30days
   + Horizon) → core facts → plan → content QC (filter, done-no-content terminal) → article + cover
-  + script + review + voice → publish (surfdash + podcast, full|partial|none routing) → locales
+  + script + review + voice → publish (surfdash + podcast, full|partial|none routing) → xhs draft
+  (independent, non-blocking target) → locales
 initialState: prepare
 terminalStates:
   - done
@@ -48,6 +49,22 @@ vars:
   # "true" retries down AUTO_ORDER, anything else is a comma-separated provider list. The empty
   # default keeps F614's pinned look the default; availability trades against it only on opt-in.
   cover_fallback: ""
+  # E8: XHS image-card target. Cards are planned from the lead plan item (the same source the
+  # cover uses) and rendered through the pinned xhs-card/xhs-knowledge presets. `xhs_live` stays a
+  # separate launch-time switch (ADR-022), so an unattended run drafts and never posts live.
+  # Default OFF (2026-09-28): XHS warned the operator about automated login/publish activity.
+  # `xhs-pub` always launches a headed browser and drives the creator console, and an unattended
+  # daily job repeating that is precisely the pattern the platform flags — so the target is
+  # operator-opt-in until a reviewed automation policy exists. Do NOT flip this on for a scheduled
+  # run; publish XHS deliberately, by hand, and rarely.
+  xhs_enabled: "false"
+  xhs_cards: "4"
+  xhs_style: "xhs-knowledge"
+  # Same credential surface as the cover pin: the provider/model must be one this machine can
+  # actually reach, and each provider renders its own look.
+  xhs_provider: "minimax"
+  xhs_model: "image-01"
+  xhs_live: "false"
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
@@ -312,6 +329,41 @@ states:
         options:
           command: >-
             kk stage daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: xhs-write
+    description: "Plan the XHS card series from the lead plan item via agent.run (title + note + N ordered cards), then render it through the pinned xhs-card/xhs-knowledge presets (E8); onError: continue — a failed plan or render skips the XHS target, never the run"
+    onEnter:
+      - kind: agent.run
+        # XHS is an independent, non-blocking target: a bad or failed plan must never halt the run.
+        # The render stage still fails loud; the publish state then skips naming the missing series.
+        onError: continue
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          # ADR-115 error tier: keep this prompt <= 1000 chars.
+          input: |
+            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+            Take item 1 only (its "title" and "metadata.brief") — the lead story.
+            Write a Xiaohongshu note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags).
+            Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
+            Ground every "copy", "points" and "sourcePoint" in that story alone — no invented facts. No text, letters, numbers, logos or real people in "subject".
+            Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/2-xhs/${vars.run_date}_18_xhs_plan.json.
+          expectFile: ${vars.work_dir}/2-xhs/${vars.run_date}_18_xhs_plan.json
+          allowAppend: false
+      - kind: shell
+        onError: continue
+        options:
+          command: >-
+            kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}"
+
+  - id: xhs-publish
+    description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status. xhs-pub itself enforces a headless session preflight and a 24h publish/check cap (ADR-025), so a sessionless or capped run fails soft with a named reason and the run continues"
+    onEnter:
+      - kind: shell
+        onError: continue
+        options:
+          command: >-
+            kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}"
 
   - id: publish
     description: "Classify the sequenced surfdash → podcast outcomes full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned; task 0118: per-target classification over the merged result.json)"
@@ -595,6 +647,26 @@ transitions:
   - from: show-notes
     to: publish-podcast
     description: "Show notes rendered (briefMode timeline or legacy fallback) -> podcast publish carries them via metadata.showNotes"
+    guard:
+      kind: always
+
+  - from: publish-podcast
+    to: xhs-write
+    description: "xhs_enabled -> plan and render the XHS card series from the lead plan item; first-match-wins, so this sits above the classification edge (XHS is independent and never gates publish_status)"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.xhs_enabled}" = "true"'
+
+  - from: xhs-write
+    to: xhs-publish
+    description: "Card series planned and rendered (or failed: onError continue) -> publish the XHS draft"
+    guard:
+      kind: always
+
+  - from: xhs-publish
+    to: publish
+    description: "XHS dispatched (or skipped: onError continue) -> classify the surfdash/podcast outcomes; XHS contributes no target to the classification"
     guard:
       kind: always
 

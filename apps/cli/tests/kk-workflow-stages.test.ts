@@ -795,6 +795,251 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    /**
+     * E8: a fake `kk` for the XHS stages. Records every argv line, then answers as the real plugin
+     * would: `image-gen` writes the artifact beside `--out` plus a Content recording its path and
+     * composed prompt (what `daily-xhs-render` reads back), `xhs-pub` writes its own Result.
+     */
+    function fakeXhsKk(
+        dir: string,
+        record: string,
+        mode: 'image-gen' | 'xhs-pub',
+        exitCode = 0,
+    ): Record<string, string> {
+        const respond =
+            mode === 'image-gen'
+                ? [
+                      'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
+                      'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
+                      'fs.writeFileSync(artifact, "png");',
+                      'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "composed " + spec.vars.headline }] } }));',
+                  ]
+                : [
+                      'const payload = JSON.parse(fs.readFileSync(at("--in"), "utf8"));',
+                      'fs.writeFileSync(at("--out"), JSON.stringify({ ok: true, target: "xhs-pub", metadata: { publishStatus: payload.metadata.publishStatus } }));',
+                  ];
+        return fakeKk(
+            dir,
+            [
+                "const fs = require('node:fs');",
+                'const argv = process.argv.slice(2);',
+                `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify(argv) + '\\n');`,
+                `if (${exitCode} !== 0) process.exit(${exitCode});`,
+                'const at = (name) => argv[argv.indexOf(name) + 1];',
+                ...respond,
+            ].join('\n'),
+        );
+    }
+
+    function xhsCard(role: string, copy: string, sourcePoint: string) {
+        return { role, copy, points: [`${copy}-要点`], layout: 'definition', subject: 'a desk', sourcePoint };
+    }
+
+    it('daily-xhs-render builds one pinned envelope per card and packages the images in card order (E8)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            const xhs = join(dir, '2-xhs');
+            mkdirSync(xhs, { recursive: true });
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({
+                    title: '今日 AI 速览',
+                    body: '正文 #AI',
+                    cards: [xhsCard('cover', '今日头条', 'lead fact'), xhsCard('content', '模型发布', 'detail fact')],
+                }),
+            );
+            const result = run(
+                ['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', 'minimax', 'image-01'],
+                env,
+            );
+            expect(result.stderr).toBe('');
+            expect(result.status).toBe(0);
+
+            // One provider call per card, in card order — the series is never fanned out.
+            const calls = readFileSync(record, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            expect(calls.length).toBe(2);
+            type Envelope = {
+                format: string;
+                style: string;
+                provider: string;
+                model: string;
+                maxImages: number;
+                vars: Record<string, string>;
+            };
+            const specs = calls.map((argv) => {
+                expect(argv.slice(0, 3)).toEqual(['executor', 'run', 'image-gen']);
+                const inPath = argv[argv.indexOf('--in') + 1];
+                if (inPath === undefined) throw new Error(`no --in in: ${argv.join(' ')}`);
+                const docs = JSON.parse(readFileSync(inPath, 'utf-8')) as {
+                    metadata: { imageGen: Envelope };
+                }[];
+                return docs[0]?.metadata.imageGen as Envelope;
+            });
+            expect(specs.map((spec) => spec.vars.index)).toEqual(['01', '02']);
+            for (const spec of specs) {
+                // Pinned by the stage, never model-authored: a plan cannot drift the card look.
+                expect(spec.format).toBe('xhs-card');
+                expect(spec.style).toBe('xhs-knowledge');
+                expect(spec.provider).toBe('minimax');
+                expect(spec.model).toBe('image-01');
+                expect(spec.maxImages).toBe(1);
+                expect(spec.vars.language).toBe('简体中文');
+            }
+            expect(specs[1]?.vars.role).toBe('content');
+
+            const content = JSON.parse(readFileSync(join(xhs, 'content.json'), 'utf-8')) as {
+                title: string;
+                metadata: { images: { path: string }[]; publishStatus: string };
+            };
+            expect(content.title).toBe('今日 AI 速览');
+            expect(content.metadata.publishStatus).toBe('draft');
+            expect(content.metadata.images.map((image) => image.path)).toEqual([
+                join(xhs, 'cards/card-01-xhs-card-01.png'),
+                join(xhs, 'cards/card-02-xhs-card-01.png'),
+            ]);
+            // Provenance (source point, layout, prompt path) stays in the manifest, not the DTO.
+            const manifest = JSON.parse(readFileSync(join(xhs, 'cards.json'), 'utf-8')) as {
+                cards: { sourcePoint: string; status: string }[];
+            };
+            expect(manifest.cards.map((card) => card.status)).toEqual(['rendered', 'rendered']);
+            expect(manifest.cards[0]?.sourcePoint).toBe('lead fact');
+            expect(readFileSync(join(xhs, 'cards/card-01.prompt.txt'), 'utf-8')).toBe('composed 今日头条');
+        });
+    });
+
+    it('daily-xhs-render refuses a plan whose card count disagrees with xhs_cards, and one not opening on the cover (E8)', () => {
+        withTempDir((dir) => {
+            const xhs = join(dir, '2-xhs');
+            mkdirSync(xhs, { recursive: true });
+            const plan = join(xhs, '20260101_18_xhs_plan.json');
+            writeFileSync(plan, JSON.stringify({ title: 't', body: 'b', cards: [xhsCard('cover', 'c', 'sp')] }));
+            const short = run(['daily-xhs-render', dir, '20260101', '', '4', 'xhs-knowledge', '', '']);
+            expect(short.status).toBe(1);
+            expect(short.stderr).toContain('xhs plan: expected 4 cards (xhs_cards), got 1');
+
+            // A content card in first position would publish a series with no cover.
+            writeFileSync(plan, JSON.stringify({ title: 't', body: 'b', cards: [xhsCard('content', 'c', 'sp')] }));
+            const noCover = run(['daily-xhs-render', dir, '20260101', '', '1', 'xhs-knowledge', '', '']);
+            expect(noCover.status).toBe(1);
+            expect(noCover.stderr).toContain("must be role 'cover'");
+
+            // The cap is refused before any plan is read, so a bad var cannot spend.
+            const capped = run(['daily-xhs-render', dir, '20260101', '', '11', 'xhs-knowledge', '', '']);
+            expect(capped.status).toBe(1);
+            expect(capped.stderr).toContain('xhs render: xhs_cards must be 1..10');
+        });
+    });
+
+    it('daily-xhs-render reuses a card whose artifact is still on disk instead of re-rendering it (E8)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            const cards = join(dir, '2-xhs/cards');
+            mkdirSync(cards, { recursive: true });
+            writeFileSync(
+                join(dir, '2-xhs/20260101_18_xhs_plan.json'),
+                JSON.stringify({
+                    title: 't',
+                    body: 'b',
+                    cards: [xhsCard('cover', 'c1', 'sp1'), xhsCard('content', 'c2', 'sp2')],
+                }),
+            );
+            // Card 01 survived an earlier run (resume after a card-02 failure): artifact on disk.
+            const kept = join(cards, 'card-01-xhs-card-01.png');
+            writeFileSync(kept, 'png');
+            writeFileSync(
+                join(cards, 'card-01.json'),
+                JSON.stringify({ metadata: { images: [{ path: kept, prompt: 'composed earlier' }] } }),
+            );
+
+            const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            // Exactly one paid call — card 02 — and the cached prompt is preserved verbatim.
+            const calls = readFileSync(record, 'utf-8').trim().split('\n');
+            expect(calls.length).toBe(1);
+            expect(calls[0]).toContain('card-02');
+            expect(readFileSync(join(cards, 'card-01.prompt.txt'), 'utf-8')).toBe('composed earlier');
+            const content = JSON.parse(readFileSync(join(dir, '2-xhs/content.json'), 'utf-8')) as {
+                metadata: { images: { path: string }[] };
+            };
+            expect(content.metadata.images.map((image) => image.path)).toEqual([
+                kept,
+                join(cards, 'card-02-xhs-card-01.png'),
+            ]);
+        });
+    });
+
+    it('daily-publish-xhs drafts by default, caches per requested status, and never blocks the run (E8)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'xhs-pub');
+            const xhs = join(dir, '2-xhs');
+            const publish = join(dir, '3-publish');
+            mkdirSync(xhs, { recursive: true });
+            mkdirSync(publish, { recursive: true });
+
+            // A failed render packages nothing: the target skips instead of failing the run.
+            const skipped = run(['daily-publish-xhs', dir, '20260101', '', 'false'], env);
+            expect(skipped.status).toBe(0);
+            expect(skipped.stdout).toContain('no card series at');
+            expect(existsSync(record)).toBe(false);
+
+            writeFileSync(
+                join(xhs, 'content.json'),
+                JSON.stringify({
+                    title: 't',
+                    body: 'b',
+                    format: 'text',
+                    metadata: { images: [{ path: '/tmp/x.png' }] },
+                }),
+            );
+            const input = join(publish, '20260101_19_publish-xhs_content.json');
+            const statusOf = (): string =>
+                (JSON.parse(readFileSync(input, 'utf-8')) as { metadata: { publishStatus: string } }).metadata
+                    .publishStatus;
+            const callCount = (): number => readFileSync(record, 'utf-8').trim().split('\n').length;
+
+            // Default is a draft — the packaged Content never carries a live status by itself.
+            expect(run(['daily-publish-xhs', dir, '20260101', '', 'false'], env).status).toBe(0);
+            expect(statusOf()).toBe('draft');
+            expect(callCount()).toBe(1);
+
+            // Cached on the *requested* status: a repeat draft run does not post a second draft...
+            expect(run(['daily-publish-xhs', dir, '20260101', '', 'false'], env).status).toBe(0);
+            expect(callCount()).toBe(1);
+            // ...and a cached draft must not satisfy a live request (ADR-022 explicit switch).
+            expect(run(['daily-publish-xhs', dir, '20260101', '', 'true'], env).status).toBe(0);
+            expect(statusOf()).toBe('public');
+            expect(callCount()).toBe(2);
+        });
+    });
+
+    it('daily-publish-xhs logs a plugin failure without failing the run (E8 non-blocking target)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            // The plugin fails (expired XHS session, changed console): the run must survive it.
+            const env = fakeXhsKk(dir, record, 'xhs-pub', 1);
+            mkdirSync(join(dir, '2-xhs'), { recursive: true });
+            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            writeFileSync(
+                join(dir, '2-xhs/content.json'),
+                JSON.stringify({
+                    title: 't',
+                    body: 'b',
+                    format: 'text',
+                    metadata: { images: [{ path: '/tmp/x.png' }] },
+                }),
+            );
+            const result = run(['daily-publish-xhs', dir, '20260101', '', 'false'], env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('WARNING: publish-xhs — xhs-pub exited 1');
+        });
+    });
+
     it('daily-wrap-docs hashes the file URL the shell built and labels the profile', () => {
         withTempDir((dir) => {
             for (const sub of ['2-script', '3-audio']) mkdirSync(join(dir, sub), { recursive: true });

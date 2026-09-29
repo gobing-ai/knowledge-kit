@@ -49,6 +49,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'publish-surfdash',
             'show-notes',
             'publish-podcast',
+            'xhs-write',
+            'xhs-publish',
             'publish',
             'patch-surfdash',
             'publish-partial',
@@ -150,19 +152,60 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).not.toContain('wt-image-cover');
     });
 
+    it('R2 (E8) — the xhs target plans the lead item, pins the presets, and stays draft-only + non-blocking', () => {
+        const workDir = '$' + '{vars.work_dir}';
+        const runDate = '$' + '{vars.run_date}';
+        const block = yaml.match(/- id: xhs-write\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        expect(block).not.toBe('');
+        // E8: the card copy comes from the same lead plan item the cover reads — never the digest.
+        expect(block).toContain(`2-plan/\${vars.run_date}_03_plan_plan.json`);
+        expect(block).toContain('Take item 1 only');
+        expect(block).toContain('onError: continue');
+        expect(block).toContain(`expectFile: ${workDir}/2-xhs/${runDate}_18_xhs_plan.json`);
+        // The stage owns the pinned render, exactly like F614's cover: one render path, no image
+        // skill in the YAML (a second path would let the card look drift from the preset).
+        expect(block).toContain(
+            `kk stage daily-xhs-render "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_cards}" "${'$'}{vars.xhs_style}" "${'$'}{vars.xhs_provider}" "${'$'}{vars.xhs_model}"`,
+        );
+        expect(yaml).not.toContain('kk:xhs-images');
+        // Draft is the shipped default; live needs the explicit launch-time switch (ADR-022).
+        expect(yaml).toContain('xhs_live: "false"');
+        expect(yaml).toContain(
+            `kk stage daily-publish-xhs "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_live}"`,
+        );
+        // Independent and non-blocking: the chain sits between publish-podcast and the
+        // classification state, so the XHS outcome can never alter publish_status
+        // (surfdash + podcast remain the episode's publication contract).
+        const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
+        expect(edges).toContain('publish-podcast->xhs-write');
+        expect(edges).toContain('xhs-write->xhs-publish');
+        expect(edges).toContain('xhs-publish->publish');
+        expect(edges).not.toContain('xhs-publish->publish-partial');
+        // First-match-wins: the xhs edge must precede the always classification edge, and the
+        // disabled path must still reach it.
+        const xhsEdge = yaml.indexOf('to: xhs-write');
+        const classifyEdge = yaml.indexOf('- from: publish-podcast\n    to: publish');
+        expect(xhsEdge).toBeGreaterThan(-1);
+        expect(classifyEdge).toBeGreaterThan(xhsEdge);
+        // Off by default: XHS warned about automated login/publish activity (2026-09-28), and
+        // xhs-pub drives a headed browser against the creator console. Opt-in only.
+        expect(yaml).toContain('xhs_enabled: "false"');
+    });
+
     it('R2/R3 (0144) — every delegated action is a one-line `kk stage` call and the prompts stay under the cap', () => {
         // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
         // which resolves the shipped stages script from the installed package. The YAML must carry no
         // prelude remnants and exactly one delegation call per stage (22 -> 23 sites: daily-cover
-        // joined in F614 0163 R3).
+        // joined in F614 0163 R3; 23 -> 25: daily-xhs-render + daily-publish-xhs joined in E8).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(23);
+        expect(yaml.split('kk stage daily-').length - 1).toBe(25);
         // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
             ['cover', 1000],
+            ['xhs-write', 1000],
             ['script-write', 1000],
         ] as const) {
             const block = yaml.match(new RegExp(`- id: ${step}\\n[\\s\\S]*?(?=\\n  - id: )`))?.[0] ?? '';
@@ -631,7 +674,17 @@ if (plugin === 'aihot-ingest') {
     it('R3 (0128) — every daily stage emits >= 2 files, so no stage is flattened', () => {
         // 0133: the stage directories are created and addressed by the runner, so the enumeration
         // reads the runner's `join(workDir, '<stage>', `${runDate}_NN_step_name`)` calls.
-        const stages = ['1-ingest', '2-facts', '2-plan', '2-article', '2-cover', '2-script', '3-audio', '3-publish'];
+        const stages = [
+            '1-ingest',
+            '2-facts',
+            '2-plan',
+            '2-article',
+            '2-cover',
+            '2-xhs',
+            '2-script',
+            '3-audio',
+            '3-publish',
+        ];
         for (const stage of stages) {
             // Count distinct artifact references the runner builds for this stage: either the
             // `'<stage>/<file>'` literal form or a `join(workDir, '<stage>', …)` call.

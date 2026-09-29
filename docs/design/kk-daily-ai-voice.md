@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (F614 0163: lead-item subject brief agent.run → pinned daily-news presets via `kk stage daily-cover`) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `voicebox` → voice-gen default, `ominivoice` → omni-voice-gen, `gemini` → gemini-tts) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (F614 0163: lead-item subject brief agent.run → pinned daily-news presets via `kk stage daily-cover`) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `voicebox` → voice-gen default, `ominivoice` → omni-voice-gen, `gemini` → gemini-tts) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes) → xhs draft (E8: lead-item card plan agent.run → pinned `xhs-card` × `xhs-knowledge` presets via `kk stage daily-xhs-render` → `kk stage daily-publish-xhs`). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe); the XHS target only with `xhs_enabled: "true"` — **off by default** since 2026-09-28 (XHS warned about automated login/publish activity; see §7) — and a live post additionally needs the launch-time `xhs_live` switch, ADR-022). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
 
 ## 2. Architecture & Data Flow
 
@@ -31,9 +31,13 @@ flowchart TD
     K -->|3-audio/{run_date}_10_wrap-docs_docs.json| M[generate: voice generator var]
     M -->|3-audio/content.wav + content.mp3| N[quality-control]
     N -->|publish_enabled| O[publish-prep: article + audio seam]
-    O --> P[publish: fan-out surfdash-pub + podcast-pub]
-    N -->|publish disabled| Q[done]
-    P --> Q
+    O --> P1[publish-surfdash -> show-notes -> publish-podcast]
+    P1 -->|xhs_enabled| XW[xhs-write: lead-item card plan agent.run -> kk stage daily-xhs-render]
+    XW --> XP[xhs-publish: kk stage daily-publish-xhs, draft unless xhs_live]
+    XP --> P[publish: classify full|partial|none]
+    P1 -->|xhs disabled| P
+    P --> Q[done]
+    N -->|publish disabled| Q
 ```
 
 ## 3. Invocation
@@ -57,7 +61,7 @@ Fixed-name exceptions (outside the convention):
 - `run-date.txt` — its content defines `${vars.run_date}`, so it cannot embed the value it defines; the `prepare` stage also runs while `${vars.run_date}` is still empty (it mints the stamp).
 - `step-timing.json` — shared append-across-states timing log.
 - The `prepare`-written executor configs (`1-ingest/source.json`, `1-ingest/last30days.json`, `1-ingest/horizon.json`, `1-ingest/last30days-docs.json`) — written before `${vars.run_date}` is captured.
-- Plugin-fixed intermediates: `2-cover/content.json` + the `content-daily-news-cover-01.<ext>` artifact it records (image-gen names them after the format preset; `daily-cover-normalize` reads the path from the manifest, F614 — the pre-F614 `content-cover-01.{png,jpg}` names are cleaned up as stale), `3-audio/content.wav` / `content.mp3` (voice generator siblings of the `--out` file).
+- Plugin-fixed intermediates: `2-cover/content.json` + the `content-daily-news-cover-01.<ext>` artifact it records (image-gen names them after the format preset; `daily-cover-normalize` reads the path from the manifest, F614 — the pre-F614 `content-cover-01.{png,jpg}` names are cleaned up as stale), `2-xhs/content.json` + `2-xhs/cards.json` + `2-xhs/cards/card-NN.*` (the card series the publisher and the render stage read back by fixed stem, E8 — see §7), `3-audio/content.wav` / `content.mp3` (voice generator siblings of the `--out` file).
 
 Convention-named artifacts:
 - `${run_date}_02_collect_blended.json`: Fan-in merged `Doc[]`; `${run_date}_02_collect_content.json` / `${run_date}_02_collect_core-facts.md`: blended core-facts Content + markdown.
@@ -73,6 +77,8 @@ Convention-named artifacts:
 - `${run_date}_13_publish-prep_content.json`: Article + audio merged for the publish seam. 0171: `publish-prep` publishes the MP3 (`metadata.mp3Path ?? audioPath`), fails loud when that file is not `.mp3` (naming `transcode_mp3`), and stamps the enclosure's ID3v2.3 tags in place (§6).
 - `${run_date}_14_publish-surfdash_result.json` / `${run_date}_16_publish-podcast_result.json`: per-target fan-out results; `${run_date}_15_show-notes_show-notes.md`: rendered show notes.
 - `${run_date}_17_publish_result.json` / `${run_date}_17_publish_publish-status.txt`: merged publish result and the `full|partial|none` routing flag (read by the publish/locales transition guards).
+- `2-xhs/cards.json` / `2-xhs/content.json` / `2-xhs/cards/card-NN.{in.json,json,prompt.txt}`: the XHS card series (E8) — the ordered card manifest (role, source point, layout, prompt + image path per card), the packaged `Content` whose `metadata.images` are the card artifacts **in card order** and whose `metadata.publishStatus` is `draft`, and per card the pinned image-gen envelope, the rendered `Content`, and the exact composed prompt (the retry path). The stage fixes the `card-NN` stem, so each artifact lands as `2-xhs/cards/card-NN-xhs-card-01.<ext>` — the provider picks the extension, so the stage reads the recorded path back rather than guessing it.
+- `${run_date}_19_publish-xhs_content.json` / `${run_date}_19_publish-xhs_result.json`: the publish payload (`metadata.publishStatus` resolved from the `xhs_live` var) and the `xhs-pub` Result. Deliberately **not** read by `daily-publish-classify` — XHS is an independent, non-blocking target and contributes no `publish_status` target (see §7).
 - `${run_date}_19_run-report_report.json` / `${run_date}_19_run-report_report.md` (work-dir root) plus inputs `${run_date}_19_run-report_episode-plan.json` and the shared rejected audit in `2-plan/`.
 - `${run_date}_20_translate-en_*` / `${run_date}_22_translate-ja_*` / `${run_date}_24_translate-sync_*`: locale scaffolds, post-path markers, and sync results in `3-publish/`.
 
@@ -118,3 +124,41 @@ carrying tags — never the WAV render (`ffmpeg -c copy`, no re-encode):
   sibling, updates `audioPath`, preserves the source render, and re-transcodes `mp3Path`
   when present; this prevents ffmpeg from receiving the same path as input and output
   (0176).
+
+## 7. XHS card target (E8)
+
+The `xhs-write` → `xhs-publish` pair adds a Xiaohongshu image-card draft to every daily run. It
+follows the cover's split (F614): the agent authors **copy only**, the stage owns the look.
+
+- `xhs-write` — `agent.run` (`role: scribe`, `onError: continue`) reads the same lead plan item the
+  cover brief reads and writes `2-xhs/${run_date}_18_xhs_plan.json`: `title`, `body` (Chinese note +
+  hashtags), and exactly `${vars.xhs_cards}` ordered cards, each with `role`, `copy`, `points`,
+  `layout`, `subject` and the `sourcePoint` it is grounded in. `kk stage daily-xhs-render` then
+  validates that plan (count, cover-first, per-field non-empty, char caps) and renders one card per
+  `kk executor run image-gen` call, sequentially, through the pinned `xhs-card` format × the
+  `xhs_style` preset with the `xhs_provider`/`xhs_model` pin. It packages `cards.json` + `content.json`
+  (`metadata.publishStatus: draft`).
+- `xhs-publish` — `kk stage daily-publish-xhs` resolves `draft` (default) or `public` (`xhs_live`),
+  writes the payload, and runs `kk executor run xhs-pub` (its default `script` driver — ADR-024).
+- **Draft by default.** A live post requires an explicit launch-time `xhs_live=true`; an unattended
+  run never publishes publicly on its own (ADR-022).
+- **Independent and non-blocking.** The chain sits between `publish-podcast` and the classification
+  state, so XHS can never alter `publish_status` — surfdash + podcast remain the episode's
+  publication contract, and a missing/expired XHS session or a changed creator console logs a loud
+  failure while the run continues. The `xhs-publish` stage is `soft` on the plugin call for the same
+  reason, and caches on the **requested** status so a cached draft can never satisfy a later live
+  request.
+- **Resume-safe spend.** A card whose recorded artifact is still on disk is reused, not re-rendered
+  (and not re-billed); the first failed card stops the spend and leaves later cards pending for a
+  resume run. `xhs_cards` is capped at 10 and refused before any plan is read.
+- The card series is a **draft-quality** artifact: model-rendered Chinese text can be misspelled.
+  The saved per-card prompt is the regeneration path; bitmap text repair is out of scope.
+- **Off by default (`xhs_enabled: "false"`), and guarded when on.** 2026-09-28: the operator
+  received an XHS warning about automated login/publish activity. `xhs-pub` always launches a
+  **headed** browser and drives the creator console (`goto` the publish URL, upload, type, click
+  暂存离开), so a scheduled daily job repeating that is precisely the pattern the platform flags.
+  The workflow target is therefore operator-opt-in and must not be enabled for a scheduled run.
+  Independently of the workflow, `xhs-pub` itself now enforces ADR-025: a **headless session
+  preflight** before any headed visit (so a missing/expired session is a fast refusal, not a 120 s
+  headed login wait) and a **24h cap** of one publish cycle plus one session check. A capped or
+  sessionless publish returns `ok: false`, which this stage treats as non-blocking.

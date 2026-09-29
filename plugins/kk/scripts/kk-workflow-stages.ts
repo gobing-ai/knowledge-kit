@@ -76,6 +76,24 @@ const DEDUP_TITLE_THRESHOLD = 0.4;
 const COVER_FORMAT = 'daily-news-cover';
 const COVER_STYLE = 'daily-news';
 const COVER_SUBJECT_CAP = 240;
+// E8: the XHS card series. Format and style are pinned exactly like the cover's; only the copy is
+// model-authored. `XHS_MAX_CARDS` mirrors the format preset's own series guidance.
+const XHS_FORMAT = 'xhs-card';
+const XHS_MAX_CARDS = 10;
+const XHS_TITLE_CAP = 20;
+const XHS_BODY_CAP = 1000;
+const XHS_ROLES: readonly string[] = ['cover', 'content', 'closing'];
+
+/** One planned card, normalized: `index` zero-padded for the preset's artifact name. */
+interface XhsCard {
+    index: string;
+    role: string;
+    copy: string;
+    points: string[];
+    layout: string;
+    subject: string;
+    sourcePoint: string;
+}
 
 function fail(message: string): never {
     console.error(message);
@@ -425,6 +443,7 @@ const DAILY_DIRS = [
     '2-plan',
     '2-article',
     '2-cover',
+    '2-xhs',
     '2-script',
     '3-audio',
     '3-publish',
@@ -1005,6 +1024,206 @@ function coverNormalizeBody(workDir: string, runDate: string): void {
         }
     }
     console.log(`cover normalized: ${runDate}_07_cover_cover.png`);
+}
+
+/** `metadata.images[0]` — the artifact the image-gen plugin recorded for one render. */
+function firstArtifact(content: Record<string, unknown> | null): Record<string, unknown> | null {
+    const images = metadataOf(content).images;
+    const first = Array.isArray(images) ? images[0] : undefined;
+    return first !== null && typeof first === 'object' ? (first as Record<string, unknown>) : null;
+}
+
+/**
+ * E8: validate the agent-written XHS card plan. The plan is the only model-authored input —
+ * format, style, provider and model are pinned by `dailyXhsRender`, matching F614's cover. Every
+ * check fails loud naming the field, so an unusable plan skips the XHS target visibly instead of
+ * publishing a partial card series (the owning state carries `onError: continue`).
+ */
+function xhsPlan(planPath: string, count: number): { title: string; body: string; cards: XhsCard[] } {
+    const parsed = requireJson(planPath, 'xhs plan');
+    const title = typeof parsed.title === 'string' ? parsed.title.trim() : '';
+    if (title === '' || title.length > XHS_TITLE_CAP) {
+        failWith(1, `xhs plan: title must be 1..${XHS_TITLE_CAP} chars, got ${title.length}`);
+    }
+    const body = typeof parsed.body === 'string' ? parsed.body.trim() : '';
+    if (body === '' || body.length > XHS_BODY_CAP) {
+        failWith(1, `xhs plan: body must be 1..${XHS_BODY_CAP} chars, got ${body.length}`);
+    }
+    const raw = parsed.cards;
+    if (!Array.isArray(raw) || raw.length !== count) {
+        failWith(1, `xhs plan: expected ${count} cards (xhs_cards), got ${Array.isArray(raw) ? raw.length : 0}`);
+    }
+    const cards = raw.map((entry, position): XhsCard => {
+        const card = (entry !== null && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+        const label = `xhs plan: card ${position + 1}`;
+        const text = (key: string): string => {
+            const value = card[key];
+            if (typeof value !== 'string' || value.trim() === '') failWith(1, `${label} needs a non-empty '${key}'`);
+            return value.trim();
+        };
+        const role = text('role');
+        if (!XHS_ROLES.includes(role)) {
+            failWith(1, `${label} role must be one of ${XHS_ROLES.join('|')}, got '${role}'`);
+        }
+        if (position === 0 && role !== 'cover') failWith(1, `${label} must be role 'cover' (the series opens on it)`);
+        const points = card.points;
+        if (!Array.isArray(points) || points.length < 1 || points.length > 4) {
+            failWith(1, `${label} needs 1..4 'points', got ${Array.isArray(points) ? points.length : 0}`);
+        }
+        const bullets = points.map((point) => {
+            if (typeof point !== 'string' || point.trim() === '') failWith(1, `${label} has an empty point`);
+            return point.trim();
+        });
+        return {
+            index: `${position + 1}`.padStart(2, '0'),
+            role,
+            copy: text('copy'),
+            points: bullets,
+            layout: text('layout'),
+            subject: text('subject'),
+            sourcePoint: text('sourcePoint'),
+        };
+    });
+    return { title, body, cards };
+}
+
+/**
+ * E8: build one `image-gen` envelope per planned card, render them sequentially, and package the
+ * ordered card manifest + `Content` that `xhs-pub` consumes. Format, style, provider and model
+ * are pinned here (never model-authored), so the series cannot drift from its preset. Resume-safe:
+ * a card whose recorded artifact is still on disk is not re-rendered — and not re-billed.
+ */
+function dailyXhsRender(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', countArg = '', style = '', provider = '', model = ''] = args;
+    const count = Number.parseInt(countArg, 10);
+    const planPath = join(workDir, '2-xhs', `${runDate}_18_xhs_plan.json`);
+    const cardsDir = join(workDir, '2-xhs', 'cards');
+    const manifestPath = join(workDir, '2-xhs', 'cards.json');
+    const contentPath = join(workDir, '2-xhs', 'content.json');
+    timed(workDir, 'xhs-render', () => {
+        if (!Number.isInteger(count) || count < 1 || count > XHS_MAX_CARDS) {
+            failWith(1, `xhs render: xhs_cards must be 1..${XHS_MAX_CARDS}, got '${countArg}'`);
+        }
+        const plan = xhsPlan(planPath, count);
+        sted('mkdir', cardsDir, () => mkdirSync(cardsDir, { recursive: true }));
+        const images: Record<string, unknown>[] = [];
+        const cards: Record<string, unknown>[] = [];
+        for (const card of plan.cards) {
+            const out = join(cardsDir, `card-${card.index}.json`);
+            const promptPath = join(cardsDir, `card-${card.index}.prompt.txt`);
+            let artifact = firstArtifact(readJson(out));
+            if (artifact === null || !isFile(typeof artifact.path === 'string' ? artifact.path : '')) {
+                const envPath = join(cardsDir, `card-${card.index}.in.json`);
+                const imageGen: Record<string, unknown> = {
+                    job: 'free',
+                    format: XHS_FORMAT,
+                    style,
+                    vars: {
+                        role: card.role,
+                        layout: card.layout,
+                        headline: card.copy,
+                        points: card.points.join('\n'),
+                        subject: card.subject,
+                        language: '简体中文',
+                        index: card.index,
+                    },
+                    maxImages: 1,
+                };
+                if (provider !== '') imageGen.provider = provider;
+                if (model !== '') imageGen.model = model;
+                sted('write', envPath, () =>
+                    writeJsonText(envPath, [
+                        { id: `xhs-card-${card.index}`, title: runDate, body: '', metadata: { imageGen } },
+                    ]),
+                );
+                // Sequential on purpose: one provider call per card, and the first failure stops
+                // the spend — later cards stay unrendered for a resume run to pick up.
+                kk(['executor', 'run', 'image-gen', '--in', envPath, '--out', out, ...pluginsArgs(pluginsPath)]);
+                artifact = firstArtifact(requireJson(out, 'xhs render'));
+            }
+            if (artifact === null) failWith(1, `xhs render: card ${card.index} recorded no image artifact (${out})`);
+            const recorded = artifact.path;
+            if (typeof recorded !== 'string' || !isFile(recorded)) {
+                failWith(1, `xhs render: card ${card.index} image artifact is not on disk: '${String(recorded)}'`);
+            }
+            // `image-gen` writes the artifact beside `--out`; the publisher requires absolute paths.
+            const imagePath = resolve(recorded);
+            sted('write', promptPath, () =>
+                writeRaw(promptPath, typeof artifact.prompt === 'string' ? artifact.prompt : ''),
+            );
+            images.push({ ...artifact, path: imagePath });
+            cards.push({
+                index: card.index,
+                role: card.role,
+                sourcePoint: card.sourcePoint,
+                copy: card.copy,
+                layout: card.layout,
+                promptPath,
+                imagePath,
+                status: 'rendered',
+            });
+        }
+        sted('write', manifestPath, () => writeJsonText(manifestPath, { source: planPath, cards }));
+        sted('write', contentPath, () =>
+            writeJsonText(contentPath, {
+                title: plan.title,
+                body: plan.body,
+                format: 'text',
+                metadata: { images, publishStatus: 'draft' },
+            }),
+        );
+        console.log(`xhs render: ${cards.length} cards packaged in card order (${contentPath})`);
+    });
+}
+
+/** A single-target xhs Result, not the fan-out aggregate: `ok` plus `metadata.publishStatus`. */
+function xhsStatus(path: string): string {
+    const parsed = readJson(path);
+    if (parsed?.ok !== true) return '';
+    const status = metadataOf(parsed).publishStatus;
+    return status === 'public' || status === 'draft' ? status : '';
+}
+
+/**
+ * E8: publish the packaged card series through `xhs-pub`'s script driver. Draft by default; live
+ * only on an explicit launch-time `xhs_live=true` (ADR-022 — an unattended run never posts live on
+ * its own). Non-blocking by operator decision: a missing/expired XHS session or a changed console
+ * logs a loud failure and leaves the run alive, and the outcome never enters `publish_status`
+ * (surfdash + podcast remain the episode's publication contract).
+ */
+function dailyPublishXhs(args: string[]): void {
+    const [workDir = '', runDate = '', pluginsPath = '', live = 'false'] = args;
+    const content = join(workDir, '2-xhs', 'content.json');
+    const input = join(workDir, '3-publish', `${runDate}_19_publish-xhs_content.json`);
+    const result = join(workDir, '3-publish', `${runDate}_19_publish-xhs_result.json`);
+    const want = live === 'true' ? 'public' : 'draft';
+    timed(workDir, 'publish-xhs', () => {
+        // Cache on the *requested* status: a cached draft must not silently satisfy a later
+        // xhs_live=true re-run (that would report a live post that never happened).
+        if (xhsStatus(result) === want) {
+            console.log(`publish-xhs cached: ${want} already recorded in ${result}`);
+            return;
+        }
+        if (!isFile(content)) {
+            console.log(`publish-xhs: no card series at ${content} (render packaged none) — skip`);
+            return;
+        }
+        const packaged = requireJson(content, 'publish-xhs');
+        sted('write', input, () =>
+            writeJsonText(input, { ...packaged, metadata: { ...metadataOf(packaged), publishStatus: want } }),
+        );
+        // `soft` keeps the XHS target non-blocking: the plugin still writes its own failed Result
+        // and prints the failing step (login gate, upload, body, submit control), which is what the
+        // operator needs to re-run — never a silent skip.
+        const status = kk(['executor', 'run', 'xhs-pub', '--in', input, '--out', result, ...pluginsArgs(pluginsPath)], {
+            soft: true,
+        });
+        console.log(
+            status === 0
+                ? `publish-xhs: ${want} dispatched; outcome recorded in ${result}`
+                : `WARNING: publish-xhs — xhs-pub exited ${status}; XHS target skipped (run continues, see ${result})`,
+        );
+    });
 }
 
 /**
@@ -1846,6 +2065,9 @@ if (import.meta.main)
         case 'daily-cover-normalize':
             dailyCoverNormalize(rest);
             break;
+        case 'daily-xhs-render':
+            dailyXhsRender(rest);
+            break;
         case 'daily-script-style':
             dailyScriptStyle(rest);
             break;
@@ -1875,6 +2097,9 @@ if (import.meta.main)
             break;
         case 'daily-publish-podcast':
             dailyPublishPodcast(rest);
+            break;
+        case 'daily-publish-xhs':
+            dailyPublishXhs(rest);
             break;
         case 'daily-publish-classify':
             dailyPublishClassify(rest);
