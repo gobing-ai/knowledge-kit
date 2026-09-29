@@ -334,7 +334,7 @@ describe('xhs card presets (E8 0168)', () => {
         for (const key of ['role', 'layout', 'headline', 'points', 'subject', 'language']) {
             expect(format.variables[key], `${key} variable declared`).toBeDefined();
         }
-        expect(format.variables['language']?.default).toBe('简体中文');
+        expect(format.variables.language?.default).toBe('简体中文');
         expect(style.modifiers).toContain('large legible Chinese typography');
     });
 
