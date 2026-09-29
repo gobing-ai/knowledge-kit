@@ -178,7 +178,7 @@ Feature: kk-daily-ai-voice run report, timeline show notes, real surfdash publis
 | 0118 | Timeline show notes with briefings, timestamps, and article URLs | done |
 | 0119 | Stamp ai-news tag on daily AI voice articles | done |
 | 0120 | Dogfood verify round of the enhanced AI-voice pipeline | done |
-| 0138 | Fix daily-ai-voice content quality and QC gating defects | testing |
+| 0138 | Fix daily-ai-voice content quality and QC gating defects | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

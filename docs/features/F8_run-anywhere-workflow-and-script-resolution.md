@@ -110,7 +110,14 @@ Feature: Run-anywhere workflow and script resolution
 | 0128 | Flatten single-file step outputs across itc, solo-podcast, and daily-ai-voice workflows | done |
 | 0129 | Sync docs and help surfaces to the new workflow folder and workspace contract | done |
 | 0130 | Fix kk-solo-podcast.yaml shell-action schema (command: indent + options: null) | done |
-| 0131 | Reduce ADR-115 composition findings in kk-solo-podcast.yaml (4 shell actions + 1 agent.run prompt over threshold) | todo |
+| 0131 | Reduce ADR-115 composition findings in kk-solo-podcast.yaml (4 shell actions + 1 agent.run prompt over threshold) | done |
+| 0132 | Reduce ADR-115 composition findings in the remaining kk workflows (kk-daily-ai-voice 21, kk-storm-research 2, kk-itc 1) | done |
+| 0133 | kk-daily-ai-voice ADR-115 group 1: ingest/plan shells (prepare, collect, plan, quality-control-content, plan-translate) | done |
+| 0134 | kk-daily-ai-voice ADR-115 group 2: authoring/audio shells (article, cover, script, wrap-docs, generate, quality-control) | cancelled |
+| 0135 | kk-daily-ai-voice ADR-115 group 3: publish/report shells (publish-prep, surfdash, show-notes, podcast, publish, run-report) | cancelled |
+| 0136 | kk-daily-ai-voice ADR-115 group 4: translate tail (translate-en, translate-ja, translate-sync) | cancelled |
+| 0137 | Fix the dead surfdash link in kk-daily-ai-voice show-notes (reads the not-yet-written merged publish result) | done |
+| 0178 | CLI resolves kk stage scripts from gitignored apps/cli/plugins — stale-bundle hazard | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

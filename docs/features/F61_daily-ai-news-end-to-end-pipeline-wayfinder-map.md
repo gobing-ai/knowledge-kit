@@ -33,6 +33,7 @@ Wayfinder map — deliberately **no Gherkin AC**. The ship criterion is the dest
 | 0089 | Wrap last30days + Horizon as Doc[] ingestion sources | done |
 | 0090 | Core-facts blend contract + template prototype | done |
 | 0091 | Article generation + publish fan-out incl. podcast show notes | done |
+| 0148 | Fix workflow engine and daily-pipeline gaps from 091825 live dogfood | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
