@@ -1,11 +1,11 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
-import { BrowserProfileMissingError } from '@gobing-ai/ts-browser-automation';
+import * as tsBrowserAutomation from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
-import type { Page } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     checkWechatSession,
@@ -14,6 +14,7 @@ import {
     main,
     markdownToWechatHtml,
     processPublishIO,
+    storageStatePath,
     WechatmpBrowserTransport,
     type WechatPage,
     wrapPlaywrightPage,
@@ -108,7 +109,7 @@ describe('wechatmp-pub plugin', () => {
                 throw new Error('must not open a headed browser');
             },
             checkSession: async () => {
-                throw new BrowserProfileMissingError('/tmp/profile');
+                throw new tsBrowserAutomation.BrowserProfileMissingError('/tmp/profile');
             },
         });
         const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
@@ -161,6 +162,24 @@ describe('wechatmp-pub plugin', () => {
             options: { target: 'wechatmp' },
         });
         expect(noBody.ok).toBe(false);
+        expect(opened).toBe(0);
+    });
+
+    test('missing title throws before any browser interaction', async () => {
+        let opened = 0;
+        const transport = new WechatmpBrowserTransport({
+            openPage: async () => {
+                opened += 1;
+                return makeFakePage([]);
+            },
+            checkSession: async () => {},
+        });
+        await expect(
+            transport.publish({
+                content: { title: '', body: 'B', format: 'markdown' },
+                options: { target: 'wechatmp' },
+            }),
+        ).rejects.toThrow('content.title is required');
         expect(opened).toBe(0);
     });
 
@@ -267,6 +286,7 @@ describe('wrapPlaywrightPage (real adapter, offline via stub page)', () => {
         return {
             url: () => 'https://mp.weixin.qq.com/cgi-bin/home',
             goto: async () => undefined,
+            waitForURL: async () => undefined,
             locator: (selector: string) => ({
                 first: () => ({
                     fill: async (value: string) => {
@@ -311,6 +331,41 @@ describe('wrapPlaywrightPage (real adapter, offline via stub page)', () => {
     test('isWechatLoggedIn reads the console home fragment', () => {
         expect(isWechatLoggedIn(stubRawPage({ fills: [], clicks: [], evals: [] }))).toBe(true);
     });
+
+    test('waitForUrlFragment resolves once the URL matches the escaped fragment', async () => {
+        const page = wrapPlaywrightPage(stubRawPage({ fills: [], clicks: [], evals: [] }));
+        const waitForFragment = page.waitForUrlFragment;
+        if (!waitForFragment) throw new Error('a raw waitForURL should enable waitForUrlFragment');
+        await expect(waitForFragment('appmsg_edit&action=edit', 200)).resolves.toBeUndefined();
+    });
+
+    test('clickAndAwaitNewPage follows the popup, or falls back to the origin page', async () => {
+        const origin = stubRawPage({ fills: [], clicks: [], evals: [] });
+        const popup = {
+            waitForLoadState: async () => undefined,
+            url: () => 'https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&appmsgid=42',
+        } as unknown as Page;
+        const withPopup = wrapPlaywrightPage(origin, {
+            waitForEvent: async () => popup,
+            close: async () => undefined,
+        } as unknown as BrowserContext);
+        const followPopup = withPopup.clickAndAwaitNewPage;
+        if (!followPopup) throw new Error('a context should enable clickAndAwaitNewPage');
+        const followed = await followPopup('.js_publish');
+        expect(followed.url()).toContain('appmsgid=42');
+
+        const noPopupCtx = {
+            waitForEvent: async () => {
+                throw new Error('wait timed out');
+            },
+            close: async () => undefined,
+        } as unknown as BrowserContext;
+        const fallbackPage = wrapPlaywrightPage(stubRawPage({ fills: [], clicks: [], evals: [] }), noPopupCtx);
+        const followFallback = fallbackPage.clickAndAwaitNewPage;
+        if (!followFallback) throw new Error('a context should enable clickAndAwaitNewPage');
+        const fallback = await followFallback('.js_publish');
+        expect(fallback.url()).toContain('/cgi-bin/home');
+    });
 });
 
 describe('checkWechatSession (preflight)', () => {
@@ -322,6 +377,102 @@ describe('checkWechatSession (preflight)', () => {
             await expect(checkWechatSession('/tmp/nonexistent-wechat-profile-test')).rejects.toThrow();
         } finally {
             delete process.env.WECHATMP_PROFILE_DIR;
+        }
+    });
+});
+
+describe('browser seam (stubbed openPersistentBrowser)', () => {
+    afterEach(() => {
+        mock.restore();
+    });
+
+    function stubCookieContext(page: Page): BrowserContext {
+        return {
+            addCookies: async () => undefined,
+            pages: () => [page],
+            newPage: async () => page,
+            waitForEvent: async () => page,
+            close: async () => undefined,
+        } as unknown as BrowserContext;
+    }
+
+    function stubFlowPage(urls: string[]): Page {
+        let call = 0;
+        return {
+            url: () => urls[Math.min(call++, urls.length - 1)],
+            goto: async () => undefined,
+            close: async () => undefined,
+            waitForLoadState: async () => undefined,
+            waitForURL: async () => undefined,
+            locator: () => ({
+                first: () => ({
+                    fill: async () => undefined,
+                    click: async () => undefined,
+                    waitFor: async () => undefined,
+                    evaluate: async () => undefined,
+                }),
+            }),
+        } as unknown as Page;
+    }
+
+    async function writeSessionState(profileDir: string): Promise<void> {
+        await mkdir(profileDir, { recursive: true });
+        await writeFile(
+            join(profileDir, 'storage-state.json'),
+            JSON.stringify({ cookies: [{ name: 'slave_sid', value: 'v' }] }),
+        );
+    }
+
+    test('storageStatePath resolves inside the profile dir', () => {
+        expect(storageStatePath('/profiles/wechatmp')).toBe('/profiles/wechatmp/storage-state.json');
+    });
+
+    test('checkWechatSession injects saved cookies and confirms the console session', async () => {
+        const profileDir = join(process.cwd(), '.tmp-test-wechat-profile');
+        await writeSessionState(profileDir);
+        // First poll misses the console fragment (exercises the retry sleep), second confirms login.
+        const page = stubFlowPage(['https://mp.weixin.qq.com/', 'https://mp.weixin.qq.com/cgi-bin/home?t=home']);
+        let launches = 0;
+        const openSpy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(async () => {
+            launches += 1;
+            return stubCookieContext(page);
+        });
+        try {
+            await checkWechatSession(profileDir);
+            expect(launches).toBe(1);
+            expect(openSpy).toHaveBeenCalledWith({ profileDir, headless: true });
+        } finally {
+            mock.restore();
+            await rm(profileDir, { recursive: true, force: true });
+        }
+    });
+
+    test('default transport drives the draft flow end to end over the stubbed browser', async () => {
+        const profileDir = join(process.cwd(), '.tmp-test-wechat-profile-flow');
+        await writeSessionState(profileDir);
+        const prevProfileDir = process.env.WECHATMP_PROFILE_DIR;
+        process.env.WECHATMP_PROFILE_DIR = profileDir;
+        const editorUrl = 'https://mp.weixin.qq.com/cgi-bin/appmsg?action=edit&appmsgid=42';
+        const pages = [stubFlowPage(['https://mp.weixin.qq.com/cgi-bin/home?t=home']), stubFlowPage([editorUrl])];
+        let launches = 0;
+        spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(async () => {
+            launches += 1;
+            const page = pages[Math.min(launches - 1, pages.length - 1)];
+            if (!page) throw new Error('no stub page for this launch');
+            return stubCookieContext(page);
+        });
+        const transport = new WechatmpBrowserTransport();
+        try {
+            const result = await transport.publish({ content: ARTICLE, options: { target: 'wechatmp' } });
+            expect(result.ok).toBe(true);
+            expect(result.metadata?.publishStatus).toBe('draft');
+            expect(String(result.metadata?.note)).toContain('appmsgid 42');
+            expect(launches).toBe(2);
+        } finally {
+            if (prevProfileDir === undefined) delete process.env.WECHATMP_PROFILE_DIR;
+            else process.env.WECHATMP_PROFILE_DIR = prevProfileDir;
+            mock.restore();
+            await rm(profileDir, { recursive: true, force: true });
         }
     });
 });

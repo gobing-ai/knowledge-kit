@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
@@ -258,10 +257,13 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
     const context = await openPersistentBrowser({ profileDir, headless });
     try {
         const stateFile = storageStatePath(profileDir);
-        const state = await readFile(stateFile, 'utf8')
-            .then(JSON.parse)
-            .catch(() => undefined);
-        const cookies = state?.cookies as Cookie[] | undefined;
+        let state: { cookies?: Cookie[] } | undefined;
+        try {
+            state = JSON.parse(await createNodeFileSystem().readFile(stateFile));
+        } catch {
+            state = undefined; // absent or corrupt session state — reported below
+        }
+        const cookies = state?.cookies;
         if (!cookies || cookies.length === 0) {
             throw new BrowserProfileMissingError(
                 `no saved console session state (${stateFile}) — run \`bun src/profile-check.ts login\` once`,
