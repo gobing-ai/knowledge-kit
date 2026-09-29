@@ -55,8 +55,9 @@ run as the `xhs-write` → `xhs-publish` pair, sitting between `publish-podcast`
 - **Non-blocking:** the XHS outcome never enters `publish_status` (surfdash + podcast remain the
   episode's publication contract). Both stages carry `onError: continue`, and the publish stage is
   `soft` on the plugin call, so a missing profile, an expired session, or a changed creator console
-  logs a loud failure and the run still finishes. `xhs_enabled: "false"` (the shipped default)
-  removes the target entirely.
+  logs a loud failure and the run still finishes. `xhs_enabled: "false"` (a launch-time var)
+  removes the target entirely; since 2026-09-29 the workflow ships it **on** (draft-only, see
+  ADR-025 amendment in `docs/00_ADR.md`).
 - **Platform automation risk (2026-09-28).** XHS warned the operator about automated login/publish
   activity, and this channel is the one target in the repo that drives an interactive creator
   console from a headed browser — so the exposure is account-level, not just a failed run. The

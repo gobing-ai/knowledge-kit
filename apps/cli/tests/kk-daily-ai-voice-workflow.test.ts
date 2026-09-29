@@ -99,7 +99,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain('kk stage daily-prepare');
         expect(runnerSource).toContain("last30daysEnabled !== 'true'");
         expect(runnerSource).toContain("'10-ingest/last30days-docs.json'");
-        expect(yaml).toContain('vdriver: "voicebox"');
+        expect(yaml).toContain('vdriver: "gemini"');
         expect(yaml).toContain('intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"');
         expect(yaml).toContain('surfdash_root: "/Users/robin/xprojects/surfdash"');
         // Content QC thresholds ride the plugin env channel (0099-calibrated DEFAULT_FILTER_CONFIG).
@@ -187,9 +187,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         const classifyEdge = yaml.indexOf('- from: publish-podcast\n    to: publish');
         expect(xhsEdge).toBeGreaterThan(-1);
         expect(classifyEdge).toBeGreaterThan(xhsEdge);
-        // Off by default: XHS warned about automated login/publish activity (2026-09-28), and
-        // xhs-pub drives a headed browser against the creator console. Opt-in only.
-        expect(yaml).toContain('xhs_enabled: "false"');
+        // On by default (2026-09-29 operator decision): daily runs fill the XHS draft box.
+        // The safety rail is xhs_live: "false" — an unattended run drafts, never posts live.
+        expect(yaml).toContain('xhs_enabled: "true"');
+        expect(yaml).toContain('xhs_live: "false"');
     });
 
     it('R2/R3 (0144) — every delegated action is a one-line `kk stage` call and the prompts stay under the cap', () => {
@@ -356,8 +357,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
                 'kk-daily-ai-voice integration test requires `spur` on PATH (the repo quality gate installs it); refusing to skip silently',
             );
         }
-        // unset -> workflow default vdriver 'voicebox' (voice-gen, flipped from
-        // ominivoice 2026-09-20 after the matched-rate A/B); explicit 'ominivoice'
+        // unset -> workflow default vdriver 'gemini' (gemini-tts; 2026-09-29 operator override
+        // of the 2026-09-20 voicebox default); explicit 'ominivoice'
         // keeps covering the omni-voice-gen branch (generator swap + call log).
         // 0140: the third case drives a degradation-class audit (`passed:false`, no
         // `repetition_detected`) through the real engine — Branch A publishes it warn-only.
@@ -609,10 +610,10 @@ if (plugin === 'aihot-ingest') {
                 const generatorByDriver: Record<string, string> = {
                     ominivoice: 'kk:omni-voice-gen',
                     gemini: 'kk:gemini-tts',
+                    voicebox: 'kk:voice-gen',
                 };
-                if (typeof vdriver === 'string' && generatorByDriver[vdriver]) {
-                    expect(generated.metadata.generator).toBe(generatorByDriver[vdriver]);
-                }
+                const generator = typeof vdriver === 'string' ? generatorByDriver[vdriver] : generatorByDriver.gemini;
+                expect(generated.metadata.generator).toBe(generator);
                 expect(generated.metadata.qc.passed).toBe(qcPassed);
 
                 const calls = readFileSync(callLog, 'utf8')
@@ -629,7 +630,8 @@ if (plugin === 'aihot-ingest') {
                     'episode-plan-gen',
                     'daily-article-gen',
                     'dailynews-gen',
-                    vdriver === 'ominivoice' ? 'omni-voice-gen' : vdriver === 'gemini' ? 'gemini-tts' : 'voice-gen',
+                    // suite cases: undefined -> default gemini-tts; 'ominivoice' -> omni branch.
+                    vdriver === 'ominivoice' ? 'omni-voice-gen' : 'gemini-tts',
                 ]);
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).

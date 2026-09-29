@@ -20,10 +20,12 @@ vars:
   limit: "10"
   language: "zh"
   voice_profile: "robin-news"
-  # 20260917: voice driver switch — voicebox (default, voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts).
-  # 20260920: default flipped to voicebox — operator A/B at matched speech rate (~5.2 chars/s)
-  # judged voicebox clearly better (ominivoice carries ~1min dead air over 16min + ASR-garble class).
-  vdriver: "voicebox"
+  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts).
+  # 20260917 introduced the switch; 20260920 flipped default to voicebox after an operator A/B;
+  # 20260929 operator override: gemini-tts is the default again (verified live on this machine —
+  # robin-news replicated profile, GEMINI_API_KEY + GEMINI_TTS_MODEL via ~/.config/kk/config.yaml
+  # env block; smoke render 6.8s). Flip back with vdriver="voicebox".
+  vdriver: "gemini"
   # 20260917 review #7: 8s intro sting prepended to every daily output; empty = skip.
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   # 20260917 review #4/#6: surfdash checkout the patch stage commits to.
@@ -50,20 +52,21 @@ vars:
   # default keeps F614's pinned look the default; availability trades against it only on opt-in.
   cover_fallback: ""
   # E8: XHS image-card target. Cards are planned from the lead plan item (the same source the
-  # cover uses) and rendered through the pinned xhs-card/xhs-knowledge presets. `xhs_live` stays a
-  # separate launch-time switch (ADR-022), so an unattended run drafts and never posts live.
-  # Default OFF (2026-09-28): XHS warned the operator about automated login/publish activity.
-  # `xhs-pub` always launches a headed browser and drives the creator console, and an unattended
-  # daily job repeating that is precisely the pattern the platform flags — so the target is
-  # operator-opt-in until a reviewed automation policy exists. Do NOT flip this on for a scheduled
-  # run; publish XHS deliberately, by hand, and rarely.
-  xhs_enabled: "false"
+  # cover uses) and rendered through the pinned xhs-card/xhs-knowledge presets, then the xhs-pub
+  # headed browser saves them into the creator draft box.
+  # 2026-09-28 default OFF: XHS had warned the operator about automated login/publish activity,
+  # because `xhs-pub` always launches a headed browser and drives the creator console.
+  # 2026-09-29 operator decision: default ON — daily runs fill the draft box (best-practice
+  # default). The safety rail is `xhs_live: "false"` below: an unattended run drafts and never
+  # posts live. To post live, run ad-hoc with xhs_live="true" — deliberately, by hand.
+  xhs_enabled: "true"
   xhs_cards: "4"
   xhs_style: "xhs-knowledge"
   # Same credential surface as the cover pin: the provider/model must be one this machine can
   # actually reach, and each provider renders its own look.
   xhs_provider: "minimax"
   xhs_model: "image-01"
+  # ADR-022 rail: draft-box only. "true" posts live and stays a launch-time opt-in.
   xhs_live: "false"
   plan_max_items: "20"
   plan_translate_enabled: "true"

@@ -975,6 +975,14 @@ the plugin (every surface inherits it) rather than in one caller.
 **Cost.** A legitimate second publish inside the window is refused and needs an explicit state
 reset. The window is machine-local, so a second machine keeps its own budget.
 
+**Amendment (2026-09-29).** Operator decision: the daily workflow's XHS target defaults **on**
+(`xhs_enabled: "true"`) so unattended runs fill the creator draft box. The draft-default principle
+of ADR-022 is untouched — `xhs_live` stays a launch-time switch, so a scheduled run can never post
+live. The plugin-level ADR-025 guards (headless preflight, 24h cap, never-automated login) remain
+in force and are what makes the on-by-default draft loop acceptable. The "must not be enabled on a
+scheduled run" clause above is superseded by this amendment; the account-level exposure it named is
+accepted by the operator with the caps as the mitigation.
+
 **Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
 
 ---
