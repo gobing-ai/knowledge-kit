@@ -232,20 +232,29 @@ const TITLE_ECHO_NOISE_RE = /[，。、：:；;!！?？…\s「」『』【】]/
  * character prefix compare, never a fuzzy/LLM similarity match (anti-pattern list). The body is
  * returned untouched whenever the normalized prefix does not equal the normalized title, and a
  * body that is *only* the restatement collapses to the empty string (the lead alone carries it).
+ *
+ * 20260929 dogfood: plan bodies can restate the title MORE THAN once — a bare first line plus a
+ * restated line carrying a parenthetical extension (`title（来源标注日期为…）`). A single pass
+ * strips only the first, so the second becomes the new head and the VoiceScript validator rejects
+ * the segment. Keep stripping until the head no longer echoes; every accepted pass strictly
+ * shortens the body, so the loop terminates.
  */
 export function stripLeadingTitleEcho(body: string, title: string): string {
     const wanted = title.replace(TITLE_ECHO_NOISE_RE, '');
     if (wanted.length < 4) return body; // a short title would match too much of the body
-    let matched = '';
-    let end = -1;
-    for (let i = 0; i < body.length && matched.length < wanted.length; i++) {
-        const kept = (body[i] ?? '').replace(TITLE_ECHO_NOISE_RE, '');
-        if (kept === '') continue; // drift punctuation between title and echo
-        matched += kept;
-        if (matched.length >= wanted.length) end = i + 1;
+    let text = body;
+    for (;;) {
+        let matched = '';
+        let end = -1;
+        for (let i = 0; i < text.length && matched.length < wanted.length; i++) {
+            const kept = (text[i] ?? '').replace(TITLE_ECHO_NOISE_RE, '');
+            if (kept === '') continue; // drift punctuation between title and echo
+            matched += kept;
+            if (matched.length >= wanted.length) end = i + 1;
+        }
+        if (end === -1 || matched !== wanted) return text;
+        text = text.slice(end).replace(/^[，。、：:；;!！?？…\s「」『』【】]+/, '');
     }
-    if (end === -1 || matched !== wanted) return body;
-    return body.slice(end).replace(/^[，。、：:；;!！?？…\s「」『』【】]+/, '');
 }
 
 /**

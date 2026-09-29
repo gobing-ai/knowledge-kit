@@ -423,6 +423,18 @@ describe('0139 R1 — title echo', () => {
         expect(stripLeadingTitleEcho(other, 'OpenAI 据报道考虑以约 1.2 万亿美元估值融资')).toBe(other);
     });
 
+    it('strips a second restatement behind the first (20260929 Anthropic doubled echo)', () => {
+        const doubled =
+            'Anthropic 发布 Claude Sonnet 5.5\n\nAnthropic 发布 Claude Sonnet 5.5（来源标注日期为 2026 年 9 月 28 日）。官方宣称该模型运行速度提升 30% 以上。';
+        const stripped = stripLeadingTitleEcho(doubled, 'Anthropic 发布 Claude Sonnet 5.5');
+        expect(stripped.startsWith('（来源标注日期为')).toBe(true);
+        expect(stripped).not.toContain('Anthropic 发布 Claude Sonnet 5.5');
+    });
+
+    it('collapses a body that is only the restatement to empty without hanging', () => {
+        expect(stripLeadingTitleEcho('标题就是这四个字。标题就是这四个字。', '标题就是这四个字')).toBe('');
+    });
+
     it('speaks the item title exactly once in the emitted fact segment', () => {
         const script = buildNewsVoiceScript([RUN_PLAN_ITEMS[0] as Doc], { language: 'zh', voiceProfile: 'Robin' });
         const fact = script.segments[1]?.text ?? '';
