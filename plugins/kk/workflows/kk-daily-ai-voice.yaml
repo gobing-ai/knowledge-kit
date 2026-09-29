@@ -72,7 +72,7 @@ vars:
   # article/cover straight to script (template build, no plan file is written).
   script_write_enabled: "true"
   plugins_path: ""
-  # Projected by the publish state from 3-publish/<run_date>_17_publish_publish-status.txt;
+  # Projected by the publish state from 31-publish/<run_date>_17_publish_publish-status.txt;
   # guards test this var instead of cat-ing the file (state at decision time).
   publish_status: ""
   last30days_topic: "AI news"
@@ -129,8 +129,8 @@ states:
           # 45m leash; aihot/last30days keep the default.
           command: >-
             __STAMP_T0="$(date -u +%FT%TZ)"; trap '[ -n "${vars.work_dir}" ] && printf "{\"step\":\"collect\",\"startedAt\":\"%s\",\"endedAt\":\"%s\"}\n" "$__STAMP_T0" "$(date -u +%FT%TZ)" >> "${vars.work_dir}/step-timing.json"' EXIT;
-            if [ -f "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json" ]; then echo "collect cached: ${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json"; exit 0; fi;
-            kk executor fan-in --source "aihot-ingest:${vars.work_dir}/1-ingest/source.json" --source "last30days-ingest:${vars.work_dir}/1-ingest/last30days.json" --source "horizon-ingest:${vars.work_dir}/1-ingest/horizon.json" --source-timeout-override "horizon-ingest:2700000" --out "${vars.work_dir}/1-ingest/${vars.run_date}_02_collect_blended.json"
+            if [ -f "${vars.work_dir}/10-ingest/${vars.run_date}_02_collect_blended.json" ]; then echo "collect cached: ${vars.work_dir}/10-ingest/${vars.run_date}_02_collect_blended.json"; exit 0; fi;
+            kk executor fan-in --source "aihot-ingest:${vars.work_dir}/10-ingest/source.json" --source "last30days-ingest:${vars.work_dir}/10-ingest/last30days.json" --source "horizon-ingest:${vars.work_dir}/10-ingest/horizon.json" --source-timeout-override "horizon-ingest:2700000" --out "${vars.work_dir}/10-ingest/${vars.run_date}_02_collect_blended.json"
       - kind: shell
         options:
           command: >-
@@ -161,13 +161,13 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a adds the copy discipline).
           input: |
-            Read ${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
             For items with needsTranslation, translate "title", "body", and "metadata.brief" (when present) into natural simplified Chinese.
             Titles read as a news event (subject + action + object) — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
             Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
             Keep other fields (id, sourceUri, mediaType, metadata), technical terms as-is; no trailing commas or comments.
-            Output strictly valid JSON — a same-length, same-order array with the same ids — to ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json.
-          expectFile: ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json
+            Output strictly valid JSON — a same-length, same-order array with the same ids — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
+          expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
           allowAppend: false
 
   - id: article-write
@@ -179,11 +179,11 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3).
           input: |
-            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
             Write a morning-news prose article in natural simplified Chinese: title line "# 每日 AI 资讯 — ${vars.run_date}", an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together.
             Narrative register — smooth transitions between items, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). Keep facts/URLs from the plan verbatim; product/model names as-is; 「」 quotes.
-            Output the markdown to ${vars.work_dir}/2-article/${vars.run_date}_06_article-write_body.md.
-          expectFile: ${vars.work_dir}/2-article/${vars.run_date}_06_article-write_body.md
+            Output the markdown to ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md.
+          expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
           allowAppend: false
 
   - id: article
@@ -206,12 +206,12 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
-            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the episode's lead story.
             Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
             No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
-            Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/2-cover/${vars.run_date}_07_cover-brief.json.
-          expectFile: ${vars.work_dir}/2-cover/${vars.run_date}_07_cover-brief.json
+            Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json.
+          expectFile: ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json
           allowAppend: false
       - kind: shell
         options:
@@ -242,11 +242,11 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
-            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; use each doc's `id`; don't edit it. Also read the style contract ${vars.work_dir}/2-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; use each doc's `id`; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
             For each doc write a `lead` (a spoken bridge into the title, not containing it) and an `insight` (why it matters, grounded only in that doc's facts).
             Write an `intro` hooking today's actual themes and an `outro`; no greeting or sign-off — the builder adds both.
-            Output only the JSON object {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}]} with one item per doc id to ${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json.
-          expectFile: ${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json
+            Output only the JSON object {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}]} with one item per doc id to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json.
+          expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
           allowAppend: false
 
   - id: script
@@ -263,7 +263,7 @@ states:
     onEnter:
       - kind: hitl.confirm
         options:
-          prompt: "Review daily AI news VoiceScript at ${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml. Proceed to voice generation?"
+          prompt: "Review daily AI news VoiceScript at ${vars.work_dir}/24-script/${vars.run_date}_08_script_voicescript.yaml. Proceed to voice generation?"
           var: __hitlAnswer
 
   - id: wrap-docs
@@ -342,13 +342,13 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
-            Read ${vars.work_dir}/2-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the lead story.
             Write a Xiaohongshu note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags).
             Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
             Ground every "copy", "points" and "sourcePoint" in that story alone — no invented facts. No text, letters, numbers, logos or real people in "subject".
-            Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/2-xhs/${vars.run_date}_18_xhs_plan.json.
-          expectFile: ${vars.work_dir}/2-xhs/${vars.run_date}_18_xhs_plan.json
+            Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
+          expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
           allowAppend: false
       - kind: shell
         onError: continue
@@ -374,7 +374,7 @@ states:
             kk stage daily-publish-classify "${vars.work_dir}" "${vars.run_date}"
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/${vars.run_date}_17_publish_publish-status.txt
+          path: ${vars.work_dir}/31-publish/${vars.run_date}_17_publish_publish-status.txt
           var: publish_status
 
   - id: patch-surfdash
@@ -410,11 +410,11 @@ states:
             kk stage daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
+          path: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
           var: surfdash_en_post_path
       - kind: file.read.into-var
         options:
-          path: ${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
+          path: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
           var: surfdash_ja_post_path
       - kind: agent.run
         options:
@@ -430,7 +430,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kk stage daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/3-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
+            kk stage daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
 
   - id: done
     description: "Terminal — Daily AI news pipeline completed (collect → QC'd plan → article/cover/script/voice → publish/locales)"
@@ -466,7 +466,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "$(jq ''.metadata.docs | length == 0'' "${vars.work_dir}/2-plan/${vars.run_date}_04_quality-control-content_candidates.json")" = "true"'
+        command: 'test "$(jq ''.metadata.docs | length == 0'' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" = "true"'
 
   - from: quality-control-content
     to: plan-translate
@@ -520,7 +520,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.cover_enabled}" = "true" && test ! -f "${vars.work_dir}/2-cover/${vars.run_date}_07_cover_cover.png"'
+        command: 'test "${vars.cover_enabled}" = "true" && test ! -f "${vars.work_dir}/23-cover/${vars.run_date}_07_cover_cover.png"'
 
   # F613 R3: first match wins — the cover edge stays above script-write so the cover still
   # generates before the plan is authored; script-write sits above the always `-> script` edges
@@ -531,7 +531,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.script_write_enabled}" = "true" && test "${vars.language}" = "zh" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml"'
+        command: 'test "${vars.script_write_enabled}" = "true" && test "${vars.language}" = "zh" && test ! -f "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json" && test ! -f "${vars.work_dir}/24-script/${vars.run_date}_08_script_voicescript.yaml"'
 
   - from: article
     to: script
@@ -545,7 +545,7 @@ transitions:
     guard:
       kind: shell
       options:
-        command: 'test "${vars.script_write_enabled}" = "true" && test "${vars.language}" = "zh" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script-write_plan.json" && test ! -f "${vars.work_dir}/2-script/${vars.run_date}_08_script_voicescript.yaml"'
+        command: 'test "${vars.script_write_enabled}" = "true" && test "${vars.language}" = "zh" && test ! -f "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json" && test ! -f "${vars.work_dir}/24-script/${vars.run_date}_08_script_voicescript.yaml"'
 
   - from: cover
     to: script

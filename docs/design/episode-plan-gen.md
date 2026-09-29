@@ -113,7 +113,7 @@ r6 replay invariant (locked in tests): with permissive thresholds (full allowlis
 filter over the r6 gated plan reproduces it byte-for-byte — 4 survivors; under the 0099-calibrated
 default QC config exactly the GPT-6 doc (3/3/5/1) survives, and the three category-mismatched
 docs are rejected with per-dimension reasons. The r7 dogfood evidence
-(`.spur/run/daily-dogfood-20260906-r3/2-plan/candidates.rejected.json`, 20/20 rejected under
+(`.spur/run/daily-dogfood-20260906-r3/21-plan/candidates.rejected.json`, 20/20 rejected under
 3/3/2/2) replays as locked-in tests too: the flagship impact-1 item is admitted, the
 OpenAI coding-agents item classifies ai-news, and the yt-dlp error-log post lands non-ai.
 
@@ -141,18 +141,18 @@ blend-facts → plan → plan-translate → article
 ```
 
 - `plan`: runs `episode-plan-gen`, then extracts `metadata.docs` from the Content artifact to
-  `2-plan/plan.json` (fail loud when absent/empty). Cached short-circuit on existing `plan.json`.
+  `21-plan/plan.json` (fail loud when absent/empty). Cached short-circuit on existing `plan.json`.
 - `plan-translate` (agent.run, gated by `plan_translate_enabled: "true"`): translates
   `needsTranslation` items' `title`/`body` to Simplified Chinese **in place** — same file, same
   order, same ids; everything else (metadata, URLs, sourceUri) untouched. Disabled → `plan` routes
   straight to `article`.
-- `article` / `script` consume `--in 2-plan/plan.json`. The workflow no longer sets
+- `article` / `script` consume `--in 21-plan/plan.json`. The workflow no longer sets
   `DAILYNEWS_MAX_ITEMS` — the plan is the single limiter (`plan_max_items`, default `"20"`).
 - `--mode filter` adds the quality-control seam: since 0097 the `quality-control-content` state
   runs it through the executor seam as `EPISODE_PLAN_MODE=filter` (`kk executor run` forwards only
   `--in`/`--out`, so the mode rides the env channel), with the `done-no-content` terminal for an
   empty kept set, the `qc_*` vars as workflow tunables, and the rejection audit at
-  `2-plan/candidates.rejected.json`.
+  `21-plan/candidates.rejected.json`.
 
 ## Show notes contract (downstream, podcast-pub)
 

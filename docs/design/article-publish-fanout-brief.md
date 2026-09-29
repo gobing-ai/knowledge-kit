@@ -121,14 +121,14 @@ Evidence:
 
 ```bash
 kk executor fan-out \
-  --content 2-article/content.json \
+  --content 22-article/content.json \
   --target surfdash-pub \
   --target podcast-pub \
-  --out 3-publish/result.json
+  --out 31-publish/result.json
 ```
 
 Partial success → exit `1` → fail-loud signals an incomplete pipeline state to `spur workflow` while
-the per-target `AggregateResult` records which platform published; `--retry-from 3-publish/result.json`
+the per-target `AggregateResult` records which platform published; `--retry-from 31-publish/result.json`
 re-runs only the failed target next morning.
 
 **Why sequential per-target states were rejected:** N separate `*-pub` states re-implement the

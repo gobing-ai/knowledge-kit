@@ -13,19 +13,19 @@ import { echoError } from '@gobing-ai/ts-utils';
  * if drift ever matters).
  *
  * Inputs:
- * - `--in` Doc[] — kept candidates (`2-plan/episode-plan.json`, built by the
+ * - `--in` Doc[] — kept candidates (`21-plan/episode-plan.json`, built by the
  *   workflow from the filter Content's metadata.docs). Scores live in
  *   `metadata.scores` (quality/importance/urgency/impact 0-5).
  * - `NEWS_REPORT_REJECTED_FILE` — the filter's rejected audit path
- *   (`2-plan/candidates.rejected.json`, RejectedDoc[] of {doc, reasons})
+ *   (`21-plan/candidates.rejected.json`, RejectedDoc[] of {doc, reasons})
  * - `NEWS_REPORT_BLENDED_FILE` — the collect stage's blended fan-in output
- *   (`1-ingest/<date>_02_collect_blended.json`); absent or unreadable -> the
+ *   (`10-ingest/<date>_02_collect_blended.json`); absent or unreadable -> the
  *   语料构成 section is omitted, never throw.
  * - `NEWS_REPORT_QC_FILE` — the generate stage's QC audit path
- *   (`3-audio/<date>_11_generate_content.json`); absent -> the 音频 QC block is omitted;
+ *   (`30-audio/<date>_11_generate_content.json`); absent -> the 音频 QC block is omitted;
  *   absent or unreadable -> reject counts render as 0, never throw.
  * - `NEWS_REPORT_SCRIPT_FILE` — the script stage's Content path
- *   (`2-script/<date>_08_script_content.json`, F613 R5); absent or metadata-less -> the
+ *   (`24-script/<date>_08_script_content.json`, F613 R5); absent or metadata-less -> the
  *   脚本来源 line is omitted, never throw.
  * - `NEWS_REPORT_TIMING_FILE` — `<work_dir>/step-timing.json` JSONL of
  *   {step, startedAt, endedAt} appended by the workflow shell steps; missing

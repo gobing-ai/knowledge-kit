@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (F614 0163: lead-item subject brief agent.run → pinned daily-news presets via `kk stage daily-cover`) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `voicebox` → voice-gen default, `ominivoice` → omni-voice-gen, `gemini` → gemini-tts) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes) → xhs draft (E8: lead-item card plan agent.run → pinned `xhs-card` × `xhs-knowledge` presets via `kk stage daily-xhs-render` → `kk stage daily-publish-xhs`). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe); the XHS target only with `xhs_enabled: "true"` — **off by default** since 2026-09-28 (XHS warned about automated login/publish activity; see §7) — and a live post additionally needs the launch-time `xhs_live` switch, ADR-022). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `1-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
+`kk-daily-ai-voice` (`plugins/kk/workflows/kk-daily-ai-voice.yaml`) is the daily AI news end-to-end pipeline (F61 destination, extended 2026-09-03): collect (aihot-ingest + last30days-ingest + horizon-ingest) → blended core-facts (fan-in + core-facts-gen) → episode plan (episode-plan-gen: score/dedup/select + plan-translate agent step, 2026-09-05) → article (content-gen) + cover (F614 0163: lead-item subject brief agent.run → pinned daily-news presets via `kk stage daily-cover`) + script-write (agent-authored per-item script plan, F613 0162: guarded by `script_write_enabled`+zh, `onError: continue`) + spoken broadcast script (dailynews-gen, plan-aware since F613) + audio (voice driver selected by the `vdriver` var: `voicebox` → voice-gen default, `ominivoice` → omni-voice-gen, `gemini` → gemini-tts) → publish fan-out (surfdash-pub + podcast-pub, article as episode show notes) → xhs draft (E8: lead-item card plan agent.run → pinned `xhs-card` × `xhs-knowledge` presets via `kk stage daily-xhs-render` → `kk stage daily-publish-xhs`). Publish runs only with `publish_enabled: "true"`; cover only with `cover_enabled: "true"`; in-place plan translation only with `plan_translate_enabled: "true"`; the script-write plan authoring only with `script_write_enabled: "true"` and `language: "zh"` (and only when neither today's plan nor VoiceScript exists — resume-safe); the XHS target only with `xhs_enabled: "true"` — **off by default** since 2026-09-28 (XHS warned about automated login/publish activity; see §7) — and a live post additionally needs the launch-time `xhs_live` switch, ADR-022). Article/script/show notes all consume `${run_date}_03_plan_plan.json` (selection capped by `plan_max_items`, default `20`). `last30days_enabled: "false"` (default) routes `fetch` directly to Horizon and stubs `10-ingest/last30days-docs.json` as `[]` for fan-in (the `prepare`-written executor configs keep fixed names — see section 4). Step outputs follow the naming convention `{run_date}_{NN}_{step_name}_{artifact}.{ext}` (`${run_date}` = local `YYYYMMDD`, captured once in `prepare`; `NN` = 1-based ordinal of the owning state) and are skipped when the step's output file already exists — fast re-runs never regenerate completed steps or mix days' content. Voice synthesis waits scale with segment length (`VOICEBOX_TIMEOUT_MS` base + 60s/100 chars) so long qwen segments don't trip the fixed deadline.
 
 ## 2. Architecture & Data Flow
 
@@ -13,23 +13,23 @@ flowchart TD
     B -->|last30days disabled| D[ingest-horizon]
     C --> D[ingest-horizon]
     D -->|Doc[] x3| E[blend-facts: fan-in + core-facts-gen]
-    E -->|1-ingest/{run_date}_02_collect_blended.json + 2-facts/{run_date}_02_collect_core-facts.md| P0[plan: episode-plan-gen]
+    E -->|10-ingest/{run_date}_02_collect_blended.json + 20-facts/{run_date}_02_collect_core-facts.md| P0[plan: episode-plan-gen]
     P0 -->|plan_translate_enabled| P1[plan-translate: agent.run in-place zh]
     P0 -->|translate disabled| F
-    P1 -->|2-plan/plan.json| F[article: content-gen]
+    P1 -->|21-plan/plan.json| F[article: content-gen]
     F -->|cover_enabled| G[cover: subject-brief agent.run -> kk stage daily-cover]
     F -->|cover disabled| G2[script-write]
-    G -->|2-cover/{run_date}_07_cover_cover.png| G2
+    G -->|23-cover/{run_date}_07_cover_cover.png| G2
     G2 -->|script_write_enabled+zh, no plan/YAML yet| SW[script-write: daily-script-style + agent.run, onError continue]
     G2 -->|disabled/non-zh/cached| H
-    SW -->|2-script/{run_date}_08_script-write_plan.json| H[script: dailynews-gen]
-    H -->|2-script/{run_date}_08_script_content.json & {run_date}_08_script_voicescript.yaml| I{skip_review?}
+    SW -->|24-script/{run_date}_08_script-write_plan.json| H[script: dailynews-gen]
+    H -->|24-script/{run_date}_08_script_content.json & {run_date}_08_script_voicescript.yaml| I{skip_review?}
     I -->|false| J[review: hitl.confirm]
     I -->|true| K[wrap-docs]
     J -->|Approved| K[wrap-docs: VoiceScript -> Doc]
     J -->|Rejected| L[failed]
-    K -->|3-audio/{run_date}_10_wrap-docs_docs.json| M[generate: voice generator var]
-    M -->|3-audio/content.wav + content.mp3| N[quality-control]
+    K -->|30-audio/{run_date}_10_wrap-docs_docs.json| M[generate: voice generator var]
+    M -->|30-audio/content.wav + content.mp3| N[quality-control]
     N -->|publish_enabled| O[publish-prep: article + audio seam]
     O --> P1[publish-surfdash -> show-notes -> publish-podcast]
     P1 -->|xhs_enabled| XW[xhs-write: lead-item card plan agent.run -> kk stage daily-xhs-render]
@@ -60,8 +60,8 @@ and later steps stay cached until their own outputs are deleted.
 Fixed-name exceptions (outside the convention):
 - `run-date.txt` — its content defines `${vars.run_date}`, so it cannot embed the value it defines; the `prepare` stage also runs while `${vars.run_date}` is still empty (it mints the stamp).
 - `step-timing.json` — shared append-across-states timing log.
-- The `prepare`-written executor configs (`1-ingest/source.json`, `1-ingest/last30days.json`, `1-ingest/horizon.json`, `1-ingest/last30days-docs.json`) — written before `${vars.run_date}` is captured.
-- Plugin-fixed intermediates: `2-cover/content.json` + the `content-daily-news-cover-01.<ext>` artifact it records (image-gen names them after the format preset; `daily-cover-normalize` reads the path from the manifest, F614 — the pre-F614 `content-cover-01.{png,jpg}` names are cleaned up as stale), `2-xhs/content.json` + `2-xhs/cards.json` + `2-xhs/cards/card-NN.*` (the card series the publisher and the render stage read back by fixed stem, E8 — see §7), `3-audio/content.wav` / `content.mp3` (voice generator siblings of the `--out` file).
+- The `prepare`-written executor configs (`10-ingest/source.json`, `10-ingest/last30days.json`, `10-ingest/horizon.json`, `10-ingest/last30days-docs.json`) — written before `${vars.run_date}` is captured.
+- Plugin-fixed intermediates: `23-cover/content.json` + the `content-daily-news-cover-01.<ext>` artifact it records (image-gen names them after the format preset; `daily-cover-normalize` reads the path from the manifest, F614 — the pre-F614 `content-cover-01.{png,jpg}` names are cleaned up as stale), `25-xhs/content.json` + `25-xhs/cards.json` + `25-xhs/cards/card-NN.*` (the card series the publisher and the render stage read back by fixed stem, E8 — see §7), `30-audio/content.wav` / `content.mp3` (voice generator siblings of the `--out` file).
 
 Convention-named artifacts:
 - `${run_date}_02_collect_blended.json`: Fan-in merged `Doc[]`; `${run_date}_02_collect_content.json` / `${run_date}_02_collect_core-facts.md`: blended core-facts Content + markdown.
@@ -77,10 +77,10 @@ Convention-named artifacts:
 - `${run_date}_13_publish-prep_content.json`: Article + audio merged for the publish seam. 0171: `publish-prep` publishes the MP3 (`metadata.mp3Path ?? audioPath`), fails loud when that file is not `.mp3` (naming `transcode_mp3`), and stamps the enclosure's ID3v2.3 tags in place (§6).
 - `${run_date}_14_publish-surfdash_result.json` / `${run_date}_16_publish-podcast_result.json`: per-target fan-out results; `${run_date}_15_show-notes_show-notes.md`: rendered show notes.
 - `${run_date}_17_publish_result.json` / `${run_date}_17_publish_publish-status.txt`: merged publish result and the `full|partial|none` routing flag (read by the publish/locales transition guards).
-- `2-xhs/cards.json` / `2-xhs/content.json` / `2-xhs/cards/card-NN.{in.json,json,prompt.txt}`: the XHS card series (E8) — the ordered card manifest (role, source point, layout, prompt + image path per card), the packaged `Content` whose `metadata.images` are the card artifacts **in card order** and whose `metadata.publishStatus` is `draft`, and per card the pinned image-gen envelope, the rendered `Content`, and the exact composed prompt (the retry path). The stage fixes the `card-NN` stem, so each artifact lands as `2-xhs/cards/card-NN-xhs-card-01.<ext>` — the provider picks the extension, so the stage reads the recorded path back rather than guessing it.
+- `25-xhs/cards.json` / `25-xhs/content.json` / `25-xhs/cards/card-NN.{in.json,json,prompt.txt}`: the XHS card series (E8) — the ordered card manifest (role, source point, layout, prompt + image path per card), the packaged `Content` whose `metadata.images` are the card artifacts **in card order** and whose `metadata.publishStatus` is `draft`, and per card the pinned image-gen envelope, the rendered `Content`, and the exact composed prompt (the retry path). The stage fixes the `card-NN` stem, so each artifact lands as `25-xhs/cards/card-NN-xhs-card-01.<ext>` — the provider picks the extension, so the stage reads the recorded path back rather than guessing it.
 - `${run_date}_19_publish-xhs_content.json` / `${run_date}_19_publish-xhs_result.json`: the publish payload (`metadata.publishStatus` resolved from the `xhs_live` var) and the `xhs-pub` Result. Deliberately **not** read by `daily-publish-classify` — XHS is an independent, non-blocking target and contributes no `publish_status` target (see §7).
-- `${run_date}_19_run-report_report.json` / `${run_date}_19_run-report_report.md` (work-dir root) plus inputs `${run_date}_19_run-report_episode-plan.json` and the shared rejected audit in `2-plan/`.
-- `${run_date}_20_translate-en_*` / `${run_date}_22_translate-ja_*` / `${run_date}_24_translate-sync_*`: locale scaffolds, post-path markers, and sync results in `3-publish/`.
+- `${run_date}_19_run-report_report.json` / `${run_date}_19_run-report_report.md` (work-dir root) plus inputs `${run_date}_19_run-report_episode-plan.json` and the shared rejected audit in `21-plan/`.
+- `${run_date}_20_translate-en_*` / `${run_date}_22_translate-ja_*` / `${run_date}_24_translate-sync_*`: locale scaffolds, post-path markers, and sync results in `31-publish/`.
 
 The workflow passes only the generic executor flags (`--in`, `--out`, optional `--plugins-path`).
 
@@ -131,7 +131,7 @@ The `xhs-write` → `xhs-publish` pair adds a Xiaohongshu image-card draft to ev
 follows the cover's split (F614): the agent authors **copy only**, the stage owns the look.
 
 - `xhs-write` — `agent.run` (`role: scribe`, `onError: continue`) reads the same lead plan item the
-  cover brief reads and writes `2-xhs/${run_date}_18_xhs_plan.json`: `title`, `body` (Chinese note +
+  cover brief reads and writes `25-xhs/${run_date}_18_xhs_plan.json`: `title`, `body` (Chinese note +
   hashtags), and exactly `${vars.xhs_cards}` ordered cards, each with `role`, `copy`, `points`,
   `layout`, `subject` and the `sourcePoint` it is grounded in. `kk stage daily-xhs-render` then
   validates that plan (count, cover-first, per-field non-empty, char caps) and renders one card per

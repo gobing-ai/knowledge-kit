@@ -80,13 +80,15 @@ bootstrap:
         # works for shell steps — that mismatch is the 06:00:01 file.read
         # failure of 2026-09-13..18 (double quotes let the job worker's /bin/sh
         # expand it before spur sees it). publish_enabled defaults to false,
-        # cover_enabled=true currently fails loud (agy image task is async and
-        # never lands the artifact), and skip_review=true avoids the HITL pause
-        # at `review` — a 06:00 cron run must be headless. Re-enable cover once
-        # the image path completes synchronously.
+        # and skip_review=true avoids the HITL pause at `review` — a 06:00 cron
+        # run must be headless. cover_enabled stays at its workflow default
+        # (true, minimax/image-01): the 09-12 async-image disable is stale — the
+        # pinned-preset cover path (0163/F614) rendered synchronously on
+        # 09-24/25 and was re-verified end-to-end on the 20260928 workspace
+        # (brief → render 18s → normalize → PNG) before re-enabling.
         command: >-
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
-          --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"cover_enabled\":\"false\",\"skip_review\":\"true\"}"
+          --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"skip_review\":\"true\"}"
 
       # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
       # page compaction, PRAGMA optimize, and WAL checkpoint truncation).

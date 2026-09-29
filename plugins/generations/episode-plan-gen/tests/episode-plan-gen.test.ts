@@ -771,8 +771,8 @@ describe('filter mode (--mode filter, 0094)', () => {
     });
 
     test('rejectedOutPath — <out>.json → <out>.rejected.json', () => {
-        expect(rejectedOutPath('/run/2-plan/candidates.json')).toBe('/run/2-plan/candidates.rejected.json');
-        expect(rejectedOutPath('/run/2-plan/candidates')).toBe('/run/2-plan/candidates.rejected.json');
+        expect(rejectedOutPath('/run/21-plan/candidates.json')).toBe('/run/21-plan/candidates.rejected.json');
+        expect(rejectedOutPath('/run/21-plan/candidates')).toBe('/run/21-plan/candidates.rejected.json');
     });
 
     test('processFilterIO — kept Content at --out; { rejected, config, total } audit at candidates.rejected.json', async () => {
@@ -993,7 +993,7 @@ describe('filter replay on the real r6 plan output (0094 verify)', () => {
 
 describe('r7 dogfood recalibration replay (0099)', () => {
     // Verbatim docs from the 0098 dogfood evidence (20/20 live candidates rejected under the
-    // shipped 3/3/2/2 config): .spur/run/daily-dogfood-20260906-r3/2-plan/candidates.rejected.json
+    // shipped 3/3/2/2 config): .spur/run/daily-dogfood-20260906-r3/21-plan/candidates.rejected.json
     const fixturePath = join(import.meta.dir, 'fixtures', 'r7-rejected-excerpt.json');
 
     async function replay(): Promise<{ kept: Doc[]; rejected: Array<{ doc: Doc; reasons: string[] }> }> {

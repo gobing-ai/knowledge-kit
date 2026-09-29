@@ -15,7 +15,7 @@ As a result, episodes sound almost the same every day, and the keyword buckets m
 
 ```
 article → [cover] → script-write (agent.run, onError: continue) → script (kk stage daily-script) → wrap-docs …
-                     writes 2-script/<date>_08_script-write_plan.json      reads it if valid, else templates
+                     writes 24-script/<date>_08_script-write_plan.json      reads it if valid, else templates
 ```
 
 Ownership:
@@ -32,7 +32,7 @@ The LLM never writes YAML. This keeps the pacing invariants from tasks 0139 and 
 
 ### 1. Style contract (R1)
 
-The contract is the kk sidecar `plugins/kk/scripts/daily-voice-style.zh.md`, resolved by `resolveSidecar` like the other shipped sidecars. Spur workflows have no workflow-dir variable, so `kk stage daily-script-style` snapshots it to `2-script/<date>_08_script-write_style.md`, and the prompt reads that snapshot. It defines:
+The contract is the kk sidecar `plugins/kk/scripts/daily-voice-style.zh.md`, resolved by `resolveSidecar` like the other shipped sidecars. Spur workflows have no workflow-dir variable, so `kk stage daily-script-style` snapshots it to `24-script/<date>_08_script-write_style.md`, and the prompt reads that snapshot. It defines:
 
 - **Host persona and register:** spoken Mandarin, first person, calm and informed, no hype.
 - **Fixed greeting and sign-off:** the builder always emits these. The plan's intro and outro go *between* them, so the show's identity never drifts.
@@ -55,7 +55,7 @@ This is a new state in `kk-daily-ai-voice.yaml`. It uses the same `agent.run` pa
 - `allowAppend: false`
 - `onError: continue`
 
-It reads `2-plan/<date>_03_plan_plan.json` (a bare `Doc[]`), the same items, order, and titles that the show notes are rendered from. It also reads the style file. It writes:
+It reads `21-plan/<date>_03_plan_plan.json` (a bare `Doc[]`), the same items, order, and titles that the show notes are rendered from. It also reads the style file. It writes:
 
 ```json
 {

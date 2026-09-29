@@ -438,15 +438,15 @@ function parseStage(
 // deliberately stay in the YAML.
 
 const DAILY_DIRS = [
-    '1-ingest',
-    '2-facts',
-    '2-plan',
-    '2-article',
-    '2-cover',
-    '2-xhs',
-    '2-script',
-    '3-audio',
-    '3-publish',
+    '10-ingest',
+    '20-facts',
+    '21-plan',
+    '22-article',
+    '23-cover',
+    '25-xhs',
+    '24-script',
+    '30-audio',
+    '31-publish',
 ] as const;
 
 /** `date -u +%FT%TZ` — the timestamp grammar the step-timing lines have always used. */
@@ -619,23 +619,23 @@ function dailyPrepare(args: string[]): void {
             mkdirSync(anchorDir, { recursive: true });
             writeFileSync(join(anchorDir, 'work-dir.txt'), `${workDir}\n`);
         });
-        sted('write', join(workDir, '1-ingest/source.json'), () =>
-            writeJsonText(join(workDir, '1-ingest/source.json'), {
+        sted('write', join(workDir, '10-ingest/source.json'), () =>
+            writeJsonText(join(workDir, '10-ingest/source.json'), {
                 limit: Number(limit),
                 cursor: cursor === '' ? undefined : cursor,
                 stateFile: stateFile === '' ? undefined : stateFile,
             }),
         );
         if (last30daysEnabled !== 'true') {
-            sted('write', join(workDir, '1-ingest/last30days-docs.json'), () =>
-                writeFileSync(join(workDir, '1-ingest/last30days-docs.json'), '[]'),
+            sted('write', join(workDir, '10-ingest/last30days-docs.json'), () =>
+                writeFileSync(join(workDir, '10-ingest/last30days-docs.json'), '[]'),
             );
         }
-        sted('write', join(workDir, '1-ingest/last30days.json'), () =>
-            writeJsonText(join(workDir, '1-ingest/last30days.json'), { topic }),
+        sted('write', join(workDir, '10-ingest/last30days.json'), () =>
+            writeJsonText(join(workDir, '10-ingest/last30days.json'), { topic }),
         );
-        sted('write', join(workDir, '1-ingest/horizon.json'), () =>
-            writeJsonText(join(workDir, '1-ingest/horizon.json'), { hours: Number(horizonHours) }),
+        sted('write', join(workDir, '10-ingest/horizon.json'), () =>
+            writeJsonText(join(workDir, '10-ingest/horizon.json'), { hours: Number(horizonHours) }),
         );
     });
 }
@@ -679,9 +679,9 @@ function resolveWorksDir(): string {
 
 function dailyCollectFacts(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const content = join(workDir, '2-facts', `${runDate}_02_collect_content.json`);
-    const facts = join(workDir, '2-facts', `${runDate}_02_collect_core-facts.md`);
-    const blended = join(workDir, '1-ingest', `${runDate}_02_collect_blended.json`);
+    const content = join(workDir, '20-facts', `${runDate}_02_collect_content.json`);
+    const facts = join(workDir, '20-facts', `${runDate}_02_collect_core-facts.md`);
+    const blended = join(workDir, '10-ingest', `${runDate}_02_collect_blended.json`);
     timed(workDir, 'collect', () => {
         if (isFile(content) && isFile(facts)) {
             console.log(`core facts cached: ${facts}`);
@@ -696,9 +696,9 @@ function dailyCollectFacts(args: string[]): void {
 
 function dailyPlan(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', planMaxItems = ''] = args;
-    const planContent = join(workDir, '2-plan', `${runDate}_03_plan_content.json`);
-    const planDocs = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
-    const blended = join(workDir, '1-ingest', `${runDate}_02_collect_blended.json`);
+    const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
+    const planDocs = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    const blended = join(workDir, '10-ingest', `${runDate}_02_collect_blended.json`);
     timed(workDir, 'plan', () => {
         if (isFile(planDocs)) {
             console.log(`plan cached: ${planDocs}`);
@@ -728,9 +728,9 @@ function dailyQcContent(args: string[]): void {
         minUrgency = '',
         minImpact = '',
     ] = args;
-    const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
-    const annotated = join(workDir, '2-plan', `${runDate}_04_quality-control-content_annotated.json`);
-    const planContent = join(workDir, '2-plan', `${runDate}_03_plan_content.json`);
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const annotated = join(workDir, '21-plan', `${runDate}_04_quality-control-content_annotated.json`);
+    const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
     timed(workDir, 'quality-control-content', () => {
         if (isFile(candidates)) {
             console.log(`candidates cached: ${candidates}`);
@@ -830,10 +830,10 @@ function assertScriptContent(scriptPath: string): void {
 
 function dailyArticle(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const articleMd = join(workDir, '2-article', `${runDate}_06_article_article.md`);
-    const articleContent = join(workDir, '2-article', `${runDate}_06_article_content.json`);
-    const planIn = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
-    const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const articleMd = join(workDir, '22-article', `${runDate}_06_article_article.md`);
+    const articleContent = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+    const planIn = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
     timed(workDir, 'article', () => {
         let planUsable = true;
         const raw = isFile(planIn) ? readFileSync(planIn, 'utf-8') : '';
@@ -870,7 +870,7 @@ function dailyArticle(args: string[]): void {
         // Agent-written prose body (workflow `article-write` state) replaces the mechanical
         // per-item render when present — the 3-format split: surfdash gets an article,
         // not a news list (2026-09-16 feedback).
-        const proseBody = join(workDir, '2-article', `${runDate}_06_article-write_body.md`);
+        const proseBody = join(workDir, '22-article', `${runDate}_06_article-write_body.md`);
         kk(
             [
                 'executor',
@@ -928,9 +928,9 @@ function coverBrief(briefPath: string): { reason: string | null; subject: string
  */
 function dailyCover(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = '', fallback = ''] = args;
-    const briefPath = join(workDir, '2-cover', `${runDate}_07_cover-brief.json`);
-    const envPath = join(workDir, '2-cover', `${runDate}_07_cover_image-gen-in.json`);
-    const contentOut = join(workDir, '2-cover', 'content.json');
+    const briefPath = join(workDir, '23-cover', `${runDate}_07_cover-brief.json`);
+    const envPath = join(workDir, '23-cover', `${runDate}_07_cover_image-gen-in.json`);
+    const contentOut = join(workDir, '23-cover', 'content.json');
     timed(workDir, 'cover', () => {
         const brief = coverBrief(briefPath);
         const vars: Record<string, string> = {};
@@ -987,20 +987,20 @@ function coverNormalizeBody(workDir: string, runDate: string): void {
     // F614 R5: the artifact name follows the format preset (`<stem>-<format>-NN.<ext>`,
     // paths.ts), so normalize reads the path the plugin itself recorded in the manifest instead
     // of a hard-coded name. The legacy content-cover-01.{png,jpg} paths stay as stale cleanup.
-    const legacyPng = join(workDir, '2-cover', 'content-cover-01.png');
-    const legacyJpg = join(workDir, '2-cover', 'content-cover-01.jpg');
+    const legacyPng = join(workDir, '23-cover', 'content-cover-01.png');
+    const legacyJpg = join(workDir, '23-cover', 'content-cover-01.jpg');
     // Must match the name dailyPublishPrep and the article->cover workflow guard read:
     // `${runDate}_07_cover_cover.png` (a plain `cover-${runDate}.png` left options.coverPath
     // undefined and silently dropped the cover from both podcast and surfdash — 2026-09-16 run).
-    const out = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
-    const images = metadataOf(readJson(join(workDir, '2-cover', 'content.json'))).images;
+    const out = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+    const images = metadataOf(readJson(join(workDir, '23-cover', 'content.json'))).images;
     const first = Array.isArray(images) ? images[0] : undefined;
     const recorded =
         first !== null && typeof first === 'object' && typeof (first as Record<string, unknown>).path === 'string'
             ? ((first as Record<string, unknown>).path as string)
             : '';
     if (recorded === '' || !isFile(recorded)) {
-        failWith(1, 'cover normalize: no image artifact in 2-cover/content.json');
+        failWith(1, 'cover normalize: no image artifact in 23-cover/content.json');
     }
     const source = recorded;
     if (source.endsWith('.jpg') || source.endsWith('.jpeg')) {
@@ -1096,10 +1096,10 @@ function xhsPlan(planPath: string, count: number): { title: string; body: string
 function dailyXhsRender(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', countArg = '', style = '', provider = '', model = ''] = args;
     const count = Number.parseInt(countArg, 10);
-    const planPath = join(workDir, '2-xhs', `${runDate}_18_xhs_plan.json`);
-    const cardsDir = join(workDir, '2-xhs', 'cards');
-    const manifestPath = join(workDir, '2-xhs', 'cards.json');
-    const contentPath = join(workDir, '2-xhs', 'content.json');
+    const planPath = join(workDir, '25-xhs', `${runDate}_18_xhs_plan.json`);
+    const cardsDir = join(workDir, '25-xhs', 'cards');
+    const manifestPath = join(workDir, '25-xhs', 'cards.json');
+    const contentPath = join(workDir, '25-xhs', 'content.json');
     timed(workDir, 'xhs-render', () => {
         if (!Number.isInteger(count) || count < 1 || count > XHS_MAX_CARDS) {
             failWith(1, `xhs render: xhs_cards must be 1..${XHS_MAX_CARDS}, got '${countArg}'`);
@@ -1193,9 +1193,9 @@ function xhsStatus(path: string): string {
  */
 function dailyPublishXhs(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', live = 'false'] = args;
-    const content = join(workDir, '2-xhs', 'content.json');
-    const input = join(workDir, '3-publish', `${runDate}_19_publish-xhs_content.json`);
-    const result = join(workDir, '3-publish', `${runDate}_19_publish-xhs_result.json`);
+    const content = join(workDir, '25-xhs', 'content.json');
+    const input = join(workDir, '31-publish', `${runDate}_19_publish-xhs_content.json`);
+    const result = join(workDir, '31-publish', `${runDate}_19_publish-xhs_result.json`);
     const want = live === 'true' ? 'public' : 'draft';
     timed(workDir, 'publish-xhs', () => {
         // Cache on the *requested* status: a cached draft must not silently satisfy a later
@@ -1234,13 +1234,13 @@ function dailyPublishXhs(args: string[]): void {
  */
 function dailyScriptStyle(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
-    const snapshot = join(workDir, '2-script', `${runDate}_08_script-write_style.md`);
+    const snapshot = join(workDir, '24-script', `${runDate}_08_script-write_style.md`);
     if (isFile(snapshot)) {
         console.log(`script style cached: ${snapshot}`);
         return;
     }
     const sidecar = requireSidecar('', STYLE_SIDECAR, 'daily-voice-style');
-    const scriptDir = join(workDir, '2-script');
+    const scriptDir = join(workDir, '24-script');
     sted('mkdir', scriptDir, () => mkdirSync(scriptDir, { recursive: true }));
     sted('cp', snapshot, () => copyFileSync(sidecar, snapshot));
     console.log(`script style snapshot: ${snapshot}`);
@@ -1248,9 +1248,9 @@ function dailyScriptStyle(args: string[]): void {
 
 function dailyScript(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', language = '', title = '', voiceProfile = ''] = args;
-    const yamlOut = join(workDir, '2-script', `${runDate}_08_script_voicescript.yaml`);
-    const contentOut = join(workDir, '2-script', `${runDate}_08_script_content.json`);
-    const planIn = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    const yamlOut = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+    const contentOut = join(workDir, '24-script', `${runDate}_08_script_content.json`);
+    const planIn = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
     timed(workDir, 'script', () => {
         if (isFile(yamlOut)) {
             console.log(`voicescript capped by plan: ${yamlOut}`);
@@ -1264,7 +1264,7 @@ function dailyScript(args: string[]): void {
                 // F613 R4: always passed as absolute paths — spawnPluginEntry runs plugins with
                 // cwd = the plugin package dir, so a relative workDir would silently miss the
                 // plan; a plan file absent at build time reports missing-plan (template fallback).
-                DAILYNEWS_SCRIPT_PLAN: resolve(join(workDir, '2-script', `${runDate}_08_script-write_plan.json`)),
+                DAILYNEWS_SCRIPT_PLAN: resolve(join(workDir, '24-script', `${runDate}_08_script-write_plan.json`)),
                 DAILYNEWS_STYLE_FILE: resolve(resolveSidecar('', STYLE_SIDECAR)),
             },
         });
@@ -1286,8 +1286,8 @@ function dailyScript(args: string[]): void {
 
 function dailyWrapDocs(args: string[]): void {
     const [workDir = '', runDate = '', voiceProfile = ''] = args;
-    const scriptPath = join(workDir, '2-script', `${runDate}_08_script_voicescript.yaml`);
-    const docsPath = join(workDir, '3-audio', `${runDate}_10_wrap-docs_docs.json`);
+    const scriptPath = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+    const docsPath = join(workDir, '30-audio', `${runDate}_10_wrap-docs_docs.json`);
     timed(workDir, 'wrap-docs', () => {
         // R3 (task 0139): the second validator placement — covers a HITL-edited YAML and the
         // script-stage cache path, neither of which re-enters dailyScript's fresh-write branch.
@@ -1323,8 +1323,8 @@ function dailyGenerate(args: string[]): void {
             `generate: unknown vdriver '${vdriver}' (expected one of: ${Object.keys(VOICE_DRIVERS).join(', ')})`,
         );
     }
-    const docs = join(workDir, '3-audio', `${runDate}_10_wrap-docs_docs.json`);
-    const content = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    const docs = join(workDir, '30-audio', `${runDate}_10_wrap-docs_docs.json`);
+    const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
     timed(workDir, 'generate', () => {
         if (isFile(content) && metadataOf(readJson(content)).qc !== undefined) {
             const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
@@ -1350,7 +1350,7 @@ function dailyIntro(args: string[]): void {
         console.log('intro-music: intro_music var empty — skip');
         return;
     }
-    const contentPath = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    const contentPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
     timed(workDir, 'intro-music', () => {
         const content = requireJson(contentPath, 'intro-music');
         const meta = metadataOf(content);
@@ -1453,7 +1453,7 @@ function dailyIntro(args: string[]): void {
 
 function dailyQualityReport(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
-    const content = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
     timed(workDir, 'quality-control', () => {
         const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
         console.log('=== Voice Quality Control Report ===');
@@ -1511,10 +1511,10 @@ function stampId3Tags(audioFile: string, title: string, runDate: string, artist:
 
 function dailyPublishPrep(args: string[]): void {
     const [workDir = '', runDate = '', artist = '', album = ''] = args;
-    const articlePath = join(workDir, '2-article', `${runDate}_06_article_content.json`);
-    const audioPath = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
-    const prepPath = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
-    const coverPath = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
+    const articlePath = join(workDir, '22-article', `${runDate}_06_article_content.json`);
+    const audioPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+    const prepPath = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
+    const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
     timed(workDir, 'publish-prep', () => {
         const article = requireJson(articlePath, 'publish-prep');
         const audioMeta = metadataOf(readJson(audioPath));
@@ -1553,8 +1553,8 @@ function dailyPublishPrep(args: string[]): void {
 
 function dailyPublishSurfdash(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const prep = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
-    const result = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
+    const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
+    const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
     timed(workDir, 'publish-surfdash', () => {
         if (targetPublished(result, 'surfdash-pub')) {
             console.log(`publish-surfdash cached: surfdash target ok in ${result}`);
@@ -1583,16 +1583,16 @@ function dailyPublishSurfdash(args: string[]): void {
 
 function dailyShowNotes(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', title = ''] = args;
-    const article = join(workDir, '2-article', `${runDate}_06_article_content.json`);
+    const article = join(workDir, '22-article', `${runDate}_06_article_content.json`);
     // The preceding `publish-surfdash` state writes this artifact; `_17_publish_result.json` does
     // not exist yet at `show-notes` time (the later `publish` state merges it), so reading it left
     // PODCAST_PUB_ARTICLE_POST_PATH permanently empty (task 0137).
-    const result = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
-    const out = join(workDir, '3-publish', `${runDate}_15_show-notes_show-notes.md`);
-    const plan = join(workDir, '2-plan', `${runDate}_03_plan_plan.json`);
+    const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
+    const out = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
+    const plan = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
     // Generated-episode content carries `metadata.segments[]` — the source of real
     // audio offsets for the show-notes timeline (jump-to-item timestamps).
-    const audioContent = join(workDir, '3-audio', `${runDate}_11_generate_content.json`);
+    const audioContent = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
     timed(workDir, 'show-notes', () => {
         const effective = readJson(article)?.title;
         const titleArg = title !== '' ? title : typeof effective === 'string' ? effective : '';
@@ -1625,9 +1625,9 @@ function firstPostPath(parsed: Record<string, unknown> | null, target: string): 
 
 function dailyPublishPodcast(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const prep = join(workDir, '3-publish', `${runDate}_13_publish-prep_content.json`);
-    const notes = join(workDir, '3-publish', `${runDate}_15_show-notes_show-notes.md`);
-    const result = join(workDir, '3-publish', `${runDate}_16_publish-podcast_result.json`);
+    const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
+    const notes = join(workDir, '31-publish', `${runDate}_15_show-notes_show-notes.md`);
+    const result = join(workDir, '31-publish', `${runDate}_16_publish-podcast_result.json`);
     timed(workDir, 'publish-podcast', () => {
         if (targetPublished(result, 'podcast-pub')) {
             console.log(`publish-podcast cached: podcast target ok in ${result}`);
@@ -1667,10 +1667,10 @@ function dailyPublishPodcast(args: string[]): void {
 
 function dailyPublishClassify(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
-    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
-    const statusFile = join(workDir, '3-publish', `${runDate}_17_publish_publish-status.txt`);
-    const surfdash = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
-    const podcast = join(workDir, '3-publish', `${runDate}_16_publish-podcast_result.json`);
+    const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);
+    const statusFile = join(workDir, '31-publish', `${runDate}_17_publish_publish-status.txt`);
+    const surfdash = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
+    const podcast = join(workDir, '31-publish', `${runDate}_16_publish-podcast_result.json`);
     timed(workDir, 'publish', () => {
         // Both per-target files must exist: the pre-0133 `jq -s … || echo '[]'` chain could not read
         // a missing one (jq exits 2 after printing the slurped partial), which drove status to `none`.
@@ -1696,7 +1696,7 @@ function targetsOf(path: string): Record<string, unknown>[] {
 
 function dailyPublishPartial(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
-    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
+    const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);
     timed(workDir, 'publish-partial', () => {
         const failed = targetsOf(result)
             .filter((entry) => entry.ok !== true || entry.status !== 'published')
@@ -1727,8 +1727,8 @@ function dailyPatchSurfdash(args: string[]): void {
         return;
     }
     timed(workDir, 'patch-surfdash', () => {
-        const sdResult = join(workDir, '3-publish', `${runDate}_14_publish-surfdash_result.json`);
-        const podcastResult = join(workDir, '3-publish', `${runDate}_16_publish-podcast_result.json`);
+        const sdResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
+        const podcastResult = join(workDir, '31-publish', `${runDate}_16_publish-podcast_result.json`);
         if (!isFile(sdResult) || !isFile(podcastResult)) {
             failWith(1, 'patch-surfdash: missing surfdash/podcast publish results — run the publish states first');
         }
@@ -1755,7 +1755,7 @@ function dailyPatchSurfdash(args: string[]): void {
         const slugDir = dirname(postPath);
         const showNotesUrl = typeof pod.url === 'string' ? pod.url : '';
         const coverUrl = ((pod.metadata as Record<string, unknown> | undefined)?.imageUrl as string | undefined) ?? '';
-        const localCover = join(workDir, '2-cover', `${runDate}_07_cover_cover.png`);
+        const localCover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const dateIso = `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`;
         const crossLink: Record<string, string> = {
             zh: `🎧 本期已同步制作为播客节目，[点击收听《每日 AI 资讯 · ${dateIso}》](${showNotesUrl})。`,
@@ -1857,8 +1857,8 @@ function dailyRunReport(args: string[]): void {
     ] = args;
     const reportMd = join(workDir, `${runDate}_19_run-report_report.md`);
     const reportJson = join(workDir, `${runDate}_19_run-report_report.json`);
-    const cands = join(workDir, '2-plan', `${runDate}_19_run-report_episode-plan.json`);
-    const candidates = join(workDir, '2-plan', `${runDate}_04_quality-control-content_candidates.json`);
+    const cands = join(workDir, '21-plan', `${runDate}_19_run-report_episode-plan.json`);
+    const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
     timed(workDir, 'run-report', () => {
         if (isFile(reportMd)) {
             console.log(`run report cached: ${reportMd}`);
@@ -1880,20 +1880,20 @@ function dailyRunReport(args: string[]): void {
                 QC_MIN_IMPACT: minImpact,
                 NEWS_REPORT_REJECTED_FILE: join(
                     absWorkDir,
-                    '2-plan',
+                    '21-plan',
                     `${runDate}_04_quality-control-content_candidates.rejected.json`,
                 ),
                 NEWS_REPORT_TIMING_FILE: join(absWorkDir, 'step-timing.json'),
                 // 0139 R5b: the generate stage's QC audit, read best-effort (absent -> section omitted).
-                NEWS_REPORT_QC_FILE: join(absWorkDir, '3-audio', `${runDate}_11_generate_content.json`),
+                NEWS_REPORT_QC_FILE: join(absWorkDir, '30-audio', `${runDate}_11_generate_content.json`),
                 // 20260917 funnel: the plan stage's full selection trail (every fetched title +
                 // scores + disposition), rendered as the 选稿漏斗 section (absent -> omitted).
-                NEWS_REPORT_PLAN_AUDIT_FILE: join(absWorkDir, '2-plan', `${runDate}_03_plan_plan.json.audit.json`),
+                NEWS_REPORT_PLAN_AUDIT_FILE: join(absWorkDir, '21-plan', `${runDate}_03_plan_plan.json.audit.json`),
                 // 20260917 funnel: the blended fan-in input, rendered as the 语料构成
                 // source/category composition (absent -> omitted).
-                NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '1-ingest', `${runDate}_02_collect_blended.json`),
+                NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '10-ingest', `${runDate}_02_collect_blended.json`),
                 // F613 R5: the script stage's Content, read best-effort (absent -> 脚本来源 omitted).
-                NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '2-script', `${runDate}_08_script_content.json`),
+                NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '24-script', `${runDate}_08_script_content.json`),
                 NEWS_REPORT_DATE: runDate,
             },
         });
@@ -1914,8 +1914,8 @@ function dailyRunReport(args: string[]): void {
  */
 function dailyTranslateLocalize(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const result = join(workDir, '3-publish', `${runDate}_17_publish_result.json`);
-    const zhFile = join(workDir, '3-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
+    const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);
+    const zhFile = join(workDir, '31-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
     timed(workDir, 'translate-localize', () => {
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
         const zh = postPath.endsWith('index.md') ? postPath : '';
@@ -1924,10 +1924,10 @@ function dailyTranslateLocalize(args: string[]): void {
             for (const target of ['en', 'ja'] as const) {
                 sted(
                     'write',
-                    join(workDir, '3-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
+                    join(workDir, '31-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
                     () =>
                         writeRaw(
-                            join(workDir, '3-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
+                            join(workDir, '31-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`),
                             '',
                         ),
                 );
@@ -1936,17 +1936,17 @@ function dailyTranslateLocalize(args: string[]): void {
             return;
         }
         for (const target of ['en', 'ja'] as const) {
-            const markerFile = join(workDir, '3-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`);
+            const markerFile = join(workDir, '31-publish', `${runDate}_20_translate-localize_${target}-post-path.txt`);
             const existing = zh.replace('/zh/', `/${target}/`);
             if (isFile(existing)) {
                 sted('write', markerFile, () => writeRaw(markerFile, existing));
                 console.log(`${target} draft cached: ${existing}`);
                 continue;
             }
-            const scaffold = join(workDir, '3-publish', `${runDate}_20_translate-localize_scaffold-${target}.json`);
+            const scaffold = join(workDir, '31-publish', `${runDate}_20_translate-localize_scaffold-${target}.json`);
             const scaffoldResult = join(
                 workDir,
-                '3-publish',
+                '31-publish',
                 `${runDate}_20_translate-localize_scaffold-${target}-result.json`,
             );
             sted('write', scaffold, () =>
@@ -1970,8 +1970,8 @@ function dailyTranslateLocalize(args: string[]): void {
 
 function dailyTranslateSync(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', zhPathFile = ''] = args;
-    const sync = join(workDir, '3-publish', `${runDate}_24_translate-sync_sync.json`);
-    const syncResult = join(workDir, '3-publish', `${runDate}_24_translate-sync_sync-result.json`);
+    const sync = join(workDir, '31-publish', `${runDate}_24_translate-sync_sync.json`);
+    const syncResult = join(workDir, '31-publish', `${runDate}_24_translate-sync_sync-result.json`);
     timed(workDir, 'translate-sync', () => {
         // Reads the marker file itself — the collapsed `translate` state has no
         // cross-state var to hand the path through.

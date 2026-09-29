@@ -39,10 +39,10 @@ Both commands accept `--profile <dir>` and `--timeout <ms>`; profile dir precede
 run as the `xhs-write` → `xhs-publish` pair, sitting between `publish-podcast` and the
 `publish` classification state.
 
-- **Source:** the lead plan item only (`2-plan/<run_date>_03_plan_plan.json` item 1) — the same
+- **Source:** the lead plan item only (`21-plan/<run_date>_03_plan_plan.json` item 1) — the same
   source the daily cover's subject brief reads. One coherent story, not the whole digest.
 - **Skill vs stage:** the daily run does **not** invoke `kk:xhs-images`. It follows F614's cover
-  split instead — the agent authors copy only (`2-xhs/<run_date>_18_xhs_plan.json`), and
+  split instead — the agent authors copy only (`25-xhs/<run_date>_18_xhs_plan.json`), and
   `kk stage daily-xhs-render` owns format/style/provider/model plus the render loop. A second,
   skill-driven path into the same presets would let the card look drift.
 - **Spend:** `${vars.xhs_cards}` (default 4) is the fixed series size, rendered unattended with no

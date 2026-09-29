@@ -98,7 +98,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // 0144: the YAML delegates through `kk stage` (the kbin/pkg/st prelude is gone).
         expect(yaml).toContain('kk stage daily-prepare');
         expect(runnerSource).toContain("last30daysEnabled !== 'true'");
-        expect(runnerSource).toContain("'1-ingest/last30days-docs.json'");
+        expect(runnerSource).toContain("'10-ingest/last30days-docs.json'");
         expect(yaml).toContain('vdriver: "voicebox"');
         expect(yaml).toContain('intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"');
         expect(yaml).toContain('surfdash_root: "/Users/robin/xprojects/surfdash"');
@@ -138,8 +138,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // R2: the brief step reads the lead plan item, caps itself at 240 chars, writes JSON.
         expect(block).toContain('onError: continue');
         expect(block).toContain('allowAppend: false');
-        expect(block).toContain(`expectFile: ${workDir}/2-cover/${runDate}_07_cover-brief.json`);
-        expect(block).toContain(`2-plan/\${vars.run_date}_03_plan_plan.json`);
+        expect(block).toContain(`expectFile: ${workDir}/23-cover/${runDate}_07_cover-brief.json`);
+        expect(block).toContain(`21-plan/\${vars.run_date}_03_plan_plan.json`);
         expect(block).toContain('≤240 characters');
         expect(block).toContain('{"subject": "..."}');
         // R3: the stage owns the pinned render; normalize is unchanged.
@@ -158,10 +158,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         const block = yaml.match(/- id: xhs-write\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
         expect(block).not.toBe('');
         // E8: the card copy comes from the same lead plan item the cover reads — never the digest.
-        expect(block).toContain(`2-plan/\${vars.run_date}_03_plan_plan.json`);
+        expect(block).toContain(`21-plan/\${vars.run_date}_03_plan_plan.json`);
         expect(block).toContain('Take item 1 only');
         expect(block).toContain('onError: continue');
-        expect(block).toContain(`expectFile: ${workDir}/2-xhs/${runDate}_18_xhs_plan.json`);
+        expect(block).toContain(`expectFile: ${workDir}/25-xhs/${runDate}_18_xhs_plan.json`);
         // The stage owns the pinned render, exactly like F614's cover: one render path, no image
         // skill in the YAML (a second path would let the card look drift from the preset).
         expect(block).toContain(
@@ -273,7 +273,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `kk stage daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
-            `kk stage daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.work_dir}/3-publish/\${vars.run_date}_20_translate-localize_zh-post-path.txt"`,
+            `kk stage daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.work_dir}/31-publish/\${vars.run_date}_20_translate-localize_zh-post-path.txt"`,
         ]) {
             expect(yaml, call.slice(12, 40)).toContain(call);
         }
@@ -319,7 +319,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(block).toContain(`kk stage daily-script-style "\${vars.work_dir}" "\${vars.run_date}"`);
         expect(block).toContain('onError: continue');
         expect(block).toContain('allowAppend: false');
-        expect(block).toContain(`expectFile: \${vars.work_dir}/2-script/\${vars.run_date}_08_script-write_plan.json`);
+        expect(block).toContain(`expectFile: \${vars.work_dir}/24-script/\${vars.run_date}_08_script-write_plan.json`);
 
         const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
         // First match wins: cover stays the first article edge, script-write sits above the
@@ -341,10 +341,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             expect(guard, `${edge} guard`).toContain(`test "\${vars.script_write_enabled}" = "true"`);
             expect(guard, `${edge} guard`).toContain(`test "\${vars.language}" = "zh"`);
             expect(guard, `${edge} guard`).toContain(
-                `test ! -f "\${vars.work_dir}/2-script/\${vars.run_date}_08_script-write_plan.json"`,
+                `test ! -f "\${vars.work_dir}/24-script/\${vars.run_date}_08_script-write_plan.json"`,
             );
             expect(guard, `${edge} guard`).toContain(
-                `test ! -f "\${vars.work_dir}/2-script/\${vars.run_date}_08_script_voicescript.yaml"`,
+                `test ! -f "\${vars.work_dir}/24-script/\${vars.run_date}_08_script_voicescript.yaml"`,
             );
         }
     });
@@ -576,35 +576,35 @@ if (plugin === 'aihot-ingest') {
                 );
 
                 expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
-                expect(existsSync(join(workDir, '1-ingest/source.json'))).toBe(true);
+                expect(existsSync(join(workDir, '10-ingest/source.json'))).toBe(true);
                 const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
                 // 0097: per-source docs live in fan-in's internal temp files — only blended.json lands.
-                expect(existsSync(join(workDir, `1-ingest/${runDate}_02_collect_blended.json`))).toBe(true);
-                expect(existsSync(join(workDir, '1-ingest/docs.json'))).toBe(false);
-                expect(existsSync(join(workDir, '1-ingest/last30days-docs.json'))).toBe(false);
-                expect(existsSync(join(workDir, `1-ingest/horizon-docs-${runDate}.json`))).toBe(false);
-                expect(existsSync(join(workDir, `2-facts/${runDate}_02_collect_content.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-facts/${runDate}_02_collect_core-facts.md`))).toBe(true);
-                expect(existsSync(join(workDir, `2-plan/${runDate}_03_plan_content.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-plan/${runDate}_03_plan_plan.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-plan/${runDate}_04_quality-control-content_annotated.json`))).toBe(
+                expect(existsSync(join(workDir, `10-ingest/${runDate}_02_collect_blended.json`))).toBe(true);
+                expect(existsSync(join(workDir, '10-ingest/docs.json'))).toBe(false);
+                expect(existsSync(join(workDir, '10-ingest/last30days-docs.json'))).toBe(false);
+                expect(existsSync(join(workDir, `10-ingest/horizon-docs-${runDate}.json`))).toBe(false);
+                expect(existsSync(join(workDir, `20-facts/${runDate}_02_collect_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `20-facts/${runDate}_02_collect_core-facts.md`))).toBe(true);
+                expect(existsSync(join(workDir, `21-plan/${runDate}_03_plan_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `21-plan/${runDate}_03_plan_plan.json`))).toBe(true);
+                expect(existsSync(join(workDir, `21-plan/${runDate}_04_quality-control-content_annotated.json`))).toBe(
                     true,
                 );
-                expect(existsSync(join(workDir, `2-plan/${runDate}_04_quality-control-content_candidates.json`))).toBe(
+                expect(existsSync(join(workDir, `21-plan/${runDate}_04_quality-control-content_candidates.json`))).toBe(
                     true,
                 );
                 expect(
-                    existsSync(join(workDir, `2-plan/${runDate}_04_quality-control-content_candidates.rejected.json`)),
+                    existsSync(join(workDir, `21-plan/${runDate}_04_quality-control-content_candidates.rejected.json`)),
                 ).toBe(true);
-                expect(existsSync(join(workDir, `2-article/${runDate}_06_article_content.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-article/${runDate}_06_article_article.md`))).toBe(true);
-                expect(existsSync(join(workDir, `2-script/${runDate}_08_script_content.json`))).toBe(true);
-                expect(existsSync(join(workDir, `2-script/${runDate}_08_script_voicescript.yaml`))).toBe(true);
-                expect(existsSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`))).toBe(true);
-                expect(existsSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`))).toBe(true);
-                expect(existsSync(join(workDir, '3-audio/content.wav'))).toBe(true);
+                expect(existsSync(join(workDir, `22-article/${runDate}_06_article_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `22-article/${runDate}_06_article_article.md`))).toBe(true);
+                expect(existsSync(join(workDir, `24-script/${runDate}_08_script_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, `24-script/${runDate}_08_script_voicescript.yaml`))).toBe(true);
+                expect(existsSync(join(workDir, `30-audio/${runDate}_10_wrap-docs_docs.json`))).toBe(true);
+                expect(existsSync(join(workDir, `30-audio/${runDate}_11_generate_content.json`))).toBe(true);
+                expect(existsSync(join(workDir, '30-audio/content.wav'))).toBe(true);
                 const generated = JSON.parse(
-                    readFileSync(join(workDir, `3-audio/${runDate}_11_generate_content.json`), 'utf8'),
+                    readFileSync(join(workDir, `30-audio/${runDate}_11_generate_content.json`), 'utf8'),
                 );
                 const generatorByDriver: Record<string, string> = {
                     ominivoice: 'kk:omni-voice-gen',
@@ -658,7 +658,7 @@ if (plugin === 'aihot-ingest') {
                 ).toBe(true);
 
                 const wrappedDocs = JSON.parse(
-                    readFileSync(join(workDir, `3-audio/${runDate}_10_wrap-docs_docs.json`), 'utf8'),
+                    readFileSync(join(workDir, `30-audio/${runDate}_10_wrap-docs_docs.json`), 'utf8'),
                 );
                 expect(wrappedDocs[0].metadata.voiceProfile).toBe('Alex');
             } finally {
@@ -675,15 +675,15 @@ if (plugin === 'aihot-ingest') {
         // 0133: the stage directories are created and addressed by the runner, so the enumeration
         // reads the runner's `join(workDir, '<stage>', `${runDate}_NN_step_name`)` calls.
         const stages = [
-            '1-ingest',
-            '2-facts',
-            '2-plan',
-            '2-article',
-            '2-cover',
-            '2-xhs',
-            '2-script',
-            '3-audio',
-            '3-publish',
+            '10-ingest',
+            '20-facts',
+            '21-plan',
+            '22-article',
+            '23-cover',
+            '25-xhs',
+            '24-script',
+            '30-audio',
+            '31-publish',
         ];
         for (const stage of stages) {
             // Count distinct artifact references the runner builds for this stage: either the

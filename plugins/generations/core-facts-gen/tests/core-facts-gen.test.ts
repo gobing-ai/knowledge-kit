@@ -17,7 +17,7 @@ const DOCS: Doc[] = [
         metadata: {
             source: 'aihot',
             published_at: '2026-09-02',
-            sources: [{ file: '1-ingest/docs.json', sourceUri: 'https://example.com/alpha' }],
+            sources: [{ file: '10-ingest/docs.json', sourceUri: 'https://example.com/alpha' }],
         },
     },
     {
@@ -28,8 +28,8 @@ const DOCS: Doc[] = [
         metadata: {
             score: 8,
             sources: [
-                { file: '1-ingest/docs.json', sourceUri: 'https://example.com/llama-a' },
-                { file: '1-ingest/horizon.json', sourceUri: 'https://example.com/llama-h' },
+                { file: '10-ingest/docs.json', sourceUri: 'https://example.com/llama-a' },
+                { file: '10-ingest/horizon.json', sourceUri: 'https://example.com/llama-h' },
             ],
         },
     },
@@ -41,7 +41,7 @@ const DOCS: Doc[] = [
         metadata: {
             source: 'reddit',
             relevance_score: 0.87,
-            sources: [{ file: '1-ingest/last30days.json' }],
+            sources: [{ file: '10-ingest/last30days.json' }],
         },
     },
 ];
@@ -56,9 +56,9 @@ describe('renderCoreFacts', () => {
         expect(md).toContain('date: 2026-09-03');
         expect(md).toContain('dedup_rule: id');
         expect(md).toContain('doc_count: 3');
-        expect(md).toContain('- docs.json (1-ingest/docs.json)');
-        expect(md).toContain('- horizon.json (1-ingest/horizon.json)');
-        expect(md).toContain('- last30days.json (1-ingest/last30days.json)');
+        expect(md).toContain('- docs.json (10-ingest/docs.json)');
+        expect(md).toContain('- horizon.json (10-ingest/horizon.json)');
+        expect(md).toContain('- last30days.json (10-ingest/last30days.json)');
         expect(md).toContain('### Alpha ships');
         expect(md).toContain('**Source:** aihot');
         expect(md).toContain('**Score:** 8'); // metadata.score wins

@@ -514,7 +514,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-classify derives full/partial/none and writes the status file', () => {
         withTempDir((dir) => {
-            const publish = join(dir, '3-publish');
+            const publish = join(dir, '31-publish');
             mkdirSync(publish, { recursive: true });
             const stamp = '20260101';
             const write = (name: string, ok: boolean, status: string) =>
@@ -542,7 +542,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-classify reports none when a per-target result file is missing', () => {
         withTempDir((dir) => {
-            const publish = join(dir, '3-publish');
+            const publish = join(dir, '31-publish');
             mkdirSync(publish, { recursive: true });
             const stamp = '20260101';
             // Only the surfdash file exists: the pre-0133 `jq -s` chain could not read the pair and
@@ -574,9 +574,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     "fs.writeFileSync(out, JSON.stringify({ body: '# article' }));",
                 ].join('\n'),
             );
-            for (const sub of ['2-plan', '2-article']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['21-plan', '22-article']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a' }]));
+            writeFileSync(join(dir, `21-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a' }]));
             expect(run(['daily-article', dir, stamp, ''], { ...env, ENV_DUMP: envDump }).status).toBe(0);
             expect(JSON.parse(readFileSync(envDump, 'utf-8'))).toEqual({ ART_DATE: undefined, ARTICLE_DATE: stamp });
         });
@@ -584,17 +584,17 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-prep stamps the ID3 tags on the MP3 enclosure and drops an absent cover path', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            const audio = join(dir, '3-audio/content.mp3');
+            const audio = join(dir, '30-audio/content.mp3');
             const record = join(dir, 'ffmpeg-argv.json');
             writeFileSync(audio, 'mp3-bytes');
             writeFileSync(
-                join(dir, `2-article/${stamp}_06_article_content.json`),
+                join(dir, `22-article/${stamp}_06_article_content.json`),
                 JSON.stringify({ title: 'T', body: 'B' }),
             );
             writeFileSync(
-                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
             );
             expect(
@@ -627,7 +627,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(readFileSync(audio, 'utf-8')).toBe('tagged');
             expect(existsSync(`${audio}.id3.tmp.mp3`)).toBe(false);
             const merged = JSON.parse(
-                readFileSync(join(dir, `3-publish/${stamp}_13_publish-prep_content.json`), 'utf-8'),
+                readFileSync(join(dir, `31-publish/${stamp}_13_publish-prep_content.json`), 'utf-8'),
             ) as { metadata: Record<string, unknown>; options: Record<string, unknown> };
             expect(merged.metadata.audioFile).toBe(audio);
             expect(merged.metadata.runDate).toBe(stamp);
@@ -638,17 +638,17 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-prep omits the artist/album tags when those vars are empty', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            const audio = join(dir, '3-audio/content.mp3');
+            const audio = join(dir, '30-audio/content.mp3');
             const record = join(dir, 'ffmpeg-argv.json');
             writeFileSync(audio, 'mp3-bytes');
             writeFileSync(
-                join(dir, `2-article/${stamp}_06_article_content.json`),
+                join(dir, `22-article/${stamp}_06_article_content.json`),
                 JSON.stringify({ title: 'T', body: 'B' }),
             );
             writeFileSync(
-                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { mp3Path: audio, duration: 12 } }),
             );
             expect(run(['daily-publish-prep', dir, stamp, '', ''], fakeFfmpeg(dir, record)).status).toBe(0);
@@ -660,16 +660,16 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-prep rejects a non-MP3 enclosure naming transcode_mp3', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            const wav = join(dir, '3-audio/content.wav');
+            const wav = join(dir, '30-audio/content.wav');
             writeFileSync(wav, 'RIFF-fake-wave');
             writeFileSync(
-                join(dir, `2-article/${stamp}_06_article_content.json`),
+                join(dir, `22-article/${stamp}_06_article_content.json`),
                 JSON.stringify({ title: 'T', body: 'B' }),
             );
             writeFileSync(
-                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { audioPath: wav, duration: 12 } }),
             );
             const result = run(
@@ -679,22 +679,22 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(result.status).toBe(1);
             expect(result.stderr).toContain('publish-prep: resolved audio is not an MP3');
             expect(result.stderr).toContain('transcode_mp3');
-            expect(existsSync(join(dir, `3-publish/${stamp}_13_publish-prep_content.json`))).toBe(false);
+            expect(existsSync(join(dir, `31-publish/${stamp}_13_publish-prep_content.json`))).toBe(false);
         });
     });
 
     it('daily-publish-prep fails the stage when the ffmpeg ID3 stamp fails, leaving the audio untouched', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            const audio = join(dir, '3-audio/content.mp3');
+            const audio = join(dir, '30-audio/content.mp3');
             writeFileSync(audio, 'mp3-bytes');
             writeFileSync(
-                join(dir, `2-article/${stamp}_06_article_content.json`),
+                join(dir, `22-article/${stamp}_06_article_content.json`),
                 JSON.stringify({ title: 'T', body: 'B' }),
             );
             writeFileSync(
-                join(dir, `3-audio/${stamp}_11_generate_content.json`),
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
             );
             const result = run(
@@ -705,16 +705,16 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(result.stderr).toContain('publish-prep: ffmpeg ID3 stamp failed: ffmpeg: boom');
             expect(readFileSync(audio, 'utf-8')).toBe('mp3-bytes');
             expect(existsSync(`${audio}.id3.tmp.mp3`)).toBe(false);
-            expect(existsSync(join(dir, `3-publish/${stamp}_13_publish-prep_content.json`))).toBe(false);
+            expect(existsSync(join(dir, `31-publish/${stamp}_13_publish-prep_content.json`))).toBe(false);
         });
     });
 
     it('daily-publish-prep fails loud when the voice content carries no audio path', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            writeFileSync(join(dir, `2-article/${stamp}_06_article_content.json`), JSON.stringify({ title: 'T' }));
-            writeFileSync(join(dir, `3-audio/${stamp}_11_generate_content.json`), JSON.stringify({ metadata: {} }));
+            writeFileSync(join(dir, `22-article/${stamp}_06_article_content.json`), JSON.stringify({ title: 'T' }));
+            writeFileSync(join(dir, `30-audio/${stamp}_11_generate_content.json`), JSON.stringify({ metadata: {} }));
             const result = run(['daily-publish-prep', dir, stamp]);
             expect(result.status).toBe(1);
             expect(result.stderr).toContain('publish-prep: voice content carries no mp3Path/audioPath');
@@ -723,18 +723,18 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-prep fails loud naming the path when the article content file is missing (date-shape mismatch)', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-article', '3-audio', '3-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
             const result = run(['daily-publish-prep', dir, '2026-01-01']);
             expect(result.status).toBe(1);
             expect(result.stderr).toContain(
-                `required input not found or unparsable: ${join(dir, '2-article/2026-01-01_06_article_content.json')}`,
+                `required input not found or unparsable: ${join(dir, '22-article/2026-01-01_06_article_content.json')}`,
             );
         });
     });
 
     it('daily-cover-normalize renames the manifest-recorded png cover and clears the stale artifacts', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             // F614: the artifact name follows the format preset; normalize follows the manifest.
             const artifact = join(cover, 'content-daily-news-cover-01.png');
@@ -755,7 +755,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
     const itMacOnly = it.skipIf(process.platform !== 'darwin');
     itMacOnly('daily-cover-normalize transcodes a manifest-recorded jpg cover via sips', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             const artifact = join(cover, 'content-daily-news-cover-01.jpg');
             writeFileSync(artifact, JPEG_BYTES);
@@ -768,21 +768,21 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-cover-normalize fails loud when the manifest is missing or carries no image path', () => {
         withTempDir((dir) => {
-            mkdirSync(join(dir, '2-cover'), { recursive: true });
+            mkdirSync(join(dir, '23-cover'), { recursive: true });
             const missing = run(['daily-cover-normalize', dir, '20260101']);
             expect(missing.status).toBe(1);
-            expect(missing.stderr).toContain('cover normalize: no image artifact in 2-cover/content.json');
+            expect(missing.stderr).toContain('cover normalize: no image artifact in 23-cover/content.json');
 
-            writeFileSync(join(dir, '2-cover/content.json'), JSON.stringify({ metadata: { images: [] } }));
+            writeFileSync(join(dir, '23-cover/content.json'), JSON.stringify({ metadata: { images: [] } }));
             const empty = run(['daily-cover-normalize', dir, '20260101']);
             expect(empty.status).toBe(1);
-            expect(empty.stderr).toContain('cover normalize: no image artifact in 2-cover/content.json');
+            expect(empty.stderr).toContain('cover normalize: no image artifact in 23-cover/content.json');
         });
     });
 
     it('daily-cover-normalize fails loud when sips is absent for a jpg cover', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             const artifact = join(cover, 'content-daily-news-cover-01.jpg');
             writeFileSync(artifact, 'jpg');
@@ -794,7 +794,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const result = run(['daily-cover-normalize', dir, '20260101'], { PATH: bin });
             expect(result.status).toBe(1);
             expect(result.stderr).toContain('cover normalize: sips not found; cannot transcode jpg -> png');
-            expect(existsSync(join(dir, '2-cover/20260101_07_cover_cover.png'))).toBe(false);
+            expect(existsSync(join(dir, '23-cover/20260101_07_cover_cover.png'))).toBe(false);
         });
     });
 
@@ -842,7 +842,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');
             const env = fakeXhsKk(dir, record, 'image-gen');
-            const xhs = join(dir, '2-xhs');
+            const xhs = join(dir, '25-xhs');
             mkdirSync(xhs, { recursive: true });
             writeFileSync(
                 join(xhs, '20260101_18_xhs_plan.json'),
@@ -916,7 +916,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-xhs-render refuses a plan whose card count disagrees with xhs_cards, and one not opening on the cover (E8)', () => {
         withTempDir((dir) => {
-            const xhs = join(dir, '2-xhs');
+            const xhs = join(dir, '25-xhs');
             mkdirSync(xhs, { recursive: true });
             const plan = join(xhs, '20260101_18_xhs_plan.json');
             writeFileSync(plan, JSON.stringify({ title: 't', body: 'b', cards: [xhsCard('cover', 'c', 'sp')] }));
@@ -941,10 +941,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');
             const env = fakeXhsKk(dir, record, 'image-gen');
-            const cards = join(dir, '2-xhs/cards');
+            const cards = join(dir, '25-xhs/cards');
             mkdirSync(cards, { recursive: true });
             writeFileSync(
-                join(dir, '2-xhs/20260101_18_xhs_plan.json'),
+                join(dir, '25-xhs/20260101_18_xhs_plan.json'),
                 JSON.stringify({
                     title: 't',
                     body: 'b',
@@ -966,7 +966,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(calls.length).toBe(1);
             expect(calls[0]).toContain('card-02');
             expect(readFileSync(join(cards, 'card-01.prompt.txt'), 'utf-8')).toBe('composed earlier');
-            const content = JSON.parse(readFileSync(join(dir, '2-xhs/content.json'), 'utf-8')) as {
+            const content = JSON.parse(readFileSync(join(dir, '25-xhs/content.json'), 'utf-8')) as {
                 metadata: { images: { path: string }[] };
             };
             expect(content.metadata.images.map((image) => image.path)).toEqual([
@@ -980,8 +980,8 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');
             const env = fakeXhsKk(dir, record, 'xhs-pub');
-            const xhs = join(dir, '2-xhs');
-            const publish = join(dir, '3-publish');
+            const xhs = join(dir, '25-xhs');
+            const publish = join(dir, '31-publish');
             mkdirSync(xhs, { recursive: true });
             mkdirSync(publish, { recursive: true });
 
@@ -1026,10 +1026,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const record = join(dir, 'kk-argv.jsonl');
             // The plugin fails (expired XHS session, changed console): the run must survive it.
             const env = fakeXhsKk(dir, record, 'xhs-pub', 1);
-            mkdirSync(join(dir, '2-xhs'), { recursive: true });
-            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            mkdirSync(join(dir, '25-xhs'), { recursive: true });
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
             writeFileSync(
-                join(dir, '2-xhs/content.json'),
+                join(dir, '25-xhs/content.json'),
                 JSON.stringify({
                     title: 't',
                     body: 'b',
@@ -1045,14 +1045,14 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-wrap-docs hashes the file URL the shell built and labels the profile', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-script', '3-audio']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['24-script', '30-audio']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260101';
-            const scriptPath = join(dir, `2-script/${stamp}_08_script_voicescript.yaml`);
+            const scriptPath = join(dir, `24-script/${stamp}_08_script_voicescript.yaml`);
             // A minimal *valid* VoiceScript: the wrap-docs stage now runs the R3 content validator,
             // so a schema-invalid stub no longer reaches the doc packaging it is here to exercise.
             writeFileSync(scriptPath, 'language: en\nsegments:\n  - text: "Hello and welcome to the episode."\n');
             expect(run(['daily-wrap-docs', dir, stamp, 'Alex']).status).toBe(0);
-            const docs = JSON.parse(readFileSync(join(dir, `3-audio/${stamp}_10_wrap-docs_docs.json`), 'utf-8')) as {
+            const docs = JSON.parse(readFileSync(join(dir, `30-audio/${stamp}_10_wrap-docs_docs.json`), 'utf-8')) as {
                 id: string;
                 sourceUri: string;
                 body: string;
@@ -1077,22 +1077,22 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     "fs.writeFileSync(out, JSON.stringify({ body: 'facts body' }));",
                 ].join('\n'),
             );
-            mkdirSync(join(dir, '1-ingest'), { recursive: true });
-            mkdirSync(join(dir, '2-facts'), { recursive: true });
+            mkdirSync(join(dir, '10-ingest'), { recursive: true });
+            mkdirSync(join(dir, '20-facts'), { recursive: true });
             const stamp = '20260101';
-            writeFileSync(join(dir, `1-ingest/${stamp}_02_collect_blended.json`), '[]');
+            writeFileSync(join(dir, `10-ingest/${stamp}_02_collect_blended.json`), '[]');
             expect(run(['daily-collect-facts', dir, stamp, ''], env).status).toBe(0);
-            expect(readFileSync(join(dir, `2-facts/${stamp}_02_collect_core-facts.md`), 'utf-8')).toBe('facts body');
+            expect(readFileSync(join(dir, `20-facts/${stamp}_02_collect_core-facts.md`), 'utf-8')).toBe('facts body');
             // Second run takes the cache branch (the fake kk would overwrite the body otherwise).
-            writeFileSync(join(dir, `2-facts/${stamp}_02_collect_content.json`), JSON.stringify({ body: 'ignored' }));
+            writeFileSync(join(dir, `20-facts/${stamp}_02_collect_content.json`), JSON.stringify({ body: 'ignored' }));
             expect(run(['daily-collect-facts', dir, stamp, ''], env).status).toBe(0);
-            expect(readFileSync(join(dir, `2-facts/${stamp}_02_collect_core-facts.md`), 'utf-8')).toBe('facts body');
+            expect(readFileSync(join(dir, `20-facts/${stamp}_02_collect_core-facts.md`), 'utf-8')).toBe('facts body');
         });
     });
 
     it('daily-translate-localize writes zh/en/ja markers, skips without a zh path, scaffolds otherwise', () => {
         withTempDir((dir) => {
-            const publish = join(dir, '3-publish');
+            const publish = join(dir, '31-publish');
             mkdirSync(publish, { recursive: true });
             const stamp = '20260101';
             // No result.json → no post path → all markers written empty and no scaffolding runs.
@@ -1148,7 +1148,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-translate-sync skips without a zh path file and syncs through the zh marker', () => {
         withTempDir((dir) => {
-            const publish = join(dir, '3-publish');
+            const publish = join(dir, '31-publish');
             mkdirSync(publish, { recursive: true });
             const stamp = '20260101';
             // No marker file at all → loud skip without invoking kk.
@@ -1176,10 +1176,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-publish-partial names the failed targets and preserves the retry file', () => {
         withTempDir((dir) => {
-            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
             const stamp = '20260101';
             writeFileSync(
-                join(dir, `3-publish/${stamp}_17_publish_result.json`),
+                join(dir, `31-publish/${stamp}_17_publish_result.json`),
                 JSON.stringify({
                     targets: [
                         { target: 'surfdash-pub', ok: true, status: 'published' },
@@ -1218,11 +1218,11 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-show-notes forwards the published surfdash post path so the timeline layout engages', () => {
         withTempDir((dir) => {
-            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
             const stamp = '20260101';
             const postPath = '/posts/zh/daily-ai-20260101/index.md';
             writeFileSync(
-                join(dir, `3-publish/${stamp}_14_publish-surfdash_result.json`),
+                join(dir, `31-publish/${stamp}_14_publish-surfdash_result.json`),
                 JSON.stringify({
                     targets: [{ target: 'surfdash-pub', ok: true, status: 'published', metadata: { postPath } }],
                 }),
@@ -1239,14 +1239,14 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-show-notes degrades to an empty article post path when the surfdash result is absent or failed', () => {
         withTempDir((dir) => {
-            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
             const stamp = '20260101';
             // Absent file — the surfdash state never ran or published nothing.
             expect(run(['daily-show-notes', dir, stamp, '', 'T'], showNotesKk(dir)).status).toBe(0);
             expect(showNotesEnv(dir).PODCAST_PUB_ARTICLE_POST_PATH).toBe('');
             // Present file with a failed target — the legacy full-body layout must survive.
             writeFileSync(
-                join(dir, `3-publish/${stamp}_14_publish-surfdash_result.json`),
+                join(dir, `31-publish/${stamp}_14_publish-surfdash_result.json`),
                 JSON.stringify({
                     targets: [{ target: 'surfdash-pub', ok: false, status: 'failed', metadata: { postPath: null } }],
                 }),
@@ -1258,10 +1258,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
 
     it('daily-show-notes never depends on _17_publish_result.json, which the later publish state writes', () => {
         withTempDir((dir) => {
-            mkdirSync(join(dir, '3-publish'), { recursive: true });
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
             const stamp = '20260101';
             writeFileSync(
-                join(dir, `3-publish/${stamp}_17_publish_result.json`),
+                join(dir, `31-publish/${stamp}_17_publish_result.json`),
                 JSON.stringify({
                     targets: [
                         {
@@ -1326,7 +1326,7 @@ describe('F614 (0163) — daily-cover stage', () => {
 
     it('daily-cover writes the brief subject into the pinned image-gen envelope and invokes the plugin', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
             const env = fakeImageGen(dir);
@@ -1369,7 +1369,7 @@ describe('F614 (0163) — daily-cover stage', () => {
 
     it('daily-cover maps the 6th fallback arg onto the envelope: absent / true / comma list (D6 0166 R7)', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
             const env = fakeImageGen(dir);
@@ -1392,7 +1392,7 @@ describe('F614 (0163) — daily-cover stage', () => {
 
     it('daily-cover omits empty provider/model keys and forwards a non-empty plugins path', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
             const env = fakeImageGen(dir);
@@ -1447,7 +1447,7 @@ describe('F614 (0163) — daily-cover stage', () => {
         ];
         for (const [name, briefText, reason] of cases) {
             withTempDir((dir) => {
-                const cover = join(dir, '2-cover');
+                const cover = join(dir, '23-cover');
                 mkdirSync(cover, { recursive: true });
                 if (briefText !== null) writeFileSync(join(cover, '20260101_07_cover-brief.json'), briefText);
                 const env = fakeImageGen(dir);
@@ -1472,7 +1472,7 @@ describe('F614 (0163) — daily-cover stage', () => {
 
     it('daily-cover fails the stage when the image-gen plugin fails', () => {
         withTempDir((dir) => {
-            const cover = join(dir, '2-cover');
+            const cover = join(dir, '23-cover');
             mkdirSync(cover, { recursive: true });
             writeFileSync(join(cover, '20260101_07_cover-brief.json'), JSON.stringify({ subject: briefSubject }));
             // A fake kk that exits non-zero: a plugin failure is a real failure (no fallback).
@@ -1549,9 +1549,9 @@ describe('kk workflow stage runner — post-translation plan dedup (0138 R3)', (
                     "require('node:fs').writeFileSync(out, JSON.stringify({ body: '# article' }));",
                 ].join('\n'),
             );
-            for (const sub of ['2-plan', '2-article']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['21-plan', '22-article']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260916';
-            const planPath = join(dir, `2-plan/${stamp}_03_plan_plan.json`);
+            const planPath = join(dir, `21-plan/${stamp}_03_plan_plan.json`);
             writeFileSync(
                 planPath,
                 JSON.stringify([
@@ -1606,9 +1606,9 @@ describe('0139 R3 — voicescript content gate wiring', () => {
 
     it('daily-script exits non-zero when the generated voicescript carries a 标签 metadata tail', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260916';
-            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            writeFileSync(join(dir, `21-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
             const bodyPath = join(dir, 'body.yaml');
             writeFileSync(
                 bodyPath,
@@ -1624,14 +1624,14 @@ describe('0139 R3 — voicescript content gate wiring', () => {
 
     it('daily-script passes a clean voicescript through to the file', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260916';
-            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            writeFileSync(join(dir, `21-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
             const bodyPath = join(dir, 'body.yaml');
             writeFileSync(bodyPath, validScript());
             const result = run(['daily-script', dir, stamp, '', 'en', 'T', 'Robin'], fakeKkEchoingBody(dir, bodyPath));
             expect(result.status).toBe(0);
-            expect(readFileSync(join(dir, `2-script/${stamp}_08_script_voicescript.yaml`), 'utf-8')).toBe(
+            expect(readFileSync(join(dir, `24-script/${stamp}_08_script_voicescript.yaml`), 'utf-8')).toBe(
                 validScript(),
             );
         });
@@ -1639,9 +1639,9 @@ describe('0139 R3 — voicescript content gate wiring', () => {
 
     it('daily-wrap-docs rejects a HITL-edited duplicate segment, then proceeds once repaired', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-script', '3-audio']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['24-script', '30-audio']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260916';
-            const scriptPath = join(dir, `2-script/${stamp}_08_script_voicescript.yaml`);
+            const scriptPath = join(dir, `24-script/${stamp}_08_script_voicescript.yaml`);
             const duplicated = [
                 'language: en',
                 'segments:',
@@ -1657,14 +1657,14 @@ describe('0139 R3 — voicescript content gate wiring', () => {
             expect(rejected.stderr).toContain('segment 1');
             expect(rejected.stderr).toContain('duplicates segment 0');
             // Nothing packaged while the gate is red.
-            expect(existsSync(join(dir, `3-audio/${stamp}_10_wrap-docs_docs.json`))).toBe(false);
+            expect(existsSync(join(dir, `30-audio/${stamp}_10_wrap-docs_docs.json`))).toBe(false);
 
             // Recovery is an operator edit + re-run: the repaired YAML packages normally, so generate
             // consumes it.
             writeFileSync(scriptPath, validScript('  - text: "Second segment."'));
             const repaired = run(['daily-wrap-docs', dir, stamp, 'Robin']);
             expect(repaired.status).toBe(0);
-            const docs = JSON.parse(readFileSync(join(dir, `3-audio/${stamp}_10_wrap-docs_docs.json`), 'utf-8')) as {
+            const docs = JSON.parse(readFileSync(join(dir, `30-audio/${stamp}_10_wrap-docs_docs.json`), 'utf-8')) as {
                 body: string;
             }[];
             expect(docs[0]?.body).toContain('Hello and welcome to the episode.');
@@ -1704,7 +1704,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
     it('daily-script-style snapshots the shipped style sidecar and is idempotent (R1)', () => {
         withTempDir((dir) => {
             const stamp = '20260925';
-            const snapshot = join(dir, `2-script/${stamp}_08_script-write_style.md`);
+            const snapshot = join(dir, `24-script/${stamp}_08_script-write_style.md`);
             expect(run(['daily-script-style', dir, stamp]).status).toBe(0);
             expect(existsSync(snapshot)).toBe(true);
             expect(readFileSync(snapshot, 'utf-8')).toBe(readFileSync(STYLE_SIDECAR, 'utf-8'));
@@ -1737,9 +1737,9 @@ describe('F613 (0162) — script-write stage wiring', () => {
 
     it('daily-script always passes the absolute plan and style paths (R4)', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260925';
-            writeFileSync(join(dir, `2-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+            writeFileSync(join(dir, `21-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
             const envLog = join(dir, 'env.jsonl');
             const result = run(['daily-script', dir, stamp, '', 'zh', 'T', 'Robin'], {
                 KK_TEST_ENV_LOG: envLog,
@@ -1747,17 +1747,17 @@ describe('F613 (0162) — script-write stage wiring', () => {
             });
             expect(result.status).toBe(0);
             const env = lastEnv(envLog);
-            expect(env.DAILYNEWS_SCRIPT_PLAN).toBe(resolve(dir, '2-script', `${stamp}_08_script-write_plan.json`));
+            expect(env.DAILYNEWS_SCRIPT_PLAN).toBe(resolve(dir, '24-script', `${stamp}_08_script-write_plan.json`));
             expect(env.DAILYNEWS_STYLE_FILE).toBe(resolve(STYLE_SIDECAR));
         });
     });
 
     it('daily-run-report passes NEWS_REPORT_SCRIPT_FILE for the 脚本来源 read (R5)', () => {
         withTempDir((dir) => {
-            for (const sub of ['2-plan', '2-script']) mkdirSync(join(dir, sub), { recursive: true });
+            for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
             const stamp = '20260925';
             writeFileSync(
-                join(dir, `2-plan/${stamp}_04_quality-control-content_candidates.json`),
+                join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`),
                 JSON.stringify({ metadata: { docs: [] } }),
             );
             const envLog = join(dir, 'env.jsonl');
@@ -1767,7 +1767,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             });
             expect(result.status).toBe(0);
             expect(lastEnv(envLog).NEWS_REPORT_SCRIPT_FILE).toBe(
-                resolve(dir, '2-script', `${stamp}_08_script_content.json`),
+                resolve(dir, '24-script', `${stamp}_08_script_content.json`),
             );
         });
     });
@@ -1794,7 +1794,7 @@ describe('kk workflow stage runner — daily-prepare work_dir composition (0139)
             expect(res.status).toBe(0);
             const work = join(dir, 'kk-daily-ai-voice/20260918');
             expect(readFileSync(join(work, 'run-date.txt'), 'utf-8')).toBe('20260918\n');
-            expect(existsSync(join(work, '1-ingest/source.json'))).toBe(true);
+            expect(existsSync(join(work, '10-ingest/source.json'))).toBe(true);
             expect(anchor(dir)).toBe(`${work}\n`);
         });
     });
@@ -1859,7 +1859,7 @@ describe('daily-patch-surfdash git scoping and frontmatter (R6/R11)', () => {
             'utf-8',
         );
 
-        const pub = join(workDir, '3-publish');
+        const pub = join(workDir, '31-publish');
         mkdirSync(pub, { recursive: true });
         writeFileSync(
             join(pub, `${RUN_DATE}_14_publish-surfdash_result.json`),
@@ -1971,14 +1971,14 @@ describe('daily-intro (0176)', () => {
 
     function setupWorkDir(dir: string, metadata: Record<string, unknown>): string {
         const workDir = join(dir, 'work');
-        mkdirSync(join(workDir, '3-audio'), { recursive: true });
-        writeFileSync(join(workDir, '3-audio', `${RUN_DATE}_11_generate_content.json`), JSON.stringify({ metadata }));
+        mkdirSync(join(workDir, '30-audio'), { recursive: true });
+        writeFileSync(join(workDir, '30-audio', `${RUN_DATE}_11_generate_content.json`), JSON.stringify({ metadata }));
         return workDir;
     }
 
     function readMeta(workDir: string): Record<string, unknown> {
         const content = JSON.parse(
-            readFileSync(join(workDir, '3-audio', `${RUN_DATE}_11_generate_content.json`), 'utf-8'),
+            readFileSync(join(workDir, '30-audio', `${RUN_DATE}_11_generate_content.json`), 'utf-8'),
         );
         return content.metadata as Record<string, unknown>;
     }

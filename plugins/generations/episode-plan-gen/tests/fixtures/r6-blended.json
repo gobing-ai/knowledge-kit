@@ -18,7 +18,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/sora-2"
                 }
             ]
@@ -43,7 +43,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/abundant-intelligence"
                 }
             ]
@@ -68,7 +68,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/jakub-and-szymon"
                 }
             ]
@@ -93,7 +93,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/the-gentle-singularity"
                 }
             ]
@@ -118,7 +118,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/three-observations"
                 }
             ]
@@ -143,7 +143,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/reflections"
                 }
             ]
@@ -168,7 +168,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/gpt-4o"
                 }
             ]
@@ -193,7 +193,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/what-i-wish-someone-had-told-me"
                 }
             ]
@@ -218,7 +218,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/researchers-and-founders"
                 }
             ]
@@ -243,7 +243,7 @@
             },
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/docs.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/docs.json",
                     "sourceUri": "https://blog.samaltman.com/idea-generation"
                 }
             ]
@@ -270,11 +270,11 @@
             ],
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://sofiabelen.github.io/projects/visualizing-rusts-vtables-how-dyn-trait-works-in-memory/"
                 },
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://sofiabelen.github.io/projects/visualizing-rusts-vtables-how-dyn-trait-works-in-memory/"
                 }
             ]
@@ -307,11 +307,11 @@
             ],
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://www.reddit.com/r/MachineLearning/comments/1w7sgf3/language_models_can_control_their_own_attention_r/"
                 },
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://www.reddit.com/r/MachineLearning/comments/1w7sgf3/language_models_can_control_their_own_attention_r/"
                 }
             ]
@@ -338,11 +338,11 @@
             ],
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://news.google.com/rss/articles/CBMiekFVX3lxTE0wOTZYWC1FMTRxUzBPV2lSZlBIQS1mNHZTN2l1VlFRZW80SGMzWUtKT01Ca0xncjNiZHk4dXNRTGRFRnRuQnYtU3NSV2FkUUhyME13RllPYXZQNzJXWDVfYnVqN0p3cW5JeXljVWotcjFiSmI3dXZlTkhn?oc=5"
                 },
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://news.google.com/rss/articles/CBMiekFVX3lxTE0wOTZYWC1FMTRxUzBPV2lSZlBIQS1mNHZTN2l1VlFRZW80SGMzWUtKT01Ca0xncjNiZHk4dXNRTGRFRnRuQnYtU3NSV2FkUUhyME13RllPYXZQNzJXWDVfYnVqN0p3cW5JeXljVWotcjFiSmI3dXZlTkhn?oc=5"
                 }
             ]
@@ -365,11 +365,11 @@
             "references": [],
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://simonwillison.net/2026/Sep/5/blender-coding-agents-macos/"
                 },
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://simonwillison.net/2026/Sep/5/blender-coding-agents-macos/"
                 }
             ]
@@ -392,11 +392,11 @@
             "references": [],
             "sources": [
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://simonwillison.net/2026/Sep/5/introducing-gpt-6-astra-for-developers/"
                 },
                 {
-                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/1-ingest/horizon-docs-20260905.json",
+                    "file": "/Users/robin/xprojects/knowledge-kit/.spur/run/daily-dogfood-20260906/10-ingest/horizon-docs-20260905.json",
                     "sourceUri": "https://simonwillison.net/2026/Sep/5/introducing-gpt-6-astra-for-developers/"
                 }
             ]

@@ -286,11 +286,11 @@ spur workflow run "$dest" --vars \
   `$work_dir/3-script-voicescript.yaml`, `$work_dir/4-audio/content.json`, and
   `$work_dir/4-audio/content.wav`.
 - **`kk-daily-ai-voice`**: print resolved `work_dir` (read the date from `$work_dir/run-date.txt`),
-  then `$work_dir/2-article/<date>_06_article_article.md`,
-  `$work_dir/2-script/<date>_08_script_voicescript.yaml`,
-  `$work_dir/3-audio/<date>_11_generate_content.json` (carries the audio path and QC metrics),
+  then `$work_dir/22-article/<date>_06_article_article.md`,
+  `$work_dir/24-script/<date>_08_script_voicescript.yaml`,
+  `$work_dir/30-audio/<date>_11_generate_content.json` (carries the audio path and QC metrics),
   and `$work_dir/<date>_19_run-report_report.md`. With `publish_enabled=true` also print
-  `$work_dir/3-publish/<date>_17_publish_publish-status.txt` and the
+  `$work_dir/31-publish/<date>_17_publish_publish-status.txt` and the
   `<date>_14_publish-surfdash_result.json` / `<date>_16_publish-podcast_result.json` outcomes.
 
 If the run ended `failed`, show the failing state (`spur workflow trace <run-id> --json`) and the

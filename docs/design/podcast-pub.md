@@ -97,7 +97,7 @@ steps and creates the published item in one call.
 A **bare JSON array** input selects the pure show-notes render — no microfeed
 client, no credentials, no API call:
 
-- `--in`: episode-plan `Doc[]` array (the `2-plan/plan.json` shape). The
+- `--in`: episode-plan `Doc[]` array (the `21-plan/plan.json` shape). The
   generic publish kind is `Content → Result`; this array form reaches the
   entry only because `plugin.json` declares `operations["show-notes"]`
   (`doc-list` → `markdown`, 0110 I3). An undeclared publisher is rejected
@@ -119,7 +119,7 @@ Usage (workflow show-notes state):
 
 ```sh
 PODCAST_PUB_TITLE="…" PODCAST_PUB_RUN_DATE="2026-09-07" \
-  kk executor run podcast-pub --in "$WORK/2-plan/plan.json" --out "$WORK/3-publish/show-notes.md"
+  kk executor run podcast-pub --in "$WORK/21-plan/plan.json" --out "$WORK/31-publish/show-notes.md"
 ```
 
 ### 4.2 Apple Podcasts audio MIME guard (0170)

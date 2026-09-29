@@ -104,8 +104,8 @@ describe('0138 AC9 — daily-ai-voice content quality end to end', () => {
     it('rejects the stubs, keeps one Gemini item, and renders copy without scaffolding', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-0138-'));
         try {
-            const planDir = join(dir, '2-plan');
-            const articleDir = join(dir, '2-article');
+            const planDir = join(dir, '21-plan');
+            const articleDir = join(dir, '22-article');
             mkdirSync(planDir, { recursive: true });
             mkdirSync(articleDir, { recursive: true });
 

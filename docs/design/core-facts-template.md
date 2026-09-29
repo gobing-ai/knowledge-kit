@@ -13,7 +13,7 @@ blend-home recommendation (merge = kk subcommand, render = generator):
 - **Merge (N `Doc[]` → 1 `Doc[]`): `kk executor fan-in`** — a kk subcommand, never a workflow-engine state.
   It takes repeatable `--in <Doc[]>` files and writes one deduplicated `Doc[]` to `--out`
   (`docs/design/fan-in-and-fan-out-specification.md:50`; implemented in `apps/cli/src/fanin.ts`).
-- **Render (merged `Doc[]` → `2-facts/core-facts.md`): a `generator`** (kind `generation`) that maps the
+- **Render (merged `Doc[]` → `20-facts/core-facts.md`): a `generator`** (kind `generation`) that maps the
   merged `Doc[]` into a single dated core-facts markdown `Content` (`body` = the facts markdown). 0090
   prototypes this render with a mechanical script — **no LLM** in the prototype (LLM blending is a later
   implement decision). The render's contract + template is this document.
@@ -71,7 +71,7 @@ frontmatter roster.
 ## 6. R3 — can the four stage-2 consumers render from the facts file alone?
 
 The four consumers (article 2.2 / script 2.3 / cover 2.4 / voice 2.5) are **generators that consume the
-merged `Doc[]`** (`1-ingest/blended.json`), not the markdown facts render. The markdown `2-facts/core-facts.md`
+merged `Doc[]`** (`10-ingest/blended.json`), not the markdown facts render. The markdown `20-facts/core-facts.md`
 is the human/audit form of that `Doc[]`. So "render from the facts file alone" holds for each consumer
 because the source of truth for all four is the same merged `Doc[]` the facts render is drawn from; the
 markdown render is not itself the consumer input. Full walk with per-consumer dispositions is in task 0090

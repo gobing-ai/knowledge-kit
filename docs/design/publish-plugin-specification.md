@@ -22,7 +22,7 @@ This specification cites Section 1 of `docs/design/ingestion-plugin-specificatio
       `ResultSchema`-validates it, and treats `ok: false` as invocation failure (exit 1, artifact
       kept, 0110 I6).
   - **Declared `operations` with `output: 'markdown'`** (e.g. show-notes) → the raw markdown
-      artifact on `--out` (podcast-pub's `3-publish/show-notes.md`); the executor checks existence
+      artifact on `--out` (podcast-pub's `31-publish/show-notes.md`); the executor checks existence
       + non-emptiness only. This exemption is per declared operation, not per input shape.
 
 ### 2.2 Transport Abstraction Interface
