@@ -604,6 +604,7 @@ transitions:
   - from: review
     to: failed
     description: "VoiceScript rejected -> abort"
+    terminalReason: failed-agent
     guard:
       kind: shell
       options:
@@ -685,8 +686,16 @@ transitions:
       kind: always
 
   - from: xhs-publish
+    to: wechat-publish
+    description: "XHS dispatched (or skipped: onError continue) -> chain the WeChat draft when wechat_enabled. 20260929 dogfood: publish-podcast's edges are first-match-wins, so the direct publish-podcast -> wechat-publish edge is unreachable whenever xhs_enabled=true — wechat must hang off the xhs path"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.wechat_enabled}" = "true"'
+
+  - from: xhs-publish
     to: publish
-    description: "XHS dispatched (or skipped: onError continue) -> classify the surfdash/podcast outcomes; XHS contributes no target to the classification"
+    description: "XHS dispatched (or skipped: onError continue) -> classify the surfdash/podcast outcomes; XHS contributes no target to the classification (direct edge when wechat_enabled is false)"
     guard:
       kind: always
 
@@ -735,6 +744,7 @@ transitions:
   - from: publish
     to: failed
     description: "Publish none (all targets failed or fan-out crash) -> pipeline failed"
+    terminalReason: failed-check
     guard:
       kind: shell
       options:
