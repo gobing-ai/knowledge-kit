@@ -224,11 +224,23 @@ describe('validate-voicescript content checks (0139 R3)', () => {
         }
     });
 
-    it('rejects a 标签 metadata tail anywhere in the segment', () => {
+    it('rejects a 标签 metadata tail at the end of the segment', () => {
         const { code, err } = validate(script('正文内容。标签，ai、google'));
         expect(code).toBe(1);
         expect(err).toContain('segment 0');
         expect(err).toContain('标签 metadata tail');
+    });
+
+    it('rejects a 标签 tail with comma-separated tags', () => {
+        const { code } = validate(script('正文内容。标签，ai，google'));
+        expect(code).toBe(1);
+    });
+
+    it('allows 标签 as prose when the sentence continues past the punctuation', () => {
+        // 2026-09-28 daily run: segment 14 spoke 「硬件标签」 as a common noun.
+        const prose = '一个推了两年的硬件标签，突然从新品上消失了。';
+        expect(validate(script(prose)).code).toBe(0);
+        expect(validate(script('新 Surface 依然满足硬件要求，公司却选择不贴这个标签，说明卖点变了。')).code).toBe(0);
     });
 
     it('rejects a colon-mangled URL', () => {

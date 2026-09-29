@@ -1384,6 +1384,11 @@ describe('voice-gen validateVoiceScript content checks (0139 R3 SYNC twin)', () 
         );
     });
 
+    it('allows 标签 as prose when the sentence continues past the punctuation', () => {
+        // 2026-09-28 daily run: the Surface segment spoke 「硬件标签」 as a common noun.
+        expect(() => validateVoiceScript(script('一个推了两年的硬件标签，突然从新品上消失了。'))).not.toThrow();
+    });
+
     it('rejects a colon-mangled URL and accepts clean copy', () => {
         expect(() => validateVoiceScript(script('见 wss，//example.com/ws'))).toThrow(
             'content check failed: segment 0 has a colon-mangled URL',

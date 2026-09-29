@@ -129,8 +129,11 @@ const CONTENT_ECHO_NOISE_RE = /[，。、：:；;!！?？…\s「」『』【】
 /** Research scaffold labels the plan-translate stage must not emit as spoken copy. */
 const CONTENT_SCAFFOLD_LABEL_RE =
     /^(?:\*\*)?[「『]?(?:背景|潜在影响|可做角度|为什么现在值得注意|社区讨论)[」』]?(?:\*\*)?(?:[：:，,]|\s|$)/;
-/** `标签，` metadata tails — the plan item's tag line spoken aloud. */
-const CONTENT_TAG_TAIL_RE = /标签[：:，,]/;
+/** `标签：…` / `标签，ai、google` metadata tails — the plan item's tag line spoken aloud.
+ *  Terminal-anchored: the tail runs to the end of the segment with no sentence-ending
+ *  punctuation. Prose like 「一个推了两年的硬件标签，突然从新品上消失了。」 continues past the
+ *  comma to a 。 and must not trip the gate (false positive of the 2026-09-28 daily run). */
+const CONTENT_TAG_TAIL_RE = /标签[：:，,][^\n。！？…]*$/;
 /** `wss，//` / `https。//` — the translator replacing a URL colon with a Chinese comma. */
 const CONTENT_URL_MANGLE_RE = /[，。]\/\//;
 
