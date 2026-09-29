@@ -1575,6 +1575,17 @@ function dailyPublishPrep(args: string[]): void {
         stampId3Tags(audioFile, typeof article.title === 'string' ? article.title : '', runDate, artist, album);
         const resolvedCover = resolve(coverPath);
         const hasCover = existsSync(resolvedCover);
+        // Daily-show itunes convention: season = year, episode = day-of-year. run_date arrives
+        // dashed (`$(date +%F)`) or digits-only (formatRunDate); map.ts forwards numbers only,
+        // so a malformed run_date omits both tags instead of failing the publish.
+        const digits = runDate.replaceAll(/\D/g, '');
+        const season = Number(digits.slice(0, 4));
+        const month = Number(digits.slice(4, 6));
+        const day = Number(digits.slice(6, 8));
+        const episode =
+            digits.length === 8 && month >= 1 && month <= 12 && day >= 1 && day <= 31
+                ? Math.round((Date.UTC(season, month - 1, day) - Date.UTC(season, 0, 1)) / 86_400_000) + 1
+                : 0;
         // podcast-pub's documented contract reads metadata.coverImage (map.ts); options.coverPath
         // alone was silently dropped by the mapper — episodes published without a cover.
         const merged = {
@@ -1584,6 +1595,7 @@ function dailyPublishPrep(args: string[]): void {
                 audioFile,
                 runDate,
                 ...(hasCover ? { coverImage: resolvedCover } : {}),
+                ...(episode > 0 ? { itunes: { season, episode } } : {}),
             },
             options: {
                 audioFile,

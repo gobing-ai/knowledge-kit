@@ -631,8 +631,33 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             ) as { metadata: Record<string, unknown>; options: Record<string, unknown> };
             expect(merged.metadata.audioFile).toBe(audio);
             expect(merged.metadata.runDate).toBe(stamp);
+            expect(merged.metadata.itunes).toEqual({ season: 2026, episode: 1 });
             expect(merged.options.durationSec).toBe(12);
             expect('coverPath' in merged.options).toBe(false);
+        });
+    });
+
+    it('daily-publish-prep derives itunes season/episode from a dashed run_date (year, day-of-year)', () => {
+        withTempDir((dir) => {
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '2026-09-29';
+            const audio = join(dir, '30-audio/content.mp3');
+            writeFileSync(audio, 'mp3-bytes');
+            writeFileSync(
+                join(dir, `22-article/${stamp}_06_article_content.json`),
+                JSON.stringify({ title: 'T', body: 'B' }),
+            );
+            writeFileSync(
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
+                JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
+            );
+            expect(
+                run(['daily-publish-prep', dir, stamp, '', ''], fakeFfmpeg(dir, join(dir, 'ffmpeg-argv.json'))).status,
+            ).toBe(0);
+            const merged = JSON.parse(
+                readFileSync(join(dir, `31-publish/${stamp}_13_publish-prep_content.json`), 'utf-8'),
+            ) as { metadata: Record<string, unknown> };
+            expect(merged.metadata.itunes).toEqual({ season: 2026, episode: 272 });
         });
     });
 
