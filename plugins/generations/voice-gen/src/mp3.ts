@@ -15,7 +15,8 @@ export function isMp3Requested(env: NodeJS.ProcessEnv = process.env): boolean {
 export type Mp3Transcoder = (wavPath: string, mp3Path: string) => Promise<void>;
 
 /**
- * Convert a workspace WAV to MP3 with ffmpeg + libmp3lame (VBR `-qscale:a 2`).
+ * Convert a workspace WAV to MP3 with ffmpeg + libmp3lame (CBR 64k — feed validators
+ * flag VBR and podcast apps seek/duration-track CBR more reliably).
  * Fail-loud if ffmpeg is missing, exits non-zero, or writes no file.
  */
 export async function transcodeWavToMp3(wavPath: string, mp3Path: string, ffmpegBin = 'ffmpeg'): Promise<void> {
@@ -37,8 +38,8 @@ export async function transcodeWavToMp3(wavPath: string, mp3Path: string, ffmpeg
                 wavPath,
                 '-codec:a',
                 'libmp3lame',
-                '-qscale:a',
-                '2',
+                '-b:a',
+                '64k',
                 mp3Path,
             ],
             { stdout: 'pipe', stderr: 'pipe' },

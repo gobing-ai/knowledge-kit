@@ -1263,6 +1263,22 @@ segments:
         expect(isMp3Requested({ VOICE_GEN_MP3: 'on' })).toBe(true);
     });
 
+    it('transcodeWavToMp3 encodes CBR (ffmpeg args use -b:a, never -qscale:a VBR)', async () => {
+        // Feed validators flag VBR; pin the exact encoder contract via a stub that records argv.
+        writeFileSync(audioPath, createTestWav());
+        const argsFile = join(testDir, 'ffmpeg-args.json');
+        writeFileSync(
+            join(testDir, 'kk-stub-ffmpeg'),
+            `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsFile)}\nfor a in "$@"; do :; done\ntouch "$a"\n`,
+            { mode: 0o755 },
+        );
+        await transcodeWavToMp3(audioPath, mp3Path, join(testDir, 'kk-stub-ffmpeg'));
+        const args = readFileSync(argsFile, 'utf8').split('\n');
+        expect(args).toContain('-b:a');
+        expect(args).toContain('64k');
+        expect(args).not.toContain('-qscale:a');
+    });
+
     it('transcodeWavToMp3 fails loud when the WAV input is missing', async () => {
         await expect(transcodeWavToMp3(join(testDir, 'missing.wav'), mp3Path)).rejects.toThrow(/WAV input not found/);
         expect(existsSync(mp3Path)).toBe(false);
