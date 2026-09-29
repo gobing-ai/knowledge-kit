@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
@@ -6,10 +7,10 @@ import {
     type PublishTransportPayload,
     resolveBrowserProfileDir,
 } from '@gobing-ai/publish-harness';
-import { BrowserProfileMissingError, withProfilePage } from '@gobing-ai/ts-browser-automation';
+import { BrowserProfileMissingError, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import type { Page } from 'playwright';
+import type { BrowserContext, Cookie, Page } from 'playwright';
 
 const TARGET = 'wechatmp';
 const CONSOLE_URL = 'https://mp.weixin.qq.com/';
@@ -19,11 +20,14 @@ const SEL = {
     // Console home: an authenticated session lands on /cgi-bin/home; logged-out shows the QR scan page.
     loggedInFragment: '/cgi-bin/home',
     menuItem: '.new-creation__menu .new-creation__menu-item',
-    titleInput: '#title',
+    // The 2024+ console editor renders title/body as two ProseMirror instances; the legacy
+    // textarea#title is a hidden mirror. The title PM carries a 标题 placeholder — the only
+    // reliable discriminator between the two editors.
+    titleInput: '.ProseMirror[data-placeholder*="标题"]',
     authorInput: '#author',
-    editor: '.ProseMirror',
+    editor: '.ProseMirror:not([data-placeholder])',
     summaryInput: '#js_description',
-    saveDraftBtn: '.js_save_draft, button:has-text("保存为草稿"), button:has-text("保存草稿")',
+    saveDraftBtn: 'button:has-text("保存为草稿")',
     publishBtn: '.js_publish, button:has-text("发表"), button:has-text("发布")',
     confirmBtn: '.weui-desktop-dialog .weui-desktop-btn_primary, button:has-text("确定")',
     toast: '.weui-desktop-toast',
@@ -149,6 +153,12 @@ export interface WechatPage {
     setInnerHtml(selector: string, html: string): Promise<void>;
     waitFor(selector: string, timeoutMs: number): Promise<void>;
     waitForAny(selectors: readonly string[], timeoutMs: number): Promise<string>;
+    /** Resolves when the page URL contains the fragment (real browsers); absent on test fakes. */
+    waitForUrlFragment?(fragment: string, timeoutMs: number): Promise<void>;
+    /** Click and adopt the tab the console opens for the editor; absent on test fakes (same-page click). */
+    clickAndAwaitNewPage?(selector: string): Promise<WechatPage>;
+    /** Present on real browser pages; absent on test fakes. publish() closes it in finally. */
+    close?(): Promise<void>;
 }
 
 export function isWechatLoggedIn(page: Page): boolean {
@@ -157,18 +167,33 @@ export function isWechatLoggedIn(page: Page): boolean {
 
 export type SessionCheck = (profileDir: string) => Promise<void>;
 
+/** Cookies captured at login time — mp.weixin.qq.com grant cookies do not survive a Chromium restart
+ * (the store drops them despite 4-day expiries), but the server session does, so we re-inject. */
+export function storageStatePath(profileDir: string): string {
+    return `${profileDir}/storage-state.json`;
+}
+
 /** Headless session preflight: throws (incl. BrowserProfileMissingError) when the profile cannot drive the console. */
 export async function checkWechatSession(profileDir: string): Promise<void> {
-    await withProfilePage(
-        {
-            profileDir,
-            headless: true,
-            url: CONSOLE_URL,
-            isAuthenticated: isWechatLoggedIn,
-            timeoutMs: CONSOLE_READY_TIMEOUT_MS,
-        },
-        async () => {},
-    );
+    const { page, context } = await openWithState(profileDir, true);
+    try {
+        await pollLogin(page);
+    } finally {
+        await context.close();
+    }
+}
+
+async function pollLogin(page: Page): Promise<void> {
+    const deadline = Date.now() + CONSOLE_READY_TIMEOUT_MS;
+    while (!isWechatLoggedIn(page)) {
+        if (Date.now() > deadline) {
+            throw new Error(
+                `Authentication was not confirmed within ${CONSOLE_READY_TIMEOUT_MS}ms — the saved session state has ` +
+                    'likely expired: re-run `bun src/profile-check.ts login` to sign in again.',
+            );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
 }
 
 export interface WechatmpTransportOptions {
@@ -176,7 +201,7 @@ export interface WechatmpTransportOptions {
     checkSession?: SessionCheck;
 }
 
-export function wrapPlaywrightPage(page: Page): WechatPage {
+export function wrapPlaywrightPage(page: Page, context?: BrowserContext): WechatPage {
     return {
         goto: (url) => page.goto(url, { waitUntil: 'domcontentloaded' }).then(() => undefined),
         url: () => page.url(),
@@ -210,13 +235,52 @@ export function wrapPlaywrightPage(page: Page): WechatPage {
             }
             return '';
         },
+        waitForUrlFragment: (fragment, timeoutMs) =>
+            page
+                .waitForURL(new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: timeoutMs })
+                .then(() => undefined),
+        clickAndAwaitNewPage: context
+            ? async (selector) => {
+                  const popup = context.waitForEvent('page', { timeout: 15000 }).catch(() => undefined);
+                  await page.locator(selector).first().click();
+                  const opened = await popup;
+                  if (!opened) return wrapPlaywrightPage(page, context);
+                  await opened.waitForLoadState('domcontentloaded').catch(() => {});
+                  return wrapPlaywrightPage(opened, context);
+              }
+            : undefined,
+        close: context ? () => context.close() : undefined,
     };
 }
 
+/** Launch, inject the saved login cookies, and land on the console. Caller owns closing the context. */
+async function openWithState(profileDir: string, headless: boolean): Promise<{ page: Page; context: BrowserContext }> {
+    const context = await openPersistentBrowser({ profileDir, headless });
+    try {
+        const stateFile = storageStatePath(profileDir);
+        const state = await readFile(stateFile, 'utf8')
+            .then(JSON.parse)
+            .catch(() => undefined);
+        const cookies = state?.cookies as Cookie[] | undefined;
+        if (!cookies || cookies.length === 0) {
+            throw new BrowserProfileMissingError(
+                `no saved console session state (${stateFile}) — run \`bun src/profile-check.ts login\` once`,
+            );
+        }
+        await context.addCookies(cookies);
+        const page = context.pages()[0] ?? (await context.newPage());
+        await page.goto(CONSOLE_URL);
+        return { page, context };
+    } catch (error: unknown) {
+        await context.close();
+        throw error;
+    }
+}
+
 async function defaultOpenPage(profileDir: string): Promise<WechatPage> {
-    return withProfilePage({ profileDir, headless: false, url: CONSOLE_URL }, async (handle) =>
-        wrapPlaywrightPage(handle.page),
-    );
+    // Headless works end-to-end for the draft flow (probed 2026-09-29); no window is popped.
+    const { page, context } = await openWithState(profileDir, true);
+    return wrapPlaywrightPage(page, context);
 }
 
 export class WechatmpBrowserTransport implements PublishTransport {
@@ -259,27 +323,40 @@ export class WechatmpBrowserTransport implements PublishTransport {
         const page = await this.openPage(profileDir);
         try {
             await page.waitFor(SEL.menuItem, CONSOLE_READY_TIMEOUT_MS);
-            await page.click(`${SEL.menuItem}:has-text("图文"), ${SEL.menuItem}`);
-            await page.waitFor(SEL.titleInput, CONSOLE_READY_TIMEOUT_MS);
-            await page.fill(SEL.titleInput, title);
-            await this.tryFill(page, SEL.authorInput, String(content.metadata?.author ?? ''));
-            await page.waitFor(SEL.editor, CONSOLE_READY_TIMEOUT_MS);
-            await page.setInnerHtml(SEL.editor, markdownToWechatHtml(content.body));
+            // The console opens the article editor in a new tab — adopt it when it appears.
+            const editor = page.clickAndAwaitNewPage
+                ? await page.clickAndAwaitNewPage(`${SEL.menuItem}:has-text("图文"), ${SEL.menuItem}`)
+                : page;
+            if (editor === page) {
+                await page.click(`${SEL.menuItem}:has-text("图文"), ${SEL.menuItem}`);
+            }
+            await editor.waitFor(SEL.titleInput, CONSOLE_READY_TIMEOUT_MS);
+            await editor.fill(SEL.titleInput, title);
+            await this.tryFill(editor, SEL.authorInput, String(content.metadata?.author ?? ''));
+            await editor.waitFor(SEL.editor, CONSOLE_READY_TIMEOUT_MS);
+            await editor.setInnerHtml(SEL.editor, markdownToWechatHtml(content.body));
             const digest = resolveDigest(content);
-            if (digest) await this.tryFill(page, SEL.summaryInput, digest);
+            if (digest) await this.tryFill(editor, SEL.summaryInput, digest);
 
             if (want === 'draft') {
-                await page.click(SEL.saveDraftBtn);
+                await editor.click(SEL.saveDraftBtn);
             } else {
-                await page.click(SEL.publishBtn);
-                await this.tryClick(page, SEL.confirmBtn);
+                await editor.click(SEL.publishBtn);
+                await this.tryClick(editor, SEL.confirmBtn);
             }
-            const seen = await page.waitForAny([SEL.toast], TOAST_TIMEOUT_MS);
-            if (seen === '') {
-                return this.failed(
-                    `save was clicked but no confirmation toast appeared within ${TOAST_TIMEOUT_MS}ms — verify the console manually`,
-                );
+            // Real consoles confirm the draft save by navigating from the isNew editor
+            // (appmsg_edit_v2) to the saved-draft edit page carrying the new appmsgid.
+            if (editor.waitForUrlFragment) {
+                await editor.waitForUrlFragment('appmsg_edit&action=edit', CONSOLE_READY_TIMEOUT_MS);
+            } else {
+                const seen = await editor.waitForAny([SEL.toast], TOAST_TIMEOUT_MS);
+                if (seen === '') {
+                    return this.failed(
+                        `save was clicked but no confirmation toast appeared within ${TOAST_TIMEOUT_MS}ms — verify the console manually`,
+                    );
+                }
             }
+            const appmsgid = /appmsgid=(\d+)/.exec(editor.url())?.[1] ?? '';
             return {
                 ok: true,
                 target: TARGET,
@@ -287,13 +364,15 @@ export class WechatmpBrowserTransport implements PublishTransport {
                     publishStatus: want,
                     note:
                         want === 'draft'
-                            ? 'saved to the WeChat MP draft box (草稿箱)'
+                            ? `saved to the WeChat MP draft box (草稿箱)${appmsgid ? ` as appmsgid ${appmsgid}` : ''}`
                             : 'published via the console 发表 flow',
                 },
             };
         } catch (error: unknown) {
             const why = error instanceof Error ? error.message : String(error);
             return this.failed(`console flow failed: ${why}`);
+        } finally {
+            await page.close?.();
         }
     }
 

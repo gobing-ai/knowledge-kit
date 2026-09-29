@@ -80,7 +80,7 @@ describe('wechatmp-pub plugin', () => {
         const editorCall = log.find((call) => call.op === 'setInnerHtml');
         expect(String(editorCall?.args[1])).toContain('<h1>今日头条</h1>');
         expect(String(editorCall?.args[1])).toContain('<strong>重点</strong>');
-        expect(log.some((call) => call.op === 'click' && String(call.args[0]).includes('js_save_draft'))).toBe(true);
+        expect(log.some((call) => call.op === 'click' && String(call.args[0]).includes('保存为草稿'))).toBe(true);
         expect(log.some((call) => call.op === 'click' && String(call.args[0]).includes('js_publish'))).toBe(false);
     });
 
