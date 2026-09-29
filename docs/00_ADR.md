@@ -983,6 +983,12 @@ in force and are what makes the on-by-default draft loop acceptable. The "must n
 scheduled run" clause above is superseded by this amendment; the account-level exposure it named is
 accepted by the operator with the caps as the mitigation.
 
+**Amendment (2026-09-29, headed preflight fallback).** XHS bot-walls and slow-walls headless loads:
+the same profile that never confirms auth headless reads ready in ~27 s headed. The session
+preflight now retries a headless refusal once with a headed, read-only readiness visit before
+refusing; the publish budget and never-automated-login rules are unchanged (the fallback is a
+readiness check, not a publish cycle, and a dead session still refuses fast).
+
 **Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
 
 ---

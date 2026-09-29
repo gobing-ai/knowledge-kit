@@ -427,30 +427,38 @@ export interface SessionCheckOptions {
  * `verified`, which is what turns "no session" from a 120s headed login wait into a fast refusal.
  */
 export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise<ProfileSessionCheck> {
-    try {
-        await withProfilePage(
-            {
+    const timeoutMs = opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS;
+    // XHS bot-walls and slow-walls headless loads (observed 2026-09-29: headless auth never
+    // confirms while the same profile reads ready in 27s headed), so a headless refusal is
+    // retried once headed — still a read-only readiness check before any publish actions.
+    for (const headless of [true, false] as const) {
+        try {
+            await withProfilePage(
+                {
+                    profileDir: opts.profileDir,
+                    headless,
+                    url: PUBLISH_URL,
+                    isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
+                    timeoutMs,
+                    launcher: opts.launcher,
+                },
+                async () => undefined,
+            );
+            return {
+                status: 'verified',
                 profileDir: opts.profileDir,
-                headless: true,
-                url: PUBLISH_URL,
-                isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
-                timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
-                launcher: opts.launcher,
-            },
-            async () => undefined,
-        );
-        return {
-            status: 'verified',
-            profileDir: opts.profileDir,
-            detail: `authenticated ${CHANNEL} creator console observed headlessly via profile ${opts.profileDir} (read-only)`,
-        };
-    } catch (error) {
-        return {
-            status: 'refused',
-            profileDir: opts.profileDir,
-            detail: `headless readiness refused: ${error instanceof Error ? error.message : String(error)}`,
-        };
+                detail: `authenticated ${CHANNEL} creator console observed ${headless ? 'headlessly' : 'via headed fallback'} via profile ${opts.profileDir} (read-only)`,
+            };
+        } catch (error) {
+            if (headless) continue;
+            return {
+                status: 'refused',
+                profileDir: opts.profileDir,
+                detail: `headless and headed readiness refused: ${error instanceof Error ? error.message : String(error)}`,
+            };
+        }
     }
+    throw new Error('unreachable: session check loop must return or throw');
 }
 
 export class XhsBrowserTransport implements PublishTransport {

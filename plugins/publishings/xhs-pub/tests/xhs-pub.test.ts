@@ -1334,13 +1334,13 @@ describe('xhs-pub headless profile-session check (0177, read-only)', () => {
         expect(closed).toEqual(['closed']);
     });
 
-    test('refused: a headless site refusal (no authenticated console) is an explicit failure', async () => {
+    test('refused: headless and headed refusals (no authenticated console) are an explicit failure', async () => {
         const closed: string[] = [];
         const launcher = fakeLauncher(consoleContext(false, closed));
         const outcome = await checkProfileSession({ profileDir: '/tmp/kk-xhs-check', timeoutMs: 60, launcher });
         expect(outcome.status).toBe('refused');
-        expect(outcome.detail).toContain('headless readiness refused');
-        expect(closed).toEqual(['closed']);
+        expect(outcome.detail).toContain('readiness refused');
+        expect(closed).toEqual(['closed', 'closed']);
     });
 
     test('refused: a missing profile headless never fabricates a session', async () => {
@@ -1402,7 +1402,7 @@ describe('xhs-pub profile-check CLI (0177)', () => {
                 fakeLauncher(consoleContext(false)),
             );
             expect(code).toBe(1);
-            expect(err.text()).toContain('headless readiness refused');
+            expect(err.text()).toContain('readiness refused');
         } finally {
             restore();
         }
