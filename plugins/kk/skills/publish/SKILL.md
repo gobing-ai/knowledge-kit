@@ -28,7 +28,7 @@ not add a `kk publish` noun.
 | juejin | `juejin-pub` | `browser` / `agent` | workflow `agent.run` |
 | infoq | `infoq-pub` | `browser` / `agent` | workflow `agent.run` |
 | substack | `substack-pub` | `browser` / `agent` | workflow `agent.run` |
-| xhs | `xhs-pub` | `browser` / `script` | workflow `agent.run` (script driver: Playwright `setInputFiles` card upload) |
+| xhs | `xhs-pub` | `browser` / `script` | `kk executor run xhs-pub --in <content.json> --out <result.json>` — its default `script` driver uploads the ordered card images with Playwright `setInputFiles`; the `agent` driver fails loud for this channel (ADR-024) |
 
 Already-harvested file-cli channels (`qiita-pub`, `zenn-pub`, `surfdash-pub`,
 `emdash-pub`, `podcast-pub`) compose the same way.
@@ -46,6 +46,15 @@ bun plugins/publishings/xhs-pub/src/profile-check.ts check   # headless; exit 0 
 
 `check` never signs in — with no saved profile it refuses (exit 1) instead of reporting success.
 Overrides: `--profile <dir>`, `--timeout <ms>`; env fallback `XHS_PROFILE_DIR` / `KK_BROWSER_PROFILE_DIR`.
+
+**ADR-025 (2026-09-28, after an XHS warning about automated activity).** Publish now runs this same
+check as a **preflight** before opening anything headed — so a missing or expired session is a fast
+refusal (`ok: false`) rather than a headed window sitting on the login gate for 120 s — and both
+console visits are capped at **one headed publish cycle + one session check per 24 h**
+(`~/.config/kk/xhs-automation.json`, override `KK_XHS_AUTOMATION_STATE`; a manual `check` draws on
+the same `check` budget). A capped or sessionless publish fails with `ok: false` and a named reason.
+`login` is never automated and never capped. Do not schedule XHS publishing: publish deliberately,
+by hand, at most once a day, and prefer a draft.
 
 ## Do not
 

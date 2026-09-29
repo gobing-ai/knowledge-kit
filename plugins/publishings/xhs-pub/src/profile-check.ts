@@ -12,71 +12,40 @@
  *    creates a profile headless, so a check cannot fabricate a session from a
  *    fresh directory.
  *
+ * ADR-025 (2026-09-28): the publish flow now runs this same check as a preflight before any headed
+ * visit, and `check` draws on the shared 24h automation budget — the cap bounds total console
+ * visits, not just publishes. The implementation lives in `./index` so both paths share it.
+ *
  * Manual dogfood: `bun plugins/publishings/xhs-pub/src/profile-check.ts login` then
  * `bun plugins/publishings/xhs-pub/src/profile-check.ts check` on the same profile;
  * the full recipe lives in docs/design/xhs-image-cards.md.
  */
 import { parseArgs } from 'node:util';
 import { resolveBrowserProfileDir } from '@gobing-ai/publish-harness';
-import { type BrowserLauncher, loginWithProfile, withProfilePage } from '@gobing-ai/ts-browser-automation';
+import { type BrowserLauncher, loginWithProfile } from '@gobing-ai/ts-browser-automation';
 import { echo, echoError } from '@gobing-ai/ts-utils';
-import { CHANNEL, isXhsConsoleReady, LOGIN_TIMEOUT_MS, PUBLISH_URL, wrapPlaywrightPage } from './index';
+import { type AutomationGuard, createAutomationGuard } from './automation-guard';
+import {
+    CHANNEL,
+    checkXhsProfileSession,
+    isXhsConsoleReady,
+    LOGIN_TIMEOUT_MS,
+    PUBLISH_URL,
+    wrapPlaywrightPage,
+} from './index';
 
-/** Readiness deadline for the headless check: the publish step scale, not the 120s login wait. */
-const CHECK_TIMEOUT_MS = 30_000;
-
-/** Explicit check verdict: only an observed authenticated console is `verified`. */
-export interface ProfileSessionCheck {
-    status: 'verified' | 'refused';
-    profileDir: string;
-    /** Verdict evidence: what was observed, or the explicit refusal reason. */
-    detail: string;
-}
-
-export interface ProfileCheckOptions {
-    profileDir: string;
-    timeoutMs?: number;
-    launcher?: BrowserLauncher;
-}
+export type { ProfileSessionCheck, SessionCheckOptions as ProfileCheckOptions } from './index';
+/**
+ * The session check lives in `./index` with the rest of the console contract (readiness gate,
+ * publish URL, preflight deadline) so the publish preflight and this CLI share one implementation.
+ * Re-exported under the 0177 names, so the operator surface is unchanged.
+ */
+export { checkXhsProfileSession as checkProfileSession };
 
 export interface ProfileLoginOptions {
     profileDir: string;
     timeoutMs?: number;
     launcher?: BrowserLauncher;
-}
-
-/**
- * Reopen the existing profile headless and apply the XHS login gate read-only: one
- * goto of the creator console and selector reads — no upload, no click, no note.
- * `withProfilePage` closes the context on every exit path; its poll turns "the
- * console never showed an authenticated UI" into a login timeout, reported here as
- * an explicit refusal.
- */
-export async function checkProfileSession(opts: ProfileCheckOptions): Promise<ProfileSessionCheck> {
-    try {
-        await withProfilePage(
-            {
-                profileDir: opts.profileDir,
-                headless: true,
-                url: PUBLISH_URL,
-                isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
-                timeoutMs: opts.timeoutMs ?? CHECK_TIMEOUT_MS,
-                launcher: opts.launcher,
-            },
-            async () => undefined,
-        );
-        return {
-            status: 'verified',
-            profileDir: opts.profileDir,
-            detail: `authenticated XHS creator console observed headlessly via profile ${opts.profileDir} (read-only)`,
-        };
-    } catch (error) {
-        return {
-            status: 'refused',
-            profileDir: opts.profileDir,
-            detail: `headless readiness refused: ${error instanceof Error ? error.message : String(error)}`,
-        };
-    }
 }
 
 /**
@@ -96,7 +65,11 @@ export async function loginProfile(opts: ProfileLoginOptions): Promise<void> {
 }
 
 /** `login|check [--profile <dir>] [--timeout <ms>]`; profile precedence matches the publish flow. */
-export async function main(argv: string[] = process.argv.slice(2), launcher?: BrowserLauncher): Promise<number> {
+export async function main(
+    argv: string[] = process.argv.slice(2),
+    launcher?: BrowserLauncher,
+    guard: AutomationGuard = createAutomationGuard(),
+): Promise<number> {
     let command: string;
     let profileDir: string;
     let timeoutMs: number | undefined;
@@ -137,7 +110,16 @@ export async function main(argv: string[] = process.argv.slice(2), launcher?: Br
         );
         return 1;
     }
-    const outcome = await checkProfileSession({ profileDir, timeoutMs, launcher });
+    // ADR-025: a manual session check is a real console visit, so it draws on the shared 24h
+    // automation budget rather than a separate one. `login` is deliberately uncapped above: it is
+    // operator-interactive, so capping it would only block recovery from an expired session.
+    const cap = guard.allow('check');
+    if (!cap.allowed) {
+        echoError(`profile-check: ${cap.reason}`);
+        return 1;
+    }
+    guard.record('check');
+    const outcome = await checkXhsProfileSession({ profileDir, timeoutMs, launcher });
     echo(JSON.stringify(outcome));
     if (outcome.status !== 'verified') {
         echoError(outcome.detail);

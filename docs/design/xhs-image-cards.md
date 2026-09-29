@@ -1,4 +1,4 @@
-# Xiaohongshu image cards (feature E8, shipped — 0167 publisher, 0168 skill + presets)
+# Xiaohongshu image cards (feature E8, shipped — 0167 publisher, 0168 skill + presets, daily-pipeline target)
 
 ## Decision and boundary
 
@@ -32,6 +32,74 @@ Both commands accept `--profile <dir>` and `--timeout <ms>`; profile dir precede
 - Shipped presets: `image-gen/presets/formats/xhs-card.yaml` and `presets/styles/xhs-knowledge.yaml` (layout/typography/consistency guidance adapted from `baoyu-xhs-images`, MIT © Jim Liu, via `plugins/kk/skills/xhs-images/references/card-layouts.md`). Existing styles remain selectable. Format variables cover card role, layout, source-grounded copy, and scene; output is one image per call.
 - `cards.json`: `{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, status }] }` (`status: pending | rendered | failed`) in display order. The authoring skill checks prompt and image existence before packaging.
 - `Content.metadata.images[]`: existing `ImageArtifact` objects; `xhs-pub` requires non-empty ordered absolute paths. `Content.metadata.publishStatus`: `draft | public`, default `draft`. Unknown status fails before browser action.
+
+## Daily pipeline integration
+
+`plugins/kk/workflows/kk-daily-ai-voice.yaml` wires the same capability into the unattended daily
+run as the `xhs-write` → `xhs-publish` pair, sitting between `publish-podcast` and the
+`publish` classification state.
+
+- **Source:** the lead plan item only (`2-plan/<run_date>_03_plan_plan.json` item 1) — the same
+  source the daily cover's subject brief reads. One coherent story, not the whole digest.
+- **Skill vs stage:** the daily run does **not** invoke `kk:xhs-images`. It follows F614's cover
+  split instead — the agent authors copy only (`2-xhs/<run_date>_18_xhs_plan.json`), and
+  `kk stage daily-xhs-render` owns format/style/provider/model plus the render loop. A second,
+  skill-driven path into the same presets would let the card look drift.
+- **Spend:** `${vars.xhs_cards}` (default 4) is the fixed series size, rendered unattended with no
+  confirmation gate. The stage refuses a plan whose card count disagrees with it, refuses more than
+  10, and reuses any card whose recorded artifact is still on disk — a resume after a failed card
+  re-bills only the cards that are actually missing.
+- **Draft by default:** `metadata.publishStatus` is `draft` unless the launch-time `xhs_live` switch
+  is `true` (ADR-022). `kk stage daily-publish-xhs` runs `kk executor run xhs-pub` directly on its
+  default `script` driver — the browser work is the plugin's, not an agent step.
+- **Non-blocking:** the XHS outcome never enters `publish_status` (surfdash + podcast remain the
+  episode's publication contract). Both stages carry `onError: continue`, and the publish stage is
+  `soft` on the plugin call, so a missing profile, an expired session, or a changed creator console
+  logs a loud failure and the run still finishes. `xhs_enabled: "false"` (the shipped default)
+  removes the target entirely.
+- **Platform automation risk (2026-09-28).** XHS warned the operator about automated login/publish
+  activity, and this channel is the one target in the repo that drives an interactive creator
+  console from a headed browser — so the exposure is account-level, not just a failed run. The
+  resulting guard (ADR-025) is described under **Automation risk policy** below, and it applies to
+  the workflow target too: `xhs_enabled` ships **off** and must not be enabled on a scheduled run.
+- The daily note is short-form (≤20-char title, ≤1000-char body, 2–4 bullets per card), so the
+  series stays inside the legibility budget above.
+
+## Automation risk policy (ADR-025, 2026-09-28)
+
+XHS warned the operator about automated login/publish activity. `xhs-pub` is the only target in the
+repo that drives an interactive creator console from a headed browser, so a runaway loop is an
+account-level risk rather than a failed run. Four rules, enforced in the plugin so every surface
+(workflow, skill, manual `kk executor run`) inherits them:
+
+1. **No headed visit without a verified session.** Every publish runs a **headless preflight**
+   (`checkXhsProfileSession`) before opening anything: one `goto` of the creator console and
+   selector reads, no upload and no click. A refusal returns `ok: false` with the preflight reason
+   and the headed browser is never opened. Because the upstream launcher never creates a profile
+   headless, a missing profile is refused outright — this is what replaced the old behaviour, a
+   headed window sitting on the login gate for the full `LOGIN_TIMEOUT_MS` (120 s). Verified
+   2026-09-28 against the real launcher: `openPersistentBrowser({ headless: true })` on an absent
+   profile directory throws `BrowserProfileMissingError` and creates nothing.
+2. **One headed publish cycle and one session check per 24 h.** Both are capped in
+   `automation-guard.ts` against a state file (`~/.config/kk/xhs-automation.json`, override
+   `KK_XHS_AUTOMATION_STATE`). A manual `profile-check check` draws on the same `check` budget as the
+   preflight's own console visit. The `publish` budget is consumed **at the headed launch, not at
+   the attempt**, so a refused preflight leaves the window intact and the operator can log in and
+   retry the same day.
+3. **`login` is never automated and never capped.** Recovery is a headed, operator-interactive
+   session (`loginWithProfile`); a human types the credentials. Capping it would only block recovery
+   from an expired session.
+4. **A corrupt or unreadable state file fails closed.** The guard cannot prove the window is clean,
+   so it refuses with an actionable message instead of silently granting a fresh budget. Delete the
+   file to reset deliberately.
+
+Also unchanged and load-bearing: a live `发布` submit is **single-click** (an unobserved publish is
+never retried, because a retry risks a second public post), while draft saves keep a bounded retry
+because drafts are cheap and deletable.
+
+Operator recipe: run `bun plugins/publishings/xhs-pub/src/profile-check.ts check` (headless, one
+console visit, draws on the `check` budget) before a publish; if it refuses, `login` once, then
+publish. Expect at most one publish per day.
 
 ## Checks and limits
 

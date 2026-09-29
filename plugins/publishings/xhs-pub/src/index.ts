@@ -8,9 +8,10 @@ import {
     resolveBrowserProfileDir,
     trySelectors,
 } from '@gobing-ai/publish-harness';
-import { openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
+import { type BrowserLauncher, openPersistentBrowser, withProfilePage } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import { type AutomationGuard, createAutomationGuard } from './automation-guard';
 
 export const CHANNEL = 'xhs';
 const TARGET = 'xhs';
@@ -19,6 +20,11 @@ export const PUBLISH_URL = 'https://creator.xiaohongshu.com/publish/publish';
 const PUBLISHED_MARKER = 'published=true';
 export const LOGIN_TIMEOUT_MS = 120_000;
 const STEP_TIMEOUT_MS = 30_000;
+/**
+ * Headless session-preflight deadline (ADR-025): the step scale, not the 120s interactive login
+ * wait. A preflight must fail fast — the point is to avoid a headed visit entirely.
+ */
+const PREFLIGHT_TIMEOUT_MS = 30_000;
 const POLL_MS = 500;
 /** The console drops a submit click that lands while the note is still settling (live run 2026-09-25). */
 const SUBMIT_SETTLE_MS = 2_500;
@@ -397,6 +403,56 @@ async function findAttachedSelector(
     throw new Error(`${what}: no matching element observed`);
 }
 
+/** Explicit session verdict: only an observed authenticated console is `verified`. */
+export interface ProfileSessionCheck {
+    status: 'verified' | 'refused';
+    profileDir: string;
+    /** Verdict evidence: what was observed, or the explicit refusal reason. */
+    detail: string;
+}
+
+export interface SessionCheckOptions {
+    profileDir: string;
+    timeoutMs?: number;
+    launcher?: BrowserLauncher;
+}
+
+/**
+ * Reopen the existing profile headless and apply the login gate read-only: one goto of the creator
+ * console and selector reads — no upload, no click, no note. `withProfilePage` closes the context on
+ * every exit path, and the upstream launcher never creates a profile headless, so a check can
+ * neither fabricate a session nor leave a browser behind.
+ *
+ * ADR-025: this is the publish preflight. The headed visit is only attempted once it says
+ * `verified`, which is what turns "no session" from a 120s headed login wait into a fast refusal.
+ */
+export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise<ProfileSessionCheck> {
+    try {
+        await withProfilePage(
+            {
+                profileDir: opts.profileDir,
+                headless: true,
+                url: PUBLISH_URL,
+                isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
+                timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
+                launcher: opts.launcher,
+            },
+            async () => undefined,
+        );
+        return {
+            status: 'verified',
+            profileDir: opts.profileDir,
+            detail: `authenticated ${CHANNEL} creator console observed headlessly via profile ${opts.profileDir} (read-only)`,
+        };
+    } catch (error) {
+        return {
+            status: 'refused',
+            profileDir: opts.profileDir,
+            detail: `headless readiness refused: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+}
+
 export class XhsBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriverName;
@@ -405,6 +461,8 @@ export class XhsBrowserTransport implements PublishTransport {
     private readonly submitSettleMs: number;
     private readonly submitAttempts: number;
     private readonly openPage: OpenPage;
+    private readonly automation: AutomationGuard;
+    private readonly preflight: (profileDir: string) => Promise<ProfileSessionCheck>;
 
     constructor(
         driver: BrowserDriverName = 'script',
@@ -414,6 +472,10 @@ export class XhsBrowserTransport implements PublishTransport {
             submitSettleMs?: number;
             submitAttempts?: number;
             openPage?: OpenPage;
+            /** ADR-025 automation-risk guard; defaults to the real 24h-capped state file. */
+            automation?: AutomationGuard;
+            /** ADR-025 headless session preflight; defaults to `checkXhsProfileSession`. */
+            preflight?: (profileDir: string) => Promise<ProfileSessionCheck>;
         },
     ) {
         this.driver = driver;
@@ -422,6 +484,8 @@ export class XhsBrowserTransport implements PublishTransport {
         this.submitSettleMs = opts?.submitSettleMs ?? SUBMIT_SETTLE_MS;
         this.submitAttempts = opts?.submitAttempts ?? SUBMIT_ATTEMPTS;
         this.openPage = opts?.openPage ?? defaultOpenPage;
+        this.automation = opts?.automation ?? createAutomationGuard();
+        this.preflight = opts?.preflight ?? ((profileDir) => checkXhsProfileSession({ profileDir }));
     }
 
     /**
@@ -545,6 +609,22 @@ export class XhsBrowserTransport implements PublishTransport {
         const paths = validation.paths ?? [];
         const publishStatus = payload.content.metadata?.publishStatus === 'public' ? 'public' : 'draft';
         const base = { driver: this.driver, publishStatus, profileDir, imageCount: paths.length };
+
+        // ADR-025 automation guard — both gates run before any browser opens.
+        // 1. Frequency cap: the operator's platform warning makes a repeated console visit an
+        //    account-level risk, not merely a failed run.
+        const cap = this.automation.allow('publish');
+        if (!cap.allowed) return fail(`automation cap: ${cap.reason}`);
+        // 2. Headless session preflight: an unauthenticated profile must never produce a headed
+        //    visit. The upstream launcher refuses a missing profile headless, so this replaces the
+        //    previous behaviour — a headed window waiting out the 120s login gate.
+        const session = await this.preflight(profileDir);
+        if (session.status !== 'verified') {
+            return fail(`session preflight refused (no headed visit attempted): ${session.detail}`);
+        }
+        // Consumed at the headed launch, not at the attempt: a refusal above leaves the window
+        // intact so the operator can log in and retry the same day.
+        this.automation.record('publish');
 
         let opened: OpenedPage;
         try {

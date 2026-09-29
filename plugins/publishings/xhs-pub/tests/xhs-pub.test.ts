@@ -1,6 +1,7 @@
-import { afterAll, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
@@ -12,6 +13,7 @@ import {
 } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
+import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
 import {
     createShadowProbe,
     defaultLauncher,
@@ -19,6 +21,7 @@ import {
     main,
     makeDefaultOpenPage,
     type OpenPage,
+    type ProfileSessionCheck,
     processPublishIO,
     validatePublishInput,
     wrapPlaywrightPage,
@@ -27,6 +30,39 @@ import {
     type XhsPage,
 } from '../src/index';
 import { checkProfileSession, loginProfile, main as profileCheckMain } from '../src/profile-check';
+
+// ADR-025: publish runs a 24h-capped automation guard and a headless session preflight, and the
+// CLI `check` command uses the same guard. Both are real side effects, so:
+//  - `makeTransport` stubs them for the flow tests (a default preflight would open a browser);
+//  - the guard's state file is redirected to a temp path cleared before every test, so the caps
+//    never leak between tests or write into the operator's ~/.config/kk.
+const AUTOMATION_STATE = join(mkdtempSync(join(tmpdir(), 'kk-xhs-guard-')), 'state.json');
+process.env.KK_XHS_AUTOMATION_STATE = AUTOMATION_STATE;
+
+beforeEach(() => {
+    rmSync(AUTOMATION_STATE, { force: true });
+});
+
+/** The allow-all guard for tests that are not exercising the cap itself. */
+const ALLOW_ALL: AutomationGuard = { allow: () => ({ allowed: true, reason: '' }), record: () => undefined };
+
+/** A `verified` preflight: tests not exercising the preflight must never open a browser. */
+const VERIFIED_PREFLIGHT = async (profileDir: string): Promise<ProfileSessionCheck> => ({
+    status: 'verified',
+    profileDir,
+    detail: 'test stub',
+});
+
+/**
+ * ADR-025: the publish path is guarded, so every construction goes through here and stubs both
+ * seams. A test that wants the real guard or preflight passes them explicitly.
+ */
+function makeTransport(
+    driver: 'script' | 'agent' = 'script',
+    opts: ConstructorParameters<typeof XhsBrowserTransport>[1] = {},
+): XhsBrowserTransport {
+    return new XhsBrowserTransport(driver, { automation: ALLOW_ALL, preflight: VERIFIED_PREFLIGHT, ...opts });
+}
 
 const tmpRoot = join(process.cwd(), '.tmp-test-xhs');
 // The scratch tree must not survive the run: an untracked directory created DURING a
@@ -232,14 +268,14 @@ const happy: FakeState = {
 
 describe('xhs-pub validation (no browser opens)', () => {
     test('default driver is script, kind browser', () => {
-        const t = new XhsBrowserTransport();
+        const t = makeTransport();
         expect(t.kind).toBe('browser');
         expect(t.driver).toBe('script');
     });
 
     test('agent driver fails loud before any browser action', async () => {
         const { open, closed } = makeOpenPage(happy);
-        const result = await new XhsBrowserTransport('agent', { openPage: open }).publish({ content: cardContent() });
+        const result = await makeTransport('agent', { openPage: open }).publish({ content: cardContent() });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('unsupported driver');
         expect(closed).toHaveLength(0);
@@ -277,7 +313,7 @@ describe('xhs-pub validation (no browser opens)', () => {
 
     test('transport fails before openPage on invalid images', async () => {
         const { open, closed } = makeOpenPage(happy);
-        const t = new XhsBrowserTransport('script', { openPage: open, stepTimeoutMs: 50, submitSettleMs: 10 });
+        const t = makeTransport('script', { openPage: open, stepTimeoutMs: 50, submitSettleMs: 10 });
         const result = await t.publish({ content: cardContent({ images: [] }) });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('non-empty');
@@ -289,7 +325,7 @@ describe('xhs-pub script flow (fake page)', () => {
     test('draft: ordered paths in one setInputFiles call, confirmed save, no id', async () => {
         await seedImages();
         const { open, closed } = makeOpenPage(happy);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 500,
             loginTimeoutMs: 500,
@@ -315,7 +351,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const state = { ...happy };
         const { open, calls } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 500,
             loginTimeoutMs: 500,
@@ -351,7 +387,7 @@ describe('xhs-pub script flow (fake page)', () => {
         const fake = makeFakePage({ ...happy });
         const pageWithoutShadow: XhsPage = { ...fake.page, findShadowControl: undefined, clickAt: undefined };
         const open: OpenPage = async () => ({ page: pageWithoutShadow, close: async () => {} });
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -368,7 +404,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const fake = makeFakePage({ ...happy, shadowBar: false });
         const open: OpenPage = async () => ({ page: fake.page, close: async () => {} });
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -388,7 +424,7 @@ describe('xhs-pub script flow (fake page)', () => {
             page: { ...fake.page, clickInViewport: async () => false },
             close: async () => {},
         });
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -417,7 +453,7 @@ describe('xhs-pub script flow (fake page)', () => {
             };
             return { page: wrapped, close: inner.close };
         };
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: openSpy,
             stepTimeoutMs: 500,
             loginTimeoutMs: 500,
@@ -432,7 +468,7 @@ describe('xhs-pub script flow (fake page)', () => {
     test('public: explicit publishStatus publishes and reports observed url', async () => {
         await seedImages();
         const { open, closed } = makeOpenPage(happy);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 500,
             loginTimeoutMs: 500,
@@ -449,7 +485,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const state = { ...happy, loggedIn: false };
         const { open, closed } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', { openPage: open, loginTimeoutMs: 40, stepTimeoutMs: 40 });
+        const t = makeTransport('script', { openPage: open, loginTimeoutMs: 40, stepTimeoutMs: 40 });
         const result = await t.publish({ content: cardContent() });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('login timeout');
@@ -461,7 +497,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const state = { ...happy, uploadThumbCount: 1 };
         const { open, closed } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 60,
             loginTimeoutMs: 500,
@@ -478,7 +514,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const state: FakeState = { ...happy, draftSaveIsSilent: true };
         const { open, closed } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -496,7 +532,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const state: FakeState = { ...happy, counterUnreadable: true };
         const { open } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 300,
             loginTimeoutMs: 500,
@@ -513,7 +549,7 @@ describe('xhs-pub script flow (fake page)', () => {
         await seedImages();
         const state: FakeState = { ...happy, publishConfirm: false };
         const { open, closed } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 60,
             loginTimeoutMs: 500,
@@ -535,7 +571,7 @@ describe('xhs-pub script flow (fake page)', () => {
                 'The "playwright" peer dependency is not installed. Add playwright@^1.55.0 to your dependencies and run `npx playwright install chromium` to download the browser.',
             );
         };
-        const t = new XhsBrowserTransport('script', { openPage: open, stepTimeoutMs: 50, submitSettleMs: 10 });
+        const t = makeTransport('script', { openPage: open, stepTimeoutMs: 50, submitSettleMs: 10 });
         const result = await t.publish({ content: cardContent() });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('playwright');
@@ -944,7 +980,7 @@ describe('xhs-pub seam without a typing capability (task 0174 R2)', () => {
             },
         };
         const open: OpenPage = async () => ({ page, close: async () => {} });
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -1023,7 +1059,7 @@ describe('xhs-pub resilient probes (task 0174)', () => {
             },
         };
         const open: OpenPage = async () => ({ page, close: async () => {} });
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -1040,7 +1076,7 @@ describe('xhs-pub resilient probes (task 0174)', () => {
 describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (0174 review P2)', () => {
     const publishDraft = async (state: FakeState, open: OpenPage = makeOpenPage(state).open) => {
         await seedImages();
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 200,
             loginTimeoutMs: 500,
@@ -1140,7 +1176,7 @@ describe('xhs-pub live publish confirmation (0174 R5, measured 2026-09-26)', () 
     const publishPublic = async (state: FakeState) => {
         await seedImages();
         const { open, calls } = makeOpenPage(state);
-        const t = new XhsBrowserTransport('script', {
+        const t = makeTransport('script', {
             openPage: open,
             stepTimeoutMs: 300,
             loginTimeoutMs: 500,
@@ -1182,7 +1218,7 @@ describe('xhs-pub profile precedence (preserved, 0177)', () => {
         process.env.XHS_PROFILE_DIR = '/tmp/kk-xhs-env';
         process.env.KK_BROWSER_PROFILE_DIR = '/tmp/kk-shared-env';
         try {
-            const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+            const result = await makeTransport('script', { openPage: probe }).publish({
                 content: cardContent(),
                 options: { profileDir: '/tmp/kk-xhs-opt' },
             });
@@ -1200,7 +1236,7 @@ describe('xhs-pub profile precedence (preserved, 0177)', () => {
         process.env.XHS_PROFILE_DIR = '/tmp/kk-xhs-env';
         process.env.KK_BROWSER_PROFILE_DIR = '/tmp/kk-shared-env';
         try {
-            const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+            const result = await makeTransport('script', { openPage: probe }).publish({
                 content: cardContent(),
             });
             expect(result.ok).toBe(false);
@@ -1215,7 +1251,7 @@ describe('xhs-pub profile precedence (preserved, 0177)', () => {
         await seedImages();
         process.env.KK_BROWSER_PROFILE_DIR = '/tmp/kk-shared-env';
         try {
-            const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+            const result = await makeTransport('script', { openPage: probe }).publish({
                 content: cardContent(),
             });
             expect(result.ok).toBe(false);
@@ -1227,7 +1263,7 @@ describe('xhs-pub profile precedence (preserved, 0177)', () => {
 
     test('default is the xhs channel profile dir', async () => {
         await seedImages();
-        const result = await new XhsBrowserTransport('script', { openPage: probe }).publish({
+        const result = await makeTransport('script', { openPage: probe }).publish({
             content: cardContent(),
         });
         expect(result.ok).toBe(false);
@@ -1415,5 +1451,174 @@ describe('xhs-pub profile-check CLI (0177)', () => {
         } finally {
             restore();
         }
+    });
+});
+
+describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', () => {
+    const NOW = () => new Date('2026-09-28T10:00:00Z');
+    const verified = async (profileDir: string): Promise<ProfileSessionCheck> => ({
+        status: 'verified',
+        profileDir,
+        detail: 'stub',
+    });
+    const refused = async (profileDir: string): Promise<ProfileSessionCheck> => ({
+        status: 'refused',
+        profileDir,
+        detail: 'no authenticated console in the saved profile',
+    });
+
+    async function withGuardDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-guard-'));
+        try {
+            return await fn(dir);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    test('cap: a second publish inside the window is refused before any browser opens', async () => {
+        await seedImages();
+        await withGuardDir(async (dir) => {
+            const guard = createAutomationGuard({ statePath: join(dir, 'state.json'), now: NOW });
+            // The page is never reached: the budget is consumed at the headed launch, and this
+            // openPage proves it by throwing if it is ever called.
+            const never = async () => {
+                throw new Error('openPage must not be reached');
+            };
+            const first = makeTransport('script', { automation: guard, preflight: verified, openPage: never });
+            const firstResult = await first.publish({ content: cardContent() });
+            expect(firstResult.ok).toBe(false);
+
+            const second = makeTransport('script', { automation: guard, preflight: verified, openPage: never });
+            const secondResult = await second.publish({ content: cardContent() });
+            expect(secondResult.ok).toBe(false);
+            expect(secondResult.error).toContain('automation cap');
+            expect(secondResult.error).toContain("'publish' already ran");
+        });
+    });
+
+    test('preflight: a refused session blocks the headed visit and leaves the budget intact', async () => {
+        await seedImages();
+        await withGuardDir(async (dir) => {
+            const guard = createAutomationGuard({ statePath: join(dir, 'state.json'), now: NOW });
+            let opened = 0;
+            const transport = makeTransport('script', {
+                automation: guard,
+                preflight: refused,
+                openPage: async () => {
+                    opened += 1;
+                    throw new Error('unreachable');
+                },
+            });
+            const result = await transport.publish({ content: cardContent() });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('session preflight refused');
+            expect(result.error).toContain('no authenticated console');
+            expect(opened).toBe(0);
+            // The operator can log in and retry the same day: the cap bounds headed visits, not attempts.
+            expect(guard.allow('publish').allowed).toBe(true);
+        });
+    });
+
+    test('state: a corrupt state file is refused, never silently reset to a fresh budget', async () => {
+        await seedImages();
+        await withGuardDir(async (dir) => {
+            const path = join(dir, 'state.json');
+            await writeFile(path, 'not json');
+            const guard = createAutomationGuard({ statePath: path, now: NOW });
+            const transport = makeTransport('script', {
+                automation: guard,
+                preflight: verified,
+                openPage: async () => {
+                    throw new Error('unreachable');
+                },
+            });
+            const result = await transport.publish({ content: cardContent() });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('not valid JSON');
+            expect(result.error).toContain('delete');
+        });
+    });
+
+    test('window: the budget reopens once 24h have passed, and each event has its own budget', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-guard-'));
+        try {
+            const path = join(dir, 'state.json');
+            const guard = createAutomationGuard({ statePath: path, now: NOW });
+            guard.record('publish');
+            expect(guard.allow('publish').allowed).toBe(false);
+            // A `check` is a separate budget: publishing must not block the manual session check.
+            expect(guard.allow('check').allowed).toBe(true);
+
+            const later = createAutomationGuard({
+                statePath: path,
+                now: () => new Date(NOW().getTime() + CAP_WINDOW_MS),
+            });
+            expect(later.allow('publish').allowed).toBe(true);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('state: a non-object, an unparsable timestamp, and an unreadable path all fail closed', async () => {
+        await withGuardDir(async (dir) => {
+            const arrayPath = join(dir, 'array.json');
+            await writeFile(arrayPath, '[1,2]');
+            expect(createAutomationGuard({ statePath: arrayPath, now: NOW }).allow('publish').reason).toContain(
+                'is not a JSON object',
+            );
+
+            const stampPath = join(dir, 'stamp.json');
+            await writeFile(stampPath, JSON.stringify({ publish: 'garbage' }));
+            expect(createAutomationGuard({ statePath: stampPath, now: NOW }).allow('publish').reason).toContain(
+                "unparsable 'publish' timestamp",
+            );
+
+            // A directory where the file belongs is not a first run: refuse, never ignore.
+            const dirPath = join(dir, 'as-dir');
+            await mkdir(dirPath);
+            expect(createAutomationGuard({ statePath: dirPath, now: NOW }).allow('publish').reason).toContain(
+                'is unreadable',
+            );
+        });
+    });
+
+    test('state: an absent file is the legitimate first run, and record creates the parent directory', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-guard-'));
+        try {
+            const path = join(dir, 'nested', 'state.json');
+            const guard = createAutomationGuard({ statePath: path, now: NOW });
+            expect(guard.allow('publish').allowed).toBe(true);
+            guard.record('publish');
+            expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual({ publish: NOW().toISOString() });
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('CLI: a manual `check` draws on the shared check budget', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        await withGuardDir(async (dir) => {
+            const guard = createAutomationGuard({ statePath: join(dir, 'state.json'), now: NOW });
+            try {
+                const first = await profileCheckMain(
+                    ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                    fakeLauncher(consoleContext(true)),
+                    guard,
+                );
+                expect(first).toBe(0);
+                const second = await profileCheckMain(
+                    ['check', '--profile', '/tmp/kk-xhs-check', '--timeout', '50'],
+                    fakeLauncher(consoleContext(true)),
+                    guard,
+                );
+                expect(second).toBe(1);
+                expect(err.text()).toContain("'check' already ran");
+            } finally {
+                restore();
+            }
+        });
     });
 });

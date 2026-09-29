@@ -954,6 +954,31 @@ shared pipeline into a `packages/` library rather than chaining plugin-to-plugin
 
 ---
 
+## ADR-025: XHS automation is operator-initiated, session-preflighted, and rate-capped
+
+**Status:** Accepted · **Date:** 2026-09-28
+
+**Decision.** `xhs-pub` refuses to drive the creator console unless a saved session passes a
+headless preflight, and it bounds console visits to one headed publish cycle and one read-only
+session check per 24 h (state file `~/.config/kk/xhs-automation.json`, override
+`KK_XHS_AUTOMATION_STATE`). The publish budget is consumed at the headed launch, so a refused
+preflight leaves the window intact; `login` stays uncapped because it is operator-interactive by
+construction. The daily workflow's XHS target ships `xhs_enabled: "false"` and must not be enabled
+on a scheduled run.
+
+**Why.** XHS warned the operator about automated login/publish activity (2026-09-28). `xhs-pub`
+always launches a headed browser against the creator console; before this decision a missing session
+was not a fast refusal but a 120 s headed login wait, and the freshly-wired daily target defaulted
+to on — 365 unattended console sessions a year. The exposure is account-level, so the guard lives in
+the plugin (every surface inherits it) rather than in one caller.
+
+**Cost.** A legitimate second publish inside the window is refused and needs an explicit state
+reset. The window is machine-local, so a second machine keeps its own budget.
+
+**Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
