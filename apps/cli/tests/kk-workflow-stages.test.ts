@@ -57,6 +57,20 @@ function writeContent(dir: string, metadata: unknown): void {
     writeFileSync(join(dir, '4-audio/content.json'), JSON.stringify({ metadata }));
 }
 
+/**
+ * Task 0189 R10: daily-publish-prep only packages drafts that cleared the content-safety verdict
+ * gate. Drives the real prep + gate stages (the two agent outputs are written in the agents' place).
+ */
+function passSafety(dir: string, stamp: string): void {
+    mkdirSync(join(dir, '24-script'), { recursive: true });
+    const at = (name: string) => join(dir, '24-script', `${stamp}_09_${name}`);
+    writeFileSync(join(dir, '24-script', `${stamp}_08_script_voicescript.yaml`), 'segments: []\n');
+    run(['daily-safety-prep', dir, stamp, 'xiaoyuzhou']);
+    writeFileSync(at('safety-review_report.json'), JSON.stringify({ platforms: [{ decision: 'OK' }] }));
+    writeFileSync(at('safety-judge_verdict.json'), JSON.stringify({ verdict: 'PASS' }));
+    run(['daily-safety-gate', dir, stamp]);
+}
+
 describe('kk workflow stage runner (0132)', () => {
     it('prepare-solo writes brief.md from the topic, stages both subdirs, and zeroes .revise-count', () => {
         withTempDir((dir) => {
@@ -597,6 +611,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
             );
+            passSafety(dir, stamp);
             expect(
                 run(['daily-publish-prep', dir, stamp, 'Robin Min', '咸话咸说'], fakeFfmpeg(dir, record)).status,
             ).toBe(0);
@@ -651,6 +666,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
             );
+            passSafety(dir, stamp);
             expect(
                 run(['daily-publish-prep', dir, stamp, '', ''], fakeFfmpeg(dir, join(dir, 'ffmpeg-argv.json'))).status,
             ).toBe(0);
@@ -676,10 +692,37 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 join(dir, `30-audio/${stamp}_11_generate_content.json`),
                 JSON.stringify({ metadata: { mp3Path: audio, duration: 12 } }),
             );
+            passSafety(dir, stamp);
             expect(run(['daily-publish-prep', dir, stamp, '', ''], fakeFfmpeg(dir, record)).status).toBe(0);
             const argv = JSON.parse(readFileSync(record, 'utf-8')) as string[];
             expect(argv.filter((arg) => arg.startsWith('artist=') || arg.startsWith('album='))).toEqual([]);
             expect(argv).toContain('title=T');
+        });
+    });
+
+    it('daily-publish-prep refuses drafts with no safety stamp, or edited after the stamp (0189 R10)', () => {
+        withTempDir((dir) => {
+            for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            const audio = join(dir, '30-audio/content.mp3');
+            const article = join(dir, `22-article/${stamp}_06_article_content.json`);
+            const prep = join(dir, `31-publish/${stamp}_13_publish-prep_content.json`);
+            writeFileSync(audio, 'mp3-bytes');
+            writeFileSync(article, JSON.stringify({ title: 'T', body: 'B' }));
+            writeFileSync(
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
+                JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
+            );
+            const env = fakeFfmpeg(dir, join(dir, 'ffmpeg-argv.json'));
+            const unreviewed = run(['daily-publish-prep', dir, stamp, '', ''], env);
+            expect(unreviewed.status).not.toBe(0);
+            expect(unreviewed.stderr).toContain('content-safety');
+            passSafety(dir, stamp);
+            writeFileSync(article, JSON.stringify({ title: 'T', body: 'edited after PASS' }));
+            const stale = run(['daily-publish-prep', dir, stamp, '', ''], env);
+            expect(stale.status).not.toBe(0);
+            expect(stale.stderr).toContain('changed after');
+            expect(existsSync(prep)).toBe(false);
         });
     });
 
@@ -1314,6 +1357,8 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 PODCAST_PUB_RUN_DATE: stamp,
                 PODCAST_PUB_BRIEF_MODE: 'true',
                 PODCAST_PUB_TITLE: 'Daily AI',
+                // 0189 R1 / Apple §1.11: the AI-voice disclosure rides in the episode metadata too.
+                PODCAST_PUB_FOOTER_NOTE: '本期文字由 AI 辅助整理，音频为 AI 合成配音。',
             });
         });
     });

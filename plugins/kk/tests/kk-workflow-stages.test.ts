@@ -292,3 +292,93 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
         }
     });
 });
+
+describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
+    const OK_REPORT = { platforms: [{ platform: 'xiaoyuzhou', decision: 'OK', findings: [] }], escalate: false };
+    const PASS_VERDICT = { verdict: 'PASS', rubric: 'compliance', score: 0.95 };
+    const at = (dir: string, name: string) => join(dir, '24-script', `${STAMP}_09_${name}`);
+
+    /** Drafts + prep; the two agent.run outputs are written by the test in place of the agents. */
+    function setup(report?: unknown, verdict?: unknown): string {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-0189-safety-'));
+        for (const sub of ['22-article', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
+        writeFileSync(join(dir, '22-article', `${STAMP}_06_article_content.json`), JSON.stringify({ title: 'T' }));
+        writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: []\n');
+        expect(runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']).status).toBe(0);
+        if (report !== undefined) writeFileSync(at(dir, 'safety-review_report.json'), JSON.stringify(report));
+        if (verdict !== undefined) writeFileSync(at(dir, 'safety-judge_verdict.json'), JSON.stringify(verdict));
+        return dir;
+    }
+
+    /** Run the gate; routing is transition-owned, so it always exits 0 and the status file decides. */
+    function gate(dir: string): string {
+        const result = runStage(['daily-safety-gate', dir, STAMP]);
+        expect(result.status).toBe(0);
+        rmSync(dir, { recursive: true, force: true });
+        return `${result.stdout.match(/safety: status=(\w+)/)?.[1]}|${result.stdout}`;
+    }
+
+    it('PASS verdict + all-OK report on the unchanged drafts → pass, with a digest stamp', () => {
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+        expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('pass');
+        const request = readJson<{ digest: string; platforms: string[] }>(at(dir, 'safety-review_request.json'));
+        expect(request.platforms).toEqual(['xiaoyuzhou']);
+        expect(readJson<{ digest: string }>(at(dir, 'safety-judge_stamp.json')).digest).toBe(request.digest);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it.each([
+        ['missing verdict', OK_REPORT, undefined],
+        ['missing report', undefined, PASS_VERDICT],
+        ['FAIL verdict', OK_REPORT, { verdict: 'FAIL' }],
+        ['NEEDS_REVISION verdict', OK_REPORT, { verdict: 'NEEDS_REVISION' }],
+        ['unrecognized verdict', OK_REPORT, { verdict: 'pass' }],
+        ['BLOCK decision despite a PASS verdict', { platforms: [{ decision: 'BLOCK' }] }, PASS_VERDICT],
+        ['report without platforms', { platforms: [] }, PASS_VERDICT],
+        ['unknown decision', { platforms: [{ decision: 'FINE' }] }, PASS_VERDICT],
+    ])('%s → block, no stamp', (_name, report, verdict) => {
+        const dir = setup(report, verdict);
+        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+        expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('block');
+        expect(() => readFileSync(at(dir, 'safety-judge_stamp.json'))).toThrow();
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('unparsable verdict JSON → block', () => {
+        const dir = setup(OK_REPORT);
+        writeFileSync(at(dir, 'safety-judge_verdict.json'), '{not json');
+        expect(gate(dir)).toStartWith('block|');
+    });
+
+    it('a RISK decision or escalate:true cannot be auto-passed by a PASS verdict → escalate', () => {
+        expect(gate(setup({ platforms: [{ decision: 'RISK' }], escalate: false }, PASS_VERDICT))).toStartWith(
+            'escalate|',
+        );
+        expect(gate(setup({ platforms: [{ decision: 'OK' }], escalate: true }, PASS_VERDICT))).toStartWith('escalate|');
+    });
+
+    it('drafts edited after the review was requested → block (an old PASS does not carry over)', () => {
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: [edited]\n');
+        expect(gate(dir)).toStartWith('block|');
+    });
+
+    it('re-running prep drops the previous report, verdict and stamp, so a retry must be re-reviewed', () => {
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+        expect(runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']).status).toBe(0);
+        for (const name of ['safety-review_report.json', 'safety-judge_verdict.json', 'safety-judge_stamp.json']) {
+            expect(() => readFileSync(at(dir, name))).toThrow();
+        }
+        expect(gate(dir)).toStartWith('block|');
+    });
+
+    it('prep fails loud when a draft is missing', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-0189-safety-'));
+        const result = runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('safety-review');
+        rmSync(dir, { recursive: true, force: true });
+    });
+});

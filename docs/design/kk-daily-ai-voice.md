@@ -23,7 +23,13 @@ flowchart TD
     G2 -->|script_write_enabled+zh, no plan/YAML yet| SW[script-write: daily-script-style + agent.run, onError continue]
     G2 -->|disabled/non-zh/cached| H
     SW -->|24-script/{run_date}_08_script-write_plan.json| H[script: dailynews-gen]
-    H -->|24-script/{run_date}_08_script_content.json & {run_date}_08_script_voicescript.yaml| I{skip_review?}
+    H -->|24-script/{run_date}_08_script_content.json & {run_date}_08_script_voicescript.yaml| SG{publish_enabled?}
+    SG -->|true| SR[safety-review: daily-safety-prep + kk:content-safety agent.run]
+    SR --> SJ[safety-judge: kk:content-judge compliance agent.run + daily-safety-gate]
+    SJ -->|pass + skip_review| K
+    SJ -->|pass, or escalate| J
+    SJ -->|block / no status| L
+    SG -->|false| I{skip_review?}
     I -->|false| J[review: hitl.confirm]
     I -->|true| K[wrap-docs]
     J -->|Approved| K[wrap-docs: VoiceScript -> Doc]
@@ -73,6 +79,7 @@ Convention-named artifacts:
 - `${run_date}_07_cover_cover.png`: Cover image (cover state skipped when the day's file exists).
 - `${run_date}_08_script-write_style.md` / `${run_date}_08_script-write_plan.json`: the style contract snapshot (idempotent copy of the shipped `daily-voice-style.zh.md` sidecar) and the agent-authored per-item plan (F613 0162; a failed/rejected plan is simply absent — the script step then builds from templates). The script step also passes `DAILYNEWS_DATE=${vars.run_date}` (task 0189): the broadcast greeting carries the episode's run date even on a backfilled/retried run.
 - `${run_date}_08_script_content.json` / `${run_date}_08_script_voicescript.yaml`: Generator `Content` with VoiceScript YAML body and the human-readable VoiceScript (skipped when the day's `.yaml` exists; Content.metadata stamps `scriptSource`/`scriptPlanErrors`, surfaced by run-report's `脚本来源` line — see `docs/design/daily-voice-script-plan.md`).
+- `${run_date}_09_safety-review_request.json` / `${run_date}_09_safety-review_report.json` / `${run_date}_09_safety-judge_verdict.json` / `${run_date}_09_safety-judge_status.txt` / `${run_date}_09_safety-judge_stamp.json` (in `24-script/`, task 0189 R10): the content-safety verdict gate, run only when `publish_enabled`. `daily-safety-prep` digests the article Content + VoiceScript (sha256), drops every artifact of an earlier review, and writes the request (`digest`, `platforms` from the `safety_platforms` var). The `kk:content-safety` agent.run writes the report; the `kk:content-judge` (`compliance` rubric) agent.run writes the verdict. `daily-safety-gate` projects both into `safety_status` — `block` for a missing/unparsable/malformed report or verdict, any `BLOCK` decision, any non-`PASS` verdict, or drafts whose digest changed since the request; `escalate` for a `RISK` decision or `escalate: true` (routes to `review` even when `skip_review` is `"true"`); `pass` otherwise — and writes the digest stamp for pass/escalate. `daily-publish-prep` refuses to package when the stamp is absent or its digest differs from the current drafts, so an edit after PASS (including a HITL edit at `review`) or an older draft never publishes. The program holds no platform policy: rules live in the skill's `references/platforms/*.md`.
 - `${run_date}_10_wrap-docs_docs.json`: VoiceScript wrapped as a single `Doc` for the voice driver selected by `vdriver` (default `voicebox` → voice-gen).
 - `${run_date}_11_generate_content.json`: Synthesized audio `Content` metadata (generate state skipped when the file exists and `metadata.qc.passed` is true). Carries `metadata.mp3Path` since 0171 — `transcode_mp3` defaults to `"true"` and rides the `VOICE_GEN_MP3` env channel.
 - `${run_date}_13_publish-prep_content.json`: Article + audio merged for the publish seam. 0171: `publish-prep` publishes the MP3 (`metadata.mp3Path ?? audioPath`), fails loud when that file is not `.mp3` (naming `transcode_mp3`), and stamps the enclosure's ID3v2.3 tags in place (§6).

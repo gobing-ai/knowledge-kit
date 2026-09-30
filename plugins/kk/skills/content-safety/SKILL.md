@@ -149,9 +149,15 @@ credentials, and no platform word lists are embedded in any caller or in TypeScr
 
 ## Workflow integration
 
-Currently invoked as a manual / ad-hoc `agent.run` review (task 0189 R6: no new pipeline
-integrations). The deterministic pipeline gate is the topic-boundary QC stage
-(`plugins/kk/scripts/topic-boundary.json` via `daily-qc-content`); this skill covers the
-judgment-shaped residue the deterministic gate cannot express. See
-`plugins/kk/skills/content-judge/references/workflow-integration.md` for the `agent.run` step
-shape if a workflow later wires a gate on this skill's report.
+The `kk-daily-ai-voice` workflow runs this skill in `detect-only` mode on every publishing run
+(`safety-review` state, task 0189 R10): it reads the review request for the target `platforms`
+and writes the report JSON; `kk:content-judge` (`compliance` rubric) then re-checks the same
+drafts independently, and the `daily-safety-gate` stage consumes both. The program reads only
+`platforms[].decision`, `escalate`, and the judge's `verdict` — a `BLOCK`, a non-`PASS` verdict,
+or a missing/unreadable file stops the run; a `RISK` or `escalate: true` forces the human review
+even when the run is otherwise unattended. The report is bound to the exact draft bytes: editing a
+draft after the verdict invalidates it. The earlier deterministic gate is the topic-boundary QC
+stage (`plugins/kk/scripts/topic-boundary.json` via `daily-qc-content`); this skill covers the
+judgment-shaped residue that gate cannot express. Step shape:
+`plugins/kk/skills/content-judge/references/workflow-integration.md`. Outside the workflow the
+skill stays usable ad hoc on any draft.

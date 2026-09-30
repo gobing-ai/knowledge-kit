@@ -40,6 +40,8 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'cover',
             'script-write',
             'script',
+            'safety-review',
+            'safety-judge',
             'review',
             'wrap-docs',
             'generate',
@@ -224,17 +226,19 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
         // which resolves the shipped stages script from the installed package. The YAML must carry no
         // prelude remnants and exactly one delegation call per stage (25 -> 26: daily-publish-wechat
-        // joined 2026-09-29 with the WeChat MP draft target).
+        // joined 2026-09-29 with the WeChat MP draft target; 26 -> 28: the 0189 safety prep + gate).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(26);
+        expect(yaml.split('kk stage daily-').length - 1).toBe(28);
         // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
             ['cover', 1000],
             ['xhs-write', 1000],
             ['script-write', 1000],
+            ['safety-review', 1000],
+            ['safety-judge', 1000],
         ] as const) {
             const block = yaml.match(new RegExp(`- id: ${step}\\n[\\s\\S]*?(?=\\n  - id: )`))?.[0] ?? '';
             const input = block.split('input: |')[1]?.split('expectFile:')[0] ?? '';
@@ -324,6 +328,35 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
 
     it('R5 — supports review bypass via skip_review=true', () => {
         expect(yaml).toContain('test "$' + '{vars.skip_review}" = "true"');
+    });
+
+    it('0189 R10 — a publishing run is gated on the content-safety verdict before audio or review', () => {
+        const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
+        // First-match-wins: the publish_enabled edge sits above both review edges.
+        expect(edges.filter((e) => e.startsWith('script->'))).toEqual([
+            'script->safety-review',
+            'script->wrap-docs',
+            'script->review',
+        ]);
+        expect(edges).toContain('safety-review->safety-judge');
+        // pass+skip_review -> wrap-docs; pass|escalate -> review; anything else (block, empty) -> failed.
+        expect(edges.filter((e) => e.startsWith('safety-judge->'))).toEqual([
+            'safety-judge->wrap-docs',
+            'safety-judge->review',
+            'safety-judge->failed',
+        ]);
+        const judge = yaml.slice(yaml.indexOf('  - from: safety-judge'), yaml.indexOf('  - from: review'));
+        // skip_review can only bypass the human on a clean pass — never on an escalation.
+        expect(judge).toContain(
+            'test "$' + '{vars.safety_status}" = "pass" && test "$' + '{vars.skip_review}" = "true"',
+        );
+        expect(judge).toContain(
+            'test "$' + '{vars.safety_status}" = "pass" || test "$' + '{vars.safety_status}" = "escalate"',
+        );
+        expect(judge.slice(judge.lastIndexOf('to: failed'))).toContain('kind: always');
+        expect(yaml).toContain('safety_status: ""');
+        expect(yaml).toContain('kk:content-safety');
+        expect(yaml).toContain('kk:content-judge');
     });
 
     it('R3 (0140) — the quality-control edges carry no qc.passed gate and no failed fallthrough', () => {

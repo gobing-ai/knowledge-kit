@@ -1500,6 +1500,91 @@ function dailyScript(args: string[]): void {
     });
 }
 
+/** Task 0189 R10 artifacts of the content-safety verdict gate (24-script, step 09). */
+function safetyPath(workDir: string, runDate: string, name: string): string {
+    return join(workDir, '24-script', `${runDate}_09_${name}`);
+}
+
+/**
+ * Digest of the exact drafts under review (article Content + VoiceScript). A verdict is only valid
+ * for the bytes it was issued on: the gate and publish-prep both recompute this, so an edit after
+ * PASS — including a HITL edit at `review` — invalidates the stamp instead of riding on it.
+ */
+function safetyDigest(workDir: string, runDate: string): string {
+    const hash = createHash('sha256');
+    for (const path of [
+        join(workDir, '22-article', `${runDate}_06_article_content.json`),
+        join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`),
+    ]) {
+        if (!isFile(path)) failWith(1, `safety-review: required draft not found: ${path}`);
+        hash.update(readFileSync(path)).update('\0');
+    }
+    return hash.digest('hex');
+}
+
+/**
+ * Open a content-safety review of the current drafts: drop every artifact of an earlier review
+ * (a retry must be re-reviewed on its final version) and write the request the two agent.run
+ * steps read. The program passes context only — platform policy lives in the kk:content-safety
+ * skill's reference files, never here.
+ */
+function dailySafetyPrep(args: string[]): void {
+    const [workDir = '', runDate = '', platforms = ''] = args;
+    timed(workDir, 'safety-review', () => {
+        const digest = safetyDigest(workDir, runDate);
+        for (const name of [
+            'safety-review_report.json',
+            'safety-judge_verdict.json',
+            'safety-judge_status.txt',
+            'safety-judge_stamp.json',
+        ]) {
+            const stale = safetyPath(workDir, runDate, name);
+            if (isFile(stale)) unlinkSync(stale);
+        }
+        const request = safetyPath(workDir, runDate, 'safety-review_request.json');
+        const targets = platforms
+            .split(',')
+            .map((platform) => platform.trim())
+            .filter(Boolean);
+        sted('write', request, () => writeJsonText(request, { digest, platforms: targets, mode: 'detect-only' }));
+    });
+}
+
+/**
+ * Consume the content-safety report and the content-judge verdict into pass|escalate|block (exit 0
+ * in all three — routing is transition-owned). Fail-closed: only an explicit PASS verdict on the
+ * unchanged drafts, with a well-formed report carrying no BLOCK, unblocks; a RISK decision or
+ * `escalate: true` forces the human review regardless of the verdict score.
+ */
+function dailySafetyGate(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    const statusFile = safetyPath(workDir, runDate, 'safety-judge_status.txt');
+    const stampFile = safetyPath(workDir, runDate, 'safety-judge_stamp.json');
+    timed(workDir, 'safety-judge', () => {
+        const request = readJson(safetyPath(workDir, runDate, 'safety-review_request.json'));
+        const report = readJson(safetyPath(workDir, runDate, 'safety-review_report.json'));
+        const verdict = readJson(safetyPath(workDir, runDate, 'safety-judge_verdict.json'));
+        const platforms = Array.isArray(report?.platforms) ? (report.platforms as Record<string, unknown>[]) : [];
+        const decisions = platforms.map((platform) => platform?.decision);
+        const digest = safetyDigest(workDir, runDate);
+        let status = 'block';
+        let reason = 'verdict PASS on unchanged drafts, no BLOCK/RISK';
+        if (request?.digest !== digest) reason = 'drafts changed after the review was requested';
+        else if (decisions.length === 0 || decisions.some((d) => d !== 'OK' && d !== 'RISK' && d !== 'BLOCK'))
+            reason = 'content-safety report missing or malformed';
+        else if (decisions.includes('BLOCK')) reason = 'content-safety report carries a BLOCK decision';
+        else if (verdict?.verdict !== 'PASS')
+            reason = `content-judge verdict is ${typeof verdict?.verdict === 'string' ? verdict.verdict : 'missing or unreadable'}`;
+        else if (decisions.includes('RISK') || report?.escalate === true) {
+            status = 'escalate';
+            reason = 'RISK decision or escalation — human review required';
+        } else status = 'pass';
+        if (status !== 'block') sted('write', stampFile, () => writeJsonText(stampFile, { digest, status }));
+        sted('write', statusFile, () => writeRaw(statusFile, status));
+        console.log(`safety: status=${status} (${reason}); routing is transition-owned`);
+    });
+}
+
 function dailyWrapDocs(args: string[]): void {
     const [workDir = '', runDate = '', voiceProfile = ''] = args;
     const scriptPath = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
@@ -1775,6 +1860,13 @@ function dailyPublishPrep(args: string[]): void {
                 coverPath: hasCover ? resolvedCover : undefined,
             },
         };
+        // Task 0189 R10: the last program seam before anything is dispatched. No stamp, or a
+        // stamp issued on different bytes (edited after PASS, or an older draft), never publishes.
+        const stamp = readJson(safetyPath(workDir, runDate, 'safety-judge_stamp.json'));
+        if (stamp === null) failWith(1, 'publish-prep: no content-safety verdict stamp for this run — not publishing');
+        if (stamp.digest !== safetyDigest(workDir, runDate)) {
+            failWith(1, 'publish-prep: drafts changed after the content-safety verdict — re-run the review');
+        }
         sted('write', prepPath, () => writeJsonText(prepPath, merged));
     });
 }
@@ -1831,6 +1923,9 @@ function dailyShowNotes(args: string[]): void {
                 PODCAST_PUB_RUN_DATE: runDate,
                 PODCAST_PUB_BRIEF_MODE: 'true',
                 PODCAST_PUB_ARTICLE_POST_PATH: postPath,
+                // Task 0189 R1 / Apple §1.11: AI-voice disclosure in the episode metadata, not only
+                // in the audio sign-off and the article footer.
+                PODCAST_PUB_FOOTER_NOTE: '本期文字由 AI 辅助整理，音频为 AI 合成配音。',
                 ...(isFile(audioContent) ? { PODCAST_PUB_AUDIO_CONTENT: audioContent } : {}),
             },
         });
@@ -2337,6 +2432,12 @@ if (import.meta.main)
             break;
         case 'daily-script':
             dailyScript(rest);
+            break;
+        case 'daily-safety-prep':
+            dailySafetyPrep(rest);
+            break;
+        case 'daily-safety-gate':
+            dailySafetyGate(rest);
             break;
         case 'daily-wrap-docs':
             dailyWrapDocs(rest);
