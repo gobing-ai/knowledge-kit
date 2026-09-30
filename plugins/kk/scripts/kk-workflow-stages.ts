@@ -785,7 +785,16 @@ export function applyTopicBoundary(
         const needle = haystack.toLowerCase();
         let exclusion: TopicBoundaryExclusion | null = null;
         for (const rule of spec.rules) {
-            const matched = rule.keywords.find((keyword) => keyword !== '' && needle.includes(keyword.toLowerCase()));
+            // ASCII keywords must start at a word boundary ("selection" is not "election", "patriot"
+            // is not "riot"); the tail stays open so plurals/inflections still hit. zh keywords have
+            // no word boundaries and keep plain substring matching.
+            const matched = rule.keywords.find((keyword) => {
+                const lower = keyword.toLowerCase();
+                if (lower === '') return false;
+                return /^[a-z]/.test(lower)
+                    ? new RegExp(`\\b${lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(needle)
+                    : needle.includes(lower);
+            });
             if (matched !== undefined) {
                 exclusion = { id: String(record.id ?? ''), title, rule: rule.id, reason: rule.reason, matched };
                 break;
@@ -801,7 +810,9 @@ export function applyTopicBoundary(
                 const published = new Date(stamp);
                 if (
                     !Number.isNaN(published.getTime()) &&
-                    published.getTime() > new Date(`${runIso}T23:59:59Z`).getTime()
+                    // No zone suffix: run_date is a LOCAL day, so its end is local too — a UTC
+                    // cutoff flags same-evening items west of Greenwich as future-dated.
+                    published.getTime() > new Date(`${runIso}T23:59:59`).getTime()
                 ) {
                     exclusion = {
                         id: String(record.id ?? ''),

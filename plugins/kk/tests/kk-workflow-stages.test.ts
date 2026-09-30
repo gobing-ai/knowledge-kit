@@ -37,14 +37,14 @@ interface BoundaryResult {
 }
 
 /** applyTopicBoundary probe: the pure (docs, runDate, spec) function, called against the real spec data. */
-function applyBoundary(docs: unknown[], runDate: string): BoundaryResult {
+function applyBoundary(docs: unknown[], runDate: string, tz = 'UTC'): BoundaryResult {
     const script = [
         `import { readFileSync } from 'node:fs';`,
         `import { applyTopicBoundary } from ${JSON.stringify(runner)};`,
         `const spec = JSON.parse(readFileSync(${JSON.stringify(specPath)}, 'utf-8'));`,
         `console.log(JSON.stringify(applyTopicBoundary(${JSON.stringify(docs)}, ${JSON.stringify(runDate)}, spec)));`,
     ].join('\n');
-    const result = spawnSync('bun', ['-e', script], { encoding: 'utf-8' });
+    const result = spawnSync('bun', ['-e', script], { encoding: 'utf-8', env: { ...process.env, TZ: tz } });
     if (result.status !== 0) throw new Error(`applyTopicBoundary failed: ${result.stderr}`);
     return JSON.parse(result.stdout) as BoundaryResult;
 }
@@ -138,6 +138,31 @@ describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
         expect(excluded).toEqual([
             expect.objectContaining({ id: 'future-1', rule: 'date-conflict', matched: '2026-09-17T08:00:00.000Z' }),
         ]);
+    });
+
+    it('does not match an English keyword buried inside a longer word (selection ≠ election, patriot ≠ riot)', () => {
+        const { kept, excluded } = applyBoundary(
+            [qcDoc('fp-1', 'Model selection heuristics for agents'), qcDoc('fp-2', 'Patriot: a Rust tracing library')],
+            STAMP,
+        );
+        expect(excluded).toEqual([]);
+        expect(kept.map((doc) => doc.id)).toEqual(['fp-1', 'fp-2']);
+    });
+
+    it('still matches an English keyword at a word start, including plurals', () => {
+        const { excluded } = applyBoundary([qcDoc('en-2', 'New tariffs hit GPU imports')], STAMP);
+        expect(excluded).toEqual([expect.objectContaining({ id: 'en-2', rule: 'trade-controls', matched: 'tariff' })]);
+    });
+
+    it('judges date-conflict against the local run day, not UTC (a Pacific-evening item is not future-dated)', () => {
+        // 2026-09-17T03:00Z is 20:00 on 2026-09-16 in Los Angeles — same local day as the run.
+        const { kept, excluded } = applyBoundary(
+            [qcDoc('evening-1', '浏览器端零依赖语音实现', '2026-09-17T03:00:00.000Z')],
+            STAMP,
+            'America/Los_Angeles',
+        );
+        expect(excluded).toEqual([]);
+        expect(kept.map((doc) => doc.id)).toEqual(['evening-1']);
     });
 
     it('keeps nothing when every doc is excluded (zero-kept → done-no-content edge)', () => {
