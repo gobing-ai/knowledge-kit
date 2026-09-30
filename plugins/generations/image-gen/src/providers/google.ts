@@ -174,6 +174,9 @@ export const createGoogle: ProviderFactory = (options?: ProviderOptions): ImageP
             // the key and the proxy password into logs. `-sS` (not `-s`) keeps curl's own diagnostic on
             // stderr, so `details` no longer falls back to that argv-bearing message.
             //
+            // `stdio: ['pipe', 'pipe', 'pipe']` is explicit because Bun's `execFileSync` otherwise
+            // tees the child's stderr to the parent's stderr even though it also captures it.
+            //
             // File IO goes through the `@gobing-ai/ts-runtime` seam (`no-direct-fs-io`): the seam is
             // text-only with no `mode` argument, and the file lives in `os.tmpdir()`, which is a
             // per-user directory (0700 on macOS).
@@ -199,7 +202,12 @@ export const createGoogle: ProviderFactory = (options?: ProviderOptions): ImageP
                         '@-',
                         url,
                     ],
-                    { input: JSON.stringify(body), encoding: 'utf8', timeout: 310_000 },
+                    {
+                        input: JSON.stringify(body),
+                        encoding: 'utf8',
+                        timeout: 310_000,
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                    },
                 );
             } catch (error: unknown) {
                 const e = error as { message?: string; stderr?: string | Buffer };
