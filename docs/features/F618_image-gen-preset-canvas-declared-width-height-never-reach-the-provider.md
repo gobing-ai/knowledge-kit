@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-09-29T02:25:45.197Z"
-updated_at: "2026-09-29T02:31:39.341Z"
+updated_at: "2026-09-30T05:51:00.214Z"
 ---
 
 # F618: XHS daily card target with automation-risk guard (ADR-025)
@@ -54,10 +54,14 @@ Feature: image-gen canvas declarations are delivered, not decorative
 
   @edge
   Scenario: R3 — The measured regression stays fixed
-    Given the xhs-card preset at 3:4
-    When a card is rendered
-    Then the artifact is 1080x1440, not the measured 864x1152
+    Given the xhs-card preset at 3:4 on MiniMax image-01
+    When image-gen requests the raw provider image
+    Then the request carries 1080x1440 rather than the aspect ratio that produced 864x1152
+    And the delivered size is recorded, so a regression is visible in the metadata
 ```
+
+> Scope note (2026-09-29 refinement): R3 pins the **raw provider artifact**. The composed XHS card's 1080x1440 canvas
+> is owned by F616 (task 0180) and holds regardless of provider.
 
 ## Tasks
 
