@@ -298,7 +298,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-publish-podcast "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `kk stage daily-publish-wechat "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.wechat_live}"`,
             `kk stage daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
-            `kk stage daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}"`,
+            `kk stage daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}" "\${vars.plugins_path}"`,
             `kk stage daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `kk stage daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,

@@ -400,12 +400,12 @@ states:
           var: publish_status
 
   - id: patch-surfdash
-    description: "20260917 #4/#6 — patch published surfdash posts: podcast cover URL into image/og_image frontmatter + podcast cross-link (zh/en/ja), commit+push"
+    description: "20260917 #4/#6 — patch published surfdash posts: podcast cover URL into image/og_image frontmatter + podcast cross-link (zh/en/ja), re-sync EmDash rows so CMS cards get the CDN cover (20260929), commit+push"
     onEnter:
       - kind: shell
         options:
           command: >-
-            kk stage daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.surfdash_root}"
+            kk stage daily-patch-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.surfdash_root}" "${vars.plugins_path}"
 
   - id: publish-partial
     description: "Partial publish — at least one target published, at least one failed; echo warning, write a .spur/run marker, preserve result.json for --retry-from, continue to done (task 0118: surfdash failure = no-URL fallback notes; podcast failure = its own partial)"

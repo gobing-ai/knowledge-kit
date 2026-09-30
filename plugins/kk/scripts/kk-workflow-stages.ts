@@ -1806,7 +1806,7 @@ function dailyPublishPartial(args: string[]): void {
  * Idempotent per post; commits + pushes the surfdash checkout (SURFDASH_AUTO_PUSH=0 keeps commit-only).
  */
 function dailyPatchSurfdash(args: string[]): void {
-    const [workDir = '', runDate = '', surfdashRoot = ''] = args;
+    const [workDir = '', runDate = '', surfdashRoot = '', pluginsPath = ''] = args;
     if (!surfdashRoot || !existsSync(surfdashRoot)) {
         console.log(`patch-surfdash: surfdash root '${surfdashRoot}' not found — skip`);
         return;
@@ -1905,6 +1905,39 @@ function dailyPatchSurfdash(args: string[]): void {
                 sted('write', indexMd, () => writeFileSync(indexMd, md));
                 written.push(relative(surfdashRoot, indexMd));
                 changed++;
+            }
+        }
+        // 20260929 prod feedback: CMS cards (homepage hero/tag/search) read EmDash rows whose
+        // featured_image is snapshotted at translate-sync time — i.e. the pre-patch
+        // `./assets/cover.png`, which the deployed worker does not serve (404). The patch only
+        // rewrites files, so re-sync the EmDash rows from the patched files through the same
+        // `kk executor` path as translate-sync (its plugin child gets EMDASH_API_TOKEN from kk
+        // config; a direct orchestrator spawn gets 403 from prod dev-bypass). Runs before the
+        // changed===0 early-return so re-runs heal rows an earlier commit left stale
+        // (20260925/20260929). Fixture tests pass no plugins-path and must not shell out.
+        if (pluginsPath === '') {
+            console.log('patch-surfdash: no plugins-path — skip emdash re-sync');
+        } else {
+            const syncIn = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync.json`);
+            const syncResult = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
+            sted('write', syncIn, () =>
+                writeJqText(syncIn, { body: '', options: { operation: 'sync', postPath: join(slugDir, 'index.md') } }),
+            );
+            const status = kk(
+                ['executor', 'run', 'surfdash-pub', '--in', syncIn, '--out', syncResult, ...pluginsArgs(pluginsPath)],
+                { unset: NESTED_SPUR_UNSET, soft: true },
+            );
+            const result = isFile(syncResult) ? readJson(syncResult) : null;
+            const ok =
+                status === 0 &&
+                result !== null &&
+                (result.ok === true || (result.targets as Array<{ ok?: boolean }> | undefined)?.[0]?.ok === true);
+            if (!ok) {
+                console.log(
+                    `patch-surfdash: WARNING: emdash re-sync failed (exit ${status}) — CMS cards keep the stale cover; fix: kk executor run surfdash-pub --in ${syncIn} --out ${syncResult} --plugins-path ${pluginsPath}`,
+                );
+            } else {
+                console.log('patch-surfdash: emdash rows re-synced from patched files');
             }
         }
         if (changed === 0) {
