@@ -227,7 +227,19 @@ function docTimestamp(doc: Doc): number | null {
 }
 
 /** Freshness + non-news gates applied before scoring/dedup (archived or off-topic items never enter the pool). */
+/**
+ * Platform-safety gate (operator rule 2026-09-29): China domestic politics stories never enter
+ * the plan. Keyword heuristic — high-precision markers + top-leader names only; widen after
+ * reviewing false negatives in the audit trail rather than pre-emptively (overblocking kills
+ * legitimate AI-industry coverage).
+ */
+const CHINA_POLITICS_RE = /习近平|李克强|李强|党中央|政治局|中南海|政府工作报告|国台办|外交部发言人|两会/;
+function isChinaPolitics(doc: Doc): boolean {
+    return CHINA_POLITICS_RE.test(`${doc.title ?? ''}\n${(doc.body ?? '').slice(0, 2000)}`);
+}
+
 function passesGates(doc: Doc, planDate: string): boolean {
+    if (isChinaPolitics(doc)) return false;
     const meta = asRecord(doc.metadata);
     const tags = Array.isArray(meta.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [];
     if (tags.some((tag) => NON_NEWS_TAGS.has(tag.toLowerCase()))) return false;

@@ -63,6 +63,18 @@ describe('episode-plan-gen', () => {
         expect(aihot).toBeGreaterThan(hn);
     });
 
+    test('china-politics docs never enter the plan (platform-safety gate)', () => {
+        const politics = doc({ id: 'p', title: '习近平主持中央会议部署经济工作' });
+        const tech = doc({
+            id: 't',
+            title: 'Sora 2 发布',
+            body: 'OpenAI 发布 Sora 应用。',
+            sourceUri: 'https://openai.com/sora-2',
+        });
+        const plan = planEpisode([politics, tech], { maxItems: 10, date: '2026-09-04' });
+        expect(plan.map((d) => d.id)).toEqual(['t']);
+    });
+
     test('planScore normalizes last30days 0..1 relevance and horizon 0..10 score', () => {
         const last30 = planScore(doc({ metadata: { source: 'hackernews', relevance_score: '0.7666' } }));
         const horizon = planScore(doc({ metadata: { source: 'rss', score: 7 } }));

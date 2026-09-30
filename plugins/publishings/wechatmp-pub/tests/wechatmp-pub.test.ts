@@ -551,6 +551,42 @@ describe('wechatmp-pub draft enrichment (metadata.wechatmp)', () => {
         },
     });
 
+    test('insertAudio reuses the same-title 素材库 material and verifies placement at the top', async () => {
+        const calls: string[] = [];
+        const returns: unknown[] = [undefined, undefined, 'checked', true, 'top'];
+        const transport = new WechatmpBrowserTransport();
+        const page: WechatPage = {
+            ...recordingPage(calls),
+            evalJs: async (expression: string) => {
+                calls.push(expression.includes('js_insertaudio') ? 'open' : 'eval');
+                return returns.shift();
+            },
+        };
+        const warn = await (
+            transport as unknown as { insertAudio: (p: WechatPage, t: string) => Promise<string> }
+        ).insertAudio(page, '每日 AI 资讯 — 2026-09-29');
+        expect(warn).toBe('');
+        expect(calls).toEqual(['eval', 'open', 'wait .audio_dialog', 'eval', 'eval', 'pause', 'eval']);
+    });
+
+    test('insertAudio warns instead of inserting when no same-title material exists', async () => {
+        const calls: string[] = [];
+        const returns: unknown[] = [undefined, undefined, 'missing', 'missing', 'missing'];
+        const transport = new WechatmpBrowserTransport();
+        const page: WechatPage = {
+            ...recordingPage(calls),
+            evalJs: async () => {
+                calls.push('eval');
+                return returns.shift();
+            },
+        };
+        const warn = await (
+            transport as unknown as { insertAudio: (p: WechatPage, t: string) => Promise<string> }
+        ).insertAudio(page, '每日 AI 资讯 — 2026-09-30');
+        expect(warn).toContain('素材库无同名音频');
+        expect(calls).toEqual(['eval', 'eval', 'wait .audio_dialog', 'eval', 'pause', 'eval', 'pause', 'eval', 'eval']); // caret, menu, wait, 3x dedupe, cancel
+    });
+
     test('enrichDraft warns and sweeps when the original dialog does not commit', async () => {
         const calls: string[] = [];
         const transport = new WechatmpBrowserTransport();

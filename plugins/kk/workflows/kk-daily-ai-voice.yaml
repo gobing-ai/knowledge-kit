@@ -76,6 +76,8 @@ vars:
   # live — 发表 only on an ad-hoc wechat_live="true" run, deliberately, by hand.
   wechat_enabled: "true"
   wechat_live: "false"
+  # 合集 tag for the MP draft (passed to wechatmp-pub); other shows/collections override per workflow.
+  wechat_collection: "每日AI资讯"
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
@@ -191,7 +193,7 @@ states:
           # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3).
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
-            Write a morning-news prose article in natural simplified Chinese: title line "# 每日 AI 资讯 — ${vars.run_date}", an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together.
+            Write a morning-news prose article in natural simplified Chinese: title line "# 每日 AI 资讯 — ${vars.run_date}", an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together. 内容合规（平台审核）：全文不出现中国现任或历任党、国家、政府最高领导人的姓名，必须提及时以职务代称（如「国家主席」「国务院总理」）；不书写中国国内政治相关议题。
             Narrative register — smooth transitions between items, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). Keep facts/URLs from the plan verbatim; product/model names as-is; 「」 quotes.
             Output the markdown to ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md.
           expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
@@ -255,7 +257,7 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; use each doc's `id`; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
             For each doc write a `lead` (a spoken bridge into the title, not containing it) and an `insight` (why it matters, grounded only in that doc's facts).
-            Write an `intro` hooking today's actual themes and an `outro`; no greeting or sign-off — the builder adds both.
+            Write an `intro` hooking today's actual themes and an `outro`; no greeting or sign-off — the builder adds both. 内容合规：不出现中国现任、历任最高领导人姓名（以职务代称），不涉及中国国内政治。
             Output only the JSON object {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}]} with one item per doc id to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json.
           expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
           allowAppend: false
@@ -355,7 +357,7 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the lead story.
-            Write a Xiaohongshu note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags).
+            Write an XHS note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags). 不提领导人姓名，不涉国内政治。
             Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
             Ground every "copy", "points" and "sourcePoint" in that story alone — no invented facts. No text, letters, numbers, logos or real people in "subject".
             Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
@@ -383,7 +385,7 @@ states:
         onError: continue
         options:
           command: >-
-            kk stage daily-publish-wechat "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.wechat_live}"
+            kk stage daily-publish-wechat "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.wechat_live}" "${vars.wechat_collection}"
 
   - id: publish
     description: "Classify the sequenced surfdash → podcast outcomes full|partial|none into publish-status.txt (exit 0 in all three — routing is transition-owned; task 0118: per-target classification over the merged result.json)"

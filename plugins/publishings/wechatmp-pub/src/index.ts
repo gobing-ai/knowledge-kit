@@ -362,6 +362,11 @@ export class WechatmpBrowserTransport implements PublishTransport {
             const enrichMeta = content.metadata?.wechatmp;
             if (enrichMeta && typeof enrichMeta === 'object' && !Array.isArray(enrichMeta)) {
                 enrichWarnings = await this.enrichDraft(editor, enrichMeta as Record<string, unknown>);
+                const audioTitle = (enrichMeta as Record<string, unknown>).audioTitle;
+                if (typeof audioTitle === 'string' && audioTitle.trim() !== '') {
+                    const audioWarn = await this.insertAudio(editor, audioTitle.trim());
+                    if (audioWarn !== '') enrichWarnings.push(audioWarn);
+                }
             }
 
             if (want === 'draft') {
@@ -507,6 +512,85 @@ export class WechatmpBrowserTransport implements PublishTransport {
         }
         await sweep();
         return warnings;
+    }
+
+    /**
+     * Audio embed at the article top (operator request 2026-09-29): open the editor's audio menu
+     * (a hover dropdown - JS click bypasses the hover gate), reuse an existing same-title 素材库
+     * material, and insert at the caret (placed at the article start first). Upload of a missing
+     * material is deliberately manual for now: the 上传音频 form is iframe-based and unmapped.
+     * Fail-soft: every non-committed outcome returns a warning string; '' means placed at top.
+     */
+    private async insertAudio(editor: WechatPage, title: string): Promise<string> {
+        const evalJs = editor.evalJs;
+        if (typeof evalJs !== 'function') return '';
+        const CARET = `(() => {
+            const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
+            if (!pm || !pm.firstChild) return;
+            const r = document.createRange();
+            r.setStart(pm.firstChild, 0);
+            r.collapse(true);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(r);
+        })()`;
+        const DEDUPE = `(() => {
+            const want = ${JSON.stringify(title)}.replace(/\\s+/g, '');
+            const hit = [...document.querySelectorAll('label.frm_checkbox_label.audio_item')]
+                .find((l) => (l.textContent ?? '').replace(/\\s+/g, '').includes(want));
+            if (!hit) return 'missing';
+            const cb = (hit.closest('li') ?? hit.parentElement)?.querySelector('input[type=checkbox]');
+            if (!cb) return 'nobox';
+            cb.click();
+            return 'checked';
+        })()`;
+        const INSERT = `(() => {
+            const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '插入' && b.offsetWidth > 0);
+            if (!btn) return false;
+            btn.click();
+            return true;
+        })()`;
+        const CANCEL = `(() => {
+            const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '取消' && b.offsetWidth > 0);
+            btn?.click();
+        })()`;
+        const VERIFY = `(() => {
+            const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
+            if (!pm) return 'noeditor';
+            const node = pm.querySelector('mpvoice, [class*="audio"]');
+            if (!node) return 'absent';
+            const first = pm.firstElementChild;
+            return first && (first === node || first.contains(node)) ? 'top' : 'notop';
+        })()`;
+        try {
+            const run = (expression: string) => evalJs.call(editor, expression);
+            await run(CARET);
+            await run("document.querySelector('li.js_insertaudio')?.click()");
+            await editor.waitFor('.audio_dialog', TOAST_TIMEOUT_MS);
+            // The 素材库 list loads async after the dialog opens - retry while rows stream in.
+            let dedupe = String(await run(DEDUPE));
+            for (let i = 0; dedupe === 'missing' && i < 2; i++) {
+                await editor.waitForTimeout?.(1200);
+                dedupe = String(await run(DEDUPE));
+            }
+            if (dedupe !== 'checked') {
+                await run(CANCEL);
+                return dedupe === 'missing'
+                    ? '音频: 素材库无同名音频，请手动上传后插入'
+                    : '音频: 同名素材行未找到勾选框，请手动插入';
+            }
+            if ((await run(INSERT)) !== true) {
+                await run(CANCEL);
+                return '音频: 插入按钮未找到，请手动插入';
+            }
+            await editor.waitForTimeout?.(2000);
+            const state = String(await run(VERIFY));
+            if (state === 'absent' || state === 'noeditor') return '音频: 插入未生效，请手动检查';
+            if (state === 'notop') return '音频: 已插入但未在文首，请手动调整位置';
+            return '';
+        } catch {
+            return '音频: 自动插入失败，请手动插入';
+        }
     }
 
     private async tryFill(page: WechatPage, selector: string, value: string): Promise<void> {

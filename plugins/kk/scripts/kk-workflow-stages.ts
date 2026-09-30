@@ -1233,7 +1233,9 @@ function dailyPublishXhs(args: string[]): void {
  * outcome never enters `publish_status` (surfdash + podcast remain the publication contract).
  */
 function dailyPublishWechat(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', live = 'false'] = args;
+    const [workDirRaw = '', runDate = '', pluginsPath = '', live = 'false', collectionArg = ''] = args;
+    // Metadata carries file paths consumed by the plugin child process (cwd = plugin dir) - never emit relatives.
+    const workDir = resolve(workDirRaw);
     const article = join(workDir, '22-article', `${runDate}_06_article_content.json`);
     const input = join(workDir, '31-publish', `${runDate}_20_publish-wechat_content.json`);
     const result = join(workDir, '31-publish', `${runDate}_20_publish-wechat_result.json`);
@@ -1253,15 +1255,32 @@ function dailyPublishWechat(args: string[]): void {
         // MP draft enrichment (operator preference 2026-09-29): 原创+作者, 赞赏, 合集, 原文链接
         // (the surfdash post), AI 生成声明, cover. The brand strings are this daily show's constants.
         const cover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
+        const audio = join(workDir, '30-audio', `${runDate}_11_generate_content.mp3`);
         const wechatmp: Record<string, unknown> = {
             original: true,
             aiGenerated: true,
             author: '冰原奔狼',
-            collection: '每日AI资讯',
+            collection: collectionArg || '每日AI资讯',
             ...(isFile(cover) ? { coverPath: cover } : {}),
+            // Audio block at the article top (operator request 2026-09-29): the daily MP3 goes to
+            // the 素材库 under the article title; the plugin reuses an existing same-title material.
+            ...(isFile(audio)
+                ? {
+                      audioPath: audio,
+                      audioTitle: typeof packaged.title === 'string' ? packaged.title : '',
+                      audioCoverPath: isFile(cover) ? cover : '',
+                  }
+                : {}),
         };
+        // WeChat-only closing line (operator request 2026-09-29): point readers/listeners back to
+        // the show's platforms. Appended to the wechat input body only, never the master article.
+        const outro = '\n\n欲听往期节目，可至小宇宙、Apple Podcast、YouTube 等平台搜索【咸话咸说】。';
         sted('write', input, () =>
-            writeJsonText(input, { ...packaged, metadata: { ...metadataOf(packaged), publishStatus: want, wechatmp } }),
+            writeJsonText(input, {
+                ...packaged,
+                body: `${typeof packaged.body === 'string' ? packaged.body : ''}${outro}`,
+                metadata: { ...metadataOf(packaged), publishStatus: want, wechatmp },
+            }),
         );
         // `soft` keeps the WeChat target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (session preflight, editor paste, save control), which is what
