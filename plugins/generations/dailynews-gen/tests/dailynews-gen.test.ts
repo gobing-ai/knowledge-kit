@@ -185,6 +185,8 @@ describe('dailynews-gen plugin (0073)', () => {
         expect(script.segments[1]?.text).toContain("First up today, let's look at");
         const lastSegment = script.segments[script.segments.length - 1];
         expect(lastSegment?.text).toContain('That wraps up this episode of AI 乱炖');
+        // 0189 R1: the AI-voice disclosure is spoken in the episode itself.
+        expect(lastSegment?.text).toContain('AI-synthesized');
     });
 
     it('R6 — handles empty Doc[] input gracefully with fallback script', () => {

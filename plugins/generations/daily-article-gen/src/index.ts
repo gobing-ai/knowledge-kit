@@ -138,7 +138,7 @@ function tagsFor(docs: Doc[]): string[] {
 }
 
 /** A leading H1 line — agent bodies used to carry their own title; the canonical title is computed (task 0189 R4). */
-const LEADING_H1_RE = /^#\s*[^\n]+\n+/.source;
+const LEADING_H1_RE = /^#(?!#)\s*[^\n]+\n+/.source;
 
 /** Build the article Content from a merged Doc[]; `bodyOverride` replaces the mechanical render (agent-written prose), still scaffold-stripped as a safety net. */
 export function docsToContent(docs: Doc[], date: string, bodyOverride?: string): Content {
@@ -150,6 +150,9 @@ export function docsToContent(docs: Doc[], date: string, bodyOverride?: string):
         const stripped = stripScaffold(bodyOverride.trim()).trim().replace(new RegExp(LEADING_H1_RE), '');
         body = `# ${title}\n\n${stripped}\n`;
     }
+    // Task 0189 R1: the AI-production note rides on every article path (mechanical and agent
+    // prose). Podcast show notes are rendered separately by podcast-pub and do not inherit it.
+    body = `${body.trimEnd()}\n\n---\n\n*文字由 AI 辅助整理，音频为 AI 合成配音。*\n`;
     return ContentSchema.parse({
         title,
         body,

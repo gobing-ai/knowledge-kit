@@ -298,6 +298,8 @@ describe('F613 R3 — plan substitution in buildNewsVoiceScript', () => {
         const lastSegment = texts[texts.length - 1];
         expect(lastSegment).toContain('无论是安全规则还是电力瓶颈');
         expect(lastSegment).toContain('感谢您的收听，我是Robin');
+        // 0189 R1: the AI-voice disclosure is builder-owned, so a plan outro cannot drop it.
+        expect(lastSegment).toContain('AI 合成配音');
         expect(lastSegment).toContain('我们下期节目不见不散');
         expect(spoken).not.toContain('好了，以上就是');
     });

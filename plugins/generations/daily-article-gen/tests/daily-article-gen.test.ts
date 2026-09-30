@@ -135,6 +135,20 @@ describe('daily-article-gen', () => {
         expect(content.body).toContain('正文第一段。');
     });
 
+    test('docsToContent keeps a leading H2 section heading — only an H1 is a title (0189 R4)', () => {
+        const content: Content = docsToContent([doc()], '2026-09-29', '## 第一节\n\n正文第一段。');
+        expect(content.body).toContain('## 第一节');
+    });
+
+    test('docsToContent ends with the AI-production disclosure on both the mechanical and agent-prose paths (0189 R1)', () => {
+        for (const content of [
+            docsToContent([doc()], '2026-09-29'),
+            docsToContent([doc()], '2026-09-29', '正文第一段。'),
+        ]) {
+            expect(content.body.trimEnd().endsWith('*文字由 AI 辅助整理，音频为 AI 合成配音。*')).toBe(true);
+        }
+    });
+
     test('processGeneratorIO reads Doc[] and writes article Content (ARTICLE_DATE=YYYYMMDD)', async () => {
         const tmpDir = join(process.cwd(), '.tmp-test-daily-article');
         await mkdir(tmpDir, { recursive: true });

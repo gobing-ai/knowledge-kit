@@ -450,11 +450,13 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
 
     // 3. Outro segment: Warm, conversational wrap-up. F613: the plan outro replaces the template
     // wrap-up head; the fixed sign-off stays builder-owned.
+    // Task 0189 R1: the AI-voice disclosure is part of the builder-owned sign-off (not the plan),
+    // so it is spoken in every episode — Apple Podcasts guideline 1.11 requires it in the content.
     const outroText = isZh
         ? scriptPlan
-            ? `${scriptPlan.outro}感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
-            : `好了，本期AI乱炖就聊到这里。希望今天这些工具、论文和实践的经验对您有启发。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
-        : `That wraps up this episode of AI 乱炖. I hope today's takeaways were useful. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
+            ? `${scriptPlan.outro}本期音频为 AI 合成配音。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+            : `好了，本期AI乱炖就聊到这里。希望今天这些工具、论文和实践的经验对您有启发。本期音频为 AI 合成配音。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+        : `That wraps up this episode of AI 乱炖. I hope today's takeaways were useful. The audio in this episode is AI-synthesized. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
 
     segments.push({
         text: normalizeBroadcastText(outroText, isZh),
