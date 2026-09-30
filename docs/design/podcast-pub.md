@@ -107,7 +107,10 @@ client, no credentials, no API call:
   required — missing either fails loud. Optional: `PODCAST_PUB_ARTICLE_BASE_URL`,
   `PODCAST_PUB_BRIEF_MODE` (`true`/`1`), and `PODCAST_PUB_ARTICLE_POST_PATH`
   (0118 timeline layout; a non-empty postPath switches the footer to the
-  published `<base>/<locale>/posts/<postSlug>` URL, empty ⇒ legacy fallback).
+  published `<base>/<locale>/posts/<postSlug>` URL, empty ⇒ legacy fallback);
+  `PODCAST_PUB_FOOTER_NOTE` (0189: a closing line appended verbatim in both
+  layouts — the daily workflow passes its AI-production disclosure; unset ⇒ no
+  footer, byte-stable render).
   The daily workflow passes the postPath from the surfdash publish result
   (`_14_publish-surfdash_result.json`, task 0137) — not the later merged
   `_17_publish_result.json`, which does not exist yet at show-notes time.

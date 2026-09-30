@@ -59,6 +59,7 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T
         'PODCAST_PUB_TITLE',
         'PODCAST_PUB_RUN_DATE',
         'PODCAST_PUB_ARTICLE_BASE_URL',
+        'PODCAST_PUB_FOOTER_NOTE',
     ]) {
         saved[key] = process.env[key];
         if (env[key] === undefined) delete process.env[key];
@@ -1252,6 +1253,34 @@ describe('podcast-pub show-notes operation (L1 R6)', () => {
                 spy.mockRestore();
             }
         });
+    });
+
+    test('footerNote closes the show notes in both layouts, survives HTML render, and is off by default (0189 R1)', async () => {
+        const note = '本期文字由 AI 辅助整理，音频为 AI 合成配音。';
+        const plain = renderShowNotesMarkdown([], { title: 'T', runDate: '2026-01-02', footerNote: note });
+        expect(plain.trimEnd().endsWith(note)).toBe(true);
+        expect(renderShowNotesHtml(plain)).toContain(note);
+        const brief = renderShowNotesMarkdown([], {
+            title: 'T',
+            runDate: '2026-01-02',
+            briefMode: true,
+            articlePostPath: '/srv/content/posts/articles/zh/20260102-t/index.md',
+            footerNote: note,
+        });
+        expect(brief.trimEnd().endsWith(note)).toBe(true);
+        expect(renderShowNotesHtml(brief)).toContain(note);
+        expect(renderShowNotesMarkdown([], { title: 'T', runDate: '2026-01-02' })).not.toContain('AI 合成配音');
+        // Workflow callers pass it as PODCAST_PUB_FOOTER_NOTE (kk executor run carries only --in/--out).
+        await withEnv(
+            { PODCAST_PUB_TITLE: 'T', PODCAST_PUB_RUN_DATE: '2026-01-02', PODCAST_PUB_FOOTER_NOTE: note },
+            async () => {
+                const result = await new PodcastPubTransport().publish({
+                    content: episodeContent(),
+                    options: { operation: 'show-notes', docs: [] },
+                });
+                expect(String(result.metadata?.markdown).trimEnd().endsWith(note)).toBe(true);
+            },
+        );
     });
 
     test('payload options beat set env vars when both are present (resolveOptionString precedence)', async () => {

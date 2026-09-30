@@ -139,6 +139,7 @@ function resolveShowNotesRenderOptions(
     const briefModeRaw = options.briefMode ?? process.env.PODCAST_PUB_BRIEF_MODE;
     const briefMode = briefModeRaw === true || briefModeRaw === 'true' || briefModeRaw === '1';
     const articlePostPath = resolveOptionString(options.articlePostPath, 'PODCAST_PUB_ARTICLE_POST_PATH');
+    const footerNote = resolveOptionString(undefined, 'PODCAST_PUB_FOOTER_NOTE');
     // Audio segment metadata for real timeline offsets: the generated episode content's
     // `metadata.segments[]` (duration + ASR transcription). Absent ⇒ `--:--` offsets.
     let audioSegments: ShowNotesRenderOptions['audioSegments'];
@@ -164,6 +165,7 @@ function resolveShowNotesRenderOptions(
             ...(articleBaseUrl !== undefined ? { articleBaseUrl } : {}),
             ...(briefMode ? { briefMode: true } : {}),
             ...(articlePostPath !== undefined ? { articlePostPath } : {}),
+            ...(footerNote !== undefined ? { footerNote } : {}),
             ...(audioSegments !== undefined ? { audioSegments } : {}),
         },
     };

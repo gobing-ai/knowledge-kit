@@ -266,6 +266,11 @@ export interface ShowNotesRenderOptions {
      */
     articlePostPath?: string;
     /**
+     * Closing line appended verbatim in both layouts — the caller's production disclosure
+     * (task 0189 R1: AI-voice note in episode metadata). Absent ⇒ no footer, byte-stable render.
+     */
+    footerNote?: string;
+    /**
      * Audio segment metadata from the generated episode content
      * (`metadata.segments[]`: per-segment `duration` seconds + ASR `transcription`).
      * When present, per-item timestamps are real audio offsets (listener jump-to-item),
@@ -352,5 +357,6 @@ export function renderShowNotesMarkdown(docs: Doc[], opts: ShowNotesRenderOption
         });
         lines.push(`详情见本期完整文章：[ ${opts.title} ](${articleUrl})`, '');
     }
+    if (opts.footerNote) lines.push(opts.footerNote, '');
     return lines.join('\n');
 }
