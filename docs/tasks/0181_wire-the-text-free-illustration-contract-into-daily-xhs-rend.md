@@ -4,7 +4,7 @@ name: Wire the text-free illustration contract into daily-xhs-render and xhs-car
 status: todo
 template: feature-impl
 created_at: 2026-09-29T02:28:56.271Z
-updated_at: "2026-09-30T05:52:44.530Z"
+updated_at: "2026-09-30T06:27:23.704Z"
 feature_id: F616
 
 priority: P2

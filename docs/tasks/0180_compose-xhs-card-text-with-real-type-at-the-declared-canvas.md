@@ -4,7 +4,7 @@ name: Compose xhs-card text with real type at the declared canvas
 status: todo
 template: feature-impl
 created_at: 2026-09-29T02:28:56.039Z
-updated_at: "2026-09-30T05:52:42.994Z"
+updated_at: "2026-09-30T06:27:23.540Z"
 feature_id: F616
 
 priority: P2
