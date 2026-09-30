@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ContentSchema, type Doc } from '@gobing-ai/kk-core';
 import { YAML } from 'bun';
 import {
+    broadcastDateFromEnv,
     buildNewsVoiceScript,
     formatBroadcastDate,
     formatChineseCount,
@@ -87,6 +88,38 @@ describe('dailynews-gen plugin (0073)', () => {
         expect(en).toContain('Saturday');
     });
 
+    it('broadcastDateFromEnv parses YYYYMMDD and ISO into local calendar dates (0189: broadcast date ≠ render date)', () => {
+        // Local parts, not UTC: `new Date('2026-09-29')` renders Sep 28 west of UTC.
+        const stamped = broadcastDateFromEnv('20260929');
+        expect(stamped?.getFullYear()).toBe(2026);
+        expect(stamped?.getMonth()).toBe(8);
+        expect(stamped?.getDate()).toBe(29);
+        const iso = broadcastDateFromEnv('2026-09-29');
+        expect(iso?.getDate()).toBe(29);
+        expect(iso?.getMonth()).toBe(8);
+    });
+
+    it('broadcastDateFromEnv rejects absent, garbled and out-of-range values instead of rolling them over', () => {
+        expect(broadcastDateFromEnv(undefined)).toBeUndefined();
+        expect(broadcastDateFromEnv('')).toBeUndefined();
+        expect(broadcastDateFromEnv('not-a-date')).toBeUndefined();
+        // The Date constructor rolls 2026-13-01 into 2027 — the round-trip check must reject it.
+        expect(broadcastDateFromEnv('20261301')).toBeUndefined();
+        expect(broadcastDateFromEnv('20260999')).toBeUndefined();
+    });
+
+    it('DAILYNEWS_DATE drives the broadcast greeting when no explicit date option is passed (0189)', async () => {
+        writeFileSync(inPath, JSON.stringify([SAMPLE_DOC_1, SAMPLE_DOC_2]));
+        process.env.DAILYNEWS_DATE = '20260929';
+        try {
+            const content = await processGeneratorIO(inPath, outPath, { language: 'zh' });
+            const script = VoiceScriptSchema.parse(YAML.parse(content.body));
+            expect(script.segments[0]?.text).toContain('今天是2026年9月29日');
+        } finally {
+            delete process.env.DAILYNEWS_DATE;
+        }
+    });
+
     it('formatChineseCount converts numbers to Chinese digits', () => {
         expect(formatChineseCount(1)).toBe('一');
         expect(formatChineseCount(2)).toBe('两');
@@ -107,15 +140,15 @@ describe('dailynews-gen plugin (0073)', () => {
     it('R3 & R4 — generates structured Chinese broadcast VoiceScript with intro and news transitions', () => {
         const testDate = new Date(2026, 7, 22);
         const script = buildNewsVoiceScript([SAMPLE_DOC_1, SAMPLE_DOC_2], { date: testDate });
-        expect(script.title).toContain('今日AI科技漫谈');
+        expect(script.title).toContain('AI 乱炖');
         expect(script.language).toBe('zh');
         expect(script.default_profile).toBe('Robin');
         expect(script.segments.length).toBeGreaterThanOrEqual(4); // Intro + stories + Outro
 
-        // Segment 0: Opening with date, self intro, overview
+        // Segment 0: Opening with date, self intro, overview (「」 stripped by normalizeBroadcastText)
         expect(script.segments[0]?.text).toContain('今天是2026年8月22日');
-        expect(script.segments[0]?.text).toContain('欢迎收听由Robin为您带来的今日AI科技漫谈');
-        expect(script.segments[0]?.text).toContain('两条最值得关注的重点动态');
+        expect(script.segments[0]?.text).toContain('欢迎收听咸话咸说的AI 乱炖栏目');
+        expect(script.segments[0]?.text).toContain('整理了两条值得聊的内容');
         expect(script.segments[0]?.gap_ms).toBe(700);
 
         // Story 1: Conversational lead
@@ -130,7 +163,7 @@ describe('dailynews-gen plugin (0073)', () => {
 
         // Outro
         const lastSegment = script.segments[script.segments.length - 1];
-        expect(lastSegment?.text).toContain('以上就是今天AI科技漫谈的全部内容');
+        expect(lastSegment?.text).toContain('本期AI乱炖就聊到这里');
         expect(lastSegment?.text).toContain('我是Robin');
         expect(lastSegment?.gap_ms).toBe(300);
     });
@@ -148,20 +181,20 @@ describe('dailynews-gen plugin (0073)', () => {
         expect(script.language).toBe('en');
         expect(script.default_profile).toBe('Alex');
         expect(script.segments.length).toBeGreaterThanOrEqual(3); // Intro + 1 story + Outro
-        expect(script.segments[0]?.text).toContain('This is Alex with your AI Daily Briefing');
+        expect(script.segments[0]?.text).toContain('This is Alex with AI 乱炖');
         expect(script.segments[1]?.text).toContain("First up today, let's look at");
         const lastSegment = script.segments[script.segments.length - 1];
-        expect(lastSegment?.text).toContain("That wraps up today's AI Daily Briefing");
+        expect(lastSegment?.text).toContain('That wraps up this episode of AI 乱炖');
     });
 
     it('R6 — handles empty Doc[] input gracefully with fallback script', () => {
         const scriptZh = buildNewsVoiceScript([], { language: 'zh' });
         expect(scriptZh.segments.length).toBe(2);
-        expect(scriptZh.segments[0]?.text).toContain('今天科技圈暂无最新的精选动态');
+        expect(scriptZh.segments[0]?.text).toContain('今天没有足够扎实的可聊内容');
 
         const scriptEn = buildNewsVoiceScript([], { language: 'en' });
         expect(scriptEn.segments.length).toBe(2);
-        expect(scriptEn.segments[0]?.text).toContain('There are no new featured stories today');
+        expect(scriptEn.segments[0]?.text).toContain('There is nothing solid enough to share today');
     });
 
     it('R3 — processGeneratorIO produces validated Content matching ContentSchema and block YAML', async () => {
@@ -173,7 +206,7 @@ describe('dailynews-gen plugin (0073)', () => {
         });
 
         expect(content.format).toBe('markdown');
-        expect(content.title).toContain('今日AI科技漫谈');
+        expect(content.title).toContain('AI 乱炖');
         expect(content.references?.length).toBe(2);
         expect(content.metadata?.generator).toBe('kk:dailynews-gen');
         expect(content.metadata?.storyCount).toBe(2);

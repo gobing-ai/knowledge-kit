@@ -65,11 +65,12 @@ describe('daily-article-gen scaffold strip (0138 R4b)', () => {
 describe('daily-article-gen', () => {
     test('renders each item with an clickable source link and published date', () => {
         const md = renderDailyArticle([doc()], '2026-09-04');
-        expect(md).toContain('# 每日 AI 资讯 — 2026-09-04');
+        // Task 0189 R1/R4: episode title is `AI 乱炖｜<lead item title> · YYYY-MM-DD`.
+        expect(md).toContain('# AI 乱炖｜Sora 2 发布 · 2026-09-04');
         expect(md).toContain('## 1. Sora 2 发布');
         expect(md).toContain('[来源：Sam Altman：Blog（RSS）](https://blog.samaltman.com/sora-2)');
         expect(md).toContain('2026-09-04');
-        expect(md).toContain('本期共 1 条新闻');
+        expect(md).toContain('本期共 1 条内容，均附可点击来源链接');
     });
 
     test('falls back to hostname labels and numbered headings when metadata is sparse', () => {
@@ -94,7 +95,7 @@ describe('daily-article-gen', () => {
 
     test('docsToContent carries references and generator metadata', () => {
         const content: Content = docsToContent([doc()], '2026-09-04');
-        expect(content.title).toBe('每日 AI 资讯 — 2026-09-04');
+        expect(content.title).toBe('AI 乱炖｜Sora 2 发布 · 2026-09-04');
         expect(content.references).toEqual([
             { url: 'https://blog.samaltman.com/sora-2', title: 'Sora 2 发布', cite: 'd1' },
         ]);
@@ -125,6 +126,13 @@ describe('daily-article-gen', () => {
             '2026-09-04',
         );
         expect(content.metadata?.tags).toEqual(['ai-news', 'keep', 'me', 'x']);
+    });
+
+    test('docsToContent strips an agent-written leading H1 from the body override (0189 R4)', () => {
+        const content: Content = docsToContent([doc()], '2026-09-29', '# 我自己的标题\n\n正文第一段。');
+        expect(content.body.startsWith('# AI 乱炖｜Sora 2 发布 · 2026-09-29')).toBe(true);
+        expect(content.body).not.toContain('我自己的标题');
+        expect(content.body).toContain('正文第一段。');
     });
 
     test('processGeneratorIO reads Doc[] and writes article Content (ARTICLE_DATE=YYYYMMDD)', async () => {

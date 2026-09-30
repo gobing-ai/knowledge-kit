@@ -136,6 +136,16 @@ const CONTENT_SCAFFOLD_LABEL_RE =
 const CONTENT_TAG_TAIL_RE = /标签[：:，,][^\n。！？…]*$/;
 /** `wss，//` / `https。//` — the translator replacing a URL colon with a Chinese comma. */
 const CONTENT_URL_MANGLE_RE = /[，。]\/\//;
+/** Retired pre-0189 positioning names (task 0189 R4): no production path — fresh build, cached
+ *  re-render, or HITL-edited script — may speak an old news-bulletin column name. Exact
+ *  substrings; brand-consistency gate, not a platform sensitive-word table. */
+const RETIRED_POSITIONING_NAMES = [
+    '每日AI资讯',
+    '每日 AI 资讯',
+    '今日AI科技漫谈',
+    'AI科技漫谈',
+    'AI Daily Briefing',
+] as const;
 
 function assertSegmentContent(script: VoiceScript): void {
     const seen = new Map<string, number>();
@@ -170,6 +180,11 @@ function assertSegmentContent(script: VoiceScript): void {
         }
         if (CONTENT_URL_MANGLE_RE.test(text)) {
             throw new Error(`content check failed: segment ${idx} has a colon-mangled URL`);
+        }
+        for (const name of RETIRED_POSITIONING_NAMES) {
+            if (text.includes(name)) {
+                throw new Error(`content check failed: segment ${idx} carries retired positioning name "${name}"`);
+            }
         }
     }
 }

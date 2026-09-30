@@ -66,6 +66,32 @@ async function resolveScriptPlan(fs: FileSystem, docs: Doc[]): Promise<ScriptPla
     return { scriptPlan: validated.plan, scriptSource: 'plan', scriptPlanErrors: [] };
 }
 
+/**
+ * `DAILYNEWS_DATE` (YYYYMMDD or `YYYY-MM-DD`) → a local-midnight Date. Task 0189: the broadcast
+ * greeting must carry the episode's run date, not the render date — a 9/29 episode rebuilt on 9/30
+ * must not greet "今天是9月30日". Parsed as local calendar parts, never UTC (`new Date('2026-09-29')`
+ * is UTC midnight and renders the previous day west of UTC). Absent → undefined; garbled or
+ * out-of-range (the Date constructor rolls over, e.g. month 13) → undefined with a warn so a
+ * caller bug surfaces instead of silently broadcasting the wrong day.
+ */
+export function broadcastDateFromEnv(raw: string | undefined): Date | undefined {
+    if (!raw) return undefined;
+    const match = raw.match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
+    if (match === null) {
+        echoError(`dailynews-gen: ignoring malformed DAILYNEWS_DATE "${raw}" (expected YYYYMMDD or YYYY-MM-DD)`);
+        return undefined;
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const date = new Date(year, month, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+        echoError(`dailynews-gen: ignoring out-of-range DAILYNEWS_DATE "${raw}"`);
+        return undefined;
+    }
+    return date;
+}
+
 export async function processGeneratorIO(
     inputPath: string,
     outputPath: string,
@@ -101,7 +127,9 @@ export async function processGeneratorIO(
     const planOutcome = isZh
         ? await resolveScriptPlan(fs, docs)
         : { scriptSource: 'template' as const, scriptPlanErrors: [] as ScriptPlanError[] };
-    const script = buildNewsVoiceScript(docs, { ...options, scriptPlan: planOutcome.scriptPlan });
+    // Explicit option wins; else DAILYNEWS_DATE (workflow backfill/retry); else the builder's now.
+    const date = options?.date ?? broadcastDateFromEnv(process.env.DAILYNEWS_DATE);
+    const script = buildNewsVoiceScript(docs, { ...options, date, scriptPlan: planOutcome.scriptPlan });
     const yamlBody = formatVoiceScriptToYaml(script);
 
     const content: Content = {

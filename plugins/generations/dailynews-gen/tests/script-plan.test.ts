@@ -281,7 +281,9 @@ describe('F613 R3 — plan substitution in buildNewsVoiceScript', () => {
         const spoken = texts.join('\n');
 
         // intro: builder greeting + plan intro, template tail gone
-        expect(texts[0]).toContain('欢迎收听由Robin为您带来的今日AI科技漫谈。今天我们聊两件事，一场牵动全局的安全会谈');
+        expect(texts[0]).toContain(
+            '欢迎收听咸话咸说的AI 乱炖栏目，我是Robin。今天我们聊两件事，一场牵动全局的安全会谈',
+        );
         expect(spoken).not.toContain('话不多说');
         // lead: plan bridge keeps 【title】 spoken exactly once, and the title is not in the bridge
         const leadSeg = texts.find((text) => text.includes('我们先从一场备受关注的安全会谈说起'));

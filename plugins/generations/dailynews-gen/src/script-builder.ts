@@ -313,11 +313,13 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     const dateStr = formatBroadcastDate(broadcastDate, language);
 
     if (docs.length === 0) {
-        const title = options?.title || (isZh ? '今日AI科技漫谈（暂无更新）' : 'AI Daily Briefing (No Updates)');
+        const title = options?.title || (isZh ? 'AI 乱炖（暂无更新）' : 'AI 乱炖 (No Updates)');
         const segments: VoiceScriptSegment[] = isZh
             ? [
                   {
-                      text: `大家好，今天是${dateStr}。欢迎收听由${voiceProfile}为您带来的今日AI科技漫谈。今天科技圈暂无最新的精选动态。`,
+                      // Task 0189 R1/R4: honest no-content episode — the copy names the show
+                      // (咸话咸说) and the column (AI 乱炖), and never claims a news digest happened.
+                      text: `大家好，今天是${dateStr}。欢迎收听「咸话咸说」的「AI 乱炖」栏目，我是${voiceProfile}。今天没有足够扎实的可聊内容。`,
                       gap_ms: 400,
                       emotion: 'calm',
                   },
@@ -329,7 +331,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
               ]
             : [
                   {
-                      text: `Hello and welcome. Today is ${dateStr}. This is ${voiceProfile} with your AI Daily Briefing. There are no new featured stories today.`,
+                      text: `Hello and welcome. Today is ${dateStr}. This is ${voiceProfile} with AI 乱炖, our chat about AI tools, papers, and hands-on practice. There is nothing solid enough to share today.`,
                       gap_ms: 400,
                       emotion: 'calm',
                   },
@@ -352,9 +354,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         });
     }
 
-    const title =
-        options?.title ||
-        (isZh ? `今日AI科技漫谈（共${docs.length}条）` : `AI Daily Briefing (${docs.length} stories)`);
+    const title = options?.title || (isZh ? `AI 乱炖（共${docs.length}条）` : `AI 乱炖 (${docs.length} stories)`);
     const segments: VoiceScriptSegment[] = [];
 
     let hostName =
@@ -382,9 +382,10 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         ? scriptPlan
             ? // F613: fixed greeting stays builder-owned; the plan only fills the slot between
               // greeting and first story (the template tail 从「今天科技圈有几条…正题。」 is replaced).
-              `大家好，今天是${dateStr}，欢迎收听由${hostName}为您带来的今日AI科技漫谈。${scriptPlan.intro}`
-            : `大家好，今天是${dateStr}，欢迎收听由${hostName}为您带来的今日AI科技漫谈。今天科技圈有几条非常有看点的大消息，我精选了${countText}最值得关注的重点动态来和大家聊一聊${titlesSummary ? `，包括${titlesSummary}` : ''}。话不多说，我们马上进入今天的正题。`
-        : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with your AI Daily Briefing. In today's episode, we have ${countText} fascinating stories from the AI world. Let's dive straight in.`;
+              // Task 0189 R1: the greeting names the show (咸话咸说) and the column (AI 乱炖).
+              `大家好，今天是${dateStr}，欢迎收听「咸话咸说」的「AI 乱炖」栏目，我是${hostName}。${scriptPlan.intro}`
+            : `大家好，今天是${dateStr}，欢迎收听「咸话咸说」的「AI 乱炖」栏目，我是${hostName}。今天我从 AI 工具、论文和实践中整理了${countText}值得聊的内容${titlesSummary ? `，包括${titlesSummary}` : ''}，咱们一条条来聊。`
+        : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with AI 乱炖, where we talk about AI tools, papers, and hands-on practice. In today's episode, we have ${countText} stories. Let's dive straight in.`;
 
     segments.push({
         text: normalizeBroadcastText(introText, isZh),
@@ -452,8 +453,8 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     const outroText = isZh
         ? scriptPlan
             ? `${scriptPlan.outro}感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
-            : `好了，以上就是今天AI科技漫谈的全部内容。不知道今天这几条消息有没有给您带来一些新的启发？感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
-        : `That wraps up today's AI Daily Briefing. I hope today's highlights gave you some useful takeaways. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
+            : `好了，本期AI乱炖就聊到这里。希望今天这些工具、论文和实践的经验对您有启发。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+        : `That wraps up this episode of AI 乱炖. I hope today's takeaways were useful. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
 
     segments.push({
         text: normalizeBroadcastText(outroText, isZh),

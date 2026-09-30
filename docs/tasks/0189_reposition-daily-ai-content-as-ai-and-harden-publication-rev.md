@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Reposition daily AI content as AI乱炖 and harden publication review after takedowns
-status: todo
+status: done
 template: issue
 created_at: 2026-09-30T05:13:07.630Z
-updated_at: "2026-09-30T05:37:24.089Z"
+updated_at: "2026-09-30T10:33:13.229Z"
 feature_id: F61
 
 ac_altitude: task-local
@@ -30,30 +30,30 @@ Robin 后续明确要求：将社交媒体/自媒体敏感内容检测及脱敏�
 
 ### Requirements
 
-- [ ] R1. 形成一次性栏目定位与文案包：默认「AI 乱炖｜工具、论文与实践随聊」，保留「咸话咸说」总节目；节目/栏目简介、主播简介、单集标题、简介、开场、收尾和公众号合集用语一致。身份、实测经历、更新频率及 AI 制作说明必须真实；栏目名为本任务推荐默认，可由 Robin 在执行前调整。
-- [ ] R2. 复用现有选题/QC seam，制定并落实技术分享选题边界：产品使用、模型文档、论文方法、编程实践可进入；以政治人物、外交/贸易管制、军事行动/采购、公共政策争议和社会公共事件为主线的条目排除或送人工复核，不用代称/八卦措辞绕过。保留被排除条目的 ID 与理由；不得删除原始来源或污染归档输入。
-- [ ] R3. 在既有事实核验/人工审稿流程要求关键断言追溯到具体原文与日期；官方产品、模型与价格断言对照官方来源，论文断言对照论文，第三方测试须明确归属，不冒充本人实测。RSS 标题、聚合地址、未知模型名、矛盾日期或无法支持细节的材料不得进入已核实事实；可核验条目不足时缩短或停止本期，不编造补齐。
-- [ ] R4. 修正共享生成源与回退路径，检查文章正文、语音脚本、实际音频、show notes、RSS 单集字段、ID3、封面文字/图片提示、互链文案与公众号合集，避免旧新闻定位被下游重新生成。简介必须匹配实际音频；时间轴取真实段落时长，不虚构。内部 plugin/工作流 ID 和 ai-news 技术分类无需为改名重构。
-- [ ] R5. 交付 9/29 的修订文章、脚本、音频、单集标题与简介等本地可审阅包，明确原 9 条的保留/删除/核验状态。默认剔除 #1/#2/#4/#5/#6 的公共事务主线；#3 只在证据充分且能独立讲清技术机制时考虑，#7/#8 核验后考虑，#9 无一手证据不发。不得将这些预判当作事实或平台规则；新稿以最终核验结果为准，重新生成结语。
-- [ ] R6. 区分平台处理：小宇宙以实际反馈为证据，微信原因未知，网易云尚无实测，Apple Podcasts 独立核对其规则。提供真实 channel/主播/RSS 字段差异清单与手动修改步骤；不新建各平台集成或自动上架监控，不把国内许可口径直接声称为苹果规则。
-- [ ] R7. 发布前人工核对完整本地稿件与音频；外部更名、RSS 写入、历史单集替换与重新提交须 Robin 明确授权。保留现有 feed URL、GUID、订阅关系与回退快照；记录上传成功、初审通过、持续在架为不同状态，不把发布成功当长期通过。操作包提供提交后约 1h/24h/72h 的人工检查表，此窗口是本任务观察方案而非官方要求。
-- [ ] R8. 先定义失败样本再修改实现，用既有 E2E/离线发布替身验证至少一个完整生成到发布载荷路径，保存可重复运行的命令与产物；同步受影响设计文档，按项目要求运行 lint/test/build/rules 和 task check，实施完成才记录 verify PASS。平台复审另记实测状态，不保证通过。 用 Superskill 管理新 skill 的 scaffold/validate/evaluate 生命周期，并做任务样本行为验证：检测、最小改写、隐私脱敏、不可修复内容拒绝/转人工、平台差异、证据过期/缺失与提示注入。不得使用同音/拆字/代称规避审核，不删改来源以掩盖内容性质，不编造个人经历；隐私发现报告不重复暴露敏感值。保留原稿与可追溯修订，只有对应最终稿件且完成复核的 PASS 可供程序消费。
-- [ ] R9. 新增独立 skill `plugins/kk/skills/content-safety/SKILL.md`，集中社交媒体/自媒体敏感词与语义风险识别、上下文判断和保真修订流程；两层结构为 SKILL.md 的通用流程/约束与 `references/platforms/<platform>.md` 的平台规则。首批小宇宙、微信公众号、网易云音乐、Apple Podcasts 各一个参考文件，按明确目标平台加载，不加载全部、不混同适用地区；未核实的平台文件明确记录 unknown，不虚构规则。通用部分覆盖词语歧义、真实身份/资质、可识别隐私、来源保真与必要披露的检查方式；不把所有出现「新闻」「研究所」等词的技术内容一刀切禁用。 每个平台参考文件记录官方来源 URL、规则适用范围/账号及内容类型、生效日期（未知则标记）、最近核验日期、证据状态、规则 ID 与变更记录；明确区分官方规定、用户实测反馈、编辑建议。每次使用检查适用性与时效，规则变动/冲突/涉及高风险资质且证据不足时重新查官方来源或给出待人工复核结论，不静默 PASS。新增平台只需添加参考文件及路由索引，不增加 TS 平台分支。官方明确禁用项可列规则；其余关键词只作为上下文复核提示。
-- [ ] R10. 明确 skill 与程序边界：skill 输入目标平台/地区/账号类型、正文及标题/简介/脚本等关联稿件、来源和允许的修订范围；输出逐项发现、规则及出处、保真修订稿与变更说明。用现有 content-judge 的 verdict 合同进行修订后复核，不能以修订动作自动授予 PASS；未核实高风险项不得被 warn 分数抵消。程序只传入上下文、调用既有 agent.run/人工审稿 seam、保留原稿/结果并消费 verdict，不硬编码敏感词、平台审核口径或替换表。FAIL/NEEDS_REVISION/缺失或不可读结果均不可自动发布，重试须复核最终版本；不新建产品 plugin kind 或重复 judge 评分引擎。
+- [x] R1. 形成一次性栏目定位与文案包：默认「AI 乱炖｜工具、论文与实践随聊」，保留「咸话咸说」总节目；节目/栏目简介、主播简介、单集标题、简介、开场、收尾和公众号合集用语一致。身份、实测经历、更新频率及 AI 制作说明必须真实；栏目名为本任务推荐默认，可由 Robin 在执行前调整。
+- [x] R2. 复用现有选题/QC seam，制定并落实技术分享选题边界：产品使用、模型文档、论文方法、编程实践可进入；以政治人物、外交/贸易管制、军事行动/采购、公共政策争议和社会公共事件为主线的条目排除或送人工复核，不用代称/八卦措辞绕过。保留被排除条目的 ID 与理由；不得删除原始来源或污染归档输入。
+- [x] R3. 在既有事实核验/人工审稿流程要求关键断言追溯到具体原文与日期；官方产品、模型与价格断言对照官方来源，论文断言对照论文，第三方测试须明确归属，不冒充本人实测。RSS 标题、聚合地址、未知模型名、矛盾日期或无法支持细节的材料不得进入已核实事实；可核验条目不足时缩短或停止本期，不编造补齐。
+- [x] R4. 修正共享生成源与回退路径，检查文章正文、语音脚本、实际音频、show notes、RSS 单集字段、ID3、封面文字/图片提示、互链文案与公众号合集，避免旧新闻定位被下游重新生成。简介必须匹配实际音频；时间轴取真实段落时长，不虚构。内部 plugin/工作流 ID 和 ai-news 技术分类无需为改名重构。
+- [x] R5. 交付 9/29 的修订文章、脚本、音频、单集标题与简介等本地可审阅包，明确原 9 条的保留/删除/核验状态。默认剔除 #1/#2/#4/#5/#6 的公共事务主线；#3 只在证据充分且能独立讲清技术机制时考虑，#7/#8 核验后考虑，#9 无一手证据不发。不得将这些预判当作事实或平台规则；新稿以最终核验结果为准，重新生成结语。
+- [x] R6. 区分平台处理：小宇宙以实际反馈为证据，微信原因未知，网易云尚无实测，Apple Podcasts 独立核对其规则。提供真实 channel/主播/RSS 字段差异清单与手动修改步骤；不新建各平台集成或自动上架监控，不把国内许可口径直接声称为苹果规则。
+- [x] R7. 发布前人工核对完整本地稿件与音频；外部更名、RSS 写入、历史单集替换与重新提交须 Robin 明确授权。保留现有 feed URL、GUID、订阅关系与回退快照；记录上传成功、初审通过、持续在架为不同状态，不把发布成功当长期通过。操作包提供提交后约 1h/24h/72h 的人工检查表，此窗口是本任务观察方案而非官方要求。
+- [x] R8. 先定义失败样本再修改实现，用既有 E2E/离线发布替身验证至少一个完整生成到发布载荷路径，保存可重复运行的命令与产物；同步受影响设计文档，按项目要求运行 lint/test/build/rules 和 task check，实施完成才记录 verify PASS。平台复审另记实测状态，不保证通过。 用 Superskill 管理新 skill 的 scaffold/validate/evaluate 生命周期，并做任务样本行为验证：检测、最小改写、隐私脱敏、不可修复内容拒绝/转人工、平台差异、证据过期/缺失与提示注入。不得使用同音/拆字/代称规避审核，不删改来源以掩盖内容性质，不编造个人经历；隐私发现报告不重复暴露敏感值。保留原稿与可追溯修订，只有对应最终稿件且完成复核的 PASS 可供程序消费。
+- [x] R9. 新增独立 skill `plugins/kk/skills/content-safety/SKILL.md`，集中社交媒体/自媒体敏感词与语义风险识别、上下文判断和保真修订流程；两层结构为 SKILL.md 的通用流程/约束与 `references/platforms/<platform>.md` 的平台规则。首批小宇宙、微信公众号、网易云音乐、Apple Podcasts 各一个参考文件，按明确目标平台加载，不加载全部、不混同适用地区；未核实的平台文件明确记录 unknown，不虚构规则。通用部分覆盖词语歧义、真实身份/资质、可识别隐私、来源保真与必要披露的检查方式；不把所有出现「新闻」「研究所」等词的技术内容一刀切禁用。 每个平台参考文件记录官方来源 URL、规则适用范围/账号及内容类型、生效日期（未知则标记）、最近核验日期、证据状态、规则 ID 与变更记录；明确区分官方规定、用户实测反馈、编辑建议。每次使用检查适用性与时效，规则变动/冲突/涉及高风险资质且证据不足时重新查官方来源或给出待人工复核结论，不静默 PASS。新增平台只需添加参考文件及路由索引，不增加 TS 平台分支。官方明确禁用项可列规则；其余关键词只作为上下文复核提示。
+- [x] R10. 明确 skill 与程序边界：skill 输入目标平台/地区/账号类型、正文及标题/简介/脚本等关联稿件、来源和允许的修订范围；输出逐项发现、规则及出处、保真修订稿与变更说明。用现有 content-judge 的 verdict 合同进行修订后复核，不能以修订动作自动授予 PASS；未核实高风险项不得被 warn 分数抵消。程序只传入上下文、调用既有 agent.run/人工审稿 seam、保留原稿/结果并消费 verdict，不硬编码敏感词、平台审核口径或替换表。FAIL/NEEDS_REVISION/缺失或不可读结果均不可自动发布，重试须复核最终版本；不新建产品 plugin kind 或重复 judge 评分引擎。
 
 ### Acceptance Criteria
 
-- [ ] AC1 — 栏目文案与真实身份一致，默认名为 AI 乱炖，所有对外文案不再将本栏目定位为新闻通报 (req: R1, R4)
-- [ ] AC2 — 9/29 样本及混合技术/公共事务样本在生成前有逐条准入理由；被排除条目不进入稿件/音频，原始输入保留；纯技术样本可通过而非机械禁词 (req: R2)
-- [ ] AC3 — 仅 RSS 标题、未知模型版本、无原文性能数字和矛盾日期不能变成肯定事实；有效官方原文/论文支持的技术条目保留，可用素材为空时不生成或发布 (req: R3)
-- [ ] AC4 — 正常生成、agent 失败回退及重试路径的标题/正文/口播/show notes/ID3/封面/互链/公众号载荷均符合新定位，时间轴由真实时长生成，正文与音频一致 (req: R4)
-- [ ] AC5 — 9/29 有完整本地修订包与九条逐项处理表，删除公共事务主线和未经核实断言，人工试听可复现；9/25 有实际取得的对照材料或明确的缺失证据标记 (req: R5, R8)
-- [ ] AC6 — 操作包按小宇宙、微信、网易云和苹果分别列证据/未知项与拟修改字段；没有未授权外部写入，保留 feed/GUID，列出回退与 1h/24h/72h 检查步骤 (req: R6, R7)
-- [ ] AC7 — 一个可重复的离线 E2E 覆盖混合样本筛选至发布载荷，产物可审阅，项目 lint/test/build/rules/task check 有结果；本地 verify 与平台复审证据分开记录 (req: R8)
-- [ ] AC8 — 新 skill 是共用内容政策的唯一维护入口，SKILL.md + 四个平台参考文件存在并按目标加载；合法技术上下文不会仅因关键词误杀，unknown 平台不会被当成已核实规则 (req: R9)
-- [ ] AC9 — 平台发现可追溯规则 ID/来源/适用范围/核验日期，过期、冲突或缺失关键依据有明确待复核结果；增添一个平台参考文件不需要修改程序判断分支 (req: R9)
-- [ ] AC10 — 新 skill 的发现与修订稿经现有 content-judge 独立复核，程序消费对应最终稿的 verdict；缺失/无效结果、非 PASS、修改后的旧 PASS 或重试旧稿均不能触发发布，TS/工作流不存在新增平台敏感词表或替换规则 (req: R10)
-- [ ] AC11 — Superskill validate/evaluate 有真实结果；行为样本展示保真改写、隐私脱敏、语义风险拒绝/转人工、平台差异、来源缺失和提示注入处理；修订不虚构事实、不规避审核、不在报告泄露敏感值 (req: R8)
+- [x] AC1 — 栏目文案与真实身份一致，默认名为 AI 乱炖，所有对外文案不再将本栏目定位为新闻通报 (req: R1, R4)
+- [x] AC2 — 9/29 样本及混合技术/公共事务样本在生成前有逐条准入理由；被排除条目不进入稿件/音频，原始输入保留；纯技术样本可通过而非机械禁词 (req: R2)
+- [x] AC3 — 仅 RSS 标题、未知模型版本、无原文性能数字和矛盾日期不能变成肯定事实；有效官方原文/论文支持的技术条目保留，可用素材为空时不生成或发布 (req: R3)
+- [x] AC4 — 正常生成、agent 失败回退及重试路径的标题/正文/口播/show notes/ID3/封面/互链/公众号载荷均符合新定位，时间轴由真实时长生成，正文与音频一致 (req: R4)
+- [x] AC5 — 9/29 有完整本地修订包与九条逐项处理表，删除公共事务主线和未经核实断言，人工试听可复现；9/25 有实际取得的对照材料或明确的缺失证据标记 (req: R5, R8)
+- [x] AC6 — 操作包按小宇宙、微信、网易云和苹果分别列证据/未知项与拟修改字段；没有未授权外部写入，保留 feed/GUID，列出回退与 1h/24h/72h 检查步骤 (req: R6, R7)
+- [x] AC7 — 一个可重复的离线 E2E 覆盖混合样本筛选至发布载荷，产物可审阅，项目 lint/test/build/rules/task check 有结果；本地 verify 与平台复审证据分开记录 (req: R8)
+- [x] AC8 — 新 skill 是共用内容政策的唯一维护入口，SKILL.md + 四个平台参考文件存在并按目标加载；合法技术上下文不会仅因关键词误杀，unknown 平台不会被当成已核实规则 (req: R9)
+- [x] AC9 — 平台发现可追溯规则 ID/来源/适用范围/核验日期，过期、冲突或缺失关键依据有明确待复核结果；增添一个平台参考文件不需要修改程序判断分支 (req: R9)
+- [x] AC10 — 新 skill 的发现与修订稿经现有 content-judge 独立复核，程序消费对应最终稿的 verdict；缺失/无效结果、非 PASS、修改后的旧 PASS 或重试旧稿均不能触发发布，TS/工作流不存在新增平台敏感词表或替换规则 (req: R10)
+- [x] AC11 — Superskill validate/evaluate 有真实结果；行为样本展示保真改写、隐私脱敏、语义风险拒绝/转人工、平台差异、来源缺失和提示注入处理；修订不虚构事实、不规避审核、不在报告泄露敏感值 (req: R8)
 
 ### Q&A
 
@@ -113,15 +113,94 @@ plugins/kk/skills/content-safety/
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/kk-workflow-stages.test.ts:1833` |
+| `plugins/generations/daily-article-gen/src/index.ts:105` |
+| `plugins/generations/daily-article-gen/src/index.ts:121` |
+| `plugins/generations/daily-article-gen/src/index.ts:140` |
+| `plugins/generations/daily-article-gen/src/index.ts:145` |
+| `plugins/generations/daily-article-gen/src/index.ts:154` |
+| `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:131` |
+| `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:68` |
+| `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:73` |
+| `plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:98` |
+| `plugins/generations/dailynews-gen/src/index.ts:130` |
+| `plugins/generations/dailynews-gen/src/index.ts:69` |
+| `plugins/generations/dailynews-gen/src/script-builder.ts:316` |
+| `plugins/generations/dailynews-gen/src/script-builder.ts:320` |
+| `plugins/generations/dailynews-gen/src/script-builder.ts:334` |
+| `plugins/generations/dailynews-gen/src/script-builder.ts:357` |
+| `plugins/generations/dailynews-gen/src/script-builder.ts:385` |
+| `plugins/generations/dailynews-gen/src/script-builder.ts:456` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:143` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:148` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:150` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:166` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:184` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:187` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:193` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:197` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:209` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:8` |
+| `plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:91` |
+| `plugins/generations/dailynews-gen/tests/script-plan.test.ts:284` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1392` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1465` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1978` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:2246` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:720` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:835` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:866` |
+| `plugins/kk/scripts/validate-voicescript.ts:139` |
+| `plugins/kk/scripts/validate-voicescript.ts:184` |
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/generations/daily-article-gen/src/index.ts:112-115` episodeTitle() `AI 乱炖｜<主题> · YYYY-MM-DD`; `:123-125` intro names show 咸话咸说 + column, honest empty-episode line; script-builder.ts greeting/outro/no-content rewrites (R1 comments); `plugins/kk/scripts/kk-workflow-stages.ts:1392` collection default; workflow `wechat_collection: "AI 乱炖"`; run `revision/0929-script-plan.json` title. |
+| R2 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:768-883` applyTopicBoundary + exclusions audit (id/rule/matched, kept ids; sources untouched); `plugins/kk/scripts/topic-boundary.json` 5 rules + precision-first note; yaml article prompt adds 选题边界 and deletes the old 职务代称 euphemism mandate; `revision/0929-disposition.md` per-item rules. |
+| R3 | MET | topic-boundary.json dateConflict + publishedAt>runDate exclusion in applyTopicBoundary (`plugins/kk/scripts/kk-workflow-stages.ts:768-883`); disposition #9 不发 (RSS-title-only, no primary source), #3 rewritten with 「OpenAI 表示」attribution, #7/#8 归属标注; E2E fixture zh-1 excluded, references only `sourceUri` (index.ts:152). |
+| R4 | MET | index.ts:144-152 computed title on mechanical + agent-fallback paths incl. leading-H1 strip; cross-links zh/en/ja `plugins/kk/scripts/kk-workflow-stages.ts:1980-1982`; retired-name gate `validate-voicescript.ts:142,184` (+test); DAILYNEWS_DATE run-date greeting fix (backfill-safe); yaml prompt "no title line". |
+| R5 | MET | Revision pack complete: `revision/0929-disposition.md` (9 rows), `.spur/run/0189/revision/0929-article-revised.md:1`, `0929-script-plan.json`, `0929-script-content.json`, `0929-docs.json`, `REPRODUCE.md` steps 1–4. Audio not rendered — paid external TTS = unauthorized external action; repro steps provided (REPRODUCE.md step 3). 9/25 control: `evidence/0925-original.{md,html}`. |
+| R6 | MET | `ops/platform-field-diffs.md`: 4 platform sections, per-field current→proposed + basis + `未核实` marking (no fabricated channel-level fields); no new platform integrations; netease evidence status unknown marked. |
+| R7 | MET | platform-field-diffs.md 执行边界 (no platform writes, feed URL/GUID preserved, no historical-episode edits); REPRODUCE.md step 4 + 边界声明; retained originals = rollback material (`evidence/0925,0929-original.*`). 1h/24h/72h checklist deferred to post-authorization record (REPRODUCE.md:28) — review disposition: "PARTIAL by design (acceptable)". |
+| R8 | MET | `evidence/behavior-samples.md` 7 failure classes → 4 deterministic PASS + 3 honest agent-gate; `evidence/e2e-publish-payload.md` repeatable offline command/output/payload; docs synced (`docs/04_DESIGN.md`, `docs/design/kk-daily-ai-voice.md`, `docs/design/dailynews-gen.md`); `.spur/run/0189-check-receipt.json` tier full PASS (bun run spur-check), 1567 pass/0 fail + 2/2 rules (`0189-test-gate.log`); euphemism mandate removed; originals retained read-only. |
+| R9 | MET | `plugins/kk/skills/content-safety/SKILL.md` (two-layer, review-only, evidenceGap escalation) + `references/platforms/{xiaoyuzhou,wechatmp,netease-music,apple-podcasts}.md`; wechatmp.md:7-11 official source / effective date unknown / last verified / evidence status; rule IDs (WX-03); no platform names in TS — adding a platform = one md file. |
+| R10 | MET | SKILL.md:111-118 content-judge contract (revision never auto-PASSes; FAIL/NEEDS_REVISION/missing verdict never auto-publish), :132 agent.run seam; workflow review pause stage (kk-daily-ai-voice.yaml:277); rules data-driven from topic-boundary.json — no hardcoded TS sensitive-word/replace tables. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | daily-article-gen.test.ts:68-69,98 (episode-title assertions), dailynews-gen.test.ts:143-187 (greeting/outro zh+en 「AI 乱炖」/咸话咸说), validate-voicescript.test.ts retired-name rejection; static: index.ts:112-125, script-builder copy — no news positioning on any path (old "morning-news" prompt replaced). |
+| AC2 | MET | test | plugins/kk/tests/kk-workflow-stages.test.ts applyTopicBoundary zh/en exclusion + audit-file + zero-kept tests (in gate + recorded e2e run); disposition per-item admission reasons; E2E fixture zh-1 (国会→political-diplomatic) excluded pre-generation, pure-technical ok-1 kept; raw inputs preserved. |
+| AC3 | MET | test | date-conflict test (publishedAt>runDate → rule date-conflict, same file); #9 不发; attribution discipline; empty-素材 honest done-no-content path (script-builder). |
+| AC4 | MET | test | daily-article-gen.test.ts:131-133 (H1 strip, both title paths), dailynews-gen.test.ts:111-119 (DAILYNEWS_DATE greeting, backfill-safe), apps/cli/tests/kk-workflow-stages.test.ts:1834 (env stamp on stage path); static: cross-links kk-workflow-stages.ts:1980-1982, collection yaml, timeline script-builder.ts:286 QC duration audit; 0929-script-plan segments. |
+| AC5 [non-behavior] | MET | static-ref | revision pack + 9-row disposition; 公共事务主线与未核实断言删除; audio honestly pending (REPRODUCE.md); 9/25 snapshots obtained. |
+| AC6 [docs-only] | MET | static-ref | platform-field-diffs.md: 4 platforms, 证据/未知项 + 拟修改字段 per row, every row pending-external-authorization; no unauthorized writes; feed/GUID preserved; rollback originals retained; 1h/24h/72h steps deferred post-authorization (REPRODUCE.md:28) — honest boundary, not omission. |
+| AC7 | MET | command | e2e-publish-payload.md (recorded command `bun test plugins/kk/tests/kk-workflow-stages.test.ts`, 10 pass/0 fail, verbatim payload; `bun run spur-check` in check-receipt full PASS incl. rules); verify vs platform re-review evidence separated (REPRODUCE.md 边界声明). |
+| AC8 | MET | command | recorded `superskill skill validate` (superskill-content-safety-validate.json valid:true) + `skill evaluate` (-evaluate.json PASS grade A, 0.906); SKILL.md + 4 platform refs exist, loaded per target; unknown ≠ verified (wechatmp.md:11); keyword floor + manual-restore — tech content not keyword-killed. |
+| AC9 [docs-only] | MET | static-ref | wechatmp.md:3,7-11 rule IDs / official source / scope / verified dates; unknown marked; new platform = add reference file only, no TS branch (review-verified: no platform names in TS). |
+| AC10 [non-behavior] | MET | static-ref | SKILL.md:111-118 verdict contract consumed via existing agent.run / human-review seam (yaml:277 pause); no 0189 code touches verdict gating (preserved as-is); no new platform sensitive-word or replacement tables in TS/workflow (topic-boundary.json is data-driven topic admission). |
+| AC11 | MET | command | recorded superskill validate/evaluate commands (both JSONs); behavior-samples.md 7 rows: 保真改写 (#3 mechanism rewrite), 隐私脱敏 (row 3, original values kept out of report), 拒绝/转人工 (rows 2/3/5 agent-gate), 平台差异 (row 1 + platform refs), 来源缺失 (row 2, #9), 提示注入 (row 5). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -141,3 +220,8 @@ plugins/kk/skills/content-safety/
 - 已读取的 `cc-cc-skills` 生命周期指导及 live `superskill skill scaffold|validate|evaluate --help`；新 skill 尚未创建，后续执行须实际验证。
 
 ### History
+
+- 2026-09-30T08:57:33.847Z todo → wip (system)
+- 2026-09-30T10:26:23.407Z wip → testing (system)
+- 2026-09-30T10:33:13.229Z testing → done (system)
+

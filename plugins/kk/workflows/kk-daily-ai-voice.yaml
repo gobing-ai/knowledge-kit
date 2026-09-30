@@ -3,10 +3,11 @@
 name: kk-daily-ai-voice
 kind: state-machine
 description: >-
-  Daily AI news end-to-end pipeline (F61 destination): collect (fan-in --source: aihot + last30days
-  + Horizon) → core facts → plan → content QC (filter, done-no-content terminal) → article + cover
-  + script + review + voice → publish (surfdash + podcast, full|partial|none routing) → xhs draft
-  (independent, non-blocking target) → locales
+  Daily AI tech-sharing end-to-end pipeline for the 「AI 乱炖」 column of show 「咸话咸说」 (task 0189 R1):
+  collect (fan-in --source: aihot + last30days + Horizon) → core facts → plan → content QC (filter +
+  topic boundary, done-no-content terminal) → article + cover + script + review + voice → publish
+  (surfdash + podcast, full|partial|none routing) → xhs draft (independent, non-blocking target) →
+  locales
 initialState: prepare
 terminalStates:
   - done
@@ -77,7 +78,7 @@ vars:
   wechat_enabled: "true"
   wechat_live: "false"
   # 合集 tag for the MP draft (passed to wechatmp-pub); other shows/collections override per workflow.
-  wechat_collection: "每日AI资讯"
+  wechat_collection: "AI 乱炖"
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"
@@ -184,17 +185,20 @@ states:
           allowAppend: false
 
   - id: article-write
-    description: "Write the morning-news prose article from the translated plan via agent.run (3-format split: surfdash gets prose, not a news list)"
+    description: "Write the tech-sharing prose article from the translated plan via agent.run (3-format split: surfdash gets prose, not a news list)"
     onEnter:
       - kind: agent.run
         options:
           role: scribe
           agent: ${vars.agent}
-          # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3).
+          # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3). No title line: the
+          # canonical episode title is computed by daily-article-gen (task 0189 R4).
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
-            Write a morning-news prose article in natural simplified Chinese: title line "# 每日 AI 资讯 — ${vars.run_date}", an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together. 内容合规（平台审核）：全文不出现中国现任或历任党、国家、政府最高领导人的姓名，必须提及时以职务代称（如「国家主席」「国务院总理」）；不书写中国国内政治相关议题。
-            Narrative register — smooth transitions between items, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). Keep facts/URLs from the plan verbatim; product/model names as-is; 「」 quotes.
+            Write a tech-sharing prose article in natural simplified Chinese for the 「AI 乱炖」 column (show 「咸话咸说」， tools/papers/hands-on practice 随聊): no title line (the pipeline computes it), an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together.
+            选题边界：只写技术内容；某条主线若属政治/外交或贸易管制/军事/公共政策争议/社会公共事件，跳过该条并在文末加一行「> 注：<N> 条条目因选题边界未写入」。
+            事实纪律：每个事实取自该条计划内容，不虚构、不引他处；模型/产品名与 URL 照抄；某条材料不足就少写或不写，不凑数。
+            Narrative register — smooth transitions, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). 「」 quotes.
             Output the markdown to ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md.
           expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
           allowAppend: false
@@ -219,7 +223,7 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
-            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the episode's lead story.
             Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
             No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
@@ -257,7 +261,7 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; use each doc's `id`; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
             For each doc write a `lead` (a spoken bridge into the title, not containing it) and an `insight` (why it matters, grounded only in that doc's facts).
-            Write an `intro` hooking today's actual themes and an `outro`; no greeting or sign-off — the builder adds both. 内容合规：不出现中国现任、历任最高领导人姓名（以职务代称），不涉及中国国内政治。
+            Write an `intro` hooking today's actual themes and an `outro`; no greeting or sign-off — the builder adds both. 选题边界：只写技术内容；公共事务主线（政治/外交贸易管制/军事/政策争议/社会事件）不出现。
             Output only the JSON object {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}]} with one item per doc id to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json.
           expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
           allowAppend: false
@@ -357,9 +361,9 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
             Take item 1 only (its "title" and "metadata.brief") — the lead story.
-            Write an XHS note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags). 不提领导人姓名，不涉国内政治。
+            Write an XHS note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags). 选题边界：公共事务主线不写入，只写技术内容。
             Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
-            Ground every "copy", "points" and "sourcePoint" in that story alone — no invented facts. No text, letters, numbers, logos or real people in "subject".
+            Ground every "copy", "points" and "sourcePoint" in that story — no invented facts. No text, letters, numbers, logos or real people in "subject".
             Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
           expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
           allowAppend: false

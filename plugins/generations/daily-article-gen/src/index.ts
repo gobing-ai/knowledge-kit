@@ -102,10 +102,27 @@ function renderDoc(doc: Doc, index: number): string {
     return `## ${index + 1}. ${heading}\n\n${metaLine ? `${metaLine}\n\n` : ''}${stripScaffold(doc.body ?? '').trim()}`;
 }
 
+/**
+ * Episode title for the 「AI 乱炖」 column (task 0189 R1/R4): `AI 乱炖｜<本期实际技术主题> · YYYY-MM-DD`.
+ * The deterministic proxy for 本期实际技术主题 is the lead plan item's title — the same doc the
+ * cover brief and XHS cards already treat as the episode's lead story. Pure function so the
+ * agent-written and template article paths, ID3, RSS and show notes all derive one identical
+ * title; never re-introduces the retired news-bulletin positioning (task 0189 R4).
+ */
+export function episodeTitle(docs: Doc[], date: string): string {
+    const lead = docs[0]?.title?.trim() ?? '';
+    const theme = lead !== '' ? lead : '工具、论文与实践';
+    return `AI 乱炖｜${theme} · ${date}`;
+}
+
 /** Render the article markdown for a merged Doc[] (pure — exported for tests). */
 export function renderDailyArticle(docs: Doc[], date: string): string {
     const items = docs.map(renderDoc).join('\n\n');
-    return `# 每日 AI 资讯 — ${date}\n\n本期共 ${docs.length} 条新闻，均附可点击来源链接。\n\n${items}\n`;
+    const intro =
+        docs.length > 0
+            ? `「AI 乱炖」是「咸话咸说」的 AI 技术分享栏目：工具、论文与实践随聊。本期共 ${docs.length} 条内容，均附可点击来源链接。`
+            : '「AI 乱炖」是「咸话咸说」的 AI 技术分享栏目：工具、论文与实践随聊。本期没有足够扎实的可聊内容。';
+    return `# ${episodeTitle(docs, date)}\n\n${intro}\n\n${items}\n`;
 }
 
 /** Single-source daily tag: stamped on every Content this generator emits (task 0119). */
@@ -120,11 +137,22 @@ function tagsFor(docs: Doc[]): string[] {
     return [AI_NEWS_TAG, ...existing.filter((t) => t !== AI_NEWS_TAG)];
 }
 
+/** A leading H1 line — agent bodies used to carry their own title; the canonical title is computed (task 0189 R4). */
+const LEADING_H1_RE = /^#\s*[^\n]+\n+/.source;
+
 /** Build the article Content from a merged Doc[]; `bodyOverride` replaces the mechanical render (agent-written prose), still scaffold-stripped as a safety net. */
 export function docsToContent(docs: Doc[], date: string, bodyOverride?: string): Content {
+    const title = episodeTitle(docs, date);
+    let body = renderDailyArticle(docs, date);
+    if (bodyOverride) {
+        // The canonical episode title is computed from the lead item; a leading H1 the agent may
+        // still have written is replaced (not duplicated) so body and metadata agree on every path.
+        const stripped = stripScaffold(bodyOverride.trim()).trim().replace(new RegExp(LEADING_H1_RE), '');
+        body = `# ${title}\n\n${stripped}\n`;
+    }
     return ContentSchema.parse({
-        title: `每日 AI 资讯 — ${date}`,
-        body: bodyOverride ? stripScaffold(bodyOverride).trim() : renderDailyArticle(docs, date),
+        title,
+        body,
         format: 'markdown',
         references: docs.filter((d) => d.sourceUri).map((d) => ({ url: d.sourceUri, title: d.title, cite: d.id })),
         metadata: { generator: 'kk:daily-article', date, doc_count: docs.length, tags: tagsFor(docs) },

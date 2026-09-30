@@ -717,6 +717,108 @@ function dailyPlan(args: string[]): void {
     });
 }
 
+/**
+ * Topic-boundary sidecar (task 0189 R2). Sibling of this file; node-builtins-only read.
+ */
+interface TopicBoundaryRule {
+    id: string;
+    reason: string;
+    keywords: string[];
+}
+
+interface TopicBoundarySpec {
+    version: number;
+    scanChars: number;
+    rules: TopicBoundaryRule[];
+    dateConflict: { reason: string };
+}
+
+interface TopicBoundaryExclusion {
+    id: string;
+    title: string;
+    rule: string;
+    reason: string;
+    matched: string;
+}
+
+function readTopicBoundary(): TopicBoundarySpec {
+    const path = join(SCRIPTS_DIR, 'topic-boundary.json');
+    let parsed: TopicBoundarySpec;
+    try {
+        parsed = JSON.parse(readFileSync(path, 'utf-8')) as TopicBoundarySpec;
+    } catch (err: unknown) {
+        failWith(1, `topic-boundary: spec unreadable at ${path}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!Array.isArray(parsed.rules) || parsed.rules.length === 0) {
+        failWith(1, `topic-boundary: spec at ${path} carries no rules`);
+    }
+    return parsed;
+}
+
+/**
+ * Deterministic topic admission for the AI 乱炖 column (task 0189 R2): an item whose mainline is
+ * political/diplomatic-trade, military, public-policy dispute, or a social public event is
+ * excluded with its ID, rule and matched keyword recorded — sources stay untouched. A date that
+ * contradicts the run (publishedAt after the run date, e.g. an aggregated future-dated draft) is
+ * inadmissible as evidence (R3). Matches scan the title plus the first `scanChars` chars of the
+ * body — precision first: a body-mention far below the fold does not exclude. Matching is
+ * case-insensitive (task 0189 F2: both sides lowercased; zh unaffected) so headline-capitalized
+ * "President"/"Pentagon" still hit the lowercase English keywords in the spec.
+ */
+export function applyTopicBoundary(
+    docs: unknown[],
+    runDate: string,
+    spec: TopicBoundarySpec,
+): {
+    kept: unknown[];
+    excluded: TopicBoundaryExclusion[];
+} {
+    const excluded: TopicBoundaryExclusion[] = [];
+    const kept: unknown[] = [];
+    for (const doc of docs) {
+        const record = (doc ?? {}) as Record<string, unknown>;
+        const title = typeof record.title === 'string' ? record.title : '';
+        const body = typeof record.body === 'string' ? record.body : '';
+        const haystack = `${title}\n${body.slice(0, spec.scanChars)}`;
+        // Case-insensitive comparison (task 0189 F2): spec keywords are lowercase English; the
+        // recorded `matched` stays the spec's keyword verbatim. zh is unaffected by lowercasing.
+        const needle = haystack.toLowerCase();
+        let exclusion: TopicBoundaryExclusion | null = null;
+        for (const rule of spec.rules) {
+            const matched = rule.keywords.find((keyword) => keyword !== '' && needle.includes(keyword.toLowerCase()));
+            if (matched !== undefined) {
+                exclusion = { id: String(record.id ?? ''), title, rule: rule.id, reason: rule.reason, matched };
+                break;
+            }
+        }
+        if (exclusion === null) {
+            const publishedAt = metadataOf(record).publishedAt;
+            const stamp = typeof publishedAt === 'string' ? publishedAt : '';
+            const runIso = /^\d{8}$/.test(runDate)
+                ? `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`
+                : '';
+            if (runIso !== '' && stamp !== '') {
+                const published = new Date(stamp);
+                if (
+                    !Number.isNaN(published.getTime()) &&
+                    published.getTime() > new Date(`${runIso}T23:59:59Z`).getTime()
+                ) {
+                    exclusion = {
+                        id: String(record.id ?? ''),
+                        title,
+                        rule: 'date-conflict',
+                        reason: spec.dateConflict.reason,
+                        matched: stamp,
+                    };
+                }
+            }
+        }
+        if (exclusion !== null) excluded.push(exclusion);
+        else kept.push(doc);
+    }
+    return { kept, excluded };
+}
+
 function dailyQcContent(args: string[]): void {
     const [
         workDir = '',
@@ -730,6 +832,7 @@ function dailyQcContent(args: string[]): void {
     ] = args;
     const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
     const annotated = join(workDir, '21-plan', `${runDate}_04_quality-control-content_annotated.json`);
+    const exclusions = join(workDir, '21-plan', `${runDate}_04_quality-control-content_exclusions.json`);
     const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
     timed(workDir, 'quality-control-content', () => {
         if (isFile(candidates)) {
@@ -760,6 +863,32 @@ function dailyQcContent(args: string[]): void {
             },
         );
     });
+    // Topic boundary (task 0189 R2) runs on every invocation — re-applying to already-filtered
+    // candidates is a no-op, so cached reruns stay idempotent while a crash between the candidates
+    // write and the exclusions write still converges on the next run. Zero kept docs leaves the
+    // candidates file empty for the workflow's existing done-no-content edge.
+    const boundaryDocs = metadataOf(readJson(candidates)).docs;
+    if (!Array.isArray(boundaryDocs)) return;
+    const { kept, excluded } = applyTopicBoundary(boundaryDocs, runDate, readTopicBoundary());
+    if (excluded.length === 0) return;
+    sted('write', exclusions, () =>
+        writeJsonText(exclusions, {
+            version: 1,
+            runDate,
+            excluded,
+            kept: kept.map((doc) => (doc as { id: string }).id),
+        }),
+    );
+    const content = requireJson(candidates, 'topic-boundary');
+    const meta = content.metadata;
+    if (meta === null || typeof meta !== 'object') {
+        failWith(1, 'topic-boundary: candidates content carries no metadata object');
+    }
+    (meta as Record<string, unknown>).docs = kept;
+    sted('write', candidates, () => writeJsonText(candidates, content));
+    console.log(
+        `topic-boundary: excluded ${excluded.length} item(s): ${excluded.map((entry) => `${entry.id}(${entry.rule})`).join(', ')}`,
+    );
 }
 
 /**
@@ -1260,7 +1389,7 @@ function dailyPublishWechat(args: string[]): void {
             original: true,
             aiGenerated: true,
             author: '冰原奔狼',
-            collection: collectionArg || '每日AI资讯',
+            collection: collectionArg || 'AI 乱炖',
             ...(isFile(cover) ? { coverPath: cover } : {}),
             // Audio block at the article top (operator request 2026-09-29): the daily MP3 goes to
             // the 素材库 under the article title; the plugin reuses an existing same-title material.
@@ -1333,6 +1462,9 @@ function dailyScript(args: string[]): void {
             env: {
                 DAILYNEWS_LANGUAGE: language,
                 DAILYNEWS_TITLE: title,
+                // Task 0189: the broadcast greeting carries the episode's run date, not the render
+                // date — a backfilled/retried run must not greet "today".
+                DAILYNEWS_DATE: runDate,
                 VOICEBOX_DEFAULT_PROFILE: voiceProfile,
                 // F613 R4: always passed as absolute paths — spawnPluginEntry runs plugins with
                 // cwd = the plugin package dir, so a relative workDir would silently miss the
@@ -1843,9 +1975,11 @@ function dailyPatchSurfdash(args: string[]): void {
         const localCover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const dateIso = `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`;
         const crossLink: Record<string, string> = {
-            zh: `🎧 本期已同步制作为播客节目，[点击收听《每日 AI 资讯 · ${dateIso}》](${showNotesUrl})。`,
-            en: `🎧 This episode is also available as a podcast: [listen to the Daily AI Briefing · ${dateIso}](${showNotesUrl}).`,
-            ja: `🎧 本エピソードはポッドキャストでも配信中：[Daily AI Briefing · ${dateIso} を聴く](${showNotesUrl})。`,
+            // Task 0189 R4: cross-links carry the column's episode-title pattern, not the retired
+            // news-bulletin name (the VoiceScript episode title is episodeTitle(lead, date)).
+            zh: `🎧 本期已同步制作为播客节目，[点击收听《AI 乱炖 · ${dateIso}》](${showNotesUrl})。`,
+            en: `🎧 This episode is also available as a podcast: [listen to AI 乱炖 · ${dateIso}](${showNotesUrl}).`,
+            ja: `🎧 本エピソードはポッドキャストでも配信中：[AI 乱炖 · ${dateIso} を聴く](${showNotesUrl})。`,
         };
         let changed = 0;
         for (const [locale, dir] of [
@@ -2109,7 +2243,8 @@ function dailyTranslateSync(args: string[]): void {
 
 const [stage, ...rest] = process.argv.slice(2);
 
-// Imported as a module (unit tests reach `dedupPlanByTitle`) → exports only, never a stage run;
+// Imported as a module (unit tests reach `dedupPlanByTitle` / `applyTopicBoundary`) → exports
+// only, never a stage run;
 // executed as the entrypoint → dispatch.
 if (import.meta.main)
     switch (stage) {

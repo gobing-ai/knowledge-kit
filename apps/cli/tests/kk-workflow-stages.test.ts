@@ -1830,6 +1830,8 @@ describe('F613 (0162) — script-write stage wiring', () => {
             const env = lastEnv(envLog);
             expect(env.DAILYNEWS_SCRIPT_PLAN).toBe(resolve(dir, '24-script', `${stamp}_08_script-write_plan.json`));
             expect(env.DAILYNEWS_STYLE_FILE).toBe(resolve(STYLE_SIDECAR));
+            // Task 0189: the broadcast greeting carries the run date (backfill/retry must not say today).
+            expect(env.DAILYNEWS_DATE).toBe(stamp);
         });
     });
 

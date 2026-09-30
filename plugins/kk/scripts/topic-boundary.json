@@ -1,0 +1,105 @@
+{
+    "version": 1,
+    "note": "Task 0189 R2 topic admission for the AI 乱炖 column. Excludes items whose mainline is political/diplomatic-trade, military, public-policy dispute, or a social public event; records every exclusion with id, rule, reason and the matched keyword. Sources are never deleted or modified. Scan covers the title plus the first scanChars chars of the body. Precision first: these keywords are a floor, not a sieve — a rare false negative is caught by the script-write/article-write topic-boundary prompts and the content-safety skill review, and a suspected false positive is restored by hand with a recorded reason (manual review), never silently.",
+    "scanChars": 200,
+    "rules": [
+        {
+            "id": "political-diplomatic",
+            "reason": "政治/外交主线：涉及政治人物、政府机构、选举、外交或双边关系的条目，不属于 AI 乱炖的技术分享范围（0189 R2）。",
+            "keywords": [
+                "领导人",
+                "主席访",
+                "总书记",
+                "国务院总理",
+                "外交部",
+                "大使馆",
+                "国事访问",
+                "政治局",
+                "中南海",
+                "总统",
+                "白宫",
+                "国会",
+                "议会",
+                "选举",
+                "台海",
+                "两岸关系",
+                "中美关系",
+                "president",
+                "parliament",
+                "election",
+                "diplomat"
+            ]
+        },
+        {
+            "id": "trade-controls",
+            "reason": "外交/贸易管制主线：制裁、关税、出口管制、实体清单等政府间管制动作属于公共事务，不是技术实践（0189 R2；涉管制的技术影响可在人工复审后改写为纯技术内容）。",
+            "keywords": [
+                "制裁",
+                "关税",
+                "出口管制",
+                "实体清单",
+                "贸易战",
+                "禁令",
+                "制裁清单",
+                "sanctions",
+                "tariff",
+                "export control",
+                "trade war",
+                "entity list"
+            ]
+        },
+        {
+            "id": "military",
+            "reason": "军事主线：军队、武器、作战相关的条目一律排除（0189 R2）。",
+            "keywords": [
+                "军队",
+                "军事",
+                "解放军",
+                "武器",
+                "导弹",
+                "无人机袭击",
+                "战场",
+                "military",
+                "pentagon",
+                "missile"
+            ]
+        },
+        {
+            "id": "policy-dispute",
+            "reason": "公共政策争议主线：立法、听证、反垄断等政策博弈是公共事务主线，不是技术内容（0189 R2；纯技术子话题需人工复审并重写后才可使用）。",
+            "keywords": [
+                "立法",
+                "听证",
+                "政策争议",
+                "反垄断",
+                "监管机构",
+                "监管新规",
+                "法案",
+                "regulation",
+                "antitrust",
+                "legislation",
+                "lawsuit"
+            ]
+        },
+        {
+            "id": "social-event",
+            "reason": "社会公共事件主线：事故、灾害、冲突现场等社会事件的报道不属于技术分享（0189 R2）。",
+            "keywords": [
+                "社会事件",
+                "踩踏",
+                "骚乱",
+                "抗议",
+                "示威",
+                "罢工",
+                "遇难",
+                "伤亡",
+                "protest",
+                "riot",
+                "casualties"
+            ]
+        }
+    ],
+    "dateConflict": {
+        "reason": "日期自相矛盾：条目 publishedAt 晚于本期运行日期（如聚合源携带的未来日期草稿），依据 0189 R3 不得作为事实依据。"
+    }
+}
