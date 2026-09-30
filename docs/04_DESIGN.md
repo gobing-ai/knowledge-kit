@@ -38,6 +38,7 @@ sync: [T3]
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
 | [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy; Apple enclosure MIME gate and channel compliance checklist | shipped (E6; 0170/0173) |
 | [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | shipped (E7) |
+| [browser-publish-channels.md](design/browser-publish-channels.md) | InfoQ/Juejin/Substack/X-article script flows on ts-browser-automation + `publish-harness/browser` command library; per-channel transport verdict | planned (E91, ADR-027) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |

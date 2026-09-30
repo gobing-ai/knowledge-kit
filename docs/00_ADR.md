@@ -1023,6 +1023,36 @@ never post live.
 
 ---
 
+## ADR-027: Browser publish channels run script flows on ts-browser-automation with a shared harness command library
+
+**Status:** Accepted · **Date:** 2026-09-29
+
+**Decision.** `infoq-pub`, `juejin-pub`, `substack-pub`, and the `x-pub` `article` operation
+replace their always-failing `agent`-driver stubs with `script`-driver Playwright flows over
+`@gobing-ai/ts-browser-automation` (`withProfilePage` / `loginWithProfile`), following the
+`xhs-pub` (ADR-024) and `wechatmp-pub` (ADR-026) pattern: headless session preflight, draft by
+default, success only from an observed browser signal. The shared plumbing — profile-dir
+precedence, a `login|check` profile CLI factory, polling, HTML paste / CodeMirror fill, file
+upload, observed-outcome, and `Bun.markdown.html` rendering — lives in
+`@gobing-ai/publish-harness` under a `./browser` sub-path export; `xhs-pub` and `wechatmp-pub`
+migrate onto it. Site selectors and flows stay in each plugin. `medium-pub` (REST token),
+`qiita-pub` (API v2), `zenn-pub` (zenn-cli + git), and `x-pub` `post` (API v2) stay on their
+official transports.
+
+**Why.** The `agent` default from the wt-publish harvest (E7, D13) never had an executor, so
+four advertised channels fail every real run. The script pattern is already proven twice in this
+repo; a third and fourth hand-copy of the same plumbing is the duplication a shared module
+removes. Official APIs remain strictly better where they exist.
+
+**Cost / accepted risk.** Selector drift and anti-bot friction per site — mitigated by loud
+unobserved-outcome failures and operator-driven draft dogfood; CI stays offline. No
+ADR-025-style automation guard for the new channels until a site warns (X is the first
+candidate). Medium browser fallback is deferred until the token API stops accepting posts.
+
+**Detail:** `docs/design/browser-publish-channels.md`; feature E91.
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
