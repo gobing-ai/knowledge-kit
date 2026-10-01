@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F616"
 name: "Legible XHS card text via deterministic typesetting"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-09-29T02:25:41.090Z"
-updated_at: "2026-09-29T02:26:18.913Z"
+updated_at: "2026-09-30T06:32:32.375Z"
 ---
 
 # F616: Legible XHS card text via deterministic typesetting
@@ -95,3 +95,6 @@ Feature: Legible XHS card text via deterministic typesetting
 ## Notes
 
 ## History
+
+- 2026-09-30T06:32:32.375Z backlog → active (system)
+

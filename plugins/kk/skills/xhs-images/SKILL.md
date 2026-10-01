@@ -42,7 +42,7 @@ generation, `EXTEND.md` chain. Layout catalog:
    imagePath, status: 'pending' }] }`.
 2. **Envelopes** — for each card write `<out>/cards/NN.in.json`: the `image-gen`
    envelope with `job: free`, `format: xhs-card`, `style`, `vars` (role,
-   layout, headline, points, subject, language 简体中文, index), `provider`,
+   layout, headline, points, subject, index), `provider`,
    `model`, `maxImages: 1`, `outputStem: card-NN`. For NN ≥ 02 add
    `referenceImages: [<cover path>]` **only when** `kk:image-authoring`
    `references/providers.md` marks the provider/model reference-capable.
@@ -51,7 +51,8 @@ generation, `EXTEND.md` chain. Layout catalog:
    composed prompt; it must equal `ImageArtifact.prompt` after render). Resolve
    provider/model via `kk:image-authoring`'s preference chain (arguments >
    env > `$KK_CONFIG` > defaults). Show **one** spend preview for the series
-   (provider, model, style, N, cover prompt, per-card copy list, plus the
+   (provider, model, style, N, cover prompt, per-card copy list (typeset by
+   image-gen's composer, not prompt text), plus the
    consistency path: cover-reference chain when the provider is
    reference-capable per `kk:image-authoring` `references/providers.md`, or an
    explicit weaker-consistency disclosure when it is not) and follow the
@@ -82,8 +83,11 @@ extension. Replanning requires a new `--out`.
 - N ≤ 10 and ≤ `image.max_images`; refusal names the cap env/key.
 - Source file is never written.
 - One spend confirmation per series; renders strictly sequential.
-- Card text stays minimal (headline ≤ 12 chars, 2–4 short points) — the model
-  renders text, so fewer words means fewer rendering defects.
-- Consistency: cover prompt fixes palette/typography wording; per-card prompts
-  reuse it verbatim and vary only layout/points/subject. When the provider is
-  reference-capable, cards ≥ 02 reference the rendered cover.
+- Card text stays minimal (headline ≤ 12 chars, 2–4 short points): copy is
+  typeset by image-gen's composer at fixed glyph floors, not rendered by the
+  model — the provider prompt must stay text-free (0181). Keep the headline
+  short and 2–4 points so the card fits the text panel; overflow fails loud
+  before spend.
+- Consistency: cover prompt fixes palette and illustration wording; per-card
+  prompts reuse it verbatim and vary only layout/points/subject. When the
+  provider is reference-capable, cards ≥ 02 reference the rendered cover.

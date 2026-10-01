@@ -883,7 +883,9 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                       'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
                       'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
                       'fs.writeFileSync(artifact, "png");',
-                      'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "composed " + spec.vars.headline }] } }));',
+                      'const illus = at("--out").replace(/.json$/, "") + "-illustration-01.png";',
+                      'fs.writeFileSync(illus, "png");',
+                      'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "flat illustration " + spec.vars.subject, illustration: { path: illus, bytes: 3 } }] } }));',
                   ]
                 : [
                       'const payload = JSON.parse(fs.readFileSync(at("--in"), "utf8"));',
@@ -958,7 +960,8 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 expect(spec.provider).toBe('minimax');
                 expect(spec.model).toBe('image-01');
                 expect(spec.maxImages).toBe(1);
-                expect(spec.vars.language).toBe('简体中文');
+                // 0181: card copy is typeset by image-gen's composer — no language var.
+                expect(spec.vars.language).toBeUndefined();
             }
             expect(specs[1]?.vars.role).toBe('content');
 
@@ -974,11 +977,51 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             ]);
             // Provenance (source point, layout, prompt path) stays in the manifest, not the DTO.
             const manifest = JSON.parse(readFileSync(join(xhs, 'cards.json'), 'utf-8')) as {
-                cards: { sourcePoint: string; status: string }[];
+                cards: { sourcePoint: string; status: string; illustrationPath?: string }[];
             };
             expect(manifest.cards.map((card) => card.status)).toEqual(['rendered', 'rendered']);
             expect(manifest.cards[0]?.sourcePoint).toBe('lead fact');
-            expect(readFileSync(join(xhs, 'cards/card-01.prompt.txt'), 'utf-8')).toBe('composed 今日头条');
+            // 0181: the text-free illustration layer is recorded beside the card image.
+            expect(manifest.cards[0]?.illustrationPath).toBe(join(xhs, 'cards/card-01-illustration-01.png'));
+            expect(manifest.cards[1]?.illustrationPath).toBe(join(xhs, 'cards/card-02-illustration-01.png'));
+            expect(readFileSync(join(xhs, 'cards/card-01.prompt.txt'), 'utf-8')).toBe('flat illustration a desk');
+        });
+    });
+
+    it('daily-xhs-render with every artifact already on disk spends nothing but still packages (E8 0181)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            const cards = join(dir, '25-xhs/cards');
+            mkdirSync(cards, { recursive: true });
+            writeFileSync(
+                join(dir, '25-xhs/20260101_18_xhs_plan.json'),
+                JSON.stringify({
+                    title: 't',
+                    body: 'b',
+                    cards: [xhsCard('cover', 'c1', 'sp1'), xhsCard('content', 'c2', 'sp2')],
+                }),
+            );
+            for (const index of ['01', '02']) {
+                const png = join(cards, `card-${index}-xhs-card-01.png`);
+                writeFileSync(png, 'png');
+                writeFileSync(
+                    join(cards, `card-${index}.json`),
+                    JSON.stringify({ metadata: { images: [{ path: png, prompt: `flat illustration ${index}` }] } }),
+                );
+            }
+            const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            expect(result.stderr).toBe('');
+            // Zero provider calls: the fake kk never ran (it would have created the record).
+            expect(existsSync(record)).toBe(false);
+            const content = JSON.parse(readFileSync(join(dir, '25-xhs/content.json'), 'utf-8')) as {
+                metadata: { images: { path: string }[] };
+            };
+            expect(content.metadata.images.map((image) => image.path)).toEqual([
+                join(cards, 'card-01-xhs-card-01.png'),
+                join(cards, 'card-02-xhs-card-01.png'),
+            ]);
         });
     });
 

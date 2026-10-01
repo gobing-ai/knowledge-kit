@@ -1230,7 +1230,8 @@ function xhsPlan(planPath: string, count: number): { title: string; body: string
 /**
  * E8: build one `image-gen` envelope per planned card, render them sequentially, and package the
  * ordered card manifest + `Content` that `xhs-pub` consumes. Format, style, provider and model
- * are pinned here (never model-authored), so the series cannot drift from its preset. Resume-safe:
+ * are pinned here (never model-authored), so the series cannot drift from its preset. Card copy
+ * is typeset by image-gen's composer; the provider prompt stays text-free (0181). Resume-safe:
  * a card whose recorded artifact is still on disk is not re-rendered — and not re-billed.
  */
 function dailyXhsRender(args: string[]): void {
@@ -1264,7 +1265,6 @@ function dailyXhsRender(args: string[]): void {
                         headline: card.copy,
                         points: card.points.join('\n'),
                         subject: card.subject,
-                        language: '简体中文',
                         index: card.index,
                     },
                     maxImages: 1,
@@ -1276,8 +1276,10 @@ function dailyXhsRender(args: string[]): void {
                         { id: `xhs-card-${card.index}`, title: runDate, body: '', metadata: { imageGen } },
                     ]),
                 );
-                // Sequential on purpose: one provider call per card, and the first failure stops
-                // the spend — later cards stay unrendered for a resume run to pick up.
+                // Sequential on purpose: one provider call per card (illustration only —
+                // card copy is typeset by image-gen's composer, never prompted), and the
+                // first failure stops the spend — later cards stay unrendered for a resume
+                // run to pick up.
                 kk(['executor', 'run', 'image-gen', '--in', envPath, '--out', out, ...pluginsArgs(pluginsPath)]);
                 artifact = firstArtifact(requireJson(out, 'xhs render'));
             }
@@ -1288,6 +1290,15 @@ function dailyXhsRender(args: string[]): void {
             }
             // `image-gen` writes the artifact beside `--out`; the publisher requires absolute paths.
             const imagePath = resolve(recorded);
+            // 0181: a composed card may also carry the text-free illustration layer; keep
+            // its recorded path so the manifest shows both layers.
+            const rawIllustration: unknown = artifact.illustration;
+            const illustrationPath =
+                typeof rawIllustration === 'object' &&
+                rawIllustration !== null &&
+                typeof (rawIllustration as Record<string, unknown>).path === 'string'
+                    ? resolve((rawIllustration as Record<string, unknown>).path as string)
+                    : undefined;
             sted('write', promptPath, () =>
                 writeRaw(promptPath, typeof artifact.prompt === 'string' ? artifact.prompt : ''),
             );
@@ -1300,6 +1311,7 @@ function dailyXhsRender(args: string[]): void {
                 layout: card.layout,
                 promptPath,
                 imagePath,
+                illustrationPath,
                 status: 'rendered',
             });
         }

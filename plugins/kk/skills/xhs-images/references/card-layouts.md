@@ -20,13 +20,13 @@ backend selection, batch/parallel generation, `EXTEND.md` chain.
 
 - Headline: extra-large bold; ≤ 12 Chinese characters.
 - Points: short lines, 2–4 per card, generous line spacing.
-- Keep total on-card text minimal — the model renders text, so fewer words
-  means fewer rendering defects.
-- Language default: 简体中文 (`xhs-card` format `language` var).
+- Keep total on-card text minimal — copy is typeset at fixed glyph floors by
+  image-gen's composer, so fewer words means the card fits the text panel
+  without overflow (which fails loud before spend).
 
 ## Consistency rules
 
-- Compose the cover prompt first; fix palette/typography wording there.
+- Compose the cover prompt first; fix palette and illustration wording there.
 - Per-card prompts reuse that wording verbatim; vary only
   layout/points/subject (via the `xhs-card` template variables).
 - When the provider/model is reference-capable per `kk:image-authoring`

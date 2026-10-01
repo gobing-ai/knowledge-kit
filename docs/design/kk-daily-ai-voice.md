@@ -159,8 +159,10 @@ follows the cover's split (F614): the agent authors **copy only**, the stage own
 - **Resume-safe spend.** A card whose recorded artifact is still on disk is reused, not re-rendered
   (and not re-billed); the first failed card stops the spend and leaves later cards pending for a
   resume run. `xhs_cards` is capped at 10 and refused before any plan is read.
-- The card series is a **draft-quality** artifact: model-rendered Chinese text can be misspelled.
-  The saved per-card prompt is the regeneration path; bitmap text repair is out of scope.
+- **Text-free card prompts (0181).** Card copy is typeset by image-gen's composer; the provider
+  renders only the text-free illustration (`daily-xhs-render` sends no `language` var, and the
+  guard refuses any Han text or card copy in the prompt pre-spend). A weak card is regenerated
+  from an edited prompt; bitmap text repair is out of scope.
 - **On by default (`xhs_enabled: "true"` since 2026-09-29), draft-only, and guarded.** 2026-09-28:
   the operator received an XHS warning about automated login/publish activity, and the target was
   flipped off. 2026-09-29 operator decision: back **on** as the best-practice default so daily

@@ -169,3 +169,4 @@ dist
 /data/backends/cuda
 
 /.works
+plugins/generations/image-gen/.spur/
