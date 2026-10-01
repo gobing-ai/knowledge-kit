@@ -79,6 +79,12 @@ export interface ImageArtifact {
     width?: number;
     height?: number;
     bytes: number;
+    /**
+     * Task 0180 (F616 R5): when the format has a compose block, the raw provider
+     * illustration is recorded here. `path` on the parent artifact is the composed
+     * card. `xhs-pub` reads only `.path`, so the publish DTO is unchanged.
+     */
+    illustration?: { path: string; width?: number; height?: number; bytes: number };
 }
 
 /** One illustration caption, the wt captions.json payload reduced to what consumers read (R4). */

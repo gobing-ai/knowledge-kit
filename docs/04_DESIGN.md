@@ -759,3 +759,49 @@ a recovery instruction before creating any artifact). View selection — pseudoc
 component tree / file tree / Mermaid / diff / copyable block, with one focused HTML artifact as
 last resort — lives in the skill body + `references/views.md`. No alias commands, no subagent, no
 first-layer `kk` noun (F9; ADR-009 / ADR-011).
+
+## image-gen compose block + composed-card artifact (2026-10-01, task 0180, ADR-028)
+
+Compose formats are format presets carrying a `compose` block. Schema (zod-validated in
+`@gobing-ai/image-gen`):
+
+```yaml
+formats:
+  - name: xhs-card
+    width: 1080
+    height: 1440
+    compose:
+      engine: text-card          # only engine shipped; unknown engine fails loud
+      safeArea: 72               # px inset all [data-field] boxes must respect
+      headlineMinPx: 64          # every headline starts at 1.5x this floor and steps down to it
+      bodyMinPx: 36
+      illustrationHeight: 640    # top band; 0 hides the band (text-only cards)
+      palette: { background: '#FFFFFF', text: '#1F2328', accent: '#FF2442' }
+      fonts: { headline: NotoSansSC-Bold.otf, body: NotoSansSC-Regular.otf }
+```
+
+Behavior: `compose(headline, points, role, compose, fontBytes, illustrationBytes?) -> PNG` is a
+pure function (byte-identical for identical inputs, SHA-256 verified); text is typeset with the
+pinned Noto Sans SC SubsetOTF fonts from `assets/fonts/` through headless Chromium (Playwright,
+local, no network); overflow beyond `safeArea` fails loud naming the field. Non-compose formats
+(`free`, `cover`, `daily-news-cover`, `illustration`) are unchanged.
+
+Artifact: for compose formats the job returns `ImageArtifact` with `.path` = composed card PNG
+and `.illustration = { path, bytes }` = raw provider output (written beside the
+card as `<stem>-illustration<N>.<ext>`). Consumers (daily XHS stages, `xhs-pub`) read only
+`.path`. Pre-spend: font cmap coverage fails loud naming field + code point;
+`KK_IMAGE_DRY_RUN=1` runs the full pre-spend path (cmap check + text-only compose) without
+provider spend. E2E evidence: `bun plugins/generations/image-gen/scripts/compose-e2e-artifact.ts`
+(1080x1440 + SHA-256 determinism per variant); the bun-test E2E case skips under `bun test` with
+a printed reason (Bun 1.3.14 event-loop block during Chromium launch).
+
+Task 0181 (F616 R1) — text-free prompt contract: for compose formats the composed provider prompt
+must stay text-free. `assertTextFreePrompt` (in `@gobing-ai/image-gen`'s compose module) refuses
+pre-spend (dry runs included, before any font IO) when the prompt or any named contributor carries
+a Han character, the headline, or any point as a literal substring (trimmed, length ≥ 2; numerals
+and ordinary Latin words are fine), and the error names the offending segment (`the format
+template`, `the style preset '<name>'`, `spec.extra`, `vars.<name>`) or falls back to `the
+composed prompt`. The shipped `xhs-card` template states the text-free rule and `xhs-knowledge`
+carries `negative: text, letters, numbers, Chinese characters, captions, watermark, logo`; the
+daily `xhs-render` stage sends no `language` var and records each card's `illustrationPath` in
+`cards.json`.

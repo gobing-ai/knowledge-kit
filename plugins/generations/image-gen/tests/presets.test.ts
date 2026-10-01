@@ -331,14 +331,29 @@ describe('xhs card presets (E8 0168)', () => {
         expect(format.width).toBe(1080);
         expect(format.height).toBe(1440);
         expect(format.defaultStyle).toBe('xhs-knowledge');
-        for (const key of ['role', 'layout', 'headline', 'points', 'subject', 'language']) {
+        // 0180: language is gone — the card copy is typeset, never prompted. headline/points stay
+        // declared because the composer reads them from spec.vars.
+        for (const key of ['role', 'layout', 'headline', 'points', 'subject']) {
             expect(format.variables[key], `${key} variable declared`).toBeDefined();
         }
-        expect(format.variables.language?.default).toBe('简体中文');
-        expect(style.modifiers).toContain('large legible Chinese typography');
+        expect(format.variables.language).toBeUndefined();
+        // 0180: the compose block pins the deterministic typesetting geometry (ADR-028).
+        expect(format.compose).toEqual({
+            engine: 'text-card',
+            safeArea: 72,
+            headlineMinPx: 64,
+            bodyMinPx: 36,
+            illustrationHeight: 640,
+            palette: { background: '#FFFFFF', text: '#1F2328', accent: '#FF2442' },
+            fonts: { headline: 'NotoSansSC-Bold.otf', body: 'NotoSansSC-Regular.otf' },
+        });
+        // 0181: the style may not carry card copy or any Han text into the prompt,
+        // and it must forbid text on the illustration via the negative prompt.
+        expect(style.modifiers).not.toMatch(/\p{Script=Han}/u);
+        expect(style.negative).toBe('text, letters, numbers, Chinese characters, captions, watermark, logo');
     });
 
-    test('xhs-card composes role, headline and points into the rendered prompt', () => {
+    test('xhs-card keeps the illustration prompt free of card copy (0180 R1)', () => {
         const { formats, styles } = loadShipped();
         const format = formats.get('xhs-card');
         const style = styles.get('xhs-knowledge');
@@ -353,9 +368,53 @@ describe('xhs card presets (E8 0168)', () => {
             subject: 'flat illustration of service boundaries',
         });
         expect(prompt).toContain('Card role: cover');
-        expect(prompt).toContain('"微服务拆分"');
-        expect(prompt).toContain('先按业务边界');
+        expect(prompt).toContain('flat illustration of service boundaries');
         expect(prompt).toContain('xiaohongshu-style');
+        // The card copy never reaches the provider: the composer typesets it from a real font.
+        expect(prompt).not.toContain('微服务拆分');
+        expect(prompt).not.toContain('先按业务边界');
+        expect(prompt).not.toContain('简体中文');
+    });
+});
+
+describe('compose block schema (F616 0180)', () => {
+    const base = {
+        name: 'card-format',
+        description: 'test',
+        job: 'free',
+        aspectRatio: '3:4',
+        width: 1080,
+        height: 1440,
+        defaultStyle: 'xhs-knowledge',
+        keywords: ['k'],
+        outputFilename: 'card-{{index | 01}}.png',
+        variables: {},
+        template: 'Scene.',
+        compose: {
+            engine: 'text-card',
+            safeArea: 72,
+            headlineMinPx: 64,
+            bodyMinPx: 36,
+            illustrationHeight: 640,
+            palette: { background: '#FFFFFF', text: '#1F2328', accent: '#FF2442' },
+            fonts: { headline: 'NotoSansSC-Bold.otf', body: 'NotoSansSC-Regular.otf' },
+        },
+    } as const;
+
+    test('a valid compose block parses and keeps the engine literal', () => {
+        const result = FormatPresetSchema.safeParse(base);
+        expect(result.success).toBeTrue();
+    });
+
+    test('a compose block without width/height fails loud', () => {
+        const missing = { ...base } as Record<string, unknown> & typeof base;
+        delete missing.width;
+        delete missing.height;
+        const result = FormatPresetSchema.safeParse(missing);
+        expect(result.success).toBeFalse();
+        if (!result.success) {
+            expect(result.error.message).toContain('width and height');
+        }
     });
 });
 

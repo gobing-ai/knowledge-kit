@@ -30,7 +30,7 @@ Both commands accept `--profile <dir>` and `--timeout <ms>`; profile dir precede
 
 - Agent entry: `kk:xhs-images <source> [--style <preset>] [--count <1..10>] [--out <dir>] [--live]`. The skill defaults to a draft and uses `kk:image-authoring`'s preview and payment controls. `--live` is an explicit operator instruction; unattended workflow mode still needs a separate launch-time live switch per ADR-022.
 - Shipped presets: `image-gen/presets/formats/xhs-card.yaml` and `presets/styles/xhs-knowledge.yaml` (layout/typography/consistency guidance adapted from `baoyu-xhs-images`, MIT © Jim Liu, via `plugins/kk/skills/xhs-images/references/card-layouts.md`). Existing styles remain selectable. Format variables cover card role, layout, source-grounded copy, and scene; output is one image per call.
-- `cards.json`: `{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, status }] }` (`status: pending | rendered | failed`) in display order. The authoring skill checks prompt and image existence before packaging.
+- `cards.json`: `{ source, cards: [{ index, role, sourcePoint, copy, layout, promptPath, imagePath, illustrationPath, status }] }` (`status: pending | rendered | failed`) in display order. `illustrationPath` is set when the card composed an illustration — the recorded absolute path of the raw provider image (0181). The authoring skill checks prompt and image existence before packaging.
 - `Content.metadata.images[]`: existing `ImageArtifact` objects; `xhs-pub` requires non-empty ordered absolute paths. `Content.metadata.publishStatus`: `draft | public`, default `draft`. Unknown status fails before browser action.
 
 ## Daily pipeline integration
@@ -111,4 +111,39 @@ publish. Expect at most one publish per day.
 - The live console contract above is measured, not contractual: XHS can change its DOM. The driver fails loud and names the failing step (login gate, tab, upload, thumbnail count, body, submit control, or draft confirmation) instead of reporting an outcome it did not observe.
 - The submit bar holds both `暂存离开` (draft) and `发布` (live) in one closed shadow root, so the driver always reads the target's box before clicking and never clicks a fixed position. A bounded retry of a *draft* save can leave more than one draft on the console (drafts are cheap and deletable); the live `发布` path is never retried — an unobserved publish fails loud and tells the operator to check the note manager before retrying.
 - **Live publish reliability (measured 2026-09-26).** A publish run reached the console's success page and created a real post (`.spur/run/xhs-live-preflight/result.public3.json`: `ok:true`, 4 ordered cards, `publishControl: 发布`), and the post was then removed through the note manager and verified absent. Two earlier attempts had the `发布` click dropped by the console (no post created; `ok:false` with the duplicate warning) on the same fixed settle — the publish path deliberately stays **single-click**: a dropped click fails loud instead of risking a second public post, so the operator re-runs once when that happens. Draft saves stay bounded-retry because drafts are cheap and deletable.
-- Generated Chinese text can be misspelled. A weak card is regenerated from an edited prompt; bitmap text repair is outside scope. Saved prompts preserve the reproduction path.
+- **Text-free illustration contract (0181).** The composed provider prompt must stay text-free:
+  no Han character anywhere and never the headline or any point as a literal substring (trimmed,
+  length ≥ 2 — Latin card copy is caught too; numerals and ordinary Latin words are fine).
+  `image-gen` refuses pre-spend (dry runs included) naming the offending segment — the format
+  template, the style preset, `spec.extra`, or a named var — and the shipped `xhs-card` ×
+  `xhs-knowledge` presets enforce it (the template states `no text, no letters, no numerals`; the
+  style carries a text `negative`). A weak card is regenerated from an edited prompt; bitmap text
+  repair is outside scope. Saved prompts preserve the reproduction path.
+
+## Deterministic text typesetting (2026-10-01, ADR-028)
+
+Card copy (headline + bullet points) is never sent to the image provider as prompt text. For
+compose formats (any format preset carrying a `compose` block, e.g. `xhs-card`), the image-gen
+plugin composes a text layer deterministically: pure TypeScript builds the card HTML from
+`(headline, points, role, compose, font bytes)` and headless Chromium (Playwright, local, no
+network) screenshots it at the declared canvas (1080x1440 for `xhs-card`). The provider renders
+the illustration band only; the card PNG is `compose(illustrationBytes) | text-only`.
+
+Boundary and guarantees:
+
+- **Pure + byte-identical (R3):** same inputs → same PNG bytes; the artifact script
+  (`bun plugins/generations/image-gen/scripts/compose-e2e-artifact.ts`) proves SHA-256
+  determinism per variant and writes `.spur/run/0180/card-{without,with}-illustration.png`.
+- **Fonts:** pinned Noto Sans SC SubsetOTF Regular+Bold ship in `assets/fonts/` (OFL license,
+  `SOURCE.md` provenance). A pre-spend cmap check fails loud naming field + code point for any
+  uncovered character (whitespace/line breaks exempt); `KK_IMAGE_DRY_RUN=1` runs the full
+  pre-spend path without provider spend or Chromium.
+- **Safe area (R2):** every `[data-field]` box is measured in-page against the 72px inset;
+  overflow fails loud naming the field. Headline starts >=64px, bullets >=36px.
+- **Artifact contract (R5):** the job artifact `ImageArtifact` keeps `.path` (composed card) and
+  adds `.illustration = {path,width,height,bytes}` (provider output); downstream (`xhs-pub`,
+  daily stages) reads only `.path`.
+- **Environment:** the E2E bun test skips under `bun test` (Bun 1.3.14 blocks the event loop
+  during Playwright's Chromium launch) with a printed reason; real E2E evidence is the artifact
+  script above. Clean `browser.close()` does not leak processes; a hung launch cycle can — the
+  script bounds each variant with a subprocess timeout + retry.

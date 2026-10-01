@@ -9,4 +9,10 @@ coverageDir = ".coverage"
 coverageReporter = ["text", "lcov"]
 coverageThreshold = { lines = 0.9, functions = 0.9 }
 coverageSkipTestFiles = true
-pathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**"]
+coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**",
+	# chromium.ts drives real headless Chromium via Playwright; under bun test
+	# (Bun 1.3.14) the launch blocks the event loop and cannot run in-process.
+	# It is E2E-verified by scripts/compose-e2e-artifact.ts instead (see
+	# docs/design/xhs-image-cards.md § Deterministic text typesetting).
+	"**/compose/chromium.ts",
+]

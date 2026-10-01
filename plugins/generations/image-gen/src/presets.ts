@@ -31,6 +31,28 @@ export interface FormatVariable {
     default: string;
 }
 
+/**
+ * Optional compose block in a format preset (task 0180, F616).
+ * When present, image-gen typesets the on-card copy from Noto Sans SC via
+ * headless Chromium instead of generating text as pixels. Requires `width`
+ * and `height` on the format (enforced by FormatPresetSchema refine).
+ */
+export interface ComposeConfig {
+    /** The only v1 engine value; zod literal enforces it. */
+    engine: 'text-card';
+    /** Safe-area inset in px on all sides. */
+    safeArea: number;
+    /** Headline minimum font size in px. */
+    headlineMinPx: number;
+    /** Body/bullets minimum font size in px. */
+    bodyMinPx: number;
+    /** Height in px of the illustration band (top); text panel takes the rest. */
+    illustrationHeight: number;
+    palette: { background: string; text: string; accent: string };
+    /** Font filenames under `assets/fonts/`. */
+    fonts: { headline: string; body: string };
+}
+
 /** R1 — `formats/<name>.yaml`: the job skeleton (template, keywords, variables). */
 export interface FormatPreset {
     /** Filename stem must equal this. */
@@ -51,6 +73,8 @@ export interface FormatPreset {
     variables: Record<string, FormatVariable>;
     /** Prompt body; YAML block scalar, embedded newlines preserved. */
     template: string;
+    /** Optional compose block (0180): when present, image-gen typesets card copy from a real font. */
+    compose?: ComposeConfig;
 }
 
 /** R1 — `styles/<name>.yaml`; `modifiers` is the only required prompt field. */
@@ -76,20 +100,36 @@ const PresetSourceSchema = z.object({
     confidence: z.enum(['high', 'medium', 'low']).optional(),
 });
 
-/** Parse gate for `formats/<name>.yaml`. */
-export const FormatPresetSchema = z.object({
-    name: z.string(),
-    description: z.string(),
-    job: z.enum(['free', 'cover', 'illustration']),
-    aspectRatio: z.string(),
-    width: z.number().optional(),
-    height: z.number().optional(),
-    defaultStyle: z.string(),
-    keywords: z.array(z.string()),
-    outputFilename: z.string(),
-    variables: z.record(z.string(), z.object({ description: z.string(), default: z.string() })),
-    template: z.string(),
+/** The zod schema for the optional compose block (0180). */
+const ComposeConfigSchema = z.object({
+    engine: z.literal('text-card'),
+    safeArea: z.number(),
+    headlineMinPx: z.number(),
+    bodyMinPx: z.number(),
+    illustrationHeight: z.number(),
+    palette: z.object({ background: z.string(), text: z.string(), accent: z.string() }),
+    fonts: z.object({ headline: z.string(), body: z.string() }),
 });
+
+/** Parse gate for `formats/<name>.yaml`. */
+export const FormatPresetSchema = z
+    .object({
+        name: z.string(),
+        description: z.string(),
+        job: z.enum(['free', 'cover', 'illustration']),
+        aspectRatio: z.string(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        defaultStyle: z.string(),
+        keywords: z.array(z.string()),
+        outputFilename: z.string(),
+        variables: z.record(z.string(), z.object({ description: z.string(), default: z.string() })),
+        template: z.string(),
+        compose: ComposeConfigSchema.optional(),
+    })
+    .refine((data) => data.compose === undefined || (data.width !== undefined && data.height !== undefined), {
+        message: 'A format preset with a compose block requires both width and height to be declared',
+    });
 
 /** Parse gate for `styles/<name>.yaml`. */
 export const StylePresetSchema = z.object({

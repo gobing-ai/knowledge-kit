@@ -1,9 +1,12 @@
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import { writeBytes } from './bytes';
+import { imageDimensions, readBytes, writeBytes } from './bytes';
+import type { CardComposer } from './compose/card';
+import { assertCoverage, assertTextFreePrompt, type TextFreeSource } from './compose/card';
+import { glyphCoverage } from './compose/cmap';
 import {
     type CaptionEntry,
     type ImageArtifact,
@@ -26,6 +29,7 @@ import {
     selectProvider,
 } from './providers/types';
 
+export type { CardComposer, CardInput } from './compose/card';
 export * from './job';
 export * from './paths';
 export * from './presets';
@@ -192,6 +196,12 @@ export async function processGeneratorIO(
         providerResolver?: ProviderResolver;
         /** D6 0166: builds fallback candidates by name (tests inject stubs); defaults to the registry. */
         createProvider?: (name: string) => ImageProvider;
+        /**
+         * Task 0180: injectable card composer. Tests supply a stub; the default is the Chromium
+         * composer (same seam style as `providerResolver`). Resolved lazily so missing Playwright
+         * surfaces only when a compose-format job is actually requested.
+         */
+        composer?: CardComposer;
     } = {},
 ): Promise<void> {
     const fs = createNodeFileSystem();
@@ -228,6 +238,85 @@ export async function processGeneratorIO(
             );
         }
         if (spec.job === 'illustration') assertAnchorPlan(doc?.body ?? '', positions, prompts.length);
+
+        // Task 0180 (F616 R4/R5): when the format has a compose block, run pre-spend checks
+        // (coverage + a dry compose with no illustration). This runs on BOTH the dry-run and
+        // spend branches so a missing-glyph or overflow error never bills the provider.
+        let _chromiumComposer: CardComposer | undefined;
+        const resolveComposer = async (): Promise<CardComposer> => {
+            if (options.composer !== undefined) return options.composer;
+            if (_chromiumComposer !== undefined) return _chromiumComposer;
+            // Lazy import: Playwright is a runtime dep, not always needed.
+            const { makeChromiumComposer } = await import('./compose/chromium');
+            _chromiumComposer = makeChromiumComposer();
+            return _chromiumComposer;
+        };
+
+        if (format.compose !== undefined) {
+            const cfg = format.compose;
+            if (spec.job !== 'free') {
+                throw new Error(
+                    `compose: format '${format.name}' has a compose block but the job is '${spec.job}' — compose formats require job: free`,
+                );
+            }
+            const vars = spec.vars ?? {};
+            const headline = vars.headline ?? format.variables.headline?.default ?? '';
+            if (!headline.trim()) {
+                throw new Error(`compose: format '${format.name}' requires a non-empty vars.headline`);
+            }
+            const pointsRaw = vars.points ?? format.variables.points?.default ?? '';
+            const points = pointsRaw.split('\n').filter((l: string) => l.trim() !== '');
+
+            // Task 0181 (F616 R1): the provider prompt must stay text-free — card copy is
+            // typeset by the composer. Refusal happens before any font IO, compose, or spend
+            // and names the offending segment (template, style preset, extra, or a named var).
+            const promptVars: Record<string, string> = { subject: doc?.body ?? '', ...(spec.vars ?? {}) };
+            const textFreeSources: TextFreeSource[] = [
+                { source: 'the format template', text: format.template },
+                {
+                    source: `the style preset '${style.name}'`,
+                    text: [style.modifiers, style.negative].filter((part) => part !== '').join(', '),
+                },
+                { source: 'spec.extra', text: spec.extra ?? '' },
+                ...Object.entries(promptVars)
+                    .filter(([name]) => name !== 'headline' && name !== 'points' && name !== 'index')
+                    .map(([name, value]) => ({ source: `vars.${name}`, text: String(value) })),
+            ];
+            assertTextFreePrompt(prompts[0] ?? '', { headline, points }, textFreeSources);
+
+            // Load font bytes once for coverage check.
+            const fontsDir = join(import.meta.dir, '..', 'assets', 'fonts');
+            const fontNames = [cfg.fonts.headline, cfg.fonts.body];
+            const fontBytesMap = new Map<string, Uint8Array>();
+            for (const name of fontNames) {
+                fontBytesMap.set(name, new Uint8Array(await readBytes(join(fontsDir, name))));
+            }
+            const coverageMap = new Map<string, (cp: number) => boolean>();
+            for (const [name, bytes] of fontBytesMap) {
+                coverageMap.set(name, glyphCoverage(bytes));
+            }
+
+            if (format.width == null || format.height == null) {
+                throw new Error(
+                    `image-gen: format '${format.name}' declares no canvas size; compose requires width and height`,
+                );
+            }
+            const cardInput = {
+                headline,
+                points,
+                role: vars.role ?? format.variables.role?.default ?? 'content',
+                compose: cfg,
+                width: format.width,
+                height: format.height,
+            };
+
+            // assertCoverage: fails loud naming field + code point (R4).
+            assertCoverage(cardInput, coverageMap);
+
+            // Dry compose (no illustration): proves Chromium is available and layout fits (R5).
+            const composer = await resolveComposer();
+            await composer.compose(cardInput);
+        }
 
         // Selection must succeed (or fail loud naming the provider) even when nothing is spent.
         const resolveProvider: ProviderResolver = options.providerResolver ?? defaultProviderResolver;
@@ -367,17 +456,86 @@ export async function processGeneratorIO(
                     );
                 }
             }
-            const path = artifactPath(outputPath, stem, format.name, index + 1, result.extension);
-            await writeBytes(path, result.bytes);
-            written.push(path);
+
+            let artifactPathValue: string;
+            let artifactBytes: number;
+            let artifactWidth: number | undefined;
+            let artifactHeight: number | undefined;
+            let illustrationMeta: ImageArtifact['illustration'] | undefined;
+
+            if (format.compose !== undefined) {
+                // Task 0180 (F616 R5): compose path.
+                // 1. Write the raw provider illustration.
+                const illustrationArtifactPath = artifactPath(
+                    outputPath,
+                    stem,
+                    `${format.name}-illustration`,
+                    index + 1,
+                    result.extension,
+                );
+                await writeBytes(illustrationArtifactPath, result.bytes);
+                written.push(illustrationArtifactPath);
+
+                // 2. Compose the card over the illustration.
+                const vars = spec.vars ?? {};
+                const headline = vars.headline ?? format.variables.headline?.default ?? '';
+                const pointsRaw = vars.points ?? format.variables.points?.default ?? '';
+                const points = pointsRaw.split('\n').filter((l: string) => l.trim() !== '');
+                if (format.width == null || format.height == null) {
+                    throw new Error(
+                        `image-gen: format '${format.name}' declares no canvas size; compose requires width and height`,
+                    );
+                }
+                const cardInput = {
+                    headline,
+                    points,
+                    role: vars.role ?? format.variables.role?.default ?? 'content',
+                    compose: format.compose,
+                    width: format.width,
+                    height: format.height,
+                    illustration: { bytes: result.bytes, mime: `image/${result.extension}` },
+                };
+                const composer = await resolveComposer();
+                const cardBytes = await composer.compose(cardInput);
+
+                // 3. Write the composed card.
+                const cardPath = artifactPath(outputPath, stem, format.name, index + 1, 'png');
+                await writeBytes(cardPath, cardBytes);
+                written.push(cardPath);
+
+                // 4. Measure the card dimensions via imageDimensions and assert canvas.
+                const dims = imageDimensions(cardBytes);
+                if (dims.width !== format.width || dims.height !== format.height) {
+                    throw new Error(
+                        `compose: card dimensions ${dims.width}x${dims.height} do not match format canvas ${format.width}x${format.height}`,
+                    );
+                }
+
+                artifactPathValue = cardPath;
+                artifactBytes = cardBytes.byteLength;
+                artifactWidth = dims.width;
+                artifactHeight = dims.height;
+                illustrationMeta = { path: illustrationArtifactPath, bytes: result.bytes.byteLength };
+            } else {
+                // Non-compose: existing path (R6).
+                const path = artifactPath(outputPath, stem, format.name, index + 1, result.extension);
+                await writeBytes(path, result.bytes);
+                written.push(path);
+                artifactPathValue = path;
+                artifactBytes = result.bytes.byteLength;
+            }
+
             const artifact: ImageArtifact = {
-                path,
+                path: artifactPathValue,
                 format: format.name,
                 style: style.name,
                 provider: result.provider,
                 model: result.model,
                 prompt,
-                bytes: result.bytes.byteLength,
+                bytes: artifactBytes,
+                ...(artifactWidth !== undefined ? { width: artifactWidth } : {}),
+                ...(artifactHeight !== undefined ? { height: artifactHeight } : {}),
+                ...(illustrationMeta !== undefined ? { illustration: illustrationMeta } : {}),
             };
             if (spec.seed !== undefined) {
                 artifact.seed = spec.seed;
@@ -386,10 +544,10 @@ export async function processGeneratorIO(
             if (anchor !== undefined) {
                 const parts = body.split(anchor);
                 const altText = `Illustration ${index + 1}`;
-                const markdown = `${anchor}\n\n![${altText}](${path})`;
+                const markdown = `${anchor}\n\n![${altText}](${artifactPathValue})`;
                 captions.push({
                     index: index + 1,
-                    path,
+                    path: artifactPathValue,
                     caption: anchor,
                     altText,
                     anchor,

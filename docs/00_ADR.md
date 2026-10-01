@@ -1053,6 +1053,40 @@ candidate). Medium browser fallback is deferred until the token API stops accept
 
 ---
 
+## ADR-028: Card copy is typeset from a real font, not generated as pixels
+
+**Status:** Accepted · **Date:** 2026-09-30
+
+**Decision.** Image generation never receives on-card text. A generator format preset may declare
+a `compose` block; for such a format the plugin's renderer (`image-gen`) generates only a
+text-free illustration, then typesets the card copy — headline and bullet points — from fonts
+shipped inside the plugin (Noto Sans SC, OFL-1.1) through headless Chromium (Playwright, already
+cataloged and kept external by the bundler) into the format's declared pixel canvas. The compose
+step is a pure function of (copy, role, compose block, font bytes, illustration bytes): identical
+input yields byte-identical PNGs, so recorded artifacts stay resumable. Character coverage is
+checked against the shipped font's `cmap` before any provider spend; an uncovered character fails
+loud naming the code point and field. Chromium is the rendering engine because the alternative
+(satori + a rasterizer) adds native or WASM dependencies that are not already installed, and
+Chromium gives real measured layout for the bounded safe-area and minimum-glyph-size checks.
+
+**Why.** Diffusion models have no glyph renderer: BPE token embeddings carry no glyph geometry and
+latent compression destroys the 2–5px strokes of a Han character, so MiniMax `image-01` returned
+illegible Chinese for every measured card (F616, filed from the 0179 review). Task 0163 already
+banned Chinese text from the daily cover's image prompts for the same structural reason. Setting
+copy with a deterministic typesetter is the fix; switching providers remains probabilistic.
+
+**Cost / accepted risk.** A generator plugin gains a browser runtime and ships a binary font asset
+(~17 MB for the two Noto Sans SC weights); one Chromium launch per composed image is acceptable
+next to a paid provider call. Output is reproducible per install because the font bytes ship with
+the plugin — no system-font lookup and no runtime download. A post-spend compose failure is
+infrastructure only (Chromium crash) and re-bills the illustration on the next run; keeping a paid
+illustration across failures is deferred until observed.
+
+**Detail:** task 0180; `docs/design/xhs-image-cards.md` (Decision and boundary);
+`docs/04_DESIGN.md` (format `compose` block, `ImageArtifact.illustration`).
+
+---
+
 ## Decisions deliberately deferred
 
 - **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
