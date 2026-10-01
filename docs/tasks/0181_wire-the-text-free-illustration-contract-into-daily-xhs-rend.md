@@ -4,7 +4,7 @@ name: Wire the text-free illustration contract into daily-xhs-render and xhs-car
 status: done
 template: feature-impl
 created_at: 2026-09-29T02:28:56.271Z
-updated_at: "2026-10-01T07:43:33.632Z"
+updated_at: "2026-10-01T17:38:40.562Z"
 feature_id: F616
 
 priority: P2
@@ -128,11 +128,13 @@ Steps:
 - [x] Skill and `card-layouts.md` edits; run check 8.
 - [x] Docs, same commit (T3): `docs/design/xhs-image-cards.md`, `docs/04_DESIGN.md`, `docs/design/kk-daily-ai-voice.md`
       §7.
-- [x] `bun run gate` — green 2026-10-01 00:13 (1607 pass / 0 fail, all rules passed). The operator-approved paid
-      dogfood is an F616 feature-level gate (design doc §7: "one representative Chinese article should be rendered
-      and inspected"): `spur workflow run` the daily XHS states, or the skill on one article with `--count 4`, and
-      inspect the four cards for legibility; record the artifact paths in Testing. Tracked for batch close with the
-      cost-estimate approval request — not a task-0181 exit condition.
+- [x] `bun run gate` — green 2026-10-01 00:13 (1607 pass / 0 fail, all rules passed).
+- [x] Operator-approved paid dogfood (F616 feature-level gate, design doc §7 "one representative Chinese article
+      should be rendered and inspected") — DONE 2026-10-01 via the production path: representative zh article →
+      hand-authored 4-card plan → `kk stage daily-xhs-render` (minimax image-01, xhs-knowledge/xhs-card), dry-run
+      pre-check confirmed the text-free prompt at 0 spend, 4/4 cards rendered sequentially in 2m35s (≈$0.014),
+      all 1080×1440, operator eyeball check passed. Artifacts `.spur/run/0181-dogfood/work/25-xhs/`; evidence in
+      Testing.
 
 ### Solution
 
@@ -191,6 +193,23 @@ Each entry cites the first changed line per file (`file:line`).
 | Card copy is set with real type, not generated pixels | MET | test | `plugins/generations/image-gen/tests/text-free.test.ts:67-110` (96px start / 64px floor / 36px body floors on the shared `cardHtml`; no `<img>` when illustration absent), `plugins/generations/image-gen/tests/compose-e2e.test.ts:153-165` (safe-area overflow refused on the no-illustration path), `apps/cli/tests/kk-workflow-stages.test.ts:921,941-944` (no language var; illustrationPath + typeset prompt trail); cmd: `.spur/run/0181/card-r2-no-illustration.png` measured 1080x1440 |
 | Composition is deterministic and resumable | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:948-983` (zero-spawn resume: record file never created = 0 image-gen spawns; cards packaged in order), `:1008-1050` (resume re-renders only missing card-02; cached prompt preserved verbatim), `:868-945` (images order card-01→card-02, illustrationPath in cards.json); determinism of the compose itself evidenced by SHA-256 pairs in `plugins/generations/image-gen/scripts/compose-e2e-artifact.ts` (0180 contract reused by the r2 variant) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+**F616 feature-level dogfood (operator-approved paid run, 2026-10-01)**
+
+- Production path end-to-end: representative zh article `.spur/run/0181-dogfood/article.md` → 4-card plan
+  `.spur/run/0181-dogfood/work/25-xhs/20261001_18_xhs_plan.json` (cover + 2 content + closing) →
+  `kk stage daily-xhs-render <work> 20261001 "" 4 xhs-knowledge minimax image-01` → exit 0, "4 cards packaged in
+  card order".
+- Pre-spend guard on a real envelope: `KK_IMAGE_DRY_RUN=1` dry run of card-01 passed the text-free guard and
+  composed the provider prompt with 0 generate calls (`.spur/run/0181-dogfood/dry/card-01.json`; prompt carries the
+  xhs-card template wording "no text, no letters, no numerals, no captions — the text band is typeset separately").
+- 4/4 rendered sequentially in 2m35s, first try, no retries (minimax image-01, ≈$0.014 total).
+- Cards `.spur/run/0181-dogfood/work/25-xhs/cards/card-01-xhs-card-01.png` … `card-04-xhs-card-01.png`, each
+  measured 1080×1440 (sips); text-free illustration layers `card-0N-xhs-card-illustration-0N.jpg` beside them.
+- `cards.json`: all four entries `rendered` with `illustrationPath` recorded; `content.json`: `metadata.images[4]`
+  in card order, `publishStatus: draft` (never published — no `--live`).
+- Operator eyeball check on the four PNGs: legible — copy crisp at the deterministic glyph floors; approved to
+  close out F616 (2026-10-01).
 
 ### Review
 

@@ -2,11 +2,11 @@
 schema_version: 1
 id: "F616"
 name: "Legible XHS card text via deterministic typesetting"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-29T02:25:41.090Z"
-updated_at: "2026-09-30T06:32:32.375Z"
+updated_at: "2026-10-01T21:13:16.000Z"
 ---
 
 # F616: Legible XHS card text via deterministic typesetting
@@ -97,4 +97,6 @@ Feature: Legible XHS card text via deterministic typesetting
 ## History
 
 - 2026-09-30T06:32:32.375Z backlog → active (system)
+- 2026-10-01T21:13:16.000Z active → verifying (bypass, operator-authorized direct edit: spur feature-verification workflow FK bug — receipt artifact registration references runs.id before the workflow commits its run row, so the onEnter hop can never pass)
+- 2026-10-01T21:13:16.000Z verifying → done (bypass, same authorization: tasks 0180/0181 done, paid dogfood legible per operator, `bun run spur-check` PASS 1607/0)
 
