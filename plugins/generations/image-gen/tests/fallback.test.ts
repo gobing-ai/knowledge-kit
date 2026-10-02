@@ -68,6 +68,8 @@ interface StubOptions {
     available?: boolean;
     /** supportsReferenceImages() (default true); false drives the reference-image skip. */
     refs?: boolean;
+    /** 0182: when true, reports exactSize only for model 'image-01' (the MiniMax image-01 rule). */
+    exact?: boolean;
     /** Overrides defaultModel() (default `${name}-default-model`). */
     model?: string;
     /** Runs after the request is recorded, before the outcome — proves the WARN precedes the retry. */
@@ -87,6 +89,7 @@ function stub(name: string, options: StubOptions = {}): Stub {
         defaultModel: () => model,
         isAvailable: () => options.available ?? true,
         supportsReferenceImages: () => options.refs ?? true,
+        ...(options.exact === true ? { exactSize: (m: string): boolean => m === 'image-01' } : {}),
         generate: (request: ImageRequest) => {
             requests.push(request);
             options.onCall?.();
@@ -325,5 +328,26 @@ describe('D6 runtime fallback (0166)', () => {
         expect(mini.requests).toHaveLength(0);
         expect(goog.requests).toHaveLength(0);
         expect(existsSync(OUT)).toBe(false);
+    });
+
+    test('0182 — the exact gate is per candidate: the primary asks exact, the aspect-only fallback does not (R1/R2)', async () => {
+        const mini = stub('minimax', { model: 'image-01', exact: true, throws: new Error(AUTH) });
+        const goog = stub('google');
+        writeFileSync(IN, JSON.stringify([coverDoc({ provider: 'minimax', model: 'image-01', fallback: ['google'] })]));
+
+        await processGeneratorIO(IN, OUT, optionsWith({ minimax: mini.provider, google: goog.provider }, 'minimax'));
+
+        // The primary was asked for the declared cover canvas with aspectRatio omitted (R1).
+        expect(mini.requests[0]?.width).toBe(1344);
+        expect(mini.requests[0]?.height).toBe(576);
+        expect(mini.requests[0]?.aspectRatio).toBeUndefined();
+        // The candidate cannot honour it: aspect-only, on its own default model (R2, D6 invariant).
+        expect(goog.requests[0]?.model).toBe('google-default-model');
+        expect(goog.requests[0]?.aspectRatio).toBe('21:9');
+        expect(goog.requests[0]?.width).toBeUndefined();
+        expect(goog.requests[0]?.height).toBeUndefined();
+        const images = readOut().metadata.images as Array<Record<string, unknown>>;
+        expect(images[0]?.provider).toBe('google');
+        expect(images[0]?.sizeRequest).toBe('aspect');
     });
 });

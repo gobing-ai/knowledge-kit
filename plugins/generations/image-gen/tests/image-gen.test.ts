@@ -3,9 +3,11 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Content, ContentSchema, type Doc } from '@gobing-ai/kk-core';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
+import type { CardComposer } from '../src/compose/card';
 import { DEFAULT_MAX_IMAGES, main, type ProviderResolver, processGeneratorIO, resolveMaxImages } from '../src/index';
 import type { ImageJobSpec } from '../src/job';
-import type { ImageProvider } from '../src/providers/types';
+import type { ImageProvider, ImageRequest } from '../src/providers/types';
 
 let TMP = '';
 let OUT = '';
@@ -386,5 +388,171 @@ describe('ImageJobSpec typing', () => {
     test('the spec type accepts the frozen fields', () => {
         const spec: ImageJobSpec = { job: 'cover' };
         expect(spec.job).toBe('cover');
+    });
+});
+
+describe('0182 — the preset canvas reaches the provider, or the delivery is recorded (F618)', () => {
+    /** 24-byte PNG header (signature + IHDR) carrying the given canvas. */
+    function pngBytes(width: number, height: number): Uint8Array {
+        const bytes = new Uint8Array(24);
+        bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+        const view = new DataView(bytes.buffer);
+        view.setUint32(8, 13);
+        bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+        view.setUint32(16, width);
+        view.setUint32(20, height);
+        return bytes;
+    }
+
+    interface RecordingStub {
+        readonly provider: ImageProvider;
+        readonly requests: ImageRequest[];
+    }
+
+    function recordingStub(
+        name: string,
+        options: { model?: string; exact?: boolean; bytes: Uint8Array },
+    ): RecordingStub {
+        const requests: ImageRequest[] = [];
+        const model = options.model ?? 'image-01';
+        const provider: ImageProvider = {
+            name,
+            defaultModel: () => model,
+            isAvailable: () => true,
+            supportsReferenceImages: () => true,
+            // Mirrors the MiniMax image-01 rule; the stub answers for the exact gate only.
+            ...(options.exact === true ? { exactSize: (m: string): boolean => m === 'image-01' } : {}),
+            generate: (request: ImageRequest) => {
+                requests.push(request);
+                return Promise.resolve({
+                    bytes: options.bytes,
+                    extension: 'jpg',
+                    provider: name,
+                    model: request.model,
+                });
+            },
+        };
+        return { provider, requests };
+    }
+
+    /** Stub composer: a 1080x1440 card PNG, matching the xhs-card canvas the guards expect. */
+    function cardComposer(): CardComposer {
+        return { compose: async () => pngBytes(1080, 1440) };
+    }
+
+    function xhsCardDoc(): Doc {
+        return {
+            id: 'd1',
+            body: 'A knowledge article body.',
+            format: 'markdown',
+            references: [],
+            metadata: {
+                imageGen: {
+                    job: 'free',
+                    format: 'xhs-card',
+                    provider: 'minimax',
+                    model: 'image-01',
+                    vars: { headline: '核心概念', points: '要点一\n要点二' },
+                },
+            },
+        } as Doc;
+    }
+
+    let stderr = createBufferTarget();
+    let restoreStderr: (() => void) | undefined;
+
+    beforeEach(() => {
+        stderr = createBufferTarget();
+        restoreStderr = setDefaultOutputTargets({ stderr });
+    });
+
+    afterEach(() => {
+        restoreStderr?.();
+        restoreStderr = undefined;
+    });
+
+    async function runOut(
+        dir: string,
+        docs: Doc[],
+        provider: ImageProvider,
+        composer?: CardComposer,
+    ): Promise<Record<string, unknown>> {
+        const out = join(TMP, dir, 'content.json');
+        writeFileSync(IN, JSON.stringify(docs));
+        await processGeneratorIO(IN, out, {
+            providerResolver: () => provider,
+            ...(composer !== undefined ? { composer } : {}),
+        });
+        return JSON.parse(readFileSync(out, 'utf-8')) as Record<string, unknown>;
+    }
+
+    function imagesOf(content: Record<string, unknown>): Array<Record<string, unknown>> {
+        return ((content.metadata as Record<string, unknown>).images ?? []) as Array<Record<string, unknown>>;
+    }
+
+    test('an aspect-only provider on xhs-card keeps the aspect request and records sizeRequest aspect (R2)', async () => {
+        const stubby = recordingStub('minimax', { model: 'image-01', bytes: pngBytes(864, 1152) });
+        const content = await runOut('out-0182-aspect', [xhsCardDoc()], stubby.provider, cardComposer());
+        expect(stubby.requests[0]?.aspectRatio).toBe('3:4');
+        expect(stubby.requests[0]?.width).toBeUndefined();
+        expect(stubby.requests[0]?.height).toBeUndefined();
+        expect(imagesOf(content)[0]?.sizeRequest).toBe('aspect');
+    });
+
+    test(
+        'xhs-card on an exact-capable minimax sends 1080x1440 with no aspectRatio; an 864x1152 delivery ' +
+            'is recorded and warns, never fails (R1/R3/R5)',
+        async () => {
+            const stubby = recordingStub('minimax', { model: 'image-01', exact: true, bytes: pngBytes(864, 1152) });
+            const content = await runOut('out-0182-exact', [xhsCardDoc()], stubby.provider, cardComposer());
+
+            // The exact request: the declared canvas, aspectRatio omitted (R1/R5).
+            expect(stubby.requests[0]?.width).toBe(1080);
+            expect(stubby.requests[0]?.height).toBe(1440);
+            expect(stubby.requests[0]?.aspectRatio).toBeUndefined();
+
+            const images = imagesOf(content);
+            expect(images[0]?.sizeRequest).toBe('exact');
+            // The raw provider artifact records what actually arrived (R5).
+            const illus = images[0]?.illustration as Record<string, unknown>;
+            expect(illus.width).toBe(864);
+            expect(illus.height).toBe(1152);
+            expect(stderr.text()).toContain(
+                "WARN image-gen: minimax/image-01 delivered 864x1152; format 'xhs-card' declares 1080x1440",
+            );
+        },
+    );
+
+    test('unparseable delivery bytes omit width/height, warn exactly once, and the run still succeeds (R3)', async () => {
+        const stubby = recordingStub('minimax', { model: 'image-01', exact: true, bytes: new Uint8Array([1, 2, 3]) });
+        const content = await runOut('out-0182-junk', [xhsCardDoc()], stubby.provider, cardComposer());
+        const images = imagesOf(content);
+        expect(images[0]?.sizeRequest).toBe('exact');
+        const illus = images[0]?.illustration as Record<string, unknown>;
+        expect(illus.width).toBeUndefined();
+        expect(illus.height).toBeUndefined();
+        expect(stderr.text()).toContain('WARN image-gen: minimax/image-01 delivered unparseable image bytes');
+        expect(stderr.text().match(/WARN image-gen:/g)).toHaveLength(1);
+    });
+
+    test('the exact gate consults the model actually sent: image-01-live stays aspect-only (R4, D6)', async () => {
+        const stubby = recordingStub('minimax', { model: 'image-01-live', exact: true, bytes: pngBytes(1344, 576) });
+        const content = await runOut(
+            'out-0182-model',
+            [
+                {
+                    id: 'd1',
+                    body: 'a red bicycle',
+                    format: 'markdown',
+                    references: [],
+                    metadata: { imageGen: { job: 'cover', provider: 'minimax', model: 'image-01-live' } },
+                } as Doc,
+            ],
+            stubby.provider,
+        );
+        expect(stubby.requests[0]?.aspectRatio).toBe('21:9');
+        expect(stubby.requests[0]?.width).toBeUndefined();
+        expect(stubby.requests[0]?.height).toBeUndefined();
+        expect(imagesOf(content)[0]?.sizeRequest).toBe('aspect');
     });
 });

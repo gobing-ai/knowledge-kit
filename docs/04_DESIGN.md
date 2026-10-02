@@ -805,3 +805,31 @@ composed prompt`. The shipped `xhs-card` template states the text-free rule and 
 carries `negative: text, letters, numbers, Chinese characters, captions, watermark, logo`; the
 daily `xhs-render` stage sends no `language` var and records each card's `illustrationPath` in
 `cards.json`.
+
+## image-gen preset canvas: exact-size gate + delivered-size recording (2026-10-02, task 0182)
+
+Format presets declare a pixel canvas (`width`/`height` in `presets/formats/*.yaml`), but before 0182
+only `aspectRatio` ever reached the provider. Task 0182 makes the declaration truthful: the declared
+canvas reaches a provider that can honour it, and every written artifact records what was actually
+delivered.
+
+**Exact-size rule:** `ImageProvider.exactSize?(model, width, height): boolean` gates forwarding per
+adapter and model. When the preset declares both edges and the resolved provider reports the
+capability for the resolved model, the request carries `width`/`height` with `aspectRatio` omitted
+(MiniMax reads width/height only when `aspect_ratio` is absent); otherwise the request keeps the
+byte-identical aspect-only shape — no new validation failure for any existing preset × provider
+pair. The gate runs per fallback candidate with that candidate's own model (D6: the primary's
+`spec.model` never leaks to a candidate), so an exact-capable primary falling back to an aspect-only
+provider records `sizeRequest: 'aspect'`. Only MiniMax `image-01` opts in today (512..2048 per edge,
+divisible by 8); every other adapter keeps the default (absent method = aspect-only) until it opts
+in on measured evidence.
+
+**Delivered-size recording:** every written `ImageArtifact` records the delivered `width`/`height`,
+measured from the bytes by `imageDimensions` (`src/bytes.ts` — header-only, no decode: PNG IHDR,
+JPEG SOFn, WebP VP8/VP8L/VP8X; unparseable bytes return `null`, not a throw), plus
+`sizeRequest: 'exact' | 'aspect'`. A declared canvas that comes back different emits
+`WARN image-gen: <provider>/<model> delivered <WxH>; format '<name>' declares <WxH>`; unparseable
+bytes omit the dimensions and emit one WARN instead. Both warn only — the bytes are already paid
+for, and failing would delete them through the cleanup path. On the compose path the card keeps
+0180's canvas assertion (an unparseable composed card still fails loud); the raw provider delivery
+lands on `illustration.width/height` beside the card.

@@ -50,11 +50,17 @@ export function parsePixelSize(size: string): { width: number; height: number } 
     return { width, height };
 }
 
+/** 0182 R4: image-01 accepts an exact canvas of 512..2048 per edge, divisible by 8. */
+function isAcceptablePixelSize(width: number, height: number): boolean {
+    return width >= 512 && width <= 2048 && height >= 512 && height <= 2048 && width % 8 === 0 && height % 8 === 0;
+}
+
+/** Throwing twin of {@link isAcceptablePixelSize} for the request-body path; messages are frozen (tests pin them). */
 function validatePixelSize(width: number, height: number): void {
-    if (width < 512 || width > 2048 || height < 512 || height > 2048) {
-        throw new Error('MiniMax custom size must keep width and height between 512 and 2048.');
-    }
-    if (width % 8 !== 0 || height % 8 !== 0) {
+    if (!isAcceptablePixelSize(width, height)) {
+        if (width < 512 || width > 2048 || height < 512 || height > 2048) {
+            throw new Error('MiniMax custom size must keep width and height between 512 and 2048.');
+        }
         throw new Error('MiniMax custom size requires width and height divisible by 8.');
     }
 }
@@ -146,6 +152,8 @@ export const createMinimax: ProviderFactory = (options?: ProviderOptions): Image
         defaultModel: () => DEFAULT_MODEL,
         isAvailable: () => readEnv('MINIMAX_API_KEY') !== '',
         supportsReferenceImages: () => true,
+        exactSize: (model: string, width: number, height: number): boolean =>
+            model === 'image-01' && isAcceptablePixelSize(width, height),
         validate(req: ImageRequest): void {
             requestBody(req.prompt, req.model, req);
         },

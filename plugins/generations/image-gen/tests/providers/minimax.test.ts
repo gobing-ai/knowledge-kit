@@ -66,6 +66,61 @@ describe('minimax request building', () => {
     });
 });
 
+describe('minimax exactSize — the 0182 capability predicate (R4)', () => {
+    const provider = PROVIDERS.minimax.create({ env: { MINIMAX_API_KEY: 'k' } });
+
+    test('image-01 reports exact size only inside 512..2048 per edge, divisible by 8', () => {
+        // Every shipped canvas that passes the rule (Q&A blast radius: cover, free, xhs-card).
+        expect(provider.exactSize?.('image-01', 1080, 1440)).toBe(true);
+        expect(provider.exactSize?.('image-01', 1344, 576)).toBe(true);
+        expect(provider.exactSize?.('image-01', 1024, 1024)).toBe(true);
+        expect(provider.exactSize?.('image-01', 1152, 864)).toBe(true);
+        expect(provider.exactSize?.('image-01', 512, 2048)).toBe(true);
+        // Out of range or not divisible by 8 → no capability.
+        expect(provider.exactSize?.('image-01', 504, 512)).toBe(false);
+        expect(provider.exactSize?.('image-01', 2049, 2048)).toBe(false);
+        expect(provider.exactSize?.('image-01', 1082, 1440)).toBe(false);
+    });
+
+    test('any other model keeps the default: no capability → aspect-only (R4)', () => {
+        expect(provider.exactSize?.('image-01-live', 1080, 1440)).toBe(false);
+    });
+
+    test('an exact request posts width/height and no aspect_ratio (0182 R1/R5)', async () => {
+        let body = '';
+        const provider2 = PROVIDERS.minimax.create({
+            env: { MINIMAX_API_KEY: 'k' },
+            fetch: (async (_input: unknown, init?: RequestInit) => {
+                body = String(init?.body);
+                const b64 = Buffer.from('img').toString('base64');
+                return new Response(JSON.stringify({ data: { image_base64: [b64] } }), { status: 200 });
+            }) as typeof fetch,
+        });
+        await provider2.generate({ prompt: 'p', model: 'image-01', width: 1080, height: 1440 });
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        expect(parsed.width).toBe(1080);
+        expect(parsed.height).toBe(1440);
+        expect(parsed).not.toHaveProperty('aspect_ratio');
+    });
+
+    test('a non-image-01 model carries the aspect body, byte-for-byte as before 0182 (R2/R4)', async () => {
+        let body = '';
+        const provider2 = PROVIDERS.minimax.create({
+            env: { MINIMAX_API_KEY: 'k' },
+            fetch: (async (_input: unknown, init?: RequestInit) => {
+                body = String(init?.body);
+                const b64 = Buffer.from('img').toString('base64');
+                return new Response(JSON.stringify({ data: { image_base64: [b64] } }), { status: 200 });
+            }) as typeof fetch,
+        });
+        await provider2.generate({ prompt: 'p', model: 'image-01-live', aspectRatio: '3:4' });
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        expect(parsed.aspect_ratio).toBe('3:4');
+        expect(parsed).not.toHaveProperty('width');
+        expect(parsed).not.toHaveProperty('height');
+    });
+});
+
 describe('minimax provider', () => {
     test('rejects unsupported subject reference extensions via validate', () => {
         const provider = PROVIDERS.minimax.create({ env: { MINIMAX_API_KEY: 'k' } });

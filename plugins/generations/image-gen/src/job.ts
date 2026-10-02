@@ -76,6 +76,12 @@ export interface ImageArtifact {
     /** The exact prompt string sent. */
     prompt: string;
     seed?: number;
+    /**
+     * 0182 R3: what the provider was asked for — 'exact' when the request carried the
+     * preset's declared width/height (the provider reported it could honour them for this
+     * model), 'aspect' for the aspect-only shape. Present on every written artifact.
+     */
+    sizeRequest?: 'exact' | 'aspect';
     width?: number;
     height?: number;
     bytes: number;

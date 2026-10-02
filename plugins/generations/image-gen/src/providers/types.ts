@@ -32,7 +32,11 @@ export interface ImageRequest {
     model: string;
     /** e.g. '21:9' — from FormatPreset.aspectRatio (0102). */
     aspectRatio?: string;
-    /** Optional exact pixels; providers that only take an aspect ratio ignore them. */
+    /**
+     * Declared preset canvas (0182 R1). Sent only when the resolved provider's
+     * `exactSize(model, width, height)` returns true — with `aspectRatio` omitted;
+     * every other provider receives the aspect-only request shape and never sees them.
+     */
     width?: number;
     height?: number;
     quality?: ImageQuality;
@@ -64,6 +68,13 @@ export interface ImageProvider {
     isAvailable(): boolean;
     /** Queryable ref-image capability; 0105 routes `--ref` work on this fact. */
     supportsReferenceImages(model: string): boolean;
+    /**
+     * Exact-size capability (0182 R1/R4): can this adapter deliver the exact pixel canvas
+     * for this model? Absent = aspect-only — `processGeneratorIO` then sends only
+     * `aspectRatio`, byte-for-byte as before 0182. Adapters opt in one at a time, on
+     * measured evidence (task 0182 Q&A, closed).
+     */
+    exactSize?(model: string, width: number, height: number): boolean;
     /** Throw on an impossible combination (e.g. Imagen + referenceImages) before spending money. */
     validate?(req: ImageRequest): void;
     generate(req: ImageRequest): Promise<ImageResult>;

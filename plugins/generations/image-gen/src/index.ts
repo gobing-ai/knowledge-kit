@@ -390,7 +390,10 @@ export async function processGeneratorIO(
         const captions: CaptionEntry[] = [];
         const attempts: ProviderAttempt[] = [];
         let at = 0; // sticky index into `order`
-        const generateWithFallback = async (image: number, prompt: string): Promise<ImageResult> => {
+        const generateWithFallback = async (
+            image: number,
+            prompt: string,
+        ): Promise<{ result: ImageResult; sizeRequest: 'exact' | 'aspect' }> => {
             const start = attempts.length; // this image's failed attempts begin here (R5 summarises the slice)
             for (;;) {
                 const name = order[at];
@@ -401,17 +404,26 @@ export async function processGeneratorIO(
                 const provider = at === 0 ? primary : createCandidate(name);
                 // spec.model is provider-specific (D6): only the requested provider receives it.
                 const model = at === 0 ? (spec.model ?? provider.defaultModel()) : provider.defaultModel();
+                // 0182 R1/R4: the exact-size gate runs per candidate, with that candidate's own
+                // model and its own capability report. Without it the request keeps today's
+                // aspect-only shape (R2); on the exact path aspectRatio is omitted (R1 — MiniMax
+                // reads width/height only when aspect_ratio is absent).
+                const exact =
+                    format.width !== undefined &&
+                    format.height !== undefined &&
+                    provider.exactSize?.(model, format.width, format.height) === true;
                 const request: ImageRequest = {
                     prompt,
                     model,
-                    aspectRatio: format.aspectRatio,
+                    ...(exact ? { width: format.width, height: format.height } : { aspectRatio: format.aspectRatio }),
                     ...(spec.referenceImages !== undefined && spec.referenceImages.length > 0
                         ? { referenceImages: spec.referenceImages }
                         : {}),
                 };
                 try {
                     provider.validate?.(request);
-                    return await provider.generate(request);
+                    const result = await provider.generate(request);
+                    return { result, sizeRequest: exact ? 'exact' : 'aspect' };
                 } catch (err: unknown) {
                     if (spec.fallback === undefined) {
                         throw err; // D6 R1: strict mode propagates the original error, unwrapped.
@@ -441,7 +453,22 @@ export async function processGeneratorIO(
         };
         let body = doc?.body ?? '';
         for (const [index, prompt] of prompts.entries()) {
-            const result = await generateWithFallback(index + 1, prompt);
+            const { result, sizeRequest } = await generateWithFallback(index + 1, prompt);
+            // 0182 R3: measure the raw provider delivery once — both branches read it. A declared
+            // canvas that came back different (or unparseable) warns and never fails: the bytes
+            // are already paid for, and failing would delete them through the cleanup path.
+            const delivered = imageDimensions(result.bytes);
+            if (format.width !== undefined && format.height !== undefined) {
+                if (delivered === null) {
+                    echoError(
+                        `WARN image-gen: ${result.provider}/${result.model} delivered unparseable image bytes; dimensions omitted`,
+                    );
+                } else if (delivered.width !== format.width || delivered.height !== format.height) {
+                    echoError(
+                        `WARN image-gen: ${result.provider}/${result.model} delivered ${delivered.width}x${delivered.height}; format '${format.name}' declares ${format.width}x${format.height}`,
+                    );
+                }
+            }
             // Re-check against the spliced body; the pre-spend plan check is assertAnchorPlan (0169).
             let anchor: string | undefined;
             if (spec.job === 'illustration') {
@@ -505,6 +532,11 @@ export async function processGeneratorIO(
 
                 // 4. Measure the card dimensions via imageDimensions and assert canvas.
                 const dims = imageDimensions(cardBytes);
+                if (dims === null) {
+                    throw new Error(
+                        `compose: composed card dimensions are unparseable; format '${format.name}' requires ${format.width}x${format.height}`,
+                    );
+                }
                 if (dims.width !== format.width || dims.height !== format.height) {
                     throw new Error(
                         `compose: card dimensions ${dims.width}x${dims.height} do not match format canvas ${format.width}x${format.height}`,
@@ -515,14 +547,21 @@ export async function processGeneratorIO(
                 artifactBytes = cardBytes.byteLength;
                 artifactWidth = dims.width;
                 artifactHeight = dims.height;
-                illustrationMeta = { path: illustrationArtifactPath, bytes: result.bytes.byteLength };
+                illustrationMeta = {
+                    path: illustrationArtifactPath,
+                    bytes: result.bytes.byteLength,
+                    // 0182 R3/R5: the raw provider delivery, measured from its own bytes.
+                    ...(delivered !== null ? { width: delivered.width, height: delivered.height } : {}),
+                };
             } else {
-                // Non-compose: existing path (R6).
+                // Non-compose: existing path (R6); the artifact records the delivered size (0182 R3).
                 const path = artifactPath(outputPath, stem, format.name, index + 1, result.extension);
                 await writeBytes(path, result.bytes);
                 written.push(path);
                 artifactPathValue = path;
                 artifactBytes = result.bytes.byteLength;
+                artifactWidth = delivered?.width;
+                artifactHeight = delivered?.height;
             }
 
             const artifact: ImageArtifact = {
@@ -533,6 +572,7 @@ export async function processGeneratorIO(
                 model: result.model,
                 prompt,
                 bytes: artifactBytes,
+                sizeRequest,
                 ...(artifactWidth !== undefined ? { width: artifactWidth } : {}),
                 ...(artifactHeight !== undefined ? { height: artifactHeight } : {}),
                 ...(illustrationMeta !== undefined ? { illustration: illustrationMeta } : {}),
