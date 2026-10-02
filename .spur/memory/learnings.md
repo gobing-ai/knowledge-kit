@@ -1352,3 +1352,46 @@ Learnings artifact: [.spur/run/badc0f49-dabc-4587-85ba-93ee194798a7-wrapup-learn
 - When a pipeline adds a derived artifact, audit downstream ordering and filename transformations. The 0171 `mp3Path` addition exposed a latent `.wav`-only rewrite that previously happened to work.
 - Check both WAV-only and MP3-present workspaces, plus the idempotent short-circuit and preservation of the source render. Real failed-run artifacts can reproduce the bug without paying the upstream generation cost again.
 - The CLI may execute a gitignored packaged plugin copy instead of the source tree. Sync that runtime copy before validating a script fix, or the test run may execute stale code.
+### Doc-Evolve Wrapup Drift Audit & Repairs
+
+Repairs completed per [docs/99_PROJECT_CONSTITUTION.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/docs/99_PROJECT_CONSTITUTION.md) (§4.1, §4.3, §5, §6.1, §6.4, §6.5, §7):
+
+- [docs/00_ADR.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/docs/00_ADR.md): Bumped frontmatter `version: 1.30.0` and refreshed `updated_at: 2026-10-02` (resolving stale `2026-09-25` date following ADR-027 and ADR-028 additions). Synchronized ADR-028 Detail to cross-reference tasks `0180` and `0182`.
+- [docs/03_ARCHITECTURE.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/docs/03_ARCHITECTURE.md): Bumped frontmatter `version: 2.29.0` and `updated_at: 2026-10-02`. Added task 0182 mechanism to the XHS image-card / generator path: `ImageProvider.exactSize?(model, width, height)` capability seam, per-candidate aspect-only fallback invariant, header-only `imageDimensions` byte parsing, and the money-boundary post-spend warn-never-fail invariant for delivery dimension mismatches. Synchronized System shape and plugin tables to reflect `browser/script` drivers for WeChat MP (ADR-026) and browser publish channels (ADR-027).
+- [docs/04_DESIGN.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/docs/04_DESIGN.md): Bumped frontmatter `version: 2.39.0` and refreshed `updated_at: 2026-10-02`. Synchronized line 790 to include `width?` and `height?` in `.illustration = { path, bytes, width?, height? }`.
+- [docs/design/xhs-image-cards.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/docs/design/xhs-image-cards.md): Synchronized the Artifact contract (R5) to document `sizeRequest: 'exact' | 'aspect'` and raw provider delivery dimensions in `.illustration = { path, width?, height?, bytes }`.
+- [docs/design/generator-plugin-specification.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/docs/design/generator-plugin-specification.md): Updated `metadata.images[]` schema documentation to include `sizeRequest?` and `illustration?`, and appended amendments for task 0180 (typeset card copy) and task 0182 (preset canvas forwarding and delivery measurement).
+- Task/feature corpus files under `docs/tasks/` and `docs/features/` were untouched.
+- Quality gates: `bun run lint` checked 328 files with Biome 2.5.5 and typechecked all 29 workspaces/plugins cleanly (exit 0).
+- Learning artifact written to [.spur/run/8e877b39-6321-4736-adf3-f0e0aa469e55-wrapup-learnings.md](file:///Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/.spur/run/8e877b39-6321-4736-adf3-f0e0aa469e55-wrapup-learnings.md).
+
+---
+
+## 2026-10-02 — Task 0182: Deliver the preset canvas: forward declared width/height or record the delivered size
+
+### Conventions
+
+- **Opt-in capability seam over blind parameter forwarding**: Providers treat `width`/`height` inconsistently (some reject <1024, some map to fixed strings, others require specific aspect ratios). Canvas forwarding must be gated per-adapter and per-model via an optional method `ImageProvider.exactSize?(model: string, width: number, height: number): boolean` (`plugins/generations/image-gen/src/providers/types.ts`). An absent method strictly defaults to aspect-only (`exactSize === undefined`).
+- **Aspect ratio mutual exclusion on exact requests**: Providers supporting exact pixel sizes (like MiniMax) prioritize or only inspect `width`/`height` when `aspect_ratio` is omitted. When `exactSize` evaluates to `true`, omit `aspectRatio` completely from the request; when `false`, send `{ aspectRatio }` and omit `width`/`height`.
+- **Per-candidate fallback evaluation (D6 model isolation)**: `exactSize` must be evaluated dynamically for each candidate in a fallback chain using that candidate's own model (`candidate.defaultModel()`), never leaking the primary's `spec.model`. When an exact-capable primary falls back to an aspect-only candidate, the artifact truthfully records `sizeRequest: 'aspect'`.
+- **Money boundary invariant (Warn-never-fail on post-spend mismatches)**: Once bytes are returned from a provider API, the cost has already been incurred. Delivery dimension mismatches (`WARN image-gen: <provider>/<model> delivered <W>x<H>; format '<name>' declares <W>x<H>`) or unparseable image bytes must emit a warning on stderr rather than throwing, which would trigger cleanup and delete paid output.
+- **Truthful artifact dimensions and compose separation**: `ImageArtifact` records the actual delivered `width`/`height` parsed from bytes, plus `sizeRequest: 'exact' | 'aspect'`. On compose formats (task 0180 / ADR-028), the parent artifact retains the composed card canvas while raw provider delivery dimensions are recorded in `illustration.width`/`illustration.height`.
+
+### Errors fixed
+
+- **Dead preset canvas dimensions resulting in MiniMax 864x1152 deliveries**: Generator requests previously only mapped `aspectRatio: format.aspectRatio`, leaving preset `width`/`height` (e.g., 1080x1440 for `xhs-card`) dead. MiniMax `image-01` defaulted 3:4 aspect requests to 864x1152. Wiring `exactSize` to MiniMax `image-01` ensures wire requests carry `width: 1080, height: 1440` without `aspect_ratio`.
+- **Throwing parser contract in `imageDimensions`**: `imageDimensions` in `src/bytes.ts` previously threw errors on non-PNG or corrupted buffers. It was refactored to return `null` across PNG, JPEG, and WebP, allowing callers to handle unparseable bytes gracefully without post-spend failures. The composer (`src/index.ts`) explicitly asserts card parseability and throws loud if the composed card itself is invalid.
+
+### Patterns
+
+- **Zero-dependency binary header parsers**: Implemented binary header inspection in `src/bytes.ts` without external dependencies:
+  - PNG: IHDR chunk offset (16-24 bytes) big-endian uint32.
+  - JPEG: Frame marker walk (SOF0–SOF15 except DHT/DAC/JPG), enforcing `length >= 2` to prevent infinite loops on truncated or malformed streams.
+  - WebP: RIFF chunk walk handling VP8 (lossy 14-bit dimensions), VP8L (lossless 14-bit dimensions with 0x2f signature), and VP8X (extended 24-bit canvas dimensions) with even-byte padding stride.
+- **Frozen error preservation through predicate refactoring**: Refactored existing throwing validators (MiniMax `validatePixelSize`) to derive from a shared boolean predicate `isAcceptablePixelSize(w, h)`, keeping existing error messages frozen byte-for-byte for legacy callers and tests while enabling reuse in `exactSize`.
+
+### Gotchas
+
+- **Documentation verification behind client-rendered SPAs**: Official MiniMax API documentation at `platform.minimaxi.com` returns 404/cookie-challenge responses to anonymous HTTP fetches (`curl`, headless proxies). The 512..2048 per-edge and %8 constraints were verified via existing pinned tests and documented as an evidence gap rather than asserting an unverified live URL.
+- **Git worktree path confinement**: Git worktrees store `.git` as a file referencing `/path/to/main/.git/worktrees/<name>`, which contains `commondir: ../..`. Sandboxed shells restricted strictly to the worktree directory will fail Git operations with `Operation not permitted` unless proper directory permissions are established.
+- **Throw vs. Null contract migrations across test suites**: Migrating a helper from a throwing contract to a `null`-returning contract requires updating or relocating existing negative-path characterization tests (e.g. moving tests from `compose-cmap.test.ts` to `bytes.test.ts`) while ensuring higher-level invariant checks (such as compose-card validation) retain fail-loud behavior where required.

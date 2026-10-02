@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.38.0
+version: 2.39.0
 created_at: 2026-07-22
-updated_at: 2026-09-28
+updated_at: 2026-10-02
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -787,7 +787,7 @@ local, no network); overflow beyond `safeArea` fails loud naming the field. Non-
 (`free`, `cover`, `daily-news-cover`, `illustration`) are unchanged.
 
 Artifact: for compose formats the job returns `ImageArtifact` with `.path` = composed card PNG
-and `.illustration = { path, bytes }` = raw provider output (written beside the
+and `.illustration = { path, bytes, width?, height? }` = raw provider output (written beside the
 card as `<stem>-illustration<N>.<ext>`). Consumers (daily XHS stages, `xhs-pub`) read only
 `.path`. Pre-spend: font cmap coverage fails loud naming field + code point;
 `KK_IMAGE_DRY_RUN=1` runs the full pre-spend path (cmap check + text-only compose) without

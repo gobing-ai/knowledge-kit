@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: "Deliver the preset canvas: forward declared width/height or record the delivered size"
-status: testing
+status: done
 template: feature-impl
 created_at: 2026-09-29T02:28:56.497Z
-updated_at: "2026-10-02T11:00:07.420Z"
+updated_at: "2026-10-02T11:01:19.231Z"
 feature_id: F618
 
 priority: P2
+done_forced: "false"
+done_reason: unforced close; PASS artifact at /Users/robin/xprojects/knowledge-kit-dev-run-0182-89dc6/.spur/memory/evidence/0182-verdict.json
 ---
 
 ## 0182. Deliver the preset canvas: forward declared width/height or record the delivered size
@@ -222,4 +224,5 @@ MiniMax is the only `exactSize` adapter. Every other provider — google, openai
 - 2026-09-30T05:52:45.971Z backlog → todo (system)
 - 2026-10-02T10:18:53.452Z todo → wip (system)
 - 2026-10-02T10:47:22.685Z wip → testing (system)
+- 2026-10-02T11:01:19.225Z testing → done (system)
 

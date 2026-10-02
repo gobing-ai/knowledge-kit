@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.29.0
+version: 1.30.0
 created_at: 2026-05-28
-updated_at: 2026-09-25
+updated_at: 2026-10-02
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1082,8 +1082,8 @@ the plugin — no system-font lookup and no runtime download. A post-spend compo
 infrastructure only (Chromium crash) and re-bills the illustration on the next run; keeping a paid
 illustration across failures is deferred until observed.
 
-**Detail:** task 0180; `docs/design/xhs-image-cards.md` (Decision and boundary);
-`docs/04_DESIGN.md` (format `compose` block, `ImageArtifact.illustration`).
+**Detail:** tasks 0180, 0182; `docs/design/xhs-image-cards.md` (Decision and boundary);
+`docs/04_DESIGN.md` (format `compose` block, exact canvas gate, `ImageArtifact.illustration`).
 
 ---
 

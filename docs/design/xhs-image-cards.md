@@ -140,8 +140,10 @@ Boundary and guarantees:
   pre-spend path without provider spend or Chromium.
 - **Safe area (R2):** every `[data-field]` box is measured in-page against the 72px inset;
   overflow fails loud naming the field. Headline starts >=64px, bullets >=36px.
-- **Artifact contract (R5):** the job artifact `ImageArtifact` keeps `.path` (composed card) and
-  adds `.illustration = {path,width,height,bytes}` (provider output); downstream (`xhs-pub`,
+- **Artifact contract (R5, task 0182):** the job artifact `ImageArtifact` keeps `.path` (composed card)
+  at the format's declared canvas, records `sizeRequest: 'exact' | 'aspect'`, and adds
+  `.illustration = {path, width?, height?, bytes}` holding the raw provider delivery (e.g. 864x1152
+  on MiniMax `image-01` before canvas forwarding or on fallback); downstream (`xhs-pub`,
   daily stages) reads only `.path`.
 - **Environment:** the E2E bun test skips under `bun test` (Bun 1.3.14 blocks the event loop
   during Playwright's Chromium launch) with a printed reason; real E2E evidence is the artifact

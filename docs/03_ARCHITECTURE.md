@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.28.0
+version: 2.29.0
 created_at: 2026-07-22
-updated_at: 2026-09-25
+updated_at: 2026-10-02
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -48,12 +48,12 @@ plugins/
     emdash-pub/       # @gobing-ai/emdash-pub — publish channel, file-cli (EmDash REST token) (E5)
     podcast-pub/      # @gobing-ai/podcast-pub — publish channel, file-cli (microfeed REST + presigned upload) (E6)
     medium-pub/       # @gobing-ai/medium-pub — publish channel, file-cli (Medium integration-token REST) (E7)
-    wechatmp-pub/     # @gobing-ai/wechatmp-pub — publish channel, file-cli (WeChat `draft/add`) (E7)
-    x-pub/            # @gobing-ai/x-pub — publish channel: post via tweets API, article via browser/agent (E7)
-    juejin-pub/       # @gobing-ai/juejin-pub — publish channel, browser/agent (Juejin) (E7)
-    infoq-pub/        # @gobing-ai/infoq-pub — publish channel, browser/agent (InfoQ CN) (E7)
-    substack-pub/     # @gobing-ai/substack-pub — publish channel, browser/agent (Substack) (E7)
-    xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/script (Xiaohongshu) (E7/E8)
+    wechatmp-pub/     # @gobing-ai/wechatmp-pub — publish channel, browser/script (WeChat MP console) (E7, ADR-026)
+    x-pub/            # @gobing-ai/x-pub — publish channel: post via tweets API, article via browser/script (E7, ADR-027)
+    juejin-pub/       # @gobing-ai/juejin-pub — publish channel, browser/script (Juejin) (E7, ADR-027)
+    infoq-pub/        # @gobing-ai/infoq-pub — publish channel, browser/script (InfoQ CN) (E7, ADR-027)
+    substack-pub/     # @gobing-ai/substack-pub — publish channel, browser/script (Substack) (E7, ADR-027)
+    xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/script (Xiaohongshu) (E7/E8, ADR-024)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
                       # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
@@ -116,6 +116,8 @@ Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary
 `kk:xhs-images` reads source content and writes an ordered card plan and saved prompts. Each card is one `image-gen` job using an XHS preset; the skill collects the resulting `metadata.images[]` entries into one `Content` carrying the XHS note. `xhs-pub` validates the ordered local paths, attaches them through its browser transport, and returns a `Result` from observed draft or publication state. The agent handles content judgment and spend confirmation; product plugins retain image bytes, browser actions, and result validation. A failed card can resume from its saved prompt without repeating successful paid jobs.
 
 Since ADR-028 (task 0180), card copy is not provider prompt text: for compose formats (a `compose` block on the format preset, e.g. `xhs-card`), image-gen typesets headline/points locally with pinned Noto Sans SC via headless Chromium at the declared canvas and composes the card over the provider illustration band (or text-only on the pre-spend probe). The provider prompt carries the illustration description only; the job artifact adds `ImageArtifact.illustration` and downstream consumers read only `.path` (the composed card). Pre-spend guards: font cmap coverage check and `KK_IMAGE_DRY_RUN=1` text-only compose fail loud without spend. Mechanism and guarantees: `docs/design/xhs-image-cards.md` § Deterministic text typesetting.
+
+Declared canvas forwarding and delivery measurement (task 0182): Format presets declare canvas dimensions (`width`/`height`), but providers vary in exact canvas support. An opt-in capability seam `ImageProvider.exactSize?(model, width, height)` allows providers (e.g. MiniMax `image-01`) to receive exact pixel requests (with `aspectRatio` omitted), while providers without the capability receive byte-identical aspect-only requests (`aspectRatio` only). Delivery dimensions are measured from raw image bytes via a zero-dependency, header-only reader (`imageDimensions` in `src/bytes.ts`: PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X; unparseable bytes return `null`, not a throw) and recorded in `ImageArtifact.width/height` with `sizeRequest: 'exact' | 'aspect'`. Mismatched or unparseable dimensions emit a warning rather than failing after spend, preserving paid artifacts (money boundary invariant). On compose formats (0180), the raw provider delivery is recorded in `illustration.width/height` beside the card canvas.
 
 The XHS path keeps draft as the default. An explicit public switch is required before the browser submits a live post (ADR-022). Task 0167 replaced the placeholder `sessionReady` stub with a Playwright script driver, verifying ordered uploads via `setInputFiles`, thumbnail counts, and browser-confirmed draft or public outcomes. Surface and artifact shapes live in `docs/design/xhs-image-cards.md`.
 
@@ -348,11 +350,11 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/publishings/emdash-pub` | `@gobing-ai/emdash-pub` | Publish channel: EmDash CMS REST token transport, Portable Text mapping (E5) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/podcast-pub` | `@gobing-ai/podcast-pub` | Publish channel: microfeed REST Bearer transport + upload flow, episode mapping (E6) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/medium-pub` | `@gobing-ai/medium-pub` | Publish channel: Medium integration-token REST (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
-| `plugins/publishings/wechatmp-pub` | `@gobing-ai/wechatmp-pub` | Publish channel: WeChat `draft/add` (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
-| `plugins/publishings/x-pub` | `@gobing-ai/x-pub` | Publish channel: X `POST /2/tweets` + article browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
-| `plugins/publishings/juejin-pub` | `@gobing-ai/juejin-pub` | Publish channel: Juejin browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
-| `plugins/publishings/infoq-pub` | `@gobing-ai/infoq-pub` | Publish channel: InfoQ CN browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
-| `plugins/publishings/substack-pub` | `@gobing-ai/substack-pub` | Publish channel: Substack browser/agent (E7) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/wechatmp-pub` | `@gobing-ai/wechatmp-pub` | Publish channel: WeChat MP console browser/script (E7, ADR-026) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/x-pub` | `@gobing-ai/x-pub` | Publish channel: X `POST /2/tweets` + article browser/script (E7, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/juejin-pub` | `@gobing-ai/juejin-pub` | Publish channel: Juejin browser/script (E7, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/infoq-pub` | `@gobing-ai/infoq-pub` | Publish channel: InfoQ CN browser/script (E7, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/substack-pub` | `@gobing-ai/substack-pub` | Publish channel: Substack browser/script (E7, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/xhs-pub` | `@gobing-ai/xhs-pub` | Publish channel: Xiaohongshu browser/script (E7/E8) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
