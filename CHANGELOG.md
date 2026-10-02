@@ -1,3 +1,50 @@
+## [0.0.29] - 2026-10-02
+
+### Added
+
+- feat(kk): render daily XHS cards via composer with text-free prompts (F616 0181) (efa68094)
+- feat(image-gen): deterministic Chromium text-card composer and text-free guard (F616 0180, 0181) (c810df18)
+- feat(kk): gate every publishing run on a content-safety verdict (6800198d)
+- feat(podcast-pub): add a footerNote option to show notes (0812ec02)
+- feat(generations): disclose AI production in article and podcast output (46ae1e2d)
+- feat(kk): reposition daily AI content as AI 乱炖 and harden publication review (23fa8950)
+
+### Fixed
+
+- fix(test): silence test console leaks; report image-gen E2E skips honestly (9affbe4e)
+- fix(test): stop bun test discovery from matching gitignored vendors; raise per-test timeout (5185e072)
+- fix(kk): match boundary keywords at word starts and judge dates by local day (0ce4633f)
+
+### Changed
+
+- chore: gitignore spur context freshness cache (1ea18396)
+- chore(spur): ignore .spur/memory/runs; record F616 close-out learnings (f6b84d04)
+- docs(tasks): record 0181 dogfood evidence; close feature F616 (dae079b6)
+- docs(tasks): updat tasks after verification (2fe18b57)
+- docs(tasks): record task 0189 verify verdict PARTIAL with re-anchored evidence (1e6b3c3d)
+- docs(content-safety): harden injection stance and verify Apple Podcasts rules (0a13ac24)
+- docs(tasks): updat tasks after refinment (3df3fde6)
+- docs(tasks): updat tasks after refinment (be1aeda5)
+- docs(tasks): updat tasks after refinment (f770e5ae)
+- docs: add task 0189 to reposition daily AI content as AI乱炖 (3afb031f)
+- docs: add E91 task batch 0183-0188 for browser publish channels (9b63a23a)
+- docs: add feature E91 browser publish channels on ts-browser-automation (ef837f05)
+- docs: add ADR-027 and browser-publish-channels design satellite (a1442ded)
+
+<!--
+Verification (2026-10-02, sp-dev-changelog): HIGH
+- Coverage: 22 bullets = 22 commits in v0.0.28..HEAD, each short hash exactly once.
+- Mapping: feat→Added 6, fix→Fixed 3, docs/chore→Changed 13, unrecognized→Other 0. Header version/date match --version 0.0.29.
+- Source citations for API/library claims (verified against installed bun 1.3.14, not docs-from-memory):
+  - `bun test --path-ignore-patterns` / `--timeout`: `bun test --help`, bun 1.3.14 (both flags present, exact wording matches usage in the test script).
+  - `test.skipIf(condition): Test<T>`: node_modules/.bun/bun-types@1.3.14/node_modules/bun-types/test.d.ts:538 — installed types match the runtime version.
+  - Chromium composer + text-free guard (c810df18): plugins/generations/image-gen/src/compose/card.ts:100 (`assertTextFreePrompt`), :145 (`cardHtml`, fixed-px safe-area typesetting); driver in src/compose/chromium.ts (same commit).
+  - Content-safety verdict gate (6800198d): plugins/kk/scripts/kk-workflow-stages.ts:1578 reads `safety-judge_verdict.json`.
+  - footerNote (0812ec02): plugins/publishings/podcast-pub/src/show-notes.ts:272,360; env wiring src/index.ts:142 (`PODCAST_PUB_FOOTER_NOTE`).
+  - Remaining bullets cite their own diff as primary source; summary scope spot-checked against `git show --stat` (46ae1e2d, 0ce4633f, 23fa8950, efa68094).
+- Confidence: HIGH — external-API claims verified against the installed toolchain; local behavioral claims cite file:line in the shipped source; no claim rests on unverified recollection.
+-->
+
 ## [0.0.26] - 2026-09-29
 
 ### Added
