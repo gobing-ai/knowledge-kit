@@ -103,26 +103,26 @@ function qcDoc(id: string, title: string, publishedAt = '2026-09-16T00:20:39.000
 describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
     it('excludes a zh political-mainline doc with its rule, reason and matched keyword', () => {
         const { kept, excluded } = applyBoundary(
-            [qcDoc('zh-1', '国会表决通过 AI 监管新法案'), qcDoc('ok-1', '浏览器端零依赖语音实现')],
+            [qcDoc('zh-1', '台海局势牵动芯片供应链'), qcDoc('ok-1', '浏览器端零依赖语音实现')],
             STAMP,
         );
         expect(kept.map((doc) => doc.id)).toEqual(['ok-1']);
         expect(excluded).toEqual([
             {
                 id: 'zh-1',
-                title: '国会表决通过 AI 监管新法案',
+                title: '台海局势牵动芯片供应链',
                 rule: 'political-diplomatic',
                 reason: expect.stringContaining('政治/外交主线'),
-                matched: '国会',
+                matched: '台海',
             },
         ]);
     });
 
     it('excludes a headline-capitalized English keyword (F2: matching is case-insensitive)', () => {
-        const { kept, excluded } = applyBoundary([qcDoc('en-1', 'President signs sweeping AI rules')], STAMP);
+        const { kept, excluded } = applyBoundary([qcDoc('en-1', 'Antitrust suit targets search ad stack')], STAMP);
         expect(kept).toEqual([]);
         expect(excluded).toEqual([
-            expect.objectContaining({ id: 'en-1', rule: 'political-diplomatic', matched: 'president' }),
+            expect.objectContaining({ id: 'en-1', rule: 'policy-dispute', matched: 'antitrust' }),
         ]);
     });
 
@@ -140,7 +140,7 @@ describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
         ]);
     });
 
-    it('does not match an English keyword buried inside a longer word (selection ≠ election, patriot ≠ riot)', () => {
+    it('does not match an English keyword buried inside a longer word (patriot ≠ riot)', () => {
         const { kept, excluded } = applyBoundary(
             [qcDoc('fp-1', 'Model selection heuristics for agents'), qcDoc('fp-2', 'Patriot: a Rust tracing library')],
             STAMP,
@@ -167,7 +167,7 @@ describe('topic boundary — applyTopicBoundary (task 0189 R2/R3/F1)', () => {
 
     it('keeps nothing when every doc is excluded (zero-kept → done-no-content edge)', () => {
         const { kept, excluded } = applyBoundary(
-            [qcDoc('zh-1', '国会表决通过新法案'), qcDoc('zh-2', '中美关系谈判重启')],
+            [qcDoc('zh-1', '台海局势再度紧张'), qcDoc('zh-2', '中美关系谈判重启')],
             STAMP,
         );
         expect(kept).toEqual([]);
@@ -193,7 +193,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
 
     it('writes the exclusions audit {version, runDate, excluded, kept} and narrows candidates to kept docs', () => {
         const dir = setup([
-            qcDoc('zh-1', '国会表决通过 AI 监管新法案'),
+            qcDoc('zh-1', '台海局势牵动芯片供应链'),
             qcDoc('future-1', '前沿模型训练暂停报告', '2026-09-17T08:00:00.000Z'),
             qcDoc('ok-1', '浏览器端零依赖语音实现'),
         ]);
@@ -219,7 +219,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
     });
 
     it('rerun is idempotent: cached candidates, boundary no-op, audit and candidates untouched', () => {
-        const dir = setup([qcDoc('zh-1', '国会表决通过 AI 监管新法案'), qcDoc('ok-1', '浏览器端零依赖语音实现')]);
+        const dir = setup([qcDoc('zh-1', '台海局势牵动芯片供应链'), qcDoc('ok-1', '浏览器端零依赖语音实现')]);
         try {
             expect(runStage(['daily-qc-content', dir, STAMP, ...qcStageArgs], fakeKk(dir)).status).toBe(0);
             const auditBefore = readFileSync(exclusionsPath(dir), 'utf-8');
@@ -237,7 +237,7 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
     });
 
     it('zero kept docs leaves candidates empty for the workflow done-no-content edge', () => {
-        const dir = setup([qcDoc('zh-1', '国会表决通过新法案'), qcDoc('zh-2', '中美关系谈判重启')]);
+        const dir = setup([qcDoc('zh-1', '台海局势再度紧张'), qcDoc('zh-2', '中美关系谈判重启')]);
         try {
             const result = runStage(['daily-qc-content', dir, STAMP, ...qcStageArgs], fakeKk(dir));
             expect(result.status).toBe(0);
@@ -256,7 +256,7 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
     it('daily-qc-content → daily-article renders the publish payload from kept docs only', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-0189-e2e-'));
         mkdirSync(join(dir, '21-plan'), { recursive: true });
-        const docs = [qcDoc('zh-1', '国会表决通过 AI 监管新法案'), qcDoc('ok-1', '浏览器端零依赖语音实现')];
+        const docs = [qcDoc('zh-1', '台海局势牵动芯片供应链'), qcDoc('ok-1', '浏览器端零依赖语音实现')];
         writeFileSync(join(dir, '21-plan', `${STAMP}_03_plan_content.json`), JSON.stringify({ metadata: { docs } }));
         const env = fakeKk(dir);
         try {

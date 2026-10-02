@@ -127,6 +127,13 @@ export async function processGeneratorIO(
     const planOutcome = isZh
         ? await resolveScriptPlan(fs, docs)
         : { scriptSource: 'template' as const, scriptPlanErrors: [] as ScriptPlanError[] };
+    // Topic boundary (task 0189): docs the plan declares excluded are not spoken, not counted,
+    // and not referenced — title, storyCount, and references must match what is actually said.
+    const excludedIds = new Set(planOutcome.scriptPlan?.excluded?.map((ex) => ex.id) ?? []);
+    if (excludedIds.size > 0) {
+        echoError(`dailynews-gen: topic boundary excludes ${excludedIds.size} doc(s): ${[...excludedIds].join(', ')}`);
+        docs = docs.filter((doc) => !excludedIds.has(doc.id));
+    }
     // Explicit option wins; else DAILYNEWS_DATE (workflow backfill/retry); else the builder's now.
     const date = options?.date ?? broadcastDateFromEnv(process.env.DAILYNEWS_DATE);
     const script = buildNewsVoiceScript(docs, { ...options, date, scriptPlan: planOutcome.scriptPlan });

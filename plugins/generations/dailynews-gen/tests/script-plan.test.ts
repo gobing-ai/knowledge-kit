@@ -155,6 +155,34 @@ describe('F613 R2 — validateScriptPlan rules', () => {
         });
     });
 
+    // Task 0189: a topic-boundary exclusion replaces the missing item instead of triggering
+    // missing-item; bad exclusion ids fail loud like any plan item id.
+    it('accepts a declared exclusion instead of missing-item, but validates its id', () => {
+        const plan = twoDocPlan();
+        plan.items = [plan.items[0] as ScriptPlan['items'][number]];
+        plan.excluded = [{ id: 'energy-doc-1', reason: '主线为公共政策争议' }];
+        expect(validateScriptPlan(plan, docs, style)).toEqual({ ok: true, plan });
+
+        plan.excluded = [{ id: 'no-such-doc', reason: '不存在' }];
+        expect(validateScriptPlan(plan, docs, style)).toEqual({
+            ok: false,
+            errors: [
+                { itemId: 'no-such-doc', rule: 'unknown-id' },
+                { itemId: 'energy-doc-1', rule: 'missing-item' },
+            ],
+        });
+
+        plan.items = [
+            plan.items[0] as ScriptPlan['items'][number],
+            twoDocPlan().items[1] as ScriptPlan['items'][number],
+        ];
+        plan.excluded = [{ id: 'energy-doc-1', reason: '重复' }];
+        expect(validateScriptPlan(plan, docs, style)).toEqual({
+            ok: false,
+            errors: [{ itemId: 'energy-doc-1', rule: 'conflict-id' }],
+        });
+    });
+
     it('rejects fields over their char cap (cap:<field>), episode fields at itemId episode', () => {
         const over = (n: number) => '好'.repeat(n);
         expect(validateScriptPlan({ ...twoDocPlan(), intro: over(121) }, docs, style)).toEqual({
@@ -397,6 +425,28 @@ describe('F613 R4 — processGeneratorIO plan handling and explicit fallback', (
             const unparsable = await processGeneratorIO(inPath, outPath, options);
             expect(unparsable.metadata?.scriptPlanErrors).toEqual([{ itemId: 'episode', rule: 'no-style' }]);
             expect(unparsable.metadata?.scriptSource).toBe('template');
+        });
+    });
+
+    // Task 0189 topic boundary: a declared exclusion removes the doc from title/storyCount,
+    // stories, and references — the episode must say, count, and cite only what it speaks.
+    it('builds from a plan with an exclusion, dropping the doc from content and metadata', async () => {
+        writeFileSync(stylePath, readFileSync(STYLE_SIDECAR, 'utf-8'));
+        const plan = twoDocPlan();
+        plan.items = [plan.items[0] as ScriptPlan['items'][number]];
+        plan.excluded = [{ id: 'energy-doc-1', reason: '主线为公共政策争议' }];
+        writeFileSync(planPath, JSON.stringify(plan));
+        await withPlanEnv({ DAILYNEWS_SCRIPT_PLAN: planPath, DAILYNEWS_STYLE_FILE: stylePath }, async () => {
+            const content = await processGeneratorIO(inPath, outPath, options);
+            expect(content.metadata?.scriptSource).toBe('plan');
+            expect(content.metadata?.scriptPlanErrors).toEqual([]);
+            expect(content.metadata?.storyCount).toBe(1);
+            const metadata = content.metadata as { stories?: { id: string }[] } | undefined;
+            expect(metadata?.stories?.map((s) => s.id)).toEqual(['520246ce54c2a6e6']);
+            expect(content.references?.map((r) => r.url)).toEqual([
+                'https://arstechnica.com/tech-policy/2026/09/china-silent-as-us-touts-plan-for-ai-safety-alerts-that-omits-tech-experts/',
+            ]);
+            expect(content.body).not.toContain(ENERGY_DOC.title);
         });
     });
 

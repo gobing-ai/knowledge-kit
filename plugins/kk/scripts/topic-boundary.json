@@ -1,11 +1,11 @@
 {
     "version": 1,
-    "note": "Task 0189 R2 topic admission for the AI 乱炖 column. Excludes items whose mainline is political/diplomatic-trade, military, public-policy dispute, or a social public event; records every exclusion with id, rule, reason and the matched keyword. Sources are never deleted or modified. Scan covers the title plus the first scanChars chars of the body. Precision first: these keywords are a floor, not a sieve — a rare false negative is caught by the script-write/article-write topic-boundary prompts and the content-safety skill review, and a suspected false positive is restored by hand with a recorded reason (manual review), never silently.",
+    "note": "Task 0189 R2 topic admission for the AI 乱炖 column, with the 2026-10-02 operator scope correction: the political-diplomatic rule is China-only (中国政治/外交主线). Foreign public-affairs items are NOT floor-excluded — they flow to the plan and are handled by the article-write/script-write/cover 选题边界 prompts (skip + note / plan `excluded`) and the content-safety review. Excluded items are recorded with id, rule, reason and the matched keyword. Sources are never deleted or modified. Scan covers the title plus the first scanChars chars of the body. Precision first: these keywords are a floor, not a sieve — a rare false negative is caught by the prompt-layer boundaries and the content-safety skill review, and a suspected false positive is restored by hand with a recorded reason (manual review), never silently.",
     "scanChars": 200,
     "rules": [
         {
             "id": "political-diplomatic",
-            "reason": "政治/外交主线：涉及政治人物、政府机构、选举、外交或双边关系的条目，不属于 AI 乱炖的技术分享范围（0189 R2）。",
+            "reason": "中国政治/外交主线：涉及中国党政机构、领导人、外交部门或台海/中美关系的条目，不属于 AI 乱炖的技术分享范围（0189 R2；2026-10-02 操作者裁定本规则仅限中国，外国政治条目由选题边界提示与内容安全评审处理）。",
             "keywords": [
                 "领导人",
                 "主席访",
@@ -16,18 +16,9 @@
                 "国事访问",
                 "政治局",
                 "中南海",
-                "总统",
-                "白宫",
-                "国会",
-                "议会",
-                "选举",
                 "台海",
                 "两岸关系",
-                "中美关系",
-                "president",
-                "parliament",
-                "election",
-                "diplomat"
+                "中美关系"
             ]
         },
         {

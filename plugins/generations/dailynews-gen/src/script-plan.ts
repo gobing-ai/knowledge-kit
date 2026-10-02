@@ -12,6 +12,12 @@ export interface ScriptPlan {
     intro: string;
     outro: string;
     items: { id: string; lead: string; insight: string }[];
+    /**
+     * Docs deliberately not spoken (topic-boundary exclusions, task 0189). An id here is
+     * exempt from `missing-item`; listing an id in both `items` and `excluded` is a
+     * `conflict-id` error, and an unknown id is `unknown-id` like any plan item.
+     */
+    excluded?: { id: string; reason: string }[];
 }
 
 /**
@@ -41,11 +47,17 @@ const ScriptPlanItemSchema = z.object({
     insight: z.string().min(1),
 });
 
+const ScriptPlanExclusionSchema = z.object({
+    id: z.string().min(1),
+    reason: z.string().min(1),
+});
+
 const ScriptPlanSchema = z.object({
     version: z.literal(1),
     intro: z.string().min(1),
     outro: z.string().min(1),
     items: z.array(ScriptPlanItemSchema),
+    excluded: z.array(ScriptPlanExclusionSchema).optional(),
 });
 
 const StyleContractSchema = z.object({
@@ -86,8 +98,9 @@ export function parseStyleContract(markdown: string): StyleContract {
  * one warn line names every violation, so a rejected plan is diagnosable in one read:
  *
  * - `schema`: wrong shape or version (`itemId: episode`)
- * - `unknown-id`: a plan item id that is not a doc
- * - `missing-item`: a doc with no plan item
+ * - `unknown-id`: a plan item (or exclusion) id that is not a doc
+ * - `missing-item`: a doc with no plan item and no exclusion
+ * - `conflict-id`: an id listed in both `items` and `excluded`
  * - `cap:<field>`: a field over its cap (`intro`/`outro` report `itemId: episode`)
  * - `banned:<phrase>`: a field containing a banned phrase
  * - `duplicate-insight`: the same insight text on two items in one episode
@@ -107,8 +120,13 @@ export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContr
         if (!docIds.has(item.id)) errors.push({ itemId: item.id, rule: 'unknown-id' });
     }
     const plannedIds = new Set(valid.items.map((item) => item.id));
+    const excludedIds = new Set((valid.excluded ?? []).map((ex) => ex.id));
+    for (const ex of valid.excluded ?? []) {
+        if (!docIds.has(ex.id)) errors.push({ itemId: ex.id, rule: 'unknown-id' });
+        if (plannedIds.has(ex.id)) errors.push({ itemId: ex.id, rule: 'conflict-id' });
+    }
     for (const doc of docs) {
-        if (!plannedIds.has(doc.id)) errors.push({ itemId: doc.id, rule: 'missing-item' });
+        if (!plannedIds.has(doc.id) && !excludedIds.has(doc.id)) errors.push({ itemId: doc.id, rule: 'missing-item' });
     }
 
     if (valid.intro.length > style.caps.intro) errors.push({ itemId: 'episode', rule: 'cap:intro' });
