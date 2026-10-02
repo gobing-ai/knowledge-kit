@@ -146,6 +146,7 @@ dist
 /.spur/context/token-ledger.jsonl
 **/.spur/context/token-ledger.jsonl
 /.spur/context/.session*.json
+/.spur/context/.freshness.json
 /.spur/run/
 /.spur/runs/
 /.spur/memory/sessions/*-checkpoint.md
