@@ -285,8 +285,6 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
                 { url: 'https://example.com/ok-1', title: '浏览器端零依赖语音实现', cite: 'ok-1' },
             ]);
             // Publish-payload capture quoted in .spur/run/0189/evidence/e2e-publish-payload.md.
-            console.log('E2E publish payload (daily-article Content):');
-            console.log(JSON.stringify(content, null, 2));
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
