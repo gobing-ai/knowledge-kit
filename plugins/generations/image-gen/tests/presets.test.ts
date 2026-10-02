@@ -515,3 +515,25 @@ describe('resolvePresetRoots (R8)', () => {
         }
     });
 });
+
+describe('PresetSource.confidence verification', () => {
+    test('accepts high, medium and low, and preserves the value', () => {
+        for (const confidence of ['high', 'medium', 'low'] as const) {
+            const parsed = StylePresetSchema.parse(testStyle({ source: { kind: 'extracted', confidence } }));
+            expect(parsed.source?.confidence).toBe(confidence);
+        }
+    });
+
+    test('rejects a confidence outside the HIGH/MEDIUM/LOW enum', () => {
+        const result = StylePresetSchema.safeParse(testStyle({ source: { kind: 'extracted', confidence: 'sure' } }));
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error.issues.some((i) => i.path.includes('confidence'))).toBe(true);
+        }
+    });
+
+    test('absent confidence stays allowed (authored presets)', () => {
+        const parsed = StylePresetSchema.parse(testStyle());
+        expect(parsed.source).toBeUndefined();
+    });
+});
