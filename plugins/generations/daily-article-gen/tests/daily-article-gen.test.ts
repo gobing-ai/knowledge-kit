@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Content, Doc } from '@gobing-ai/kk-core';
-import { docsToContent, main, processGeneratorIO, renderDailyArticle, stripScaffold } from '../src/index';
+import {
+    docsToContent,
+    excludedIdsFromNote,
+    main,
+    processGeneratorIO,
+    renderDailyArticle,
+    stripScaffold,
+} from '../src/index';
 
 function doc(overrides: Partial<Doc> = {}): Doc {
     return {
@@ -146,6 +153,36 @@ describe('daily-article-gen', () => {
             docsToContent([doc()], '2026-09-29', '正文第一段。'),
         ]) {
             expect(content.body.trimEnd().endsWith('*文字由 AI 辅助整理，音频为 AI 合成配音。*')).toBe(true);
+        }
+    });
+
+    test('excludedIdsFromNote parses boundary-note ids; article Content never cites excluded docs (judge 2026-10-02)', async () => {
+        const note = '> 注：2 条条目因选题边界未写入：b039f703ebf7885f（政治争议）、3615960163537c76（监管议题）';
+        expect([...excludedIdsFromNote(note)]).toEqual(['b039f703ebf7885f', '3615960163537c76']);
+        expect(excludedIdsFromNote('无注记正文').size).toBe(0);
+        expect(excludedIdsFromNote(undefined).size).toBe(0);
+        const tmpDir = join(process.cwd(), '.tmp-test-daily-article-excluded');
+        await mkdir(tmpDir, { recursive: true });
+        const bodyPath = join(tmpDir, 'body.md');
+        const inPath = join(tmpDir, 'docs.json');
+        const outPath = join(tmpDir, 'content.json');
+        await Bun.write(bodyPath, `正文。\n\n${note}\n`);
+        await Bun.write(
+            inPath,
+            JSON.stringify([doc({ id: '4954f1a6cbc0fc44' }), doc({ id: 'b039f703ebf7885f', title: 'RFK' })]),
+        );
+        try {
+            process.env.ARTICLE_DATE = '20260904';
+            process.env.ARTICLE_BODY_FILE = bodyPath;
+            const content = await processGeneratorIO(inPath, outPath);
+            expect(content.metadata?.doc_count).toBe(1);
+            expect(content.references?.map((r) => r.cite)).toEqual(['4954f1a6cbc0fc44']);
+            expect(content.title).toContain('Sora 2 发布');
+            expect(content.body).not.toContain('RFK');
+        } finally {
+            delete process.env.ARTICLE_DATE;
+            delete process.env.ARTICLE_BODY_FILE;
+            await rm(tmpDir, { recursive: true, force: true });
         }
     });
 

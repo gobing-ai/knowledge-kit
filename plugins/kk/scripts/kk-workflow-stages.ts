@@ -1928,8 +1928,37 @@ function dailyShowNotes(args: string[]): void {
     timed(workDir, 'show-notes', () => {
         const effective = readJson(article)?.title;
         const titleArg = title !== '' ? title : typeof effective === 'string' ? effective : '';
+        // Boundary-excluded docs must not render into show notes (judge finding 2026-10-02): the
+        // article body's 未写入 note names the dropped ids; filter the plan copy podcast-pub sees.
+        // Inlined parse — this file must not import @gobing-ai/* (header contract); the same note
+        // grammar lives in daily-article-gen's excludedIdsFromNote.
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
-        kk(['executor', 'run', 'podcast-pub', '--in', plan, '--out', out, ...pluginsArgs(pluginsPath)], {
+        const articleBody = readJson(article)?.body;
+        const excluded = new Set<string>();
+        if (typeof articleBody === 'string') {
+            for (const note of articleBody.matchAll(/未写入[：:](.*)/g)) {
+                for (const id of note[1].matchAll(/[0-9a-f]{16}/g)) excluded.add(id[0]);
+            }
+        }
+        let planIn = plan;
+        if (excluded.size > 0) {
+            const parsed: unknown = readJson(plan);
+            if (Array.isArray(parsed)) {
+                const kept = parsed.filter(
+                    (d) =>
+                        !(
+                            d !== null &&
+                            typeof d === 'object' &&
+                            excluded.has(String((d as Record<string, unknown>).id))
+                        ),
+                );
+                if (kept.length !== parsed.length) {
+                    planIn = plan.replace(/\.json$/, '-shownotes.json');
+                    writeJsonText(planIn, kept);
+                }
+            }
+        }
+        kk(['executor', 'run', 'podcast-pub', '--in', planIn, '--out', out, ...pluginsArgs(pluginsPath)], {
             env: {
                 PODCAST_PUB_TITLE: titleArg,
                 PODCAST_PUB_RUN_DATE: runDate,

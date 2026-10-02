@@ -140,6 +140,20 @@ function tagsFor(docs: Doc[]): string[] {
 /** A leading H1 line — agent bodies used to carry their own title; the canonical title is computed (task 0189 R4). */
 const LEADING_H1_RE = /^#(?!#)\s*[^\n]+\n+/.source;
 
+/** ids the article-write note marks as dropped on the topic boundary, e.g. 「…未写入：<id>（原因）、<id>（原因）」. */
+const NOTE_EXCLUDED_RE = /未写入[：:](.*)/g;
+const HEX_ID_RE = /[0-9a-f]{16}/g;
+
+/** Parse the boundary-note ids out of an article body so references/metadata never cite excluded docs (judge finding 2026-10-02). */
+export function excludedIdsFromNote(body: string | undefined): Set<string> {
+    const ids = new Set<string>();
+    if (!body) return ids;
+    for (const note of body.matchAll(NOTE_EXCLUDED_RE)) {
+        for (const id of (note[1] ?? '').matchAll(HEX_ID_RE)) ids.add(id[0]);
+    }
+    return ids;
+}
+
 /** Build the article Content from a merged Doc[]; `bodyOverride` replaces the mechanical render (agent-written prose), still scaffold-stripped as a safety net. */
 export function docsToContent(docs: Doc[], date: string, bodyOverride?: string): Content {
     const title = episodeTitle(docs, date);
@@ -174,7 +188,9 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
         bodyOverride = await Bun.file(bodyFile).text();
         if (bodyOverride.trim() === '') bodyOverride = undefined;
     }
-    const content = docsToContent(docs, date, bodyOverride);
+    const excluded = excludedIdsFromNote(bodyOverride);
+    const kept = excluded.size === 0 ? docs : docs.filter((d) => !excluded.has(d.id));
+    const content = docsToContent(kept, date, bodyOverride);
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);
     if (outDir && outDir !== '.') await fs.ensureDir(outDir);
