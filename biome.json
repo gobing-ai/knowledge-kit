@@ -14,8 +14,7 @@
             "!**/.coverage",
             "!**/node_modules",
             "!**/vendors",
-            "!**/*.generated.mjs",
-            "!plugins/sp/scripts/**/*.mjs"
+            "!**/*.generated.mjs"
         ]
     },
     "formatter": {
