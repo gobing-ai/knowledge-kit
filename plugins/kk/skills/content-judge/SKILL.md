@@ -30,6 +30,7 @@ Every evaluation writes a JSON verdict file. The default path is
 ```json
 {
   "verdict": "PASS | FAIL | NEEDS_REVISION",
+  "confidence": "HIGH | MEDIUM | LOW",
   "rubric": "<rubric-id>",
   "score": 0.0,
   "summary": "<one-paragraph reasoning summary>",
@@ -56,6 +57,22 @@ Every evaluation writes a JSON verdict file. The default path is
 
 `PASS` is the only verdict that unblocks publish. The shell guard treats `FAIL` and
 `NEEDS_REVISION` identically (exit 1); the distinction is for the feedback loop, not the gate.
+
+### Confidence level
+
+Every verdict carries a `confidence` level — `HIGH`, `MEDIUM`, or `LOW` — self-assessed by the
+judge from evidence coverage:
+
+- `HIGH` — every criterion grounded in directly verified evidence (sources opened, claims
+  cross-checked); no unverified rule text or assumption entered the reasoning.
+- `MEDIUM` — verdict grounded but with known evidence gaps (e.g. unverified platform rule text,
+  single-source claims), none strong enough to flip the verdict.
+- `LOW` — verdict rests on assumptions or unverified evidence that could plausibly flip it.
+
+The `daily-safety-gate` requires the field on the safety verdict (missing or a value outside the
+enum → block). The level itself does not change routing — escalation stays owned by the review's
+`RISK` decisions and `escalate` flag; treat `LOW` as a signal to demand human review before
+publishing.
 
 ## Evaluation procedure
 

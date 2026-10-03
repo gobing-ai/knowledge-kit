@@ -1600,6 +1600,8 @@ function dailySafetyGate(args: string[]): void {
         else if (decisions.includes('BLOCK')) reason = 'content-safety report carries a BLOCK decision';
         else if (verdict?.verdict !== 'PASS')
             reason = `content-judge verdict is ${typeof verdict?.verdict === 'string' ? verdict.verdict : 'missing or unreadable'}`;
+        else if (verdict?.confidence !== 'HIGH' && verdict?.confidence !== 'MEDIUM' && verdict?.confidence !== 'LOW')
+            reason = 'content-judge verdict is missing a HIGH/MEDIUM/LOW confidence level';
         else if (decisions.includes('RISK') || report?.escalate === true) {
             status = 'escalate';
             reason = 'RISK decision or escalation — human review required';

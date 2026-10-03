@@ -293,7 +293,7 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
 
 describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
     const OK_REPORT = { platforms: [{ platform: 'xiaoyuzhou', decision: 'OK', findings: [] }], escalate: false };
-    const PASS_VERDICT = { verdict: 'PASS', rubric: 'compliance', score: 0.95 };
+    const PASS_VERDICT = { verdict: 'PASS', rubric: 'compliance', score: 0.95, confidence: 'HIGH' };
     const at = (dir: string, name: string) => join(dir, '24-script', `${STAMP}_09_${name}`);
 
     /** Drafts + prep; the two agent.run outputs are written by the test in place of the agents. */
@@ -332,6 +332,8 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         ['FAIL verdict', OK_REPORT, { verdict: 'FAIL' }],
         ['NEEDS_REVISION verdict', OK_REPORT, { verdict: 'NEEDS_REVISION' }],
         ['unrecognized verdict', OK_REPORT, { verdict: 'pass' }],
+        ['PASS verdict without a confidence level', OK_REPORT, { verdict: 'PASS', rubric: 'compliance', score: 0.95 }],
+        ['unrecognized confidence level', OK_REPORT, { verdict: 'PASS', confidence: 'SURE' }],
         ['BLOCK decision despite a PASS verdict', { platforms: [{ decision: 'BLOCK' }] }, PASS_VERDICT],
         ['report without platforms', { platforms: [] }, PASS_VERDICT],
         ['unknown decision', { platforms: [{ decision: 'FINE' }] }, PASS_VERDICT],
@@ -340,6 +342,13 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
         expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('block');
         expect(() => readFileSync(at(dir, 'safety-judge_stamp.json'))).toThrow();
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('a LOW confidence verdict still routes pass on an all-OK report (routing stays with decisions/escalate)', () => {
+        const dir = setup(OK_REPORT, { verdict: 'PASS', rubric: 'compliance', score: 0.9, confidence: 'LOW' });
+        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+        expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('pass');
         rmSync(dir, { recursive: true, force: true });
     });
 
