@@ -535,8 +535,10 @@ describe('runInvoke', () => {
             // The entry delays its grandchild spawn to ~250ms — inside the 300ms kill
             // window. A single-snapshot walk misses the in-flight spawn, kills the
             // root, and the grandchild registers under launchd as an unreachable
-            // orphan that writes the marker at +2s. The two-sweep kill (settle, then
-            // sweep again while the root is still alive) must reap it.
+            // orphan that writes the marker at +2s. The kill must reap it: group
+            // SIGKILL first (the entry runs in its own pgid, so a fork that lands
+            // after any pgrep snapshot still dies with the group), then the
+            // two-sweep pgrep walk as backstop.
             const marker = join(root, 'grandchild-lived.txt');
             const grandchild = `setTimeout(() => { const { writeFileSync } = require('node:fs'); writeFileSync(${JSON.stringify(marker)}, 'x'); }, 2000); setInterval(() => {}, 1000);`;
             writeFileSync(

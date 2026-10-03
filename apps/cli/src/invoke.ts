@@ -212,6 +212,18 @@ function killSubtree(pid: number): void {
  * `taskkill /T /F /PID <pid>` — add when one exists.
  */
 async function killProcessTree(pid: number): Promise<void> {
+    // Group kill first: with the entry spawned detached, every descendant —
+    // including a grandchild whose fork completed after the last pgrep
+    // snapshot — already carries the entry's pgid, so this reaps the race the
+    // pgrep walk below cannot see (observed: snapshot at +152ms, root kill at
+    // +168ms, fork landing in between → orphan reparented to launchd).
+    if (process.platform !== 'win32') {
+        try {
+            process.kill(-pid, 'SIGKILL');
+        } catch {
+            // No such group — entry already gone; the walk below still runs.
+        }
+    }
     const sweep = () => {
         for (const child of listChildren(pid)) {
             killSubtree(child);
@@ -250,6 +262,9 @@ export async function spawnPluginEntryAsync(opts: PluginEntryAsyncSpawnOptions):
         env: pluginEntryEnv(opts),
         stdout: 'pipe',
         stderr: 'pipe',
+        // Own process group (POSIX) so the timeout kill can take the whole tree
+        // group-wide; see killProcessTree (0110 I2b).
+        detached: process.platform !== 'win32',
     });
 
     if (opts.timeoutMs !== undefined) {
