@@ -46,6 +46,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'wrap-docs',
             'generate',
             'intro-music',
+            'episode-duration',
             'quality-control',
             'publish-prep',
             'publish-surfdash',
@@ -226,11 +227,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // 0144: the six-line kbin/pkg/st prelude moved into the `kk stage` verb (apps/cli/src/stage.ts),
         // which resolves the shipped stages script from the installed package. The YAML must carry no
         // prelude remnants and exactly one delegation call per stage (25 -> 26: daily-publish-wechat
-        // joined 2026-09-29 with the WeChat MP draft target; 26 -> 28: the 0189 safety prep + gate).
+        // joined 2026-09-29 with the WeChat MP draft target; 26 -> 28: the 0189 safety prep + gate;
+        // 28 -> 29: the 20261002 episode-duration gate).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(28);
+        expect(yaml.split('kk stage daily-').length - 1).toBe(29);
         // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
@@ -568,7 +570,8 @@ if (plugin === 'aihot-ingest') {
         title: 'Daily AI News',
         body: wavPath,
         format: 'audio',
-        metadata: { audioPath: wavPath, qc },
+        // The real voice plugins stamp the probed audio length; the duration gate reads it.
+        metadata: { audioPath: wavPath, duration: 1080, qc },
     }));
 } else if (plugin === 'omni-voice-gen') {
     readFileSync(inPath, 'utf8');
@@ -578,7 +581,7 @@ if (plugin === 'aihot-ingest') {
         title: 'Daily AI News',
         body: wavPath,
         format: 'audio',
-        metadata: { audioPath: wavPath, generator: 'kk:omni-voice-gen', qc },
+        metadata: { audioPath: wavPath, duration: 1080, generator: 'kk:omni-voice-gen', qc },
     }));
 } else if (plugin === 'gemini-tts') {
     readFileSync(inPath, 'utf8');
@@ -588,7 +591,7 @@ if (plugin === 'aihot-ingest') {
         title: 'Daily AI News',
         body: wavPath,
         format: 'audio',
-        metadata: { audioPath: wavPath, generator: 'kk:gemini-tts', qc },
+        metadata: { audioPath: wavPath, duration: 1080, generator: 'kk:gemini-tts', qc },
     }));
 } else {
     process.exit(4);
@@ -782,11 +785,14 @@ if (plugin === 'aihot-ingest') {
         expect(edges).toContain('publish->failed');
     });
 
-    it('generate routes through intro-music before quality-control (0149: intro state was orphaned)', () => {
+    it('generate routes through intro-music and the duration gate before quality-control (0149: intro state was orphaned; 20261002: gate added)', () => {
         const edges = [...yaml.matchAll(/from: ([\w-]+)\n\s+to: ([\w-]+)/gm)].map((m) => `${m[1]}->${m[2]}`);
         expect(edges).toContain('generate->intro-music');
-        expect(edges).toContain('intro-music->quality-control');
-        // The pre-0149 shortcut must stay gone: it left every episode without the intro sting.
+        expect(edges).toContain('intro-music->episode-duration');
+        expect(edges).toContain('episode-duration->quality-control');
+        // The pre-0149 shortcut must stay gone: it left every episode without the intro sting,
+        // and the 20261002 gate must never be bypassed by a direct intro-music edge.
         expect(edges).not.toContain('generate->quality-control');
+        expect(edges).not.toContain('intro-music->quality-control');
     });
 });

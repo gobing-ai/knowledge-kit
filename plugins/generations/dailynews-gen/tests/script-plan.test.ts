@@ -84,7 +84,7 @@ async function withPlanEnv(env: Record<string, string | undefined>, run: () => P
 describe('F613 R1 — style contract sidecar', () => {
     it('parseStyleContract reads the real shipped sidecar: caps and the full banned list', () => {
         const style = parseStyleContract(readFileSync(STYLE_SIDECAR, 'utf-8'));
-        expect(style.caps).toEqual({ intro: 120, outro: 120, lead: 60, insight: 160 });
+        expect(style.caps).toEqual({ intro: 150, outro: 150, lead: 80, insight: 380 });
         // every current zhInsightFor canned line is banned, so a plan can never reuse them
         for (const canned of [
             '在各种技术光环背后，正是这样专注而不知疲倦的底层攻坚者，为今天整个大模型生态奠定了最坚实的技术基石。',
@@ -452,7 +452,7 @@ describe('F613 R4 — processGeneratorIO plan handling and explicit fallback', (
 
     it('a rejected plan falls back to templates, warns once naming every itemId/rule, and exits 0', async () => {
         const rejected = twoDocPlan();
-        rejected.intro = '好'.repeat(121);
+        rejected.intro = '好'.repeat(151);
         rejected.items[0] = {
             ...(rejected.items[0] as ScriptPlan['items'][number]),
             lead: '首先来聊聊大家非常关注的话题。',

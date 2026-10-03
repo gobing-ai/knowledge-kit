@@ -192,11 +192,11 @@ states:
           # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a adds the copy discipline).
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
-            For items with needsTranslation, adapt "title", "body", and "metadata.brief" (when present) into natural spoken simplified Chinese. Full-coverage adaptation, not a summary: every fact, number, name, quote and hedge in the source body must survive into the Chinese text (口播全长改编，不摘要不省略)。Target body length ≈ 0.6–0.7 × source character count.
-            Titles read as a news event (subject + action + object) — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
+            For needsTranslation items, adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — full coverage, not a summary: keep every fact, number, name, quote and hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× the source.
+            Titles read as a news event; keep product/model names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
             Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
-            Keep other fields (id, sourceUri, mediaType, metadata), technical terms as-is; no trailing commas or comments.
-            Output strictly valid JSON — a same-length, same-order array with the same ids — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
+            Keep other fields (id, sourceUri, mediaType, metadata) as-is; no comments or trailing commas.
+            Output strictly valid JSON — a same-length, same-order array — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
           expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
           allowAppend: false
 
@@ -275,9 +275,8 @@ states:
           agent: ${vars.agent}
           # ADR-115 error tier: keep this prompt <= 1000 chars.
           input: |
-            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
+            Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps, duration budget and banned phrases.
             For each doc write a `lead` (a spoken bridge, not containing the title) and an `insight` (grounded only in that doc's facts: keep its numbers and hedges（据报道）, add no new degree words like「高预算穷举」).
-            Episode design target: 15–20 minutes total speech; size the script by driver rate — gemini ≈3.3 chars/s (正文约 4300–5800 字), Voicebox robin-news ≈6.3 chars/s (正文约 5700–7600 字). Write insights at the style cap — unpack the item's own facts (mechanism → why it matters → practical angle), 3–6 sentences.
             intro/outro hook only in-scope items; no greeting or sign-off — the builder adds both. 选题边界：政治/外交、贸易管制、军事、公共政策争议、社会公共事件条目绝不复述；读文章 22-article/*_06_article-write_body.md，其文末注记点名的 id 一并进 excluded，各配中文原因。
             Output only JSON {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}],"excluded":[{"id":"…","reason":"…"}]} to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json. Exactly one `items` entry per doc not in `excluded`.
           expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
