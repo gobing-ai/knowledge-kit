@@ -103,16 +103,14 @@ function renderDoc(doc: Doc, index: number): string {
 }
 
 /**
- * Episode title for the 「AI 乱炖」 column (task 0189 R1/R4): `AI 乱炖｜<本期实际技术主题> · YYYY-MM-DD`.
- * The deterministic proxy for 本期实际技术主题 is the lead plan item's title — the same doc the
- * cover brief and XHS cards already treat as the episode's lead story. Pure function so the
- * agent-written and template article paths, ID3, RSS and show notes all derive one identical
- * title; never re-introduces the retired news-bulletin positioning (task 0189 R4).
+ * Episode title for the 「AI 乱炖」 column: fixed `AI 乱炖 · YYYY-MM-DD` (2026-10-02 operator
+ * simplification, superseding the 0189 R1/R4 `AI 乱炖｜<lead item> · date` pattern). The date
+ * alone identifies the episode; the day's stories live in the show notes, cards and post body.
+ * Pure function so the agent-written and template article paths, ID3, RSS and show notes all
+ * derive one identical title.
  */
-export function episodeTitle(docs: Doc[], date: string): string {
-    const lead = docs[0]?.title?.trim() ?? '';
-    const theme = lead !== '' ? lead : '工具、论文与实践';
-    return `AI 乱炖｜${theme} · ${date}`;
+export function episodeTitle(date: string): string {
+    return `AI 乱炖 · ${date}`;
 }
 
 /** Render the article markdown for a merged Doc[] (pure — exported for tests). */
@@ -122,7 +120,7 @@ export function renderDailyArticle(docs: Doc[], date: string): string {
         docs.length > 0
             ? `「AI 乱炖」是「咸话咸说」的 AI 技术分享栏目：工具、论文与实践随聊。本期共 ${docs.length} 条内容，均附可点击来源链接。`
             : '「AI 乱炖」是「咸话咸说」的 AI 技术分享栏目：工具、论文与实践随聊。本期没有足够扎实的可聊内容。';
-    return `# ${episodeTitle(docs, date)}\n\n${intro}\n\n${items}\n`;
+    return `# ${episodeTitle(date)}\n\n${intro}\n\n${items}\n`;
 }
 
 /** Single-source daily tag: stamped on every Content this generator emits (task 0119). */
@@ -156,7 +154,7 @@ export function excludedIdsFromNote(body: string | undefined): Set<string> {
 
 /** Build the article Content from a merged Doc[]; `bodyOverride` replaces the mechanical render (agent-written prose), still scaffold-stripped as a safety net. */
 export function docsToContent(docs: Doc[], date: string, bodyOverride?: string): Content {
-    const title = episodeTitle(docs, date);
+    const title = episodeTitle(date);
     let body = renderDailyArticle(docs, date);
     if (bodyOverride) {
         // The canonical episode title is computed from the lead item; a leading H1 the agent may
