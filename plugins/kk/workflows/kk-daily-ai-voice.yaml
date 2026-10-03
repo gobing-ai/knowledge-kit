@@ -113,6 +113,12 @@ vars:
   qc_min_importance: "3"
   qc_min_urgency: "2"
   qc_min_impact: "1"
+  # 20261002 episode floor: a weak, policy-heavy day filtered to 5 QC-kept docs and the prompt-layer
+  # 选题边界 dropped 2 more at script-write → a 5-minute episode. Below this count, importance-only
+  # rejects (quality/urgency/impact still hard) backfill the plan; floor is 8 because the script-layer
+  # drops land AFTER this gate (lossy upstream compensation). Moves in lockstep with
+  # DEFAULT_FILTER_CONFIG.minEpisodeItems (env wins).
+  qc_min_episode_items: "8"
   __hitlAnswer: ""
 
 states:
@@ -169,7 +175,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}"
+            kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}" "${vars.qc_min_episode_items}"
 
   - id: plan-translate
     description: "Translate needsTranslation plan items into the output plan.json via agent.run"

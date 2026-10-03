@@ -840,6 +840,7 @@ function dailyQcContent(args: string[]): void {
         minImportance = '',
         minUrgency = '',
         minImpact = '',
+        minEpisodeItems = '',
     ] = args;
     const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
     const annotated = join(workDir, '21-plan', `${runDate}_04_quality-control-content_annotated.json`);
@@ -870,6 +871,7 @@ function dailyQcContent(args: string[]): void {
                     QC_MIN_IMPORTANCE: minImportance,
                     QC_MIN_URGENCY: minUrgency,
                     QC_MIN_IMPACT: minImpact,
+                    QC_MIN_EPISODE_ITEMS: minEpisodeItems,
                 },
             },
         );

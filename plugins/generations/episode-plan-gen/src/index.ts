@@ -635,6 +635,8 @@ export interface FilterConfig {
     minImportance: number;
     minUrgency: number;
     minImpact: number;
+    /** Episode floor: when fewer docs survive, importance-only rejects backfill up to this count. */
+    minEpisodeItems: number;
 }
 
 /** A doc the filter dropped, with every failed check (`category:not-in-allowlist`, `quality:2<3`, …). */
@@ -659,6 +661,13 @@ export const DEFAULT_FILTER_CONFIG: FilterConfig = {
     minImportance: 3,
     minUrgency: 2,
     minImpact: 1,
+    // 20261002 dogfood: a weak, policy-heavy day collapsed the episode to 2 spoken items
+    // (~5 min audio) because importance (source-tier base) is the first dimension a tail-source
+    // day fails. Backfill admits importance-only rejects — quality/urgency/impact/category
+    // minimums stay hard — so a thin news day deepens instead of shipping a stub. Floor is 8,
+    // not 6: the prompt-layer 选题边界 (script-write) drops policy items AFTER this gate (today
+    // 2 of 5), so the floor compensates upstream to land ~4-6 spoken items on a thin day.
+    minEpisodeItems: 8,
 };
 
 /** One QC_MIN_* threshold: an integer 0–5 or absent (→ fallback); anything else fails loud — never clamped. */
@@ -668,6 +677,17 @@ function parseFilterThreshold(raw: string | undefined, name: string, fallback: n
     if (!/^\d+$/.test(value)) throw new Error(`${name}='${raw}' is not an integer in 0–5 (fail loud, no clamping)`);
     const parsed = Number.parseInt(value, 10);
     if (parsed < 0 || parsed > 5) throw new Error(`${name}=${parsed} is outside 0–5 (fail loud, no clamping)`);
+    return parsed;
+}
+
+/** QC_MIN_EPISODE_ITEMS: a positive integer count or absent (→ fallback); anything else fails loud. */
+function parseFloorCount(raw: string | undefined, name: string, fallback: number): number {
+    if (raw === undefined || raw.trim() === '') return fallback;
+    const value = raw.trim();
+    if (!/^\d+$/.test(value)) throw new Error(`${name}='${raw}' is not a positive integer (fail loud, no clamping)`);
+    const parsed = Number.parseInt(value, 10);
+    if (parsed < 1)
+        throw new Error(`${name}=${parsed} must be >= 1 (a 0 floor disables the gate — drop the env instead)`);
     return parsed;
 }
 
@@ -697,6 +717,11 @@ export function filterConfigFromEnv(env: Record<string, string | undefined> = pr
         ),
         minUrgency: parseFilterThreshold(env.QC_MIN_URGENCY, 'QC_MIN_URGENCY', DEFAULT_FILTER_CONFIG.minUrgency),
         minImpact: parseFilterThreshold(env.QC_MIN_IMPACT, 'QC_MIN_IMPACT', DEFAULT_FILTER_CONFIG.minImpact),
+        minEpisodeItems: parseFloorCount(
+            env.QC_MIN_EPISODE_ITEMS,
+            'QC_MIN_EPISODE_ITEMS',
+            DEFAULT_FILTER_CONFIG.minEpisodeItems,
+        ),
     };
 }
 
@@ -749,6 +774,53 @@ export function filterAnnotated(docs: Doc[], config: FilterConfig): { kept: Doc[
     return { kept, rejected };
 }
 
+function importanceOf(doc: Doc): number {
+    const scores = asRecord(asRecord(doc.metadata).scores);
+    return typeof scores.importance === 'number' ? scores.importance : 0;
+}
+
+function planScoreOf(doc: Doc): number {
+    const value = asRecord(doc.metadata).planScore;
+    return typeof value === 'number' ? value : 0;
+}
+
+/**
+ * Episode floor (20261002): when the strict filter leaves fewer than `minEpisodeItems` docs,
+ * backfill from rejects that failed ONLY the importance minimum — importance is the source-tier
+ * base (tail sources carry 2), so on a thin day it is the softest dimension, while quality/
+ * urgency/impact/category stay hard gates. Admission order: importance desc, planScore desc,
+ * plan order. Admitted docs are stamped `metadata.backfilled: true` and leave the rejected
+ * audit (they are spoken, not dropped). Pure: input docs are never mutated.
+ */
+export function backfillToFloor(
+    kept: Doc[],
+    rejected: RejectedDoc[],
+    config: FilterConfig,
+): { kept: Doc[]; rejected: RejectedDoc[]; admitted: Doc[] } {
+    if (kept.length >= config.minEpisodeItems) return { kept, rejected, admitted: [] };
+    const eligible = rejected
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry.reasons.length > 0 && entry.reasons.every((r) => r.startsWith('importance:')));
+    eligible.sort((a, b) => {
+        const byImportance = importanceOf(b.entry.doc) - importanceOf(a.entry.doc);
+        if (byImportance !== 0) return byImportance;
+        const byPlanScore = planScoreOf(b.entry.doc) - planScoreOf(a.entry.doc);
+        if (byPlanScore !== 0) return byPlanScore;
+        return a.index - b.index;
+    });
+    const taken = eligible.slice(0, config.minEpisodeItems - kept.length);
+    const takenIds = new Set(taken.map(({ entry }) => entry.doc.id));
+    const admitted = taken.map(({ entry }) => ({
+        ...entry.doc,
+        metadata: { ...asRecord(entry.doc.metadata), backfilled: true },
+    }));
+    return {
+        kept: [...kept, ...admitted],
+        rejected: rejected.filter((entry) => !takenIds.has(entry.doc.id)),
+        admitted,
+    };
+}
+
 /** Sibling rejected-audit path: `<out>.json` → `<out>.rejected.json` (candidates.json → candidates.rejected.json). */
 export function rejectedOutPath(outputPath: string): string {
     return outputPath.endsWith('.json')
@@ -792,9 +864,15 @@ async function processFilterIO(inputPath: string, outputPath: string): Promise<C
     const config = filterConfigFromEnv();
     const docs = DocListSchema.parse(await readJsonFile(inputPath));
     const { kept, rejected } = filterAnnotated(docs, config);
-    const content = planContent(kept, resolvePlanDate());
+    const filled = backfillToFloor(kept, rejected, config);
+    if (filled.admitted.length > 0) {
+        echoError(
+            `episode floor backfill: admitted ${filled.admitted.length} importance-only reject(s) to reach ${config.minEpisodeItems} items (${filled.admitted.map((d) => d.id).join(', ')})`,
+        );
+    }
+    const content = planContent(filled.kept, resolvePlanDate());
     await atomicWrite(outputPath, content);
-    await atomicWrite(rejectedOutPath(outputPath), { rejected, config, total: docs.length });
+    await atomicWrite(rejectedOutPath(outputPath), { rejected: filled.rejected, config, total: docs.length });
     return content;
 }
 

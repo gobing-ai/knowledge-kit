@@ -3,6 +3,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Content, Doc } from '@gobing-ai/kk-core';
 import {
+    backfillToFloor,
     type Category,
     classifyCategory,
     cleanBody,
@@ -629,12 +630,20 @@ describe('filter mode (--mode filter, 0094)', () => {
         minImportance: 3,
         minUrgency: 2,
         minImpact: 1,
+        minEpisodeItems: 8,
     };
     const annotated = (category: string, scores: Record<string, number>, extra: Partial<Doc> = {}): Doc =>
         doc({ ...extra, metadata: { source: 'aihot', ...(extra.metadata ?? {}), category, scores } });
 
     async function withQcEnv(overrides: Record<string, string | undefined>, fn: () => Promise<unknown>): Promise<void> {
-        const names = ['QC_CATEGORIES', 'QC_MIN_QUALITY', 'QC_MIN_IMPORTANCE', 'QC_MIN_URGENCY', 'QC_MIN_IMPACT'];
+        const names = [
+            'QC_CATEGORIES',
+            'QC_MIN_QUALITY',
+            'QC_MIN_IMPORTANCE',
+            'QC_MIN_URGENCY',
+            'QC_MIN_IMPACT',
+            'QC_MIN_EPISODE_ITEMS',
+        ];
         const prev = names.map((name) => [name, process.env[name]] as const);
         try {
             for (const [name] of prev) {
@@ -705,6 +714,7 @@ describe('filter mode (--mode filter, 0094)', () => {
             minImportance: 3,
             minUrgency: 2,
             minImpact: 5,
+            minEpisodeItems: 8,
         });
     });
 
@@ -720,6 +730,68 @@ describe('filter mode (--mode filter, 0094)', () => {
             expect(result.kept).toHaveLength(0);
             expect(result.rejected[0]?.reasons).toEqual([`${dim}:${atMins[dim] - 1}<${atMins[dim]}`]);
         }
+    });
+
+    test('backfillToFloor — floor met leaves kept/rejected untouched', () => {
+        const config = filterConfigFromEnv({});
+        const kept = [annotated('ai-news', atMins, { id: 'k1' }), annotated('ai-news', atMins, { id: 'k2' })];
+        const result = backfillToFloor(kept, [], { ...config, minEpisodeItems: 2 });
+        expect(result.admitted).toHaveLength(0);
+        expect(result.kept).toBe(kept);
+    });
+
+    test('backfillToFloor — importance-only rejects admitted strongest-first, stamped backfilled, dropped from the rejected audit', () => {
+        const config = filterConfigFromEnv({});
+        const kept = [annotated('ai-news', atMins, { id: 'k1' })];
+        const importanceOnly = (id: string, importance: number, planScore: number): Doc =>
+            annotated('ai-news', { ...atMins, importance }, { id, metadata: { source: 'tail', planScore } });
+        const {
+            kept: filled,
+            rejected,
+            admitted,
+        } = backfillToFloor(
+            kept,
+            [
+                { doc: importanceOnly('weak-score', 2, 10), reasons: ['importance:2<3'] },
+                { doc: importanceOnly('strong', 2, 90), reasons: ['importance:2<3'] },
+                { doc: importanceOnly('higher-imp', 4, 5), reasons: ['importance:4<3'] },
+                {
+                    doc: annotated('ai-news', { ...atMins, quality: 1 }, { id: 'bad-quality' }),
+                    reasons: ['quality:1<2', 'importance:2<3'],
+                },
+                { doc: annotated('non-ai', atMins, { id: 'bad-cat' }), reasons: ['category:not-in-allowlist'] },
+            ],
+            { ...config, minEpisodeItems: 3 },
+        );
+        // higher importance first, then planScore desc among equal importance; non-importance-only rejects never admitted.
+        expect(filled.map((d) => d.id)).toEqual(['k1', 'higher-imp', 'strong']);
+        expect(admitted.map((d) => d.id)).toEqual(['higher-imp', 'strong']);
+        for (const doc of admitted) {
+            expect((doc.metadata as Record<string, unknown>).backfilled).toBe(true);
+        }
+        expect(rejected.map((r) => r.doc.id)).toEqual(['weak-score', 'bad-quality', 'bad-cat']);
+    });
+
+    test('backfillToFloor — best effort when the eligible pool is smaller than the floor gap', () => {
+        const config = filterConfigFromEnv({});
+        const { kept, admitted } = backfillToFloor(
+            [annotated('ai-news', atMins, { id: 'k1' })],
+            [
+                {
+                    doc: annotated('ai-news', { ...atMins, importance: 2 }, { id: 'only-one' }),
+                    reasons: ['importance:2<3'],
+                },
+            ],
+            { ...config, minEpisodeItems: 8 },
+        );
+        expect(kept.map((d) => d.id)).toEqual(['k1', 'only-one']);
+        expect(admitted).toHaveLength(1);
+    });
+
+    test('QC_MIN_EPISODE_ITEMS — parses a floor, fails loud on non-integer/zero', () => {
+        expect(filterConfigFromEnv({ QC_MIN_EPISODE_ITEMS: '4' }).minEpisodeItems).toBe(4);
+        expect(() => filterConfigFromEnv({ QC_MIN_EPISODE_ITEMS: 'abc' })).toThrow(/QC_MIN_EPISODE_ITEMS/);
+        expect(() => filterConfigFromEnv({ QC_MIN_EPISODE_ITEMS: '0' })).toThrow(/QC_MIN_EPISODE_ITEMS/);
     });
 
     test('category allowlist — QC_CATEGORIES=ai-news drops non-ai categories with reasons recorded', () => {
@@ -963,6 +1035,7 @@ describe('filter replay on the real r6 plan output (0094 verify)', () => {
             minImportance: 0,
             minUrgency: 0,
             minImpact: 0,
+            minEpisodeItems: 8,
         };
         const { kept, rejected } = filterAnnotated(plan, permissive);
         expect(rejected).toHaveLength(0);
