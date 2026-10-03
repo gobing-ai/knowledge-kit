@@ -1684,6 +1684,54 @@ function dailyGenerate(args: string[]): void {
  * `intro_music` empty -> skip. Writes `<stem>.intro.wav` (original render kept), points
  * `audioPath` at the merged file, extends `duration`, marks `introMerged` (idempotent).
  */
+/**
+ * Episode duration gate (standing requirement, 20261002): a daily episode must run 15–20 minutes
+ * (duration is authoritative; the 8–10-item figure is only an estimate). Reads the final audio
+ * content's `metadata.duration` — after the intro sting merged, this is the true episode length —
+ * and fails loud outside `[min, max]` seconds-worth of minutes. A missing duration is a failure,
+ * not a pass: the gate must never silently let an under-length episode through again.
+ */
+function dailyEpisodeDuration(args: string[]): void {
+    const [workDir = '', runDate = '', minArg = '', maxArg = ''] = args;
+    if (!workDir) fail('missing work_dir');
+    if (!runDate) fail('missing run_date');
+    const minMinutes = Number(minArg);
+    const maxMinutes = Number(maxArg);
+    if (!Number.isFinite(minMinutes) || minMinutes <= 0) fail(`invalid min_minutes: ${minArg || '(empty)'}`);
+    if (!Number.isFinite(maxMinutes) || maxMinutes < minMinutes) fail(`invalid max_minutes: ${maxArg || '(empty)'}`);
+    const contentPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+    if (!isFile(contentPath)) failWith(1, `episode-duration: audio content not found: ${contentPath}`);
+    let raw: unknown;
+    try {
+        const parsed = JSON.parse(readFileSync(contentPath, 'utf-8')) as { metadata?: { duration?: unknown } };
+        raw = parsed.metadata?.duration;
+    } catch (error) {
+        if ((error as { code?: string }).code !== undefined) {
+            sted('read', contentPath, () => readFileSync(contentPath, 'utf-8'));
+        }
+        raw = undefined;
+    }
+    const seconds = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        failWith(1, `episode-duration: audio metadata.duration missing or not a number in ${contentPath}`);
+    }
+    const minutes = seconds / 60;
+    const shown = minutes.toFixed(1);
+    if (minutes < minMinutes) {
+        failWith(
+            1,
+            `episode-duration: episode runs ${shown} min, below the ${minMinutes}–${maxMinutes} min requirement (duration is authoritative). The candidate pool is too thin — deepen per-item treatment or add items; do not ship a short episode silently.`,
+        );
+    }
+    if (minutes > maxMinutes) {
+        failWith(
+            1,
+            `episode-duration: episode runs ${shown} min, above the ${minMinutes}–${maxMinutes} min requirement. Trim items or per-item treatment.`,
+        );
+    }
+    console.log(`episode-duration ok: ${shown} min within ${minMinutes}–${maxMinutes} min`);
+}
+
 function dailyIntro(args: string[]): void {
     const [workDir = '', runDate = '', introSrc = ''] = args;
     if (!introSrc || introSrc.trim() === '') {
@@ -2525,6 +2573,9 @@ if (import.meta.main)
             break;
         case 'daily-intro':
             dailyIntro(rest);
+            break;
+        case 'daily-episode-duration':
+            dailyEpisodeDuration(rest);
             break;
         case 'daily-quality-report':
             dailyQualityReport(rest);

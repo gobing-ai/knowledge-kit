@@ -397,3 +397,53 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 });
+
+describe('daily-episode-duration stage — 15–20 min standing gate', () => {
+    const mkAudio = (dir: string, duration: unknown) => {
+        const d = join(dir, '30-audio');
+        mkdirSync(d, { recursive: true });
+        writeFileSync(join(d, `${STAMP}_11_generate_content.json`), JSON.stringify({ metadata: { duration } }));
+    };
+
+    it('fails loud below the min bound', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-duration-'));
+        mkAudio(dir, 495); // today's pre-fix episode: 8.25 min
+        const result = runStage(['daily-episode-duration', dir, STAMP, '15', '20']);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('8.3');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('fails loud above the max bound', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-duration-'));
+        mkAudio(dir, 1500);
+        expect(runStage(['daily-episode-duration', dir, STAMP, '15', '20']).status).not.toBe(0);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('passes inside the window and accepts numeric-string durations', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-duration-'));
+        mkAudio(dir, '980.5');
+        const result = runStage(['daily-episode-duration', dir, STAMP, '15', '20']);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('16.3');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('fails loud on missing duration, missing audio, and invalid bounds', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-duration-'));
+        mkAudio(dir, undefined);
+        expect(runStage(['daily-episode-duration', dir, STAMP, '15', '20']).status).not.toBe(0);
+        rmSync(dir, { recursive: true, force: true });
+
+        const dir2 = mkdtempSync(join(tmpdir(), 'kk-duration-'));
+        expect(runStage(['daily-episode-duration', dir2, STAMP, '15', '20']).status).not.toBe(0);
+        rmSync(dir2, { recursive: true, force: true });
+
+        const dir3 = mkdtempSync(join(tmpdir(), 'kk-duration-'));
+        mkAudio(dir3, 980);
+        expect(runStage(['daily-episode-duration', dir3, STAMP, '', '20']).status).not.toBe(0);
+        expect(runStage(['daily-episode-duration', dir3, STAMP, '20', '15']).status).not.toBe(0);
+        rmSync(dir3, { recursive: true, force: true });
+    });
+});

@@ -119,6 +119,11 @@ vars:
   # drops land AFTER this gate (lossy upstream compensation). Moves in lockstep with
   # DEFAULT_FILTER_CONFIG.minEpisodeItems (env wins).
   qc_min_episode_items: "8"
+  # Standing requirement (20261002, operator): episodes run 15–20 minutes; duration is
+  # authoritative and the 8–10-item figure is only an estimate. Enforced by the
+  # episode-duration stage after intro-music (fail loud outside the window).
+  episode_min_minutes: "15"
+  episode_max_minutes: "20"
   __hitlAnswer: ""
 
 states:
@@ -187,7 +192,7 @@ states:
           # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a adds the copy discipline).
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
-            For items with needsTranslation, translate "title", "body", and "metadata.brief" (when present) into natural simplified Chinese.
+            For items with needsTranslation, adapt "title", "body", and "metadata.brief" (when present) into natural spoken simplified Chinese. Full-coverage adaptation, not a summary: every fact, number, name, quote and hedge in the source body must survive into the Chinese text (口播全长改编，不摘要不省略)。Target body length ≈ 0.6–0.7 × source character count.
             Titles read as a news event (subject + action + object) — e.g. "OpenAI 发布 Sora 应用，集成 Sora 2 模型". Keep product/model/company names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
             Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
             Keep other fields (id, sourceUri, mediaType, metadata), technical terms as-is; no trailing commas or comments.
@@ -272,6 +277,7 @@ states:
           input: |
             Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps and banned phrases.
             For each doc write a `lead` (a spoken bridge, not containing the title) and an `insight` (grounded only in that doc's facts: keep its numbers and hedges（据报道）, add no new degree words like「高预算穷举」).
+            Episode design target: 15–20 minutes total speech; size the script by driver rate — gemini ≈3.3 chars/s (正文约 4300–5800 字), Voicebox robin-news ≈6.3 chars/s (正文约 5700–7600 字). Write insights at the style cap — unpack the item's own facts (mechanism → why it matters → practical angle), 3–6 sentences.
             intro/outro hook only in-scope items; no greeting or sign-off — the builder adds both. 选题边界：政治/外交、贸易管制、军事、公共政策争议、社会公共事件条目绝不复述；读文章 22-article/*_06_article-write_body.md，其文末注记点名的 id 一并进 excluded，各配中文原因。
             Output only JSON {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}],"excluded":[{"id":"…","reason":"…"}]} to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json. Exactly one `items` entry per doc not in `excluded`.
           expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
@@ -361,6 +367,14 @@ states:
         options:
           command: >-
             kk stage daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
+
+  - id: episode-duration
+    description: "Fail loud unless final episode duration sits in the 15–20 min window (duration authoritative)"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}"
 
   - id: quality-control
     description: "Verify audio quality, speech rate, and silence/repetition QC metrics"
@@ -721,8 +735,14 @@ transitions:
       kind: always
 
   - from: intro-music
+    to: episode-duration
+    description: "Intro merged -> gate final episode duration (15–20 min, standing requirement)"
+    guard:
+      kind: always
+
+  - from: episode-duration
     to: quality-control
-    description: "Intro merged -> run quality control validation"
+    description: "Duration within window -> run quality control validation"
     guard:
       kind: always
 
