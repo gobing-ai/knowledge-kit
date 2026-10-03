@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -360,6 +360,23 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         const dir = setup(OK_REPORT, PASS_VERDICT);
         writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: [edited]\n');
         expect(gate(dir)).toStartWith('block|');
+    });
+
+    it('a quality-verdict block quarantines the drafts (mv, not rm) while verdict artifacts stay; a digest-mismatch block keeps them', () => {
+        const dir = setup(OK_REPORT, { verdict: 'FAIL' });
+        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+        const q = join(dir, '24-script', `.quarantine-${STAMP}-judge-block`);
+        expect(existsSync(join(q, `${STAMP}_06_article_content.json`))).toBe(true);
+        expect(existsSync(join(q, `${STAMP}_08_script_voicescript.yaml`))).toBe(true);
+        expect(() => readFileSync(at(dir, 'safety-review_report.json'))).not.toThrow();
+        // A digest-mismatch block is a deliberate HITL edit: the drafts stay put for re-review.
+        const dir2 = setup(OK_REPORT, PASS_VERDICT);
+        writeFileSync(join(dir2, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: [edited]\n');
+        expect(runStage(['daily-safety-gate', dir2, STAMP]).status).toBe(0);
+        expect(readFileSync(at(dir2, 'safety-judge_status.txt'), 'utf-8')).toBe('block');
+        expect(existsSync(join(dir2, '24-script', `${STAMP}_08_script_voicescript.yaml`))).toBe(true);
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(dir2, { recursive: true, force: true });
     });
 
     it('re-running prep drops the previous report, verdict and stamp, so a retry must be re-reviewed', () => {

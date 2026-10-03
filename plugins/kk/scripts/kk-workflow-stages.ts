@@ -1524,14 +1524,19 @@ function safetyPath(workDir: string, runDate: string, name: string): string {
  */
 function safetyDigest(workDir: string, runDate: string): string {
     const hash = createHash('sha256');
-    for (const path of [
-        join(workDir, '22-article', `${runDate}_06_article_content.json`),
-        join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`),
-    ]) {
+    for (const path of safetyDraftPaths(workDir, runDate)) {
         if (!isFile(path)) failWith(1, `safety-review: required draft not found: ${path}`);
         hash.update(readFileSync(path)).update('\0');
     }
     return hash.digest('hex');
+}
+
+/** The drafts under review — the digest's bytes, and the quarantine set on a quality block. */
+function safetyDraftPaths(workDir: string, runDate: string): [string, string] {
+    return [
+        join(workDir, '22-article', `${runDate}_06_article_content.json`),
+        join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`),
+    ];
 }
 
 /**
@@ -1581,8 +1586,14 @@ function dailySafetyGate(args: string[]): void {
         const digest = safetyDigest(workDir, runDate);
         let status = 'block';
         let reason = 'verdict PASS on unchanged drafts, no BLOCK/RISK';
-        if (request?.digest !== digest) reason = 'drafts changed after the review was requested';
-        else if (decisions.length === 0 || decisions.some((d) => d !== 'OK' && d !== 'RISK' && d !== 'BLOCK'))
+        // A digest-mismatch block means the drafts were deliberately edited (HITL): keep them so
+        // a re-run of safety-prep re-reviews the edited version. Any other block means the
+        // content itself is rejected — quarantine the drafts below.
+        let edited = false;
+        if (request?.digest !== digest) {
+            reason = 'drafts changed after the review was requested';
+            edited = true;
+        } else if (decisions.length === 0 || decisions.some((d) => d !== 'OK' && d !== 'RISK' && d !== 'BLOCK'))
             reason = 'content-safety report missing or malformed';
         else if (decisions.includes('BLOCK')) reason = 'content-safety report carries a BLOCK decision';
         else if (verdict?.verdict !== 'PASS')
@@ -1592,6 +1603,20 @@ function dailySafetyGate(args: string[]): void {
             reason = 'RISK decision or escalation — human review required';
         } else status = 'pass';
         if (status !== 'block') sted('write', stampFile, () => writeJsonText(stampFile, { digest, status }));
+        if (status === 'block' && !edited) {
+            // A quality block poisons the isFile() draft cache: every same-day retry would
+            // re-fail on unchanged bytes (20261002 dogfood — two judge-fail runs replayed until
+            // the drafts were moved by hand). Quarantine (mv, never rm) so the next run
+            // regenerates from scratch; the 09_* verdict artifacts stay in 24-script for audit.
+            const q = join(workDir, '24-script', `.quarantine-${runDate}-judge-block`);
+            mkdirSync(q, { recursive: true });
+            for (const path of safetyDraftPaths(workDir, runDate)) {
+                if (!isFile(path)) continue;
+                let dest = join(q, basename(path));
+                for (let n = 2; isFile(dest); n += 1) dest = join(q, `${n}-${basename(path)}`);
+                renameSync(path, dest);
+            }
+        }
         sted('write', statusFile, () => writeRaw(statusFile, status));
         console.log(`safety: status=${status} (${reason}); routing is transition-owned`);
     });
