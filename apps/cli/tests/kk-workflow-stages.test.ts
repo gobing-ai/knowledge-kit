@@ -67,7 +67,7 @@ function passSafety(dir: string, stamp: string): void {
     writeFileSync(join(dir, '24-script', `${stamp}_08_script_voicescript.yaml`), 'segments: []\n');
     run(['daily-safety-prep', dir, stamp, 'xiaoyuzhou']);
     writeFileSync(at('safety-review_report.json'), JSON.stringify({ platforms: [{ decision: 'OK' }] }));
-    writeFileSync(at('safety-judge_verdict.json'), JSON.stringify({ verdict: 'PASS' }));
+    writeFileSync(at('safety-judge_verdict.json'), JSON.stringify({ verdict: 'PASS', confidence: 'HIGH' }));
     run(['daily-safety-gate', dir, stamp]);
 }
 
