@@ -161,6 +161,9 @@ describe('daily-article-gen', () => {
         expect([...excludedIdsFromNote(note)]).toEqual(['b039f703ebf7885f', '3615960163537c76']);
         expect(excludedIdsFromNote('无注记正文').size).toBe(0);
         expect(excludedIdsFromNote(undefined).size).toBe(0);
+        expect([...excludedIdsFromNote('> 注：1 条条目因选题边界未写入：last30days:8eafcda5f3574372（版权）')]).toEqual(
+            ['last30days:8eafcda5f3574372', '8eafcda5f3574372'],
+        );
         const tmpDir = join(process.cwd(), '.tmp-test-daily-article-excluded');
         await mkdir(tmpDir, { recursive: true });
         const bodyPath = join(tmpDir, 'body.md');

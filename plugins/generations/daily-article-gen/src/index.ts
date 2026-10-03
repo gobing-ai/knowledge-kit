@@ -140,14 +140,18 @@ const LEADING_H1_RE = /^#(?!#)\s*[^\n]+\n+/.source;
 
 /** ids the article-write note marks as dropped on the topic boundary, e.g. 「…未写入：<id>（原因）、<id>（原因）」. */
 const NOTE_EXCLUDED_RE = /未写入[：:](.*)/g;
-const HEX_ID_RE = /[0-9a-f]{16}/g;
+const HEX_ID_RE = /(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16}/g;
 
 /** Parse the boundary-note ids out of an article body so references/metadata never cite excluded docs (judge finding 2026-10-02). */
 export function excludedIdsFromNote(body: string | undefined): Set<string> {
     const ids = new Set<string>();
     if (!body) return ids;
     for (const note of body.matchAll(NOTE_EXCLUDED_RE)) {
-        for (const id of (note[1] ?? '').matchAll(HEX_ID_RE)) ids.add(id[0]);
+        for (const id of (note[1] ?? '').matchAll(HEX_ID_RE)) {
+            ids.add(id[0]);
+            const colon = id[0].indexOf(':');
+            if (colon !== -1) ids.add(id[0].slice(colon + 1));
+        }
     }
     return ids;
 }
@@ -187,7 +191,13 @@ export async function processGeneratorIO(inputPath: string, outputPath: string):
         if (bodyOverride.trim() === '') bodyOverride = undefined;
     }
     const excluded = excludedIdsFromNote(bodyOverride);
-    const kept = excluded.size === 0 ? docs : docs.filter((d) => !excluded.has(d.id));
+    const kept =
+        excluded.size === 0
+            ? docs
+            : docs.filter(
+                  (d) =>
+                      !excluded.has(d.id) && !(d.id.includes(':') && excluded.has(d.id.slice(d.id.indexOf(':') + 1))),
+              );
     const content = docsToContent(kept, date, bodyOverride);
     const fs = createNodeFileSystem();
     const outDir = dirname(outputPath);

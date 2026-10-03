@@ -1964,7 +1964,11 @@ function dailyShowNotes(args: string[]): void {
         const excluded = new Set<string>();
         if (typeof articleBody === 'string') {
             for (const note of articleBody.matchAll(/未写入[：:](.*)/g)) {
-                for (const id of note[1].matchAll(/[0-9a-f]{16}/g)) excluded.add(id[0]);
+                for (const id of note[1].matchAll(/(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16}/g)) {
+                    excluded.add(id[0]);
+                    const colon = id[0].indexOf(':');
+                    if (colon !== -1) excluded.add(id[0].slice(colon + 1));
+                }
             }
         }
         let planIn = plan;
@@ -1976,7 +1980,13 @@ function dailyShowNotes(args: string[]): void {
                         !(
                             d !== null &&
                             typeof d === 'object' &&
-                            excluded.has(String((d as Record<string, unknown>).id))
+                            (excluded.has(String((d as Record<string, unknown>).id)) ||
+                                (String((d as Record<string, unknown>).id).includes(':') &&
+                                    excluded.has(
+                                        String((d as Record<string, unknown>).id).slice(
+                                            String((d as Record<string, unknown>).id).indexOf(':') + 1,
+                                        ),
+                                    )))
                         ),
                 );
                 if (kept.length !== parsed.length) {
