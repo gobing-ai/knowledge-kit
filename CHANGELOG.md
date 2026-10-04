@@ -1,3 +1,60 @@
+## [0.0.30] - 2026-10-04
+
+### Added
+
+- feat(executor): overlap fan-out targets instead of dispatching them in series (eb0c6bd9)
+- feat(xhs): shorten the automation window from 24h to 2h (ADR-025 amendment) (69811801)
+- feat(safety): require HIGH/MEDIUM/LOW confidence in every judge-verdict gate (c261d781)
+- feat(safety): verify HIGH/MEDIUM/LOW confidence level on the safety-judge verdict (31c4cc2e)
+- feat(daily): standing 15-20 min episode-duration gate with per-driver voice rates (d4d79f2f)
+- feat(article-gen): fixed episode title AI 乱炖 · YYYY-MM-DD (fdb25538)
+- feat(qc): episode floor backfills importance-only rejects on thin news days (a690cc58)
+- feat(kk): quarantine judge-blocked drafts so a blocked run cannot stale-replay (2fef4adb)
+- feat(image-gen): honour declared preset canvas on capable providers and record delivered size (0182) (95138490)
+
+### Fixed
+
+- fix(daily): report publish-tail completeness so a skipped channel cannot hide (59f7df5f)
+- fix(safety): fail itc-report when a PASS carries no valid confidence (ef06cfab)
+- fix(safety): stamp a confidence level in the publish-prep test fixture (57f80049)
+- fix(daily): keep workflow prompts under the ADR-115 cap and repair duration-gate fixtures (92472142)
+- fix(daily): match prefixed doc ids in show-note exclusions (73311e6b)
+- fix(cli): reap timeout grandchildren via process-group kill, not pgrep alone (7e08ef24)
+- fix(daily): ban source-free degree words in article/script prompts (judge claims warn) (4860e9e2)
+- fix(daily): filter boundary-excluded docs from article references and show notes (9acd5103)
+- fix(daily): propagate boundary-excluded docs from plan to script gate (c250c377)
+
+### Changed
+
+- refactor(plugins): drop vendored sp scripts for the installed pinned verifier (0175) (53c498f7)
+- test(safety): cover TS verdict readers in the confidence consumer scan (721ce476)
+- test(safety): execute the real judge guards against the confidence contract (1468cab1)
+- test(image-gen): verify PresetSource.confidence enum (high/medium/low) (31865d43)
+- chore(merge): integrate 0175 vendored-script removal into main (ba3a2c81)
+- docs(tasks): updat tasks after refinment (6a51da50)
+- docs(wrap): 0182 wrap-up — doc-sync, learnings, metrics, feature status (c81118bf)
+
+<!--
+Verification (2026-10-04, sp-dev-changelog): HIGH
+- Coverage: 25 bullets = 25 commits in @gobing-ai/knowledge-kit-v0.0.29..HEAD (24 non-merge + the 0175
+  integration merge ba3a2c81), each short hash exactly once.
+- Mapping: feat->Added 9, fix->Fixed 9, docs/test/refactor/chore(merge)->Changed 7, unrecognized->Other 0.
+  Header [0.0.30] - 2026-10-04 matches --version 0.0.30 and `date +%F`.
+- Source citations for behaviour claims that go beyond a commit summary (checked against the tree, not memory):
+  - engine executes one node at a time (eb0c6bd9): docs/03_ARCHITECTURE.md:105; concurrency lives in
+    apps/cli/src/fanout.ts:150 (`fanout()`), the same split ADR-019 made for fan-in.
+  - ADR-025 window is 2 h (69811801): plugins/publishings/xhs-pub/src/automation-guard.ts:36
+    (`CAP_WINDOW_MS = 2 * 60 * 60 * 1000`).
+  - ADR-115 prompt cap (92472142): apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:236-239 asserts the
+    1000-char error tier for plan-translate/cover prompts.
+  - 0175 installed-verifier migration (53c498f7, ba3a2c81): installed spur 0.3.99
+    (/Users/robin/node_modules/@gobing-ai/spur/package.json), staged sp plugin 0.5.13
+    (/Users/robin/.agents/scripts/sp/.superskill-stamp.json), repeatable check scripts/verify-sp-install.ts.
+  - Remaining bullets cite their own diff as primary source; scopes spot-checked with `git show --stat`.
+- Confidence: HIGH — coverage and mapping reconcile against git; every claim that asserts installed
+  tool/library behaviour cites an installed path or a checked-in file, none rests on recollection.
+-->
+
 ## [0.0.29] - 2026-10-02
 
 ### Added
