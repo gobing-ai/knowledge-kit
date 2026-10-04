@@ -2134,7 +2134,22 @@ function dailyPublishClassify(args: string[]): void {
         const status = okCount > 0 && okCount === total ? 'full' : okCount > 0 ? 'partial' : 'none';
         sted('write', result, () => writeJqText(result, { ok: okCount === total && total > 0, targets }));
         sted('write', statusFile, () => writeRaw(statusFile, status));
+        const completeness = publishCompleteness(workDir, runDate);
+        const completenessFile = join(workDir, '31-publish', `${runDate}_17_publish_completeness.json`);
+        sted('write', completenessFile, () => writeJqText(completenessFile, { runDate, ...completeness }));
         console.log(`publish: status=${status} (${okCount}/${total} targets published); routing is transition-owned`);
+        console.log(`publish-completeness: ${completeness.rows.map((row) => `${row.channel}=${row.state}`).join(' ')}`);
+        if (completeness.missing.length > 0) {
+            const details = completeness.rows
+                .filter((row) => row.state !== 'done')
+                .map((row) => `${row.channel}=${row.state}${row.detail === '' ? '' : ` (${row.detail})`}`)
+                .join('; ');
+            console.error(
+                `WARNING: publish completeness — ${completeness.missing.join(', ')} did not complete: ${details}. ` +
+                    'Independent channels never enter publish_status; re-run their stages for this work dir (see ' +
+                    `${completenessFile})`,
+            );
+        }
     });
 }
 
@@ -2143,6 +2158,59 @@ function targetsOf(path: string): Record<string, unknown>[] {
     return Array.isArray(targets)
         ? (targets.filter((entry) => entry !== null && typeof entry === 'object') as Record<string, unknown>[])
         : [];
+}
+
+/**
+ * The publish tail's independent channels (locales, XHS, WeChat) and the surfdash CMS re-sync never
+ * enter `publish_status` — they are non-blocking by design (ADR-022/025/026). That is also why a
+ * tail driven by hand can skip every one of them and still leave a `full` status file behind:
+ * 20261002 shipped zh-only surfdash with no XHS and no WeChat draft, and nothing in the run's own
+ * artifacts said so. Record each channel's state beside the status file so the gap is visible.
+ */
+function publishCompleteness(
+    workDir: string,
+    runDate: string,
+): { rows: { channel: string; state: string; detail: string }[]; missing: string[] } {
+    const at = (name: string): string => join(workDir, '31-publish', `${runDate}_${name}`);
+    const markerFilled = (path: string): boolean => isFile(path) && readFileSync(path, 'utf-8').trim() !== '';
+    const rows: { channel: string; state: string; detail: string }[] = [];
+    const localesDone = ['en', 'ja'].every((locale) =>
+        markerFilled(at(`20_translate-localize_${locale}-post-path.txt`)),
+    );
+    rows.push({
+        channel: 'locales',
+        state: localesDone ? 'done' : 'not-run',
+        detail: localesDone ? 'en/ja drafts scaffolded' : 'translate markers absent (en/ja never scaffolded)',
+    });
+    const resultChannels: [string, string, string][] = [
+        ['xhs', '19_publish-xhs_result.json', ''],
+        ['wechat', '20_publish-wechat_result.json', ''],
+        ['cms-resync', '23_patch-surfdash_sync-result.json', '23_patch-surfdash_emdash-resync.txt'],
+    ];
+    for (const [channel, resultName, skipMarkerName] of resultChannels) {
+        const result = isFile(at(resultName)) ? readJson(at(resultName)) : null;
+        if (result !== null) {
+            const metadata = (result.metadata ?? {}) as Record<string, unknown>;
+            rows.push({
+                channel,
+                state: result.ok === true ? 'done' : 'failed',
+                detail:
+                    result.ok === true
+                        ? typeof metadata.publishStatus === 'string'
+                            ? metadata.publishStatus
+                            : 'ok'
+                        : String(result.error ?? 'ok=false'),
+            });
+            continue;
+        }
+        const skipMarker = skipMarkerName === '' ? '' : at(skipMarkerName);
+        rows.push(
+            skipMarker !== '' && isFile(skipMarker)
+                ? { channel, state: 'skipped', detail: readFileSync(skipMarker, 'utf-8').trim() }
+                : { channel, state: 'not-run', detail: 'no result artifact' },
+        );
+    }
+    return { rows, missing: rows.filter((row) => row.state !== 'done').map((row) => row.channel) };
 }
 
 function dailyPublishPartial(args: string[]): void {
@@ -2284,6 +2352,11 @@ function dailyPatchSurfdash(args: string[]): void {
         // changed===0 early-return so re-runs heal rows an earlier commit left stale
         // (20260925/20260929). Fixture tests pass no plugins-path and must not shell out.
         if (pluginsPath === '') {
+            // A missing plugins-path silently drops the CMS re-sync, and the CMS cards then keep the
+            // pre-patch `./assets/cover.png` the deployed worker cannot serve (20261002 lost its
+            // cover this way). Leave a marker for the classify step's completeness report.
+            const skipMarker = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_emdash-resync.txt`);
+            sted('write', skipMarker, () => writeRaw(skipMarker, 'skipped: no plugins-path\n'));
             console.log('patch-surfdash: no plugins-path — skip emdash re-sync');
         } else {
             const syncIn = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync.json`);

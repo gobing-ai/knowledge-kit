@@ -575,6 +575,111 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    // 20261002: the publish tail was driven by hand, so the independent channels (locales, XHS,
+    // WeChat) and the CMS re-sync never ran — and nothing in the run's own artifacts said so. The
+    // classify step now records their state beside the status file; publish_status is unchanged
+    // (these targets stay non-blocking by design).
+    describe('daily-publish-classify publish completeness', () => {
+        const stamp = '20260101';
+        const seeded = (dir: string): string => {
+            const publish = join(dir, '31-publish');
+            mkdirSync(publish, { recursive: true });
+            writeFileSync(
+                join(publish, `${stamp}_14_publish-surfdash_result.json`),
+                JSON.stringify({ ok: true, targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] }),
+            );
+            writeFileSync(
+                join(publish, `${stamp}_16_publish-podcast_result.json`),
+                JSON.stringify({ ok: true, targets: [{ target: 'podcast-pub', ok: true, status: 'published' }] }),
+            );
+            return publish;
+        };
+        const completenessOf = (publish: string): { missing: string[]; rows: { channel: string; state: string }[] } =>
+            JSON.parse(readFileSync(join(publish, `${stamp}_17_publish_completeness.json`), 'utf-8'));
+
+        it('names every channel a hand-driven tail skipped, without touching publish_status', () => {
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                const res = run(['daily-publish-classify', dir, stamp]);
+                expect(res.status, res.stderr).toBe(0);
+                expect(readFileSync(join(publish, `${stamp}_17_publish_publish-status.txt`), 'utf-8')).toBe('full');
+                const completeness = completenessOf(publish);
+                expect(completeness.missing).toEqual(['locales', 'xhs', 'wechat', 'cms-resync']);
+                expect(completeness.rows.map((row) => `${row.channel}=${row.state}`)).toEqual([
+                    'locales=not-run',
+                    'xhs=not-run',
+                    'wechat=not-run',
+                    'cms-resync=not-run',
+                ]);
+                expect(res.stderr).toContain('publish completeness');
+                expect(res.stderr).toContain('wechat');
+            });
+        });
+
+        it('records done, a named failure and the CMS skip marker', () => {
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                for (const locale of ['en', 'ja']) {
+                    writeFileSync(
+                        join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
+                        `/sd/content/posts/articles/${locale}/x/index.md`,
+                    );
+                }
+                writeFileSync(
+                    join(publish, `${stamp}_19_publish-xhs_result.json`),
+                    JSON.stringify({ ok: true, target: 'xhs', metadata: { publishStatus: 'draft' } }),
+                );
+                writeFileSync(
+                    join(publish, `${stamp}_20_publish-wechat_result.json`),
+                    JSON.stringify({ ok: false, target: 'wechatmp', error: 'console session preflight failed' }),
+                );
+                writeFileSync(
+                    join(publish, `${stamp}_23_patch-surfdash_emdash-resync.txt`),
+                    'skipped: no plugins-path\n',
+                );
+                const res = run(['daily-publish-classify', dir, stamp]);
+                expect(res.status, res.stderr).toBe(0);
+                const completeness = completenessOf(publish);
+                expect(completeness.rows.map((row) => `${row.channel}=${row.state}`)).toEqual([
+                    'locales=done',
+                    'xhs=done',
+                    'wechat=failed',
+                    'cms-resync=skipped',
+                ]);
+                expect(completeness.missing).toEqual(['wechat', 'cms-resync']);
+                expect(res.stderr).toContain('console session preflight failed');
+            });
+        });
+
+        it('reports nothing missing when the tail ran through end to end', () => {
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                for (const locale of ['en', 'ja']) {
+                    writeFileSync(
+                        join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
+                        `/sd/content/posts/articles/${locale}/x/index.md`,
+                    );
+                }
+                writeFileSync(
+                    join(publish, `${stamp}_19_publish-xhs_result.json`),
+                    JSON.stringify({ ok: true, target: 'xhs', metadata: { publishStatus: 'draft' } }),
+                );
+                writeFileSync(
+                    join(publish, `${stamp}_20_publish-wechat_result.json`),
+                    JSON.stringify({ ok: true, target: 'wechatmp', metadata: { publishStatus: 'draft' } }),
+                );
+                writeFileSync(
+                    join(publish, `${stamp}_23_patch-surfdash_sync-result.json`),
+                    JSON.stringify({ ok: true, target: 'surfdash' }),
+                );
+                const res = run(['daily-publish-classify', dir, stamp]);
+                expect(res.status, res.stderr).toBe(0);
+                expect(completenessOf(publish).missing).toEqual([]);
+                expect(res.stderr).not.toContain('publish completeness');
+            });
+        });
+    });
+
     it('daily-article passes ARTICLE_DATE (not ART_DATE) to the article plugin', () => {
         withTempDir((dir) => {
             const envDump = join(dir, 'env.json');

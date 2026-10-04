@@ -92,6 +92,18 @@ Convention-named artifacts:
 
 The workflow passes only the generic executor flags (`--in`, `--out`, optional `--plugins-path`).
 
+**Publish completeness.** The independent channels (en/ja locales, XHS, WeChat) and the surfdash CMS
+re-sync never enter `publish_status`, so a tail that skips them was indistinguishable from a complete
+run in every artifact the pipeline wrote — that is how 20261002 shipped zh-only surfdash with no XHS
+and no WeChat draft, with a `full` status file and no warning anywhere. `daily-publish-classify`
+therefore also writes `${run_date}_17_publish_completeness.json` (one row per channel:
+`done | failed | skipped | not-run` plus the recorded reason) and prints a
+`WARNING: publish completeness — …` line naming the gap; `daily-patch-surfdash` leaves a
+`${run_date}_23_patch-surfdash_emdash-resync.txt` marker when it skipped the CMS re-sync because no
+`plugins_path` was passed. These rows exist to catch a hand-driven tail: the workflow engine cannot
+start mid-graph, so the publish half of a run whose launch had `publish_enabled=false` is sometimes
+driven stage by stage, and every channel the operator's chain omits is invisible otherwise.
+
 ## 5. Stage ownership (0133, ADR-115)
 
 
