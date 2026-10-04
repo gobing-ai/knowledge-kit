@@ -73,13 +73,42 @@ describe('itc-outline-pick (0149)', () => {
 describe('itc-report (0149)', () => {
     it('writes report.json {outcome, verdict, revisions} and report.md for a passing run', () => {
         const workDir = seedWorkDir();
-        writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS', feedback: [] }));
+        writeFileSync(
+            join(workDir, '.itc-verdict.json'),
+            JSON.stringify({ verdict: 'PASS', confidence: 'HIGH', feedback: [] }),
+        );
         writeFileSync(join(workDir, '.auto-revise-count'), '1\n');
         const res = run(['itc-report', workDir, '2']);
         expect(res.status, res.stderr).toBe(0);
         const report = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
         expect(report).toEqual({ outcome: 'done', verdict: 'PASS', revisions: 1 });
         expect(readFileSync(join(workDir, '5-report/report.md'), 'utf-8')).toContain('Outcome: done');
+    });
+
+    it('marks a PASS without a HIGH/MEDIUM/LOW confidence failed — the judge gate never cleared', () => {
+        for (const confidence of [undefined, 'SURE', 'high', 1]) {
+            const workDir = seedWorkDir();
+            writeFileSync(
+                join(workDir, '.itc-verdict.json'),
+                JSON.stringify({ verdict: 'PASS', ...(confidence === undefined ? {} : { confidence }), feedback: [] }),
+            );
+            const res = run(['itc-report', workDir, '2']);
+            expect(res.status, res.stderr).toBe(0);
+            const report = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(report.outcome, `confidence=${String(confidence)}`).toBe('failed');
+            expect(report.verdict).toBe('PASS');
+            expect(readFileSync(join(workDir, '5-report/report.md'), 'utf-8')).toContain(
+                'no HIGH/MEDIUM/LOW confidence',
+            );
+        }
+    });
+
+    it('still reports an absent verdict file as done (the dry-run PASS convention is unchanged)', () => {
+        const workDir = seedWorkDir();
+        const res = run(['itc-report', workDir, '2']);
+        expect(res.status, res.stderr).toBe(0);
+        const report = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+        expect(report).toEqual({ outcome: 'done', verdict: '', revisions: 0 });
     });
 
     it('marks a FAIL verdict failed', () => {
@@ -109,7 +138,7 @@ describe('itc-report (0149)', () => {
 
     it('treats a PASS on the final allowed revision as done (budget spent != exhausted)', () => {
         const workDir = seedWorkDir();
-        writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS' }));
+        writeFileSync(join(workDir, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS', confidence: 'HIGH' }));
         writeFileSync(join(workDir, '.auto-revise-count'), '2');
         const res = run(['itc-report', workDir, '2']);
         expect(res.status, res.stderr).toBe(0);
@@ -519,7 +548,7 @@ describe('itc stages in-process (coverage of the spawned module body)', () => {
 
     it('itc-report branches', async () => {
         const pass = seedWorkDir();
-        writeFileSync(join(pass, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS' }));
+        writeFileSync(join(pass, '.itc-verdict.json'), JSON.stringify({ verdict: 'PASS', confidence: 'HIGH' }));
         writeFileSync(join(pass, '.auto-revise-count'), '1\n');
         const done = await capture((m) => m.itcReport([pass, '2']));
         expect(done.exit).toBeUndefined();

@@ -131,7 +131,18 @@ export function itcReport(args: string[]): void {
     const [workDir = '', maxRevisions = ''] = args;
     if (!workDir) fail('usage: itc-report <work_dir> [max_revisions]');
     const verdictPath = join(workDir, '.itc-verdict.json');
-    const verdict = existsSync(verdictPath) ? ((readJson(verdictPath) as { verdict?: unknown }).verdict ?? '') : '';
+    const verdictJson = existsSync(verdictPath)
+        ? (readJson(verdictPath) as { verdict?: unknown; confidence?: unknown })
+        : {};
+    const verdict = verdictJson.verdict ?? '';
+    // Same enum as the workflow guards and `daily-safety-gate`: a PASS without a HIGH/MEDIUM/LOW
+    // confidence never cleared the judge gate, so the report must not claim a publish-ready draft.
+    // An absent verdict file stays the dry-run PASS convention (verdict '').
+    const unusablePass =
+        verdict === 'PASS' &&
+        verdictJson.confidence !== 'HIGH' &&
+        verdictJson.confidence !== 'MEDIUM' &&
+        verdictJson.confidence !== 'LOW';
     // Auto runs count on .auto-revise-count; interactive runs keep the existing .revise-count.
     const revisions = readCount(join(workDir, '.auto-revise-count')) ?? readCount(join(workDir, '.revise-count')) ?? 0;
     // Exhaustion only fails the run when the last verdict still asks for another revision —
@@ -186,7 +197,8 @@ export function itcReport(args: string[]): void {
     }
 
     const publishFailed = targets.some((t) => !t.ok);
-    const outcome = verdict === 'FAIL' || exhausted || publishFailed ? 'failed' : declined ? 'declined' : 'done';
+    const outcome =
+        verdict === 'FAIL' || unusablePass || exhausted || publishFailed ? 'failed' : declined ? 'declined' : 'done';
     const reportDir = join(workDir, '5-report');
     const jsonPath = join(reportDir, 'report.json');
     const publish = hasPlan ? { targets, retryCommands } : undefined;
@@ -198,7 +210,13 @@ export function itcReport(args: string[]): void {
         );
         writeFileSync(
             join(reportDir, 'report.md'),
-            `# kk-itc run report\n\n- Outcome: ${outcome}\n- Verdict: ${verdict === '' ? 'PASS (empty)' : verdict}\n- Revisions: ${revisions}\n` +
+            `# kk-itc run report\n\n- Outcome: ${outcome}\n- Verdict: ${
+                verdict === ''
+                    ? 'PASS (empty)'
+                    : unusablePass
+                      ? 'PASS (no HIGH/MEDIUM/LOW confidence — the judge gate never cleared)'
+                      : verdict
+            }\n- Revisions: ${revisions}\n` +
                 (declined
                     ? '\n## Publish\n\n- Declined by the operator — nothing was sent.\n'
                     : targets.length > 0

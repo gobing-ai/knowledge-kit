@@ -77,6 +77,8 @@ outside `HIGH|MEDIUM|LOW` is not a usable verdict anywhere:
   confidence-aware `jq` filter that turns such a `PASS` into an out-of-contract value (`PASS!`),
   which no accept guard matches and the state machine's catch-all routes to `failed` — the import
   neither publishes nor deadlocks.
+- `kk stage itc-report` reports `outcome: failed` (and says why in `report.md`) for a `PASS` without
+  a valid confidence; an absent verdict file keeps the dry-run convention.
 
 Add that filter to any new judge gate; `references/workflow-integration.md` carries the pattern and
 `plugins/kk/tests/verdict-confidence.test.ts` fails when a workflow accepts a judge `PASS` without
