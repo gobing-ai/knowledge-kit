@@ -27,7 +27,7 @@ login/publish activity (2026-09-28).
   rendering and per-status result caching.
 - `xhs_enabled: "false"` as the shipped default, and XHS as an independent non-blocking target that
   never contributes to `publish_status`.
-- ADR-025: the headless session preflight and the 24h publish/check caps in `xhs-pub`.
+- ADR-025: the headless session preflight and the ADR-025 publish/check cap (2 h since 2026-10-03)s in `xhs-pub`.
 
 **Out of scope**
 
@@ -56,7 +56,7 @@ Feature: XHS daily card target with an automation-risk guard
 
   @core
   Scenario: R3 — Console visits are rate-capped
-    Given a publish or check already recorded inside the 24h window
+    Given a publish or check already recorded inside the ADR-025 window (2 h)
     When the same event is attempted again
     Then the attempt is refused before any browser opens, naming the wait
     And a refused preflight leaves the publish window intact for a retry after login

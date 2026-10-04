@@ -442,7 +442,7 @@ states:
             kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}"
 
   - id: xhs-publish
-    description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status. xhs-pub itself enforces a headless session preflight and a 24h publish/check cap (ADR-025), so a sessionless or capped run fails soft with a named reason and the run continues"
+    description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status. xhs-pub itself enforces a headless session preflight and a 2h publish/check cap (ADR-025), so a sessionless or capped run fails soft with a named reason and the run continues"
     onEnter:
       - kind: shell
         onError: continue

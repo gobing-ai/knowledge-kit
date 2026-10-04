@@ -989,6 +989,19 @@ preflight now retries a headless refusal once with a headed, read-only readiness
 refusing; the publish budget and never-automated-login rules are unchanged (the fallback is a
 readiness check, not a publish cycle, and a dead session still refuses fast).
 
+**Amendment (2026-10-03, window 24 h → 2 h).** Operator decision after the 20261002 XHS draft was
+saved into the creator console's draft box (`草稿箱` counter 22 → 23, `暂存离开`) yet an operator check
+of the phone app showed nothing, and the 24 h window then refused the same-day retry/re-verify that
+would have settled it. The window is now **2 h** for both events (`CAP_WINDOW_MS`). What the cap
+still buys: at most 12 headed console visits a day, the session preflight still refuses an
+unauthenticated profile in ~30 s, the publish budget is still consumed at the headed launch (a
+refused preflight leaves the window intact), `login` stays uncapped and operator-interactive, and
+drafts remain the default (`xhs_live` stays a launch-time switch, ADR-022). Residual risk accepted
+by the operator: a retry loop, or a schedule that re-runs the target more than hourly, can now reach
+the console up to 12×/day instead of 1×; the daily workflow itself still drives this target once per
+episode. The 24 h figures in the Decision paragraph and the earlier amendments above describe the
+window in force at their dates — this amendment supersedes them.
+
 **Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
 
 ---

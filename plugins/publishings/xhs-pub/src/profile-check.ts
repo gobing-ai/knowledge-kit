@@ -13,7 +13,7 @@
  *    fresh directory.
  *
  * ADR-025 (2026-09-28): the publish flow now runs this same check as a preflight before any headed
- * visit, and `check` draws on the shared 24h automation budget — the cap bounds total console
+ * visit, and `check` draws on the shared 2h automation budget — the cap bounds total console
  * visits, not just publishes. The implementation lives in `./index` so both paths share it.
  *
  * Manual dogfood: `bun plugins/publishings/xhs-pub/src/profile-check.ts login` then
@@ -110,7 +110,7 @@ export async function main(
         );
         return 1;
     }
-    // ADR-025: a manual session check is a real console visit, so it draws on the shared 24h
+    // ADR-025: a manual session check is a real console visit, so it draws on the shared 2h
     // automation budget rather than a separate one. `login` is deliberately uncapped above: it is
     // operator-interactive, so capping it would only block recovery from an expired session.
     const cap = guard.allow('check');

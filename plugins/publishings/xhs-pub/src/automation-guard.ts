@@ -4,7 +4,7 @@
  * XHS warned the operator about automated login/publish activity. This channel is the only target
  * in the repo that drives an interactive creator console from a browser, so a repeated or runaway
  * visit is an account-level risk rather than a failed run. The guard bounds console visits with two
- * independent 24h budgets — one headed publish cycle and one read-only session check — recorded in
+ * independent 2h budgets — one headed publish cycle and one read-only session check — recorded in
  * a small state file.
  *
  * Semantics that matter:
@@ -33,7 +33,7 @@ const fs = createNodeFileSystem() as unknown as {
 export type XhsAutomationEvent = 'check' | 'publish';
 
 /** One headed publish cycle and one read-only session check per window. */
-export const CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const CAP_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /** State-file override for tests and multi-account machines; default is the shared kk config dir. */
 export const AUTOMATION_STATE_ENV = 'KK_XHS_AUTOMATION_STATE';

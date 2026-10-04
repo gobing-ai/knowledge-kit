@@ -31,7 +31,7 @@ import {
 } from '../src/index';
 import { checkProfileSession, loginProfile, main as profileCheckMain } from '../src/profile-check';
 
-// ADR-025: publish runs a 24h-capped automation guard and a headless session preflight, and the
+// ADR-025: publish runs a 2h-capped automation guard and a headless session preflight, and the
 // CLI `check` command uses the same guard. Both are real side effects, so:
 //  - `makeTransport` stubs them for the flow tests (a default preflight would open a browser);
 //  - the guard's state file is redirected to a temp path cleared before every test, so the caps
@@ -1540,7 +1540,7 @@ describe('xhs-pub automation guard (ADR-025, XHS platform warning 2026-09-28)', 
         });
     });
 
-    test('window: the budget reopens once 24h have passed, and each event has its own budget', () => {
+    test('window: the budget reopens once the window has passed, and each event has its own budget', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-guard-'));
         try {
             const path = join(dir, 'state.json');

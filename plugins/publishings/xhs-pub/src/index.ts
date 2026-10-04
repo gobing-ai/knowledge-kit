@@ -480,7 +480,7 @@ export class XhsBrowserTransport implements PublishTransport {
             submitSettleMs?: number;
             submitAttempts?: number;
             openPage?: OpenPage;
-            /** ADR-025 automation-risk guard; defaults to the real 24h-capped state file. */
+            /** ADR-025 automation-risk guard; defaults to the real 2h-capped state file. */
             automation?: AutomationGuard;
             /** ADR-025 headless session preflight; defaults to `checkXhsProfileSession`. */
             preflight?: (profileDir: string) => Promise<ProfileSessionCheck>;

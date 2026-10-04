@@ -81,7 +81,7 @@ account-level risk rather than a failed run. Four rules, enforced in the plugin 
    headed window sitting on the login gate for the full `LOGIN_TIMEOUT_MS` (120 s). Verified
    2026-09-28 against the real launcher: `openPersistentBrowser({ headless: true })` on an absent
    profile directory throws `BrowserProfileMissingError` and creates nothing.
-2. **One headed publish cycle and one session check per 24 h.** Both are capped in
+2. **One headed publish cycle and one session check per 2 h.** Both are capped in
    `automation-guard.ts` against a state file (`~/.config/kk/xhs-automation.json`, override
    `KK_XHS_AUTOMATION_STATE`). A manual `profile-check check` draws on the same `check` budget as the
    preflight's own console visit. The `publish` budget is consumed **at the headed launch, not at

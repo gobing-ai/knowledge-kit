@@ -185,7 +185,7 @@ follows the cover's split (F614): the agent authors **copy only**, the stage own
   暂存离开), so the platform-flag risk the 2026-09-28 warning named is accepted, not eliminated.
   Independently of the workflow, `xhs-pub` itself now enforces ADR-025: a **headless session
   preflight** before any headed visit (so a missing/expired session is a fast refusal, not a 120 s
-  headed login wait) and a **24h cap** of one publish cycle plus one session check. A capped or
+  headed login wait) and a **2h cap** of one publish cycle plus one session check. A capped or
   sessionless publish returns `ok: false`, which this stage treats as non-blocking.
 
 ## 8. WeChat MP draft target (2026-09-29, ADR-026)
@@ -211,6 +211,6 @@ stage re-packages that Content with `metadata.publishStatus` (`draft` default, `
   never enters `publish_status`, the stage is `soft` on the plugin call, and caching is per
   **requested** status so a cached draft can never satisfy a later `wechat_live=true` re-run.
 - **No automation-guard (conscious).** WeChat has issued no automated-activity warning; the
-  preflight + draft default are the guard. If a warning ever arrives, port the ADR-025 24h cap.
+  preflight + draft default are the guard. If a warning ever arrives, port the ADR-025 automation cap.
 - Workflow vars: `wechat_enabled: "true"` (on by default, 2026-09-29 operator decision),
   `wechat_live: "false"`.
