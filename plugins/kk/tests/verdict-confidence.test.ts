@@ -281,6 +281,30 @@ describe('every judge-verdict consumer verifies confidence', () => {
         expect(ok).toBe(true);
     });
 
+    /** Source files (never tests) that read a judge verdict artifact. */
+    const tsVerdictReaders = (): string[] => {
+        const files: string[] = [];
+        const walk = (rel: string): void => {
+            for (const entry of readdirSync(join(REPO, rel), { withFileTypes: true })) {
+                const child = `${rel}/${entry.name}`;
+                if (entry.isDirectory()) walk(child);
+                else if (entry.name.endsWith('.ts')) files.push(child);
+            }
+        };
+        for (const root of ['plugins/kk/scripts', 'apps/cli/src']) walk(root);
+        return files.filter((rel) => /verdict\.json/.test(readFileSync(join(REPO, rel), 'utf-8')));
+    };
+
+    it('every TS verdict reader handles the confidence enum', () => {
+        const readers = tsVerdictReaders();
+        const offenders = readers.filter((rel) => !/confidence/.test(readFileSync(join(REPO, rel), 'utf-8')));
+        const detail = `${readers.length} readers, offenders: ${offenders.join(',') || 'none'}`;
+        expect(record('consumer-scan:ts-verdict-readers', offenders.length === 0, detail)).toBe(true);
+        expect(offenders).toEqual([]);
+        // Non-vacuous: the daily gate and the itc report are both readers today.
+        expect(readers.length).toBeGreaterThanOrEqual(2);
+    });
+
     it('the judge-state guards are the ones the scan covers (no silent parser gap)', () => {
         // Guard the parser: a judge state whose transitions lost their command would make the
         // consumer scan above vacuous.
