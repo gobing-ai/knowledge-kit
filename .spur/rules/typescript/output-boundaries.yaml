@@ -6,7 +6,7 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 #
 # SCOPE = long-running product code that boots a logger. Two script families are
 # deliberately OUT, matching spur-new (whose output-boundaries covers only
-# apps/**/src + packages/**/src, and whose plugins/sp/scripts/*.ts use console.*):
+# apps/**/src + packages/**/src, and whose sp plugin scripts use console.*):
 #
 #   1. `plugins/*/scripts/**` — SHIPPED to arbitrary user projects and shelled as
 #      `bun <script>`. These are node-builtin-only: an `@gobing-ai/*` import resolves

@@ -15,13 +15,13 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # `output-boundaries` — the ts-utils output seam is itself a forbidden import here.
 # Duplicating logic (see the SYNC note in render-md.ts) is the accepted cost of
 # shipping a runner with no dependency footprint. Mirrors spur-new's
-# `plugins/sp/scripts/*.ts` ("stays node-builtin-only — no workspace imports").
+# sp plugin scripts ("stays node-builtin-only — no workspace imports").
 #
 # ── 2026-09-25: type-only imports are exempt (false positive fixed) ──────────────
 # This rule previously used the `forbidden-import` evaluator with the textual
 # pattern `from\s+['"]@gobing-ai/`, which cannot distinguish `import type { A } from
-# '@gobing-ai/x'` from a value import. It therefore flagged
-# `plugins/sp/scripts/inline-run-setup.ts` (`import type { WorkflowActionTraceWriter }
+# '@gobing-ai/x'` from a value import. It therefore flagged the then-vendored
+# `inline-run-setup.ts` (`import type { WorkflowActionTraceWriter }
 # from '@gobing-ai/spur-app'`) and turned `bun run spur-check` red on main.
 #
 # A type-only import is erased before bundling and creates no runtime dependency, so

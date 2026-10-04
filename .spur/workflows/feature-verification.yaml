@@ -45,18 +45,31 @@ vars:
 states:
   - id: verify
     description: >
-      Run the repo-wide check set via the standard verification script, which
-      records the bound evidence receipt (verifier identity, checked-input
-      digest, run identity) and the coarse status file, always exit 0 so the
-      transition guard routes missing/corrupt/FAIL to `failed`.
+      Resolve this run's installed sp script root via Superskill, then run the
+      pinned installed verifier with Bun against the repo-wide check set. The
+      verifier records the bound evidence receipt (verifier identity,
+      checked-input digest, run identity) and the coarse status file. Both
+      actions fail closed — a locator/script failure, an unresolved or
+      non-installed root, an absent verifier, or a failing check yields a
+      non-PASS status — and always exit 0, so the transition guard routes
+      missing/corrupt/FAIL to `failed`.
     onEnter:
       - kind: shell
         options:
           command: >-
-            bun plugins/sp/scripts/feature-verification-steps.ts verify
-            --feature-id "$featureId"
-            --run-id "$__runId"
-            --spur-bin "$spurBin"
+            S="$(superskill script path sp script-root.mjs 2>/dev/null)" || S="";
+            if [ -n "$S" ] && [ -f "$S" ]; then node "$S" --run-id "$__runId" --spur-bin "$spurBin";
+            else echo "script-root failed closed — run 'superskill install sp --marketplace gobing-ai/spur'" >&2;
+            fi;
+            exit 0
+      - kind: shell
+        options:
+          command: >-
+            mkdir -p .spur/run;
+            DIR="$(jq -r 'select(.mode == "installed" and (.dir | type == "string") and .dir != "") | .dir' ".spur/run/$__runId-script-root.json" 2>/dev/null)" || DIR="";
+            [ -n "$DIR" ] && [ -f "$DIR/feature-verification-steps.mjs" ] && S="$DIR/feature-verification-steps.mjs";
+            [ -f "$S" ] && bun "$S" verify --feature-id "$featureId" --run-id "$__runId" --spur-bin "$spurBin" || printf 'FAIL feature-verification failed closed — unresolved root or verifier failure\n' > ".spur/run/$__runId-feature-verification.status";
+            exit 0
 
   - id: done
     description: Terminal — repo-wide checks passed and the receipt is bound.
