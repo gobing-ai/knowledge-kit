@@ -99,7 +99,7 @@ The output array retains stable ordering:
 
 ## 3. Fan-Out & Partial-Success Result Schema (R4)
 
-`fanout` sequentially invokes each named target publish plugin, aggregating outcomes into a unified `Result` schema.
+`fanout` invokes the named target publish plugins concurrently (ADR-007 R4 amendment 2026-10-03; `--serial`/`--serial-target` keep a target out of the batch), aggregating outcomes into a unified `Result` schema in `--target` order.
 
 ### 3.1 Aggregate Partial-Success `ResultSchema`
 The aggregate outcome is written to `--out` conforming to the extended `ResultSchema`:
@@ -249,7 +249,7 @@ This specification names its target integration sections for Task 0036:
 
 1. **`docs/03_ARCHITECTURE.md`**:
    - Section: **`## 3. Data flow (command path)`** & **`## 4. Module boundaries`**
-   - Content: Document `kk executor fan-in` and `kk executor fan-out` data flow, sequential execution model, deduplication rules, and partial-success result aggregation.
+   - Content: Document `kk executor fan-in` and `kk executor fan-out` data flow, kk-owned concurrency model (engine-sequential, `kk`-concurrent — ADR-019/ADR-007 R4 amendment), deduplication rules, and partial-success result aggregation.
 
 2. **`docs/04_DESIGN.md`**:
    - Section: **`## 1. CLI commands`**

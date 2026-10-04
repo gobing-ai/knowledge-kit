@@ -59,6 +59,7 @@ kk executor run <plugin> --in <path> --out <path> [--plugins-root <dir>] [--plug
 kk executor fan-in --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                    --out <result.json> [--retry-from <prior-result.json>]
+                   [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>]
                    [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
 ```
@@ -194,7 +195,9 @@ stay unchanged.
 
 ### 1.6 `executor fan-out` — shipped (A21; engine B6)
 
-Dispatches one `Content` to N publish targets **in sequence**, emitting one aggregate `Result`.
+Dispatches one `Content` to N publish targets **concurrently**, emitting one aggregate `Result`
+(ADR-007 R4 amendment 2026-10-03: the engine runs one node at a time, so the fan-out is where N
+independent publishers overlap — the same split ADR-019 made for `fan-in`).
 Spec: `docs/design/fan-in-and-fan-out-specification.md` §1.3, §3–§6.
 Canonical path is `kk executor fan-out`; `kk fanout` is a hidden one-release alias (ADR-011).
 A missing `--out` parent directory is created (ADR-016); a write that genuinely fails still exits
@@ -202,7 +205,8 @@ with code 2.
 
 ```text
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …] \
-                    --out <result.json> [--retry-from <prior-result.json>]
+                    --out <result.json> [--retry-from <prior-result.json>] \
+                    [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>]
                     [--plugins-root <dir>] [--plugins-path <dir> …]
 ```
 
@@ -212,6 +216,10 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …] \
 | `--target <plugin>` | string (repeatable) | yes (≥1)\* | — | Publish plugin name per target; duplicate names are deduped, so each distinct target is attempted once |
 | `--out <file>` | string | yes | — | Aggregate `Result` JSON path |
 | `--retry-from <file>` | string | no | — | Prior `Result`; published/skipped targets carried as `skipped` (url/id **and metadata** preserved, 0110 I4), only prior failures re-dispatched; failures outside the explicit selection are retained as `failed` in the aggregate (0110 I7) |
+| `--serial` | boolean | no | `false` | Dispatch the parallel batch one target at a time (pre-2026-10-03 behaviour; use when the transports share a resource) |
+| `--jobs <n>` | number | no | every target at once | Concurrent-start bound for the parallel batch; `--jobs 1` is equivalent to `--serial` |
+| `--serial-target <plugin>` | string (repeatable) | no | — | Target kept out of the parallel batch and run alone **after** it, e.g. a headed browser channel or a publisher that shares a checkout |
+| `--target-timeout <ms>` | number | no | — | Per-target wall-clock budget; an overrun is recorded `failed` (`exceeded its <ms>ms budget`) and siblings continue |
 | `--plugins-root <dir>` | string | no | — | Exclusive single-root scan (isolation/tests only; no union with defaults) |
 | `--plugins-path <dir>` | string[] | no | — | Extra plugin root to union with the default roots (repeatable; tree, kind collection, or single `plugin.json` dir) |
 
@@ -220,8 +228,9 @@ then narrow the dispatch to the still-unpublished subset.
 
 **Behavior:** validate `--content` against `ContentSchema` and every target against the publish
 registry (default merged discovery via `discoverAllPlugins`; malformed flags, invalid content, an
-unresolvable target, or combined `--plugins-root`/`--plugins-path` exits `2`) → dispatch targets
-sequentially, one `TargetOutcome` per target → write the aggregate `{ ok, summary: { total,
+unresolvable target, or combined `--plugins-root`/`--plugins-path` exits `2`) → dispatch the
+non-serial targets together (bounded by `--jobs`) and the `--serial-target` names one at a time
+afterwards, one `TargetOutcome` per target → write the aggregate `{ ok, summary: { total,
 succeeded, failed, skipped }, targets }` (spec §3.1) to `--out`.
 
 **Exit-code contract:**

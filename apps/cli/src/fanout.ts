@@ -34,6 +34,14 @@ export interface FanoutOptions {
     retryFromPath?: string;
     pluginsRoot?: string;
     pluginsPath?: string[];
+    /** Run the parallel batch one target at a time (pre-2026-10-03 behaviour). */
+    serial?: boolean;
+    /** Concurrent-start bound for the parallel batch. */
+    jobs?: number;
+    /** Targets kept out of the parallel batch (headed browser channels, shared checkouts). */
+    serialTargets?: string[];
+    /** Per-target wall-clock budget in milliseconds. */
+    targetTimeoutMs?: number;
 }
 
 /** Runner dependencies; tests inject a fake dispatch so no real publishers run. */
@@ -63,56 +71,122 @@ function aggregate(entries: TargetOutcome[]): AggregateResult {
 }
 
 /**
- * Dispatch `content` to every target sequentially (spec §3), aggregating one
- * per-target outcome each. A dispatch that rejects is recorded as failed.
- * Every target appears in the result exactly once per run.
+ * Interior concurrency for one fan-out run (ADR-007 R4 amendment 2026-10-03).
+ *
+ * The workflow engine executes one node at a time, so the publisher fan-out is where N independent
+ * targets actually get to overlap — the same split ADR-019 chose for `fan-in`. Defaults keep the
+ * caller's shape: every non-serial target starts together, results are aggregated in `--target`
+ * order, and a failing or hanging target never aborts its siblings (spec §3.1, §5.1).
+ */
+export interface FanoutRunOptions {
+    /** `'concurrent'` (default) overlaps the parallel batch; `'serial'` restores the pre-2026-10-03 loop. */
+    mode?: 'concurrent' | 'serial';
+    /** Concurrent-start bound for the parallel batch (default: every target at once). */
+    jobs?: number;
+    /** Targets that must run alone, after the parallel batch (headed browser channels sharing a profile). */
+    serialTargets?: readonly string[];
+    /** Per-target wall-clock budget; an overrun is recorded failed and its siblings continue. */
+    timeoutMs?: number;
+}
+
+/** One dispatch, reduced to a per-target outcome. A rejection or timeout is recorded, never rethrown. */
+async function dispatchOne(
+    target: Target,
+    dispatch: (target: Target) => Promise<ResultEntry>,
+    timeoutMs: number | undefined,
+): Promise<TargetOutcome> {
+    const started = Date.now();
+    try {
+        const result =
+            timeoutMs === undefined ? await dispatch(target) : await withTimeout(dispatch(target), timeoutMs, target);
+        const durationMs = Date.now() - started;
+        return result.ok
+            ? {
+                  target,
+                  ok: true,
+                  status: 'published',
+                  ...(result.url !== undefined ? { url: result.url } : {}),
+                  ...(result.id !== undefined ? { id: result.id } : {}),
+                  ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
+                  durationMs,
+              }
+            : {
+                  target,
+                  ok: false,
+                  status: 'failed',
+                  error: result.error ?? result.message ?? 'publish failed',
+                  durationMs,
+              };
+    } catch (err: unknown) {
+        return {
+            target,
+            ok: false,
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+            durationMs: Date.now() - started,
+        };
+    }
+}
+
+/**
+ * Bound one target's wall clock. The transport keeps its own timeout; this is the fan-out's own
+ * isolation guarantee (a wedged target must not hold the aggregate open past its budget).
+ */
+function withTimeout(promise: Promise<ResultEntry>, timeoutMs: number, target: Target): Promise<ResultEntry> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const budget = new Promise<ResultEntry>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`target '${target}' exceeded its ${timeoutMs}ms budget`)), timeoutMs);
+    });
+    return Promise.race([promise, budget]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Dispatch `content` to every target, aggregating one per-target outcome each (spec §3). Targets run
+ * concurrently unless `mode: 'serial'`; `serialTargets` opt individual publishers out of the batch
+ * and run them one at a time afterwards. A dispatch that rejects (or overruns `timeoutMs`) is
+ * recorded as failed without aborting siblings. Every target appears in the result exactly once per
+ * run, in the caller's target order — completion order never reorders the ledger.
  */
 export async function fanout(
     content: Content,
     targets: Target[],
     dispatch: (target: Target) => Promise<ResultEntry>,
+    options: FanoutRunOptions = {},
 ): Promise<AggregateResult> {
     // Content flows to transports through the dispatch closure; the parameter keeps the
     // publish payload part of this function's contract (spec §3).
     void content;
-    const entries: TargetOutcome[] = [];
+    const outcomes = new Map<Target, TargetOutcome>();
+    const runOne = async (target: Target): Promise<void> => {
+        outcomes.set(target, await dispatchOne(target, dispatch, options.timeoutMs));
+    };
 
-    for (const target of targets) {
-        const started = Date.now();
-        let entry: TargetOutcome;
-        try {
-            const result = await dispatch(target);
-            const durationMs = Date.now() - started;
-            entry = result.ok
-                ? {
-                      target,
-                      ok: true,
-                      status: 'published',
-                      ...(result.url !== undefined ? { url: result.url } : {}),
-                      ...(result.id !== undefined ? { id: result.id } : {}),
-                      ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
-                      durationMs,
-                  }
-                : {
-                      target,
-                      ok: false,
-                      status: 'failed',
-                      error: result.error ?? result.message ?? 'publish failed',
-                      durationMs,
-                  };
-        } catch (err: unknown) {
-            entry = {
-                target,
-                ok: false,
-                status: 'failed',
-                error: err instanceof Error ? err.message : String(err),
-                durationMs: Date.now() - started,
-            };
-        }
-        entries.push(entry);
+    if (options.mode === 'serial') {
+        // Pre-2026-10-03 behaviour, kept for callers whose transports share a resource (one headed
+        // browser profile, one checkout) and for reproducing older traces.
+        for (const target of targets) await runOne(target);
+    } else {
+        const serial = new Set(options.serialTargets ?? []);
+        const parallel = targets.filter((target) => !serial.has(target));
+        const solo = targets.filter((target) => serial.has(target));
+        const jobs = options.jobs !== undefined && options.jobs > 0 ? options.jobs : parallel.length;
+        // Worker pool: start order follows `targets`, the pool only bounds how many are in flight.
+        let cursor = 0;
+        const worker = async (): Promise<void> => {
+            while (cursor < parallel.length) {
+                const target = parallel[cursor++];
+                if (target === undefined) return;
+                await runOne(target);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs, parallel.length)) }, worker));
+        for (const target of solo) await runOne(target);
     }
 
-    return aggregate(entries);
+    // Ordered aggregation: the ledger follows the caller's target order regardless of who finished first.
+    return aggregate(
+        targets.map((target) => outcomes.get(target)).filter((entry): entry is TargetOutcome => entry !== undefined),
+    );
 }
 
 /**
@@ -216,10 +290,14 @@ async function readAggregateResult(fs: FileSystem, path: string): Promise<Aggreg
 function parseArgs(argv: string[]): FanoutOptions {
     const targets: string[] = [];
     const pluginsPath: string[] = [];
+    const serialTargets: string[] = [];
     let contentPath: string | undefined;
     let outPath: string | undefined;
     let retryFromPath: string | undefined;
     let pluginsRoot: string | undefined;
+    let serial = false;
+    let jobs: number | undefined;
+    let targetTimeoutMs: number | undefined;
 
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
@@ -271,6 +349,34 @@ function parseArgs(argv: string[]): FanoutOptions {
                 throw new Error('--plugins-path requires a directory path');
             }
             pluginsPath.push(value);
+        } else if (arg === '--serial') {
+            serial = true;
+        } else if (arg === '--jobs') {
+            const value = argv[++i];
+            if (value === undefined) {
+                throw new Error('--jobs requires a positive integer');
+            }
+            const parsed = Number(value);
+            if (!Number.isInteger(parsed) || parsed < 1) {
+                throw new Error(`--jobs requires a positive integer, got '${value}'`);
+            }
+            jobs = parsed;
+        } else if (arg === '--serial-target') {
+            const value = argv[++i];
+            if (value === undefined) {
+                throw new Error('--serial-target requires a plugin name');
+            }
+            serialTargets.push(value);
+        } else if (arg === '--target-timeout') {
+            const value = argv[++i];
+            if (value === undefined) {
+                throw new Error('--target-timeout requires milliseconds');
+            }
+            const parsed = Number(value);
+            if (!Number.isInteger(parsed) || parsed < 1) {
+                throw new Error(`--target-timeout requires a positive integer in milliseconds, got '${value}'`);
+            }
+            targetTimeoutMs = parsed;
         } else {
             throw new Error(`Unknown argument: ${arg}`);
         }
@@ -293,6 +399,10 @@ function parseArgs(argv: string[]): FanoutOptions {
         ...(retryFromPath !== undefined ? { retryFromPath } : {}),
         ...(pluginsRoot !== undefined ? { pluginsRoot } : {}),
         ...(pluginsPath.length > 0 ? { pluginsPath } : {}),
+        ...(serial ? { serial } : {}),
+        ...(jobs !== undefined ? { jobs } : {}),
+        ...(serialTargets.length > 0 ? { serialTargets } : {}),
+        ...(targetTimeoutMs !== undefined ? { targetTimeoutMs } : {}),
     };
 }
 
@@ -440,7 +550,12 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
         return EXIT_INPUT;
     }
 
-    const fresh = await fanout(content, targets, dispatch);
+    const fresh = await fanout(content, targets, dispatch, {
+        ...(opts.serial === true ? { mode: 'serial' as const } : {}),
+        ...(opts.jobs !== undefined ? { jobs: opts.jobs } : {}),
+        ...(opts.serialTargets !== undefined ? { serialTargets: opts.serialTargets } : {}),
+        ...(opts.targetTimeoutMs !== undefined ? { timeoutMs: opts.targetTimeoutMs } : {}),
+    });
     const result = prior !== undefined ? aggregate([...skipped, ...retainedFailed, ...fresh.targets]) : fresh;
 
     try {

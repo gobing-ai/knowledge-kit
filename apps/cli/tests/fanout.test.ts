@@ -1029,3 +1029,110 @@ describe('runFanout', () => {
         });
     });
 });
+
+// --- interior concurrency (ADR-007 R4 amendment, 2026-10-03) --------------------------------
+//
+// The engine runs one workflow node at a time, so `fan-out` is where N independent publishers
+// actually overlap (the same split ADR-019 made for `fan-in`). These tests pin the observable
+// contract: overlap by default, an ordered ledger regardless of completion order, per-target
+// isolation, and the two ways to keep a target out of the batch.
+describe('fanout interior concurrency', () => {
+    /** Dispatch recording start/end events and the peak number of targets in flight. */
+    function makeTracked(behavior: Record<string, 'ok' | 'fail' | 'hang'> = {}): {
+        dispatch: (t: Target) => Promise<Result>;
+        events: string[];
+        inFlight: { current: number; max: number };
+    } {
+        const events: string[] = [];
+        const inFlight = { current: 0, max: 0 };
+        const dispatch = async (t: Target): Promise<Result> => {
+            events.push(`start:${t}`);
+            inFlight.current += 1;
+            inFlight.max = Math.max(inFlight.max, inFlight.current);
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                const mode = behavior[t] ?? 'ok';
+                if (mode === 'fail') return { ok: false, target: t, error: `boom:${t}` };
+                if (mode === 'hang') {
+                    await new Promise(() => {});
+                    return { ok: true, target: t };
+                }
+                return { ok: true, target: t, url: `https://example.com/${t}`, id: `id-${t}` };
+            } finally {
+                inFlight.current -= 1;
+                events.push(`end:${t}`);
+            }
+        };
+        return { dispatch, events, inFlight };
+    }
+
+    it('starts every target together by default and keeps the ledger in --target order', async () => {
+        const { dispatch, events, inFlight } = makeTracked();
+        const result = await fanout(CONTENT, ['a', 'b', 'c'], dispatch);
+        expect(inFlight.max).toBe(3); // overlapped, not one after another
+        expect(events.slice(0, 3)).toEqual(['start:a', 'start:b', 'start:c']);
+        expect(result.targets.map((t) => t.target)).toEqual(['a', 'b', 'c']);
+        expect(result.summary).toEqual({ total: 3, succeeded: 3, failed: 0, skipped: 0 });
+        expect(result.ok).toBe(true);
+    });
+
+    it('isolates a failing target and leaves its siblings published', async () => {
+        const { dispatch } = makeTracked({ b: 'fail' });
+        const result = await fanout(CONTENT, ['a', 'b', 'c'], dispatch);
+        expect(result.ok).toBe(false);
+        expect(result.targets.map((t) => `${t.target}:${t.status}`)).toEqual([
+            'a:published',
+            'b:failed',
+            'c:published',
+        ]);
+        expect(result.targets[1]?.error).toBe('boom:b');
+    });
+
+    it('serial mode and jobs=1 both keep a single target in flight', async () => {
+        const serial = makeTracked();
+        await fanout(CONTENT, ['a', 'b', 'c'], serial.dispatch, { mode: 'serial' });
+        expect(serial.inFlight.max).toBe(1);
+
+        const bounded = makeTracked();
+        const result = await fanout(CONTENT, ['a', 'b', 'c'], bounded.dispatch, { jobs: 1 });
+        expect(bounded.inFlight.max).toBe(1);
+        // Bounding the pool must not reorder or drop entries.
+        expect(result.targets.map((t) => t.target)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('serialTargets run alone, after the parallel batch, still in ledger order', async () => {
+        const { dispatch, events, inFlight } = makeTracked();
+        const result = await fanout(CONTENT, ['a', 'wet', 'b'], dispatch, { serialTargets: ['wet'] });
+        expect(events.filter((event) => event.startsWith('start')).at(-1)).toBe('start:wet');
+        expect(inFlight.max).toBe(2); // a + b overlapped; `wet` never shared the window
+        expect(result.targets.map((t) => t.target)).toEqual(['a', 'wet', 'b']);
+    });
+
+    it('a target overrunning its budget is recorded failed while siblings continue', async () => {
+        const { dispatch } = makeTracked({ slow: 'hang' });
+        const result = await fanout(CONTENT, ['fast', 'slow'], dispatch, { timeoutMs: 50 });
+        expect(result.targets[0]?.status).toBe('published');
+        expect(result.targets[1]?.status).toBe('failed');
+        expect(result.targets[1]?.error).toContain('exceeded its 50ms budget');
+    });
+
+    it('rejects a malformed --jobs / --target-timeout before touching the filesystem', async () => {
+        for (const [flag, value] of [
+            ['--jobs', '0'],
+            ['--jobs', 'many'],
+            ['--target-timeout', '-5'],
+        ] as const) {
+            const code = await runFanout([
+                '--content',
+                'x.json',
+                '--out',
+                'y.json',
+                '--target',
+                'zenn-pub',
+                flag,
+                value,
+            ]);
+            expect(code).toBe(2);
+        }
+    });
+});

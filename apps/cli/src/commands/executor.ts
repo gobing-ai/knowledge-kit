@@ -148,6 +148,18 @@ function withFanoutOptions(cmd: Command): Command {
         .option('--target <plugin>', 'Target publish plugin name (repeatable)', collectRepeatable, [])
         .requiredOption('--out <path>', 'Aggregate Result JSON file path')
         .option('--retry-from <path>', 'Prior Result JSON file to retry only previously failed targets')
+        .option('--serial', 'Dispatch the parallel batch one target at a time (pre-2026-10-03 behaviour)')
+        .option('--jobs <n>', 'Concurrent-start bound for the parallel batch (default: every target at once)')
+        .option(
+            '--serial-target <plugin>',
+            'Target kept out of the parallel batch and run alone afterwards, e.g. a headed browser channel or a shared checkout (repeatable)',
+            collectRepeatable,
+            [],
+        )
+        .option(
+            '--target-timeout <ms>',
+            'Per-target wall-clock budget; an overrun is recorded failed and siblings continue',
+        )
         .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
         .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectRepeatable, []);
 }

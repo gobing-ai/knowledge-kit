@@ -273,6 +273,33 @@ through independent gaps in the generic success path.
 R2 retains the **package** name `knowledge-kit` / `@gobing-ai/knowledge-kit`. The
 **operator-facing binary** is `kk` (ADR-010). This is not a package rename.
 
+### Amendment — 2026-10-03 (R4: fan-out gets interior concurrency; the engine stays sequential)
+
+> **Status:** Accepted · **Amends:** R4's "sequential step invocations" wording · **Companion:** ADR-019.
+
+R4's substance is unchanged — the engine still executes one node at a time and `kk` still owns
+fan-in/fan-out. What changes is the **inside** of the fan-out step: `kk executor fan-out` now
+dispatches its non-serial targets **concurrently** and aggregates one `TargetOutcome` per target in
+`--target` order, exactly the way ADR-019 made `kk executor fan-in` spawn its `--source` plugins
+concurrently.
+
+**Why.** A run's publish wall clock was the sum of every target's transport time, because the
+engine cannot overlap nodes and the fan-out step was the only place that could. Two of the tail's
+agents — the XHS card plan and the en/ja translation — are serial by nature (one work dir, one
+agent), so the fan-out is where the parallelism actually pays.
+
+**Guards.** `--serial` restores the pre-amendment loop for a caller whose transports share a
+resource; `--jobs <n>` bounds how many start together; `--serial-target <plugin>` keeps one target
+out of the batch and runs it alone afterwards (headed browser channels, publishers sharing a
+checkout — `kk-itc` already splits browser targets out of its fan-out groups, so its groups stay
+safe by construction); `--target-timeout <ms>` records an overrun as `failed` without aborting
+siblings. A rejection, timeout or non-zero plugin exit is still recorded per target; the aggregate
+`ok`/exit contract (ADR-007 R5 partial success) is untouched.
+
+**Not decided here.** Engine-level node concurrency (`type: parallel`) remains an upstream question
+for `@gobing-ai/ts-dual-workflow-engine` (ts-libs) — the field is declared and never read. This
+amendment only moves the concurrency into the step that already owns N→1 and 1→N.
+
 ### Amendment — 2026-08-07 (LLM-as-judge repositioned to agent skills; supersedes 2026-08-02 judge-kind amendment, ticket 0037)
 
 > **Status:** Accepted · **Supersedes:** the 2026-08-02 amendment on this ADR (fourth plugin kind `judge`).
