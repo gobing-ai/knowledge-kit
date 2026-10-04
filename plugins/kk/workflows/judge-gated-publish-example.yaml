@@ -25,7 +25,7 @@ states:
           # Seed the verdict so the judge gate guards can be evaluated in --dry-run
           # (dry-run skips actions but still evaluates shell guards). A real run's
           # judge step overwrites this file before the gate is read.
-          command: 'echo ''{"verdict":"PASS","score":0.0}'' > ${vars.verdictFile} && echo ''generating content...'''
+          command: 'echo ''{"verdict":"PASS","confidence":"HIGH","score":0.0}'' > ${vars.verdictFile} && echo ''generating content...'''
   - id: judge
     description: "Evaluate generated content via the judge skill (agent.run)"
     onEnter:
@@ -51,7 +51,7 @@ states:
   - id: done
     description: "Publish completed successfully"
   - id: failed
-    description: "Judge rejected content (FAIL) or retries exhausted (NEEDS_REVISION)"
+    description: "Judge rejected content (FAIL or an out-of-contract verdict) or retries exhausted (NEEDS_REVISION)"
 
 transitions:
   - from: generate
@@ -63,14 +63,18 @@ transitions:
   # PASS -> publish.
   - from: judge
     to: publish
-    description: "Judge verdict is PASS (or file absent under --dry-run) -> proceed to publish"
+    description: "Judge verdict is PASS with a HIGH/MEDIUM/LOW confidence (or file absent under --dry-run) -> proceed to publish"
     guard:
       kind: shell
       options:
-        # Fail-closed on an explicit non-PASS verdict; fail-open only when the file is
-        # absent, which happens under --dry-run (actions are skipped, so the judge
-        # never writes its verdict). A real run always has the file.
-        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -z "$v" -o "$v" = PASS'
+        # Fail-closed on an explicit non-PASS verdict or a PASS without a valid confidence level;
+        # fail-open only when the file is absent, which happens under --dry-run (actions are skipped,
+        # so the judge never writes its verdict). A real run always has the file.
+        # The confidence-aware read appends `!` to an out-of-contract PASS, so the guards below treat
+        # it as a rejection instead of letting it through.
+        command: >-
+          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.verdictFile} 2>/dev/null)";
+          test -z "$v" -o "$v" = PASS
 
   # NEEDS_REVISION -> back to generate with a bounded retry budget.
   - from: judge
@@ -84,14 +88,18 @@ transitions:
         # responsible for incrementing attempt on each loop in a real run.
         command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test "$v" = NEEDS_REVISION -a "$attempt" -lt "$maxRetries"'
 
-  # FAIL, or NEEDS_REVISION with no retries left -> failed.
+  # FAIL, out-of-contract verdict, or NEEDS_REVISION with no retries left -> failed.
   - from: judge
     to: failed
-    description: "Judge verdict is FAIL, or NEEDS_REVISION with retries exhausted -> block publish"
+    description: "Judge verdict is FAIL, out-of-contract, or NEEDS_REVISION with retries exhausted -> block publish"
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.verdictFile} 2>/dev/null)"; test -n "$v" && { test "$v" = FAIL || test "$v" = NEEDS_REVISION -a "$attempt" -ge "$maxRetries"; }'
+        # Anything that is neither a usable PASS nor a retryable NEEDS_REVISION fails closed.
+        command: >-
+          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.verdictFile} 2>/dev/null)";
+          { test -n "$v" -a "$v" != PASS -a "$v" != NEEDS_REVISION; } ||
+          { test "$v" = NEEDS_REVISION -a "$attempt" -ge "$maxRetries"; }
 
   - from: publish
     to: done

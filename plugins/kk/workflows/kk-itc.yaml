@@ -503,27 +503,38 @@ transitions:
 
   - from: judge
     to: done
-    description: "Interactive mode, verdict PASS (or empty in dry-run), no publish targets -> complete workflow"
+    description: "Interactive mode, verdict PASS with a valid confidence (or empty in dry-run), no publish targets -> complete workflow"
     guard:
       kind: shell
       options:
-        command: '{ test "${vars.auto}" != "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -z "$v" -o "$v" = PASS; } && test -z "${vars.publish_targets}"'
+        command: >-
+          { test "${vars.auto}" != "true"; } &&
+          { v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.work_dir}/.itc-verdict.json 2>/dev/null)";
+          test -z "$v" -o "$v" = PASS; } &&
+          test -z "${vars.publish_targets}"
 
   - from: judge
     to: publish-entry
-    description: "Verdict PASS with targets set -> enter the publish tail (auto runs report after the tail)"
+    description: "Verdict PASS with a valid confidence and targets set -> enter the publish tail (auto runs report after the tail)"
     guard:
       kind: shell
       options:
-        command: '{ v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -z "$v" -o "$v" = PASS; } && test -n "${vars.publish_targets}"'
+        command: >-
+          { v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.work_dir}/.itc-verdict.json 2>/dev/null)";
+          test -z "$v" -o "$v" = PASS; } &&
+          test -n "${vars.publish_targets}"
 
   - from: judge
     to: report
-    description: "Auto mode -> the run ends in the report (PASS without targets, FAIL, or exhausted NEEDS_REVISION)"
+    description: "Auto mode -> the run ends in the report (valid PASS without targets, FAIL, or exhausted NEEDS_REVISION)"
     guard:
       kind: shell
       options:
-        command: '{ test "${vars.auto}" = "true"; } && { v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; c="$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0)"; { test -z "$v" -o "$v" = PASS; } || test "$v" = FAIL || { test "$v" = NEEDS_REVISION -a "$c" -ge "${vars.max_revisions}"; }; }'
+        command: >-
+          { test "${vars.auto}" = "true"; } &&
+          { v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.work_dir}/.itc-verdict.json 2>/dev/null)";
+          c="$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0)";
+          { test -z "$v" -o "$v" = PASS; } || test "$v" = FAIL || { test "$v" = NEEDS_REVISION -a "$c" -ge "${vars.max_revisions}"; }; }
 
   - from: judge
     to: draft-autorevise
@@ -706,8 +717,10 @@ transitions:
 
   - from: judge
     to: failed
-    description: "Catch-all: an out-of-contract verdict string fails the run instead of deadlocking the machine (0149 review P3)"
+    description: "Catch-all: an out-of-contract verdict string fails the run instead of deadlocking the machine (0149 review P3); a PASS whose confidence is missing or outside HIGH/MEDIUM/LOW reads as `PASS!` and lands here"
     guard:
       kind: shell
       options:
-        command: 'v="$(jq -r .verdict ${vars.work_dir}/.itc-verdict.json 2>/dev/null)"; test -n "$v" -a "$v" != PASS -a "$v" != FAIL -a "$v" != NEEDS_REVISION'
+        command: >-
+          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' ${vars.work_dir}/.itc-verdict.json 2>/dev/null)";
+          test -n "$v" -a "$v" != PASS -a "$v" != FAIL -a "$v" != NEEDS_REVISION

@@ -69,10 +69,21 @@ judge from evidence coverage:
   single-source claims), none strong enough to flip the verdict.
 - `LOW` — verdict rests on assumptions or unverified evidence that could plausibly flip it.
 
-The `daily-safety-gate` requires the field on the safety verdict (missing or a value outside the
-enum → block). The level itself does not change routing — escalation stays owned by the review's
-`RISK` decisions and `escalate` flag; treat `LOW` as a signal to demand human review before
-publishing.
+Every judge-verdict **consumer** enforces the enum, so a `PASS` whose `confidence` is missing or
+outside `HIGH|MEDIUM|LOW` is not a usable verdict anywhere:
+
+- `kk stage daily-safety-gate` blocks the run (`missing a HIGH/MEDIUM/LOW confidence level`).
+- The spur workflow gates (`kk-itc`, `judge-gated-publish-example`) read the verdict through a
+  confidence-aware `jq` filter that turns such a `PASS` into an out-of-contract value (`PASS!`),
+  which no accept guard matches and the state machine's catch-all routes to `failed` — the import
+  neither publishes nor deadlocks.
+
+Add that filter to any new judge gate; `references/workflow-integration.md` carries the pattern and
+`plugins/kk/tests/verdict-confidence.test.ts` fails when a workflow accepts a judge `PASS` without
+checking the enum.
+
+The level itself does not change routing — escalation stays owned by the review's `RISK` decisions
+and `escalate` flag; treat `LOW` as a signal to demand human review before publishing.
 
 ## Evaluation procedure
 

@@ -33,7 +33,10 @@ if [ ! -f "$verdict_path" ]; then
   echo "judge: verdict file not found at $verdict_path"
   exit 1
 fi
-verdict=$(jq -r '.verdict' "$verdict_path")
+# Confidence-aware read: a PASS without a HIGH|MEDIUM|LOW confidence becomes `PASS!`, which no
+# accept guard matches and the catch-all below rejects. Keep this filter byte-identical wherever a
+# guard reads a judge verdict (`plugins/kk/tests/verdict-confidence.test.ts` enforces that).
+verdict=$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "$verdict_path")
 case "$verdict" in
   PASS)
     echo "judge: PASS"
@@ -45,7 +48,7 @@ case "$verdict" in
     exit 1
     ;;
   *)
-    echo "judge: unrecognized verdict '$verdict' in $verdict_path"
+    echo "judge: unrecognized verdict or a PASS without a valid confidence ('$verdict') in $verdict_path"
     exit 1
     ;;
 esac
@@ -57,6 +60,10 @@ esac
 2. **Unrecognized value → block.** Only `PASS` unblocks; anything else exits 1.
 3. **`FAIL` and `NEEDS_REVISION` both block** — the distinction is for the feedback loop, not the
    gate. The workflow topology decides whether to retry (NEEDS_REVISION) or halt (FAIL).
+4. **A `PASS` without a `HIGH | MEDIUM | LOW` confidence is not a verdict.** The confidence-aware
+   read above makes it arrive as `PASS!`, so it fails rule 2 like any other out-of-contract value.
+5. **Leave a catch-all.** A guard set with no matching transition deadlocks the machine; every
+   judge state needs a terminal `*`/catch-all edge for verdicts outside the contract.
 
 ## Retry topology (NEEDS_REVISION)
 
