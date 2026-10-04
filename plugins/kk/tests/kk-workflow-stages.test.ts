@@ -334,6 +334,9 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         ['unrecognized verdict', OK_REPORT, { verdict: 'pass' }],
         ['PASS verdict without a confidence level', OK_REPORT, { verdict: 'PASS', rubric: 'compliance', score: 0.95 }],
         ['unrecognized confidence level', OK_REPORT, { verdict: 'PASS', confidence: 'SURE' }],
+        ['lowercase confidence level', OK_REPORT, { verdict: 'PASS', confidence: 'high' }],
+        ['non-string confidence level', OK_REPORT, { verdict: 'PASS', confidence: 1 }],
+        ['empty-string confidence level', OK_REPORT, { verdict: 'PASS', confidence: '' }],
         ['BLOCK decision despite a PASS verdict', { platforms: [{ decision: 'BLOCK' }] }, PASS_VERDICT],
         ['report without platforms', { platforms: [] }, PASS_VERDICT],
         ['unknown decision', { platforms: [{ decision: 'FINE' }] }, PASS_VERDICT],
@@ -345,12 +348,15 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
-    it('a LOW confidence verdict still routes pass on an all-OK report (routing stays with decisions/escalate)', () => {
-        const dir = setup(OK_REPORT, { verdict: 'PASS', rubric: 'compliance', score: 0.9, confidence: 'LOW' });
-        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
-        expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('pass');
-        rmSync(dir, { recursive: true, force: true });
-    });
+    it.each(['MEDIUM', 'LOW'])(
+        'a %s confidence verdict still routes pass on an all-OK report (routing stays with decisions/escalate)',
+        (confidence) => {
+            const dir = setup(OK_REPORT, { verdict: 'PASS', rubric: 'compliance', score: 0.9, confidence });
+            expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+            expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('pass');
+            rmSync(dir, { recursive: true, force: true });
+        },
+    );
 
     it('unparsable verdict JSON → block', () => {
         const dir = setup(OK_REPORT);
