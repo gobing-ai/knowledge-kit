@@ -1,0 +1,34 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# Verification blocks must close with a HIGH|MEDIUM|LOW confidence level.
+#
+# The changelog procedure (sp-dev-changelog → dev-operations.md §8 step 7) closes every emitted
+# section with `Verification: HIGH|MEDIUM|LOW — …` plus a `Confidence:` line, and the upstream
+# task-verification surface wants the same enum on verify answers (spur-new 1068). Nothing checked
+# it on the artifact this repo actually writes: CHANGELOG.md carried `Confidence: HIGH` as
+# hand-written prose, so a section could ship with the line missing or misspelled and no gate would
+# notice — the same failure mode as a judge verdict whose `confidence` field is absent, which the
+# verdict gates and `plugins/kk/tests/verdict-confidence.test.ts` already refuse.
+#
+# Scope: every markdown document in the repo that claims a `Verification (` block (today
+# CHANGELOG.md). Evidence records under docs/tasks and docs/features describe past runs and stay out
+# of scope. The checker lives in `verification-confidence-level.sh` so its file/line detail is
+# reachable by hand — the `exit-code` evaluator reports only the exit status.
+rules:
+  - id: verification-block-carries-confidence-level
+    description: "Every `Verification (` block in a repo document (CHANGELOG.md) carries exactly one `Confidence: HIGH|MEDIUM|LOW` line inside that block, so a verification close-out cannot omit or misspell the level."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/verification-confidence-level.sh"
+        message: "exit {code}: a `Verification (` block is missing its HIGH|MEDIUM|LOW `Confidence:` line (or carries one outside the enum) — run `sh .spur/rules/structure/verification-confidence-level.sh` for the file and line"
+    include:
+      - "CHANGELOG.md"
+      - "docs/**/*.md"
+    exclude:
+      - "docs/tasks/**"
+      - "docs/features/**"
+      - "**/node_modules/**"
+      - "**/vendors/**"
