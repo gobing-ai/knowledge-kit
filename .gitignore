@@ -167,6 +167,7 @@ dist
 /.spur/reports/history/*/analyze-*.json
 /.spur/reports/history/latest.json
 /.spur/memory/runs/
+/.spur/server-owner.lock/
 
 /data/voicebox.db
 /data/backends/cuda
