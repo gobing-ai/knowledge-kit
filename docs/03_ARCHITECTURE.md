@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.30.0
+version: 2.31.0
 created_at: 2026-07-22
 updated_at: 2026-10-05
 derived_from: [00_ADR, 01_PRD]
@@ -145,6 +145,28 @@ supersedes the 2026-08-02 fourth-kind amendment):
 > `docs/design/itc-generating.md`. Capability names omit a leading `kk-` so
 > `superskill install kk` yields `kk:content-judge` / `kk:topic` / `kk:itc-generating` /
 > `/kk:workflow-run` (ADR-009 amdt 2026-08-14 / 2026-08-19).
+
+### Publish modes inside a channel plugin (ADR-029)
+
+A publish channel is one plugin; its publishing **types** are `operations` of that plugin, not
+separate plugins. Selection is `options.operation ?? content.metadata.operation`, resolved against
+the channel's declared operation list; an undeclared operation fails with a named error before a
+browser is launched or a profile resolved, so a misrouted run cannot open a session it will not use.
+
+| Concern | Owner |
+| ---------- | ------- |
+| Mode list, per-mode flow, selector table, success signal | the operation |
+| Profile dir, session, preflight, `profile-check login|check`, `Content → Result` mapping | the channel |
+| Transport, when modes genuinely differ (API vs browser) | the operation, via the existing per-operation transport resolution |
+
+**Mandatory rail.** A publish flow reports success only on an observed site signal, and the signal
+is read from the page's notification containers — never from the document at large, where the
+article body the flow itself pasted satisfies the probe (fixed in the E91 residual sweep). A mode
+whose save control only exists after its artifact is attached (WeChat MP 视频 / 播客) fails fast on
+the missing artifact instead of reporting an unobservable save.
+
+Live per-mode evidence, including the drift lists the fix work consumes:
+`docs/design/xhs-ui-discovery.md`, `docs/design/wechatmp-ui-discovery.md`.
 
 ### Generator input dispatch (accepted design — not yet built)
 

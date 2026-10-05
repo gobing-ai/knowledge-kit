@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.30.0
+version: 1.31.0
 created_at: 2026-05-28
-updated_at: 2026-10-02
+updated_at: 2026-10-05
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1124,6 +1124,18 @@ illustration across failures is deferred until observed.
 
 **Detail:** tasks 0180, 0182; `docs/design/xhs-image-cards.md` (Decision and boundary);
 `docs/04_DESIGN.md` (format `compose` block, exact canvas gate, `ImageArtifact.illustration`).
+
+---
+
+## ADR-029: A publish channel is one plugin; its publishing types are operations
+
+**Status:** Accepted (design) · **Date:** 2026-10-05
+
+**Decision.** One plugin per publish *channel*. The publishing *types* a channel offers (xhs 上传视频 / 上传图文 / 写长文 / 发播客; X post / article; WeChat MP 文章 / 贴图 / 视频 / 播客) are declared, validated `operations` inside that plugin — selected from `options.operation ?? content.metadata.operation`, resolved against a per-channel declared list, and refused by name before any browser opens. Each operation owns its own flow, selector table and success signal; the channel owns one profile dir, one session, one preflight and one `profile-check` CLI. A separate plugin is warranted only by a different account/session, a different `Content → Result` contract, or a different product surface — never by a publishing type alone.
+
+**Why.** Every type on a channel shares one login, so splitting by type multiplies logins, profile dirs, env tiers and preflights while the actual difference is a selector table and a flow (confirmed against both live consoles: xhs and WeChat MP each expose four types behind one authenticated session).
+
+**Detail:** `03_ARCHITECTURE` § Publish modes inside a channel plugin (dispatch, validation, mandatory rail); per-channel live evidence in `docs/design/xhs-ui-discovery.md` and `docs/design/wechatmp-ui-discovery.md`; work in feature Q / tasks 0199–0205. Prior art: the `x-pub` `post` | `article` split.
 
 ---
 

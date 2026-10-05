@@ -4,7 +4,7 @@ name: Fix the recorded per-channel UI drift and add validated mode dispatch
 status: backlog
 template: feature-impl
 created_at: 2026-10-05T18:00:10.115Z
-updated_at: "2026-10-05T21:38:23.636Z"
+updated_at: "2026-10-05T22:28:20.424Z"
 feature_id: Q
 
 ---
@@ -65,6 +65,23 @@ The per-channel drift lists recorded by the discovery tasks (0199–0204) are th
 Approach: mode dispatch inside each channel plugin (the x-pub `post|article` precedent), with a per-channel declared mode list and a named fast-fail; per-mode modules so one mode's selector table and flow stay isolated and testable. Fixes are driven strictly by the discovery evidence — a selector is changed only when the recorded evidence shows the current one is wrong, and each change keeps an offline test (fake launcher/page) plus the shared helpers where they already fit.
 
 Rail: draft-only; the live paths stay operator-explicit; no change to the API/CLI channels' transports.
+
+
+#### Mode matrices (live evidence, 2026-10-05; ADR-029)
+
+| Channel | Operations | Save control | Success signal | Required artifact |
+| ------- | ---------- | ------------ | -------------- | ----------------- |
+| xhs | 上传图文 · 上传视频 · 写长文 · 发播客 | `暂存离开` — **closed shadow root**, reachable only via CDP `pierce: true` (light DOM in 写长文) | `保存成功` toast **plus** the `草稿箱(N)` counter; the URL never changes | 图文: ≤18 images; 视频: one video; 播客: audio + cover; 写长文: none |
+| wechatmp | 文章 (`createType=0`) · 贴图 (`8`) · 视频 (`5`) · 播客 (`7`) | `保存为草稿` | the `草稿箱` row's `更新于` timestamp (auto-save is continuous) | 文章: cover chosen from a body image; 贴图: ≥1 image; 视频: video; 播客: audio + cover |
+| infoq | write → draft | draft control | moved draft URL, or the scoped `保存成功` toast | none |
+| juejin | draft | save control | moved draft URL, or the scoped `保存成功` toast | none |
+| substack | post draft | draft path | `/publish/post/<id>` URL | none |
+| x | article · post (API) | article draft control | `/compose/articles/edit/<id>` URL | article: optional cover |
+
+Cross-mode facts to build on: `一键排版` → `匹配目标格式` exists on both xhs (写长文) and WeChat MP (文章);
+MP titles are `0/64` for 文章 but `0/20` for 视频/播客, and MP's author field is `0/8` and gated on 原创;
+MP creates the editor in a **new tab** and every console route carries the session `token`;
+MP's 视频/播客 media modal **covers the save bar**, so the artifact must exist before the save control does.
 
 ### Plan
 
