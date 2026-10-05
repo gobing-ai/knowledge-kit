@@ -1395,3 +1395,185 @@ Repairs completed per [docs/99_PROJECT_CONSTITUTION.md](file:///Users/robin/xpro
 - **Documentation verification behind client-rendered SPAs**: Official MiniMax API documentation at `platform.minimaxi.com` returns 404/cookie-challenge responses to anonymous HTTP fetches (`curl`, headless proxies). The 512..2048 per-edge and %8 constraints were verified via existing pinned tests and documented as an evidence gap rather than asserting an unverified live URL.
 - **Git worktree path confinement**: Git worktrees store `.git` as a file referencing `/path/to/main/.git/worktrees/<name>`, which contains `commondir: ../..`. Sandboxed shells restricted strictly to the worktree directory will fail Git operations with `Operation not permitted` unless proper directory permissions are established.
 - **Throw vs. Null contract migrations across test suites**: Migrating a helper from a throwing contract to a `null`-returning contract requires updating or relocating existing negative-path characterization tests (e.g. moving tests from `compose-cmap.test.ts` to `bytes.test.ts`) while ensuring higher-level invariant checks (such as compose-card validation) retain fail-loud behavior where required.
+Verification added: `Confidence: HIGH` recorded in the run-scoped learnings artifact and validated with the repo rule.
+
+```
+sh .spur/rules/structure/verification-confidence-level.sh   → exit 0
+awk check on the artifact                                  → block seen=1, conf=1
+```
+
+File: `.spur/run/8df3d58c-4e61-4dac-a534-1e7be61f7077-wrapup-learnings.md` (verification block appended; no other content changed).
+
+# Working learnings — E91 browser publish channels (0183–0188)
+
+Source: the normalized batch capture `.spur/run/8df3d58c-4e61-4dac-a534-1e7be61f7077-wrapup-tasks.json`
+(WBS 0183–0188). Grouped by date, then by task WBS. Each entry is a convention to keep, an error
+that was fixed, a reusable pattern, or a gotcha.
+
+## 2026-09-29 — refinement corrections (all six tasks)
+
+- **0183/0185–0188 — "root catalog entry" is not an installed dependency.** `package.json`
+  `workspaces.catalog` only declares a version; Bun's isolated store links declared deps only, so
+  `packages/publish-harness/node_modules/@gobing-ai/` held just `kk-core` and each channel plugin
+  declared neither `@gobing-ai/ts-browser-automation` nor `playwright`. Every consumer must add
+  `"@gobing-ai/ts-browser-automation": "catalog:"` (+ `"playwright": "catalog:"`) and run
+  `bun install`; the lockfile gains a workspace edge, not a new package. Do not assume a catalog
+  entry means "already available".
+- **0185–0188 — the live switch is `content.metadata.publishStatus === 'public'`.** No plugin uses
+  `options.publish`; `xhs-pub/src/index.ts:618` and `wechatmp-pub/src/index.ts:319-321` are the
+  precedent (ADR-022 / ADR-026). Any other value fails `ok: false` before a browser opens. A
+  half-invented third convention (`options.publish`) is exactly what refinement rejected.
+- **0183/0185–0188 — the stub tests are the old contract and get replaced, not preserved.**
+  `infoq-pub` / `juejin-pub` / `substack-pub` / `x-pub` tests asserted the `agent` default,
+  `sessionReady`, and agent/script parity — all removed by E91-D1. Replace those cases and update
+  `plugin.json` descriptions in the same change; keep the suite as the regression net only for
+  behavior that survives.
+- **0185–0188 — `checkChannelSession` is `{status, profileDir, detail}` with an optional headed
+  retry.** The publish preflight passes `headedFallback: false`; `withProfilePage` defaults to
+  headed, so flows pass `headless` explicitly (`options.headless === true` opt-in). One shared
+  result shape, not a boolean `{ok}`.
+- **0185/0186 — success needs an observed, positive signal, not a click.** The wt seeds returned
+  the URL after a sleep (infoq), waited 5 s for autosave (juejin), or clicked guessed draft
+  buttons (substack). Freeze an explicit signal per channel: moved URL carrying an id, a visible
+  toast, or a URL rewrite. E91-D6 is the rail — never report unseen success.
+- **0186 — know the editor before choosing a fill helper.** Juejin's bytemd is CodeMirror over
+  **markdown** (`fillCodeMirror`, no HTML); infoq/substack/x are ProseMirror/Draft.js rich text
+  (`pasteHtml(markdownToHtml(body))`). Inspect the seed's editor, do not infer from the site.
+- **0186 — the live popup has hard requirements.** Juejin's `确定并发布` cannot confirm without a
+  category and ≥1 tag; a live run missing `content.metadata.category` or `content.metadata.tags`
+  must fail `ok: false` naming the field **before** any browser opens.
+- **0187 — no default publication for Substack.** `SUBSTACK_PUBLICATION_URL` is required; the
+  seed's `https://substack.com/new` fallback lands on an arbitrary publication. Unset/blank/
+  non-`https:` → `ok: false` naming the variable before a browser opens. Live path emails
+  subscribers, so it stays behind `publishStatus: 'public'` and out of the operator dogfood.
+- **0188 — article cover is not a Content field.** `ContentSchema` has no cover; use
+  `options.coverPath ?? content.metadata.coverImage` (podcast-pub naming), optional, absolute path
+  to an existing `.png|.jpg|.jpeg|.webp`, validated before the browser. The article path must not
+  load Playwright for the `post` API path — `XPostApiTransport` stays importable without touching
+  Playwright.
+- **0183 — the 04 row for the design index is deliberately deferred.** The satellite row stays
+  `planned (E91, ADR-027)` until the last channel task ships; flip it (and the satellite's own
+  framing) at the shipping batch's doc-sync exit, not earlier.
+- **0184 — verify a migration candidate against its actual behavior before widening the shared
+  API.** xhs needs the ADR-025 guard around login/check; wechatmp captures `storageState` and
+  re-injects cookies across a Chromium restart, and has no `KK_BROWSER_PROFILE_DIR` tier. Neither
+  fits `runProfileCli` / `resolveChannelProfileDir` without a behavior change, so scope was
+  narrowed: the shared module stays single-purpose; single-caller options are the signal to stop.
+
+## 2026-10-05 — implementation and wrapup
+
+- **0183 — shared library shape (the pattern the other five build on).** `packages/publish-harness/src/browser.ts`
+  exports `resolveChannelProfileDir`, `checkChannelSession`, `runProfileCli`, `waitUntil`,
+  `resolveSelector`, `pasteHtml`, `fillCodeMirror`, `uploadFile`, `expectOutcome`, `markdownToHtml`,
+  re-exported through `"./browser": "./src/browser.ts"`. `src/index.ts` imports neither `./browser`
+  nor `@gobing-ai/ts-browser-automation` (R5), so API-only plugins never load browser code. Proven
+  by `bun build packages/publish-harness/src/index.ts --bundle` with 0 hits for the browser package
+  or `ClipboardEvent`.
+- **0183 — profile precedence, one rule.** `override` > `<CHANNEL>_PROFILE_DIR` >
+  `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir(channel)`; **blank counts as unset**, and no
+  directory is ever created. Every channel implements exactly this.
+- **0183 — error text is the contract.** Every helper failure throws an `Error` naming the selector
+  (or outcome label) and the timeout; transports convert it to `{ ok: false, error }`. The main
+  harness entry stays free of `console.*` / raw stdout (`no-raw-stdout-stderr` rule); `runProfileCli`
+  writes through the injected `stdout` (ts-utils `echo` seam).
+- **0183 — `expectOutcome` treats an empty-string probe as no signal.** `null` and `''` both mean
+  "the browser showed nothing"; only a non-empty observed string is success. Timeout yields
+  `{ ok: false, error: '<label>: no outcome observed within <ms>ms' }`.
+- **0183 gotcha (carried into 0190) — `fillCodeMirror`'s keyboard branch has no post-condition.**
+  `keyboard.insertText` is awaited and the function returns without confirming the editor received
+  the text, unlike `pasteHtml`. A stolen-focus no-op can be reported as success; the juejin flow
+  (0186) must assert the body after the fill. Deferred, not fixed, because the frozen surface did
+  not require it.
+- **0183 gotcha (carried into 0190) — `expectOutcome` propagates probe exceptions.** A probe that
+  rejects (`page.evaluate` during navigation) rejects `expectOutcome` instead of yielding
+  `{ ok: false }`; channel flows must wrap the probe or the "never report unseen success" rail
+  becomes an unhandled rejection.
+- **0183 advisory — `bun.lock` picked up an unrelated `apps/cli` version re-sync** (`0.0.28 →
+  0.0.31`); correct against HEAD's release commit, but the change map under-disclosed it. Read lock
+  hunks before writing "workspace edge only".
+- **0183 advisory — bundling externals are not verified.** `scripts/bundle-plugins.ts` keeps only
+  `playwright` external, so channel plugins inlining `publish-harness/browser` +
+  `@gobing-ai/ts-utils` rely on `playwright` resolving at run time. Same shape as `xhs-pub` today;
+  accepted, but unverified.
+- **0184 — behavior-preserving extraction is proved by an unchanged suite and an equivalence probe.**
+  Both plugin suites ran 97 pass / 0 fail **before and after**, and `git diff` over both test dirs
+  was empty. A 100-combination probe (override × channel env × shared env, values
+  `undefined / "" / "   " / path`) showed 0 differences in the 18 blank-free combinations; every
+  difference contained a blank tier.
+- **0184 — blank-as-unset is a real, disclosed semantic change.** xhs used `??`, so a blank
+  `XHS_PROFILE_DIR=""` shadowed `KK_BROWSER_PROFILE_DIR`; the shared resolver treats blank as unset.
+  No test covered it; closed in Q&A as accepted. Every migration that swaps an inline `??` chain for
+  a shared resolver should expect this class of divergence.
+- **0184 — helper-owned user-visible text drifts even when assertions hold.** The xhs `detail`
+  string changed (`authenticated xhs session observed …` vs `… creator console observed …`;
+  `headed … refused` vs `headless and headed … refused`), and a missing profile is now refused after
+  one headless probe instead of two. Asserted substrings (`authenticated`, `readiness refused`)
+  survived; repo-wide grep found no machine consumer of the full sentence. Disclose such deltas in
+  the change map rather than hiding them.
+- **0184 advisory — duplicated poll cadence.** The four xhs `waitUntil` call sites rely on the
+  shared `pollMs = 500` default rather than passing `POLL_MS`, leaving two sources of "500"; a
+  change to the shared default would silently change xhs cadence with no failing test.
+- **0185/0186 — toast probes matched the article body the flow itself wrote (0195/0196).** Both
+  `readToast` implementations search the whole document with `page.locator(':text("…")')`; a body
+  containing `保存成功` / `提交成功` / `发布成功` satisfies the probe with no site signal — a false
+  `ok: true` on the E91-D6 rail, reproduced for juejin (draft reported on the editor URL, no id, no
+  toast, autosave window skipped). Fix shape: scope the read to the notification/toast container or
+  exclude the editor subtree. **Probe scope is implementation's own choice even when the candidate
+  strings are design-frozen** — a localized change needing the live DOM.
+- **0185 — InfoQ's "public" is not a self-publish.** `提交` is submit for editorial review; the
+  Result message must read `submitted for InfoQ editorial review` rather than claiming a publish.
+  `保存草稿` is clicked on every run; `提交` only when `publishStatus === 'public'`.
+- **0186/0187/0188 — draft success is always an observed URL/shape.** juejin:
+  `/editor/drafts/<id>` or `保存成功`; substack: autosave rewrites to `/publish/post/<id>` with no
+  click; x article: `/compose/articles/edit/<id>`. No signal within 30 s → `ok: false` naming the
+  label and deadline; a draft run never clicks a live control.
+- **0187 gotcha (0197/0198) — validation and derivation must not disagree.** `resolvePublicationUrl`
+  validated with `new URL` but returned the raw string, while `editorUrl` re-derived the base with
+  string surgery; `https://robin.substack.com/publish/posts` (the posts dashboard — a plausible
+  paste) was accepted and became `…/publish/posts/publish/post/new`, surfacing as a session-refusal
+  that sent the operator to re-login. Fix shape: keep the parsed `URL` and derive from
+  `url.origin` + pathname.
+- **0188 — adopting a documented tier fixes code drift, not behavior drift.** The stub resolved
+  `options.profileDir ?? X_PROFILE_DIR` while `docs/04_DESIGN.md` already listed x-pub article under
+  `KK_BROWSER_PROFILE_DIR`; `resolveChannelProfileDir('x', …)` made code match the documented
+  surface, and the default profile dir stayed `…/browser-profiles/x`.
+- **0188 — dropping the seed's `tweetButton`/`Tweet` candidates is deliberate.** They are
+  post-composer controls; using them from the article flow would risk a tweet. Trim seed selector
+  lists to the operation they belong to.
+- **Batch doc-sync (0183–0188) — verify the satellite status, not just the section.** The working
+  tree had already added the 04 §`publish-harness/browser` export table, the verdict table, the env
+  row, and the harvest superseded notes, yet three T3/T1 surfaces were still stale: the 04 §0 design
+  row still read `planned (E91, ADR-027)` after the last channel shipped; the satellite
+  `docs/design/browser-publish-channels.md` still said the four channels "ship today as stubs";
+  `docs/design/publish-plugin-specification.md` still framed the browser channels as
+  "Accepted design (E7, not yet built)"; and `docs/03_ARCHITECTURE.md`'s `packages/publish-harness`
+  module row listed only the pre-E91 helpers. Repaired in this wrapup: 04 row → `shipped (E91,
+  ADR-027; 0183–0188)` with version 2.39.0 → 2.40.0; 03 module row and tree comment updated with the
+  `./browser` command library and its real dependency set (`kk-core`,
+  `ts-browser-automation`, `ts-utils`), version 2.29.0 → 2.30.0; satellite intro reframed to past
+  tense with a `shipped (0183–0188)` marker and its interface block corrected to the code
+  (`resolveSelector`, `runProfileCli` exit 2, `uploadFile`/`expectOutcome` opts); ADR-027 already
+  read `Accepted` and needed no amendment. Lesson: a batch whose tasks each name "the 04 surfaces"
+  can still leave 03's module descriptions and the design satellites' status framing stale — run
+  the §7 audit over every key doc at batch exit, and grep `not yet built` / `planned (E<n>` across
+  `docs/design/`.
+
+<!--
+Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
+- Coverage: 6 batch tasks (0183–0188) read from `.spur/run/8df3d58c-4e61-4dac-a534-1e7be61f7077-wrapup-tasks.json`
+  plus each task body via `spur task show <wbs> --json`; every learning carries its task WBS and a
+  date group.
+- Doc-drift repair detected mechanically, not from reading: `rg` stale-framing sweep over
+  `docs/00_ADR.md docs/03_ARCHITECTURE.md docs/04_DESIGN.md docs/design/*.md` plus a code/table diff —
+  `resolveSelector`/`runProfileCli`/`uploadFile`/`expectOutcome` signatures transcribed from
+  `packages/publish-harness/src/browser.ts:158,308,323,366` and `packages/publish-harness/package.json`
+  `exports`/`dependencies`; both repairs re-checked and the sweep now returns `NONE`.
+- Contract evidence: `docs/03_ARCHITECTURE.md` 2.29.0→2.30.0 and `docs/04_DESIGN.md` 2.39.0→2.40.0, both
+  `updated_at: 2026-10-05`, `owns`/`authority`/`edit_rules` matching §4.1 (§4.3); ADR-027 already
+  `Status: Accepted` at `docs/00_ADR.md:1066` (no amendment needed).
+- Scope bound: doc-evolve only — no task/feature corpus written; learnings were not re-parsed from raw
+  input, only the normalized batch JSON.
+- Confidence: HIGH — every repair is anchored to a `file:line` or a command whose output was read; the
+  one unverified area (live browser editor/toast behavior per channel) is explicitly out of this
+  doc-evolve scope and recorded as the residual tasks 0190/0195–0198.
+-->

@@ -31,7 +31,7 @@ ADR-008 (amdt 2026-09-17). Feature: E7.
 | D10 | `kk fanout` for `file-cli` and `driver: 'script'`. Agent-default channels fan out as sequential workflow `agent.run` steps | `kk fanout` spawning LLMs; a new `kk` noun | Fan-out sequencing is kk's job for deterministic plugins (ADR-007 R4). Agent loops are workflow steps |
 | D11 | Dated ADR-008 amendment, not a new ADR | ADR-021 "agent transport"; silent divergence | Drivers refine the existing kind split; they do not reverse it |
 | D12 | Thin per-channel (or one coordinator) kk skills for login/preview/confirm | Fat skills that reimplement transport | K pattern: engine in the plugin, skill is the operator surface |
-| D13 | Build order: harness → `medium-pub` → `wechatmp-pub` draft → `x-pub` post → `x-pub` article → leftover CMS (`juejin`, `substack`, `infoq`, `xhs`) | One-plugin-per-PR with no foundation; browser channels before API | Foundation first is the wt-gap this feature exists to close |
+| D13 | Build order: harness → `medium-pub` → `wechatmp-pub` draft → `x-pub` post → `x-pub` article → leftover CMS (`juejin`, `substack`, `infoq`, `xhs`) | One-plugin-per-PR with no foundation; browser channels before API | Foundation first is the wt-gap this feature exists to close. **Superseded by ADR-027 for `juejin`/`substack`/`infoq`/`x-pub` `article`:** those four ship as `script` browser flows over `@gobing-ai/ts-browser-automation` + `publish-harness/browser`, not `agent` (see `browser-publish-channels.md`) |
 | D14 | `technical-content-creation` is out of E7 | Generator plugin under `plugins/generations` | F2/F3 already harvested stages 1–4 as skills. Follow-on F41 under F4 |
 
 ### Per-channel policy
@@ -42,10 +42,10 @@ ADR-008 (amdt 2026-09-17). Feature: E7.
 | `wechatmp-pub` `draft` | `file-cli` | — | Official `POST /cgi-bin/draft/add` (2026-09-16) |
 | `wechatmp-pub` live/console | `browser` | `agent` (script optional) | `freepublish/submit` is certification-gated |
 | `x-pub` `post` | `file-cli` | — | Official `POST /2/tweets`. Non-API automation is suspendable |
-| `x-pub` `article` | `browser` | `agent` (script optional) | No public Articles API found 2026-09-17 |
-| `juejin-pub` | `browser` | `agent` (script optional) | No official public write API |
-| `substack-pub` | `browser` | `agent` (script optional) | No official public write API |
-| `infoq-pub` | `browser` | `agent` (script optional) | No official public write API |
+| `x-pub` `article` | `browser` | `script` — **superseded by ADR-027** (was `agent` (script optional)) | No public Articles API found 2026-09-17 |
+| `juejin-pub` | `browser` | `script` — **superseded by ADR-027** (was `agent` (script optional)) | No official public write API |
+| `substack-pub` | `browser` | `script` — **superseded by ADR-027** (was `agent` (script optional)) | No official public write API |
+| `infoq-pub` | `browser` | `script` — **superseded by ADR-027** (was `agent` (script optional)) | No official public write API |
 | `xhs-pub` | `browser` | `script` (E8/ADR-024 override from `agent` for ordered image upload) | No official public write API |
 
 Already harvested, **not** in E7: `qiita-pub`, `zenn-pub`, `surfdash-pub`.

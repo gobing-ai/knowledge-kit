@@ -21,7 +21,7 @@
  * the full recipe lives in docs/design/xhs-image-cards.md.
  */
 import { parseArgs } from 'node:util';
-import { resolveBrowserProfileDir } from '@gobing-ai/publish-harness';
+import { resolveChannelProfileDir } from '@gobing-ai/publish-harness/browser';
 import { type BrowserLauncher, loginWithProfile } from '@gobing-ai/ts-browser-automation';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { type AutomationGuard, createAutomationGuard } from './automation-guard';
@@ -86,8 +86,7 @@ export async function main(
                 throw new Error(`--timeout must be a non-negative number of ms, got '${values.timeout}'`);
             }
         }
-        const override = values.profile ?? process.env.XHS_PROFILE_DIR ?? process.env.KK_BROWSER_PROFILE_DIR;
-        profileDir = resolveBrowserProfileDir(CHANNEL, override);
+        profileDir = resolveChannelProfileDir(CHANNEL, values.profile);
     } catch (error) {
         echoError(
             `profile-check: ${error instanceof Error ? error.message : String(error)} — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>]`,

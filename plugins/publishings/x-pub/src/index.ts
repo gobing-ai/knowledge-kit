@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { dirname } from 'node:path';
+import { dirname, extname, isAbsolute } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import {
@@ -8,10 +8,28 @@ import {
     FakeFileCliTransport,
     type PublishTransport,
     type PublishTransportPayload,
-    resolveBrowserProfileDir,
+    trySelectors,
 } from '@gobing-ai/publish-harness';
+import {
+    type ChannelBrowserConfig,
+    checkChannelSession,
+    expectOutcome,
+    markdownToHtml,
+    pasteHtml,
+    resolveChannelProfileDir,
+    resolveSelector,
+    uploadFile,
+} from '@gobing-ai/publish-harness/browser';
+import {
+    type BrowserLauncher,
+    BrowserProfileMissingError,
+    type IsAuthenticatedPredicate,
+    LoginTimeoutError,
+    withProfilePage,
+} from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import type { Page } from 'playwright';
 
 /** Per-request timeout (ms) for the X API call — Bun's `fetch` has no default deadline (R5). */
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -127,43 +145,263 @@ export class XPostApiTransport implements PublishTransport {
     }
 }
 
+/** Channel slug for the article browser session: resolves the `X_PROFILE_DIR` tier (unchanged). */
+export const ARTICLE_CHANNEL = 'x';
+/** X's Articles composer; the preflight and the editor visit both open it. */
+export const X_ARTICLES_URL = 'https://x.com/compose/articles';
+/** The draft signal: the editor URL X renders once the article exists — the only draft evidence. */
+export const ARTICLE_EDIT_RE = /\/compose\/articles\/edit\/(\d+)/;
+/** Login/redirect URLs that mean "not authenticated" — the composer never renders behind them. */
+export const LOGIN_URL_RE = /(\/i\/flow\/login|\/login)/;
+
+/**
+ * Selectors seeded from the wt script (`x-article-playwright.ts:143-187`); each list is tried in
+ * order and the operator dogfood (0194) re-measures them. The seed's `tweetButton`/`Tweet`
+ * candidates are dropped: they belong to the tweet composer, and clicking one would post a tweet.
+ */
+export const ARTICLE_SELECTORS = {
+    write: ['[data-testid="empty_state_button_text"]', 'button:has-text("Write")', '[aria-label*="Write" i]'],
+    title: ['textarea[placeholder="Add a title"]', '[data-testid="twitter-article-title"]'],
+    body: ['.DraftEditor-editorContainer [contenteditable="true"]', 'div[role="textbox"]'],
+    addPhotos: ['[data-testid="addPhotoButton"]', 'button[aria-label*="Add photos" i]'],
+    fileInput: ['[data-testid="fileInput"]', 'input[type="file"][accept*="image"]'],
+    publish: ['[data-testid="publishButton"]', 'button:has-text("Publish")'],
+} as const;
+
+const STEP_TIMEOUT_MS = 30_000;
+const LOGIN_TIMEOUT_MS = 180_000;
+/** Operator recovery command every session failure names — never a cookie, token, page HTML or stack. */
+const LOGIN_INSTRUCTION = 'bun plugins/publishings/x-pub/src/profile-check.ts login';
+/** A live article lands on a URL carrying the article id; the composer URL is `/edit/`. */
+const LIVE_URL_ID_RE = /\/articles?\/(\d+)/;
+/** Cover extensions accepted from `options.coverPath` / `metadata.coverImage` (R2). */
+const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
+/**
+ * X-owned readiness predicate: no login redirect and the article composer reachable (the write
+ * control or the title field attached). Shared by the publish preflight and the profile CLI (R1, R5).
+ */
+export const isArticleAuthenticated: IsAuthenticatedPredicate = async (page) => {
+    if (LOGIN_URL_RE.test(page.url())) return false;
+    if ((await trySelectors(page, ARTICLE_SELECTORS.write, { visible: false })).found) return true;
+    return (await trySelectors(page, ARTICLE_SELECTORS.title, { visible: false })).found;
+};
+
+/** Site-owned config for the shared session check and operator CLI (0183). */
+export const ARTICLE_CONFIG: ChannelBrowserConfig = {
+    channel: ARTICLE_CHANNEL,
+    homeUrl: X_ARTICLES_URL,
+    isAuthenticated: isArticleAuthenticated,
+    loginTimeoutMs: LOGIN_TIMEOUT_MS,
+};
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/** Session failures whose one-liner must name the recovery command (R5). */
+function needsLogin(error: unknown): boolean {
+    return error instanceof LoginTimeoutError || error instanceof BrowserProfileMissingError;
+}
+
+/**
+ * Resolves and validates the optional cover (R2): `options.coverPath` wins over
+ * `metadata.coverImage`, and a given cover must be an absolute path to an existing
+ * `.png|.jpg|.jpeg|.webp` file. Returns the failure message otherwise, so a bad cover is refused
+ * **before** any browser opens.
+ */
+async function resolveCover(
+    options: Record<string, unknown> | undefined,
+    content: Content,
+): Promise<{ path: string } | { error: string } | undefined> {
+    const raw = options?.coverPath ?? content.metadata?.coverImage;
+    if (raw === undefined) return undefined;
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+        return { error: `cover path must be a non-empty local file path, got '${String(raw)}'` };
+    }
+    if (!isAbsolute(raw)) {
+        return { error: `cover path must be an absolute path, got '${raw}'` };
+    }
+    if (!COVER_EXTS.has(extname(raw).toLowerCase())) {
+        return { error: `cover path must be a .png, .jpg, .jpeg or .webp file, got '${raw}'` };
+    }
+    if (!(await createNodeFileSystem().exists(raw))) {
+        return { error: `cover file does not exist: '${raw}'` };
+    }
+    return { path: raw };
+}
+
 export class XArticleBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
-    private readonly loginTimeoutMs: number;
-    private readonly sessionReady: boolean;
+    private readonly launcher?: BrowserLauncher;
+    private readonly stepTimeoutMs: number;
 
-    constructor(driver: BrowserDriver = 'agent', opts?: { loginTimeoutMs?: number; sessionReady?: boolean }) {
+    constructor(driver: BrowserDriver = 'script', deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number } = {}) {
         this.driver = driver;
-        this.loginTimeoutMs = opts?.loginTimeoutMs ?? 120_000;
-        this.sessionReady = opts?.sessionReady ?? false;
+        this.launcher = deps.launcher;
+        this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
     }
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
-        const profileDir = resolveBrowserProfileDir(
-            'x',
-            typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : process.env.X_PROFILE_DIR,
-        );
-        if (!this.sessionReady && this.loginTimeoutMs <= 0) {
-            return fail(`login timeout: no authenticated X article session in ${profileDir}`);
+        if (this.driver !== 'script') {
+            return fail(`unsupported driver '${this.driver}' for x article`);
         }
-        if (!this.sessionReady) {
-            return fail(`login timeout: no authenticated X article session in ${profileDir}`);
+        const requested = payload.content.metadata?.publishStatus;
+        if (requested !== undefined && requested !== 'draft' && requested !== 'public') {
+            return fail(`unknown publishStatus '${String(requested)}' (expected absent, 'draft' or 'public')`);
         }
-        const title = payload.content.title ?? 'Untitled';
+        // Pre-validation, before any browser opens: a given cover must be a usable local image (R2),
+        // so a bad path is a fast refusal rather than a half-built draft.
+        const cover = await resolveCover(payload.options, payload.content);
+        if (cover !== undefined && 'error' in cover) return fail(cover.error);
+
+        const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
+        const profileDir = resolveChannelProfileDir(ARTICLE_CHANNEL, override);
+
+        // ADR-025 preflight: an unauthenticated or absent profile must never produce a headed
+        // visit, so the read-only headless check runs first and a refusal stays a fast refusal.
+        const session = await checkChannelSession(ARTICLE_CONFIG, {
+            profileDir,
+            launcher: this.launcher,
+            headedFallback: false,
+            timeoutMs: this.stepTimeoutMs,
+        });
+        if (session.status !== 'verified') {
+            return fail(`${TARGET} session preflight refused: ${session.detail} — run: ${LOGIN_INSTRUCTION}`);
+        }
+
+        const publishStatus = requested === 'public' ? 'public' : 'draft';
+        try {
+            return await withProfilePage(
+                {
+                    profileDir,
+                    url: X_ARTICLES_URL,
+                    isAuthenticated: isArticleAuthenticated,
+                    // Headed by default; the headless preflight above is the unattended pass,
+                    // `options.headless === true` the opt-in.
+                    headless: payload.options?.headless === true,
+                    launcher: this.launcher,
+                    // The session is already preflight-verified, so the post-goto confirmation is
+                    // a bounded step like every other one, not the 180s interactive login wait.
+                    timeoutMs: this.stepTimeoutMs,
+                },
+                async ({ page }) => this.runArticleFlow(page, payload.content, publishStatus, cover?.path, profileDir),
+            );
+        } catch (error) {
+            const hint = needsLogin(error) ? ` — run: ${LOGIN_INSTRUCTION}` : '';
+            return fail(`${errorMessage(error)}${hint}`);
+        }
+    }
+
+    /**
+     * The site-owned composer flow: write → title → Draft.js HTML paste → optional cover → the
+     * draft signal, then — for a live run only — the publish control and the live signal. Success
+     * only from an `expectOutcome` probe (E91-D6): a wait without an observed signal is never a
+     * success, and a draft run never clicks the publish control (E91-D5).
+     */
+    private async runArticleFlow(
+        page: Page,
+        content: Content,
+        publishStatus: 'draft' | 'public',
+        coverPath: string | undefined,
+        profileDir: string,
+    ): Promise<Result> {
+        const metadata = { operation: 'article', driver: this.driver, publishStatus, profileDir };
+
+        const writeSelector = await resolveSelector(page, ARTICLE_SELECTORS.write, {
+            timeoutMs: this.stepTimeoutMs,
+            label: 'write control',
+        });
+        await page.locator(writeSelector).first().click();
+
+        const titleSelector = await resolveSelector(page, ARTICLE_SELECTORS.title, {
+            timeoutMs: this.stepTimeoutMs,
+            label: 'title input',
+        });
+        await page
+            .locator(titleSelector)
+            .first()
+            .fill(content.title ?? 'Untitled');
+
+        const bodySelector = await resolveSelector(page, ARTICLE_SELECTORS.body, {
+            timeoutMs: this.stepTimeoutMs,
+            label: 'body editor',
+        });
+        // X's article editor is Draft.js rich text: the body goes in as rendered HTML through the
+        // shared paste, never as plain markdown text (E91-D4).
+        await pasteHtml(page, bodySelector, markdownToHtml(content.body), { timeoutMs: this.stepTimeoutMs });
+
+        if (coverPath !== undefined) {
+            // The photo picker is opened by a control when the composer renders it; the file input
+            // itself is routinely hidden behind it, so it is found by attachment (R2).
+            const addPhotos = await trySelectors(page, ARTICLE_SELECTORS.addPhotos, { visible: false });
+            if (addPhotos.found && addPhotos.selector !== null) {
+                await page.locator(addPhotos.selector).first().click();
+            }
+            const fileInputSelector = await resolveSelector(page, ARTICLE_SELECTORS.fileInput, {
+                timeoutMs: this.stepTimeoutMs,
+                label: 'cover file input',
+            });
+            await uploadFile(page, fileInputSelector, coverPath, { timeoutMs: this.stepTimeoutMs });
+        }
+
+        const draft = await expectOutcome(() => probeDraft(page), {
+            timeoutMs: this.stepTimeoutMs,
+            label: 'x article draft',
+        });
+        if (!draft.ok) return fail(draft.error);
+
+        // The probe only ever returns a `/compose/articles/edit/<id>` URL, so this always resolves.
+        const id = ARTICLE_EDIT_RE.exec(draft.evidence)?.[1];
+        if (publishStatus === 'draft') {
+            return ResultSchema.parse({
+                ok: true,
+                target: TARGET,
+                ...(id === undefined ? {} : { id }),
+                url: draft.evidence,
+                message: `${TARGET} article draft saved (unpublished) in profile ${profileDir}`,
+                metadata,
+            });
+        }
+
+        const publishSelector = await resolveSelector(page, ARTICLE_SELECTORS.publish, {
+            timeoutMs: this.stepTimeoutMs,
+            label: 'publish control',
+        });
+        await page.locator(publishSelector).first().click();
+        const live = await expectOutcome(() => probeLive(page), {
+            timeoutMs: this.stepTimeoutMs,
+            label: `x article publish '${publishSelector}'`,
+        });
+        if (!live.ok) return fail(live.error);
+
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
-            id: `article-draft-${title.length}`,
-            message: 'X article draft prepared (unpublished)',
-            metadata: { operation: 'article', driver: this.driver, publishStatus: 'draft', profileDir },
+            ...(id === undefined ? {} : { id }),
+            url: live.evidence,
+            message: `${TARGET} article published live in profile ${profileDir}`,
+            metadata,
         });
     }
 }
 
+/** Draft evidence is URL-only by design: X autosaves the composer onto `/edit/<id>`. */
+async function probeDraft(page: Page): Promise<string | null> {
+    const url = page.url();
+    return ARTICLE_EDIT_RE.test(url) ? url : null;
+}
+
+/** Live evidence is URL-only too: a published article URL that left the `/edit/` composer. */
+async function probeLive(page: Page): Promise<string | null> {
+    const url = page.url();
+    return !ARTICLE_EDIT_RE.test(url) && LIVE_URL_ID_RE.test(url) ? url : null;
+}
+
 export function getPublishTransport(operation: 'post' | 'article' = 'post'): PublishTransport {
     if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') {
-        return operation === 'article' ? new FakeBrowserTransport('agent') : new FakeFileCliTransport();
+        return operation === 'article' ? new FakeBrowserTransport('script') : new FakeFileCliTransport();
     }
     return operation === 'article' ? new XArticleBrowserTransport() : new XPostApiTransport();
 }
