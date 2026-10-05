@@ -55,8 +55,12 @@ Every evaluation writes a JSON verdict file. The default path is
 | `FAIL` | Content violates a must-pass criterion (safety, accuracy, compliance) | Block; surface findings; do not publish |
 | `NEEDS_REVISION` | Content is salvageable but below bar on quality criteria | Block; feedback drives a bounded regenerate-retry loop |
 
-`PASS` is the only verdict that unblocks publish. The shell guard treats `FAIL` and
-`NEEDS_REVISION` identically (exit 1); the distinction is for the feedback loop, not the gate.
+`PASS` is the only verdict that unblocks publish outright. The shell guard treats `FAIL` and
+`NEEDS_REVISION` identically (exit 1); the distinction is for the feedback loop, not the gate — a
+workflow may spend a bounded revision budget on either and then classify the residue (20261005:
+`kk-daily-ai-voice` routes non-PASS through `safety-revise` and publishes only the targets whose
+platform did not BLOCK). A `fail` means a rule was *violated*, not merely suspected: see
+"Evidence discipline".
 
 ### Confidence level
 
@@ -113,6 +117,12 @@ and `escalate` flag; treat `LOW` as a signal to demand human review before publi
   contradicted by source Y" is.
 - Never fabricate sources. If a claim cannot be verified against the provided docs/brief, mark it
   `warn` (unverified), not `fail`, unless the rubric classifies unverified claims as must-pass.
+- **A rule you cannot verify is not a rule you may `fail` on.** When a finding rests on rule text
+  that is unverified, out of date, or an editorial stance rather than platform/governing text — the
+  upstream report marks these `evidenceGap` — grade the criterion `warn` and escalate. `fail` is
+  reserved for a violation of rule text you actually verified. Downgrading here is what keeps a
+  gate a gate: an unverifiable must-pass `fail` is unanswerable, so it can neither be remediated nor
+  honestly cleared.
 
 ## Rubrics
 

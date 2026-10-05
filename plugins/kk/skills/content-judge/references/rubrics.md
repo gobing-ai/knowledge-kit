@@ -89,8 +89,14 @@ Thresholds: `pass_threshold = 0.85`
 - `no-prohibited-claims` is strict: a single prohibited claim is an immediate `FAIL`, regardless
   of overall score. Examples: unverified health/financial advice, guarantees of outcome,
 - `jurisdictional-rules`: the wrapper supplies the jurisdiction (e.g., `US-SEC`, `EU-GDPR`,
-  `CN-CAC`). If none is supplied, mark `warn` and note "no jurisdiction specified" — do not
-  guess a jurisdiction and fail against a guessed rule.
+  `CN-CAC`, or the platform reference files a distribution gate names). If none is supplied, mark
+  `warn` and note "no jurisdiction specified" — do not guess a jurisdiction and fail against a
+  guessed rule.
+  Grade `fail` only against rule text verified for that jurisdiction. A rule the wrapper or its
+  process marks `evidenceGap` (unverified text, a stale `Last verified` date, or an editorial
+  stance rather than platform/governing text) is `warn` + escalate: unverifiable rule text cannot
+  be a must-pass failure, because no revision can clear it (20261005 — the daily gate blocked
+  every run on the evidence-gapped CN 资质口径 stance until this was fixed).
 - `data-handling`: scan for PII that may have been carried through from input Docs (emails,
   phone numbers, national IDs). Leakage is a `fail`.
 
