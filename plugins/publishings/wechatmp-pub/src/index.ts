@@ -6,6 +6,7 @@ import {
     type PublishTransportPayload,
     resolveBrowserProfileDir,
 } from '@gobing-ai/publish-harness';
+import { waitUntil } from '@gobing-ai/publish-harness/browser';
 import { BrowserProfileMissingError, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
@@ -193,16 +194,12 @@ export async function checkWechatSession(profileDir: string): Promise<void> {
 }
 
 async function pollLogin(page: Page): Promise<void> {
-    const deadline = Date.now() + CONSOLE_READY_TIMEOUT_MS;
-    while (!isWechatLoggedIn(page)) {
-        if (Date.now() > deadline) {
-            throw new Error(
-                `Authentication was not confirmed within ${CONSOLE_READY_TIMEOUT_MS}ms — the saved session state has ` +
-                    'likely expired: re-run `bun src/profile-check.ts login` to sign in again.',
-            );
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
+    const ready = await waitUntil(() => Promise.resolve(isWechatLoggedIn(page)), CONSOLE_READY_TIMEOUT_MS, 1000);
+    if (ready) return;
+    throw new Error(
+        `Authentication was not confirmed within ${CONSOLE_READY_TIMEOUT_MS}ms — the saved session state has ` +
+            'likely expired: re-run `bun src/profile-check.ts login` to sign in again.',
+    );
 }
 
 export interface WechatmpTransportOptions {

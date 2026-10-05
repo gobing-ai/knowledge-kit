@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.39.0
+version: 2.41.0
 created_at: 2026-07-22
-updated_at: 2026-10-02
+updated_at: 2026-10-05
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -38,7 +38,7 @@ sync: [T3]
 | [kk-daily-ai-voice.md](design/kk-daily-ai-voice.md) | Daily AI news voice broadcast workflow | shipped (F6) |
 | [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy; Apple enclosure MIME gate and channel compliance checklist | shipped (E6; 0170/0173) |
 | [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | shipped (E7) |
-| [browser-publish-channels.md](design/browser-publish-channels.md) | InfoQ/Juejin/Substack/X-article script flows on ts-browser-automation + `publish-harness/browser` command library; per-channel transport verdict | planned (E91, ADR-027) |
+| [browser-publish-channels.md](design/browser-publish-channels.md) | InfoQ/Juejin/Substack/X-article script flows on ts-browser-automation + `publish-harness/browser` command library; per-channel transport verdict | shipped (E91, ADR-027; 0183–0188) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
@@ -404,7 +404,8 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `MICROFEED_BASE_URL` | yes (podcast-pub) | Base URL for self-hosted microfeed REST API (e.g. `https://<instance>.workers.dev`) |
 | `MICROFEED_API_KEY` | yes (podcast-pub) | microfeed named API key (`mf_…`) with write scope |
 | `MICROFEED_TIMEOUT_MS` | no (podcast-pub) | Request / upload timeout in ms (default: `300000`) |
-| `KK_BROWSER_PROFILE_DIR` | no (x-pub `article`, xhs-pub, juejin-pub, infoq-pub, substack-pub) | Shared fallback browser profile dir for the agent/script browser transports; a per-channel override wins (`X_PROFILE_DIR` / `XHS_PROFILE_DIR` / `JUEJIN_PROFILE_DIR` / `INFOQ_PROFILE_DIR` / `SUBSTACK_PROFILE_DIR`). Default `~/.config/kk/browser-profiles/<channel>` (`resolveBrowserProfileDir`) |
+| `SUBSTACK_PUBLICATION_URL` | yes (substack-pub) | Publication the Substack editor URL is derived from: the URL without its trailing `/` or `/publish`, plus `/publish/post/new`. Unset, blank or non-`https:` → `ok: false` naming this var before any browser opens (there is no default publication — `substack.com/new` picks an arbitrary one). A per-run `options.publicationUrl` (or the CLI's `--publication <url>`) wins |
+| `KK_BROWSER_PROFILE_DIR` | no (x-pub `article`, xhs-pub, juejin-pub, infoq-pub, substack-pub) | Shared fallback browser profile dir for the `script` browser transports; a per-channel override wins (`X_PROFILE_DIR` / `XHS_PROFILE_DIR` / `JUEJIN_PROFILE_DIR` / `INFOQ_PROFILE_DIR` / `SUBSTACK_PROFILE_DIR`). Tiers are resolved by `resolveChannelProfileDir(channel, override)` (`@gobing-ai/publish-harness/browser`, ADR-027); blank values count as unset. Default `~/.config/kk/browser-profiles/<channel>` (`resolveBrowserProfileDir`) |
 
 ### Request timeouts
 
@@ -459,6 +460,51 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 
 > **0177:** the persistent-browser launcher moved out of this package into `@gobing-ai/ts-browser-automation` (`openPersistentBrowser` / `loginWithProfile` / `withProfilePage`); xhs-pub binds it directly. `launchPersistentBrowser` was removed — no in-repo consumer remains.
 
+#### `@gobing-ai/publish-harness/browser` (`packages/publish-harness/src/browser.ts`)
+
+Shared browser command library behind the `./browser` sub-path export (ADR-027, E91). Plugins that
+only need the package root (`src/index.ts`) never load this module or
+`@gobing-ai/ts-browser-automation` (R5).
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `ChannelBrowserConfig` | interface | `{ channel, homeUrl, isAuthenticated, loginTimeoutMs? }`; `isAuthenticated` is the site-owned readiness predicate, `loginTimeoutMs` defaults to `180000` |
+| `ChannelSessionResult` | interface | `{ status: 'verified' \| 'refused', profileDir, detail }`; the detail carries the profile dir path only, never credentials or profile content |
+| `resolveChannelProfileDir(channel, override?)` | function | `override` > `<CHANNEL>_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir(channel)`; blank tiers count as unset, no directory is created |
+| `checkChannelSession(config, opts)` | function | Read-only headless probe (`homeUrl` + predicate), one headed retry unless `headedFallback: false`; a missing profile is refused immediately and never created |
+| `runProfileCli(config, argv?, deps?)` | function | `login\|check [--profile <dir>] [--timeout <ms>]`; `login` is headed `loginWithProfile`, `check` is `checkChannelSession`; exit 0 verified / 1 refused / 2 usage error, one line per message through the injected `stdout` |
+| `waitUntil(predicate, timeoutMs, pollMs = 500)` | function | Poll to the deadline, then one final predicate call |
+| `resolveSelector(page, selectors, opts?)` | function | First **attached** candidate of a selector list, polled to `timeoutMs`; throws naming `label` (default `selector`), every candidate and the deadline — the selector lists themselves stay site-owned in the plugin (E91-D3) |
+| `pasteHtml(page, selector, html, opts?)` | function | Synthetic `ClipboardEvent('paste')` carrying `text/html` + `text/plain`, then asserts the editor text is non-empty |
+| `fillCodeMirror(page, selector, markdown, opts?)` | function | CodeMirror 6 `view.dispatch` → CodeMirror 5 `CodeMirror.setValue` → `keyboard.insertText`, then asserts the editor text is non-empty |
+| `uploadFile(page, selector, filePath, opts?)` | function | Attached `input[type=file]`; visibility is not required |
+| `expectOutcome(probe, { timeoutMs, label, pollMs? })` | function | `{ ok: true, evidence }` or `{ ok: false, error }`; success only from an observed browser signal (E91-D6) |
+| `markdownToHtml(markdown)` | function | `Bun.markdown.html` (E91-D4) — GFM tables, fenced code, task lists; no markdown dependency |
+| `IsAuthenticatedPredicate`, `BrowserLauncher` | types | Re-exported from `@gobing-ai/ts-browser-automation` for the config and deps seams |
+
+Every helper failure throws an `Error` naming the selector (or the outcome label) and the timeout;
+transports convert it to `{ ok: false, error }`. Site selectors and URLs stay in each channel plugin
+(E91-D3) — this module never embeds one.
+
+#### Publish transport verdict (ADR-027, E91)
+
+Recorded per-publisher verdict and its reason; rationale in
+[design/browser-publish-channels.md](design/browser-publish-channels.md) §1. `driver` is only
+meaningful for `kind: 'browser'` transports.
+
+| Publisher | Transport | Verdict | Reason |
+| --------- | --------- | ------- | ------ |
+| `infoq-pub` | browser · `script` | Implement | No public write API; ProseMirror editor at `xie.infoq.cn/write` |
+| `juejin-pub` | browser · `script` | Implement | No public write API; bytemd editor (CodeMirror, markdown) |
+| `substack-pub` | browser · `script` | Implement | No public write API; ProseMirror editor, HTML paste |
+| `x-pub` `article` | browser · `script` | Implement | No Articles API; `x.com/compose/articles`, HTML paste + cover upload |
+| `x-pub` `post` | `file-cli` (API v2, OAuth 1.0a) | Keep | Official, deterministic, headless; browser posting invites anti-bot flags |
+| `medium-pub` | `file-cli` (REST, integration token) | Keep | Works for existing token holders; the browser console path fights Cloudflare — **deferred** until the token path stops accepting posts (R12) |
+| `qiita-pub` | `file-cli` (API v2) | Keep | Official API; a browser flow is strictly worse |
+| `zenn-pub` | `file-cli` (zenn-cli + git sync) | Keep | Git sync is Zenn's official publishing model |
+| `xhs-pub` | browser · `script` | Migrate plumbing | Already on the package (0177/ADR-024): profile resolution, `waitUntil` and the session check come from `@gobing-ai/publish-harness/browser`; its guard-wrapped `main()` stays |
+| `wechatmp-pub` | browser · `script` | Migrate plumbing (poll only) | Only its poll loops move to `waitUntil`; login/check stay bespoke (storageState capture + cookie re-injection) and its profile dir has no `KK_BROWSER_PROFILE_DIR` tier |
+
 ### `@gobing-ai/surfdash-pub` (`plugins/publishings/surfdash-pub`, kind `publish`)
 
 | Export | Kind | Notes |
@@ -494,6 +540,10 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 | `mapContentToMediumPost(content, options?)` | function | Medium create envelope (title, markdown/html, tags≤5, draft default) |
 | `processPublishIO` / `main()` | function | `--in`/`--out` IO; fail-loud Result |
 
+The browser fallback stays **deferred** (ADR-027, E91 R12): the integration-token REST path is the
+only `medium-pub` transport, and a console/Playwright flow is added only if that path stops
+accepting posts — the browser route fights Cloudflare, so it is not worth maintaining speculatively.
+
 ### `@gobing-ai/wechatmp-pub` (`plugins/publishings/wechatmp-pub`, kind `publish`)
 
 | Export | Kind | Notes |
@@ -509,19 +559,27 @@ The 2026-09-29 refactor replaced the HTTP `draft/add` transport (which needed `W
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
 | `XPostApiTransport` | class | `file-cli`: OAuth 1.0a `POST /2/tweets`; no browser fallback |
-| `XArticleBrowserTransport` | class | `browser` / `driver: agent`; login timeout fail-loud |
+| `XArticleBrowserTransport` | class | `browser` / `driver: script`; headless session preflight, `x.com/compose/articles` Draft.js composer; observed `/compose/articles/edit/<id>` or fail-loud |
 | `oauth1Header` | function | User-context OAuth 1.0a Authorization header |
 | `processPublishIO` / `main()` | function | `--in`/`--out`; `options.operation` `post` (default) or `article` |
 
 ### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
 
-Each is `kind: publish`, `PublishTransport.kind: 'browser'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. Login timeout → `Result.ok false` naming login timeout.
+Each is `kind: publish`, `PublishTransport.kind: 'browser'`. Offline tests use `FakeBrowserTransport`. Profile dir `~/.config/kk/browser-profiles/<channel>`. A missing or expired session is `Result.ok false` in one line naming the operator login command and the profile dir path — never a stack, cookie, or page HTML (ADR-027 channels; the shared `checkChannelSession` refusal).
 
 `xhs-pub` (0177) opens its browser through `@gobing-ai/ts-browser-automation`: `makeDefaultOpenPage` defaults to the typed upstream `openPersistentBrowser` (`defaultLauncher`, exported so the binding is provable offline), retaining its injectable launcher function and `OpenPage` seam. It closes the context if page setup fails; otherwise the publish flow owns closure. The profile helpers inject the upstream `BrowserLauncher` object (`{ launch({ profileDir, headless }) }`). Headless never fabricates a session — upstream refuses with `BrowserProfileMissingError`. In a source checkout, `src/profile-check.ts` provides the operator CLI: `bun plugins/publishings/xhs-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>]` — `login` opens the headed creator console for a one-time sign-in, `check` verifies the saved session read-only and headlessly (exit 0 verified / 1 refused). Profile dir precedence: `--profile` > `XHS_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('xhs')`.
 
 `xhs-pub` (image cards) defaults to `driver: 'script'` — ordered card images are uploaded with Playwright `setInputFiles` (`Upload ordered card images` in `docs/design/xhs-image-cards.md`); the `agent` driver fails fast (`unsupported driver … requires the script driver`). The flow follows the live console as measured 2026-09-25 (task 0174): the in-viewport 图文 tab is force-clicked first and doubles as the login gate; the image input is a hidden `input[type="file"][accept*=".jpg"]` found by attachment (not visibility); previews are counted as `img.preivew-image`; the body is TipTap ProseMirror and is typed rather than value-set; and the submit bar's `暂存离开`/`发布` controls live in the **closed** shadow root of `<XHS-PUBLISH-BTN>`, so they are resolved through CDP box models and clicked at the measured centre (a driver without CDP fails loud). Draft completion is confirmed only from a delta against the pre-entry baseline (the console's draft counter moved, or a `保存于<timestamp>` entry appeared that was not already there) — XHS autosaves uploads, so a merely readable counter is not evidence; an unobserved outcome is reported as a failure, never as success.
 
 **ADR-025 (2026-09-28, after an XHS warning about automated login/publish activity):** every publish first runs a **headless session preflight** (one `goto` + selector reads; the upstream launcher never creates a profile headless, so a missing profile is refused outright) — an unauthenticated session can no longer produce a headed window waiting out the 120 s login gate. Both console visits are then capped at **one headed publish cycle + one session check per 2 h** by `automation-guard.ts` (`~/.config/kk/xhs-automation.json`, override `KK_XHS_AUTOMATION_STATE`); the publish budget is consumed at the headed launch, so a refused preflight leaves the window intact and the operator can retry after logging in. `login` is never automated and never capped; a corrupt state file fails closed. The daily workflow's XHS target ships `xhs_enabled: "true"` (2026-09-29 operator decision; draft-only — `xhs_live` stays a launch-time switch).
+
+`infoq-pub` (0185, ADR-027/E91) is the first of the four target channels built on the shared library: `InfoqBrowserTransport` is `kind: 'browser'`, `driver: 'script'` by default, and the `agent` driver fails fast (`unsupported driver 'agent' for infoq`). The flow runs a headless `checkChannelSession` preflight with `headedFallback: false` — an absent profile or an expired session returns `ok: false` naming `bun plugins/publishings/infoq-pub/src/profile-check.ts login` plus the profile dir path, and never a cookie, page HTML or stack — then opens `https://xie.infoq.cn/write` through upstream `withProfilePage` (headed unless `options.headless === true`) and fills the title, the optional `metadata.summary` and the ProseMirror body through `pasteHtml(page, SELECTORS.body, markdownToHtml(content.body))` (E91-D4). `保存草稿` is clicked on every run; `提交` — InfoQ's submit for editorial review, as the site has no self-publish — only when `content.metadata.publishStatus === 'public'` (E91-D5), and any other value returns `ok: false` before a browser opens. Success only from an observed signal (E91-D6): the draft signal is a moved URL carrying an article id (`/\/(\d{4,}|[0-9a-f]{16,})(\/|$|\?)/`) or a visible `保存成功`/`已保存` toast, the live signal a visible `提交成功`/`审核` toast or a moved URL; no signal within 30 s returns `ok: false` naming the control and deadline, and a draft run never clicks `提交`. The Result is `{ ok, target: 'infoq', id?, url?, message, metadata: { driver, publishStatus, profileDir } }`, where `public` reports `infoq submitted for InfoQ editorial review`. Selectors are the wt seed's `title`/`summary`/`body`/`draft`/`live` lists; the operator draft dogfood re-measures `EDITOR_URL`, those selector lists and the draft signal. Operator CLI: `bun plugins/publishings/infoq-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage). Profile dir precedence: `--profile` or `options.profileDir` > `INFOQ_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('infoq')`.
+
+`juejin-pub` (0186, ADR-027/E91) is the second of the four target channels built on the shared library: `JuejinBrowserTransport` is `kind: 'browser'`, `driver: 'script'` by default, and the `agent` driver fails fast (`unsupported driver 'agent' for juejin`). The flow runs the same headless `checkChannelSession` preflight with `headedFallback: false` — an absent profile or an expired session returns `ok: false` naming `bun plugins/publishings/juejin-pub/src/profile-check.ts login` plus the profile dir path, and never a cookie, page HTML or stack — then opens `https://juejin.cn/editor/drafts/new?v=2` through upstream `withProfilePage` (headed unless `options.headless === true`) and fills the title and the bytemd CodeMirror body through `fillCodeMirror(page, SELECTORS.body, content.body)` as **markdown** (no HTML conversion, E91-D4). Juejin autosaves the draft: the flow gives the autosave its 5 s window, presses `Meta+S`/`Control+S` once when the page still showed nothing, and requires the observed signal (E91-D6) — a URL on `/editor/drafts/<id>` or a visible `保存成功` toast — before reporting `ok: true`, `publishStatus: 'draft'`, the observed URL and the URL-carried id; no signal within 30 s returns `ok: false` naming the label and the deadline. The live path runs only for `content.metadata.publishStatus === 'public'` (E91-D5; any other value returns `ok: false` before a browser opens) and needs `content.metadata.category` plus a non-empty `content.metadata.tags`: the popup's `确定并发布` cannot confirm without them, so a live run missing either returns `ok: false` naming the field **before** any browser opens. It then clicks `发布`, picks the `.category-list .item` whose text is exactly the category, types each tag with `Enter`, clicks `确定并发布`, and requires a `/post/`- or `/published/`-shaped URL or a visible `发布成功` toast; a draft run never clicks a live control. The Result is `{ ok, target: 'juejin', id?, url?, message, metadata: { driver, publishStatus, profileDir } }`. Selectors are the wt seed's `title`/`body`/`publish`/`category`/`tagInput`/`confirm` entries; the operator draft dogfood (0192) re-measures `EDITOR_URL`, those selector lists and the draft signal. Operator CLI: `bun plugins/publishings/juejin-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage). Profile dir precedence: `--profile` or `options.profileDir` > `JUEJIN_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('juejin')`.
+
+`substack-pub` (0187, ADR-027/E91) is the third of the four target channels built on the shared library: `SubstackBrowserTransport` is `kind: 'browser'`, `driver: 'script'` by default, and the `agent` driver fails fast (`unsupported driver 'agent' for substack`). The publication is required and publication-scoped (`SUBSTACK_PUBLICATION_URL`, or a per-run `options.publicationUrl`): the editor URL is that URL without its trailing `/` or `/publish`, plus `/publish/post/new`, so an unset, blank or non-`https:` publication returns `ok: false` naming the variable **before** any browser opens. The flow runs the same headless `checkChannelSession` preflight with `headedFallback: false` — an absent profile or an expired session returns `ok: false` naming `bun plugins/publishings/substack-pub/src/profile-check.ts login` plus the profile dir path, and never a cookie, page HTML or stack — then opens the publication's editor through upstream `withProfilePage` (headed unless `options.headless === true`) and fills the title, the optional `metadata.subtitle` and the ProseMirror body through `pasteHtml(page, SELECTORS.body, markdownToHtml(content.body))` as **rendered HTML** (E91-D4). Substack autosaves and rewrites the editor URL, so a draft run clicks nothing at all and success comes only from the observed signal (E91-D6): `ok: true`, `publishStatus: 'draft'`, the observed `/publish/post/<id>` URL and its id; no signal within 30 s returns `ok: false` naming the label and the deadline. The live path runs only for `content.metadata.publishStatus === 'public'` (E91-D5; any other value returns `ok: false` before a browser opens): it clicks `Continue`, then `Send to everyone now` — Substack's subscriber email — and requires a `/p/<slug>` or `/publish/posts/published` URL, so a draft run never clicks a live control. The Result is `{ ok, target: 'substack', id?, url?, message, metadata: { driver, publishStatus, profileDir } }`. Selectors are the wt seed's `title`/`subtitle`/`body`/`continue`/`send` lists; the operator draft dogfood (0193) re-measures the editor URL, those selector lists and the draft signal. Operator CLI: `bun plugins/publishings/substack-pub/src/profile-check.ts login|check [--publication <url>] [--profile <dir>] [--timeout <ms>]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage), taking the publication from `--publication` or `SUBSTACK_PUBLICATION_URL`. Profile dir precedence: `--profile` or `options.profileDir` > `SUBSTACK_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('substack')`.
+
+`x-pub` `article` (0188, ADR-027/E91) is the fourth target channel built on the shared library: `XArticleBrowserTransport` is `kind: 'browser'`, `driver: 'script'` by default, and the `agent` driver fails fast (`unsupported driver 'agent' for x article`). The flow runs a headless `checkChannelSession` preflight with `headedFallback: false` — an absent profile or an expired session returns `ok: false` naming `bun plugins/publishings/x-pub/src/profile-check.ts login` plus the profile dir path, and never a cookie, token, page HTML or stack — then opens `https://x.com/compose/articles` through upstream `withProfilePage` (headed unless `options.headless === true`), clicks the write control, fills the title (`content.title ?? 'Untitled'`) and inserts the Draft.js body through `pasteHtml(page, SELECTORS.body, markdownToHtml(content.body))` as **rendered HTML** (E91-D4). The optional cover comes from `options.coverPath ?? content.metadata.coverImage` and must be an absolute path to an existing `.png|.jpg|.jpeg|.webp` file — anything else returns `ok: false` naming the path **before** any browser opens; when given, the `addPhotoButton` control is opened (when the composer renders it) and the hidden file input filled with `uploadFile`. X autosaves the composer onto `/compose/articles/edit/<id>`, so success comes only from the observed signal (E91-D6): `ok: true`, `publishStatus: 'draft'`, that URL and its id; no signal within 30 s returns `ok: false` naming the label and the deadline. The live path runs only for `content.metadata.publishStatus === 'public'` (E91-D5; any other value returns `ok: false` before a browser opens): it clicks `Publish` and requires a URL that left `/edit/` and carries the article id, so a draft run never clicks the publish control. The Result is `{ ok, target: 'x', id?, url?, message, metadata: { operation: 'article', driver, publishStatus, profileDir } }`. Selectors are the wt seed's `write`/`title`/`body`/`addPhotos`/`fileInput`/`publish` lists (the seed's `tweetButton`/`Tweet` candidates are dropped — post-composer, tweet risk); the operator draft dogfood (0194) re-measures the composer URL, those selector lists and the edit-URL pattern. Operator CLI: `bun plugins/publishings/x-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage). Profile dir precedence: `--profile` or `options.profileDir` > `X_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `resolveBrowserProfileDir('x')`. The `post` operation is untouched: `XPostApiTransport` (API v2, OAuth 1.0a) stays `file-cli` and never opens a browser.
 
 ### `@gobing-ai/web-search` (`plugins/ingestions/web-search`, kind `ingestion`)
 

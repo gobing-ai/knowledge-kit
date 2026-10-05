@@ -88,5 +88,11 @@ For targets expecting frontmatter (e.g. static site generators like Surfing/Astr
   `plugins/publishings/qiita-pub` (E4), `plugins/publishings/emdash-pub` (E5), `plugins/publishings/podcast-pub` (E6)
   — each implements `PublishTransport` with `kind: 'file-cli'`, its own target mapper, and env-only secrets;
   all are offline-tested via `FakeFileCliTransport`.
-- **Accepted design (E7, not yet built)**: leftover wt channels plus `FakeBrowserTransport` and
-  `driver: 'script' | 'agent'` — `docs/design/remaining-wt-publish-harvest.md`.
+- **Shipped browser instances** (`kind: 'browser'`, `driver: 'script'`): `plugins/publishings/wechatmp-pub` (E7,
+  ADR-026), `plugins/publishings/xhs-pub` (E7/E8, ADR-024), and the `infoq-pub` / `juejin-pub` /
+  `substack-pub` / `x-pub` `article` flows (E91, ADR-027) — each over `@gobing-ai/ts-browser-automation`
+  with a site-owned selector table, a `login|check` profile CLI, and draft-by-default observed-outcome
+  reporting via the shared `@gobing-ai/publish-harness/browser` command library (0183); offline-tested
+  via `FakeBrowserTransport`. `policy` and `driver: 'agent'` remain in the contract with no in-repo
+  channel using `agent`; see `docs/design/remaining-wt-publish-harvest.md` and
+  `docs/design/browser-publish-channels.md`.

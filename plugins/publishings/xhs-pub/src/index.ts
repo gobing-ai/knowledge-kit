@@ -5,10 +5,10 @@ import {
     FakeBrowserTransport,
     type PublishTransport,
     type PublishTransportPayload,
-    resolveBrowserProfileDir,
     trySelectors,
 } from '@gobing-ai/publish-harness';
-import { type BrowserLauncher, openPersistentBrowser, withProfilePage } from '@gobing-ai/ts-browser-automation';
+import { checkChannelSession, resolveChannelProfileDir, waitUntil } from '@gobing-ai/publish-harness/browser';
+import { type BrowserLauncher, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { type AutomationGuard, createAutomationGuard } from './automation-guard';
@@ -353,15 +353,6 @@ export function makeDefaultOpenPage(
 /** Default seam: persistent Chromium on the channel profile, headed for first login. */
 export const defaultOpenPage: OpenPage = makeDefaultOpenPage();
 
-async function waitUntil(predicate: () => Promise<boolean>, timeoutMs: number): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        if (await predicate()) return true;
-        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-    }
-    return predicate();
-}
-
 async function findSelector(
     page: XhsPage,
     selectors: readonly string[],
@@ -418,47 +409,31 @@ export interface SessionCheckOptions {
 }
 
 /**
- * Reopen the existing profile headless and apply the login gate read-only: one goto of the creator
- * console and selector reads — no upload, no click, no note. `withProfilePage` closes the context on
- * every exit path, and the upstream launcher never creates a profile headless, so a check can
- * neither fabricate a session nor leave a browser behind.
+ * Read-only login gate over the shared session check: XHS owns the console URL and the readiness
+ * predicate, `@gobing-ai/publish-harness/browser` owns the single headless probe, the headed retry
+ * and the verdict text. `withProfilePage` closes the context on every exit path, and the upstream
+ * launcher never creates a profile headless, so a check can neither fabricate a session nor leave a
+ * browser behind.
  *
  * ADR-025: this is the publish preflight. The headed visit is only attempted once it says
  * `verified`, which is what turns "no session" from a 120s headed login wait into a fast refusal.
  */
 export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise<ProfileSessionCheck> {
-    const timeoutMs = opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS;
     // XHS bot-walls and slow-walls headless loads (observed 2026-09-29: headless auth never
-    // confirms while the same profile reads ready in 27s headed), so a headless refusal is
-    // retried once headed — still a read-only readiness check before any publish actions.
-    for (const headless of [true, false] as const) {
-        try {
-            await withProfilePage(
-                {
-                    profileDir: opts.profileDir,
-                    headless,
-                    url: PUBLISH_URL,
-                    isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
-                    timeoutMs,
-                    launcher: opts.launcher,
-                },
-                async () => undefined,
-            );
-            return {
-                status: 'verified',
-                profileDir: opts.profileDir,
-                detail: `authenticated ${CHANNEL} creator console observed ${headless ? 'headlessly' : 'via headed fallback'} via profile ${opts.profileDir} (read-only)`,
-            };
-        } catch (error) {
-            if (headless) continue;
-            return {
-                status: 'refused',
-                profileDir: opts.profileDir,
-                detail: `headless and headed readiness refused: ${error instanceof Error ? error.message : String(error)}`,
-            };
-        }
-    }
-    throw new Error('unreachable: session check loop must return or throw');
+    // confirms while the same profile reads ready in 27s headed), which is why the shared check
+    // retries a headless refusal once headed — still read-only, before any publish action.
+    return checkChannelSession(
+        {
+            channel: CHANNEL,
+            homeUrl: PUBLISH_URL,
+            isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
+        },
+        {
+            profileDir: opts.profileDir,
+            launcher: opts.launcher,
+            timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
+        },
+    );
 }
 
 export class XhsBrowserTransport implements PublishTransport {
@@ -607,11 +582,8 @@ export class XhsBrowserTransport implements PublishTransport {
                 `unsupported driver '${this.driver}' for ${TARGET}: image posts require the script driver (Playwright setInputFiles)`,
             );
         }
-        const override =
-            typeof payload.options?.profileDir === 'string'
-                ? payload.options.profileDir
-                : (process.env.XHS_PROFILE_DIR ?? process.env.KK_BROWSER_PROFILE_DIR);
-        const profileDir = resolveBrowserProfileDir(CHANNEL, override);
+        const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
+        const profileDir = resolveChannelProfileDir(CHANNEL, override);
         const validation = await validatePublishInput(payload.content);
         if (validation.error) return fail(validation.error);
         const paths = validation.paths ?? [];

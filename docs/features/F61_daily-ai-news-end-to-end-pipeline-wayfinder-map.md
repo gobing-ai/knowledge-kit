@@ -34,6 +34,7 @@ Wayfinder map — deliberately **no Gherkin AC**. The ship criterion is the dest
 | 0090 | Core-facts blend contract + template prototype | done |
 | 0091 | Article generation + publish fan-out incl. podcast show notes | done |
 | 0148 | Fix workflow engine and daily-pipeline gaps from 091825 live dogfood | done |
+| 0189 | Reposition daily AI content as AI乱炖 and harden publication review after takedowns | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

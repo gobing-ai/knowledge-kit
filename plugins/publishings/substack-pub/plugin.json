@@ -3,5 +3,5 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Substack via browser/agent transport"
+    "description": "Publish plugin for Substack (substack.com): post drafts through the ProseMirror editor via script browser transport (ts-browser-automation)"
 }

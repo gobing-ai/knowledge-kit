@@ -1,4 +1,5 @@
 import { resolveBrowserProfileDir } from '@gobing-ai/publish-harness';
+import { waitUntil } from '@gobing-ai/publish-harness/browser';
 import { openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { echo } from '@gobing-ai/ts-utils';
 import { checkWechatSession, storageStatePath } from './index';
@@ -19,11 +20,12 @@ try {
         try {
             const page = context.pages()[0] ?? (await context.newPage());
             await page.goto(CONSOLE_URL);
-            const deadline = Date.now() + LOGIN_TIMEOUT_MS;
-            while (!page.url().includes(LOGGED_IN_FRAGMENT)) {
-                if (Date.now() > deadline) throw new Error(`QR scan not completed within ${LOGIN_TIMEOUT_MS / 1000}s`);
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-            }
+            const ready = await waitUntil(
+                () => Promise.resolve(page.url().includes(LOGGED_IN_FRAGMENT)),
+                LOGIN_TIMEOUT_MS,
+                1000,
+            );
+            if (!ready) throw new Error(`QR scan not completed within ${LOGIN_TIMEOUT_MS / 1000}s`);
             await page.waitForTimeout(10_000); // settle: let the console finish its post-auth Set-Cookies
             // The Chromium profile store drops the grant cookies on restart even though they carry
             // multi-day expiries — the durable session artifact is the captured storageState file,

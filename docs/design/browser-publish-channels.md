@@ -1,13 +1,14 @@
 # Browser publish channels on ts-browser-automation
 
-> Feature **E91** (child of E9) · ADR-027 · supersedes the `agent`-driver default for `infoq-pub`, `juejin-pub`,
+> Feature **E91** (child of E9) · ADR-027 · **shipped** (0183–0188) · supersedes the `agent`-driver default for `infoq-pub`, `juejin-pub`,
 > `substack-pub`, and `x-pub` `article` in `remaining-wt-publish-harvest.md` §1 (D13 / per-channel
 > policy). Pattern source: `xhs-pub` (0177, ADR-024) and `wechatmp-pub` (ADR-026).
 
-The four browser channels above ship today as stubs: `sessionReady` is never true in production,
-so every real run returns `login timeout`. This design replaces them with script-driven Playwright
-flows over `@gobing-ai/ts-browser-automation`, and extracts the plumbing that `xhs-pub` and
-`wechatmp-pub` each re-implement into one browser module in `@gobing-ai/publish-harness`.
+The four browser channels replaced their always-failing `agent`-driver stubs: before this feature
+`sessionReady` was never true in production, so every real run returned `login timeout`. They are
+now script-driven Playwright flows over `@gobing-ai/ts-browser-automation`, and the plumbing
+`xhs-pub` and `wechatmp-pub` each re-implemented is extracted into one browser module in
+`@gobing-ai/publish-harness`.
 
 ## 1. Per-channel verdict
 
@@ -75,8 +76,8 @@ export interface ChannelBrowserConfig {
 /** --profile > <CHANNEL>_PROFILE_DIR > KK_BROWSER_PROFILE_DIR > resolveBrowserProfileDir(channel). */
 export function resolveChannelProfileDir(channel: string, override?: string): string;
 
-/** `login` (headed, loginWithProfile) | `check` (headless, read-only). Exit 0 verified, 1 refused. */
-export function runProfileCli(config: ChannelBrowserConfig, argv?: string[], deps?: { launcher?: BrowserLauncher }): Promise<number>;
+/** `login` (headed, loginWithProfile) | `check` (headless, read-only). Exit 0 verified, 1 refused, 2 usage error. */
+export function runProfileCli(config: ChannelBrowserConfig, argv?: string[], deps?: { launcher?: BrowserLauncher; stdout?: (line: string) => void }): Promise<number>;
 
 /** Headless probe first; on refusal, one headed retry (mirrors xhs `checkXhsProfileSession`). Missing profile → refused, never created. */
 export function checkChannelSession(config: ChannelBrowserConfig, opts: { profileDir: string; launcher?: BrowserLauncher; headedFallback?: boolean }): Promise<ChannelSessionResult>;
@@ -90,10 +91,13 @@ export function pasteHtml(page: Page, selector: string, html: string, opts?: { t
 /** CodeMirror 5/6 document API, falling back to keyboard insertText. */
 export function fillCodeMirror(page: Page, selector: string, markdown: string, opts?: { timeoutMs?: number }): Promise<void>;
 
-export function uploadFile(page: Page, selector: string, filePath: string): Promise<void>;
+export function uploadFile(page: Page, selector: string, filePath: string, opts?: { timeoutMs?: number }): Promise<void>;
+
+/** First attached candidate of a selector list, polled to `timeoutMs`; throws naming the label, candidates and deadline. */
+export function resolveSelector(page: Page, selectors: readonly string[], opts?: { timeoutMs?: number; label?: string }): Promise<string>;
 
 /** Poll `probe` until it yields evidence (id/URL/toast text) or the deadline passes. */
-export function expectOutcome(probe: () => Promise<string | null>, opts: { timeoutMs: number; label: string }): Promise<{ ok: true; evidence: string } | { ok: false; error: string }>;
+export function expectOutcome(probe: () => Promise<string | null>, opts: { timeoutMs: number; label: string; pollMs?: number }): Promise<{ ok: true; evidence: string } | { ok: false; error: string }>;
 
 export const markdownToHtml: (markdown: string) => string; // Bun.markdown.html
 ```

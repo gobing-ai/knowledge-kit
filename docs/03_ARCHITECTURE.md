@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.29.0
+version: 2.30.0
 created_at: 2026-07-22
-updated_at: 2026-10-02
+updated_at: 2026-10-05
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -22,7 +22,7 @@ apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
 packages/
   kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
-  publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2)
+  publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2); shared `./browser` command library (E91, ADR-027)
 plugins/
   ingestions/
     aihot-ingest/     # @gobing-ai/aihot-ingest — curated Aihot news → Doc[] (F6)
@@ -328,7 +328,7 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | -------- | -------------- | ---------------- | --------------- |
 | `apps/cli` | `@gobing-ai/knowledge-kit` | Commander surface (`executor`, `plugin`; hidden aliases `invoke`/`fanin`/`fanout`/`plugins *`), arg coercion, wiring | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra`, `commander` |
 | `packages/kk-core` | `@gobing-ai/kk-core` | Doc/Content/Result + fan-out aggregate schemas (`TargetOutcomeSchema` / `AggregateResultSchema`, 0157 R11), `PluginKind` / `kindContract`, filesystem plugin discovery | `zod` + `node:fs` / `node:path` (discovery only) |
-| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` / `FakeBrowserTransport`; browser session helpers (`resolveBrowserProfileDir`, `trySelectors`; browser launch moved upstream to `@gobing-ai/ts-browser-automation`, task 0177) | `@gobing-ai/kk-core` |
+| `packages/publish-harness` | `@gobing-ai/publish-harness` | Publish transport abstraction; `FakeFileCliTransport` / `FakeBrowserTransport`; browser session helpers (`resolveBrowserProfileDir`, `trySelectors`; browser launch moved upstream to `@gobing-ai/ts-browser-automation`, task 0177); shared `./browser` command library — channel profile-dir precedence, `login\|check` profile CLI, poll/editor-input/observed-outcome helpers (E91, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/ts-browser-automation`, `@gobing-ai/ts-utils` |
 | `plugins/ingestions/aihot-ingest` | `@gobing-ai/aihot-ingest` | Aihot selected snapshot/changes → attributed `Doc[]`; atomic cursor state (F6) | `@gobing-ai/kk-core`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils`, `zod` |
 | `plugins/ingestions/karakeep-local` | `@gobing-ai/karakeep-local` | Ingestion plugin: rclone-synced folder → `Doc[]` | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
 | `plugins/ingestions/web-search` | `@gobing-ai/web-search` | Ingestion plugin: topic `--in` JSON → `Doc[]`; live Firecrawl client (`FIRECRAWL_API_KEY`) + offline fixture stub (0057, C4) | `@gobing-ai/kk-core`, `@gobing-ai/ts-utils`, `@gobing-ai/ts-infra` |
