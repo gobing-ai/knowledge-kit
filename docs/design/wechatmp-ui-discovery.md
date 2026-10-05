@@ -1,0 +1,200 @@
+# wechatmp (mp.weixin.qq.com) console UI discovery (task 0200) — first pass, four modes
+
+Method: the plugins' own Chromium (Playwright 1.55 build) on the real profile dir
+`~/.config/kk/browser-profiles/wechatmp`, headed, driven by `.spur/run/discovery/wechatmp-walk.ts`.
+Operator attended and scanned the login QR in-window (the stored session had expired).
+**Draft-only:** no publish control was clicked and **no draft has been saved yet** (the save signal is
+still to capture). Raw evidence: `.spur/run/discovery/wechatmp-*.{json,png}`.
+
+## 1. Console shape
+
+| Element | Verified value |
+| --- | --- |
+| Console entry | `https://mp.weixin.qq.com/` → redirects to `/cgi-bin/home?t=home/index&lang=zh_CN&token=<N>` when logged in |
+| **Session token** | every console route carries `&token=<N>` (observed `302104224`); the token is per-session, so stored console URLs cannot be reused verbatim |
+| Login | itself **iframed** (`open.weixin.qq.com/connect/qrconnect?appid=…`); a QR scan is the only path |
+| Login detection | body text is unusable (`登录` appears on the console too — it false-negatived a successful login). Detect by URL/`token=` or by the absence of a `qrconnect` frame |
+| Creation menu | `div.new-creation__menu-item` with `div.new-creation__menu-title` labels; opened from the console's 新的创作 control |
+| **Editor opens in a NEW TAB** | after clicking a creation type `ctx.pages()` becomes 2; the entry page stays on the console home. Any walker must follow the newest page |
+| Profile locking | one Chromium per profile dir; a stale `SingletonLock` must be cleared only after confirming no Chromium holds the profile |
+
+## 2. The four modes we support (operator decision — 选择已有内容 / 转载 / 直播 are out of scope)
+
+Route template (verified for all four):
+
+```
+https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1
+    &type=77&createType=<N>&token=<session>&lang=zh_CN&timestamp=<ms>
+```
+
+| Mode | `createType` | Landed on |
+| --- | --- | --- |
+| 文章 | **0** | article editor (§3) |
+| 贴图 | **8** | same editor route; **title optional** (`请在这里输入标题（选填）`) |
+| 视频 | **5** | same editor route |
+| 播客 | **7** | same editor route |
+
+## 3. Editor anatomy (verified on the 文章/贴图/视频/播客 editor tabs)
+
+| Part | Verified selector / value |
+| --- | --- |
+| Title | `input.frm_input.js_title.js_counter.js_field.js_article_title`, placeholder `请在这里输入标题` (文章) / `请在这里输入标题（选填）` (贴图) |
+| Author | `input.frm_input.js_author.js_counter.js_field`, placeholder `请输入作者` |
+| **Body** | **`div.ProseMirror` in the MAIN frame** — MP has moved off the iframe UEditor. A second `div.ProseMirror.ProseMirror-focused` exists, plus a reprint-tips input (`original_primary_tips_input js_reprint_r`) |
+| Image insert | `input[type=file]` `accept="image/gif,image/jpeg,image/jpg,image/png,image/svg,image/webp"` |
+| **Save as draft** | **`保存为草稿`** |
+| **Publish** | **`发表`** (never clicked) |
+| Other bar controls | `返回原草稿`, toolbar `图片 视频 音频 超链接 小程序 模板 投票 搜索 地理位置`, plus `文档导入`, `新建内容`, `历史版本` |
+| Only child frame | an article **preview** (`/s?__biz=…`), not an editor |
+
+## 4. Drift list vs the current `wechatmp-pub` (fix candidates for task 0205)
+
+| # | Drift item | Evidence | Impact |
+| --- | --- | --- | --- |
+| W1 | The editor body is **ProseMirror in the main frame**; the plugin's `setInnerHtml`/iframe-body assumption targets the retired UEditor UI | §3 | body insertion can never land |
+| W2 | Console routes need the **session `token`**; a stored editor URL is not reusable | §1 | deep-linking the editor fails |
+| W3 | Creating a type opens the editor in a **new tab** | §1 | a flow bound to one page object never sees the editor |
+| W4 | The draft control is **`保存为草稿`** and publish is **`发表`** | §3 | the plugin's save/publish step targets the wrong affordance |
+| W5 | Title is **required for 文章** but optional for 贴图 (placeholder differs) | §3 | a missing title must fail before a browser opens, per mode |
+| W6 | Four modes need **mode dispatch** (`createType` 0/8/5/7) — the plugin implements one path today | §2 | 3 of 4 modes are unreachable |
+| W7 | 视频/播客 carry their own required artifacts (a video file; audio **plus** a cover image) | xhs-analogous, still to verify on MP | Content must carry them and fail fast |
+| W8 | The image input accepts `svg`/`webp` in addition to raster formats | §3 | format validation would wrongly reject valid inputs |
+| W9 | Login is iframed and body-text login checks false-negative | §1 | a session check can report "logged out" on a live console |
+| W10 | `文档导入` and `历史版本` exist in the editor (an import path like xhs's 导入链接) | §3 | another route to decide on — operator excluded the xhs equivalent |
+
+## 5. Draft state, auto-save, and the platform's own validation
+
+Measured while attempting one draft save on 文章:
+
+| Observation | Value |
+| --- | --- |
+| **Auto-save** | the editor continuously auto-saves (`自动保存` toasts) and records an entry in 历史版本 (`10-05 12:41 · 网页版 · 手动保存`) |
+| Draft box | the draft appears in 草稿箱 with actions `编辑 / 删除 / 发表` |
+| Validation | the platform refuses publication with **内容不完整，无法发表** and the hint **图文内容不完整 请补充封面图、标题或者正文** |
+| Publish control | `发表` (`class="mass_send"`, bottom bar, right of `保存为草稿` and `预览`) — **never activated** |
+
+**So MP has two distinct gates the plugin must model:** (a) a draft exists as soon as the editor
+auto-saves — an explicit `保存为草稿` is a manual checkpoint, not the only path; and (b) MP itself
+validates completeness (cover + title + body) before `发表`, so a channel implementation can rely on
+that refusal for the draft-vs-publish boundary but must fail fast on the *required fields* earlier.
+
+**Incident note (for the record).** On the 文章 save attempt the walker clicked at CSS (858, 657),
+which is the empty editor body — the action bar sits at y≈1047. No publish control was reached: the
+screenshot shows the untouched bar (`保存为草稿` / `预览` / `发表`), and the draft box independently
+reports the item as 内容不完整，无法发表. The walker's control targeting is being corrected to use the
+element's own box (and its x), not a y-only probe.
+
+## 5.1 Per-mode save signal and artifact gating (measured)
+
+All four modes were driven with the walker's hit-test-verified save control (the click is refused
+unless `elementFromPoint` at the control's centre resolves back to `保存为草稿`):
+
+| Mode | Save bar present before an artifact? | Draft signal observed |
+| --- | --- | --- |
+| 文章 | **yes** — `保存为草稿` at (1591,1473,96x34), `预览` (1701,1473), `发表` (1811,1473, `mass_send`) | verified: the 草稿箱 row appeared/updated — `kk-discovery-文章 请忽略 … 更新于 13:12` (matching the click time), with the platform note 图文内容不完整 请补充封面图、标题或者正文 |
+| 贴图 | yes | the bar was clicked on the same coordinates, but **no titled draft row appeared** without an image attached — 贴图 needs ≥1 image (the image input `accept="image/gif,image/jpeg,image/jpg,image/png,image/svg,image/webp"` exists on the editor) |
+| 视频 | **no** — the walker reported `REFUSED: no on-screen 保存为草稿 control resolved` | the save bar itself is **artifact-gated**: it appears only after the video is attached |
+| 播客 | no (same shape as 视频) | same gating; audio + cover are required before the bar is usable |
+
+**Signal conclusions for the plugin:**
+
+1. **The reliable MP draft signal is the 草稿箱 row keyed by title with its `更新于` timestamp** — not
+   a URL change (the editor URL is unchanged on 贴图; 文章 only shifted to its internal
+   `action=edit` route) and not a toast (`系统繁忙，请稍后再试` appears routinely and is **not** a save
+   failure indicator; `自动保存` fires on any edit).
+2. **MP auto-saves continuously** (`自动保存` toasts + 历史版本 entries), so an untitled autosave can
+   exist without a titled row. A plugin that must produce an identifiable draft needs the title set
+   and should verify by reading the draft box, not by scraped toasts.
+3. **The save bar is artifact-gated for 视频/播客.** The plugin must upload the media *before* it can
+   even see the save control — so the flow order is: attach artifact → fill title/body → save, and a
+   missing artifact must be caught by the plugin before it opens a browser.
+4. **MP enforces completeness itself** (封面图 + 标题 + 正文), which the plugin can lean on for the
+   draft/publish boundary but must not rely on for required-field validation (fail fast instead).
+
+**Drafts left on the account (all deletable, none published):** `kk-discovery-文章 请忽略` (13:12) and
+untitled auto-saves at 13:10 / 12:41; the platform marks each 内容不完整，无法发表.
+
+## 5.2 文章 full field inventory, and the 视频/播客 workflows
+
+### 文章 — every field the editor exposes
+
+| Field | Control (verified) | Constraint |
+| --- | --- | --- |
+| 标题 | **`div.ProseMirror[data-placeholder="请在这里输入标题"]`** (authoritative) mirrored by `textarea#title.frm_input.js_title.js_counter` | **0/64** |
+| 作者 | `input#author.frm_input.js_author` — labelled **原创：** | **0/8**, settings take effect only after 原创 verification (`以下设置仅在原创校验成功后生效`) |
+| 正文 | `div.ProseMirror.ProseMirror-focused` (no data-placeholder) | 正文字数 counter |
+| 摘要 | `textarea#js_description.frm_textarea.js_desc.js_counter` (`选填，不填写则默认抓取正文开头部分文字…`) | **0/120** |
+| 封面 | **no file input** — panel offers `修改` / `换一张` / **从正文选择** (`a.js_selectCoverFromContent`) / `从图片库选择` (`js_imagedialog`) / `微信扫码上传` (`js_imageScan`) / `AI 配图` (`js_aiImage`), and states **默认首图为封面** | max 1 image |
+| 留言 | `input.weui-desktop-switch__input.js_interaction_setting` (留言自动精选公开 / 不开启留言) | switch |
+| 合集 | `input.frm_checkbox.js_article_tags` | picker |
+| 原文链接 | `input.frm_checkbox.js_url_checkbox.js_field` | picker |
+| 创作来源 | `input.frm_checkbox.js_claim_source` | picker |
+| 平台推荐 | `input.frm_checkbox.js_not_recommend` + radios `not_recomment_0/1` (开启/不开启 内容不会被推荐，但不影响用户收到推送) | toggle |
+| 原创声明 | radios `import_finder_0/1` (开启/不开启) + `open_underline_1/2` | toggle pair |
+| 赞赏 | hidden `js_can_reward` / `js_can_open_reward` / `js_author_username` | reward settings |
+| Settings panel | `a.tool_bar__fold-btn.fold` → **文章设置** (collapsed by default) | container for the above |
+| Bar | `保存为草稿` · `预览` · `发表` (`mass_send`) | — |
+| Toolbar extra | `文档导入` (import a document) | — |
+
+**Two traps measured here:**
+1. **Filling `textarea#title` does nothing** — the draft still saved with an empty title (draft row showed 内容不完整). Typing into the *title ProseMirror block* set both the block and the mirror (`title-mirror` read back `kk-complete-article 完整草稿`). The textarea is a form mirror, not the input.
+2. **The cover has no file input.** The panel's own text: `拖拽或选择封面 · 默认首图为封面 · 修改 / 换一张 / 从正文选择 / 从图片库选择 / 微信扫码上传 / AI 配图 … 最多添加1张图片`. The panel's image list is **not** `<img>`-based (a probe found `panels: 5, imgs: 0`), so selecting from `从正文选择` needs iteration on that widget.
+
+**State reached with every other field filled** (draft `kk-complete-article 完整草稿`, 更新于 14:25): title (block + mirror), author, digest (≤120), body text, body images — the platform's only remaining complaint is **请补充封面图**.
+
+### 视频 and 播客 — artifact-gated modals, not a different save concept
+
+Both modes **do** expose the same bar (`保存为草稿` · `预览` · `发表`), but each starts behind a **modal media dialog that covers the bar** — which is why an earlier save attempt returned `REFUSED: no on-screen 保存为草稿 control resolved` (the hit test refused to click through the modal):
+
+| Mode | Modal contents (verified) | Title limit |
+| --- | --- | --- |
+| 视频 | tabs `素材库` / `视频号动态` / `视频链接` + **`本地上传`** + `确定` / `取消` | **0/20** |
+| 播客 | `从素材库选择`, search input `搜索音频`, **`上传音频`**, `插入` / `取消` | **0/20** |
+
+So the workflow per mode is: open the mode → satisfy its media modal (`上传…` or pick from 素材库) → confirm/insert → then title (≤20) + author + body → `保存为草稿` or `发表`. A missing artifact must be rejected by the plugin **before** it opens a browser, because the save control does not exist until the artifact is attached.
+
+**Safety note:** the hit test refused the save twice — once through the media modal, once with the cover panel open (`REFUSED: found but not on top`). No covered control was ever clicked.
+
+## 5.3 一键排版 (one-click layout) — present in MP 文章, and how it resolves
+
+The operator asked whether `一键排版` applies to MP 文章. It **does**:
+
+| Fact | Evidence |
+| --- | --- |
+| Control | `div.ailayout-btn_wrp` → `div.ailayout-btn_label`, text **一键排版**, at (1948,1350,106x36) — an `ailayout-*` (AI layout) widget in the editor chrome |
+| Click result | hit-test verified click at (2001,1368) → toasts `一键排版` ×2 and a **format-choice set: `保留源格式` / `匹配目标格式` / `仅保留文本`** |
+| Effect on content | body text length unchanged (8 → 8): it applies **layout/formatting**, it does not rewrite the text |
+
+**Flow implication for the plugin:** insert the Content body, then click `一键排版` and choose **`匹配目标格式`**
+(match the target format) so the platform's own layout rules apply to markdown-derived content.
+`保留源格式` keeps the pasted styling and `仅保留文本` strips it — both are wrong for our case.
+The same control also exists on xhs 写长文 (see `xhs-ui-discovery.md` §2), so this is a cross-channel
+step, not an MP-only one.
+
+### Account-level preconditions found while probing (block 发表, not the draft)
+
+* `未设置头像和名称 发表内容需要完善公众号头像和名称` — the 公众号 needs an avatar and a name set.
+* `公众号尚未实名 前往实名` — the account is not yet verified.
+* `未授权使用切换账号能力…` — account switching needs a login that grants it.
+
+These are **account configuration** items for the operator, not plugin defects; the plugin should
+surface them as an actionable result rather than a generic failure (the platform's own dialog text is
+the message to relay).
+
+## 6. Still to do for this task
+
+- [ ] 封面: satisfy `从正文选择` (or confirm that a body image + 默认首图为封面 completes the article for the platform).
+- [ ] 视频: attach the scratch clip through the modal and capture its draft signal.
+- [ ] 播客: attach audio + cover through the modal and capture its draft signal.
+- [ ] 贴图: attach an image and capture its draft signal.
+- [ ] Record the per-mode field matrix (title limit, author, cover rule, required artifact) for fix task 0205.
+
+## 7. Safety
+
+- MP shows no automation guard in this repo's plugin code, but the walk is still held to the same
+  discipline: **one attended pass, draft-only, no publish activation**, abort on any platform warning
+  (none appeared). The 文章 attempt left **one** draft, which the platform itself marks as
+  unpublishable, and it is named `kk discovery draft for 文章 — safe to delete.`
+- The session now persists in the real profile dir, so the plugin can use it directly. Profile
+  locking matters: one Chromium per profile dir, and a stale `SingletonLock` may only be cleared
+  after confirming no Chromium holds the profile.
