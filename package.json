@@ -12,11 +12,11 @@
             "plugins/publishings/*"
         ],
         "catalog": {
-            "@gobing-ai/ts-db": "^0.5.11",
-            "@gobing-ai/ts-infra": "^0.5.11",
-            "@gobing-ai/ts-runtime": "^0.5.11",
-            "@gobing-ai/ts-utils": "^0.5.11",
-            "@gobing-ai/ts-browser-automation": "^0.5.11",
+            "@gobing-ai/ts-db": "^0.5.15",
+            "@gobing-ai/ts-infra": "^0.5.15",
+            "@gobing-ai/ts-runtime": "^0.5.15",
+            "@gobing-ai/ts-utils": "^0.5.15",
+            "@gobing-ai/ts-browser-automation": "^0.5.15",
             "playwright": "1.55.0"
         }
     },
