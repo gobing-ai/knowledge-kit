@@ -66,6 +66,17 @@ const RENDER_SIDECAR = 'render-md.ts';
 // $KK_WORKFLOWS_DIR -> package copy -> $HOME.
 const STYLE_SIDECAR = 'daily-voice-style.zh.md';
 const REVISE_COUNT = '.revise-count';
+/** Bounded draft-remediation counter for the daily safety loop (20261005). */
+const SAFETY_REVISE_COUNT = '.safety-revise-count';
+/**
+ * Verdict criteria that describe *platform admission* (the daily's CN 资质口径 / 播报形态 rules) rather
+ * than a defect in the draft itself. Only these can be answered by dropping a publish target; every
+ * other `fail` is draft integrity, which would ship to the remaining targets too (20261005).
+ */
+const ADMISSION_CRITERIA = new Set(['jurisdictional-rules']);
+/** content-safety category 3 (可识别个人信息): a draft property, so no target choice answers it. */
+const PII_FINDING_CATEGORY = 3;
+const SAFETY_PLATFORM_DECISIONS = new Set(['OK', 'RISK', 'BLOCK']);
 // Post-translation title-dedup threshold (task 0138 R3). ponytail: the 2026-09-16 Gemini 3.8 Live
 // pair measures 0.417 zh title-only Jaccard, the nearest distinct pair 0.1 (4x margin). Character
 // bigrams need same-language input — pre-translate dedup over the mixed-language blend cannot work.
@@ -219,6 +230,14 @@ function bumpReviseCount(workDir: string): void {
             previous = Number.parseInt(readFileSync(path, 'utf-8'), 10);
         });
     sted('write', path, () => writeFileSync(path, `${(Number.isNaN(previous) ? 0 : previous) + 1}\n`));
+}
+
+/** `0` when `.safety-revise-count` is absent or unparsable: a fresh run revises, it never blocks on state. */
+function readSafetyReviseCount(workDir: string): number {
+    const path = join(workDir, SAFETY_REVISE_COUNT);
+    if (!isFile(path)) return 0;
+    const value = Number.parseInt(readFileSync(path, 'utf-8'), 10);
+    return Number.isNaN(value) ? 0 : value;
 }
 
 interface PrepareOptions {
@@ -611,6 +630,11 @@ function dailyPrepare(args: string[]): void {
             sted('mkdir', join(workDir, dir), () => mkdirSync(join(workDir, dir), { recursive: true }));
         sted('write', join(workDir, 'run-date.txt'), () =>
             writeFileSync(join(workDir, 'run-date.txt'), `${dirDate}\n`),
+        );
+        // The safety remediation budget belongs to the attempt, not to the day: a fresh run (or a
+        // same-day retry) starts with the full revise allowance instead of inheriting a spent one.
+        sted('write', join(workDir, SAFETY_REVISE_COUNT), () =>
+            writeFileSync(join(workDir, SAFETY_REVISE_COUNT), '0\n'),
         );
         // Anchor for the workflow: shell actions cannot set vars, so the YAML reads the
         // effective work_dir back into vars.work_dir from this cwd-relative file.
@@ -1401,6 +1425,14 @@ function dailyPublishWechat(args: string[]): void {
             console.log(`publish-wechat cached: ${want} already recorded in ${result}`);
             return;
         }
+        // 20261005: a platform the content-safety gate excluded never gets a draft. Skipping here
+        // keeps the run alive for the targets that did pass, which is the point of the gate.
+        const safety = readJson(safetyPath(workDir, runDate, 'safety-judge_stamp.json'));
+        const excluded = Array.isArray(safety?.excludedPlatforms) ? (safety.excludedPlatforms as string[]) : [];
+        if (excluded.includes('wechatmp')) {
+            console.log(`publish-wechat: SKIPPED — content-safety excluded wechatmp for this run`);
+            return;
+        }
         if (!isFile(article)) {
             console.log(`publish-wechat: no article at ${article} — skip`);
             return;
@@ -1570,13 +1602,26 @@ function dailySafetyPrep(args: string[]): void {
 }
 
 /**
- * Consume the content-safety report and the content-judge verdict into pass|escalate|block (exit 0
- * in all three — routing is transition-owned). Fail-closed: only an explicit PASS verdict on the
- * unchanged drafts, with a well-formed report carrying no BLOCK, unblocks; a RISK decision or
- * `escalate: true` forces the human review regardless of the verdict score.
+ * Consume the content-safety report and the content-judge verdict into a publish decision (exit 0 in
+ * every case — routing is transition-owned). The gate's job is to *adjust*, not to kill the run
+ * (20261005 operator decision): a non-PASS verdict first routes back through one bounded
+ * draft-remediation loop (`revise`), and what survives the loop is classified by what it is:
+ *
+ * - `revise`  — non-PASS and the remediation budget is not spent: re-review after the drafts change.
+ * - `exclude` — admission-only residue (the CN 资质口径 / 播报形态 findings): the platforms that
+ *               BLOCKed are dropped from this run and every other target publishes normally.
+ * - `escalate` — a RISK decision or `escalate: true` with an otherwise clean pass: human review.
+ * - `pass`    — explicit PASS verdict, unchanged drafts, no BLOCK/RISK.
+ * - `block`   — draft integrity: PII reported on a blocked platform, or a judge must-pass `fail`
+ *               outside `jurisdictional-rules` (prohibited claims / disclosure / data-handling);
+ *               also an unreadable or out-of-contract report/verdict, a non-PASS that documents
+ *               nothing, or drafts edited after the review. Never published.
+ *
+ * Fail-closed where it matters: a missing report, verdict or confidence still blocks.
  */
 function dailySafetyGate(args: string[]): void {
-    const [workDir = '', runDate = ''] = args;
+    const [workDir = '', runDate = '', maxReviseArg = '0'] = args;
+    const maxRevise = Number.parseInt(maxReviseArg, 10);
     const statusFile = safetyPath(workDir, runDate, 'safety-judge_status.txt');
     const stampFile = safetyPath(workDir, runDate, 'safety-judge_stamp.json');
     timed(workDir, 'safety-judge', () => {
@@ -1586,6 +1631,45 @@ function dailySafetyGate(args: string[]): void {
         const platforms = Array.isArray(report?.platforms) ? (report.platforms as Record<string, unknown>[]) : [];
         const decisions = platforms.map((platform) => platform?.decision);
         const digest = safetyDigest(workDir, runDate);
+        const revisions = readSafetyReviseCount(workDir);
+        // A RISK decision or an explicit escalation is a human decision even on a clean verdict.
+        const risky = decisions.includes('RISK') || report?.escalate === true;
+        const verdictFindings = Array.isArray(verdict?.findings) ? (verdict.findings as Record<string, unknown>[]) : [];
+        const verdictFails = verdictFindings.filter((finding) => finding?.status === 'fail');
+        // What a BLOCK *is* decides who can answer it. Dropping a blocked platform answers the
+        // platform's own admission rules (资质口径/播报形态 …) — but the drafts' bytes ship to every
+        // other target too, so a *draft* defect reported on that platform survives the drop. The
+        // one finding class that is unambiguously a draft property is category 3 (可识别个人信息):
+        // PII cannot be answered by choosing targets. The rest of the draft-integrity class is owned
+        // by the judge's must-pass criteria below (no-prohibited-claims / disclosure-presence /
+        // data-handling), which is where an independent reviewer can grade it.
+        const platformFindings = (platform: Record<string, unknown>): Record<string, unknown>[] =>
+            Array.isArray(platform?.findings) ? (platform.findings as Record<string, unknown>[]) : [];
+        const blockedPlatforms = platforms.filter((platform) => platform?.decision === 'BLOCK');
+        const excludedPlatforms = blockedPlatforms.map((platform) => String(platform?.platform ?? '')).filter(Boolean);
+        const piiBlock = blockedPlatforms.some((platform) =>
+            platformFindings(platform).some((finding) => Number(finding?.category) === PII_FINDING_CATEGORY),
+        );
+        // A BLOCK that names no finding is a contract violation, not a signal: there is nothing to
+        // remediate and nothing to exclude, so it blocks (fail-closed).
+        const unnamedBlock =
+            blockedPlatforms.length > 0 && blockedPlatforms.every((p) => platformFindings(p).length === 0);
+        const malformed =
+            decisions.length === 0 || decisions.some((decision) => !SAFETY_PLATFORM_DECISIONS.has(String(decision)));
+        const confidence = verdict?.confidence;
+        const confidenceOk = confidence === 'HIGH' || confidence === 'MEDIUM' || confidence === 'LOW';
+        const verdictValue = String(verdict?.verdict ?? '');
+        const outOfContract =
+            (verdictValue !== 'PASS' && verdictValue !== 'FAIL' && verdictValue !== 'NEEDS_REVISION') || !confidenceOk;
+        const nonPass = verdictValue !== 'PASS' || !confidenceOk;
+        // Integrity = the finding survives any target choice: PII reported on a blocked platform, an
+        // out-of-contract verdict, a non-PASS that documents nothing, or a `fail` outside the
+        // admission criteria.
+        const integrity =
+            piiBlock ||
+            unnamedBlock ||
+            (nonPass && verdictFindings.length === 0) ||
+            verdictFails.some((finding) => !ADMISSION_CRITERIA.has(String(finding?.criterion ?? '')));
         let status = 'block';
         let reason = 'verdict PASS on unchanged drafts, no BLOCK/RISK';
         // A digest-mismatch block means the drafts were deliberately edited (HITL): keep them so
@@ -1595,18 +1679,44 @@ function dailySafetyGate(args: string[]): void {
         if (request?.digest !== digest) {
             reason = 'drafts changed after the review was requested';
             edited = true;
-        } else if (decisions.length === 0 || decisions.some((d) => d !== 'OK' && d !== 'RISK' && d !== 'BLOCK'))
+        } else if (malformed) {
             reason = 'content-safety report missing or malformed';
-        else if (decisions.includes('BLOCK')) reason = 'content-safety report carries a BLOCK decision';
-        else if (verdict?.verdict !== 'PASS')
-            reason = `content-judge verdict is ${typeof verdict?.verdict === 'string' ? verdict.verdict : 'missing or unreadable'}`;
-        else if (verdict?.confidence !== 'HIGH' && verdict?.confidence !== 'MEDIUM' && verdict?.confidence !== 'LOW')
-            reason = 'content-judge verdict is missing a HIGH/MEDIUM/LOW confidence level';
-        else if (decisions.includes('RISK') || report?.escalate === true) {
+        } else if (outOfContract) {
+            // 20261003 hardening, unchanged: a verdict outside PASS|FAIL|NEEDS_REVISION, or any
+            // verdict without a HIGH/MEDIUM/LOW confidence, is not a verdict — block, never revise
+            // against it (there is no contract to read findings from).
+            reason = `content-judge verdict out of contract (${verdictValue || 'missing'}/${confidenceOk ? 'ok' : 'no confidence'})`;
+        } else if (nonPass || blockedPlatforms.length > 0) {
+            const trigger =
+                blockedPlatforms.length > 0
+                    ? `content-safety BLOCK on ${blockedPlatforms.map((p) => String(p?.platform ?? '')).join(', ')}`
+                    : `content-judge verdict ${verdictValue}`;
+            if (revisions < maxRevise) {
+                status = 'revise';
+                reason = `${trigger} — remediation pass ${revisions + 1}/${maxRevise} (drafts re-reviewed after the edit)`;
+            } else if (integrity) {
+                status = 'block';
+                const named = blockedPlatforms
+                    .flatMap((platform) => platformFindings(platform))
+                    .filter((finding) => Number(finding?.category) === PII_FINDING_CATEGORY)
+                    .map((finding) => `${String(finding?.item ?? '?')}(category ${String(finding?.category)})`)
+                    .join(', ');
+                const criteria = verdictFails.map((finding) => String(finding?.criterion)).join(', ');
+                reason = `${trigger} — draft-integrity findings survive ${revisions} remediation passes (${named || criteria || 'the verdict names no criterion'}); exclusion cannot fix these`;
+            } else {
+                status = 'exclude';
+                reason =
+                    excludedPlatforms.length > 0
+                        ? `${trigger} — admission-only, ${revisions} remediation passes spent: ${excludedPlatforms.join(', ')} dropped from this run, other targets publish${risky ? ' (RISK/escalation recorded)' : ''}`
+                        : `${trigger} — admission-only, no platform BLOCK: submitting to the remaining targets at recorded risk`;
+            }
+        } else if (risky) {
             status = 'escalate';
             reason = 'RISK decision or escalation — human review required';
         } else status = 'pass';
-        if (status !== 'block') sted('write', stampFile, () => writeJsonText(stampFile, { digest, status }));
+        if (status === 'pass' || status === 'escalate' || status === 'exclude') {
+            sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
+        }
         if (status === 'block' && !edited) {
             // A quality block poisons the isFile() draft cache: every same-day retry would
             // re-fail on unchanged bytes (20261002 dogfood — two judge-fail runs replayed until
@@ -1623,6 +1733,32 @@ function dailySafetyGate(args: string[]): void {
         }
         sted('write', statusFile, () => writeRaw(statusFile, status));
         console.log(`safety: status=${status} (${reason}); routing is transition-owned`);
+    });
+}
+
+/**
+ * Post-remediation bookkeeping for the `safety-revise` state: the agent edited the drafts, this
+ * stage checks they are still the artifacts the rest of the pipeline consumes and spends one unit
+ * of the remediation budget (`daily-safety-gate` reads it to choose revise-vs-exclude). Validating
+ * here fails inside the loop instead of at `wrap-docs`, after the run has moved on. A broken
+ * revision spends the budget too: an unparsable draft must not be retried forever.
+ */
+function dailySafetyRevise(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    timed(workDir, 'safety-revise', () => {
+        const [articlePath, scriptPath] = safetyDraftPaths(workDir, runDate);
+        const article = requireJson(articlePath, 'safety-revise');
+        for (const field of ['title', 'body'] as const) {
+            const value = article[field];
+            if (typeof value !== 'string' || value.trim() === '') {
+                failWith(1, `safety-revise: article ${field} must be a non-empty string in ${articlePath}`);
+            }
+        }
+        assertScriptContent(scriptPath);
+        const path = join(workDir, SAFETY_REVISE_COUNT);
+        const next = readSafetyReviseCount(workDir) + 1;
+        sted('write', path, () => writeFileSync(path, `${next}\n`));
+        console.log(`safety-revise: remediation pass ${next} applied; drafts re-validated`);
     });
 }
 
@@ -1953,10 +2089,25 @@ function dailyPublishPrep(args: string[]): void {
         // stamp issued on different bytes (edited after PASS, or an older draft), never publishes.
         const stamp = readJson(safetyPath(workDir, runDate, 'safety-judge_stamp.json'));
         if (stamp === null) failWith(1, 'publish-prep: no content-safety verdict stamp for this run — not publishing');
+        // 20261005: pass/escalate/exclude all stamp the drafts as publishable; only `block` (draft
+        // integrity) has no stamp. An `exclude` stamp carries the admission-blocked platforms so
+        // the per-target stages can skip those targets instead of failing the run.
+        if (stamp.status !== 'pass' && stamp.status !== 'escalate' && stamp.status !== 'exclude') {
+            failWith(1, `publish-prep: content-safety status ${String(stamp.status)} does not publish`);
+        }
         if (stamp.digest !== safetyDigest(workDir, runDate)) {
             failWith(1, 'publish-prep: drafts changed after the content-safety verdict — re-run the review');
         }
-        sted('write', prepPath, () => writeJsonText(prepPath, merged));
+        const excludedPlatforms = Array.isArray(stamp.excludedPlatforms) ? (stamp.excludedPlatforms as string[]) : [];
+        if (excludedPlatforms.length > 0) {
+            console.log(`publish-prep: content-safety excluded platforms: ${excludedPlatforms.join(', ')}`);
+        }
+        sted('write', prepPath, () =>
+            writeJsonText(prepPath, {
+                ...merged,
+                metadata: { ...metadataOf(merged), safetyExcludedPlatforms: excludedPlatforms },
+            }),
+        );
     });
 }
 
@@ -2639,6 +2790,9 @@ if (import.meta.main)
             break;
         case 'daily-safety-gate':
             dailySafetyGate(rest);
+            break;
+        case 'daily-safety-revise':
+            dailySafetyRevise(rest);
             break;
         case 'daily-wrap-docs':
             dailyWrapDocs(rest);

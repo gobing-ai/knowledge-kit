@@ -42,6 +42,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'script',
             'safety-review',
             'safety-judge',
+            'safety-revise',
             'review',
             'wrap-docs',
             'generate',
@@ -228,11 +229,11 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // which resolves the shipped stages script from the installed package. The YAML must carry no
         // prelude remnants and exactly one delegation call per stage (25 -> 26: daily-publish-wechat
         // joined 2026-09-29 with the WeChat MP draft target; 26 -> 28: the 0189 safety prep + gate;
-        // 28 -> 29: the 20261002 episode-duration gate).
+        // 28 -> 29: the 20261002 episode-duration gate; 29 -> 30: the 20261005 safety-revise stage).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(29);
+        expect(yaml.split('kk stage daily-').length - 1).toBe(30);
         // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
@@ -241,9 +242,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             ['script-write', 1000],
             ['safety-review', 1000],
             ['safety-judge', 1000],
+            ['safety-revise', 1000],
         ] as const) {
             const block = yaml.match(new RegExp(`- id: ${step}\\n[\\s\\S]*?(?=\\n  - id: )`))?.[0] ?? '';
-            const input = block.split('input: |')[1]?.split('expectFile:')[0] ?? '';
+            // The prompt scalar is indented 12 spaces; anything at <= 10 ends it (expectFile,
+            // requireDiff, or the next `- kind:` entry of the same state).
+            const input = (block.split('input: |')[1] ?? '').split(/\n {0,10}\S/)[0] ?? '';
             expect(input.length, `${step} prompt chars`).toBeLessThanOrEqual(cap);
         }
     });
@@ -341,13 +345,18 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             'script->review',
         ]);
         expect(edges).toContain('safety-review->safety-judge');
-        // pass+skip_review -> wrap-docs; pass|escalate -> review; anything else (block, empty) -> failed.
+        // 20261005: the gate adjusts instead of halting — pass+skip_review -> wrap-docs;
+        // pass|escalate -> review; revise -> the remediation loop; exclude -> wrap-docs;
+        // anything else (block, empty) -> failed.
         expect(edges.filter((e) => e.startsWith('safety-judge->'))).toEqual([
             'safety-judge->wrap-docs',
             'safety-judge->review',
+            'safety-judge->safety-revise',
+            'safety-judge->wrap-docs',
             'safety-judge->failed',
         ]);
-        const judge = yaml.slice(yaml.indexOf('  - from: safety-judge'), yaml.indexOf('  - from: review'));
+        expect(edges).toContain('safety-revise->safety-review');
+        const judge = yaml.slice(yaml.indexOf('  - from: safety-judge'), yaml.indexOf('  - from: safety-revise\n'));
         // skip_review can only bypass the human on a clean pass — never on an escalation.
         expect(judge).toContain(
             'test "$' + '{vars.safety_status}" = "pass" && test "$' + '{vars.skip_review}" = "true"',
@@ -355,10 +364,23 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(judge).toContain(
             'test "$' + '{vars.safety_status}" = "pass" || test "$' + '{vars.safety_status}" = "escalate"',
         );
+        expect(judge).toContain('test "$' + '{vars.safety_status}" = "revise"');
+        expect(judge).toContain('test "$' + '{vars.safety_status}" = "exclude"');
+        // The remediation edge sits above the catch-all, so a revise never falls through to failed.
+        expect(judge.indexOf('to: safety-revise')).toBeLessThan(judge.indexOf('to: failed'));
+        expect(judge.indexOf('to: wrap-docs')).toBeLessThan(judge.indexOf('to: safety-revise'));
         expect(judge.slice(judge.lastIndexOf('to: failed'))).toContain('kind: always');
         expect(yaml).toContain('safety_status: ""');
+        expect(yaml).toContain('safety_max_revise: "2"');
         expect(yaml).toContain('kk:content-safety');
         expect(yaml).toContain('kk:content-judge');
+        // The remediation state runs the safety skill in detect+revise mode and re-validates the
+        // drafts after the agent edit; a failed edit must not kill the run.
+        const revise = yaml.match(/- id: safety-revise\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        expect(revise).toContain('detect+revise');
+        expect(revise).toContain('onError: continue');
+        expect(revise).toContain('requireDiff: true');
+        expect(revise).toContain('kk stage daily-safety-revise');
     });
 
     it('R3 (0140) — the quality-control edges carry no qc.passed gate and no failed fallthrough', () => {

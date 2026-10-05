@@ -18,6 +18,8 @@ const specPath = join(import.meta.dir, '../scripts/topic-boundary.json');
 const pluginsRoot = join(import.meta.dir, '../../generations');
 
 const STAMP = '20260916';
+/** The smallest VoiceScript the shipped validator accepts — the safety stages re-validate drafts. */
+const MINIMAL_VOICESCRIPT = 'title: T\nsegments:\n  - text: 大家好，欢迎收听。\n';
 
 // daily-qc-content stage args after <work_dir> <run_date>: pluginsPath '', qcCategories '',
 // QC floors 1/1/1/1 (deterministic; see qcDoc).
@@ -300,8 +302,11 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
     function setup(report?: unknown, verdict?: unknown): string {
         const dir = mkdtempSync(join(tmpdir(), 'kk-0189-safety-'));
         for (const sub of ['22-article', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
-        writeFileSync(join(dir, '22-article', `${STAMP}_06_article_content.json`), JSON.stringify({ title: 'T' }));
-        writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: []\n');
+        writeFileSync(
+            join(dir, '22-article', `${STAMP}_06_article_content.json`),
+            JSON.stringify({ title: 'T', body: 'B' }),
+        );
+        writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), MINIMAL_VOICESCRIPT);
         expect(runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']).status).toBe(0);
         if (report !== undefined) writeFileSync(at(dir, 'safety-review_report.json'), JSON.stringify(report));
         if (verdict !== undefined) writeFileSync(at(dir, 'safety-judge_verdict.json'), JSON.stringify(verdict));
@@ -409,6 +414,141 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         const result = runStage(['daily-safety-prep', dir, STAMP, 'xiaoyuzhou']);
         expect(result.status).not.toBe(0);
         expect(result.stderr).toContain('safety-review');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    // ---- 20261005: the gate alerts and adjusts instead of stopping the run ----------------
+
+    /** A report of the real 20261005 shape: two admission BLOCKs (category 2) + one RISK. */
+    const ADMISSION_REPORT = {
+        platforms: [
+            {
+                platform: 'xiaoyuzhou',
+                decision: 'BLOCK',
+                findings: [
+                    { category: 2, item: 'XY-01', evidence: '「今天是2026年10月5日，星期一…」', evidenceGap: true },
+                ],
+            },
+            {
+                platform: 'wechatmp',
+                decision: 'BLOCK',
+                findings: [{ category: 2, item: 'WX-02', evidence: '「AI 乱炖 · 2026-10-05」', evidenceGap: true }],
+            },
+            {
+                platform: 'apple-podcasts',
+                decision: 'RISK',
+                findings: [{ category: 5, item: 'AP-05', evidence: 'no metadata disclosure', evidenceGap: true }],
+            },
+        ],
+        escalate: true,
+    };
+    /** The judge's side of the same run: a must-pass fail on the admission criterion only. */
+    const ADMISSION_VERDICT = {
+        verdict: 'FAIL',
+        rubric: 'compliance',
+        score: 0.475,
+        confidence: 'LOW',
+        findings: [{ criterion: 'jurisdictional-rules', status: 'fail', detail: '资质口径' }],
+    };
+
+    /** The gate with an explicit remediation budget; the caller owns the temp dir. */
+    function gateWith(dir: string, maxRevise: string): string {
+        const result = runStage(['daily-safety-gate', dir, STAMP, maxRevise]);
+        expect(result.status).toBe(0);
+        return result.stdout.match(/safety: status=(\w+)/)?.[1] ?? '';
+    }
+
+    it('spends the remediation budget on a non-PASS verdict before classifying anything', () => {
+        const dir = setup(ADMISSION_REPORT, ADMISSION_VERDICT);
+        expect(gateWith(dir, '2')).toBe('revise');
+        // A revise is not a verdict: no stamp, and the drafts stay put for the edit.
+        expect(() => readFileSync(at(dir, 'safety-judge_stamp.json'))).toThrow();
+        expect(existsSync(join(dir, '22-article', `${STAMP}_06_article_content.json`))).toBe(true);
+        // One pass spent → the second is still available; the budget is what ends the loop.
+        writeFileSync(join(dir, '.safety-revise-count'), '1\n');
+        expect(gateWith(dir, '2')).toBe('revise');
+        writeFileSync(join(dir, '.safety-revise-count'), '2\n');
+        expect(gateWith(dir, '2')).toBe('exclude');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('admission-only residue → exclude: the platform list is stamped and the drafts are kept', () => {
+        const dir = setup(ADMISSION_REPORT, ADMISSION_VERDICT);
+        expect(gateWith(dir, '0')).toBe('exclude');
+        const stamp = readJson<{ status: string; excludedPlatforms: string[] }>(at(dir, 'safety-judge_stamp.json'));
+        expect(stamp.status).toBe('exclude');
+        // apple-podcasts only RISKed: its category-5 finding must not drag the whole draft down.
+        expect(stamp.excludedPlatforms).toEqual(['xiaoyuzhou', 'wechatmp']);
+        expect(existsSync(join(dir, '24-script', `.quarantine-${STAMP}-judge-block`))).toBe(false);
+        expect(existsSync(join(dir, '22-article', `${STAMP}_06_article_content.json`))).toBe(true);
+        expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('exclude');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('a NEEDS_REVISION that documents only warn-grade findings is admission-only → exclude', () => {
+        const verdict = {
+            verdict: 'NEEDS_REVISION',
+            rubric: 'compliance',
+            score: 0.775,
+            confidence: 'LOW',
+            findings: [
+                { criterion: 'no-prohibited-claims', status: 'pass' },
+                { criterion: 'disclosure-presence', status: 'warn' },
+                { criterion: 'jurisdictional-rules', status: 'warn' },
+            ],
+        };
+        const dir = setup(
+            { platforms: [{ platform: 'xiaoyuzhou', decision: 'RISK', findings: [] }], escalate: true },
+            verdict,
+        );
+        expect(gateWith(dir, '0')).toBe('exclude');
+        const stamp = readJson<{ excludedPlatforms: string[] }>(at(dir, 'safety-judge_stamp.json'));
+        expect(stamp.excludedPlatforms).toEqual([]);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('draft-integrity findings survive exclusion → block + quarantine', () => {
+        // A category-3 (PII) platform BLOCK and a non-admission verdict fail: dropping a target
+        // cannot fix these, so the drafts must not publish anywhere.
+        const report = {
+            platforms: [
+                {
+                    platform: 'wechatmp',
+                    decision: 'BLOCK',
+                    findings: [{ category: 3, item: 'WX-04', evidence: '手机号' }],
+                },
+            ],
+            escalate: true,
+        };
+        const verdict = {
+            verdict: 'FAIL',
+            confidence: 'LOW',
+            findings: [{ criterion: 'data-handling', status: 'fail' }],
+        };
+        const dir = setup(report, verdict);
+        expect(gateWith(dir, '0')).toBe('block');
+        expect(existsSync(join(dir, '24-script', `.quarantine-${STAMP}-judge-block`))).toBe(true);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('daily-safety-revise validates the edited drafts and spends one budget unit per pass', () => {
+        const dir = setup(OK_REPORT, PASS_VERDICT);
+        expect(runStage(['daily-safety-revise', dir, STAMP]).status).toBe(0);
+        expect(readFileSync(join(dir, '.safety-revise-count'), 'utf-8')).toBe('1\n');
+        expect(runStage(['daily-safety-revise', dir, STAMP]).status).toBe(0);
+        expect(readFileSync(join(dir, '.safety-revise-count'), 'utf-8')).toBe('2\n');
+        // A revision that breaks the article contract fails inside the loop, not at wrap-docs.
+        writeFileSync(join(dir, '22-article', `${STAMP}_06_article_content.json`), JSON.stringify({ title: 'T' }));
+        const broken = runStage(['daily-safety-revise', dir, STAMP]);
+        expect(broken.status).not.toBe(0);
+        expect(broken.stderr).toContain('body');
+        // A VoiceScript the builder would reject is rejected here too.
+        writeFileSync(
+            join(dir, '22-article', `${STAMP}_06_article_content.json`),
+            JSON.stringify({ title: 'T', body: 'B' }),
+        );
+        writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: []\n');
+        expect(runStage(['daily-safety-revise', dir, STAMP]).status).not.toBe(0);
         rmSync(dir, { recursive: true, force: true });
     });
 });

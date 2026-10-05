@@ -45,7 +45,9 @@ prefer exclusion or abort over any rewording.
 - **detect-only** (default): emit the report; touch nothing.
 - **detect+revise**: additionally emit a proposed revision for findings in categories 3–5 where
   the fix is deletion/desensitization/disclosure. Category-2 findings get exclusion (drop the
-  item) or abort — prefer exclusion over any rewrite.
+  item) or abort — prefer exclusion over any rewrite. The `kk-daily-ai-voice` `safety-revise`
+  state calls this mode: the revision proposals are what the agent applies to the drafts before the
+  re-review (the platform level is what gets excluded when a category-2 finding survives).
 
 A revision proposal is a **proposal**. The operator/agent that owns the artifact applies it —
 keep originals intact and write the revision to a new artifact — and the revised artifact must
@@ -130,8 +132,9 @@ rule. Never emit `OK` with `evidenceGap` findings; that combination is a contrac
 - After a detect+revise revision is applied, the revised Content is re-evaluated by content-judge
   (rubric `compliance`) — a revision **never auto-PASSes**; the previous verdict is stale and the
   gate re-runs.
-- A content-judge `FAIL` on safety is terminal for that artifact in the pipeline: FAIL /
-  NEEDS_REVISION / missing-verdict states must not auto-publish.
+- A content-judge verdict never publishes on its own: the workflow's gate decides. `kk-daily-ai-voice`
+  spends a bounded revision budget on `FAIL`/`NEEDS_REVISION`, blocks only findings that travel with
+  the draft, and excludes the admission-blocked platforms instead of halting the run (20261005).
 
 ## Inputs
 
@@ -149,15 +152,23 @@ credentials, and no platform word lists are embedded in any caller or in TypeScr
 
 ## Workflow integration
 
-The `kk-daily-ai-voice` workflow runs this skill in `detect-only` mode on every publishing run
-(`safety-review` state, task 0189 R10): it reads the review request for the target `platforms`
-and writes the report JSON; `kk:content-judge` (`compliance` rubric) then re-checks the same
-drafts independently, and the `daily-safety-gate` stage consumes both. The program reads only
-`platforms[].decision`, `escalate`, and the judge's `verdict` — a `BLOCK`, a non-`PASS` verdict,
-or a missing/unreadable file stops the run; a `RISK` or `escalate: true` forces the human review
-even when the run is otherwise unattended. The report is bound to the exact draft bytes: editing a
-draft after the verdict invalidates it. The earlier deterministic gate is the topic-boundary QC
-stage (`plugins/kk/scripts/topic-boundary.json` via `daily-qc-content`); this skill covers the
-judgment-shaped residue that gate cannot express. Step shape:
+The `kk-daily-ai-voice` workflow runs this skill on every publishing run (task 0189 R10; revise
+loop 20261005): `safety-review` reads the request for the target `platforms` and writes the report
+(`detect-only`); `kk:content-judge` (`compliance` rubric) re-checks the same drafts independently;
+then `daily-safety-gate` consumes both. The gate **alerts and adjusts rather than stopping the run**:
+a non-PASS verdict spends a bounded budget in the `safety-revise` state, where this skill runs in
+`detect+revise` mode and the agent applies the proposals to the article and the VoiceScript before
+`safety-review` re-opens on the edited bytes. What survives the budget is classified — findings that
+travel with the draft still block (a PII finding on a blocked platform, or a judge must-pass `fail`
+outside the admission criteria: prohibited claims / disclosure / data-handling), while
+**admission-only findings** (the CN 资质口径 / 播报形态 rules) drop the platform
+they name from that run and let every other target publish; the drop is recorded in the verdict
+stamp's `excludedPlatforms` and honoured by the per-target publish stages. A `RISK` decision or
+`escalate: true` still forces the human review even when the run is otherwise unattended.
+
+The report is bound to the exact draft bytes: editing a draft after the verdict invalidates it, and
+the remediation loop re-requests a fresh review for that reason. The earlier deterministic gate is
+the topic-boundary QC stage (`plugins/kk/scripts/topic-boundary.json` via `daily-qc-content`); this
+skill covers the judgment-shaped residue that gate cannot express. Step shape:
 `plugins/kk/skills/content-judge/references/workflow-integration.md`. Outside the workflow the
 skill stays usable ad hoc on any draft.

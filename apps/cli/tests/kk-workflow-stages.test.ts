@@ -831,6 +831,71 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('20261005 — an admission-only exclusion is stamped, prep accepts it, and the excluded platform rides the merge', () => {
+        withTempDir((dir) => {
+            for (const sub of ['22-article', '24-script', '30-audio', '31-publish'])
+                mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            const audio = join(dir, '30-audio/content.mp3');
+            writeFileSync(audio, 'mp3-bytes');
+            writeFileSync(
+                join(dir, `22-article/${stamp}_06_article_content.json`),
+                JSON.stringify({ title: 'T', body: 'B' }),
+            );
+            writeFileSync(
+                join(dir, `24-script/${stamp}_08_script_voicescript.yaml`),
+                'title: T\nsegments:\n  - text: 大家好。\n',
+            );
+            writeFileSync(
+                join(dir, `30-audio/${stamp}_11_generate_content.json`),
+                JSON.stringify({ metadata: { audioPath: audio, duration: 12 } }),
+            );
+            const at = (name: string) => join(dir, '24-script', `${stamp}_09_${name}`);
+            expect(run(['daily-safety-prep', dir, stamp, 'wechatmp']).status).toBe(0);
+            writeFileSync(
+                at('safety-review_report.json'),
+                JSON.stringify({
+                    platforms: [
+                        { platform: 'wechatmp', decision: 'BLOCK', findings: [{ category: 2, item: 'WX-02' }] },
+                    ],
+                    escalate: true,
+                }),
+            );
+            writeFileSync(
+                at('safety-judge_verdict.json'),
+                JSON.stringify({
+                    verdict: 'FAIL',
+                    confidence: 'LOW',
+                    findings: [{ criterion: 'jurisdictional-rules', status: 'fail' }],
+                }),
+            );
+            // Budget 0 = the remediation passes are already spent.
+            expect(run(['daily-safety-gate', dir, stamp, '0']).status).toBe(0);
+            expect(readFileSync(at('safety-judge_status.txt'), 'utf-8')).toBe('exclude');
+            const env = fakeFfmpeg(dir, join(dir, 'ffmpeg-argv.json'));
+            expect(run(['daily-publish-prep', dir, stamp, '', ''], env).status).toBe(0);
+            const merged = JSON.parse(
+                readFileSync(join(dir, `31-publish/${stamp}_13_publish-prep_content.json`), 'utf-8'),
+            ) as { metadata: { safetyExcludedPlatforms?: string[] } };
+            expect(merged.metadata.safetyExcludedPlatforms).toEqual(['wechatmp']);
+        });
+    });
+
+    it('20261005 — daily-publish-wechat skips a platform the safety gate excluded, and the run continues', () => {
+        withTempDir((dir) => {
+            for (const sub of ['22-article', '24-script', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            writeFileSync(
+                join(dir, `24-script/${stamp}_09_safety-judge_stamp.json`),
+                JSON.stringify({ digest: 'd', status: 'exclude', excludedPlatforms: ['wechatmp'] }),
+            );
+            const result = run(['daily-publish-wechat', dir, stamp, '', 'false', 'AI 乱炖']);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('SKIPPED');
+            expect(existsSync(join(dir, `31-publish/${stamp}_20_publish-wechat_content.json`))).toBe(false);
+        });
+    });
+
     it('daily-publish-prep rejects a non-MP3 enclosure naming transcode_mp3', () => {
         withTempDir((dir) => {
             for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });

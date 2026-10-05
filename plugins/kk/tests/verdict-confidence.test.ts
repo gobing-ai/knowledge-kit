@@ -290,7 +290,11 @@ describe('every judge-verdict consumer verifies confidence', () => {
     it('the stage-level consumer (daily-safety-gate) also enforces it', () => {
         const stages = readFileSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'), 'utf-8');
         const gate = stages.slice(stages.indexOf('function dailySafetyGate'));
-        const ok = /confidence !== 'HIGH'/.test(gate) && /confidence !== 'MEDIUM'/.test(gate);
+        // 20261005: the gate names the whole enum (a positive allow-list); match either polarity so
+        // the scan checks the contract — every level present — not one spelling of it.
+        const ok = ['HIGH', 'MEDIUM', 'LOW'].every((level) =>
+            new RegExp(`confidence (===|!==|includes\\() ?'?${level}`).test(gate),
+        );
         expect(record('consumer-scan:kk-workflow-stages.dailySafetyGate', ok)).toBe(true);
         expect(ok).toBe(true);
     });
