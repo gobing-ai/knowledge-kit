@@ -1,3 +1,33 @@
+## [0.0.31] - 2026-10-04
+
+### Fixed
+
+- fix(daily): keep plan headings and URL colons out of spoken copy (5a8daa83)
+
+### Changed
+
+- test(safety): verify the judge confidence contract on the producer side (59b9f0b0)
+
+<!--
+Verification (2026-10-04, sp-dev-changelog): HIGH
+- Coverage: 2 bullets = 2 commits in @gobing-ai/knowledge-kit-v0.0.30..HEAD, each short hash exactly once.
+- Mapping: fix->Fixed 1, test->Changed 1, Added/Removed/Other 0. Header [0.0.31] - 2026-10-04 matches
+  --version 0.0.31 and `date +%F`.
+- Source citations for behaviour claims that go beyond a commit summary (checked against the tree, not memory):
+  - the gate that rejected the run: plugins/kk/scripts/validate-voicescript.ts:130 (CONTENT_SCAFFOLD_LABEL_RE),
+    thrown at :175-176 for a segment that opens with a scaffold label.
+  - heading strip: plugins/generations/episode-plan-gen/src/index.ts:261 (SCAFFOLD_HEADING_RE), applied per line
+    in cleanBody at :266-269.
+  - URL scheme colon exception: plugins/generations/dailynews-gen/src/script-builder.ts:125.
+  - regression coverage: apps/cli/tests/kk-daily-ai-voice-content-quality.test.ts:135 (plan-body heading check)
+    and :186 (the real daily-script stage).
+  - producer-side confidence checks: plugins/kk/tests/verdict-confidence.test.ts:343 and :385; the enum this
+    asserts is declared in plugins/kk/skills/content-judge/SKILL.md:33, and the reference filter compared
+    against the guards is plugins/kk/skills/content-judge/references/workflow-integration.md:40.
+- Confidence: HIGH — coverage and mapping reconcile against git; every behaviour claim cites a checked-in
+  path:line.
+-->
+
 ## [0.0.30] - 2026-10-04
 
 ### Added
