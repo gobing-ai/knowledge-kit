@@ -3,5 +3,5 @@
     "kind": "publish",
     "entry": "./src/index.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Xiaohongshu (xhs): ordered card images to draft or live post via Playwright script transport"
+    "description": "Publish plugin for Xiaohongshu (xhs): one creator console, four validated operations (上传图文 ≤18 images | 上传视频 | 写长文 | 发播客 audio+cover) saved as a draft via 暂存离开 or published live via 发布, over the Playwright script transport"
 }
