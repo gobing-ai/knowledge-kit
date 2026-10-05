@@ -16,6 +16,7 @@ import {
     fillCodeMirror,
     markdownToHtml,
     pasteHtml,
+    readScopedSignal,
     resolveChannelProfileDir,
     resolveSelector,
     runProfileCli,
@@ -440,6 +441,68 @@ describe('expectOutcome', () => {
         expect(outcome.ok).toBe(false);
         expect(outcome.ok === false && outcome.error).toContain('substack URL');
         expect(outcome.ok === false && outcome.error).toContain('20ms');
+    });
+});
+
+describe('expectOutcome — probe rejections (residual 0190)', () => {
+    test('keeps polling when a probe rejects and still reports the observed outcome', async () => {
+        let calls = 0;
+        const outcome = await expectOutcome(
+            async () => {
+                calls += 1;
+                // A live probe really does throw mid-navigation (`page.evaluate` on a replaced
+                // document); that is "no signal yet", not the end of the rail.
+                if (calls < 3) throw new Error('Execution context was destroyed');
+                return 'draft-9';
+            },
+            { timeoutMs: 1_000, label: 'juejin draft' },
+        );
+
+        expect(outcome).toEqual({ ok: true, evidence: 'draft-9' });
+    });
+
+    test('a probe that keeps rejecting yields a failed outcome naming the rejection', async () => {
+        const outcome = await expectOutcome(
+            async () => {
+                throw new Error('Evaluation failed: navigation in progress');
+            },
+            { timeoutMs: 20, label: 'x article draft' },
+        );
+
+        expect(outcome.ok).toBe(false);
+        expect(outcome.ok === false && outcome.error).toContain('x article draft');
+        expect(outcome.ok === false && outcome.error).toContain('Evaluation failed: navigation in progress');
+    });
+});
+
+describe('readScopedSignal — toast scoping (residuals 0195/0196)', () => {
+    /** Models the live failure mode: the label sits in the editor body or in a toast. */
+    const makeSignalPage = (state: { bodyHasLabel: boolean; toast: string | null }) => ({
+        locator(selector: string) {
+            const scoped =
+                /\[class\*="(toast|notification|message)"/.test(selector) || selector.includes('[role="alert"]');
+            const wanted = selector.slice(selector.indexOf(':text("') + 7, selector.lastIndexOf('")'));
+            const found = scoped ? state.toast : state.bodyHasLabel ? wanted : state.toast;
+            return {
+                first: () => ({
+                    count: async () => (found === null ? 0 : 1),
+                    isVisible: async () => true,
+                    textContent: async () => found,
+                }),
+            };
+        },
+    });
+
+    test('reads the label from a notification container', async () => {
+        const page = makeSignalPage({ bodyHasLabel: false, toast: '保存成功' });
+
+        expect(await readScopedSignal(page as never, ['保存成功'])).toBe('保存成功');
+    });
+
+    test('ignores the same label when it only exists in the pasted article body', async () => {
+        const page = makeSignalPage({ bodyHasLabel: true, toast: null });
+
+        expect(await readScopedSignal(page as never, ['保存成功'])).toBeNull();
     });
 });
 

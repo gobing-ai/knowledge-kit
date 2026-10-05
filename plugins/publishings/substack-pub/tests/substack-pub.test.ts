@@ -294,6 +294,19 @@ describe('substack-pub publication URL (R1, R5)', () => {
         expect(fake.calls).toEqual([]);
     });
 
+    test('a publication editor URL is rejected before any browser opens (0197)', async () => {
+        const fake = makeFakeLauncher({ page: { onPaste: 'url' } });
+        const result = await transport(fake).publish({
+            content,
+            options: { publicationUrl: 'https://robin.substack.com/publish/posts' },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('publication root');
+        expect(fake.requests).toEqual([]);
+        expect(fake.calls).toEqual([]);
+    });
+
     test('options.publicationUrl wins over SUBSTACK_PUBLICATION_URL', async () => {
         process.env.SUBSTACK_PUBLICATION_URL = 'https://env.substack.com';
         const fake = makeFakeLauncher({ page: { onPaste: 'url' } });

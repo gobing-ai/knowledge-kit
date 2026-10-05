@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Residuals from 0186
-status: backlog
+status: cancelled
 template: feature-impl
 created_at: 2026-10-05T14:58:01.664Z
-updated_at: "2026-10-05T14:58:01.856Z"
+updated_at: "2026-10-05T22:13:39.289Z"
 feature_id: E91
 
 ---
@@ -56,3 +56,6 @@ Source task: 0186 (feature E91) — deferred residuals filed by residual-scan se
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-05T22:13:39.289Z backlog → cancelled (system)
+

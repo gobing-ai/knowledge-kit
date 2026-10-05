@@ -96,6 +96,16 @@ export function resolvePublicationUrl(explicit?: string): { url: string } | { er
     if (parsed.protocol !== 'https:') {
         return { error: `substack publication URL must be https:, got '${trimmed}' — set ${PUBLICATION_URL_SOURCES}` };
     }
+    // Nested editor paths are rejected (residual 0197): `…/publish/posts` used to pass validation
+    // and then be mangled by `editorUrl` (`…/publish/posts/publish/post/new`), so a misconfigured
+    // run reported an expired session instead of a configuration error. A trailing `/publish` is
+    // accepted and stripped by `editorUrl` — that is the documented shape.
+    const trimmedPath = parsed.pathname.replace(/\/+$/, '');
+    if (trimmedPath.length > 0 && trimmedPath !== '/publish') {
+        return {
+            error: `substack publication URL must be the publication root, optionally with a trailing /publish (e.g. https://name.substack.com), got '${trimmed}' — set ${PUBLICATION_URL_SOURCES}`,
+        };
+    }
     return { url: trimmed };
 }
 

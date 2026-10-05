@@ -47,6 +47,8 @@ interface FakePageOptions {
     missingTitle?: boolean;
     onDraft?: ClickOutcome;
     onLive?: ClickOutcome;
+    /** A toast label present only in the pasted article body (the false-success input, 0195). */
+    bodySignal?: string;
 }
 
 /**
@@ -60,7 +62,15 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
     let toast: string | null = null;
 
     const attached = (selector: string): number => {
-        if (selector.includes(':text(')) return toast !== null && selector.includes(toast) ? 1 : 0;
+        if (selector.includes(':text(')) {
+            if (toast !== null && selector.includes(toast)) return 1;
+            // Pre-0195 the probe was unscoped, so a label sitting in the pasted article body counted
+            // as a signal; only a notification-container match is a real toast now.
+            const scoped =
+                /\[class\*="(toast|notification|message)"/.test(selector) || selector.includes('[role="alert"]');
+            if (!scoped && options.bodySignal !== undefined && selector.includes(options.bodySignal)) return 1;
+            return 0;
+        }
         if (selector.includes('标题')) return options.missingTitle === true ? 0 : 1;
         return 1;
     };
@@ -250,6 +260,14 @@ describe('infoq-pub draft flow', () => {
         expect(result.url).toBe(EDITOR_URL);
         expect(result.id).toBeUndefined();
         expect(fake.calls).toContain(`click:${DRAFT_SELECTOR}`);
+    });
+
+    test('a 保存成功 label that only exists in the pasted body is not an observed save (0195)', async () => {
+        const fake = makeFakeLauncher({ page: { onDraft: 'none', bodySignal: '保存成功' } });
+        const result = await transport(fake, 30).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('no outcome observed within 30ms');
     });
 
     test('a moved URL without an id segment is not a draft signal', async () => {

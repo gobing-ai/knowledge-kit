@@ -60,6 +60,8 @@ interface FakePageOptions {
     onBodyFill?: Signal;
     /** Signal emitted only after the Meta+S / Control+S press. */
     onKeySave?: Signal;
+    /** A toast label present only in the pasted article body (the false-success input, 0196). */
+    bodySignal?: string;
     /** Signal emitted when the `确定并发布` control is clicked. */
     onLive?: Signal;
     /** Category items rendered in the publish popup. */
@@ -83,7 +85,15 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
     };
 
     const attached = (selector: string): number => {
-        if (selector.includes(':text(')) return toast !== null && selector.includes(toast) ? 1 : 0;
+        if (selector.includes(':text(')) {
+            if (toast !== null && selector.includes(toast)) return 1;
+            // Pre-0196 the probe was unscoped, so a label sitting in the pasted article body counted
+            // as a signal; only a notification-container match is a real toast now.
+            const scoped =
+                /\[class\*="(toast|notification|message)"/.test(selector) || selector.includes('[role="alert"]');
+            if (!scoped && options.bodySignal !== undefined && selector.includes(options.bodySignal)) return 1;
+            return 0;
+        }
         if (TITLE_SELECTORS.includes(selector)) return options.missingTitle === true ? 0 : 1;
         if (selector === SELECTORS.category) return categories.length;
         return 1;
@@ -285,6 +295,14 @@ describe('juejin-pub draft flow (R2, R3 / AC1)', () => {
         expect(result.url).toBe(EDITOR_URL);
         expect(result.id).toBeUndefined();
         expect(liveClicks(fake.calls)).toEqual([]);
+    });
+
+    test('a 保存成功 label that only exists in the pasted body is not an observed save (0196)', async () => {
+        const fake = makeFakeLauncher({ page: { onBodyFill: 'none', bodySignal: '保存成功' } });
+        const result = await transport(fake, 30).publish({ content });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('no outcome observed within 30ms');
     });
 
     test('the save key is pressed at most once when the autosave shows nothing', async () => {

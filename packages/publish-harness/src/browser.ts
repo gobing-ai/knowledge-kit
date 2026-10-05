@@ -325,9 +325,20 @@ export async function expectOutcome(
     opts: { timeoutMs: number; label: string; pollMs?: number },
 ): Promise<{ ok: true; evidence: string } | { ok: false; error: string }> {
     let evidence = '';
+    let lastProbeError: string | null = null;
     const observed = await waitUntil(
         async () => {
-            const result = await probe();
+            let result: string | null;
+            try {
+                result = await probe();
+            } catch (error) {
+                // A probe that rejects (a `page.evaluate` whose document is replaced by a
+                // navigation) is "no signal *yet*", not a broken rail: keep polling and report the
+                // last rejection if the deadline passes. Letting it escape turned the
+                // never-report-unseen-success rail into an unhandled rejection (residual 0190).
+                lastProbeError = error instanceof Error ? error.message : String(error);
+                return false;
+            }
             // An empty string is a probe that fired without a signal (no id, URL, or toast text):
             // treating it as success would report an outcome the browser never showed (E91-D6).
             if (result === null || result.length === 0) {
@@ -342,7 +353,46 @@ export async function expectOutcome(
     if (observed && evidence.length > 0) {
         return { ok: true, evidence };
     }
-    return { ok: false, error: `${opts.label}: no outcome observed within ${opts.timeoutMs}ms` };
+    const detail = lastProbeError === null ? '' : ` (last probe error: ${lastProbeError})`;
+    return { ok: false, error: `${opts.label}: no outcome observed within ${opts.timeoutMs}ms${detail}` };
+}
+
+/**
+ * Containers that carry a transient site signal (toast / notice). Article content is never inside
+ * them, which is the whole point: see {@link readScopedSignal}.
+ */
+export const DEFAULT_SIGNAL_CONTAINERS: readonly string[] = [
+    '[class*="toast" i]',
+    '[class*="notification" i]',
+    '[role="alert"]',
+    '[class*="message" i]',
+];
+
+/**
+ * Reads a transient site signal (a toast/notice carrying one of `texts`) scoped to the page's
+ * notification containers.
+ *
+ * Scoping is load-bearing (residuals 0195/0196): an unscoped `:text(...)` match also hits the
+ * article body the flow itself pasted a few steps earlier, so a body containing `保存成功`
+ * satisfied the draft probe and reported a success the browser never showed — the operator then
+ * sees a saved draft that does not exist. Only the containers are searched, and the label must be
+ * reachable through one of them.
+ */
+export async function readScopedSignal(
+    page: Page,
+    texts: readonly string[],
+    containers: readonly string[] = DEFAULT_SIGNAL_CONTAINERS,
+): Promise<string | null> {
+    for (const text of texts) {
+        for (const container of containers) {
+            const locator = page.locator(`${container} :text("${text}")`).first();
+            if ((await locator.count().catch(() => 0)) === 0) continue;
+            if (!(await locator.isVisible().catch(() => false))) continue;
+            const observed = (await locator.textContent().catch(() => null))?.trim();
+            return observed !== undefined && observed.length > 0 ? observed : text;
+        }
+    }
+    return null;
 }
 
 /** Markdown → HTML through the Bun built-in (E91-D4); GFM tables, fenced code and task lists. */

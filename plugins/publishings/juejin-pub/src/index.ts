@@ -13,6 +13,7 @@ import {
     checkChannelSession,
     expectOutcome,
     fillCodeMirror,
+    readScopedSignal,
     resolveChannelProfileDir,
     resolveSelector,
     waitUntil,
@@ -131,15 +132,13 @@ function liveInputs(content: Content): LiveInputs | string {
  * Text of the first visible toast among `texts`, or null. `:text(…)` matches on a substring, so
  * the element's own text is returned rather than the candidate literal.
  */
+/**
+ * The draft/live outcome, read only from the page's notification containers (residual 0196): an
+ * unscoped `:text(...)` match also hits the article body this flow filled a few steps earlier, so
+ * a body containing `保存成功` reported a draft that was never saved.
+ */
 async function readToast(page: Page, texts: readonly string[]): Promise<string | null> {
-    for (const text of texts) {
-        const locator = page.locator(`:text("${text}")`).first();
-        if ((await locator.count().catch(() => 0)) === 0) continue;
-        if (!(await locator.isVisible().catch(() => false))) continue;
-        const observed = (await locator.textContent().catch(() => null))?.trim();
-        return observed !== undefined && observed.length > 0 ? observed : text;
-    }
-    return null;
+    return readScopedSignal(page, texts);
 }
 
 export class JuejinBrowserTransport implements PublishTransport {
