@@ -248,9 +248,30 @@ function passesGates(doc: Doc, planDate: string): boolean {
     return published >= Date.parse(planDate) - FRESHNESS_DAYS * 86_400_000;
 }
 
-/** Strip `⭐️ x.y/10` ratings and `### [title](url)` heading copies from a body. */
+/**
+ * Research-note section headings: the horizon/last30days note format labels its sections with a
+ * bold corner-bracket heading (`**「社区讨论」** 评论区…`, `**「背景」**`, `**「背景：GCN 架构」**`,
+ * `**「方案」**`, …). Spoken from a VoiceScript segment they read as scaffolding, and the content
+ * gates reject a segment that opens with one (`voice-gen`'s `voicescript.ts`, the
+ * `validate-voicescript.ts` sidecar) — which fails the whole unattended daily run at the `script`
+ * state (2026-10-03 「背景」/「社区讨论」, 2026-10-04 「社区讨论」). The bold corner-bracket markup is
+ * the discriminator: these note bodies never bold-quote conversational prose, so the label list
+ * stays open-ended.
+ */
+const SCAFFOLD_HEADING_RE = /^\s*\*\*\s*[「『][^」』\n]{1,80}[」』]\s*\*\*\s*[：:]?(?:\s+|$)/;
+
+/** Strip `⭐️ x.y/10` ratings, `### [title](url)` heading copies and `**「label」**` research-note
+ *  section headings from a body. A heading ahead of prose keeps the prose; a heading alone on its
+ *  line disappears with it. */
 export function cleanBody(body: string): string {
-    return body
+    const kept: string[] = [];
+    for (const line of body.split('\n')) {
+        const stripped = line.replace(SCAFFOLD_HEADING_RE, '');
+        if (stripped.trim() === '' && line.trim() !== '') continue; // the line held only a heading
+        kept.push(stripped);
+    }
+    return kept
+        .join('\n')
         .replace(/⭐️\s*[\d.]+\s*\/\s*10/g, '')
         .replace(/^#{1,6}\s*\[[^\]]*\]\([^)]*\)\s*$/gm, '')
         .replace(/\n{3,}/g, '\n\n')

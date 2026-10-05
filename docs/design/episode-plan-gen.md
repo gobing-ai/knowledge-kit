@@ -23,7 +23,7 @@ Executor: `kk executor run episode-plan-gen --in <blended Doc[] json> --out <Con
 | `filterAnnotated(docs, config)` | function | Quality-controller filter (`--mode filter`): annotated `Doc[]` → `{ kept, rejected }` by category allowlist + inclusive dimension minimums; `RejectedDoc = { doc, reasons[] }` |
 | `filterConfigFromEnv(env?)` / `DEFAULT_FILTER_CONFIG` | function / const | Single QC defaults + env-parsing source (see Filter); invalid values fail loud |
 | `rejectedOutPath(out)` | function | `<out>.json` → `<out>.rejected.json` sibling audit path |
-| `cleanBody(text)` | function | Strip `⭐️ x.y/10` ratings + `### [title](url)` heading copies, collapse blank-line runs to one, trim |
+| `cleanBody(text)` | function | Strip `⭐️ x.y/10` ratings + `### [title](url)` heading copies + `**「label」**` research-note section headings (`**「社区讨论」** 评论区…` → `评论区…`; a heading-only line disappears), collapse blank-line runs to one, trim |
 | `normalizeUrl(url)` | function | Drop the whole query string + fragment, strip `www.`/`amp.` host prefixes + trailing slash → dedup key (`null` when absent/unparseable) |
 | `titleSimilarity(a, b)` | function | Bigram Jaccard (0–1), CJK-aware |
 | `docsToContent(docs, options)` | function | Wrap plan as markdown `Content` with the selected `Doc[]` in `metadata.docs` |

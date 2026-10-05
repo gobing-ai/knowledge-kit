@@ -119,8 +119,10 @@ export function normalizeBroadcastText(raw: string, isZh: boolean): string {
 
     if (isZh) {
         text = text.replace(/[''‘’]/g, '');
-        // Replace English punctuation with Chinese pauses
-        text = text.replace(/[:：]/g, '，');
+        // Replace English punctuation with Chinese pauses. A URL scheme's colon (`https://`,
+        // `wss://`) is the exception: spoken as `，//` the URL is mangled, and the content gate
+        // (`validate-voicescript.ts` CONTENT_URL_MANGLE_RE) rejects the whole run over it.
+        text = text.replace(/[:：](?!\/\/)/g, '，');
         text = text.replace(/[;；]/g, '。');
         text = text.replace(/--+/g, '，');
         text = text.replace(/\.{2,}/g, '。');

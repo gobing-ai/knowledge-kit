@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 /**
  * 0138 AC9 — the daily-ai-voice content-quality seam end to end: blend → plan (annotate) → filter
- * (QC) → plan-translate stand-in → article.
+ * (QC) → plan-translate stand-in → article → script (VoiceScript).
  *
  * Every stage runs the real plugin / stage-runner entrypoint (spawned, not imported), so the three
  * defect classes must compose rather than merely pass in isolation. The fixture reproduces the
@@ -14,7 +14,9 @@ import { join } from 'node:path';
  * control, the Gemini 3.8 Live pair whose zh titles score 0.417 bigram Jaccard (under the 0.6
  * pre-translate threshold, over the 0.4 post-translate one), and — verbatim from the run's
  * `20260916_03_plan_plan.json` — the two translated bodies that leaked research scaffolding into
- * published copy.
+ * published copy. The same two bodies produce the failure that killed the unattended daily run at
+ * the `script` state on 2026-10-03/04: a `**「label」**` research heading landing at a VoiceScript
+ * segment start, which `validate-voicescript.ts` rejects.
  */
 const REPO = join(import.meta.dir, '../../..');
 const PLAN_GEN = join(REPO, 'plugins/generations/episode-plan-gen/src/index.ts');
@@ -106,8 +108,10 @@ describe('0138 AC9 — daily-ai-voice content quality end to end', () => {
         try {
             const planDir = join(dir, '21-plan');
             const articleDir = join(dir, '22-article');
+            const scriptDir = join(dir, '24-script');
             mkdirSync(planDir, { recursive: true });
             mkdirSync(articleDir, { recursive: true });
+            mkdirSync(scriptDir, { recursive: true });
 
             // 1. blend → plan mode (annotate + gate + select). The pre-translate title dedup runs at
             //    0.6, so the Gemini pair survives it — exactly the 2026-09-16 defect (0.4225 zh).
@@ -121,8 +125,15 @@ describe('0138 AC9 — daily-ai-voice content quality end to end', () => {
             expect(planned.status).toBe(0);
 
             const annotated = join(planDir, `${STAMP}_04_quality-control-content_annotated.json`);
-            const annotatedDocs = readJson<{ metadata: { docs: unknown[] } }>(planContent).metadata.docs;
+            const annotatedDocs = readJson<{ metadata: { docs: { id: string; body: string }[] } }>(planContent).metadata
+                .docs;
             expect(annotatedDocs).toHaveLength(6);
+            // The plan body is the copy source for every later consumer (article, VoiceScript,
+            // safety review): a research-note heading must not survive the plan funnel, or the
+            // VoiceScript gate rejects the whole unattended run at the `script` state.
+            for (const entry of annotatedDocs) {
+                expect(entry.body).not.toMatch(/\*\*\s*[「『][^」』\n]{1,80}[」』]\s*\*\*/);
+            }
             writeFileSync(annotated, JSON.stringify(annotatedDocs));
 
             // 2. filter mode (QC) — the stubs must die on the body floor.
@@ -167,6 +178,22 @@ describe('0138 AC9 — daily-ai-voice content quality end to end', () => {
             }
             expect(markdown).not.toContain('读者宜另行核实');
             expect(markdown).not.toContain('仍待验证');
+
+            // 5. script stage — the research-note headings must not survive into spoken copy. The
+            //    stage validates its own write (validate-voicescript.ts), so a leaking heading exits
+            //    non-zero exactly like the 2026-10-04 scheduler run ("segment 19 opens with a
+            //    research scaffold label").
+            const script = run(RUNNER, ['daily-script', dir, STAMP, '', 'zh', '', 'Robin'], fakeKk(dir));
+            expect(script.status).toBe(0);
+
+            const voicescript = readFileSync(join(scriptDir, `${STAMP}_08_script_voicescript.yaml`), 'utf-8');
+            const segments = [...voicescript.matchAll(/^ {2}- text: "(.*)"$/gm)].map((match) => match[1] ?? '');
+            expect(segments.length).toBeGreaterThan(2); // greeting + facts + sign-off
+            for (const text of segments) {
+                expect(text).not.toMatch(
+                    /^(?:\*\*)?[「『]?(?:背景|潜在影响|可做角度|为什么现在值得注意|社区讨论)[」』]?(?:\*\*)?(?:[：:，,]|\s|$)/,
+                );
+            }
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

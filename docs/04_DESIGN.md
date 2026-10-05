@@ -557,7 +557,7 @@ the audio script, and the show notes.
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
 | `planEpisode(docs, options)` | function | Full pipeline: `cleanBody` → `planScore` → URL dedup (`normalizeUrl`) → title dedup (`titleSimilarity`, bigram Jaccard ≥ 0.6) → top `maxItems` by score. Losers of either dedup are recorded on the winner's `metadata.mergedFrom` (`{source, title, url}`); English-dominant titles get `metadata.needsTranslation: true`; each survivor carries `metadata.planScore` |
-| `cleanBody(text)` | function | Collapse blank-line runs to one, trim |
+| `cleanBody(text)` | function | Strip `⭐️ x.y/10` ratings, `### [title](url)` heading copies and `**「label」**` research-note section headings, collapse blank-line runs to one, trim |
 | `normalizeUrl(url)` | function | Strip `utm_*`/tracking params and trailing slash for dedup keys |
 | `titleSimilarity(a, b)` | function | Bigram Jaccard similarity (0–1), CJK-aware |
 | `docsToContent(docs, options)` | function | Wrap the plan as markdown `Content` carrying the selected `Doc[]` in `metadata.docs` — the executor's generator contract output; the workflow extracts `metadata.docs` to `21-plan/plan.json` for downstream steps |
