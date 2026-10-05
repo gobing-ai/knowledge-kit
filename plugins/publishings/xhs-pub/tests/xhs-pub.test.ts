@@ -896,7 +896,18 @@ describe('xhs-pub default page opener (task 0174 wiring)', () => {
         const closed: string[] = [];
         const launched: Array<{ profileDir: string; headless: boolean }> = [];
         const { session } = fakeCdp(
-            { nodeName: '#document', children: [shadowButton('暂存离开')] },
+            // The production shape: the label lives inside a CLOSED shadow root hanging off a
+            // light-DOM host, which is exactly what no locator can reach.
+            {
+                nodeName: '#document',
+                children: [
+                    {
+                        nodeName: 'DIV',
+                        children: [],
+                        shadowRoots: [{ nodeName: '#document-fragment', children: [shadowButton('暂存离开')] }],
+                    },
+                ],
+            },
             boxAt(0, 0, 40, 20),
         );
         const open = makeDefaultOpenPage(async (options) => {

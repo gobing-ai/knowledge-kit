@@ -12,8 +12,10 @@ import type { BrowserContext, Page } from 'playwright';
 import {
     type ChannelBrowserConfig,
     checkChannelSession,
+    createShadowFinder,
     expectOutcome,
     fillCodeMirror,
+    findShadowControl,
     markdownToHtml,
     pasteHtml,
     readScopedSignal,
@@ -503,6 +505,70 @@ describe('readScopedSignal — toast scoping (residuals 0195/0196)', () => {
         const page = makeSignalPage({ bodyHasLabel: true, toast: null });
 
         expect(await readScopedSignal(page as never, ['保存成功'])).toBeNull();
+    });
+});
+
+describe('closed-shadow controls (ADR-029 rail)', () => {
+    /** A pierced CDP tree with the label inside a shadow root, as the xhs publish bar reports it. */
+    const makeSession = (state: { shadowLabel?: string; lightLabel?: string }) => {
+        const calls: string[] = [];
+        const button = (backendNodeId: number, nodeValue: string) => ({
+            nodeName: 'BUTTON',
+            backendNodeId,
+            children: [{ nodeName: '#text', nodeValue }],
+        });
+        return {
+            calls,
+            async send(method: string) {
+                calls.push(method);
+                if (method === 'DOM.getDocument') {
+                    return {
+                        root: {
+                            nodeName: '#document',
+                            children: state.lightLabel === undefined ? [] : [button(1, state.lightLabel)],
+                            shadowRoots:
+                                state.shadowLabel === undefined
+                                    ? []
+                                    : [
+                                          {
+                                              nodeName: '#document-fragment',
+                                              shadowRoots: [],
+                                              children: [button(7, `  ${state.shadowLabel} `)],
+                                          },
+                                      ],
+                        },
+                    };
+                }
+                if (method === 'DOM.getBoxModel') {
+                    // The quad the live bar reports: centre ((x1+x3)/2, (y1+y4)/2).
+                    return { model: { content: [10, 20, 110, 20, 110, 60, 10, 60] } };
+                }
+                return {};
+            },
+        };
+    };
+
+    test('resolves a labelled control inside a closed shadow root and returns its centre', async () => {
+        const session = makeSession({ shadowLabel: '暂存离开' });
+
+        expect(await findShadowControl(session, ['暂存离开', '发布'])).toEqual({ label: '暂存离开', x: 60, y: 40 });
+        expect(session.calls).toContain('DOM.getDocument');
+    });
+
+    test('a label that exists only in the light DOM is not a shadow control', async () => {
+        const session = makeSession({ lightLabel: '暂存离开' });
+
+        expect(await findShadowControl(session, ['暂存离开'])).toBeNull();
+    });
+
+    test('the shadow tree wins over a mirrored light-DOM label', async () => {
+        const session = makeSession({ shadowLabel: '发布', lightLabel: '发布' });
+
+        expect(await findShadowControl(session, ['发布'])).toEqual({ label: '发布', x: 60, y: 40 });
+    });
+
+    test('a platform without CDP yields no finder instead of guessed coordinates', async () => {
+        expect(await createShadowFinder({}, {})).toBeUndefined();
     });
 });
 

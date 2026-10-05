@@ -7,7 +7,13 @@ import {
     type PublishTransportPayload,
     trySelectors,
 } from '@gobing-ai/publish-harness';
-import { checkChannelSession, resolveChannelProfileDir, waitUntil } from '@gobing-ai/publish-harness/browser';
+import {
+    checkChannelSession,
+    createShadowFinder,
+    resolveChannelProfileDir,
+    type ShadowCdpSession,
+    waitUntil,
+} from '@gobing-ai/publish-harness/browser';
 import { type BrowserLauncher, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
@@ -227,78 +233,15 @@ export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage 
     };
 }
 
-interface CdpSession {
-    send(method: string, params?: Record<string, unknown>): Promise<unknown>;
-}
-
-interface CdpNode {
-    nodeName: string;
-    nodeValue?: string;
-    backendNodeId?: number;
-    children?: CdpNode[];
-    shadowRoots?: CdpNode[];
-}
-
-/**
- * Resolve a labelled control inside a CLOSED shadow root via Chrome DevTools Protocol.
- * `pierce: true` is the only way in: the light DOM exposes neither the label nor the node,
- * so this is what makes the publish bar reachable without guessing coordinates.
- */
-async function findControlViaCdp(session: CdpSession, labels: readonly string[]): Promise<ShadowControl | null> {
-    const document = (await session.send('DOM.getDocument', { depth: -1, pierce: true })) as { root?: CdpNode };
-    if (!document.root) return null;
-    const wanted = new Set(labels);
-    const text = (node: CdpNode): string =>
-        node.nodeName === '#text' ? (node.nodeValue ?? '') : (node.children ?? []).map(text).join('');
-    const hits: { label: string; backendNodeId: number }[] = [];
-    const walk = (node: CdpNode): void => {
-        if (hits.length > 0) return;
-        for (const shadowRoot of node.shadowRoots ?? []) {
-            walk(shadowRoot);
-            if (hits.length > 0) return;
-        }
-        if (node.nodeName === 'BUTTON') {
-            const label = text(node).replace(/\s+/g, '');
-            if (wanted.has(label) && typeof node.backendNodeId === 'number') {
-                hits.push({ label, backendNodeId: node.backendNodeId });
-                return;
-            }
-        }
-        for (const child of node.children ?? []) {
-            walk(child);
-            if (hits.length > 0) return;
-        }
-    };
-    walk(document.root);
-    const hit = hits[0];
-    if (!hit) return null;
-    const box = (await session.send('DOM.getBoxModel', { backendNodeId: hit.backendNodeId })) as {
-        model?: { content?: number[] };
-    };
-    const quad = box.model?.content;
-    if (!quad || quad.length < 8) return null;
-    // Quad layout is [x1,y1, x2,y2, x3,y3, x4,y4]; the centre is ((x1+x3)/2, (y1+y4)/2).
-    const [x1 = 0, y1 = 0, x3 = 0, , , y4 = 0] = quad;
-    return {
-        label: hit.label,
-        x: Math.round((x1 + x3) / 2),
-        y: Math.round((y1 + y4) / 2),
-    };
-}
-
 /** CDP is Chromium-only; when unavailable the submit step fails loud instead of guessing. */
 export async function createShadowProbe(
-    context: { newCDPSession?(page: unknown): Promise<CdpSession> },
+    context: { newCDPSession?(page: unknown): Promise<ShadowCdpSession> },
     page: unknown,
 ): Promise<ShadowProbe | undefined> {
-    if (typeof context.newCDPSession !== 'function') return undefined;
-    try {
-        const session = await context.newCDPSession(page);
-        await session.send('DOM.enable');
-        return { findControl: (labels) => findControlViaCdp(session, labels) };
-    } catch {
-        return undefined;
-    }
+    // The closed-shadow walk itself lives in the shared harness (ADR-029 rail); this stays a
+    // plugin-shaped adapter so the page wrapper's contract is unchanged.
+    const find = await createShadowFinder(context, page);
+    return find === undefined ? undefined : { findControl: (labels) => find(labels) };
 }
 
 /**
@@ -337,7 +280,7 @@ export function makeDefaultOpenPage(
             pages(): unknown[];
             newPage(): Promise<unknown>;
             close(): Promise<void>;
-            newCDPSession?(page: unknown): Promise<CdpSession>;
+            newCDPSession?(page: unknown): Promise<ShadowCdpSession>;
         };
         try {
             const raw = ctx.pages()[0] ?? (await ctx.newPage());

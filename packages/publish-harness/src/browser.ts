@@ -395,6 +395,99 @@ export async function readScopedSignal(
     return null;
 }
 
+/** Minimal CDP session surface the closed-shadow probe needs (Playwright's `CDPSession` satisfies it). */
+export interface ShadowCdpSession {
+    send(method: string, params?: Record<string, unknown>): Promise<unknown>;
+}
+
+/** A control resolved inside a closed shadow root, in viewport coordinates. */
+export interface ShadowControl {
+    label: string;
+    x: number;
+    y: number;
+}
+
+interface CdpNode {
+    nodeName?: string;
+    nodeValue?: string;
+    backendNodeId?: number;
+    children?: CdpNode[];
+    shadowRoots?: CdpNode[];
+}
+
+const cdpNodeText = (node: CdpNode): string =>
+    node.nodeName === '#text' ? (node.nodeValue ?? '') : (node.children ?? []).map(cdpNodeText).join('');
+
+/**
+ * Resolves a labelled control that lives inside a **closed** shadow root, returning its viewport
+ * centre so the caller can click it with a real mouse event.
+ *
+ * `DOM.getDocument({ pierce: true })` is the only way in: a closed root reports
+ * `shadowRoot === null`, so no CSS or `:text(...)` selector can reach the node — measured live on
+ * the xhs console, whose `<XHS-PUBLISH-BTN>` save bar states its label in neither (ADR-029 rail).
+ * Labels match after whitespace is stripped, because the rendered text carries layout whitespace.
+ *
+ * **Only shadow trees are matched.** A light-DOM control is a normal locator's job, and matching
+ * one here would let a channel resolve a mirrored label (sites duplicate their own chrome) instead
+ * of the real control — so the helper returns `null` rather than guessing. Light DOM is still
+ * *traversed*, because a closed root hangs off a light-DOM host element.
+ */
+export async function findShadowControl(
+    session: ShadowCdpSession,
+    labels: readonly string[],
+): Promise<ShadowControl | null> {
+    const document = (await session.send('DOM.getDocument', { depth: -1, pierce: true })) as {
+        root?: CdpNode;
+    };
+    if (!document.root) return null;
+    const wanted = new Set(labels);
+    const findNode = (node: CdpNode, insideShadow: boolean): { label: string; backendNodeId: number } | null => {
+        if (insideShadow && node.nodeName === 'BUTTON' && typeof node.backendNodeId === 'number') {
+            const label = cdpNodeText(node).replace(/\s+/g, '');
+            if (wanted.has(label)) return { label, backendNodeId: node.backendNodeId };
+        }
+        for (const shadowRoot of node.shadowRoots ?? []) {
+            const hit = findNode(shadowRoot, true);
+            if (hit) return hit;
+        }
+        for (const child of node.children ?? []) {
+            const hit = findNode(child, insideShadow);
+            if (hit) return hit;
+        }
+        return null;
+    };
+    const hit = findNode(document.root, false);
+    if (hit === null) return null;
+
+    const box = (await session.send('DOM.getBoxModel', { backendNodeId: hit.backendNodeId })) as {
+        model?: { content?: number[] };
+    };
+    const quad = box.model?.content;
+    if (quad === undefined || quad.length < 8) return null;
+    // Quad layout is [x1,y1, x2,y2, x3,y3, x4,y4]; the centre is ((x1+x3)/2, (y1+y4)/2).
+    const [x1 = 0, y1 = 0, x3 = 0, , , y4 = 0] = quad;
+    return { label: hit.label, x: Math.round((x1 + x3) / 2), y: Math.round((y1 + y4) / 2) };
+}
+
+/**
+ * Opens a CDP session and returns a finder bound to it, or `undefined` when the platform exposes
+ * no CDP (Safari/iOS). Callers fail loud on `undefined` rather than falling back to guessed
+ * coordinates: a wrong click on a publish bar is worse than a reported missing capability.
+ */
+export async function createShadowFinder(
+    context: { newCDPSession?(page: unknown): Promise<ShadowCdpSession> },
+    page: unknown,
+): Promise<((labels: readonly string[]) => Promise<ShadowControl | null>) | undefined> {
+    if (typeof context.newCDPSession !== 'function') return undefined;
+    try {
+        const session = await context.newCDPSession(page);
+        await session.send('DOM.enable');
+        return (labels) => findShadowControl(session, labels);
+    } catch {
+        return undefined;
+    }
+}
+
 /** Markdown → HTML through the Bun built-in (E91-D4); GFM tables, fenced code and task lists. */
 export const markdownToHtml: (markdown: string) => string = (markdown) => Bun.markdown.html(markdown);
 
