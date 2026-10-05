@@ -35,7 +35,8 @@ if [ ! -f "$verdict_path" ]; then
 fi
 # Confidence-aware read: a PASS without a HIGH|MEDIUM|LOW confidence becomes `PASS!`, which no
 # accept guard matches and the catch-all below rejects. Keep this filter byte-identical wherever a
-# guard reads a judge verdict (`plugins/kk/tests/verdict-confidence.test.ts` enforces that).
+# guard reads a judge verdict — and to this snippet: `plugins/kk/tests/verdict-confidence.test.ts`
+# collects every guard's filter plus this one and fails unless they are byte-identical.
 verdict=$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "$verdict_path")
 case "$verdict" in
   PASS)

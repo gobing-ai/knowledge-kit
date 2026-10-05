@@ -81,8 +81,10 @@ outside `HIGH|MEDIUM|LOW` is not a usable verdict anywhere:
   a valid confidence; an absent verdict file keeps the dry-run convention.
 
 Add that filter to any new judge gate; `references/workflow-integration.md` carries the pattern and
-`plugins/kk/tests/verdict-confidence.test.ts` fails when a workflow accepts a judge `PASS` without
-checking the enum.
+`plugins/kk/tests/verdict-confidence.test.ts` fails on either half of the contract: a workflow that
+accepts a judge `PASS` without checking the enum, and this skill drifting out of the producer side
+(enum line, per-level definition, or a reference snippet whose filter no longer matches the guards
+the consumer scan collects).
 
 The level itself does not change routing — escalation stays owned by the review's `RISK` decisions
 and `escalate` flag; treat `LOW` as a signal to demand human review before publishing.

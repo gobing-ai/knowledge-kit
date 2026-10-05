@@ -17,6 +17,12 @@ import { join } from 'node:path';
  * closed, never deadlock). It also scans every workflow that reads a judge verdict so a future
  * consumer cannot silently skip the check, and finishes by emitting a repeatable artifact at
  * `.spur/run/verdict-confidence/summary.json`.
+ *
+ * The PRODUCER half is verified too, because a consumer that enforces an enum nobody emits is just a
+ * gate that blocks every run (2026-10-04: three daily runs failed closed at `safety-judge`): the
+ * `kk:content-judge` skill must keep declaring the enum and what each level means, its reference
+ * snippet must carry the same confidence-aware filter as the guards (anti-drift across the
+ * producer→consumer seam), and every `agent.run` that writes a verdict must name that contract.
  */
 
 const REPO = join(import.meta.dir, '../../..');
@@ -24,6 +30,16 @@ const WORKFLOWS = join(REPO, 'plugins/kk/workflows');
 
 const ITC = 'plugins/kk/workflows/kk-itc.yaml';
 const EXAMPLE = 'plugins/kk/workflows/judge-gated-publish-example.yaml';
+const SKILL = 'plugins/kk/skills/content-judge/SKILL.md';
+const SKILL_REFERENCE = 'plugins/kk/skills/content-judge/references/workflow-integration.md';
+
+/**
+ * The one confidence-aware verdict read. Every workflow guard and the skill's reference snippet must
+ * carry it byte-identically: a `PASS` with a missing/out-of-enum `confidence` becomes `PASS!`, which
+ * no accept guard matches.
+ */
+const CONFIDENCE_JQ_FILTER =
+    'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end';
 
 /** Recorded check outcomes, aggregated into the artifact by the final test. */
 const checks: { id: string; ok: boolean; detail: string }[] = [];
@@ -268,9 +284,7 @@ describe('every judge-verdict consumer verifies confidence', () => {
         );
         expect(record('consumer-scan:single-jq-filter', filters.size === 1, [...filters].join(' | '))).toBe(true);
         expect(filters.size).toBe(1);
-        expect([...filters][0]).toBe(
-            'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end',
-        );
+        expect([...filters][0]).toBe(CONFIDENCE_JQ_FILTER);
     });
 
     it('the stage-level consumer (daily-safety-gate) also enforces it', () => {
@@ -315,6 +329,63 @@ describe('every judge-verdict consumer verifies confidence', () => {
             expect(record(`parser:${workflow.rel}`, ok, `${extracted}/${judge.length}`)).toBe(true);
             expect(ok).toBe(true);
         }
+    });
+});
+
+describe('every judge-verdict producer declares the confidence contract', () => {
+    const skill = readFileSync(join(REPO, SKILL), 'utf-8');
+
+    it('the judge skill states the confidence enum and defines every level', () => {
+        const enumLine = /"confidence"\s*:\s*"HIGH\s*\|\s*MEDIUM\s*\|\s*LOW"/.test(skill);
+        const levels = ['HIGH', 'MEDIUM', 'LOW'].filter((level) => skill.includes(`- \`${level}\``));
+        const ok = enumLine && levels.length === 3;
+        expect(
+            record('producer:skill-confidence-enum', ok, `enum line=${enumLine}, levels=${levels.join(',') || 'none'}`),
+        ).toBe(true);
+        expect(ok).toBe(true);
+    });
+
+    it('the skill reference snippet carries the same confidence-aware filter as the guards', () => {
+        // The skill TEACHES the consumer read; a drifted snippet would have operators wire a gate
+        // that accepts a PASS the stages refuse.
+        const snippet = readFileSync(join(REPO, SKILL_REFERENCE), 'utf-8').match(/jq -r '([^']*)'/)?.[1] ?? '';
+        expect(
+            record(
+                'producer:skill-reference-filter',
+                snippet === CONFIDENCE_JQ_FILTER,
+                snippet === '' ? 'no jq -r filter in the reference' : snippet,
+            ),
+        ).toBe(true);
+        expect(snippet).toBe(CONFIDENCE_JQ_FILTER);
+    });
+
+    /** Every `agent.run` step whose `expectFile` is a verdict artifact, across all workflows. */
+    const verdictProducers = (): { rel: string; state: string; input: string }[] => {
+        const found: { rel: string; state: string; input: string }[] = [];
+        for (const name of readdirSync(WORKFLOWS).filter((entry) => entry.endsWith('.yaml'))) {
+            const rel = `plugins/kk/workflows/${name}`;
+            const parsed = Bun.YAML.parse(readFileSync(join(REPO, rel), 'utf-8')) as {
+                states?: { id?: string; onEnter?: { kind?: string; options?: Record<string, unknown> }[] }[];
+            };
+            for (const state of parsed.states ?? []) {
+                for (const action of state.onEnter ?? []) {
+                    if (action.kind !== 'agent.run') continue;
+                    if (!/verdict/i.test(String(action.options?.expectFile ?? ''))) continue;
+                    found.push({ rel, state: state.id ?? '?', input: String(action.options?.input ?? '') });
+                }
+            }
+        }
+        return found;
+    };
+
+    it('every agent.run that writes a verdict names the skill that declares the enum', () => {
+        const producers = verdictProducers();
+        const offenders = producers.filter((p) => !/kk:content-judge/.test(p.input)).map((p) => `${p.rel}:${p.state}`);
+        const detail = `${producers.length} producers, unnamed contract: ${offenders.join(',') || 'none'}`;
+        expect(record('producer:verdict-steps-name-the-skill', offenders.length === 0, detail)).toBe(true);
+        expect(offenders).toEqual([]);
+        // Non-vacuous: the daily safety judge, the itc judge and the example each write one.
+        expect(producers.length).toBeGreaterThanOrEqual(3);
     });
 });
 
