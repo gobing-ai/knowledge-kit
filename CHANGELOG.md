@@ -1,3 +1,45 @@
+## [0.0.32] - 2026-10-05
+
+### Added
+
+- feat(publishings): xhs multi-mode publish channel (ADR-029) (2f519fcb)
+- feat(publishings): wechatmp multi-mode publish channel (ADR-029) (bb2fdfa3)
+- feat(publishings): merge E91 browser publish channels (0183-0188) (f2e53bc9)
+- feat(publishings): E91 browser publish channels on ts-browser-automation (16b7d517)
+- feat(safety): adjust the drafts and exclude blocked platforms instead of failing the run (3c3923d0)
+
+### Fixed
+
+- fix(publishings): narrow the 草稿箱 scope back and drop the slow probe (3dce56e2)
+- fix(publishings): broaden the 草稿箱 row scope and report the page URL on failure (371ea24b)
+- fix(publishings): bound the MP draft-box step — navigate its route, never click (2b29cb20)
+- fix(publishings): restore the MP session's localStorage half, and read the draft from 草稿箱 (6b999b0a)
+- fix(plugin): enhance wechatmp (e4345e60)
+- fix(plugin): enhance wechatmp (ca630448)
+- fix(publishings): 一键排版 applies the layout directly — it is not an option menu (3f8b2d77)
+- fix(kk-daily-ai-voice): heal the article cache pair when content.json is gone (99f492c6)
+- fix(safety): never grade an unverifiable rule as a must-pass failure (85306223)
+- fix(publishings): fix the E91 residuals directly and cancel their tracking tasks (5d3932de)
+
+### Changed
+
+- build: refresh the packaged plugin tree with the bundler (ff6dd87b)
+- refactor(publishings): move the closed-shadow CDP probe into the shared harness (92a00d13)
+- docs(adr): ADR-029 — a publish channel is one plugin, its types are operations (209148db)
+- docs(corpus): de-obligate a deleted probe citation in task 0186 Review (e34b4dc2)
+- docs(planning): feature Q + tasks 0199-0205 for publish-channel UI fidelity (ff3fdfb2)
+- chore(project): upgrade project dependencies (c9c8f453)
+- chore(project): update .gitignore (addb3eba)
+
+<!--
+Verification (2026-10-05, sp-dev-changelog): HIGH
+- Coverage: 22 bullets = 22 commits in @gobing-ai/knowledge-kit-v0.0.31..HEAD, each short hash exactly once.
+- Mapping: fix->Fixed 10, feat->Added 5, refactor+build+docs+chore->Changed 7. Header [0.0.32] - 2026-10-05
+  matches --version 0.0.32 and `date +%F`.
+- Confidence: HIGH — coverage and mapping reconcile against `git log` for the range; no behaviour claim beyond
+  a commit summary is made in this entry.
+-->
+
 ## [0.0.31] - 2026-10-04
 
 ### Fixed
