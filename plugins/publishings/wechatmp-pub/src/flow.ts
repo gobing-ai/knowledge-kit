@@ -209,18 +209,10 @@ function asPlaywrightPage(page: WechatPage): Page {
  */
 export function draftRowContainers(title: string): string[] {
     const keyed = title.length > 0 ? `:has-text(${JSON.stringify(title)})` : '';
-    // Broad on purpose: the account's real 草稿箱 row (confirmed live 2026-10-05 — the draft WAS
-    // there) renders under the console's media/list/card wrappers, and the first narrowing missed it.
-    return [
-        `[class*="draft" i]${keyed}`,
-        `[class*="appmsg" i]${keyed}`,
-        `[class*="media" i]${keyed}`,
-        `[class*="list" i]${keyed}`,
-        `[class*="card" i]${keyed}`,
-        `li${keyed}`,
-        `tr${keyed}`,
-        `.weui-desktop-dialog${keyed}`,
-    ];
+    // Kept narrow: a broad list (`li` / `[class*="list" i]` / media wrappers) made the per-poll
+    // `:has-text` probe slow enough on the real list to look like a hang, and it still missed the row —
+    // the draft rows appear to live inside an iframe on the list route (2026-10-05).
+    return [`[class*="draft" i]${keyed}`, `[class*="appmsg" i]${keyed}`, `.weui-desktop-dialog${keyed}`];
 }
 
 /** The console's own draft-box route (its 草稿箱 entry points here). */
