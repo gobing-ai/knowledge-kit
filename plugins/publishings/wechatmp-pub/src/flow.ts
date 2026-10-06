@@ -212,20 +212,26 @@ export function draftRowContainers(title: string): string[] {
     return [`[class*="draft" i]${keyed}`, `[class*="appmsg" i]${keyed}`, `.weui-desktop-dialog${keyed}`];
 }
 
-/** The console home's 草稿箱 entry opens the draft list, where the rows actually render. */
-const DRAFT_BOX_ENTRY = ['a:has-text("草稿箱")', '.weui-desktop-menu__link:has-text("草稿箱")', 'text=草稿箱'];
+/** The console's own draft-box route (its 草稿箱 entry points here). */
+const draftBoxUrl = (token: string): string =>
+    `https://mp.weixin.qq.com/cgi-bin/appmsg?begin=0&count=10&t=media/appmsg_list&type=10&action=list_card&token=${encodeURIComponent(token)}&lang=zh_CN`;
 
 /**
  * Enter the 草稿箱 list from the console home. The home page does NOT render the draft rows: live
  * 2026-10-05 a saved draft left `readDraftStamp` on home returning none (`before=none, after=none`)
- * even though the row existed. Best-effort — a failure here leaves the read to the probe loop, which
- * reports an honest `ok:false` rather than a fabricated one.
+ * even though the row existed.
+ *
+ * It navigates to the route instead of clicking the nav entry: a click can open a new tab and then
+ * never settle, which hung a run for 7 min with no output (no step timeout fires for that), while a
+ * bounded `goto` always returns or throws. Best-effort — a failure leaves the read to the probe loop,
+ * which reports an honest `ok:false` rather than a fabricated one.
  */
 export async function openDraftBox(page: WechatPage, timeoutMs: number): Promise<boolean> {
     try {
-        const entry = await findSelector(page, DRAFT_BOX_ENTRY, '草稿箱 entry', timeoutMs);
-        await clickSelector(page, entry, timeoutMs);
-        await sleep(3000); // its rows stream in after the click
+        const token = await resolveConsoleToken(page);
+        if (token === undefined) return false;
+        await page.goto(draftBoxUrl(token), { timeout: timeoutMs });
+        await sleep(3000); // its rows stream in after the navigation
         return true;
     } catch {
         return false;
