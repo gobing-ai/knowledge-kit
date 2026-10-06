@@ -11,168 +11,59 @@ import { BrowserProfileMissingError, openPersistentBrowser } from '@gobing-ai/ts
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Cookie, Page } from 'playwright';
+import { markdownToWechatHtml, readDraftBaseline, runMode } from './flow';
+import {
+    CONSOLE_HOME_FRAGMENT,
+    CONSOLE_URL,
+    readConsoleToken,
+    resolveWechatmpOperation,
+    TARGET,
+    validateModeInput,
+    WECHATMP_OPERATIONS,
+} from './modes';
+import { type OpenConsole, type OpenedConsole, STEP_TIMEOUT_MS, wrapPlaywrightContext } from './page';
 
-const TARGET = 'wechatmp';
-const CONSOLE_URL = 'https://mp.weixin.qq.com/';
+/**
+ * The wechatmp publish CHANNEL (ADR-029, ADR-026): one plugin, four mode `operations`.
+ *
+ * This module owns what is channel-level — the profile dir, the session preflight (ADR-026: the
+ * preflight plus the draft default ARE the automation guard, so no ADR-025 cap is ported), the
+ * ADR-029 operation dispatch and pre-browser validation, the browser launch seam and the
+ * `Content → Result` mapping. The modes themselves (entry, artifacts, selectors, save/publish flow)
+ * live in `./modes`, `./flow` and `./enrich`.
+ */
 
-/** Proven console selectors (ported from the wt-publish-to-wechatmp Playwright flow). */
-const SEL = {
-    // Console home: an authenticated session lands on /cgi-bin/home; logged-out shows the QR scan page.
-    loggedInFragment: '/cgi-bin/home',
-    menuItem: '.new-creation__menu .new-creation__menu-item',
-    // The 2024+ console editor renders title/body as two ProseMirror instances; the legacy
-    // textarea#title is a hidden mirror. The title PM carries a 标题 placeholder — the only
-    // reliable discriminator between the two editors.
-    titleInput: '.ProseMirror[data-placeholder*="标题"]',
-    authorInput: '#author',
-    editor: '.ProseMirror:not([data-placeholder])',
-    summaryInput: '#js_description',
-    saveDraftBtn: 'button:has-text("保存为草稿")',
-    originalSwitch: '.setting-group__switch.js_edit_ori',
-    tagRow: '.allow_click_opr.js_article_tags_label',
-    tagInput: 'input[placeholder*="合集"]',
-    claimSourceCheckbox: '#js_claim_source_area .frm_checkbox_label',
-    coverBtn: '.js_cover_btn_area',
-    publishBtn: '.js_publish, button:has-text("发表"), button:has-text("发布")',
-    confirmBtn: '.weui-desktop-dialog .weui-desktop-btn_primary, button:has-text("确定")',
-    toast: '.weui-desktop-toast',
-} as const;
+export const CHANNEL = TARGET;
+export type { ModeInput, WechatmpOperation } from './modes';
+export type { OpenConsole, OpenedConsole, WechatLocator, WechatPage } from './page';
+export { wrapPlaywrightPage } from './page';
+export { CONSOLE_URL, markdownToWechatHtml, runMode, WECHATMP_OPERATIONS };
 
+/** Console readiness deadline: the headless-visit scale, not the 180s interactive login wait. */
 const CONSOLE_READY_TIMEOUT_MS = 30_000;
-const TOAST_TIMEOUT_MS = 15_000;
+/** Settle before the save click: the editor must have registered the paste before it can be saved. */
+const SUBMIT_SETTLE_MS = 1_500;
+/** The observed-draft-signal window after a save click (the pre-ADR-029 toast deadline was 15s). */
+const DRAFT_SIGNAL_TIMEOUT_MS = 15_000;
+/** The save click is retried — the console can drop one that lands while the editor is settling. */
+const SUBMIT_ATTEMPTS = 2;
 
-function fail(message: string): never {
-    throw new Error(message);
+function fail(error: string): Result {
+    return ResultSchema.parse({ ok: false, target: TARGET, error });
 }
 
-function escapeHtml(text: string): string {
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** Console home readiness: an authenticated route carries the session token (discovery §1/§9-W9). */
+export function isConsoleReady(page: { url(): string }): boolean {
+    return readConsoleToken(page.url()) !== undefined || page.url().includes(CONSOLE_HOME_FRAGMENT);
 }
 
 /**
- * Harvested subset of wt md-to-wechat: headings, paragraphs, fenced code, lists, inline.
- * TypeScript only — no Python, no theme CLI.
+ * The recorded login signal for this channel (ADR-026): an authenticated session lands on
+ * `/cgi-bin/home`. Body text is unusable — `登录` also appears on a live console, which
+ * false-negatived a successful login (W9) — so the URL is the only safe read.
  */
-export function markdownToWechatHtml(markdown: string): string {
-    const lines = markdown.replace(/\r\n/g, '\n').split('\n');
-    const out: string[] = [];
-    let inCode = false;
-    let code: string[] = [];
-    let listType: 'ul' | 'ol' | null = null;
-
-    const closeList = (): void => {
-        if (listType) {
-            out.push(`</${listType}>`);
-            listType = null;
-        }
-    };
-
-    const inline = (text: string): string =>
-        escapeHtml(text)
-            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-            .replace(/`([^`]+)`/g, '<code>$1</code>')
-            // `href` is already HTML-escaped (inline() escapes before replacing), so a `"` can no
-            // longer close the attribute. The scheme allowlist is still required: escaping does not
-            // neutralise `javascript:`. Non-http(s) links degrade to their label text.
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text: string, href: string) =>
-                /^https?:\/\//i.test(href) ? `<a href="${href}">${text}</a>` : text,
-            );
-
-    for (const line of lines) {
-        if (line.startsWith('```')) {
-            if (inCode) {
-                out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
-                code = [];
-                inCode = false;
-            } else {
-                closeList();
-                inCode = true;
-            }
-            continue;
-        }
-        if (inCode) {
-            code.push(line);
-            continue;
-        }
-        const heading = line.match(/^(#{1,6})\s+(.+)$/);
-        if (heading?.[1] && heading[2]) {
-            closeList();
-            const level = Math.min(heading[1].length, 3);
-            out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
-            continue;
-        }
-        const ul = line.match(/^[-*]\s+(.+)$/);
-        if (ul?.[1]) {
-            if (listType !== 'ul') {
-                closeList();
-                listType = 'ul';
-                out.push('<ul>');
-            }
-            out.push(`<li>${inline(ul[1])}</li>`);
-            continue;
-        }
-        const ol = line.match(/^\d+\.\s+(.+)$/);
-        if (ol?.[1]) {
-            if (listType !== 'ol') {
-                closeList();
-                listType = 'ol';
-                out.push('<ol>');
-            }
-            out.push(`<li>${inline(ol[1])}</li>`);
-            continue;
-        }
-        closeList();
-        if (line.trim().length === 0) continue;
-        out.push(`<p>${inline(line.trim())}</p>`);
-    }
-    closeList();
-    if (inCode) out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
-    return out.join('');
-}
-
-function resolveTitle(content: Content): string {
-    if (typeof content.title === 'string' && content.title.trim() !== '') return content.title.trim();
-    return fail('wechatmp-pub: content.title is required');
-}
-
-function resolveDigest(content: Content): string | undefined {
-    const body = typeof content.body === 'string' ? content.body : '';
-    if (body.trim() === '') return undefined;
-    const first = body
-        .split('\n')
-        .map((line) => line.trim())
-        .find((line) => line !== '');
-    return first ? first.slice(0, 54) : undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Browser flow (ts-browser-automation; pattern mirrors xhs-pub)
-// ---------------------------------------------------------------------------
-
-export interface WechatPage {
-    goto(url: string): Promise<void>;
-    url(): string;
-    fill(selector: string, value: string): Promise<void>;
-    click(selector: string, timeoutMs?: number): Promise<void>;
-    press?(key: string): Promise<void>;
-    setInnerHtml(selector: string, html: string): Promise<void>;
-    waitFor(selector: string, timeoutMs: number): Promise<void>;
-    waitForAny(selectors: readonly string[], timeoutMs: number): Promise<string>;
-    /** Resolves when the page URL contains the fragment (real browsers); absent on test fakes. */
-    waitForUrlFragment?(fragment: string, timeoutMs: number): Promise<void>;
-    setInputFiles?(selector: string, files: string): Promise<void>;
-    waitForTimeout?(ms: number): Promise<void>;
-    /** Evaluate a JS expression in the page (real browsers) - used for commit verification; absent on fakes. */
-    evalJs?(expression: string): Promise<unknown>;
-    /** Click and adopt the tab the console opens for the editor; absent on test fakes (same-page click). */
-    clickAndAwaitNewPage?(selector: string): Promise<WechatPage>;
-    /** Present on real browser pages; absent on test fakes. publish() closes it in finally. */
-    close?(): Promise<void>;
-}
-
-export function isWechatLoggedIn(page: Page): boolean {
-    return page.url().includes(SEL.loggedInFragment);
+export function isWechatLoggedIn(page: { url(): string }): boolean {
+    return page.url().includes(CONSOLE_HOME_FRAGMENT);
 }
 
 export type SessionCheck = (profileDir: string) => Promise<void>;
@@ -194,77 +85,12 @@ export async function checkWechatSession(profileDir: string): Promise<void> {
 }
 
 async function pollLogin(page: Page): Promise<void> {
-    const ready = await waitUntil(() => Promise.resolve(isWechatLoggedIn(page)), CONSOLE_READY_TIMEOUT_MS, 1000);
+    const ready = await waitUntil(() => Promise.resolve(isConsoleReady(page)), CONSOLE_READY_TIMEOUT_MS, 1000);
     if (ready) return;
     throw new Error(
         `Authentication was not confirmed within ${CONSOLE_READY_TIMEOUT_MS}ms — the saved session state has ` +
             'likely expired: re-run `bun src/profile-check.ts login` to sign in again.',
     );
-}
-
-export interface WechatmpTransportOptions {
-    openPage?: (profileDir: string) => Promise<WechatPage>;
-    checkSession?: SessionCheck;
-}
-
-export function wrapPlaywrightPage(page: Page, context?: BrowserContext): WechatPage {
-    return {
-        goto: (url) => page.goto(url, { waitUntil: 'domcontentloaded' }).then(() => undefined),
-        url: () => page.url(),
-        fill: (selector, value) => page.locator(selector).first().fill(value),
-        click: (selector, timeoutMs) =>
-            page
-                .locator(selector)
-                .first()
-                .click(timeoutMs ? { timeout: timeoutMs } : undefined),
-        setInnerHtml: (selector, html) =>
-            page
-                .locator(selector)
-                .first()
-                .evaluate((node, value) => {
-                    node.innerHTML = value;
-                    node.dispatchEvent(new Event('input', { bubbles: true }));
-                }, html),
-        waitFor: (selector, timeoutMs) =>
-            page
-                .locator(selector)
-                .first()
-                .waitFor({ state: 'visible', timeout: timeoutMs })
-                .then(() => undefined),
-        waitForAny: async (selectors, timeoutMs) => {
-            const deadline = Date.now() + timeoutMs;
-            while (Date.now() < deadline) {
-                for (const selector of selectors) {
-                    try {
-                        await page.locator(selector).first().waitFor({ state: 'visible', timeout: 250 });
-                        return selector;
-                    } catch {
-                        // try the next candidate
-                    }
-                }
-            }
-            return '';
-        },
-        waitForUrlFragment: (fragment, timeoutMs) =>
-            page
-                .waitForURL(new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: timeoutMs })
-                .then(() => undefined),
-        setInputFiles: (selector, files) => page.locator(selector).first().setInputFiles(files),
-        waitForTimeout: (ms) => page.waitForTimeout(ms),
-        evalJs: (expression) => page.evaluate(expression),
-        press: (key) => page.keyboard.press(key),
-        clickAndAwaitNewPage: context
-            ? async (selector) => {
-                  const popup = context.waitForEvent('page', { timeout: 15000 }).catch(() => undefined);
-                  await page.locator(selector).first().click();
-                  const opened = await popup;
-                  if (!opened) return wrapPlaywrightPage(page, context);
-                  await opened.waitForLoadState('domcontentloaded').catch(() => {});
-                  return wrapPlaywrightPage(opened, context);
-              }
-            : undefined,
-        close: context ? () => context.close() : undefined,
-    };
 }
 
 /** Launch, inject the saved login cookies, and land on the console. Caller owns closing the context. */
@@ -294,37 +120,82 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
     }
 }
 
-async function defaultOpenPage(profileDir: string): Promise<WechatPage> {
-    // Headless works end-to-end for the draft flow (probed 2026-09-29); no window is popped.
+/**
+ * Default launcher: the console home wrapped as the `OpenConsole` seam (entry page + the sibling
+ * pages a creation-type click opens). Headless works end-to-end for the draft flow (probed
+ * 2026-09-29), so no window is popped — the preflight is what keeps a sessionless run from even
+ * trying.
+ */
+async function defaultOpenConsole(profileDir: string): Promise<OpenedConsole> {
     const { page, context } = await openWithState(profileDir, true);
-    return wrapPlaywrightPage(page, context);
+    return wrapPlaywrightContext(context, page);
+}
+
+type BrowserDriverName = 'script' | 'agent';
+
+export interface WechatmpTransportOptions {
+    /** ADR-029 dispatch: the console modes need the Playwright script driver. */
+    driver?: BrowserDriverName;
+    openPage?: OpenConsole;
+    checkSession?: SessionCheck;
+    /** Deadline for the console to read ready after launch (default 30s). */
+    consoleReadyTimeoutMs?: number;
+    stepTimeoutMs?: number;
+    submitSettleMs?: number;
+    /** How long an observed draft signal is waited for after a save click (default 15s). */
+    draftTimeoutMs?: number;
+    submitAttempts?: number;
 }
 
 export class WechatmpBrowserTransport implements PublishTransport {
     readonly kind = 'browser';
-    private readonly openPage: (profileDir: string) => Promise<WechatPage>;
+    readonly driver: BrowserDriverName;
+    private readonly openPage: OpenConsole;
     private readonly checkSession: SessionCheck;
+    private readonly consoleReadyTimeoutMs: number;
+    private readonly stepTimeoutMs: number;
+    private readonly submitSettleMs: number;
+    private readonly draftTimeoutMs: number;
+    private readonly submitAttempts: number;
 
     constructor(options: WechatmpTransportOptions = {}) {
-        this.openPage = options.openPage ?? defaultOpenPage;
+        this.driver = options.driver ?? 'script';
+        this.openPage = options.openPage ?? defaultOpenConsole;
         this.checkSession = options.checkSession ?? ((profileDir) => checkWechatSession(profileDir));
+        this.consoleReadyTimeoutMs = options.consoleReadyTimeoutMs ?? CONSOLE_READY_TIMEOUT_MS;
+        this.stepTimeoutMs = options.stepTimeoutMs ?? STEP_TIMEOUT_MS;
+        this.submitSettleMs = options.submitSettleMs ?? SUBMIT_SETTLE_MS;
+        this.draftTimeoutMs = options.draftTimeoutMs ?? DRAFT_SIGNAL_TIMEOUT_MS;
+        this.submitAttempts = options.submitAttempts ?? SUBMIT_ATTEMPTS;
     }
 
+    /**
+     * Publish through the console. Everything decidable without a browser is decided first (driver,
+     * operation, artifacts, field limits, publishStatus, session), so an impossible or misrouted run
+     * never opens — let alone touches — a real console.
+     */
     async publish(payload: PublishTransportPayload): Promise<Result> {
         const { content, options } = payload;
-        const want =
-            options?.operation === 'live'
-                ? 'public'
-                : ((content.metadata?.publishStatus as string | undefined) ?? 'draft');
-        if (want !== 'draft' && want !== 'public') {
-            return this.failed(`publishStatus "${want}" is not draft|public`);
+        if (this.driver !== 'script') {
+            return fail(
+                `unsupported driver '${this.driver}' for ${TARGET}: the console modes (${WECHATMP_OPERATIONS.join(', ')}) require the script driver (Playwright setInputFiles)`,
+            );
         }
-        const title = resolveTitle(content);
-        if (typeof content.body !== 'string' || content.body.trim() === '') {
-            return this.failed('wechatmp-pub: content.body is required');
-        }
-        const profileDir = resolveBrowserProfileDir(TARGET, process.env.WECHATMP_PROFILE_DIR);
+        // ADR-029 dispatch: an undeclared operation is refused by name before a browser is launched
+        // or a profile is resolved, so a misrouted run cannot open a session it will not use.
+        const requested = resolveWechatmpOperation(options, content);
+        if (requested.error !== undefined) return fail(requested.error);
 
+        // Mode validation: a missing artifact (which the 视频/播客 media modal would otherwise hide
+        // the save bar for), an over-limit field or an unknown publishStatus all fail here.
+        const validation = await validateModeInput(requested.operation, content);
+        if (validation.error !== undefined) return fail(validation.error);
+
+        const profileDir = resolveBrowserProfileDir(TARGET, process.env.WECHATMP_PROFILE_DIR);
+        const publishStatus = content.metadata?.publishStatus === 'public' ? 'public' : 'draft';
+
+        // ADR-026 rail: a headless preflight refuses a sessionless run fast, so no console visit is
+        // ever attempted with a dead session (and the draft default is this channel's guard).
         try {
             await this.checkSession(profileDir);
         } catch (error: unknown) {
@@ -332,296 +203,74 @@ export class WechatmpBrowserTransport implements PublishTransport {
                 error instanceof BrowserProfileMissingError
                     ? 'no saved console profile — log in once via `bun src/profile-check.ts login`'
                     : `console session preflight failed (${error instanceof Error ? error.message : String(error)})`;
-            // Non-blocking contract (mirrors xhs-pub): a sessionless run refuses fast and stays draftless —
-            // it must never open a headed login wall inside an unattended run.
-            return this.failed(`wechatmp-pub: ${why}`);
+            // Non-blocking contract (mirrors xhs-pub): a sessionless run refuses fast and stays
+            // draftless — it must never open a login wall inside an unattended run.
+            return fail(`${TARGET}-pub: ${why}`);
         }
 
-        const page = await this.openPage(profileDir);
-        let enrichWarnings: string[] = [];
+        let opened: OpenedConsole;
         try {
-            await page.waitFor(SEL.menuItem, CONSOLE_READY_TIMEOUT_MS);
-            // The console opens the article editor in a new tab — adopt it when it appears.
-            const editor = page.clickAndAwaitNewPage
-                ? await page.clickAndAwaitNewPage(`${SEL.menuItem}:has-text("图文"), ${SEL.menuItem}`)
-                : page;
-            if (editor === page) {
-                await page.click(`${SEL.menuItem}:has-text("图文"), ${SEL.menuItem}`);
-            }
-            await editor.waitFor(SEL.titleInput, CONSOLE_READY_TIMEOUT_MS);
-            await editor.fill(SEL.titleInput, title);
-            await this.tryFill(editor, SEL.authorInput, String(content.metadata?.author ?? ''));
-            await editor.waitFor(SEL.editor, CONSOLE_READY_TIMEOUT_MS);
-            await editor.setInnerHtml(SEL.editor, markdownToWechatHtml(content.body));
-            const digest = resolveDigest(content);
-            if (digest) await this.tryFill(editor, SEL.summaryInput, digest);
-
-            const enrichMeta = content.metadata?.wechatmp;
-            if (enrichMeta && typeof enrichMeta === 'object' && !Array.isArray(enrichMeta)) {
-                enrichWarnings = await this.enrichDraft(editor, enrichMeta as Record<string, unknown>);
-                const audioTitle = (enrichMeta as Record<string, unknown>).audioTitle;
-                if (typeof audioTitle === 'string' && audioTitle.trim() !== '') {
-                    const audioWarn = await this.insertAudio(editor, audioTitle.trim());
-                    if (audioWarn !== '') enrichWarnings.push(audioWarn);
-                }
-            }
-
-            if (want === 'draft') {
-                await editor.click(SEL.saveDraftBtn);
-            } else {
-                await editor.click(SEL.publishBtn);
-                await this.tryClick(editor, SEL.confirmBtn);
-            }
-            // Real consoles confirm the draft save by navigating from the isNew editor
-            // (appmsg_edit_v2) to the saved-draft edit page carrying the new appmsgid.
-            if (editor.waitForUrlFragment) {
-                await editor.waitForUrlFragment('appmsg_edit&action=edit', CONSOLE_READY_TIMEOUT_MS);
-            } else {
-                const seen = await editor.waitForAny([SEL.toast], TOAST_TIMEOUT_MS);
-                if (seen === '') {
-                    return this.failed(
-                        `save was clicked but no confirmation toast appeared within ${TOAST_TIMEOUT_MS}ms — verify the console manually`,
-                    );
-                }
-            }
-            const appmsgid = /appmsgid=(\d+)/.exec(editor.url())?.[1] ?? '';
-            return {
-                ok: true,
-                target: TARGET,
-                metadata: {
-                    publishStatus: want,
-                    note:
-                        want === 'draft'
-                            ? `saved to the WeChat MP draft box (草稿箱)${appmsgid ? ` as appmsgid ${appmsgid}` : ''}`
-                            : 'published via the console 发表 flow',
-                    ...(enrichWarnings.length > 0 ? { enrichWarnings } : {}),
-                },
-            };
+            opened = await this.openPage(profileDir);
         } catch (error: unknown) {
-            const why = error instanceof Error ? error.message : String(error);
-            const enrich = enrichWarnings.length > 0 ? ` (enrich warnings: ${enrichWarnings.join(' | ')})` : '';
-            return this.failed(`console flow failed: ${why}${enrich}`);
-        } finally {
-            await page.close?.();
+            return fail(error instanceof Error ? error.message : String(error));
         }
-    }
-
-    /**
-     * Set the operator's draft metadata (原创/作者/合集/创作来源/封面) in the v2 editor.
-     * Runs on a FRESH draft only - the toggles are not state-aware (no idempotency for re-runs).
-     * Per-field failures are collected into warnings and surfaced in the Result; the draft still saves.
-     * Dialog mapping evidence (probes 2026-09-29, drafts 100000805/808): 原创 + 赞赏 share ONE dialog
-     * (声明类型 radios, 作者 input, 确定) - the 赞赏 switch stays hidden for this account, so 赞赏 is a manual step;
-     * 合集 dialog = 请选择合集 input + 确认; 创作来源 is an inline checkbox (no dialog); the 原文链接 row has
-     * no reachable URL input in headless - also manual; cover accepts a direct input[type=file] set.
-     * Commit verification (evalJs): the original dialog only closes when WeChat's validation passes - the
-     * author is the reward (shang) account and must be picked from its search, which does not resolve for
-     * this account headless; a non-closing dialog is swept and surfaced as a warning. Same for the
-     * creation-source checkbox (DOM re-check).
-     */
-    private async enrichDraft(editor: WechatPage, meta: Record<string, unknown>): Promise<string[]> {
-        const DIALOG = '.weui-desktop-dialog:visible';
-        const CONFIRM = `${DIALOG} button:has-text("确认"), ${DIALOG} button:has-text("确定")`;
-        const warnings: string[] = [];
-        const str = (key: string) => (typeof meta[key] === 'string' ? (meta[key] as string) : '');
-        const on = (key: string) => meta[key] === true;
-        // Sweep any leaked dialog so the next step (especially 保存为草稿) is never overlay-blocked.
-        const sweep = async () => {
-            await this.tryClick(editor, 'button:has-text("取消")', 2000);
-            await editor.press?.('Escape');
-            await editor.waitForTimeout?.(400);
-        };
-        // One retry per step: the settings panel re-renders after dialog confirms and can briefly
-        // detach rows (observed on the tags row right after the original-declaration confirm).
-        const step = async (name: string, fn: () => Promise<void>) => {
-            try {
-                await fn();
-                return;
-            } catch {
-                // retry once below
-            }
-            await sweep();
-            await editor.waitForTimeout?.(1000);
-            try {
-                await fn();
-            } catch (error) {
-                warnings.push(`${name}: ${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`);
-                await sweep();
-            }
-        };
-        if (on('original')) {
-            await step('原创声明', async () => {
-                await editor.click(SEL.originalSwitch, 10000);
-                await editor.click(`${DIALOG} :text("文字原创")`, 8000);
-                const author = str('author');
-                if (author) await this.tryFill(editor, `${DIALOG} input[placeholder*="作者"]`, author);
-                await editor.click(CONFIRM, 8000);
-            });
-            const committed = await editor.evalJs?.(
-                `[...document.querySelectorAll('.weui-desktop-dialog')].every((d) => !d.offsetWidth)`,
+        try {
+            const ready = await waitUntil(
+                () => Promise.resolve(isConsoleReady(opened.page)),
+                this.consoleReadyTimeoutMs,
             );
-            if (committed === false) {
-                warnings.push('原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置');
-                await sweep();
-            }
-        }
-        const collection = str('collection');
-        if (collection) {
-            await step('合集', async () => {
-                await editor.click(SEL.tagRow, 8000);
-                await editor.waitFor(SEL.tagInput, 8000);
-                await editor.fill(SEL.tagInput, collection);
-                await editor.waitForTimeout?.(1200);
-                await editor.click(`${DIALOG} :text("${collection}")`, 8000);
-                await editor.click(CONFIRM, 8000);
-            });
-        }
-        if (on('aiGenerated')) {
-            await step('创作来源', async () => {
-                await editor.click(SEL.claimSourceCheckbox, 8000);
-                // Probes show no dialog on current builds — the checkbox alone declares AI generation.
-                const dialog = await editor.waitForAny([DIALOG], 3000);
-                if (dialog) {
-                    await editor.click(`${DIALOG} :text("内容由AI生成")`, 8000);
-                    await editor.click(CONFIRM, 8000);
-                }
-            });
-            const checked = await editor.evalJs?.(`!!document.querySelector('#js_claim_source_area input:checked')`);
-            if (checked === false) warnings.push('创作来源: 勾选未生效，请手动设置');
-        }
-        const coverPath = str('coverPath');
-        const putFile = editor.setInputFiles?.bind(editor);
-        if (coverPath && putFile) {
-            await step('封面', async () => {
-                try {
-                    await putFile('input[type="file"]', coverPath);
-                } catch {
-                    await editor.click(SEL.coverBtn, 8000);
-                    await editor.waitForTimeout?.(1500);
-                    await putFile('input[type="file"]', coverPath);
-                }
-                const cropBtn = await editor.waitForAny(
-                    [`${DIALOG} button:has-text("完成")`, `${DIALOG} button:has-text("确定")`],
-                    5000,
+            if (!ready) {
+                return fail(
+                    `no authenticated ${TARGET} console within ${this.consoleReadyTimeoutMs}ms — the preflight passed but the console did not report a session route (profile ${profileDir})`,
                 );
-                if (cropBtn) await editor.click(cropBtn, 8000);
+            }
+            // The 草稿箱 baseline is read before the editor opens: MP auto-saves continuously, so a
+            // row that already carried a stamp says nothing about this run's save (discovery §5.1).
+            const title = typeof content.title === 'string' ? content.title.trim() : '';
+            const draftBaseline =
+                publishStatus === 'draft' ? await readDraftBaseline(opened.page, title) : { stamp: null };
+
+            return await runMode(validation.input, {
+                entry: opened.page,
+                pages: opened.pages,
+                newPage: opened.newPage,
+                content,
+                publishStatus,
+                profileDir,
+                driver: this.driver,
+                stepTimeoutMs: this.stepTimeoutMs,
+                submitSettleMs: this.submitSettleMs,
+                draftTimeoutMs: this.draftTimeoutMs,
+                submitAttempts: this.submitAttempts,
+                draftBaseline,
             });
+        } catch (error: unknown) {
+            return fail(error instanceof Error ? error.message : String(error));
+        } finally {
+            await opened.close();
         }
-        await sweep();
-        return warnings;
-    }
-
-    /**
-     * Audio embed at the article top (operator request 2026-09-29): open the editor's audio menu
-     * (a hover dropdown - JS click bypasses the hover gate), reuse an existing same-title 素材库
-     * material, and insert at the caret (placed at the article start first). Upload of a missing
-     * material is deliberately manual for now: the 上传音频 form is iframe-based and unmapped.
-     * Fail-soft: every non-committed outcome returns a warning string; '' means placed at top.
-     */
-    private async insertAudio(editor: WechatPage, title: string): Promise<string> {
-        const evalJs = editor.evalJs;
-        if (typeof evalJs !== 'function') return '';
-        const CARET = `(() => {
-            const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
-            if (!pm || !pm.firstChild) return;
-            const r = document.createRange();
-            r.setStart(pm.firstChild, 0);
-            r.collapse(true);
-            const sel = window.getSelection();
-            sel?.removeAllRanges();
-            sel?.addRange(r);
-        })()`;
-        const DEDUPE = `(() => {
-            const want = ${JSON.stringify(title)}.replace(/\\s+/g, '');
-            const hit = [...document.querySelectorAll('label.frm_checkbox_label.audio_item')]
-                .find((l) => (l.textContent ?? '').replace(/\\s+/g, '').includes(want));
-            if (!hit) return 'missing';
-            const cb = (hit.closest('li') ?? hit.parentElement)?.querySelector('input[type=checkbox]');
-            if (!cb) return 'nobox';
-            cb.click();
-            return 'checked';
-        })()`;
-        const INSERT = `(() => {
-            const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '插入' && b.offsetWidth > 0);
-            if (!btn) return false;
-            btn.click();
-            return true;
-        })()`;
-        const CANCEL = `(() => {
-            const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '取消' && b.offsetWidth > 0);
-            btn?.click();
-        })()`;
-        const VERIFY = `(() => {
-            const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
-            if (!pm) return 'noeditor';
-            const node = pm.querySelector('mpvoice, [class*="audio"]');
-            if (!node) return 'absent';
-            const first = pm.firstElementChild;
-            return first && (first === node || first.contains(node)) ? 'top' : 'notop';
-        })()`;
-        try {
-            const run = (expression: string) => evalJs.call(editor, expression);
-            await run(CARET);
-            await run("document.querySelector('li.js_insertaudio')?.click()");
-            await editor.waitFor('.audio_dialog', TOAST_TIMEOUT_MS);
-            // The 素材库 list loads async after the dialog opens - retry while rows stream in.
-            let dedupe = String(await run(DEDUPE));
-            for (let i = 0; dedupe === 'missing' && i < 2; i++) {
-                await editor.waitForTimeout?.(1200);
-                dedupe = String(await run(DEDUPE));
-            }
-            if (dedupe !== 'checked') {
-                await run(CANCEL);
-                return dedupe === 'missing'
-                    ? '音频: 素材库无同名音频，请手动上传后插入'
-                    : '音频: 同名素材行未找到勾选框，请手动插入';
-            }
-            if ((await run(INSERT)) !== true) {
-                await run(CANCEL);
-                return '音频: 插入按钮未找到，请手动插入';
-            }
-            await editor.waitForTimeout?.(2000);
-            const state = String(await run(VERIFY));
-            if (state === 'absent' || state === 'noeditor') return '音频: 插入未生效，请手动检查';
-            if (state === 'notop') return '音频: 已插入但未在文首，请手动调整位置';
-            return '';
-        } catch {
-            return '音频: 自动插入失败，请手动插入';
-        }
-    }
-
-    private async tryFill(page: WechatPage, selector: string, value: string): Promise<void> {
-        if (value === '') return;
-        try {
-            await page.fill(selector, value);
-        } catch {
-            // optional field — the console hides it for some account types
-        }
-    }
-
-    private async tryClick(page: WechatPage, selector: string, timeoutMs?: number): Promise<void> {
-        try {
-            await page.click(selector, timeoutMs);
-        } catch {
-            // confirm dialogs are not shown for every account type
-        }
-    }
-
-    private failed(error: string): Result {
-        return { ok: false, target: TARGET, error, metadata: { publishStatus: 'draft' } };
     }
 }
 
-export function getPublishTransport(): PublishTransport {
+export function getPublishTransport(driver: BrowserDriverName = 'script'): PublishTransport {
     if (process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT === 'fake') return new FakeFileCliTransport();
-    return new WechatmpBrowserTransport();
+    return new WechatmpBrowserTransport({ driver });
 }
 
+/**
+ * `--in`/`--out` IO. A top-level `options` object in the input file is forwarded, which is how a
+ * caller selects the ADR-029 operation (`options.operation`) without touching `Content`.
+ */
 export async function processPublishIO(inPath: string, outPath: string, transport?: PublishTransport): Promise<void> {
     const fs = createNodeFileSystem();
-    const raw = JSON.parse(await fs.readFile(inPath));
-    const content = ContentSchema.parse(raw);
-    const result = await (transport ?? getPublishTransport()).publish({ content, options: { target: TARGET } });
+    const raw = JSON.parse(await fs.readFile(inPath)) as Record<string, unknown>;
+    const content: Content = ContentSchema.parse(raw);
+    const provided = raw.options;
+    const options =
+        provided !== undefined && typeof provided === 'object' && provided !== null && !Array.isArray(provided)
+            ? { target: TARGET, ...(provided as Record<string, unknown>) }
+            : { target: TARGET };
+    const result = await (transport ?? getPublishTransport()).publish({ content, options });
     await fs.writeFile(outPath, JSON.stringify(ResultSchema.parse(result), null, 2));
 }
 
