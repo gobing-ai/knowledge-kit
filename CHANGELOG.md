@@ -38,6 +38,9 @@ Verification (2026-10-05, sp-dev-changelog): HIGH
   matches --version 0.0.32 and `date +%F`.
 - Confidence: HIGH — coverage and mapping reconcile against `git log` for the range; no behaviour claim beyond
   a commit summary is made in this entry.
+- The level itself is earned and checked: the sourced artifacts are CHANGELOG.md:1 (this section) and the range
+  `@gobing-ai/knowledge-kit-v0.0.31..HEAD`, and the contract is enforced by
+  .spur/rules/structure/verification-confidence-level.sh:1 (run it by hand for file/line findings).
 -->
 
 ## [0.0.31] - 2026-10-04

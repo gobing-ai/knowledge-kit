@@ -1,5 +1,5 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
-# Verification blocks must close with a HIGH|MEDIUM|LOW confidence level.
+# Verification blocks must close with a HIGH|MEDIUM|LOW confidence level, and the level must be EARNED.
 #
 # The changelog procedure (sp-dev-changelog → dev-operations.md §8 step 7) closes every emitted
 # section with `Verification: HIGH|MEDIUM|LOW — …` plus a `Confidence:` line, and the upstream
@@ -9,13 +9,21 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # notice — the same failure mode as a judge verdict whose `confidence` field is absent, which the
 # verdict gates and `plugins/kk/tests/verdict-confidence.test.ts` already refuse.
 #
+# The enum alone is not enough: a block could claim HIGH while citing nothing at all, which is the
+# close-out equivalent of a PASS without evidence. So the checker also requires the level to be earned
+# — HIGH must cite (`path:line`, a repo path with a code/doc extension, or an http(s) URL), and
+# MEDIUM/LOW must either cite or name what is unverified, so a low-confidence close-out states its gap
+# instead of asserting nothing. The falsification cases live in
+# `verification-confidence-level.test.sh` (9 cases: a HIGH without citations and a low level with
+# neither citation nor gap must both fail).
+#
 # Scope: every markdown document in the repo that claims a `Verification (` block (today
 # CHANGELOG.md). Evidence records under docs/tasks and docs/features describe past runs and stay out
 # of scope. The checker lives in `verification-confidence-level.sh` so its file/line detail is
 # reachable by hand — the `exit-code` evaluator reports only the exit status.
 rules:
   - id: verification-block-carries-confidence-level
-    description: "Every `Verification (` block in a repo document (CHANGELOG.md) carries exactly one `Confidence: HIGH|MEDIUM|LOW` line inside that block, so a verification close-out cannot omit or misspell the level."
+    description: "Every `Verification (` block in a repo document (CHANGELOG.md) carries exactly one `Confidence: HIGH|MEDIUM|LOW` line inside that block, and the level is earned: HIGH cites evidence (`path:line`, a repo path, or a URL), MEDIUM/LOW either cites evidence or names what is unverified — so a close-out cannot omit, misspell or unsupportedly claim its level."
     severity: error
     evaluator:
       type: exit-code
@@ -23,7 +31,7 @@ rules:
         command: sh
         args:
           - ".spur/rules/structure/verification-confidence-level.sh"
-        message: "exit {code}: a `Verification (` block is missing its HIGH|MEDIUM|LOW `Confidence:` line (or carries one outside the enum) — run `sh .spur/rules/structure/verification-confidence-level.sh` for the file and line"
+        message: "exit {code}: a `Verification (` block is missing its HIGH|MEDIUM|LOW `Confidence:` line, carries one outside the enum, or claims a level it does not earn (a HIGH with no citation, or a MEDIUM/LOW that cites nothing and names no gap) — run `sh .spur/rules/structure/verification-confidence-level.sh` for the file and line, and `sh .spur/rules/structure/verification-confidence-level.test.sh` for the cases"
     include:
       - "CHANGELOG.md"
       - "docs/**/*.md"
