@@ -98,7 +98,9 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
     const context = await openPersistentBrowser({ profileDir, headless });
     try {
         const stateFile = storageStatePath(profileDir);
-        let state: { cookies?: Cookie[]; origins?: { origin?: string; localStorage?: { name: string; value: string }[] }[] } | undefined;
+        let state:
+            | { cookies?: Cookie[]; origins?: { origin?: string; localStorage?: { name: string; value: string }[] }[] }
+            | undefined;
         try {
             state = JSON.parse(await createNodeFileSystem().readFile(stateFile));
         } catch {
