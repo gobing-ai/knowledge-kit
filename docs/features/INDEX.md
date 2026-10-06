@@ -40,7 +40,7 @@
     ├── [done] **E8**: Xiaohongshu image-card authoring and publishing ([E8_xiaohongshu-image-card-authoring-and-publishing.md](./E8_xiaohongshu-image-card-authoring-and-publishing.md))
     └── [active] **E9**: Reusable browser sessions for publish channels ([E9_reusable-browser-sessions-for-publish-channels.md](./E9_reusable-browser-sessions-for-publish-channels.md))
         ├── [active] **E91**: Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library ([E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md](./E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md))
-        └── [backlog] **E92**: Publish channel UI fidelity: per-mode discovery and gap fixes ([E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md](./E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md))
+        └── [active] **E92**: Publish channel UI fidelity: per-mode discovery and gap fixes ([E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md](./E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md))
 [backlog] **F**: kk plugin collection ([F_kk-plugin-collection.md](./F_kk-plugin-collection.md))
     ├── [done] **F1**: LLM-as-judge agent skills ([F1_llm-as-judge-agent-skills.md](./F1_llm-as-judge-agent-skills.md))
     ├── [done] **F2**: Topic-core authoring skill ([F2_wt-generator-harvest.md](./F2_wt-generator-harvest.md))
