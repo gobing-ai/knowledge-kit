@@ -139,6 +139,28 @@ function needsLogin(error: unknown): boolean {
     return error instanceof LoginTimeoutError || error instanceof BrowserProfileMissingError;
 }
 
+/**
+ * Declared modes (ADR-029 dispatch; task 0205 R2): Substack’s console flow is the publication-scoped post draft. An unknown operation is refused by
+ * name before a profile is resolved or a browser opens.
+ */
+export const SUBSTACK_OPERATIONS = ['post'] as const;
+export type SubstackOperation = (typeof SUBSTACK_OPERATIONS)[number];
+
+/** Exit-early resolution of the requested operation; a default Content without one resolves to `post`. */
+export function resolveOperation(
+    options?: Record<string, unknown>,
+    content?: Content,
+): { operation: SubstackOperation; error?: undefined } | { operation?: undefined; error: string } {
+    const raw = options?.operation ?? content?.metadata?.operation;
+    if (raw === undefined) return { operation: 'post' };
+    if (typeof raw !== 'string' || !(SUBSTACK_OPERATIONS as readonly string[]).includes(raw)) {
+        return {
+            error: `unsupported operation '${String(raw)}' for substack: expected one of ${SUBSTACK_OPERATIONS.join(', ')}`,
+        };
+    }
+    return { operation: raw as SubstackOperation };
+}
+
 export class SubstackBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
@@ -155,6 +177,8 @@ export class SubstackBrowserTransport implements PublishTransport {
         if (this.driver !== 'script') {
             return fail(`unsupported driver '${this.driver}' for ${TARGET}`);
         }
+        const mode = resolveOperation(payload.options, payload.content);
+        if (mode.error !== undefined) return fail(mode.error);
         const requested = payload.content.metadata?.publishStatus;
         if (requested !== undefined && requested !== 'draft' && requested !== 'public') {
             return fail(`unknown publishStatus '${String(requested)}' (expected absent, 'draft' or 'public')`);

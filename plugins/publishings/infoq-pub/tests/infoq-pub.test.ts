@@ -22,6 +22,7 @@ import {
     LOGIN_URL_RE,
     main,
     processPublishIO,
+    resolveOperation,
     SELECTORS,
 } from '../src/index';
 
@@ -484,5 +485,20 @@ describe('infoq-pub plugin surface', () => {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
             await rm(tmpDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('task 0205 R2 — declared mode refuses unknown operations pre-browser', () => {
+    test('resolveOperation defaults to draft and refuses unknowns by name', () => {
+        expect(resolveOperation(undefined)).toEqual({ operation: 'draft' });
+        const mode = resolveOperation({ operation: 'live' });
+        expect(mode.error).toContain("unsupported operation 'live' for infoq");
+        expect(mode.error).toContain('draft');
+    });
+    test('publish refuses an unknown operation before resolving a profile', async () => {
+        const transport = new InfoqBrowserTransport();
+        const result = await transport.publish({ content, options: { operation: 'editorial' } });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain("unsupported operation 'editorial'");
     });
 });

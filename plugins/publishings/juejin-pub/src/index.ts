@@ -141,6 +141,28 @@ async function readToast(page: Page, texts: readonly string[]): Promise<string |
     return readScopedSignal(page, texts);
 }
 
+/**
+ * Declared modes (ADR-029 dispatch; task 0205 R2): Juejin's console flow is the CodeMirror markdown draft; publish tiers come from `publishStatus`, not modes. An unknown operation is refused by
+ * name before a profile is resolved or a browser opens.
+ */
+export const JUEJIN_OPERATIONS = ['draft'] as const;
+export type JuejinOperation = (typeof JUEJIN_OPERATIONS)[number];
+
+/** Exit-early resolution of the requested operation; a default Content without one resolves to `draft`. */
+export function resolveOperation(
+    options?: Record<string, unknown>,
+    content?: Content,
+): { operation: JuejinOperation; error?: undefined } | { operation?: undefined; error: string } {
+    const raw = options?.operation ?? content?.metadata?.operation;
+    if (raw === undefined) return { operation: 'draft' };
+    if (typeof raw !== 'string' || !(JUEJIN_OPERATIONS as readonly string[]).includes(raw)) {
+        return {
+            error: `unsupported operation '${String(raw)}' for juejin: expected one of ${JUEJIN_OPERATIONS.join(', ')}`,
+        };
+    }
+    return { operation: raw as JuejinOperation };
+}
+
 export class JuejinBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
@@ -157,6 +179,8 @@ export class JuejinBrowserTransport implements PublishTransport {
         if (this.driver !== 'script') {
             return fail(`unsupported driver '${this.driver}' for ${TARGET}`);
         }
+        const mode = resolveOperation(payload.options, payload.content);
+        if (mode.error !== undefined) return fail(mode.error);
         const requested = payload.content.metadata?.publishStatus;
         if (requested !== undefined && requested !== 'draft' && requested !== 'public') {
             return fail(`unknown publishStatus '${String(requested)}' (expected absent, 'draft' or 'public')`);

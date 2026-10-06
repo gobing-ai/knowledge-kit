@@ -23,6 +23,7 @@ import {
     main,
     oauth1Header,
     processPublishIO,
+    resolveOperation,
     X_ARTICLES_URL,
     XArticleBrowserTransport,
     XPostApiTransport,
@@ -696,5 +697,21 @@ describe('x-pub plugin', () => {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
             await rm(tmpDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('task 0205 R2 — declared modes refuse unknown operations pre-browser', () => {
+    test('resolveOperation refuses an unknown operation by name', () => {
+        const mode = resolveOperation({ operation: 'dm' });
+        expect(mode.error).toContain("unsupported operation 'dm'");
+        expect(mode.error).toContain('post, article');
+    });
+    test('metadata operation also validates; declared ones resolve', () => {
+        const content = { title: 't', body: 'b', format: 'markdown', metadata: { operation: 'article' } };
+        expect(resolveOperation(undefined, content)).toEqual({ operation: 'article' });
+        expect(resolveOperation(undefined, { ...content, metadata: { operation: 42 } })?.error).toContain(
+            'unsupported operation',
+        );
+        expect(resolveOperation(undefined, undefined)).toEqual({ operation: 'post' });
     });
 });

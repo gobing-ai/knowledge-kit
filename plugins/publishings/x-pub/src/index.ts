@@ -81,9 +81,23 @@ export function oauth1Header(opts: {
     return `OAuth ${header}`;
 }
 
-function resolveOperation(options?: Record<string, unknown>, content?: Content): 'post' | 'article' {
+/**
+ * Declared modes (ADR-029 dispatch): `post` (API v2 transport) and `article` (browser composer).
+ * An unknown operation is refused by name before any transport — and therefore before any
+ * browser — is resolved (task 0205 R2).
+ */
+export const X_OPERATIONS = ['post', 'article'] as const;
+export type XOperation = (typeof X_OPERATIONS)[number];
+
+export function resolveOperation(
+    options?: Record<string, unknown>,
+    content?: Content,
+): { operation: XOperation; error?: undefined } | { operation?: undefined; error: string } {
     const raw = options?.operation ?? content?.metadata?.operation ?? 'post';
-    return raw === 'article' ? 'article' : 'post';
+    if (typeof raw !== 'string' || !(X_OPERATIONS as readonly string[]).includes(raw)) {
+        return { error: `unsupported operation '${String(raw)}' for x: expected one of ${X_OPERATIONS.join(', ')}` };
+    }
+    return { operation: raw as XOperation };
 }
 
 export class XPostApiTransport implements PublishTransport {
@@ -431,7 +445,12 @@ export async function processPublishIO(
         await writePublishResult(outputPath, fail(message));
         throw new Error(message);
     }
-    const operation = resolveOperation(options, content);
+    const mode = resolveOperation(options, content);
+    if (mode.error !== undefined) {
+        await writePublishResult(outputPath, fail(mode.error));
+        throw new Error(mode.error);
+    }
+    const operation = mode.operation;
     const resolved = transport ?? getPublishTransport(operation);
     const result = ResultSchema.parse(await resolved.publish({ content, options }));
     await writePublishResult(outputPath, result);

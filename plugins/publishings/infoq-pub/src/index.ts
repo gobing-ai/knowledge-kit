@@ -127,6 +127,28 @@ async function readToast(page: Page, texts: readonly string[]): Promise<string |
     return readScopedSignal(page, texts);
 }
 
+/**
+ * Declared modes (ADR-029 dispatch; task 0205 R2): InfoQ's only console flow is the draft path; 提交 (editorial review) is live-only and not a mode. An unknown operation is refused by
+ * name before a profile is resolved or a browser opens.
+ */
+export const INFOQ_OPERATIONS = ['draft'] as const;
+export type InfoqOperation = (typeof INFOQ_OPERATIONS)[number];
+
+/** Exit-early resolution of the requested operation; a default Content without one resolves to `draft`. */
+export function resolveOperation(
+    options?: Record<string, unknown>,
+    content?: Content,
+): { operation: InfoqOperation; error?: undefined } | { operation?: undefined; error: string } {
+    const raw = options?.operation ?? content?.metadata?.operation;
+    if (raw === undefined) return { operation: 'draft' };
+    if (typeof raw !== 'string' || !(INFOQ_OPERATIONS as readonly string[]).includes(raw)) {
+        return {
+            error: `unsupported operation '${String(raw)}' for infoq: expected one of ${INFOQ_OPERATIONS.join(', ')}`,
+        };
+    }
+    return { operation: raw as InfoqOperation };
+}
+
 export class InfoqBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
@@ -143,6 +165,8 @@ export class InfoqBrowserTransport implements PublishTransport {
         if (this.driver !== 'script') {
             return fail(`unsupported driver '${this.driver}' for ${TARGET}`);
         }
+        const mode = resolveOperation(payload.options, payload.content);
+        if (mode.error !== undefined) return fail(mode.error);
         const requested = payload.content.metadata?.publishStatus;
         if (requested !== undefined && requested !== 'draft' && requested !== 'public') {
             return fail(`unknown publishStatus '${String(requested)}' (expected absent, 'draft' or 'public')`);
