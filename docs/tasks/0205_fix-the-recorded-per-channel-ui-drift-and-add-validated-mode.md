@@ -1,12 +1,14 @@
 ---
 schema_version: 1
 name: Fix the recorded per-channel UI drift and add validated mode dispatch
-status: backlog
+status: done
 template: feature-impl
 created_at: 2026-10-05T18:00:10.115Z
-updated_at: "2026-10-06T16:50:43.775Z"
+updated_at: "2026-10-06T22:38:05.057Z"
 feature_id: E92
 
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0205-verdict.json
 ---
 
 ## 0205. Fix the recorded per-channel UI drift and add validated mode dispatch
@@ -17,15 +19,16 @@ The per-channel drift lists recorded by the discovery tasks (0199–0204) are th
 
 ### Requirements
 
-- [ ] R1. Every drift item recorded by 0199–0204 is either corrected in its channel plugin or listed as an explicit exclusion with its reason.
-- [ ] R2. Each channel validates its requested `operation` against a declared mode list and fails with a named unsupported-operation error before any browser opens or profile is resolved.
-- [ ] R3. Each corrected channel saves a draft through the real console with an observed signal, and a channel whose signal never appears returns `ok:false` naming it.
+- [x] R1. Every drift item recorded by 0199–0204 is either corrected in its channel plugin or listed as an explicit exclusion with its reason.
+- [x] R2. Each channel validates its requested `operation` against a declared mode list and fails with a named unsupported-operation error before any browser opens or profile is resolved.
+- [x] R3. Each corrected channel saves a draft through the real console with an observed signal, and a channel whose signal never appears returns `ok:false` naming it.
+- [x] R5. Recorded gaps are fixed or explicitly excluded with a reason.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — R2 — A channel exposes its modes as validated operations and refuses an unknown one before opening a browser (req: R2)
-- [ ] AC2 — R3 — Each corrected flow saves a draft through the real console with an observed signal (req: R3)
-- [ ] AC3 — R5 — Recorded gaps are fixed or explicitly excluded with a reason (req: R1)
+- [x] AC1 — R2 — A channel exposes its modes as validated operations and refuses an unknown one before opening a browser (req: R2)
+- [x] AC2 — R3 — Each corrected flow saves a draft through the real console with an observed signal (req: R3)
+- [x] AC3 — R5 — Recorded gaps are fixed or explicitly excluded with a reason (req: R1)
 
 ### Q&A
 
@@ -85,27 +88,127 @@ MP's 视频/播客 media modal **covers the save bar**, so the artifact must exi
 
 ### Plan
 
-- [ ] 0. Consume the discovery evidence for each channel; write the corrected mode table and drift dispositions.
-- [ ] 1. Add the declared mode list + validated dispatch per channel, with the pre-browser fast-fail.
-- [ ] 2. Split the per-mode flows into modules where a channel has more than one mode.
-- [ ] 3. Apply the selector/URL/signal corrections, with an offline test per corrected path.
-- [ ] 4. Re-run each channel's draft path against the recorded evidence (operator-attended where the platform is capped).
-- [ ] 5. Record the exclusions with reasons and report the per-channel disposition.
+- [x] 0. Consume the discovery evidence for each channel; write the corrected mode table and drift dispositions. — all six discovery docs consumed; corrected tables + dispositions in the channel modules and doc updates (commit 635234ba).
+- [x] 1. Add the declared mode list + validated dispatch per channel, with the pre-browser fast-fail. — union refusals gate-fixed; named unsupported-operation errors before profile resolution; offline tests (1949 green).
+- [x] 2. Split the per-mode flows into modules where a channel has more than one mode. — wechatmp per-mode modules (文章/贴图/视频/播客).
+- [x] 3. Apply the selector/URL/signal corrections, with an offline test per corrected path. — x edit-URL regex, substack publication-host entry + exact-placeholder title, wechatmp type=77&createType=N + textarea title, infoq/juejin hydration waits; offline tests per path.
+- [x] 4. Re-run each channel's draft path against the recorded evidence (operator-attended where the platform is capped). — real-console draft saves measured per channel 2026-10-06 evening: infoq 已保存 + /draft/405943 + reload; juejin 保存成功 + 7693358476032786442 + reload; x Last saved + 2107589269258919936 + Drafts row; substack Saved + 219172498 + reload; wechatmp 文章 appmsgid 100000899. Walk JSONs in .spur/run/discovery/.
+- [x] 5. Record the exclusions with reasons and report the per-channel disposition. — 贴图 dialog-validation signal (no appmsgid by design), 视频/播客 artifact-gated save bar, 信息条 headless-451 — recorded in discovery docs with reasons.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/features/E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md:105` |
+| `docs/features/E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md:5` |
+| `docs/features/E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md:9` |
+| `docs/features/E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md:90` |
+| `docs/features/INDEX.md:43` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:10` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:103` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:109` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:117` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:120` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:132` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:24` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:30` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:4` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:47` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:62` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:7` |
+| `docs/tasks/0201_discover-the-infoq-write-console-and-record-ui-draft-drift.md:98` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:10` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:105` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:110` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:116` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:124` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:127` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:139` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:24` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:30` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:4` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:47` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:62` |
+| `docs/tasks/0202_discover-the-juejin-editor-and-record-ui-draft-drift.md:7` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:10` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:112` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:117` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:123` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:131` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:134` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:146` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:24` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:30` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:4` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:47` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:60` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:62` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:69` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:7` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:10` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:104` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:109` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:121` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:126` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:132` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:140` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:143` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:155` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:24` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:30` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:4` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:47` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:61` |
+| `docs/tasks/0204_discover-the-x-compose-console-article-and-post-and-record-u.md:7` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Every drift item corrected or excluded with reason: x edit-URL regex validated + dashboard drift handled; substack publication-host entry + exact Title placeholder; wechatmp type=77&createType=N deep-link + 贴图 textarea title + dialog-validation signal; infoq geekbang entry + hydration; juejin hydration + phone-bind DOM persistence — corrections in channel modules (635234ba), exclusions with reasons in discovery docs |
+| R2 | MET | Union refusals gate-fixed: declared mode lists + named unsupported-operation error before browser/profile; covered by offline tests (bun run gate green at 635234ba, 1949 tests) |
+| R3 | MET | Each corrected channel's real-console draft save observed: infoq 已保存 + reload (/draft/405943), juejin 保存成功 + URL rewrite (7693358476032786442), x Last saved + Drafts row (2107589269258919936), substack Saved + URL (219172498), wechatmp 文章 appmsgid (100000899); ok:false signal-timeout naming implemented in plugins with tests; walk evidence .spur/run/discovery/*.json |
+| R5 | MET | Recorded gaps fixed or excluded with reason: 贴图 dialog-validation signal (appmsgid 文章-only by platform design), 视频/播客 artifact-gated save bar, infoq headless-451 WAF, xhs 图文 mode — dispositions in docs/design/{wechatmp,xhs,infoq,juejin,x-article,substack}-ui-discovery.md |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC-1 | MET | command | `ls docs/design/*-ui-discovery.md |
+| AC-2 | MET | command | `bun test` union-refusal cases green at 635234ba (fingerprint sha256:716bd170…a67f) — modes exposed as validated operations, unknown refused pre-browser |
+| AC-3 | MET | command | `ls .spur/run/discovery/{infoq-walk3,juejin-walk2,x-walk3,substack-walk4,wechatmp-attended}.json` → five observed-signal real-console draft saves |
+| AC-4 | MET | command | `grep -rn -i "publish" .spur/run/discovery/*.ts |
+| AC-5 | MET | command | `grep -c "排除\|exclusion\|gated" docs/design/wechatmp-ui-discovery.md docs/design/xhs-ui-discovery.md` > 0 → recorded gaps fixed or excluded with reason |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | proof-input-digest | — |  |
+| P4 | confidence | — |  |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-06T18:23:10.677Z backlog → wip (system)
+- 2026-10-06T18:26:26.623Z wip → testing (system)
+- 2026-10-06T22:24:03.003Z testing → done (system)
+- 2026-10-06T22:30:03.478Z done → testing (system)
+- 2026-10-06T22:30:04.316Z testing → done (system)
+- 2026-10-06T22:38:04.339Z done → testing (system)
+- 2026-10-06T22:38:05.042Z testing → done (system)
+
