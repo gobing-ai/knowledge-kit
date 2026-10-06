@@ -959,6 +959,9 @@ describe('wechatmp-pub measured traps (discovery §1, §5.1, §5.2)', () => {
         const gotos = console.calls.entry.filter((call) => call.op === 'goto');
         expect(gotos.length).toBeGreaterThanOrEqual(1);
         expect(String(gotos[gotos.length - 1]?.args[0])).toContain('token=');
+        // 20261005: the 草稿箱 cards live on the console HOME; the appmsg list route the 草稿箱 entry
+        // links to renders none of them (authenticated probe), so a read there always missed.
+        expect(String(gotos[gotos.length - 1]?.args[0])).toContain('t=home/index');
     });
 });
 

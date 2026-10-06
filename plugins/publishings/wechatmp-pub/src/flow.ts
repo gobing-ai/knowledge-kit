@@ -212,30 +212,62 @@ export function draftRowContainers(title: string): string[] {
     // Kept narrow: a broad list (`li` / `[class*="list" i]` / media wrappers) made the per-poll
     // `:has-text` probe slow enough on the real list to look like a hang, and it still missed the row —
     // the draft rows appear to live inside an iframe on the list route (2026-10-05).
-    return [`[class*="draft" i]${keyed}`, `[class*="appmsg" i]${keyed}`, `.weui-desktop-dialog${keyed}`];
+    // `.weui-desktop-card` is the real row: live 2026-10-05 the 近期草稿 card on the console home is
+    // `div.weui-desktop-card.weui-desktop-publish` under `div.publish_card_container`, and it carries
+    // both the title and the `更新于` stamp. Kept narrow — a broad list (`li` / `[class*="list" i]`)
+    // made the per-poll `:has-text` probe slow enough on the real page to look like a hang.
+    return [
+        `.weui-desktop-card${keyed}`,
+        `.publish_card_container${keyed}`,
+        `[class*="draft" i]${keyed}`,
+        `[class*="appmsg" i]${keyed}`,
+        `.weui-desktop-dialog${keyed}`,
+    ];
 }
 
-/** The console's own draft-box route (its 草稿箱 entry points here). */
+/**
+ * The console home route — which is where the 草稿箱 rows actually are.
+ *
+ * Live 2026-10-05 (authenticated probe): the home page (`t=home/index`) carries the draft cards with
+ * their `更新于` stamps, while `t=media/appmsg_list&action=list_card` — the route the 草稿箱 entry
+ * links to — renders **no** draft rows at all, and every page is a single frame (no iframes).
+ * Navigating to the appmsg route was therefore the bug that produced `before=none, after=none`.
+ */
 const draftBoxUrl = (token: string): string =>
-    `https://mp.weixin.qq.com/cgi-bin/appmsg?begin=0&count=10&t=media/appmsg_list&type=10&action=list_card&token=${encodeURIComponent(token)}&lang=zh_CN`;
+    `https://mp.weixin.qq.com/cgi-bin/home?t=home/index&lang=zh_CN&token=${encodeURIComponent(token)}`;
 
 /**
- * Enter the 草稿箱 list from the console home. The home page does NOT render the draft rows: live
- * 2026-10-05 a saved draft left `readDraftStamp` on home returning none (`before=none, after=none`)
- * even though the row existed.
+ * Land on the console home and wait (bounded) for its 近期草稿 cards to render.
  *
- * It navigates to the route instead of clicking the nav entry: a click can open a new tab and then
- * never settle, which hung a run for 7 min with no output (no step timeout fires for that), while a
- * bounded `goto` always returns or throws. Best-effort — a failure leaves the read to the probe loop,
- * which reports an honest `ok:false` rather than a fabricated one.
+ * The cards stream in after the navigation, so a fixed sleep can read too early — that is the other
+ * half of the observed `before=none, after=none` miss. It navigates instead of clicking the nav entry:
+ * a click can open a new tab and never settle, which hung a run for 7 min with no output (no step
+ * timeout fires for that), while a bounded `goto` always returns or throws. Best-effort — a failure
+ * leaves the read to the probe loop, which reports an honest `ok:false` rather than a fabricated one.
  */
-export async function openDraftBox(page: WechatPage, timeoutMs: number): Promise<boolean> {
+export async function openDraftBox(page: WechatPage, title: string, timeoutMs: number): Promise<boolean> {
     try {
         const token = await resolveConsoleToken(page);
         if (token === undefined) return false;
         await page.goto(draftBoxUrl(token), { timeout: timeoutMs });
-        await sleep(3000); // its rows stream in after the navigation
-        return true;
+        const ready = await expectOutcome(
+            async () => {
+                // Container-qualified and title-keyed exactly like the read — a bare `:text(更新于)` probe
+                // would be satisfied by the pasted article body (the scoping test enforces this), and a
+                // fixed sleep can read before the cards stream in, which is the other half of the miss.
+                for (const container of draftRowContainers(title)) {
+                    const selector = `${container} :text("${DRAFT_STAMP}")`;
+                    if ((await page.locator(selector).count()) > 0) return selector;
+                }
+                return null;
+            },
+            {
+                timeoutMs,
+                label: `草稿箱 cards on the console home (:text("${DRAFT_STAMP}") inside the row containers)`,
+                pollMs: POLL_MS,
+            },
+        );
+        return ready.ok;
     } catch {
         return false;
     }
@@ -245,6 +277,26 @@ export async function openDraftBox(page: WechatPage, timeoutMs: number): Promise
  * The 草稿箱 row's `更新于` stamp for one title, read through `readScopedSignal` so it can only come
  * from a 草稿箱 container — never from the editor body this flow just typed into.
  */
+/**
+ * A bounded frame inventory for the 草稿箱 failure message.
+ *
+ * Live 2026-10-05 the row demonstrably existed and the list route was reached, yet the main frame read
+ * empty and no selector change helped. So report the frames that were actually there (and how many
+ * `更新于` stamps each held) instead of guessing again. The fakes expose no `frames()`; they get ''.
+ */
+async function describeFrames(page: WechatPage, limit: number): Promise<string> {
+    const frames = typeof page.frames === 'function' ? page.frames() : [];
+    const parts: string[] = [];
+    for (const frame of frames.slice(0, limit)) {
+        const stamped = await frame
+            .locator(`:text("${DRAFT_STAMP}")`)
+            .count()
+            .catch(() => -1);
+        parts.push(`${frame.url().slice(0, 60)}:${stamped}`);
+    }
+    return parts.join(' | ');
+}
+
 export async function readDraftStamp(page: WechatPage, title: string): Promise<string | null> {
     return readScopedSignal(asPlaywrightPage(page), [DRAFT_STAMP], draftRowContainers(title));
 }
@@ -636,7 +688,7 @@ async function saveDraft(
         // The editor lives in its own tab, so re-read the console entry page — and ENTER the 草稿箱
         // list first, because the home page does not render the draft rows (live 2026-10-05).
         await deps.entry.goto(deps.entry.url(), { timeout: deps.stepTimeoutMs });
-        await openDraftBox(deps.entry, deps.stepTimeoutMs);
+        await openDraftBox(deps.entry, title, deps.stepTimeoutMs);
         const outcome = await expectOutcome(
             async () => {
                 const stamp = await readDraftStamp(deps.entry, title);
@@ -654,7 +706,7 @@ async function saveDraft(
 
     if (signal === null || control === null) {
         return fail(
-            `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()})`,
+            `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()}, frames=${await describeFrames(deps.entry, 5)})`,
         );
     }
     return ResultSchema.parse({

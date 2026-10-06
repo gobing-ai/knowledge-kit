@@ -45,6 +45,14 @@ export interface WechatPage {
     waitForTimeout?(ms: number): Promise<void>;
     /** A page-level key press (the enrichment rail's dialog sweep). */
     press?(key: string): Promise<void>;
+    /** The page's frames, for naming what a failed read actually contained. */
+    frames?(): WechatFrame[];
+}
+
+/** One frame of the console page: enough to name it and count a signal inside it. */
+export interface WechatFrame {
+    url(): string;
+    locator(selector: string): { count(): Promise<number> };
 }
 
 /** One browser context: the console home, plus every page it holds (the editor opens in a new tab). */
@@ -183,6 +191,12 @@ interface PlaywrightLike {
 }
 
 /** The production adapter: the structural seam over a real Playwright page. */
+/** The raw Playwright frame surface the inventory needs (see `wrapPlaywrightPage`). */
+interface RawFrame {
+    url(): string;
+    locator(selector: string): { count(): Promise<number> };
+}
+
 export function wrapPlaywrightPage(raw: unknown): WechatPage {
     const pw = raw as PlaywrightLike;
     return {
@@ -208,6 +222,16 @@ export function wrapPlaywrightPage(raw: unknown): WechatPage {
         evaluate: (expression) => pw.evaluate(expression),
         waitForTimeout: (ms) => pw.waitForTimeout(ms),
         press: (key) => pw.keyboard.press(key),
+        // MP's console renders some lists inside frames, and the flows must be able to NAME what they
+        // actually saw when a read comes back empty (2026-10-05: the 草稿箱 row existed and no
+        // main-frame read found it). Only the two calls the inventory needs are exposed.
+        frames: () => {
+            const source = raw as { frames?: () => RawFrame[] };
+            return (source.frames?.() ?? []).map((frame) => ({
+                url: () => frame.url(),
+                locator: (selector: string) => ({ count: () => frame.locator(selector).count() }),
+            }));
+        },
     };
 }
 
