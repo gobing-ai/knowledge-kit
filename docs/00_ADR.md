@@ -1135,7 +1135,7 @@ illustration across failures is deferred until observed.
 
 **Why.** Every type on a channel shares one login, so splitting by type multiplies logins, profile dirs, env tiers and preflights while the actual difference is a selector table and a flow (confirmed against both live consoles: xhs and WeChat MP each expose four types behind one authenticated session).
 
-**Detail:** `03_ARCHITECTURE` § Publish modes inside a channel plugin (dispatch, validation, mandatory rail); per-channel live evidence in `docs/design/xhs-ui-discovery.md` and `docs/design/wechatmp-ui-discovery.md`; work in feature Q / tasks 0199–0205. Prior art: the `x-pub` `post` | `article` split.
+**Detail:** `03_ARCHITECTURE` § Publish modes inside a channel plugin (dispatch, validation, mandatory rail); per-channel live evidence in `docs/design/xhs-ui-discovery.md` and `docs/design/wechatmp-ui-discovery.md`; work in feature E92 / tasks 0199–0205. Prior art: the `x-pub` `post` | `article` split.
 
 ---
 

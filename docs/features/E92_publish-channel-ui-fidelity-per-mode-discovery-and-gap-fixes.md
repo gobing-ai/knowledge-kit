@@ -1,15 +1,15 @@
 ---
 schema_version: 1
-id: "Q"
+id: "E92"
 name: "Publish channel UI fidelity: per-mode discovery and gap fixes"
 status: backlog
 priority: P2
 tags: []
 created_at: "2026-10-05T17:58:49.842Z"
-updated_at: "2026-10-05T17:59:28.209Z"
+updated_at: "2026-10-06T16:50:43.775Z"
 ---
 
-# Q: Publish channel UI fidelity: per-mode discovery and gap fixes
+# E92: Publish channel UI fidelity: per-mode discovery and gap fixes
 
 ## Goal
 
@@ -99,3 +99,6 @@ Feature: Publish channel UI fidelity
 ## Notes
 
 ## History
+
+- 2026-10-06T16:50:43.775Z moved Q → E92 (system)
+

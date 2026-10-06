@@ -4,8 +4,8 @@ name: Discover the xhs publish console per mode and record UI drift
 status: backlog
 template: feature-impl
 created_at: 2026-10-05T17:59:44.252Z
-updated_at: "2026-10-05T18:00:07.851Z"
-feature_id: Q
+updated_at: "2026-10-06T16:50:43.775Z"
+feature_id: E92
 
 ---
 

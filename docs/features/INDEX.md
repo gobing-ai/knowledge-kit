@@ -39,7 +39,8 @@
     ├── [done] **E7**: Remaining wt-publish harvest ([E7_remaining-wt-publish-harvest.md](./E7_remaining-wt-publish-harvest.md))
     ├── [done] **E8**: Xiaohongshu image-card authoring and publishing ([E8_xiaohongshu-image-card-authoring-and-publishing.md](./E8_xiaohongshu-image-card-authoring-and-publishing.md))
     └── [active] **E9**: Reusable browser sessions for publish channels ([E9_reusable-browser-sessions-for-publish-channels.md](./E9_reusable-browser-sessions-for-publish-channels.md))
-        └── [active] **E91**: Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library ([E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md](./E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md))
+        ├── [active] **E91**: Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library ([E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md](./E91_browser-publish-channels-on-ts-browser-automation-infoq-juejin-substack-x-articles-shared-browser-command-library.md))
+        └── [backlog] **E92**: Publish channel UI fidelity: per-mode discovery and gap fixes ([E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md](./E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md))
 [backlog] **F**: kk plugin collection ([F_kk-plugin-collection.md](./F_kk-plugin-collection.md))
     ├── [done] **F1**: LLM-as-judge agent skills ([F1_llm-as-judge-agent-skills.md](./F1_llm-as-judge-agent-skills.md))
     ├── [done] **F2**: Topic-core authoring skill ([F2_wt-generator-harvest.md](./F2_wt-generator-harvest.md))
@@ -70,6 +71,5 @@
 [done] **N**: daily-ai-voice-cover-image-authoring ([N_daily-ai-voice-cover-image-authoring.md](./N_daily-ai-voice-cover-image-authoring.md))
 [active] **O**: kk-daily-ai-voice: run report, show-notes revamp, real surfdash publish ([O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md](./O_kk-daily-ai-voice-run-report-show-notes-revamp-real-surfdash-publish.md))
 [cancelled] **P**: Workflow folder fallback and per-workflow workspace defaults ([P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md](./P_workflow-folder-fallback-and-per-workflow-workspace-defaults.md))
-[backlog] **Q**: Publish channel UI fidelity: per-mode discovery and gap fixes ([Q_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md](./Q_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md))
 [cancelled] **R**: Publish channel UI fidelity: per-mode discovery and gap fixes ([R_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md](./R_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md))
 <!-- END AUTO-GENERATED -->

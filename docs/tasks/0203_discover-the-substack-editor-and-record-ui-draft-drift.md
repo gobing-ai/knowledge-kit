@@ -4,8 +4,8 @@ name: Discover the Substack editor and record UI draft drift
 status: backlog
 template: feature-impl
 created_at: 2026-10-05T17:59:48.787Z
-updated_at: "2026-10-05T18:00:09.333Z"
-feature_id: Q
+updated_at: "2026-10-06T16:50:43.775Z"
+feature_id: E92
 
 ---
 

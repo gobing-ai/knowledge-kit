@@ -4,8 +4,8 @@ name: Discover the WeChat MP console and record UI draft drift
 status: backlog
 template: feature-impl
 created_at: 2026-10-05T17:59:45.382Z
-updated_at: "2026-10-05T18:50:25.312Z"
-feature_id: Q
+updated_at: "2026-10-06T16:50:43.775Z"
+feature_id: E92
 
 ---
 
