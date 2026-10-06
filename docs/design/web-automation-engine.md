@@ -52,7 +52,8 @@ nodes:
     startable: true
     type: action          # discover/enhance/automate per vars.task (shell step or agent.run of kk:web-automation)
   - id: verify
-    type: gate            # observed outcome signals present in evidence JSON, else fail loud
+    type: gate            # outcome verdict in evidence JSON: signals present AND
+                          # confidence ∈ {HIGH, MEDIUM, LOW}; anything else → failed
   - id: record
     type: action          # evidence dir + drift list + discovery doc touch-up
   - id: done
@@ -67,6 +68,28 @@ edges:
   - { from: record, to: done }
   - { from: verify, to: failed }
 ```
+
+### Verdict contract (confidence-gated)
+
+`drive` writes an outcome verdict per step; `verify` enforces it:
+
+```json
+{
+  "step": "save-draft",
+  "outcome": "observed",
+  "confidence": "HIGH",
+  "signals": ["保存成功 toast @12.3s"],
+  "evidence": ["frames/012.png", "signals.json"]
+}
+```
+
+- `confidence` levels: `HIGH` = measured signal observed directly; `MEDIUM` =
+  indirect signal only (counter delta, URL change without toast); `LOW` =
+  partial evidence (a check passed without its signal).
+- **Missing, empty, or out-of-enum `confidence` blocks** — the gate routes to
+  `failed`, same rule as the daily safety verdict gate (20261003). A verdict
+  that cannot state its confidence is treated as a verdict that cannot be
+  trusted, never defaulted to LOW.
 
 Run semantics that matter here:
 

@@ -71,6 +71,12 @@ probe, don't predict.
    launch → drive → verify → record); `drive` steps run the measured
    selectors and **assert an observed outcome signal** (toast, counter delta,
    URL change). An unobserved outcome is reported as failure, never success.
+5. **Confidence-verified verdicts** — every outcome verdict carries
+   `confidence: HIGH | MEDIUM | LOW` (HIGH = measured signal observed;
+   MEDIUM = indirect signal, e.g. counter delta without toast; LOW = partial
+   evidence, one check passed). **Missing or out-of-enum confidence is itself
+   a failure** — the verify gate blocks it, mirroring the safety-verdict
+   convention (`kk-daily-ai-voice.md`, 20261003).
 
 ## Safety rails (non-negotiable)
 
@@ -79,7 +85,9 @@ probe, don't predict.
 - Bot-walled channels (xhs) and fresh logins stay **headed**; headless only
   after the session is proven.
 - Every reported success cites observed evidence (signal, screenshot, JSON).
-  No evidence → it is a failure with the reason.
+  No evidence → it is a failure with the reason — and every verdict states
+  its `HIGH | MEDIUM | LOW` confidence; a verdict without a valid level
+  fails the gate like a missing verdict.
 - Secrets stay out of repo, YAML, and vars. Login state lives only in the
   profile dir under `~/.config` (outside git); scripts print paths, never tokens.
 - One browser per channel/profile at a time; close contexts you launched.
