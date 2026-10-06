@@ -1117,22 +1117,32 @@ describe('fanout interior concurrency', () => {
     });
 
     it('rejects a malformed --jobs / --target-timeout before touching the filesystem', async () => {
-        for (const [flag, value] of [
-            ['--jobs', '0'],
-            ['--jobs', 'many'],
-            ['--target-timeout', '-5'],
-        ] as const) {
-            const code = await runFanout([
-                '--content',
-                'x.json',
-                '--out',
-                'y.json',
-                '--target',
-                'zenn-pub',
-                flag,
-                value,
-            ]);
-            expect(code).toBe(2);
+        // The handler reports the refusal through echoError: capture stderr (see capture.ts) so the
+        // dots reporter stays clean, and pin that the message names the flag it refused.
+        const cap = captureOutput();
+        try {
+            for (const [flag, value] of [
+                ['--jobs', '0'],
+                ['--jobs', 'many'],
+                ['--target-timeout', '-5'],
+            ] as const) {
+                const seen = cap.readErr().length;
+                const code = await runFanout([
+                    '--content',
+                    'x.json',
+                    '--out',
+                    'y.json',
+                    '--target',
+                    'zenn-pub',
+                    flag,
+                    value,
+                ]);
+                expect(code).toBe(2);
+                // Only THIS iteration's output: the buffer accumulates across the loop.
+                expect(cap.readErr().slice(seen)).toContain(`${flag} requires a positive integer`);
+            }
+        } finally {
+            cap.restore();
         }
     });
 });
