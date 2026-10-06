@@ -209,7 +209,18 @@ function asPlaywrightPage(page: WechatPage): Page {
  */
 export function draftRowContainers(title: string): string[] {
     const keyed = title.length > 0 ? `:has-text(${JSON.stringify(title)})` : '';
-    return [`[class*="draft" i]${keyed}`, `[class*="appmsg" i]${keyed}`, `.weui-desktop-dialog${keyed}`];
+    // Broad on purpose: the account's real 草稿箱 row (confirmed live 2026-10-05 — the draft WAS
+    // there) renders under the console's media/list/card wrappers, and the first narrowing missed it.
+    return [
+        `[class*="draft" i]${keyed}`,
+        `[class*="appmsg" i]${keyed}`,
+        `[class*="media" i]${keyed}`,
+        `[class*="list" i]${keyed}`,
+        `[class*="card" i]${keyed}`,
+        `li${keyed}`,
+        `tr${keyed}`,
+        `.weui-desktop-dialog${keyed}`,
+    ];
 }
 
 /** The console's own draft-box route (its 草稿箱 entry points here). */
@@ -651,7 +662,7 @@ async function saveDraft(
 
     if (signal === null || control === null) {
         return fail(
-            `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'})`,
+            `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()})`,
         );
     }
     return ResultSchema.parse({
