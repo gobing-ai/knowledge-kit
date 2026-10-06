@@ -1,23 +1,47 @@
-# infoq (xie.infoq.cn) console UI discovery (task 0201) — first pass, blocked at session
+# infoq (xie.infoq.cn) console UI discovery (task 0201) — second pass, measured 2026-10-06
 
-## Status: BLOCKED — operator login required
+## Status: MEASURED — authenticated walk complete (login + draft-save signal)
 
 - Profile: `~/.config/kk/browser-profiles/infoq` (INFOQ_PROFILE_DIR / KK_BROWSER_PROFILE_DIR override).
-- 2026-06-10 walk: launchPersistentContext succeeded; `https://xie.infoq.cn/` home renders **登录 / 注册** — the saved session is expired.
-- `https://xie.infoq.cn/write` with the dead session renders an **empty editor shell** (6 chrome buttons, no title/body/ProseMirror) and does **not redirect to login** (loginRedirect=false) — minor drift candidate vs `LOGIN_URL_RE` assumptions: an unauthenticated write page stays on `/write` with no controls; a readiness check keyed on login redirect would false-pass.
-- Re-measurement (selectors 保存草稿/提交, draft signal, mode table) is blocked behind an interactive login: run `bun plugins/publishings/infoq-pub/src/profile-check.ts login`, then rerun `.spur/run/discovery/walk-infoq.ts`.
+- Operator login completed 2026-10-06 via the home 登录 entry: `account.geekbang.org/infoq/login` → WeChat QR scan
+  (account pre-registered and WeChat-linked; SMS path exists at `/infoq/login/sms`).
+- Evidence artifacts (`.spur/run/discovery/`): `infoq-login3.json`, `infoq-editor-entry.json`, `infoq-editor2.json`,
+  `infoq-walk2.json`, `infoq-walk3.json`; scripts `login-infoq3.ts`, `probe-infoq-editor2.ts`, `walk-infoq3.ts`.
 
-## Baseline from plugin constants (to verify after login)
+## Infra drift (first-pass hypotheses → confirmed)
 
-| Control | Recorded candidates |
-| --- | --- |
-| Editor | `https://xie.infoq.cn/write` |
-| Title | `input[placeholder*="标题"]`, `textarea[placeholder*="标题"]` |
-| Summary | `input[placeholder*="摘要"]`, `textarea[placeholder*="摘要"]`, `input[name=summary]` |
-| Body | `.ProseMirror[contenteditable="true"]` |
-| Draft | `button:has-text("保存草稿")` (toasts `保存成功`/`已保存`, draft URL id `/(\d{4,})`) |
-| Live | `button:has-text("提交")` (editorial review — never activated by automation) |
+1. **Headless Chromium is WAF-blocked**: every headless launch receives HTTP **451 with an empty body** on
+   `xie.infoq.cn` (clean context and UA-spoofed both 451); curl and **headed** Chromium receive 200. All infoq
+   automation must run `headless: false`. The first-pass "empty shell" observation was this block, not site markup.
+2. **`/write` is dead even authenticated**: renders an empty shell (no title/body/ProseMirror, no buttons) with no
+   login redirect — the first-pass `loginRedirect=false` false-pass risk is confirmed and now moot (the URL itself is gone).
+3. **Editor entry moved**: home 立即创作 (`div.write-btn.Button_button_3onsJ`) SPA-routes to **`/draft/<id>`** and the
+   draft is **created server-side on entry** — the URL id signal exists before any content is typed
+   (`/draft/405943` measured). `EDITOR_URL`-style constants pointing at `/write` are stale.
+4. **`LOGIN_URL_RE` drift**: the SSO domain is `account.geekbang.org`, not `account.infoq.cn`; the `\/login` arm still
+   matches the geekbang path by luck. Home hydration takes ~10 s (a short-wait readiness check false-reads "logged out"
+   and non-hydrated pages false-read "logged in" — require hydration + positive avatar signal).
+
+## Measured editor contract (on `/draft/<id>`, authenticated)
+
+| Control | Measured | Recorded candidate → verdict |
+| --- | --- | --- |
+| Editor URL | `https://xie.infoq.cn/draft/<id>` (entry via home `.write-btn`) | `/write` → **dead** |
+| Title | `input[placeholder="请输入标题"]` | `[placeholder*="标题"]` → **still matches** |
+| Summary | none in the flow | summary candidates → **dead** (no summary field) |
+| Body | `.ProseMirror[contenteditable="true"]` | → **still matches** |
+| Draft save | **autosave**, indicator text **已保存**; no save button | `button:has-text("保存草稿")` → **dead** |
+| Draft signal | URL id at entry + reload persistence + `草稿箱 (N)` counter (4→5 observed) | draft URL id regex → **still works** |
+| Live/publish | `div.submit-btn.Button_button_3onsJ` 发布 + `div.preview-btn` 预览 (DIVs, not `<button>`) | `button:has-text("提交")` → **dead** (control is 发布, element is a div) |
+| Quota | `当日您还可以编辑发布 30 篇文章` (30/day) | not recorded before → new fact |
+| Input caveat | a 知道了 feature-notice modal overlays the editor and swallows click/fill events — dismiss first; CDP `fill()` did not register, real keyboard input did | new fact |
+
+## Draft-save signal (R3) — proven end to end
+
+Keyboard-typed title + body on `/draft/405943` → 已保存 indicator within ~6 s → hard reload read back identical
+title/body (`infoq-walk3.json`). A test draft (`E92 walk3 …`) remains in the account's 草稿箱 as the artifact.
 
 ## Safety
 
-Walk clicked nothing; no publish/submit control was present to act on.
+Login, navigation, draft fill/save and reload only. The publish control was **located, never clicked** (`.submit-btn`
+发布). No 发布/提交 action was activated by automation.
