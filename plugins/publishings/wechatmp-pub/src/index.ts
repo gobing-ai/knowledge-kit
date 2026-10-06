@@ -21,7 +21,7 @@ import {
     validateModeInput,
     WECHATMP_OPERATIONS,
 } from './modes';
-import { type OpenConsole, type OpenedConsole, STEP_TIMEOUT_MS, wrapPlaywrightContext } from './page';
+import { type OpenConsole, type OpenedConsole, POLL_MS, STEP_TIMEOUT_MS, wrapPlaywrightContext } from './page';
 
 /**
  * The wechatmp publish CHANNEL (ADR-029, ADR-026): one plugin, four mode `operations`.
@@ -160,6 +160,8 @@ export interface WechatmpTransportOptions {
     /** Deadline for the console to read ready after launch (default 30s). */
     consoleReadyTimeoutMs?: number;
     stepTimeoutMs?: number;
+    /** Re-poll interval for observed-signal waits (default 500ms); tests pass 0-5ms. */
+    pollMs?: number;
     submitSettleMs?: number;
     /** How long an observed draft signal is waited for after a save click (default 15s). */
     draftTimeoutMs?: number;
@@ -173,6 +175,7 @@ export class WechatmpBrowserTransport implements PublishTransport {
     private readonly checkSession: SessionCheck;
     private readonly consoleReadyTimeoutMs: number;
     private readonly stepTimeoutMs: number;
+    private readonly pollMs: number;
     private readonly submitSettleMs: number;
     private readonly draftTimeoutMs: number;
     private readonly submitAttempts: number;
@@ -183,6 +186,7 @@ export class WechatmpBrowserTransport implements PublishTransport {
         this.checkSession = options.checkSession ?? ((profileDir) => checkWechatSession(profileDir));
         this.consoleReadyTimeoutMs = options.consoleReadyTimeoutMs ?? CONSOLE_READY_TIMEOUT_MS;
         this.stepTimeoutMs = options.stepTimeoutMs ?? STEP_TIMEOUT_MS;
+        this.pollMs = options.pollMs ?? POLL_MS;
         this.submitSettleMs = options.submitSettleMs ?? SUBMIT_SETTLE_MS;
         this.draftTimeoutMs = options.draftTimeoutMs ?? DRAFT_SIGNAL_TIMEOUT_MS;
         this.submitAttempts = options.submitAttempts ?? SUBMIT_ATTEMPTS;
@@ -258,6 +262,7 @@ export class WechatmpBrowserTransport implements PublishTransport {
                 profileDir,
                 driver: this.driver,
                 stepTimeoutMs: this.stepTimeoutMs,
+                pollMs: this.pollMs,
                 submitSettleMs: this.submitSettleMs,
                 draftTimeoutMs: this.draftTimeoutMs,
                 submitAttempts: this.submitAttempts,

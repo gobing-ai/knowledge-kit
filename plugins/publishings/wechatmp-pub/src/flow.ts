@@ -21,7 +21,6 @@ import {
     findAttachedSelector,
     findSelector,
     followNewPage,
-    POLL_MS,
     tryFindSelector,
     type WechatPage,
 } from './page';
@@ -150,6 +149,8 @@ export interface ModeRunDeps {
     profileDir: string;
     driver: string;
     stepTimeoutMs: number;
+    /** Re-poll interval for the observed-signal waits — injectable so tests need no real-time waiting. */
+    pollMs: number;
     /** Settle before the save click. */
     submitSettleMs: number;
     /** How long the observed draft signal is waited for after a save click. */
@@ -245,7 +246,12 @@ const draftBoxUrl = (token: string): string =>
  * timeout fires for that), while a bounded `goto` always returns or throws. Best-effort — a failure
  * leaves the read to the probe loop, which reports an honest `ok:false` rather than a fabricated one.
  */
-export async function openDraftBox(page: WechatPage, title: string, timeoutMs: number): Promise<boolean> {
+export async function openDraftBox(
+    page: WechatPage,
+    title: string,
+    timeoutMs: number,
+    pollMs: number,
+): Promise<boolean> {
     try {
         const token = await resolveConsoleToken(page);
         if (token === undefined) return false;
@@ -264,7 +270,7 @@ export async function openDraftBox(page: WechatPage, title: string, timeoutMs: n
             {
                 timeoutMs,
                 label: `草稿箱 cards on the console home (:text("${DRAFT_STAMP}") inside the row containers)`,
-                pollMs: POLL_MS,
+                pollMs,
             },
         );
         return ready.ok;
@@ -688,7 +694,7 @@ async function saveDraft(
         // The editor lives in its own tab, so re-read the console entry page — and ENTER the 草稿箱
         // list first, because the home page does not render the draft rows (live 2026-10-05).
         await deps.entry.goto(deps.entry.url(), { timeout: deps.stepTimeoutMs });
-        await openDraftBox(deps.entry, title, deps.stepTimeoutMs);
+        await openDraftBox(deps.entry, title, deps.stepTimeoutMs, deps.pollMs);
         const outcome = await expectOutcome(
             async () => {
                 const stamp = await readDraftStamp(deps.entry, title);
@@ -698,7 +704,7 @@ async function saveDraft(
             {
                 timeoutMs: deps.draftTimeoutMs,
                 label: `draft confirmation '${control}'`,
-                pollMs: POLL_MS,
+                pollMs: deps.pollMs,
             },
         );
         if (outcome.ok) signal = outcome.evidence;
@@ -761,7 +767,7 @@ async function publishContent(
     const outcome = await expectOutcome(() => publishOutcome(entry.editor), {
         timeoutMs: deps.stepTimeoutMs,
         label: `publish confirmation '${control}'`,
-        pollMs: POLL_MS,
+        pollMs: deps.pollMs,
     });
     if (!outcome.ok) {
         return fail(

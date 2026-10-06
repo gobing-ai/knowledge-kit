@@ -373,6 +373,7 @@ function makeTransport(
         stepTimeoutMs: 300,
         submitSettleMs: 1,
         draftTimeoutMs: 50,
+        pollMs: 5,
         submitAttempts: 1,
         ...over,
     });
@@ -765,7 +766,12 @@ describe('wechatmp-pub per-mode draft flows (fake console)', () => {
     test('the save click is retried, and the retry count is reported', async () => {
         await seedMedia();
         const console = makeConsole(happyState({ saveMovesStamp: false }));
-        const result = await makeTransport(console, { submitAttempts: 2 }).publish({ content: ARTICLE });
+        // stepTimeoutMs is waited out twice on this failure path, so keep the budget small: the test
+        // asserts the retry COUNT, and 300ms x2 put it within 2.5x of bun's 5s default on CI (it timed
+        // out at 5003ms on run 37420975363 while passing at 2008ms locally).
+        const result = await makeTransport(console, { submitAttempts: 2, stepTimeoutMs: 75 }).publish({
+            content: ARTICLE,
+        });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('clicked 2×');
         expect(selectorsOf(console.calls.editor, 'click').filter(isSaveBar)).toHaveLength(2);
