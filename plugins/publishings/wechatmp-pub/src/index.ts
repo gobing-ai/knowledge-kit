@@ -118,14 +118,17 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
         // mp.weixin.qq.com (its `origins` half), and discarding it lands the console on its login page
         // even though every cookie was accepted — observed live 2026-10-05, where `check` reported OK
         // while the flow sat on a QR page. Replay each origin's storage before the console navigation.
-        for (const entry of state.origins ?? []) {
+        const origins = state?.origins ?? [];
+        for (const entry of origins) {
             const items = entry.localStorage ?? [];
             if (entry.origin === undefined || entry.origin.length === 0 || items.length === 0) continue;
             await page.goto(entry.origin).catch(() => undefined);
             await page
-                .evaluate((pairs: { name: string; value: string }[]) => {
-                    for (const pair of pairs) window.localStorage.setItem(pair.name, pair.value);
-                }, items)
+                .evaluate(
+                    // A string expression, not a callback: this plugin's tsconfig has no DOM lib.
+                    '(pairs) => { for (const pair of pairs) { window.localStorage.setItem(pair.name, pair.value); } }',
+                    items,
+                )
                 .catch(() => undefined);
         }
         await page.goto(CONSOLE_URL);

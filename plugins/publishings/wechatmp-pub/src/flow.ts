@@ -212,6 +212,26 @@ export function draftRowContainers(title: string): string[] {
     return [`[class*="draft" i]${keyed}`, `[class*="appmsg" i]${keyed}`, `.weui-desktop-dialog${keyed}`];
 }
 
+/** The console home's 草稿箱 entry opens the draft list, where the rows actually render. */
+const DRAFT_BOX_ENTRY = ['a:has-text("草稿箱")', '.weui-desktop-menu__link:has-text("草稿箱")', 'text=草稿箱'];
+
+/**
+ * Enter the 草稿箱 list from the console home. The home page does NOT render the draft rows: live
+ * 2026-10-05 a saved draft left `readDraftStamp` on home returning none (`before=none, after=none`)
+ * even though the row existed. Best-effort — a failure here leaves the read to the probe loop, which
+ * reports an honest `ok:false` rather than a fabricated one.
+ */
+export async function openDraftBox(page: WechatPage, timeoutMs: number): Promise<boolean> {
+    try {
+        const entry = await findSelector(page, DRAFT_BOX_ENTRY, '草稿箱 entry', timeoutMs);
+        await clickSelector(page, entry, timeoutMs);
+        await sleep(3000); // its rows stream in after the click
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /**
  * The 草稿箱 row's `更新于` stamp for one title, read through `readScopedSignal` so it can only come
  * from a 草稿箱 container — never from the editor body this flow just typed into.
@@ -604,9 +624,10 @@ async function saveDraft(
         await sleep(deps.submitSettleMs);
         control = await findSelector(entry.editor, SAVE_DRAFT, '保存为草稿 control', deps.stepTimeoutMs);
         await clickSelector(entry.editor, control, deps.stepTimeoutMs);
-        // The 草稿箱 list lives on the console home while the editor is in another tab, so the entry
-        // page re-reads it — once per attempt, never inside the probe loop.
+        // The editor lives in its own tab, so re-read the console entry page — and ENTER the 草稿箱
+        // list first, because the home page does not render the draft rows (live 2026-10-05).
         await deps.entry.goto(deps.entry.url(), { timeout: deps.stepTimeoutMs });
+        await openDraftBox(deps.entry, deps.stepTimeoutMs);
         const outcome = await expectOutcome(
             async () => {
                 const stamp = await readDraftStamp(deps.entry, title);
