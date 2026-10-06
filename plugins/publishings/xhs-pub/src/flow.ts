@@ -48,8 +48,9 @@ const VIDEO_EDITOR = ['div.tiptap.ProseMirror', 'div.tiptap[contenteditable="tru
 // path), then an in-page ProseMirror editor with 暂存离开 and 一键排版.
 const ARTICLE_NEW = ['text=新的创作', 'button:has-text("新的创作")'];
 const ARTICLE_EDITOR = ['div.tiptap.ProseMirror.ProseMirror-focused', 'div.tiptap.ProseMirror', '.ProseMirror'];
-const ARTICLE_LAYOUT = ['div.ailayout-btn_wrp', 'div.ailayout-btn_label', 'text=一键排版'];
-const ARTICLE_LAYOUT_TARGET = ['text=匹配目标格式', 'div:has-text("匹配目标格式")'];
+// The clickable `一键排版` is the button (measured: `button.d-button…` at the editor's action bar);
+// the `ailayout-*` divs are its label wrappers.
+const ARTICLE_LAYOUT = ['button:has-text("一键排版")', 'div.ailayout-btn_wrp', 'div.ailayout-btn_label'];
 
 // 发播客: 上传音频 opens a modal carrying the audio picker AND the cover picker; the two inputs
 // are told apart by their accept lists.
@@ -380,12 +381,18 @@ async function composeArticle(deps: ModeRunDeps): Promise<void> {
     await pasteHtml(asPlaywrightPage(deps.page), editor, markdownToHtml(deps.content.body), {
         timeoutMs: deps.stepTimeoutMs,
     });
-    // 一键排版 → 匹配目标格式 (discovery §5.3): layout only, and `匹配目标格式` is the one that
-    // re-renders the pasted markdown to the target format instead of keeping the source styling.
-    const layout = await findSelector(deps.page, ARTICLE_LAYOUT, '一键排版 control', deps.stepTimeoutMs);
-    await deps.page.locator(layout).first().click();
-    const target = await findSelector(deps.page, ARTICLE_LAYOUT_TARGET, '匹配目标格式 option', deps.stepTimeoutMs);
-    await deps.page.locator(target).first().click();
+    // 一键排版 applies the layout DIRECTLY on xhs. Measured live (dogfood 2026-10-05): a
+    // hit-test-verified click produced no option menu — the only new text was `自动保存于 …` — and a
+    // CDP-pierced scan found none either. The `保留源格式 / 匹配目标格式 / 仅保留文本` trio is WeChat
+    // MP's option set, not xhs's, and requiring it here failed a real draft run. So: click it when
+    // the control exists, and treat its absence as a non-event — the layout step is an enhancement,
+    // never a gate on saving.
+    try {
+        const layout = await findSelector(deps.page, ARTICLE_LAYOUT, '一键排版 control', deps.stepTimeoutMs);
+        await deps.page.locator(layout).first().click();
+    } catch {
+        // No layout control on this editor build — the draft still saves.
+    }
 }
 
 async function isPodcastModalOpen(page: XhsPage): Promise<boolean> {

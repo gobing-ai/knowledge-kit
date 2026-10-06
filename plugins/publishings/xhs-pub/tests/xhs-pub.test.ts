@@ -2009,7 +2009,7 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         expect(entered[0]?.args[0]).toBe('div.creator-tab:has-text("上传视频")');
     });
 
-    test('写长文: authors in place (no 导入链接, no upload), applies 一键排版 → 匹配目标格式', async () => {
+    test('写长文: authors in place (no 导入链接, no upload), applies 一键排版', async () => {
         await seedMedia();
         const { open, calls } = makeOpenPage({ ...happy });
         const t = makeTransport('script', {
@@ -2032,8 +2032,12 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         expect(log.filter((entry) => entry.op === 'evaluate').length).toBeGreaterThan(0);
         const clicked = log.filter((entry) => entry.op === 'click').map((entry) => String(entry.args[0]));
         expect(clicked).toContain('text=新的创作');
-        expect(clicked).toContain('div.ailayout-btn_wrp');
-        expect(clicked).toContain('text=匹配目标格式');
+        // 一键排版 applies the layout directly on xhs — measured live: the click produced no option
+        // menu, and the 保留源格式/匹配目标格式/仅保留文本 trio is WeChat MP's option set. Requiring an
+        // option here failed a real draft run (dogfood 2026-10-05), so the flow must click the
+        // control and never look for an option.
+        expect(clicked.some((selector) => selector.includes('一键排版'))).toBe(true);
+        expect(clicked.some((selector) => selector.includes('匹配目标格式'))).toBe(false);
         expect(clicked.some((selector) => selector.includes('导入链接'))).toBe(false);
     });
 

@@ -60,9 +60,9 @@ const AUTHOR_INPUT = ['input#author', 'input.js_author'];
 /** The editor's own image input (§3: `accept="image/gif,image/jpeg,image/jpg,image/png,image/svg,image/webp"`). */
 const IMAGE_FILE_INPUT = ['input[type="file"][accept*="image/"]', 'input[type="file"][accept*=".png"]'];
 
-/** `一键排版` → `匹配目标格式` (§5.3): layout only, and the one option that re-renders pasted markdown. */
-const LAYOUT_CONTROL = ['div.ailayout-btn_wrp', 'div.ailayout-btn_label', 'text=一键排版'];
-const LAYOUT_TARGET = ['text=匹配目标格式', 'div:has-text("匹配目标格式")'];
+/** `一键排版` (the format hint's trio is a LABEL, not a menu — see applyLayout). */
+const LAYOUT_CONTROL = ['button:has-text("一键排版")', 'div.ailayout-btn_wrp', 'div.ailayout-btn_label'];
+const LAYOUT_TARGET = ['div[role="menuitem"]:has-text("匹配目标格式")', 'li:has-text("匹配目标格式")'];
 
 /**
  * 封面 has NO file input (§5.2): the panel offers `修改` / `换一张` / `从正文选择`
@@ -364,12 +364,22 @@ async function insertBody(page: WechatPage, deps: ModeRunDeps): Promise<void> {
     await pasteHtml(asPlaywrightPage(page), selector, markdownToWechatHtml(body), { timeoutMs: deps.stepTimeoutMs });
 }
 
-/** `一键排版` → `匹配目标格式` (§5.3): layout only, applied after the body is inserted. */
+/**
+ * `一键排版` applies the layout directly. Measured live (dogfood 2026-10-05): after the click the only
+ * new text was ONE element carrying `保留源格式 匹配目标格式 仅保留文本` as a label — a format hint, not a
+ * clickable option set (the discovery note misread that concatenation as a menu). Waiting 30 s for
+ * `匹配目标格式` therefore failed a real draft. Click the control when present, honour an option only
+ * if one appears promptly, and never let the layout step gate the save.
+ */
 async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<void> {
-    const control = await findSelector(page, LAYOUT_CONTROL, '一键排版 control', deps.stepTimeoutMs);
-    await clickSelector(page, control, deps.stepTimeoutMs);
-    const target = await findSelector(page, LAYOUT_TARGET, '匹配目标格式 option', deps.stepTimeoutMs);
-    await clickSelector(page, target, deps.stepTimeoutMs);
+    try {
+        const control = await findSelector(page, LAYOUT_CONTROL, '一键排版 control', deps.stepTimeoutMs);
+        await clickSelector(page, control, deps.stepTimeoutMs);
+        const option = await findSelector(page, LAYOUT_TARGET, '匹配目标格式 option', 1500).catch(() => null);
+        if (option !== null) await clickSelector(page, option, 1500);
+    } catch {
+        // No layout control on this editor build — the draft still saves.
+    }
 }
 
 /** Fill an optional field, recording a warning instead of failing the run. */
