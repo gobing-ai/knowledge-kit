@@ -98,7 +98,7 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
     const context = await openPersistentBrowser({ profileDir, headless });
     try {
         const stateFile = storageStatePath(profileDir);
-        let state: { cookies?: Cookie[] } | undefined;
+        let state: { cookies?: Cookie[]; origins?: { origin?: string; localStorage?: { name: string; value: string }[] }[] } | undefined;
         try {
             state = JSON.parse(await createNodeFileSystem().readFile(stateFile));
         } catch {
@@ -112,6 +112,20 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
         }
         await context.addCookies(cookies);
         const page = context.pages()[0] ?? (await context.newPage());
+        // `addCookies` alone is NOT the session: the captured state also carries localStorage for
+        // mp.weixin.qq.com (its `origins` half), and discarding it lands the console on its login page
+        // even though every cookie was accepted — observed live 2026-10-05, where `check` reported OK
+        // while the flow sat on a QR page. Replay each origin's storage before the console navigation.
+        for (const entry of state.origins ?? []) {
+            const items = entry.localStorage ?? [];
+            if (entry.origin === undefined || entry.origin.length === 0 || items.length === 0) continue;
+            await page.goto(entry.origin).catch(() => undefined);
+            await page
+                .evaluate((pairs: { name: string; value: string }[]) => {
+                    for (const pair of pairs) window.localStorage.setItem(pair.name, pair.value);
+                }, items)
+                .catch(() => undefined);
+        }
         await page.goto(CONSOLE_URL);
         return { page, context };
     } catch (error: unknown) {
