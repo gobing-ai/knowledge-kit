@@ -198,3 +198,30 @@ Conventions / decisions discovered the hard way. Newest first.
 - **20261004 recovery attempts stopped at the safety gate (3 runs, 15:55–16:08).** After the `script` fix landed, three consecutive runs (unchanged drafts twice, then judge-prescribed edits: internal-ID footer note removed, Google News aggregation citation dropped from body+references, audio-only over-claim 「不可动摇的铁律…必然会水涨船高」 restored to the source's 「几乎没有例外……必然会上涨」) all ended `failed` at `safety-judge` with `block`: verdict NEEDS_REVISION, scores 0.50 → 0.575 → 0.775 (pass_threshold 0.85), **no must-pass fail** in any round. So the fixes were credited but the gate cannot clear while three gaps stay open: (1) Apple §1.11 metadata-level AI disclosure (episode description + show metadata) is unverifiable **at gate time** — the publish metadata does not exist yet, a structural ordering friction for every unattended run; (2) xiaoyuzhou's 5-item「【标题】+摘要」news-brief form needs an official-text answer or an explicit 栏目自述; (3) WeChat AI-declaration entry must be checked at publish time. Two judge-side defects worth fixing: the verdict reports `request_digest_verified=false` because the request carries only the composite digest without its recipe (gate = sha256 over `article_content.json` + NUL + `voicescript.yaml` + NUL; the judge recomputed per-file sha256 and declared a mismatch, which drags `confidence` to LOW), and the safety gate runs **before** the metadata it demands exists. Also: the article-write prompt itself instructs the agent to append the reader-visible「注：N 条条目因选题边界未写入：<hash>」note (and script-write reads that note to build `excluded`) — the judge flags it as CN-platform admission risk plus internal-ID leakage; the exclusion record belongs in the run artifacts, not the published copy.
 - Consequence: a non-PASS verdict blocks **regardless** of the report's `escalate: true`, so there is no engine path to publish that day's episode once the judge withholds PASS — the only routes are editing the drafts and re-reviewing, or publishing outside the gate by hand (the 20261002 hand-tail caveat applies: locale/XHS/WeChat get skipped).
 - **20261004 hand-driven publish tail (operator-authorized, 17:00–17:16).** After the gate blocked, the episode shipped by replicating the engine's own commands: `daily-wrap-docs → daily-generate (gemini-tts, 17.1 min, QC 100/100) → daily-intro → daily-episode-duration → daily-quality-report` ran *through the engine* with `publish_enabled=false` (a non-publishing run skips the gate by design — the `script → wrap-docs` edge wins when `skip_review=true`), then the tail was hand-driven: a sign-off-recording replacement for `daily-publish-prep` (it refuses without a gate stamp; the replacement reproduces its payload and stamps ID3, writing `…_13_publish-operator-signoff.json` instead of fabricating a stamp) → `daily-publish-surfdash` → show notes via `kk executor run podcast-pub` on a plan filtered by the script-write plan's `excluded` ids (the article's reader-facing 未写入 note is what used to drive that filter — removing the note for the judge finding broke the filter, so pass a filtered plan) → `daily-publish-podcast` → `daily-translate-localize` → hand translation of the en/ja drafts → `daily-translate-sync` → `daily-patch-surfdash` **with a plugins-path** (without it the EmDash CMS re-sync is skipped and the CMS card keeps the unstyled `./assets/cover.png` — the workflow's default `plugins_path: ""` means the *daily job never runs that re-sync*; it also needs a second invocation to heal since the plugin writes the skip marker first) → `daily-publish-xhs` (refused: creator-console session expired — login is operator-only) → `daily-publish-wechat` (draft saved) → `daily-publish-classify` → `daily-run-report`. Published: zh/en/ja posts (the site serves English at the root, `/zh/…` and `/ja/…` for the others), podcast episode, WeChat draft; XHS cards rendered but unpublished. `daily-publish-classify`'s completeness report names every independent channel, which is what made the remaining gap (xhs) visible instead of silent.
+
+## 2026-10-06 — the anti-hallucination response guard (why "Add verification for: confidence level")
+`Add verification for: confidence level (HIGH/MEDIUM/LOW)` is NOT a repo rule failure: it is the
+reason string from the response guard, `verifyAntiHallucinationProtocol` at
+/Users/robin/.agents/scripts/cc/anti-hallucination/validate_response.mjs:131 (installed as the Pi
+stop hook at /Users/robin/.agents/scripts/cc/anti-hallucination/pi-stop.ts, fired on
+`agent_before_settle`). It blocks a response that makes external claims but carries no
+`Confidence: HIGH|MEDIUM|LOW` marker (CONFIDENCE_PATTERNS, validate_response.mjs:23-25) and/or no
+source citation (SOURCE_PATTERNS, validate_response.mjs:12-22).
+
+What triggers "external claims" (validate_response.mjs:88-98): a version shape (`v1.3.14`,
+"version 1.2", any bare `1.2.3`), an `https://` URL, "recent change/release", "according to",
+"documentation says"; or the weak path — an `api|library|framework|sdk|package|endpoint|documentation`
+word in a sentence with `returns|supports|requires|defaults to|was added…` (lines 99-101).
+
+Compliance, verified both ways with the guard itself:
+  RESPONSE_TEXT="<text>" bun /Users/robin/.agents/scripts/cc/anti-hallucination/validate_response.mjs
+  - claim + `path.ext:line` citation + `Confidence: HIGH` -> {"ok":true,"reason":"Task is complete"}
+  - same text with the Confidence line removed -> {"ok":false,"reason":"Add verification for:
+    confidence level (HIGH/MEDIUM/LOW)","issues":["confidence level (HIGH/MEDIUM/LOW)"]}
+  - same text with the citations removed -> {"ok":false,"reason":"Add verification for: source
+    citations for API/library claims"}
+
+Rule of thumb: any reply that names a version, URL, or library/API behaviour ends with a
+`Confidence: HIGH|MEDIUM|LOW` line plus at least one `path:line` / URL citation. This is the
+response-side twin of the repo's own `.spur/rules/structure/verification-confidence-level.sh`, which
+enforces the same enum on every `Verification (` block in documents (commit c2e9c960).
