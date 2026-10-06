@@ -1029,7 +1029,11 @@ function dailyArticle(args: string[]): void {
                 console.error(`article: dropped ${dropped.length} near-duplicate plan item(s): ${dropped.join(', ')}`);
             }
         }
-        if (isFile(articleMd)) {
+        // The cache pair must be COMPLETE: markdown without its content.json means the generator
+        // half-ran (or the json was pruned), and returning here starves every downstream stage
+        // that reads content.json — publish-prep refuses to merge a draft it cannot read. Requiring
+        // both artifacts makes the pair self-healing instead of permanently stuck.
+        if (isFile(articleMd) && isFile(articleContent)) {
             console.log(`article cached: ${articleMd}`);
             return;
         }

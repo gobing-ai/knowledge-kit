@@ -291,6 +291,31 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
             rmSync(dir, { recursive: true, force: true });
         }
     });
+
+    it('regenerates content.json when only the article markdown survived', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-article-cache-'));
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(dir, '21-plan', `${STAMP}_03_plan_plan.json`),
+            JSON.stringify([qcDoc('ok-1', '浏览器端零依赖语音实现')]),
+        );
+        const env = fakeKk(dir);
+        const json = join(dir, '22-article', `${STAMP}_06_article_content.json`);
+        const md = join(dir, '22-article', `${STAMP}_06_article_article.md`);
+        try {
+            expect(runStage(['daily-article', dir, STAMP, ''], env).status).toBe(0);
+            expect(existsSync(json)).toBe(true);
+            expect(existsSync(md)).toBe(true);
+
+            // The half-cached state that starved publish-prep: the markdown is there, the json is
+            // not. Caching on the markdown alone returned early and never regenerated it.
+            rmSync(json);
+            expect(runStage(['daily-article', dir, STAMP, ''], env).status).toBe(0);
+            expect(existsSync(json)).toBe(true);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
 });
 
 describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
