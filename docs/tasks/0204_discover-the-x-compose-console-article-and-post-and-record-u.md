@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Discover the X compose console (article and post) and record UI draft drift
-status: backlog
+status: testing
 template: feature-impl
 created_at: 2026-10-05T17:59:49.913Z
-updated_at: "2026-10-06T16:50:43.775Z"
+updated_at: "2026-10-06T18:16:49.111Z"
 feature_id: E92
 
 ---
@@ -51,18 +51,57 @@ Rail: draft-only, operator-attended; stop immediately if the platform shows an a
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:101` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:4` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:54` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:67` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:7` |
+| `docs/tasks/0203_discover-the-substack-editor-and-record-ui-draft-drift.md:86` |
+| `docs/design/substack-ui-discovery.md:1` |
+| `docs/design/x-article-ui-discovery.md:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: FAIL (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | UNMET | observation |
+| R2 | UNMET | observation |
+| R3 | MET | observation |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC-1 | UNMET | static-ref | Per-mode evidence blocked on profile creation; blocker + baseline table recorded. |
+| AC-4 | PARTIAL | static-ref | No publish activation possible: nothing opened. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: FAIL)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P1 | evidence-rule-failed | — | Executable evidence missing for: AC-4 |
+| P4 | proof-input-digest | — |  |
+| P4 | confidence | — |  |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-06T18:14:53.389Z backlog → wip (system)
+- 2026-10-06T18:16:49.111Z wip → testing (system)
+
