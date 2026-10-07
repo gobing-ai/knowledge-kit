@@ -636,6 +636,14 @@ function dailyPrepare(args: string[]): void {
         sted('write', join(workDir, SAFETY_REVISE_COUNT), () =>
             writeFileSync(join(workDir, SAFETY_REVISE_COUNT), '0\n'),
         );
+        // Version-stamp the run: every later stage resolves `kk` from PATH, so name the binary
+        // this run will actually use (20261006 outage: a stale global kk pre-dated the revise
+        // loop and the skew was only visible after the fact).
+        const versionProbe = spawnSync('kk', ['--version'], { encoding: 'utf8', timeout: 10_000 });
+        const kkVersion = versionProbe.status === 0 ? versionProbe.stdout.trim() : 'unknown';
+        sted('write', join(workDir, 'kk-version.txt'), () =>
+            writeFileSync(join(workDir, 'kk-version.txt'), `${kkVersion}\n`),
+        );
         // Anchor for the workflow: shell actions cannot set vars, so the YAML reads the
         // effective work_dir back into vars.work_dir from this cwd-relative file.
         const anchorDir = join('.spur', 'runs', 'kk-daily-ai-voice');
