@@ -717,7 +717,9 @@ if (plugin === 'aihot-ingest') {
                     'daily-article-gen',
                     'dailynews-gen',
                     // suite cases: undefined -> default gemini-tts; 'ominivoice' -> omni branch.
-                    vdriver === 'ominivoice' ? 'omni-voice-gen' : 'gemini-tts',
+                    // 20261006 quota probe (7fd290b4): gemini runs render a tiny probe first,
+                    // so the call log carries gemini-tts twice (probe + episode).
+                    ...(vdriver === 'ominivoice' ? ['omni-voice-gen'] : ['gemini-tts', 'gemini-tts']),
                 ]);
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).
