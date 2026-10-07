@@ -1,0 +1,47 @@
+{
+    "run": {
+        "runId": "9e8d7c6b-aaaa-4bbb-8ccc-ddddeeeeffff",
+        "workflowName": "kk-itc",
+        "status": "failed",
+        "startedAt": "2026-10-07T08:20:00.000Z",
+        "completedAt": "2026-10-07T08:21:01.000Z",
+        "durationMs": 61000
+    },
+    "events": [
+        {
+            "kind": "action",
+            "node": "publish",
+            "actionKind": "shell",
+            "status": "failed",
+            "durationMs": 500,
+            "ok": false,
+            "error": "spur publish: exit 3 | channel \"wechatmp\" returned 502 | upstream said: retry later, the access token was rotated mid-request and the article body was rejected by the platform"
+        },
+        {
+            "kind": "action",
+            "node": "publish",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 100,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "check",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 200,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": {
+                    "totals": { "inputTokens": 10, "outputTokens": 20 },
+                    "cacheHit": null,
+                    "estimated": false
+                },
+                "estimated": null
+            }
+        }
+    ]
+}

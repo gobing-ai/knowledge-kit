@@ -18,6 +18,11 @@ import { join } from 'node:path';
  * consumer cannot silently skip the check, and finishes by emitting a repeatable artifact at
  * `.spur/run/verdict-confidence/summary.json`.
  *
+ * The `kk-collect` half (G31 R14) is the same seam one step downstream: `kk store label` emits the
+ * pass verdict whose level the workflow's `label` guard reads, so the fixture verdicts there are the
+ * label-result lines the emitter prints and the consumer is that guard — a missing or out-of-enum
+ * level is refused by name instead of being read as a pass.
+ *
  * The PRODUCER half is verified too, because a consumer that enforces an enum nobody emits is just a
  * gate that blocks every run (2026-10-04: three daily runs failed closed at `safety-judge`): the
  * `kk:content-judge` skill must keep declaring the enum and what each level means, its reference
@@ -30,13 +35,16 @@ const WORKFLOWS = join(REPO, 'plugins/kk/workflows');
 
 const ITC = 'plugins/kk/workflows/kk-itc.yaml';
 const EXAMPLE = 'plugins/kk/workflows/judge-gated-publish-example.yaml';
+const COLLECT = 'plugins/kk/workflows/kk-collect.yaml';
 const SKILL = 'plugins/kk/skills/content-judge/SKILL.md';
 const SKILL_REFERENCE = 'plugins/kk/skills/content-judge/references/workflow-integration.md';
+const LABEL_EMITTER = 'apps/cli/src/commands/store.ts';
 
 /**
  * The one confidence-aware verdict read. Every workflow guard and the skill's reference snippet must
  * carry it byte-identically: a `PASS` with a missing/out-of-enum `confidence` becomes `PASS!`, which
- * no accept guard matches.
+ * no accept guard matches. The `kk-collect` label guard is the newest reader of the same filter, so
+ * the label pass's own verdict is held to the contract its judge siblings already enforce.
  */
 const CONFIDENCE_JQ_FILTER =
     'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end';
@@ -87,14 +95,30 @@ function load(rel: string): Workflow {
     };
 }
 
+/** One executed guard: whether the transition was taken, plus what the guard printed. */
+interface GuardRun {
+    matched: boolean;
+    stdout: string;
+    stderr: string;
+}
+
 /**
- * Evaluate a guard the way the engine does: substitute every `${vars.*}` from the scenario table,
+ * Run one guard the way the engine does: substitute every `${vars.*}` from the scenario table,
  * export the same table as env vars (the engine also exports vars, which is how the example's
  * `$attempt` reads resolve), then run the real command string. Guards own their exit code
  * (0 = transition taken), so they need no `echo`/exit convention. Every referenced `${vars.*}` must
  * be in the table — an undeclared var is a workflow bug, not an empty string.
+ *
+ * A `${…}` the engine does not resolve from `vars` is a BUILTIN reference to it, not shell syntax
+ * (`${v:-<none>}` fails the run with `Workflow builtin "v:-<none>" is not defined`). This helper
+ * substitutes only `${vars.*}`, so it would hand such a template to bash and pass where the engine
+ * fails — hence the assertion: extend this helper before using another template shape, do not let
+ * the harness silently out-run the engine.
  */
-function matches(command: string, vars: Record<string, string>, cwd: string): boolean {
+function executeGuard(command: string, vars: Record<string, string>, cwd: string): GuardRun {
+    const templates = [...command.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1] ?? '');
+    const unsupported = templates.filter((name) => !name.startsWith('vars.'));
+    expect(unsupported, `${varRef('<name>')} templates the engine resolves as builtins, not shell`).toEqual([]);
     const missing = [...command.matchAll(VARS_REF)].map((m) => m[1]).filter((name) => !(name in vars));
     expect(missing, `scenario table covers every ${varRef('<name>')} in: ${command}`).toEqual([]);
     const resolved = command.replace(VARS_REF, (_all, name: string) => vars[name] ?? '');
@@ -104,11 +128,18 @@ function matches(command: string, vars: Record<string, string>, cwd: string): bo
         stdout: 'pipe',
         stderr: 'pipe',
     });
-    return result.exitCode === 0;
+    return { matched: result.exitCode === 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }
 
-/** The transitions leaving `state` that this scenario satisfies. */
-function route(workflow: Workflow, state: string, vars: Record<string, string>, cwd: string): string[] {
+/** Whether the guard's command string is taken in this scenario (exit code 0). */
+function matches(command: string, vars: Record<string, string>, cwd: string): boolean {
+    return executeGuard(command, vars, cwd).matched;
+}
+
+/**
+ * The transitions leaving `state` that this scenario satisfies. Each state's guards are disjoint by
+ * construction, so a fail-closed refusal must still leave exactly one — the caller asserts that.
+ */ function route(workflow: Workflow, state: string, vars: Record<string, string>, cwd: string): string[] {
     return workflow.transitions
         .filter((t) => t.from === state)
         .filter((t) => (t.command === null ? true : matches(t.command, vars, cwd)))
@@ -119,6 +150,18 @@ function route(workflow: Workflow, state: string, vars: Record<string, string>, 
 function scenarioVerdict(dir: string, verdict: unknown): string {
     const path = join(dir, '.itc-verdict.json');
     writeFileSync(path, typeof verdict === 'string' ? verdict : JSON.stringify(verdict));
+    return path;
+}
+
+/**
+ * Write one `kk store label` verdict line (the `label-result.txt` the workflow's label state
+ * produces) into `dir` and return its path. A `null` payload writes an EMPTY file, which is what a
+ * label pass that failed before printing leaves behind.
+ */
+function scenarioLabelResult(dir: string, payload: Record<string, unknown> | string | null): string {
+    const path = join(dir, 'label-result.txt');
+    if (payload === null) writeFileSync(path, '');
+    else writeFileSync(path, typeof payload === 'string' ? payload : JSON.stringify(payload));
     return path;
 }
 
@@ -245,6 +288,168 @@ describe('judge-gated-publish-example verdict → confidence routing', () => {
     it('an absent verdict file still walks the dry-run path (file-absent fail-open is unchanged)', () => {
         const dir = tempDir('kk-example-confidence-dryrun-');
         expect(route(example, 'judge', exampleVariables(join(dir, 'absent.json')), dir)).toEqual(['judge->publish']);
+    });
+});
+
+describe('kk-collect label verdict → confidence routing', () => {
+    const collect = load(COLLECT);
+
+    /** The workflow's own var defaults + the fixture work dir (the only var its guards read). */
+    const collectVariables = (dir: string): Record<string, string> => ({ ...collect.vars, work_dir: dir });
+
+    /**
+     * The engine's own rule (`ts-dual-workflow-engine` state-machine.js): outbound guards are
+     * evaluated in declaration order and the first passing one wins, an unguarded transition being
+     * unconditional. Modelling THAT — not "which guards are satisfied" — is what makes the
+     * no-deadlock assertion meaningful: `label -> release-failed` is unconditional, so a refused
+     * verdict still leaves the state instead of stranding the run.
+     */
+    const firstPassing = (state: string, vars: Record<string, string>, cwd: string): string | null => {
+        for (const transition of collect.transitions.filter((t) => t.from === state)) {
+            if (transition.command === null || matches(transition.command, vars, cwd)) {
+                return `${transition.from}->${transition.to}`;
+            }
+        }
+        return null;
+    };
+
+    /** The REAL `label -> <to>` guard command string, read out of the workflow (never copied). */
+    const labelGuard = (to: string): string => {
+        const transition = collect.transitions.find((t) => t.from === 'label' && t.to === to && t.command !== null);
+        if (transition?.command == null) throw new Error(`kk-collect declares no shell guard label->${to}`);
+        return transition.command;
+    };
+
+    it('the emitter is the verdict producer: it prints a PASS line with one level per row', () => {
+        const emitter = readFileSync(join(REPO, LABEL_EMITTER), 'utf-8');
+        const emitsVerdict = /verdict: 'PASS'/.test(emitter);
+        const derivesLevels = /labelConfidence\(/.test(emitter) && /verdictConfidence\(/.test(emitter);
+        expect(
+            record(
+                'kk-collect:producer-emits-one-level',
+                emitsVerdict && derivesLevels,
+                `${LABEL_EMITTER}: verdict line=${emitsVerdict}, level derivation=${derivesLevels}`,
+            ),
+        ).toBe(true);
+        expect(emitsVerdict).toBe(true);
+        expect(derivesLevels).toBe(true);
+    });
+
+    it.each([
+        ['PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH', labeled: 10, model: 10, fallback: 0 }, 'label->release'],
+        [
+            'PASS + MEDIUM',
+            { verdict: 'PASS', confidence: 'MEDIUM', labeled: 10, model: 5, fallback: 0 },
+            'label->release',
+        ],
+        [
+            'PASS + LOW (heuristic or degraded rows)',
+            { verdict: 'PASS', confidence: 'LOW', labeled: 5, model: 0, fallback: 5 },
+            'label->release',
+        ],
+        [
+            'PASS without a confidence field',
+            { verdict: 'PASS', labeled: 5, model: 5, fallback: 0 },
+            'label->release-failed',
+        ],
+        [
+            'PASS with a null confidence',
+            { verdict: 'PASS', confidence: null, labeled: 5, model: 5, fallback: 0 },
+            'label->release-failed',
+        ],
+        [
+            'PASS + out-of-enum confidence',
+            { verdict: 'PASS', confidence: 'SURE', labeled: 5, model: 5, fallback: 0 },
+            'label->release-failed',
+        ],
+        [
+            'PASS + lowercase confidence',
+            { verdict: 'PASS', confidence: 'high', labeled: 5, model: 5, fallback: 0 },
+            'label->release-failed',
+        ],
+        [
+            'PASS + numeric confidence',
+            { verdict: 'PASS', confidence: 1, labeled: 5, model: 5, fallback: 0 },
+            'label->release-failed',
+        ],
+        [
+            'PASS + empty-string confidence',
+            { verdict: 'PASS', confidence: '', labeled: 5, model: 5, fallback: 0 },
+            'label->release-failed',
+        ],
+        ['a label result with no verdict field', { labeled: 0, model: 0, fallback: 0 }, 'label->release-failed'],
+        ['an empty label-result file (the pass failed before printing)', null, 'label->release-failed'],
+        [
+            'a FAIL verdict',
+            { verdict: 'FAIL', confidence: 'HIGH', labeled: 0, model: 0, fallback: 0 },
+            'label->release-failed',
+        ],
+    ])('%s leaves the label state on exactly one edge', (name, payload, expected) => {
+        const dir = tempDir('kk-collect-label-');
+        scenarioLabelResult(dir, payload);
+        const taken = firstPassing('label', collectVariables(dir), dir);
+        expect(record(`kk-collect:${name}`, taken === expected, String(taken))).toBe(true);
+        expect(taken).toBe(expected);
+    });
+
+    it('names the offending value in the refusal and stays fail-closed, never deadlocked', () => {
+        const dir = tempDir('kk-collect-label-refusal-');
+        scenarioLabelResult(dir, { verdict: 'PASS', confidence: 'SURE', labeled: 5, model: 5, fallback: 0 });
+        const outOfEnum = executeGuard(labelGuard('release'), collectVariables(dir), dir);
+        expect(
+            record(
+                'kk-collect:refusal-names-out-of-enum',
+                !outOfEnum.matched && /confidence-refused/.test(outOfEnum.stderr) && outOfEnum.stderr.includes('SURE'),
+                outOfEnum.stderr.trim(),
+            ),
+        ).toBe(true);
+        expect(outOfEnum.matched).toBe(false);
+        expect(outOfEnum.stderr).toContain('kk-collect.label.confidence-refused');
+        expect(outOfEnum.stderr).toContain('SURE');
+
+        const missingDir = tempDir('kk-collect-label-missing-');
+        scenarioLabelResult(missingDir, { verdict: 'PASS', labeled: 5, model: 5, fallback: 0 });
+        const missing = executeGuard(labelGuard('release'), collectVariables(missingDir), missingDir);
+        expect(
+            record(
+                'kk-collect:refusal-names-missing',
+                !missing.matched && missing.stderr.includes('HIGH|MEDIUM|LOW') && missing.stderr.includes('<absent>'),
+                missing.stderr.trim(),
+            ),
+        ).toBe(true);
+        expect(missing.stderr).toContain('<absent>');
+
+        // Fail-closed WITHOUT deadlock: the unconditional `label -> release-failed` still fires.
+        expect(firstPassing('label', collectVariables(dir), dir)).toBe('label->release-failed');
+    });
+
+    it('a valid verdict is the only thing that reaches release (the refusal is not vacuous)', () => {
+        const dir = tempDir('kk-collect-label-valid-');
+        scenarioLabelResult(dir, { verdict: 'PASS', confidence: 'LOW', labeled: 1, model: 0, fallback: 1 });
+        const accepted = executeGuard(labelGuard('release'), collectVariables(dir), dir);
+        expect(record('kk-collect:valid-low-accepted', accepted.matched, accepted.stderr.trim())).toBe(true);
+        expect(accepted.matched).toBe(true);
+        expect(accepted.stderr).toBe('');
+    });
+
+    it('the label state keeps a shell guard for the scan to read (no silent parser gap)', () => {
+        // The consumer scans above read `command` off the parsed transitions; a label guard that
+        // stopped being a shell command would make every kk-collect check in this file vacuous.
+        const label = collect.transitions.filter((t) => t.from === 'label');
+        const shell = label.filter((t) => t.command !== null);
+        const unconditional = label.filter((t) => t.command === null);
+        // The guard reads its file through shell vars, never `${…}` (a non-`vars.*` template is a
+        // builtin reference to the engine and fails the whole run).
+        const templates = [...labelGuard('release').matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1] ?? '');
+        const ok = shell.length === 1 && unconditional.length === 1 && templates.every((n) => n.startsWith('vars.'));
+        expect(
+            record(
+                'parser:kk-collect.label',
+                ok,
+                `${shell.length} shell / ${unconditional.length} always; templates: ${templates.join(',')}`,
+            ),
+        ).toBe(true);
+        expect(ok).toBe(true);
     });
 });
 
@@ -403,7 +608,8 @@ describe('verdict-confidence artifact', () => {
             `${JSON.stringify(
                 {
                     generatedAt: new Date().toISOString(),
-                    contract: 'a judge verdict PASS requires confidence HIGH | MEDIUM | LOW',
+                    contract:
+                        'a judge verdict PASS requires confidence HIGH | MEDIUM | LOW, and so does the kk-collect label pass verdict',
                     ok: failed.length === 0,
                     failed,
                     checks,

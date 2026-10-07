@@ -1,0 +1,18 @@
+# ai-news topic profile (task 0210 R1, design kk-collect-and-daily-voice2.md §4).
+#
+# The episode pool for the daily AI-news workflow: every labelled item in the
+# launch/industry categories with a substantive body and real audience signal,
+# most time-sensitive first. `kk store extract --topic ai-news` compiles this into
+# one parameterized query over `items` + `labels` — a new topic is a new file here,
+# never a code change.
+#
+# Keys are decision ids from the sibling catalog (plugins/kk/decisions/kk-items.yaml);
+# an unknown key or decision id fails loud with `kk.store.profile.invalid`.
+# `limit` is omitted: the compiler's episode-cap default (20) applies unless
+# `kk store extract --limit` overrides it.
+topic: ai-news
+where:
+  kk-item-category: { in: [ai-news, ai-industry] }
+  kk-item-quality: { gte: 3 }
+  kk-item-importance: { gte: 3 }
+order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]

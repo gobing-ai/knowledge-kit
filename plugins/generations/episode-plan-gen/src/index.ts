@@ -19,7 +19,10 @@ import { echoError } from '@gobing-ai/ts-utils';
  * out — survivors to `--out`, rejection audit to `<out>.rejected.json`; env
  * `QC_CATEGORIES` (default 'ai-news,ai-industry'),
  * `QC_MIN_QUALITY/IMPORTANCE/URGENCY/IMPACT` (defaults 2/3/2/1 — 0099 recalibration);
- * invalid values exit 1 (fail loud, no clamping).
+ * invalid values exit 1 (fail loud, no clamping). `--mode label` (0209) is the
+ * labelling contract for `kk store label`: every input doc annotated
+ * (`metadata.category`, `metadata.scores`, `metadata.needs_model`), no cap, dedup or
+ * filter, written to `--out` with no audit sidecar.
  */
 
 /** Tunable scoring knobs (kept here so the shape is greppable, not config-filed). */
@@ -415,6 +418,41 @@ export function scoreDimensions(doc: Doc, planDate: string): DimensionScores {
     return { quality, importance, urgency, impact };
 }
 
+/**
+ * Does the keyword heuristic want a model second opinion on this doc?
+ *
+ * True exactly when the deterministic scan proves an AI signal (an AI-mapped tag, a
+ * curated AI source, or an AI keyword in the title/body head) but
+ * {@link classifyCategory} still files the doc `non-ai` — a deny rule (non-AI tag, junk
+ * phrase, non-AI source) outvoted the signal. Everything else is either confidently
+ * categorized or confidently non-AI, so `kk store label` keeps its heuristic rows and
+ * spends no model call (0209 R5).
+ */
+export function needsModelLabel(doc: Doc): boolean {
+    return classifyCategory(doc) === 'non-ai' && hasAiSignal(doc);
+}
+
+/**
+ * Any AI-side signal matches — the mirror of `classifyCategory`'s positive proof, so the
+ * two never disagree about what counts as evidence. `CATEGORY_KEYWORDS` holds AI
+ * categories only; the tag map and the curated-source set are filtered to non-`non-ai`.
+ */
+function hasAiSignal(doc: Doc): boolean {
+    const meta = asRecord(doc.metadata);
+    const tags = Array.isArray(meta.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [];
+    for (const tag of tags) {
+        const hit = TAG_CATEGORY[tag.toLowerCase()];
+        if (hit !== undefined && hit !== 'non-ai') return true;
+    }
+    const source = typeof meta.source === 'string' ? meta.source : '';
+    if (AI_DEFAULT_SOURCES.has(source)) return true;
+    const title = (doc.title ?? '').toLowerCase();
+    const bodyHead = (doc.body ?? '').slice(0, 200).toLowerCase();
+    return CATEGORY_KEYWORDS.some((row) =>
+        row.words.some((w) => matchesKeyword(title, w) || matchesKeyword(bodyHead, w)),
+    );
+}
+
 /** Composite 0..100-ish score; ordering matters more than absolute value. */
 export function planScore(doc: Doc): number {
     const meta = asRecord(doc.metadata);
@@ -638,8 +676,8 @@ function resolvePlanDate(): string {
 // kept/rejected split out (ADR-019 D3: QC is a visible, threshold-driven node).
 // ---------------------------------------------------------------------------
 
-/** Run modes: `plan` (default — the gated selection pipeline, unchanged) or `filter` (the QC gate). */
-export type GeneratorMode = 'plan' | 'filter';
+/** Run modes: `plan` (default — the gated selection pipeline, unchanged), `filter` (the QC gate) or `label` (annotation only, 0209). */
+export type GeneratorMode = 'plan' | 'filter' | 'label';
 
 /** The closed MECE taxonomy (the values `classifyCategory` emits) — filter allowlists validate against it. */
 const MECE_CATEGORIES: readonly Category[] = ['ai-news', 'ai-technical', 'ai-research', 'ai-industry', 'non-ai'];
@@ -862,7 +900,39 @@ export async function processGeneratorIO(
     outputPath: string,
     mode: GeneratorMode = 'plan',
 ): Promise<Content> {
-    return mode === 'filter' ? processFilterIO(inputPath, outputPath) : processPlanIO(inputPath, outputPath);
+    if (mode === 'filter') return processFilterIO(inputPath, outputPath);
+    if (mode === 'label') return processLabelIO(inputPath, outputPath);
+    return processPlanIO(inputPath, outputPath);
+}
+
+/**
+ * Label mode (0209 R3): annotate EVERY input doc — `metadata.category` and
+ * `metadata.scores` exactly as `planEpisode` writes them, plus `metadata.needs_model`
+ * ({@link needsModelLabel}) — with no cap, dedup, category gate or top-N selection.
+ *
+ * `kk store label` reads `metadata.docs` back and writes one `labels` row per decision,
+ * so this array IS the labelling contract; `planContent` is reused only as the Content
+ * wrapper (no audit sidecar — nothing was selected or rejected).
+ */
+export function labelDocs(docs: Doc[], planDate: string): Doc[] {
+    return docs.map((doc) => ({
+        ...doc,
+        metadata: {
+            ...asRecord(doc.metadata),
+            category: classifyCategory(doc),
+            scores: scoreDimensions(doc, planDate),
+            needs_model: needsModelLabel(doc),
+        },
+    }));
+}
+
+/** Label mode (0209): every input doc annotated, input order preserved → Content at `--out`. */
+async function processLabelIO(inputPath: string, outputPath: string): Promise<Content> {
+    const docs = DocListSchema.parse(await readJsonFile(inputPath));
+    const planDate = resolvePlanDate();
+    const content = planContent(labelDocs(docs, planDate), planDate);
+    await atomicWrite(outputPath, content);
+    return content;
 }
 
 /** Plan mode (default, behavior unchanged): blended `Doc[]` → gated/annotated plan Content + `<out>.audit.json` selection trail. */
@@ -915,9 +985,9 @@ export async function main(): Promise<number> {
     // The env rung exists because `kk executor run` spawns plugin entries with --in/--out only
     // (ADR-006, apps/cli/src/invoke.ts) and cannot forward extra CLI args.
     const mode = values.mode ?? process.env.EPISODE_PLAN_MODE ?? 'plan';
-    if (mode !== 'plan' && mode !== 'filter') {
+    if (mode !== 'plan' && mode !== 'filter' && mode !== 'label') {
         echoError(
-            `episode-plan-gen failed: unknown mode '${mode}' (from --mode flag or EPISODE_PLAN_MODE env; valid: plan, filter)`,
+            `episode-plan-gen failed: unknown mode '${mode}' (from --mode flag or EPISODE_PLAN_MODE env; valid: plan, filter, label)`,
         );
         return 1;
     }

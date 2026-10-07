@@ -66,6 +66,17 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 kk plugin check [<name>…] [--kind <kind>] [--json] [--headed] [--timeout <ms>]
                  [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin login <name> [--plugins-root <dir>] [--plugins-path <dir> …]
+kk store migrate [--db <path>]
+kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
+kk store lock release --name <lock> --run <id> [--db <path>]
+kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
+kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]
+kk store extract --topic <t> [--window 24h] [--limit <n>] [--exclude-used <workflow>]
+                 --out <Doc[].json> [--db <path>]
+kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]
+kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
+kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
+kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 ```
 
 | Command | Description | Status |
@@ -76,10 +87,21 @@ kk plugin login <name> [--plugins-root <dir>] [--plugins-path <dir> …]
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 | `plugin check` | Run each plugin's live readiness probe (`check` field, ADR-032; verdicts `verified`/`refused`/`error`/`unsupported`; §`plugin check`) | shipped (E93, 0215) |
 | `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215) |
+| `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
+| `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
+| `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs`, write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
+| `store label` | Label the ids `ingest` filed — one `labels` row per decision through the kk decision catalog, heuristic-first; prints `{verdict, confidence, labeled, model, fallback}` (§1.9) | shipped (task 0209; verdict confidence 0213) |
+| `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined); prints `{count}` (§1.9) | shipped (task 0210) |
+| `store mark-used` | Record the items one run used in `episode_usage` (idempotent); prints `{marked}` (§1.9) | shipped (task 0210) |
+| `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
+| `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
+| `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
-> registrations). The first-layer nouns are exactly `executor` and `plugin` (ADR-011, feature
-> **A21**); the engines shipped with **A2** / **B6** keep their flags and exit codes, only the
+> registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
+> extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206) and
+`ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208); the
+> engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
 > still reach the same engines but are not listed in `kk --help`. §1.5/§1.6 are callable today. The
 > spec's `--dedupe` flag is deliberately deferred, not shipped — see §1.5.
@@ -370,6 +392,193 @@ gitignored artifact) is never loaded and editing the runner takes effect without
 source fallback applies only to a genuine checkout whose package copy is missing. Runner and sidecar
 resolution, and the delegated stage names, are in §7.
 
+### 1.9 `store` — shipped (tasks 0206, 0208–0210)
+
+`kk store migrate [--db <path>]` brings the kk SQLite store's schema up to date. It is the first verb
+of the first-layer `store` noun, alongside `executor` / `plugin` / `stage`. It resolves the database
+path as explicit `--db` → `store.db_path` in the kk config → `.works/kk.db` (a leading `~` expands; a
+relative path resolves against cwd; the parent directory is created), applies every unjournaled
+migration from `packages/kk-store`'s append-only `KK_MIGRATIONS` list, and prints
+`{"db": <path>, "applied": <n>}`. It is **idempotent** — a second run against the same database
+reports `applied: 0` from the `__kk_store_migrations` journal, taking no write lock. A failure exits 1
+with `kk.store.migrate.failed: <cause>` (a `CommanderError` `main()` maps to the exit code).
+
+The store opens WAL (`PRAGMA journal_mode = WAL`) and `busy_timeout = 30000` on every open, and a
+failed migration closes the adapter before rethrowing, so a rejected open never leaks the handle.
+`packages/kk-store/src/db.ts` owns that sequence; the noun owns only path resolution and the printed
+shape. The schema is created from `defineTable(...).createTableSql`, so there is no hand-written DDL
+to drift — see §4 for the package surface and `.spur/rules/boundary/dao-boundary.yaml` for the
+ts-db/drizzle confinement rules.
+
+`kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]` takes the named
+single-flight lock through `LocksDao.acquire` and prints `{"acquired":true}`, or
+`{"skipped":"locked","holder":<run>}` — **both exit 0**: a skip is the scheduler's normal overlap
+answer, not a failure, and stdout is the lock contract the workflow's guard reads. The claim is
+re-entrant for the same `--run`, and a claim older than its recorded TTL is stolen, which is what
+covers a crashed holder. `--ttl` defaults to `7200000` (2 h: the observed 20261006 collection ran
+~32 min); `kk-collect` pins `--ttl 21600000` so a run is never overtaken mid-collect.
+`kk store lock release --name <lock> --run <id>` frees the lock **iff** that run still owns it and
+prints `{released}` (`false` when the claim was already stolen or released). Failure exits 1 with
+`kk.store.lock.failed: <cause>`.
+
+`kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]` is the collector's
+write path: it validates the input against `DocListSchema`, records the run's `collect_runs` row
+(`start` → `finish` with the counts), upserts through `ItemsDao.upsertDocs` (one batch, so a
+rejected write stores nothing) and prints `{inserted, updated, unchanged}`. `--new-ids` receives
+the ids the next label pass must decide: the inserted ids plus the already-stored ids whose content
+changed (whose `labels` rows the upsert deleted in the same batch). The DAO reports only the
+inserted half, so the invalidated half is derived from the stored `title`/`body` **before** the
+upsert — the two fields `content_hash` covers. Failure exits 1 with `kk.store.ingest.failed: <cause>`
+and writes no `--new-ids` file.
+
+`kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]`
+is the labelling pass over the ids the last `ingest` filed: the inserted items plus the already-stored
+items whose content changed. Each listed id gets **one `labels` row per decision** (`item_id`,
+`decision_id`, `value`, `score` for the 0–5 dimensions, `maker`, `source`
+(`heuristic` | `model` | `default`), `confidence` — the verdict's `HIGH | MEDIUM | LOW` level, never
+`null` for a row this pass writes — `run_id` (the `--run` value every row carries), `labeled_at`) — a
+new decision is a new row, never a schema change — and an id the store does not hold is skipped rather
+than failing the pass.
+
+Labelling is **heuristic-first**. The five decisions come from `plugins/kk/decisions/kk-items.yaml`,
+registered through `decisions.paths` in `.spur/config.yaml` and served by `spur decision run`:
+`kk-item-category` (MECE choice, fallback `non-ai`) plus `kk-item-quality|importance|urgency|impact`
+(0–5 score rubrics, fallback `2`). The keyword heuristic stays the plugin's: `kk store label` calls
+`kk executor run episode-plan-gen` with `EPISODE_PLAN_MODE=label`, which annotates **every** input Doc
+(`metadata.category`, `metadata.scores`, `metadata.needs_model`) with no cap, dedup or filter, so
+`apps/cli` imports no plugin source. In `heuristic` mode (the default) only items the heuristic files
+`non-ai` while seeing an AI signal are routed to `spur decision run <id> --param title=… --param
+source=… --evidence <body file> --maker <maker> --json`; `--mode decision` routes every item. A result
+with `source: default` (`no-backend`, `timeout`, `error`, `low-confidence`), an unparseable payload, an
+out-of-vocabulary value or a spawn failure stores the **heuristic value** with `source: default`: the
+pass exits 0 and a collect run never fails on labels. stdout is `{verdict, confidence, labeled,
+model, fallback}`, and the scratch under `<new-ids dir>/label/` is removed on the way out. Usage
+errors (a missing or malformed `--new-ids`, an unknown `--mode`) exit 1 with
+`kk.store.label.failed: <cause>`.
+
+**The confidence level (G31 R14, task 0213).** Every verdict this surface emits carries exactly one
+level from the closed `HIGH | MEDIUM | LOW` enum — the same vocabulary the judge-verdict gates and the
+`verification-confidence-level` rule use, in one contract rather than a fourth mechanism. The model's
+numeric 0–1 confidence is **mapped into the enum at this boundary and never stored**: `HIGH` at
+`>= 0.8`, `MEDIUM` at `>= 0.5`, `LOW` below it, and `LOW` for a keyword-heuristic row, a degraded
+`source: default` row or a model answer whose payload carried no number — only a model answer with
+evidence can earn more than `LOW`, and a missing level is never stored as `null` or silently
+defaulted. `labelConfidence(source, confidence)` is that mapping and `verdictConfidence(levels)` is
+the pass's own level (the weakest among its rows, `LOW` for an empty pass), both exported by
+`@gobing-ai/kk-store`. `labels.confidence` is declared `text` and holds exactly one of
+`HIGH | MEDIUM | LOW` — migration `0002` adds it as `TEXT` so a migrated database converges on a
+fresh one — and `labels.score` remains the separate 0–5 rubric value. The pass prints its verdict as `verdict: PASS` plus that level, which is what the
+`kk-collect` `label` guard reads — through the same confidence-aware `jq` filter the judge gates use,
+so a `PASS` whose level is missing or outside the enum reads as `PASS!`, is refused by name
+(`kk-collect.label.confidence-refused: verdict '<v>' carries confidence '<c>', not HIGH|MEDIUM|LOW`)
+and fails the run through `release-failed` instead of being read as a pass. Proof:
+`plugins/kk/tests/verdict-confidence.test.ts` executes the REAL guard string over fixture verdict
+lines (artifact `.spur/run/verdict-confidence/summary.json`); `apps/cli/tests/store-label.test.ts`
+proves the producer half against a temp store.
+
+`kk store extract --topic <t> [--window 24h] [--limit <n>] [--exclude-used <workflow>]
+--out <Doc[].json> [--db <path>]` is the read path an episode workflow starts from — the answer to
+"which stored items belong in this topic's pool?". The topic names a **profile file**
+(`plugins/kk/decisions/extract/<topic>.yaml`), resolved from the working checkout first and the
+installed package's own checkout second, exactly as `kk schedule render` resolves its templates;
+the CLI never spawns a plugin, so extraction neither ingests nor labels (§1.5 stays the only plugin
+entry).
+
+The profile shape is `{ topic, where, order, limit }`:
+
+```yaml
+topic: ai-news
+where:
+  kk-item-category: { in: [ai-news, ai-industry] }
+  kk-item-quality: { gte: 3 }
+  kk-item-importance: { gte: 3 }
+order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
+```
+
+`where` keys are decision ids from the kk item-label catalog (an unknown top-level key, an unknown
+decision id, a malformed predicate or a non-positive `limit` exits 1 with
+`kk.store.profile.invalid: <cause>`); each predicate is `{in: [...]}` or `{gte|gte: n}`. `order`
+entries are `"<decision-id> asc|desc"` or `"first_seen_at asc|desc"`, most significant first, with
+`i.id ASC` as the final tiebreak. `limit` defaults to the profile's own cap, or the episode cap
+(20) when the profile omits it; `--limit` overrides both.
+
+`packages/kk-store/src/profile.ts` owns `parseProfile` / `compileProfile`;
+`ItemsDao.selectByProfile` owns the SQL as one parameterized statement: a `labels` self-join per
+`where` key, `i.first_seen_at >= now - --window`, and a `NOT EXISTS (SELECT 1 FROM episode_usage …)`
+when `--exclude-used <workflow>` is given — so no SQL leaves `packages/kk-store`. A decision named
+only by `order` left-joins (an item without that label is sorted, not dropped), while a `where`
+decision with no `labels` row excludes the item: its join **is** the predicate.
+
+The pool is written to `--out` as `Doc[]` in the fan-in `blended.json` shape — `id`, `title`, `body`,
+`sourceUri`, `mediaType` and the stored metadata plus `metadata.labels: { <decision-id>: value }`
+(every stored answer for the item) — so `episode-plan-gen` consumes either file unchanged. stdout is
+`{count}` and the store is only read (no `items`/`labels`/`collect_runs` writes). An **empty pool**
+writes `[]`, prints `{"count":0}` and still exits 0: the workflow conditions on `count`, not on the
+exit code. `--window` must be `'<n>s|m|h|d'` and `--limit` a positive integer; every other failure
+(an unknown topic, a bad window or limit, an unreadable database) exits 1 with
+`kk.store.extract.failed: <cause>`.
+
+`kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]` writes the cross-day
+dedup ledger: one `episode_usage(item_id, workflow, run_id, used_at)` row per Doc in `--in`, keyed
+`(item_id, workflow, run_id)` so a retried run overwrites rather than duplicates and repeated ids in
+one input collapse to one row. The Doc's own `id` is the store id (`extract` emits it and
+`episode-plan-gen` spreads it). stdout is `{marked}`; a failure exits 1 with
+`kk.store.mark-used.failed: <cause>`. A later `extract --exclude-used <workflow>` then omits those
+items for **that workflow** — the invariant is per workflow, so a second run of the same workflow
+still never re-aired an item.
+
+### 1.10 `ledger` — shipped (task 0207)
+
+`kk ledger` maintains a per-workflow run ledger at `<works-dir>/<workflow>/ledger.md` (default
+`--works-dir .works`), rendered from `spur workflow trace --json` so every workflow — including
+future ones — gets authoritative timing and token figures without kk-owned timing files.
+
+| Arg / Option | Type | Required | Default | Description |
+| -------------- | ------ | ---------- | --------- | ------------- |
+| `--workflow <name>` | string | yes | — | Workflow name; selects `<works-dir>/<name>/ledger.md` |
+| `--run <run-id>` | string | yes (`append`) | — | Run id to render |
+| `--works-dir <dir>` | string | no | `.works` | Ledger root directory |
+| `--work-dir <dir>` | string | no | — | Workflow `work_dir`; source of `<node>.summary.txt` result cells |
+
+- `append` is the workflow's final node; `sync` is the first one, so a fail-fast DAG that never
+  reaches `append` still gets a row (see `docs/design/kk-collect-and-daily-voice2.md` §7).
+- Section shape: `## <startedAt UTC minute> · run <id first 8> · <status> · <XhYmZs> ·
+  tokens: <in>/<out> (+<n> unknown)` plus an `<!-- run:<full id> -->` marker. The marker is the
+  idempotency key: a run whose marker is already present is never appended twice, and `sync` skips
+  it. The file is append-only; `sync` writes at most once per invocation and reports the run ids it
+  added in `appended` (`[]` when nothing changed).
+- The step table (`| Step | Status | Duration | Tokens in/out | Result |`) groups `events[]`
+  entries with `kind: "action"` by `node`, in first-seen order; a node's several actions collapse
+  into one row (durations summed), and the row is `failed` when any of its actions failed.
+- Tokens are only ever reported figures: a step with no `agent.run` action renders `—`, an agent
+  step sums `cost.exact.totals.{inputTokens,outputTokens}`, and any agent action whose `cost.exact`
+  is null (including `cost.estimated`-only rows) renders `unknown` for the whole step and increments
+  the header's unknown count. Estimated usage is never rendered.
+- Result cells: the first line of `<work-dir>/<node>.summary.txt` when the file exists, else the
+  first failing action's `error`, else `ok`; pipes are escaped and the cell is cut to 120 chars.
+- Failures exit 1 with `kk.ledger.<reason>` and leave the ledger untouched: `run.running`,
+  `trace.not-found`, `trace.spawn-failed`, `trace.invalid`, `list.invalid`, `write.failed`.
+  `KK_SPUR_BIN` overrides the `spur` binary (tests, non-PATH installs).
+
+### 1.11 `schedule` — shipped (task 0208)
+
+`kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` prints the scheduling
+artifact for a shipped workflow from `plugins/kk/schedules/{launchd.plist.tmpl,cron.tmpl}`, with
+`{{repo}}` bound to the `--repo` checkout (default: cwd). **Installing it is an operator action** —
+`spur` has no scheduler and kk never writes a crontab or a `LaunchAgents` plist, so the command's
+only side effect is the text it prints (`plugins/kk/README.md` §Schedule documents the two
+install lines).
+
+| Platform | Rendered artifact |
+| ---------- | ------------------ |
+| `launchd` | plist for `ai.gobing.kk-collect`: `StartInterval` 14400 (4 h), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
+| `cron` | `0 */4 * * * cd <repo> && spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
+
+Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to the running
+package's copy, so a checkout without the templates still renders. An unknown schedule or platform
+exits 1 with `kk.schedule.render.failed: <cause>` and prints nothing — a typo must never emit a
+partial schedule.
+
 ## 2. Configuration keys
 
 Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness config stays under
@@ -482,6 +691,29 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 | `discoverPlugins(root)`, `discoverAllPlugins(opts)`, `resolvePluginRoots(opts)`, `listByKind`, `getByName` | functions | Per-root scan, merged multi-root discovery, root resolution, and registry filtering (ADR-012) |
 | `PluginRecord`, `PluginOrigin`, `DiscoverAllOptions`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types (`misplaced`, `kind_mismatch`, `shadowed` codes; `origin` on every record) |
 | `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()` | functions | Content → research-report markdown (frozen template) + `--in`/`--out` file/CLI wrapper (task 0058). **C5 (ADR-013):** drops the `## Outline` replay (applied to the byte-identical `plugins/kk/scripts/render-md.ts` copy too); references tail resolves cite ids to cached files |
+
+### `@gobing-ai/kk-store` (`packages/kk-store`)
+
+The kk-owned SQLite store (ADR-030): schema, embedded migrations, DAOs, and the store path resolver.
+It is the **only** package permitted to import `@gobing-ai/ts-db` or `drizzle-orm`, enforced by
+`.spur/rules/boundary/dao-boundary.yaml`. The public surface is deliberately ts-db-free — no ts-db
+type crosses `src/index.ts`.
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `openStore(opts)`, `Store`, `SQLITE_BUSY_TIMEOUT_MS` | function / interface / const | Lazily imports `createDbAdapter`, opens `{ driver: 'bun-sqlite', url: path }`, sets WAL + `busy_timeout`, applies `KK_MIGRATIONS`, returns the DAO bundle plus `appliedMigrations`; closes the adapter when a migration fails |
+| `resolveStorePath(configFile?, explicitPath?)`, `DEFAULT_STORE_DB_PATH` | function / const | `--db` → `store.db_path` → `.works/kk.db`; expands `~`, resolves a relative path against cwd, creates parent dirs. Async: file IO goes through ts-runtime's `FileSystem` seam (the repo's `no-direct-fs-io` rule), and config path is passed in because `apps/cli` depends on this package, never the reverse |
+| `canonicalUrl(url)`, `itemId(doc)` | functions | Pure identity helpers: lowercase scheme/host, drop the fragment and `utm_*`/`ref`/`ref_src`/`fbclid`/`gclid`, sort the remaining query params, strip the trailing slash (root excepted). `itemId` = `sha256(canonicalUrl)`, or `sha256(title + body)` for a URL-less Doc |
+| `ItemsDao`, `CollectRunsDao`, `LabelsDao`, `EpisodeUsageDao`, `LocksDao` | classes | ts-db `EntityDao` subclasses over `items`, `collect_runs`, `labels`, `episode_usage`, `locks`. `ItemsDao.upsertDocs(runId, docs)` upserts in one transaction and deletes that item's `labels` rows when `content_hash` changes; `LabelsDao.upsertLabel(input)` writes `value`/`score`/`confidence`/`run_id` per (item, decision), its `confidence` being the `HIGH \| MEDIUM \| LOW` verdict level (`labelConfidence(source, confidence)` maps the model's 0–1 payload into the enum, `verdictConfidence(levels)` is a pass's weakest level); `LocksDao.acquire(name, runId, ttlMs)` is the single-flight primitive (a stale holder is stolen past `acquired_at + ttl_ms`) |
+| `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `LabelConfidence`, `EpisodeUsageRecord`, `LockRecord`, … | types | Row and input types for the DAOs above; `LabelRecord.confidence` is the `HIGH \| MEDIUM \| LOW` level, `null` only on a row no `kk store label` pass wrote |
+
+Migrations are embedded `KkMigration[]` (`{id, sql}`, append-only; `0001_kk_store_init` + `0002_labels_confidence_run_id` today) whose
+DDL is derived from each `defineTable(...).createTableSql` — there is no hand-written DDL file — and
+journaled in `__kk_store_migrations(id TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`. A released id
+is never edited. Because a fresh `0001` derives its DDL from the live schema, it already carries any
+column a later migration adds; `applyKkMigrations` therefore skips (and reports) a `duplicate column
+name` from `ALTER TABLE … ADD COLUMN` while every other error fails closed, so a fresh database and
+one migrated from an older journaled `0001` converge on the same columns.
 
 ### `@gobing-ai/publish-harness` (`packages/publish-harness`)
 
@@ -793,6 +1025,7 @@ File: `.spur/config.yaml`
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
 | Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`gemini` -> gemini-tts default (2026-09-29), `voicebox` -> voice-gen, `ominivoice` -> omni-voice-gen; unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial); daily audio defaults to MP3 with ID3 tags (0171), and `intro-music` joins from the raw render to a distinct `.intro.wav` output (0176) (F61 destination; restructured 2026-09-06 by 0097); the `xhs-write`/`xhs-publish` pair appends a Xiaohongshu card draft (lead-item card plan agent.run -> pinned `xhs-card` x `xhs-knowledge` presets -> `kk stage daily-xhs-render` -> `kk stage daily-publish-xhs`, draft unless `xhs_live`) as an independent, non-blocking target that never enters `publish_status` (E8); the `wechat-publish` state appends a WeChat MP draft (article → `kk stage daily-publish-wechat` → `wechatmp-pub` console browser transport, draft unless `wechat_live`) on the same independent, non-blocking terms (2026-09-29); a publishing run (`publish_enabled`) passes the `safety-review` → `safety-judge` verdict gate between `script` and `review`/`wrap-docs` (0189 R10: `kk stage daily-safety-prep <work_dir> <run_date> <platforms>` + `kk:content-safety` agent.run + `kk:content-judge` compliance agent.run + `kk stage daily-safety-gate <work_dir> <run_date> <safety_max_revise>` → `safety_status` pass\|escalate\|exclude\|revise\|block; the safety verdict must carry a `HIGH\|MEDIUM\|LOW` confidence level — missing or out-of-enum values block (20261003); 20261005 the gate adjusts instead of halting: `revise` loops the drafts through `safety-revise` (`kk:content-safety` detect+revise agent.run + `kk stage daily-safety-revise`, budget `safety_max_revise`, default 2) back into `safety-review`, `exclude` drops the admission-blocked platforms from the run and publishes the rest (the stamp's `excludedPlatforms`, honoured by the per-target stages), escalate always pauses at `review` (20261007 operator decision: on the disposition contract only a finding marked `disposition:"escalate"` escalates — a report with no `disposition` field anywhere keeps the legacy any-RISK/escalate pause, fail-closed; gap/note/fix-class RISK on a clean pass lands in `exclude` at recorded risk with empty `excludedPlatforms`), and `daily-publish-prep` refuses drafts without a matching pass\|escalate\|exclude digest stamp — only draft-integrity findings (a PII finding on a blocked platform, or a must-pass `fail` outside the admission criteria), an out-of-contract verdict, or edited-after-review drafts reach `failed`); on a `block` the drafts are quarantined to `24-script/.quarantine-<run_date>-judge-block/` instead of being deleted, and the run continues to its normal terminal, so a rejected draft stays on disk for inspection rather than being re-judged in place (20261005); `daily-publish-classify` also records the independent channels' state (en/ja locales, XHS, WeChat, surfdash CMS re-sync) in `31-publish/<run_date>_17_publish_completeness.json` and warns on any gap — those channels never enter `publish_status`, so a hand-driven tail that skips them is otherwise invisible (20261003)|
+| kk-collect workflow | `docs/design/kk-collect-and-daily-voice2.md` §3, §5 | Product state-machine for standalone 4-hourly collection (task 0208, G31): `lock` (`kk ledger sync` + workspace composition + `kk store lock acquire`, a held claim routes `skipped`) → `collect` (`kk executor fan-in --source` aihot/last30days/horizon with the 45 m horizon leash + `kk stage daily-collect-facts`) → `store` (`kk store ingest`) → `label` (`kk store label --run … --new-ids …`, task 0209 — heuristic-first decision labels) → `release` (`kk store lock release` + `kk ledger append`); `collect`/`store`/`label` failures route to `release-failed` (a state-machine aborts on a failed action without transitioning, so those actions continue-on-error behind a positive-artifact guard) so the lock is never left behind. The `label` guard reads the pass verdict through the confidence-aware `jq` filter (task 0213, G31 R14): only `verdict: PASS` with a `HIGH|MEDIUM|LOW` confidence reaches `release`, and a missing or out-of-enum level is refused by name and routed to `release-failed` — fail-closed without deadlocking. Collection only: it never generates, renders audio or publishes, and the store is the sole state it shares with the daily workflow. `plugins/kk/schedules/` + `kk schedule render` provide the operator-installed 4 h launchd/cron trigger **shipped (task 0208)** |
 | kk-collect + daily voice2 | `docs/design/kk-collect-and-daily-voice2.md` | `@gobing-ai/kk-store` (ts-db SQLite, `store.db_path`, boundary rules), `kk store migrate\|lock\|ingest\|label\|extract\|mark-used`, `kk ledger append\|sync\|cutover-check`, `kk schedule render`, kk decision catalog + extraction profiles, 4h `kk-collect` state-machine, `kk-daily-ai-voice2` DAG (ADR-030/031, features G31 / G11 / G71 — **planned**) |
 | Daily voice script plan | `docs/design/daily-voice-script-plan.md` | `script-write` agent.run -> per-item script plan (intro/outro/lead/insight) under a checked-in style contract; dailynews-gen validates + builds from it, template fallback stamped `scriptSource` in the run report (F613 **shipped** 2026-09-25 by 0161+0162: `kk stage daily-script-style` snapshot, `script_write_enabled`+zh guarded `script-write` state with `onError: continue`, `NEWS_REPORT_SCRIPT_FILE` -> `脚本来源` line) |
 | Image-gen runtime fallback | `docs/features/D6_image-gen-runtime-fallback.md` | Opt-in `metadata.imageGen.fallback` on the image-gen envelope: absent = strict fail-fast (one provider, original error), `true` = retry down AUTO_ORDER (minus NEVER_AUTO), a list = retry in exactly that order; `metadata.attempts` records every failed provider try `{image, provider, model, errorClass, message}` (present only when non-empty), policy rejections never fall back, and each paid retry is WARN-logged on stderr first (D6 **shipped** 2026-09-25 by 0164–0166) |

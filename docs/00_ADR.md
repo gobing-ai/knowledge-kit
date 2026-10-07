@@ -1158,7 +1158,7 @@ illustration across failures is deferred until observed.
 
 ## ADR-030: Collected items live in a kk-owned SQLite store behind one package
 
-**Status:** Accepted (design) · **Date:** 2026-10-06
+**Status:** Accepted · **Date:** 2026-10-06 (feature G31 store, shipped — tasks 0206, 0208–0210)
 
 **Decision.** Collected `Doc[]`, their labels, collect provenance and episode usage persist in one SQLite file (`store.db_path`, default `<works_dir>/kk.db`) owned by a new `@gobing-ai/kk-store` workspace: `@gobing-ai/ts-db` adapter, drizzle schema, DAOs, versioned migrations, WAL + `busy_timeout`. ts-db is importable only inside `packages/kk-store`, drizzle only inside its `src/schema/` — enforced by `spur rule` boundary rules (spur `packages/domain` pattern). Labels come from a kk-owned `spur decision` catalog (heuristic first, model on demand, `source: default` on degrade); topic extraction is a profile file compiled to one DAO query. Markdown core-facts remain a per-run artifact.
 

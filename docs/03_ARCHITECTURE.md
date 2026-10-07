@@ -119,9 +119,15 @@ kk designs around: one action per node, no back-edges (loops → nested state-ma
 its wave's slowest node), and last-writer-wins `setVars` — DAG nodes pass data by files under
 `work_dir`. First user: `kk-daily-ai-voice2` (`docs/design/kk-collect-and-daily-voice2.md`).
 
-**Persistent store (accepted design — ADR-030; not yet built).** `@gobing-ai/kk-store` owns the
-only SQLite file (`store.db_path`); `kk store *` verbs are its sole CLI surface and the only
-ts-db importer (boundary rules). `kk-collect` writes it every 4h; DAG workflows read it.
+**Persistent store (shipped — ADR-030; tasks 0206, 0208–0210).** `@gobing-ai/kk-store` owns the
+only SQLite file (`store.db_path`); `kk store migrate|lock|ingest|label|extract|mark-used` is its
+sole CLI surface and the package is the only ts-db importer (boundary rules). `kk-collect` writes it
+every 4h; DAG workflows read it. `extract` compiles a topic profile
+(`plugins/kk/decisions/extract/<topic>.yaml`) into one `ItemsDao.selectByProfile` query — a
+`labels` self-join per `where` decision, `first_seen_at >= now - window`, `NOT EXISTS episode_usage`
+when `--exclude-used` — and writes the pool as `Doc[]` with the stored labels inlined under
+`metadata.labels`, so a new topic is a profile file rather than a pipeline. `mark-used` writes the
+cross-day dedup ledger (`episode_usage`), owner of the "never re-aired" invariant.
 
 ### XHS image-card path (ADR-024)
 

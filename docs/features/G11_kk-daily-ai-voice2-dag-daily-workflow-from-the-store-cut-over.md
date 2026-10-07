@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:37.329Z"
-updated_at: "2026-10-07T05:01:35.700Z"
+updated_at: "2026-10-07T06:44:03.001Z"
 ---
 
 # G11: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over
@@ -96,6 +96,15 @@ Scenario: R8 — Architecture docs record the DAG workflow decision
   When docs/00_ADR.md and docs/03_ARCHITECTURE.md are inspected
   Then ADR-031 records DAG product workflows with status shipped
   And the inert type parallel note in 03 is superseded
+@core
+Scenario: R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level
+  # covers: I23, I14
+  Given the voice2 safety sub-workflow, whose loop is review → judge → revise
+  When the judge verdict is read by the revise loop and by the gate that admits drafts to publish
+  Then every verdict carries exactly one confidence level from HIGH, MEDIUM, and LOW
+  And a verdict whose confidence is missing or outside that enum is refused and is never treated as a pass
+  And the refusal names the offending value and still leaves the loop a viable terminal state, so it cannot deadlock
+
 ```
 
 ## Tasks

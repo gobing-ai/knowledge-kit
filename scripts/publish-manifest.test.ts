@@ -81,13 +81,17 @@ describe('preparePublishedManifest', () => {
         const manifest = structuredClone(cliPkg);
         preparePublishedManifest(manifest, {
             catalog,
-            privateWorkspaceNames: new Set(['@gobing-ai/kk-core']),
+            // Must mirror `collectPrivateWorkspaceNames()` (scripts/publish.ts:24) — it globs
+            // `{apps,packages}/*/package.json` for `private: true`, so every private workspace
+            // package the CLI depends on belongs here. kk-store joined with task 0206.
+            privateWorkspaceNames: new Set(['@gobing-ai/kk-core', '@gobing-ai/kk-store']),
         });
         const deps = manifest.dependencies as Record<string, string>;
         for (const range of Object.values(deps)) {
             expect(range).not.toMatch(/^(catalog:|workspace:)/);
         }
         expect(deps['@gobing-ai/kk-core']).toBeUndefined();
+        expect(deps['@gobing-ai/kk-store']).toBeUndefined();
         expect(deps['@gobing-ai/ts-infra']).toBe(catalog['@gobing-ai/ts-infra']);
         expect(deps['@gobing-ai/ts-runtime']).toBe(catalog['@gobing-ai/ts-runtime']);
         expect(deps['@gobing-ai/ts-utils']).toBe(catalog['@gobing-ai/ts-utils']);

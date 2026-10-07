@@ -1,0 +1,326 @@
+{
+    "run": {
+        "runId": "b419ba8d-71cf-4a28-93f1-d064d2c712d0",
+        "workflowName": "task-pipeline",
+        "status": "done",
+        "startedAt": "2026-10-07T07:00:07.814Z",
+        "completedAt": "2026-10-07T07:14:12.341Z",
+        "durationMs": 844527,
+        "outcome": "success"
+    },
+    "events": [
+        {
+            "kind": "action",
+            "node": "precheck",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 250,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "precheck",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 29,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "precheck",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 580,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "precheck",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 17,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "precheck",
+            "actionKind": "doctor.probe",
+            "status": "done",
+            "durationMs": 13,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "implement",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 9,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "implement",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 0,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": null,
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "implement",
+            "actionKind": "command.gate",
+            "status": "done",
+            "durationMs": 334,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "implement",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 350,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "test",
+            "actionKind": "file.read.into-var",
+            "status": "done",
+            "durationMs": 2,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "test",
+            "actionKind": "file.read.into-var",
+            "status": "done",
+            "durationMs": 2,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "test",
+            "actionKind": "file.read.into-var",
+            "status": "done",
+            "durationMs": 2,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "test",
+            "actionKind": "proof.fingerprint",
+            "status": "done",
+            "durationMs": 462,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "test",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 111938,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "triage",
+            "actionKind": "decide",
+            "status": "done",
+            "durationMs": 0,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "triage",
+            "actionKind": "shell",
+            "status": "failed",
+            "durationMs": 81,
+            "ok": false,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "triage",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 64,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "triage",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 18,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "triage",
+            "actionKind": "decide",
+            "status": "done",
+            "durationMs": 324,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "triage",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 27,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "review",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 188000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": null,
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "review",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 8,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "verify",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 93000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": null,
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "verify",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 169000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": null,
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "verify",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 25,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "verify",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 28,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "record",
+            "actionKind": "run.artifact",
+            "status": "done",
+            "durationMs": 0,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "record",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 760,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "record",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 531,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "record",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 18,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "done",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 0,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "done",
+            "actionKind": "command.gate",
+            "status": "done",
+            "durationMs": 347,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "action",
+            "node": "done",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 0,
+            "ok": true,
+            "error": null
+        }
+    ]
+}

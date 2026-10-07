@@ -1,0 +1,13 @@
+# ai-research topic profile — the R5 fixture: a SECOND topic extracted from the
+# same store with no code change (task 0210 AC2).
+#
+# Same shape and same decision vocabulary as plugins/kk/decisions/extract/ai-news.yaml,
+# different predicates and order. `kk store extract --topic ai-research` copies this
+# into a temp checkout's profile directory at test time, so the shipped ai-news
+# profile is untouched.
+topic: ai-research
+where:
+  kk-item-category: { in: [ai-research] }
+  kk-item-quality: { gte: 2 }
+order: [kk-item-importance desc, first_seen_at desc]
+limit: 5

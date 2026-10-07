@@ -1,0 +1,15 @@
+# kk-collect — standalone 4-hourly collection into the kk store.
+#
+# Rendered by `kk schedule render kk-collect --platform cron --repo <checkout>`; kk never edits
+# the operator's crontab. Operator action (plugins/kk/README.md §Schedule) — MERGE, never replace:
+#
+#     crontab -l > /tmp/kk-collect.cron 2>/dev/null || :
+#     kk schedule render kk-collect --platform cron --repo "$PWD" >> /tmp/kk-collect.cron
+#     crontab /tmp/kk-collect.cron
+#
+# `kk store lock` is the single-flight guard, so an overlapping tick exits 0 without collecting.
+#
+# `mkdir -p` + an explicit PATH are load-bearing, not decoration: cron runs with a minimal PATH (no
+# `spur`/`kk`/`jq`/`bun`) and its `>>` redirect fails on a missing directory BEFORE the command runs,
+# so a bare line would produce no log and no tick. The README install steps mirror this.
+0 */4 * * * cd {{repo}} && mkdir -p .works/kk-collect && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" spur workflow run plugins/kk/workflows/kk-collect.yaml >> {{repo}}/.works/kk-collect/launchd.log 2>&1
