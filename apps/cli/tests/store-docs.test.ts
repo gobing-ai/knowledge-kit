@@ -18,7 +18,11 @@ import { join } from 'node:path';
  * 3. `docs/04_DESIGN.md` stops listing any of the six `kk store` verbs, or `kk schedule render`.
  * 4. `docs/05_FEATURES.md` records a G31 status that disagrees with the feature file — `done`
  *    while work is outstanding (the false status task 0210's R7 clause 4 forbids), or still
- *    `active` after the feature closed.
+ *    `active` after the feature closed. Invariant: the status cell contains `done` iff the
+ *    `docs/features/G31_*.md` frontmatter status is `done`. Substring match, not equality: 05
+ *    spells a completed row `✅ done`, so a bare-token compare never binds. Bound to the feature
+ *    file, never to a task WBS or phrase in the notes — those pin a transitional state and go red
+ *    on a correct sync.
  * 5. The G31 confidence-surface inventory (task 0213 R1) disappears, or one of its `file:line`
  *    anchors stops resolving (file gone, or line past EOF).
  *
@@ -78,7 +82,6 @@ describe('AC4 — the architecture docs record the store decision', () => {
         const featureStatus = read(`docs/features/${featureFile}`).match(/^status:\s*(\S+)/m)?.[1];
         expect(featureStatus).toBeDefined();
         expect(statusCell.includes('done')).toBe(featureStatus === 'done');
-        expect(row).toContain('0213');
     });
 
     it('the G31 confidence-surface inventory exists and every anchor resolves', () => {
