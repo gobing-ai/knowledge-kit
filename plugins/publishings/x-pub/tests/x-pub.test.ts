@@ -68,6 +68,8 @@ const TITLE_SELECTORS: readonly string[] = ARTICLE_SELECTORS.title;
 const PUBLISH_SELECTOR = ARTICLE_SELECTORS.publish[0];
 const ADD_PHOTOS_SELECTOR = ARTICLE_SELECTORS.addPhotos[0];
 const FILE_INPUT_SELECTOR = ARTICLE_SELECTORS.fileInput[0];
+/** The crop-dialog confirm the cover leg clicks (measured 2026-10-07, 0194); never a publish control. */
+const APPLY_SELECTOR = '[role="dialog"] button:has-text("Apply") >> visible=true';
 
 /** Signal the fake editor emits when scripted; `'none'` leaves the page on its current URL. */
 type PublisherSignal = 'url' | 'none';
@@ -81,6 +83,8 @@ interface FakePageOptions {
     missingTitle?: boolean;
     /** The Draft.js editor never receives the pasted HTML; the paste post-condition must fail. */
     emptyBody?: boolean;
+    /** The cover image never renders after Apply; the attachment post-condition must fail. */
+    coverAttached?: boolean;
     /** The X autosave: the editor URL rewrite that is the whole draft signal. */
     onPaste?: PublisherSignal;
     /** Signal emitted when the publish control is clicked. */
@@ -134,6 +138,8 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
                 if (options.onPaste === 'url') url = DRAFT_URL;
                 return true;
             }
+            // The cover-attachment probe is the only expression that asks for a rendered image.
+            if (expression.includes('twimg')) return options.coverAttached !== false;
             return options.emptyBody === true ? '' : 'Body.';
         },
     };
@@ -405,13 +411,25 @@ describe('x-pub plugin', () => {
             await rm(coverDir, { recursive: true, force: true });
         });
 
-        test('an absolute existing image cover is uploaded through the file input', async () => {
+        test('an absolute existing image cover uploads without the picker and confirms the crop dialog', async () => {
             const fake = makeFakeLauncher({ page: { onPaste: 'url' } });
             const result = await transport(fake).publish({ content, options: { coverPath } });
 
             expect(result.ok).toBe(true);
-            expect(fake.calls).toContain(`click:${ADD_PHOTOS_SELECTOR}`);
+            // Measured 2026-10-07 (0194): opening the picker swallows the set file — the flow sets
+            // the base input directly, clicks the crop dialog's Apply, and requires the render.
+            expect(fake.calls).not.toContain(`click:${ADD_PHOTOS_SELECTOR}`);
             expect(fake.calls).toContain(`setInputFiles:${FILE_INPUT_SELECTOR}|${coverPath}`);
+            expect(fake.calls).toContain(`click:${APPLY_SELECTOR}`);
+            expect(fake.calls.some((call) => call.startsWith('evaluate:') && call.includes('twimg'))).toBe(true);
+        });
+
+        test('a cover whose image never renders fails naming the attachment wait', async () => {
+            const fake = makeFakeLauncher({ page: { onPaste: 'url', coverAttached: false } });
+            const result = await transport(fake, 40).publish({ content, options: { coverPath } });
+
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('cover attachment');
         });
 
         test('metadata.coverImage is used when options.coverPath is absent', async () => {

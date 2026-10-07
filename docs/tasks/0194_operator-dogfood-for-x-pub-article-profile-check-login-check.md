@@ -1,13 +1,15 @@
 ---
 schema_version: 1
 name: "Operator dogfood for x-pub-article: profile-check login -> check -> one draft run; re-measure compose-articles URL/selectors/edit-URL pattern, with and without a cover"
-status: todo
+status: done
 template: issue
 created_at: 2026-10-05T13:41:38.888Z
-updated_at: "2026-10-07T17:59:28.579Z"
+updated_at: "2026-10-07T23:51:10.074Z"
 feature_id: E91
 
 dependencies: ["0214"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0194-verdict.json
 ---
 
 ## 0194. Operator dogfood for x-pub-article: profile-check login -> check -> one draft run; re-measure compose-articles URL/selectors/edit-URL pattern, with and without a cover
@@ -22,10 +24,10 @@ Operator prerequisites (blocking): (1) an X account that can create Articles, wh
 
 ### Requirements
 
-- [ ] R1. Dogfood the x article profile session on the operator profile (`~/.config/kk/browser-profiles/x`): `profile-check.ts login` resolves verified, then `profile-check.ts check` reports `verified`; record both outcomes, including whether the headless `check` passes or X needs headed. If the account has no Articles access, record that and stop.
-- [ ] R2. Re-measure the live composer contract against the plugin constants and record the drift for each item: `X_ARTICLES_URL` (`/compose/articles`), `ARTICLE_SELECTORS.write`/`title`/`body`/`addPhotos`/`fileInput`, whether the body paste works, the draft signal `ARTICLE_EDIT_RE` (`/compose/articles/edit/<id>`), `LIVE_URL_ID_RE`, and `LOGIN_URL_RE`. Observe `ARTICLE_SELECTORS.publish` for presence only; never click it.
-- [ ] R3. Run exactly two draft-only article runs through the real `XArticleBrowserTransport` via the plugin CLI (`operation: 'article'`), one without a cover and one with `coverPath`, each with an observed draft id from the edit URL. No publish control is activated at any point.
-- [ ] R4. Correct every stale constant found in R2 in `plugins/publishings/x-pub/src/index.ts` and pin it in `plugins/publishings/x-pub/tests/x-pub.test.ts`. Update the code comments that cite 0194 to say the values are measured, with the date.
+- [x] R1. Dogfood the x article profile session on the operator profile (`~/.config/kk/browser-profiles/x`): `profile-check.ts login` resolves verified, then `profile-check.ts check` reports `verified`; record both outcomes, including whether the headless `check` passes or X needs headed. If the account has no Articles access, record that and stop.
+- [x] R2. Re-measure the live composer contract against the plugin constants and record the drift for each item: `X_ARTICLES_URL` (`/compose/articles`), `ARTICLE_SELECTORS.write`/`title`/`body`/`addPhotos`/`fileInput`, whether the body paste works, the draft signal `ARTICLE_EDIT_RE` (`/compose/articles/edit/<id>`), `LIVE_URL_ID_RE`, and `LOGIN_URL_RE`. Observe `ARTICLE_SELECTORS.publish` for presence only; never click it.
+- [x] R3. Run exactly two draft-only article runs through the real `XArticleBrowserTransport` via the plugin CLI (`operation: 'article'`), one without a cover and one with `coverPath`, each with an observed draft id from the edit URL. No publish control is activated at any point.
+- [x] R4. Correct every stale constant found in R2 in `plugins/publishings/x-pub/src/index.ts` and pin it in `plugins/publishings/x-pub/tests/x-pub.test.ts`. Update the code comments that cite 0194 to say the values are measured, with the date.
 
 ### Acceptance Criteria
 
@@ -75,15 +77,46 @@ Pre-run state, 2026-10-07:
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Live dogfood on the operator profile (~/.config/kk/browser-profiles/x), measured 2026-10-07.
+
+**Session (R1).** `profile-check.ts login` exit 0 (4.4s; session persisted from the morning headed pass); `check` exit 0 `status:"verified"` — headed-only by `ARTICLE_CONFIG.checkHeadedOnly` (`plugins/publishings/x-pub/src/index.ts:221`), matching the 0216 headless login-wall measurement. Articles entitlement confirmed: the composer loads and draft entities are created.
+
+**Measured composer contract (R2).** `X_ARTICLES_URL` loads unredirected; `write` candidate 1 `[data-testid="empty_state_button_text"]` hits (`plugins/publishings/x-pub/src/index.ts:184`); **title drift**: `[data-testid="twitter-article-title"]` is a collapsed display div (`(Needs title)`) — the real `textarea[placeholder="Add a title"]` only mounts after clicking it; body candidate 1 `.DraftEditor-editorContainer [contenteditable="true"]` hits and `pasteHtml` lands (Draft.js); `addPhotos` ("Add photos or video") is present but **clicking the picker swallows the set file**; `fileInput` `[data-testid="fileInput"]` accepts image/jpeg,png,webp; the draft signal `ARTICLE_EDIT_RE` verified live (`/compose/articles/edit/2107977774007017472`, and both transport runs). `LIVE_URL_ID_RE` (`plugins/publishings/x-pub/src/index.ts:197`) and the publish controls were not exercised (draft-only; publish observed presence-only, never clicked; tweet composer untouched).
+
+**Fixes (R4).** (1) Title two-step in `runArticleFlow`: fill the textarea when attached, else click the display div first (`plugins/publishings/x-pub/src/index.ts:344-357`). (2) Cover leg rewritten: no picker click; after `uploadFile`, click the "Edit media" crop dialog's Apply (`plugins/publishings/x-pub/src/index.ts:381-383`) and require the cover to render via an `expectOutcome` probe (`plugins/publishings/x-pub/src/index.ts:384-392`, script at `plugins/publishings/x-pub/src/index.ts:441-443`). (3) `ARTICLE_SELECTORS` doc comment now carries the measured facts + date (`plugins/publishings/x-pub/src/index.ts:172-180`). Behavior pinned in `plugins/publishings/x-pub/tests/x-pub.test.ts` (Apply confirm + no-picker + attachment-failure cases; fake `coverAttached` flag).
+
+**Transport runs (R3).** Draft-only through `XArticleBrowserTransport` via the plugin CLI: no-cover run `ok:true` draft `2107978638767628288` (`.spur/run/0194-draft-result.json`); cover run `ok:true` draft `2107980698334453760` with in-flow attachment evidence (`.spur/run/0194-cover-result.json`). An earlier cover run (`2107978694187003904`) reported ok without attaching — the negative finding that drove the observed-outcome gate. Checks: `bun test plugins/publishings/x-pub` 37 pass / 0 fail; `bun run lint` exit 0.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | profile-check login exit 0 (4.4s, session persisted); check exit 0 status=verified headed-only (checkHeadedOnly: true; headless login-wall per 0216). Articles entitlement confirmed: composer loads and draft entities were created. |
+| R2 | MET | Live walk measured 2026-10-07: X_ARTICLES_URL loads unredirected (LOGIN_URL_RE unexercised this run; unauth -> /i/flow/login matches per 2026-10-06 discovery); write c1 [data-testid=empty_state_button_text] hit; title is TWO-STEP (twitter-article-title div shows '(Needs title)', real textarea[placeholder='Add a title'] mounts on click); body c1 .DraftEditor-editorContainer [contenteditable=true] hit, pasteHtml ok; addPhotos button present ('Add photos or video') but its click swallows the set file; fileInput [data-testid=fileInput] accept image/jpeg,png,webp; ARTICLE_EDIT_RE verified (/edit/2107977774007017472 et al.); LIVE_URL_ID_RE and publish controls unexercised/presence-only (draft-only). |
+| R3 | MET | Run 1 no cover: ok=true draft 2107978638767628288 (.spur/run/0194-draft-result.json). Run 2 with cover: ok=true draft 2107980698334453760, cover attachment observed in-flow (expectOutcome 'cover image rendered in composer') after Apply (.spur/run/0194-cover-result.json). Publish control never activated; tweet composer untouched. |
+| R4 | MET | Title two-step implemented in runArticleFlow (index.ts:344-356); cover leg rewritten: no picker click, Apply confirm, observed-attachment gate (index.ts:369-392, coverAttachedScript index.ts:441); ARTICLE_SELECTORS comment updated to measured facts + date (index.ts:172-180); behavior pinned in tests/x-pub.test.ts (37 pass, incl. new Apply/attachment cases). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | cli | login exit 0; check JSON status=verified (headed) |
+| AC2 | MET | probe | Drift found and fixed: title mounts on display-div click; cover picker click harmful. Recorded in Solution; corrected+dated in src, pinned in tests |
+| AC3 | MET | transport-run | Two draft-only CLI runs ok=true with edit-URL draft ids; cover run shows in-flow attachment evidence; no publish activation |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -92,3 +125,8 @@ Pre-run state, 2026-10-07:
 - `plugins/publishings/x-pub/src/profile-check.ts`
 
 ### History
+
+- 2026-10-07T23:32:25.534Z todo → wip (system)
+- 2026-10-07T23:50:20.564Z wip → testing (system)
+- 2026-10-07T23:51:10.060Z testing → done (system)
+

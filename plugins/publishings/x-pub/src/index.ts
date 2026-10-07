@@ -171,8 +171,14 @@ export const LOGIN_URL_RE = /(\/i\/flow\/login|\/login)/;
 
 /**
  * Selectors seeded from the wt script (`x-article-playwright.ts:143-187`); each list is tried in
- * order and the operator dogfood (0194) re-measures them. The seed's `tweetButton`/`Tweet`
- * candidates are dropped: they belong to the tweet composer, and clicking one would post a tweet.
+ * order. Measured live 2026-10-07 (0194): `write` candidate 1 and body candidate 1 hit; the title
+ * is a two-step interaction — the `twitter-article-title` div is a collapsed display that mounts
+ * the real `textarea[placeholder="Add a title"]` on click (handled in `runArticleFlow`); the
+ * paste into the Draft.js container and the `/compose/articles/edit/<id>` signal were both
+ * verified. `addPhotos` (`button[aria-label*="Add photos" i]`, "Add photos or video") is present
+ * but is NOT clicked in the flow: opening the picker detaches the fileInput's handler and swallows
+ * the set file (see the cover leg in `runArticleFlow`). The seed's `tweetButton`/`Tweet` candidates are dropped: they belong to the tweet
+ * composer, and clicking one would post a tweet.
  */
 export const ARTICLE_SELECTORS = {
     write: ['[data-testid="empty_state_button_text"]', 'button:has-text("Write")', '[aria-label*="Write" i]'],
@@ -335,7 +341,15 @@ export class XArticleBrowserTransport implements PublishTransport {
         });
         await page.locator(writeSelector).first().click();
 
-        const titleSelector = await resolveSelector(page, ARTICLE_SELECTORS.title, {
+        // X collapses the title into a display div (`[data-testid="twitter-article-title"]`, text
+        // `(Needs title)`); the real `textarea[placeholder="Add a title"]` is only mounted after
+        // that div is clicked (measured live 2026-10-07, 0194). So: fill the textarea when it is
+        // already attached, otherwise click the display div and fill the textarea it mounts.
+        const titleInput = ARTICLE_SELECTORS.title[0];
+        if ((await page.locator(titleInput).first().count()) === 0) {
+            await page.locator(ARTICLE_SELECTORS.title[1]).first().click({ timeout: this.stepTimeoutMs });
+        }
+        const titleSelector = await resolveSelector(page, [titleInput], {
             timeoutMs: this.stepTimeoutMs,
             label: 'title input',
         });
@@ -353,17 +367,27 @@ export class XArticleBrowserTransport implements PublishTransport {
         await pasteHtml(page, bodySelector, markdownToHtml(content.body), { timeoutMs: this.stepTimeoutMs });
 
         if (coverPath !== undefined) {
-            // The photo picker is opened by a control when the composer renders it; the file input
-            // itself is routinely hidden behind it, so it is found by attachment (R2).
-            const addPhotos = await trySelectors(page, ARTICLE_SELECTORS.addPhotos, { visible: false });
-            if (addPhotos.found && addPhotos.selector !== null) {
-                await page.locator(addPhotos.selector).first().click();
-            }
+            // The base `fileInput` handles a set file directly: X itself opens an "Edit media" crop
+            // dialog, and the cover attaches only when that dialog is confirmed with Apply.
+            // Clicking the add-photos picker first detaches that handler — a file set while the
+            // picker is open uploads nothing (measured live 2026-10-07, 0194). So: set the file,
+            // click Apply, and require the cover image to render (E91-D6: observed outcome only).
             const fileInputSelector = await resolveSelector(page, ARTICLE_SELECTORS.fileInput, {
                 timeoutMs: this.stepTimeoutMs,
                 label: 'cover file input',
             });
             await uploadFile(page, fileInputSelector, coverPath, { timeoutMs: this.stepTimeoutMs });
+            // The crop dialog renders two identical "Edit media" layers; click the visible Apply.
+            await page
+                .locator('[role="dialog"] button:has-text("Apply") >> visible=true')
+                .first()
+                .click({ timeout: this.stepTimeoutMs });
+            const attached = await expectOutcome(
+                async () =>
+                    (await page.evaluate(coverAttachedScript())) === true ? 'cover image rendered in composer' : null,
+                { timeoutMs: this.stepTimeoutMs, label: 'cover attachment' },
+            );
+            if (!attached.ok) return fail(attached.error);
         }
 
         const draft = await expectOutcome(() => probeDraft(page), {
@@ -411,6 +435,11 @@ export class XArticleBrowserTransport implements PublishTransport {
 async function probeDraft(page: Page): Promise<string | null> {
     const url = page.url();
     return ARTICLE_EDIT_RE.test(url) ? url : null;
+}
+
+/** DOM probe script: true once a non-avatar twimg image — the just-attached cover — is rendered. */
+function coverAttachedScript(): string {
+    return `[...document.querySelectorAll('img[src*="twimg"]')].some((img) => !/profile_images/.test(img.src ?? ''))`;
 }
 
 /** Live evidence is URL-only too: a published article URL that left the `/edit/` composer. */
