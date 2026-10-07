@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned stages
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-07T22:04:30.799Z"
+updated_at: "2026-10-07T23:33:58.911Z"
 feature_id: G11
 priority: P1
 tags:
@@ -14,6 +14,8 @@ tags:
 estimate_hours: 10
 
 dependencies: ["0210", "0207"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0211-verdict.json
 ---
 
 ## 0211. kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned stages
@@ -30,28 +32,28 @@ Design: docs/design/kk-collect-and-daily-voice2.md §6. Engine facts were verifi
 
 ### Requirements
 
-- [ ] R1. `plugins/kk/workflows/kk-daily-ai-voice2.yaml` uses `kind: dag` with the node map of design §6. `spur workflow validate` passes and `kk-daily-ai-voice.yaml` stays byte-identical.
-- [ ] R2. Head chain, in single-node waves:
+- [x] R1. `plugins/kk/workflows/kk-daily-ai-voice2.yaml` uses `kind: dag` with the node map of design §6. `spur workflow validate` passes and `kk-daily-ai-voice.yaml` stays byte-identical.
+- [x] R2. Head chain, in single-node waves:
   - `prepare`: `kk ledger sync --workflow kk-daily-ai-voice2`, plus the work dir and run date written to fixed files.
   - `read-work-dir` / `read-run-date`: `file.read.into-var`.
   - `extract`: `kk store extract --topic ai-news --window ${vars.window} --exclude-used kk-daily-ai-voice2 --out ${vars.work_dir}/10-collect/pool.json`.
 
   The head chain has no collect, ingest or label node, and there is no `setVars` or `file.read.into-var` after `extract`.
-- [ ] R3. Every node action is exactly one of: a `kk` command, an `agent.run`, `spur workflow run …`, or `file.read.into-var` (head chain only). There is no `bun -e`, inline jq or path arithmetic. Nodes exchange data only through fixed paths under `${vars.work_dir}`.
-- [ ] R4. `plugins/kk/workflows/kk-daily-safety.yaml` is a `kind: state-machine` ported from the current `safety-review` / `safety-judge` / `safety-revise` states, bounded by `safety_max_revise`. The voice2 `safety` node runs `spur workflow run plugins/kk/workflows/kk-daily-safety.yaml --vars '{"work_dir":…,"run_date":…}'`, which blocks and exits non-zero only on `block` or an integrity failure. The operator `review` node follows with `pause: true`.
-- [ ] R5. Every fan-out root after `extract` has `condition: { kind: shell, command: "kk store pool-count ${vars.work_dir}/10-collect/pool.json --min 1" }`, or the equivalent guard that 0210's `{count}` output supports. `run-report` and `ledger` list `extract` in `dependsOn`, so an empty pool runs them and they record `no-content`.
-- [ ] R6. Soft channels (xhs, wechat, locales) keep their exit-0-on-soft-failure kk stages. `publish-classify` uses `dependsOn` on every publish leaf with policy `all`. With `publish_enabled=false`, a condition skips the publish subtree.
-- [ ] R7. Any stage voice2 touches moves from `plugins/kk/scripts/kk-workflow-stages.ts` into its owning plugin or a `kk` subcommand, together with its tests, and voice still calls it through the same `kk stage` name (thin delegate). Untouched voice-only stages stay.
-- [ ] R8. `mark-used` (`kk store mark-used --workflow kk-daily-ai-voice2 --run … --in <plan docs>`) runs after `publish-classify`. `ledger` (`kk ledger append`) is the final node.
+- [x] R3. Every node action is exactly one of: a `kk` command, an `agent.run`, `spur workflow run …`, or `file.read.into-var` (head chain only). There is no `bun -e`, inline jq or path arithmetic. Nodes exchange data only through fixed paths under `${vars.work_dir}`.
+- [x] R4. `plugins/kk/workflows/kk-daily-safety.yaml` is a `kind: state-machine` ported from the current `safety-review` / `safety-judge` / `safety-revise` states, bounded by `safety_max_revise`. The voice2 `safety` node runs `spur workflow run plugins/kk/workflows/kk-daily-safety.yaml --vars '{"work_dir":…,"run_date":…}'`, which blocks and exits non-zero only on `block` or an integrity failure. The operator `review` node follows with `pause: true`.
+- [x] R5. Every fan-out root after `extract` has `condition: { kind: shell, command: "kk store pool-count ${vars.work_dir}/10-collect/pool.json --min 1" }`, or the equivalent guard that 0210's `{count}` output supports. `run-report` and `ledger` list `extract` in `dependsOn`, so an empty pool runs them and they record `no-content`.
+- [x] R6. Soft channels (xhs, wechat, locales) keep their exit-0-on-soft-failure kk stages. `publish-classify` uses `dependsOn` on every publish leaf with policy `all`. With `publish_enabled=false`, a condition skips the publish subtree.
+- [x] R7. Any stage voice2 touches moves from `plugins/kk/scripts/kk-workflow-stages.ts` into its owning plugin or a `kk` subcommand, together with its tests, and voice still calls it through the same `kk stage` name (thin delegate). Untouched voice-only stages stay.
+- [x] R8. `mark-used` (`kk store mark-used --workflow kk-daily-ai-voice2 --run … --in <plan docs>`) runs after `publish-classify`. `ledger` (`kk ledger append`) is the final node.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — kk-daily-ai-voice2 is a DAG that starts from the store
-- [ ] AC2 — Independent branches of the daily DAG run concurrently and fan in
-- [ ] AC3 — Empty pool ends the daily DAG as no-content, not failed
-- [ ] AC4 — Every DAG node is a single kk command with plugin-owned logic
-- [ ] AC5 — The safety revise loop runs as a nested state-machine sub-workflow
-- [ ] AC6 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level
+- [x] AC1 — kk-daily-ai-voice2 is a DAG that starts from the store
+- [x] AC2 — Independent branches of the daily DAG run concurrently and fan in
+- [x] AC3 — Empty pool ends the daily DAG as no-content, not failed
+- [x] AC4 — Every DAG node is a single kk command with plugin-owned logic
+- [x] AC5 — The safety revise loop runs as a nested state-machine sub-workflow
+- [x] AC6 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level
 
 Testing: before writing code, list every way the unit can fail (failure-first list in the task), then code; prove behavior with one E2E-style bun:test over a temp dir / temp DB, leaving a repeatable artifact under .works/test-artifacts/.
 
@@ -95,30 +97,64 @@ Additional declared surfaces: `apps/cli/tests/commands/**` (R7 moves stages into
 
 ### Plan
 
-- [ ] Failure-first list (empty pool, one branch fails, soft channel fails, safety block, revise bound hit, pause/resume of the operator review, publish disabled, sub-workflow binary missing).
-- [ ] `kk-daily-safety.yaml` from the current safety states; validate; run it on a fixture script dir.
-- [ ] voice2 node map; validate; dry run with `publish_enabled=false`.
-- [ ] Move touched stages into plugins / kk subcommands with their tests.
-- [ ] E2E `apps/cli/tests/voice2-dag.test.ts`, with stub agent nodes via a fake executor and a seeded store:
+- [x] Failure-first list (empty pool, one branch fails, soft channel fails, safety block, revise bound hit, pause/resume of the operator review, publish disabled, sub-workflow binary missing).
+- [x] `kk-daily-safety.yaml` from the current safety states; validate; run it on a fixture script dir.
+- [x] voice2 node map; validate; dry run with `publish_enabled=false`.
+- [x] Move touched stages into plugins / kk subcommands with their tests.
+- [x] E2E `apps/cli/tests/voice2-dag.test.ts`, with stub agent nodes via a fake executor and a seeded store:
   - assert wall time ≈ the slowest branch for the article/cover/script wave;
   - publish-classify waits for all leaves;
   - an empty store gives a run that is done, with the ledger reading no-content.
 
   Copy the traces and ledger to `.works/test-artifacts/0211/`.
-- [ ] `docs/04_DESIGN.md` + satellite §6 sync; `bun run gate`.
-- [ ] Safety sub-workflow judge verdicts carry HIGH|MEDIUM|LOW (AC6): read the confidence from the verdict in the revise loop and in the draft-admission gate through the shared confidence-aware filter, and prove with fixtures that a missing/out-of-enum level is refused, named, and never deadlocks the loop (pattern: plugins/kk/tests/verdict-confidence.test.ts).
+- [x] `docs/04_DESIGN.md` + satellite §6 sync; `bun run gate`.
+- [x] Safety sub-workflow judge verdicts carry HIGH|MEDIUM|LOW (AC6): read the confidence from the verdict in the revise loop and in the draft-admission gate through the shared confidence-aware filter, and prove with fixtures that a missing/out-of-enum level is refused, named, and never deadlocks the loop (pattern: plugins/kk/tests/verdict-confidence.test.ts).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**R7 landed (852f5b0c, c8ab8179 on sp/0211-daily-voice2).** The 24 voice2-touched `daily-*` stage bodies moved out of the runner into a plugin-owned sibling `plugins/kk/scripts/daily-stages.ts`, loaded lazily by the runner's `kk stage <name>` dispatcher (itc-stages.ts precedent — same `kk stage` surface, plugin-shippable bodies). 57 shared helpers are exported from `plugins/kk/scripts/kk-workflow-stages.ts:1` region for the sibling's destructured imports (lazy-load cycle is ESM-safe; biome has no noImportCycles here). The 6 old-voice-only stages (dailyPrepare, dailyCollectFacts, dailyPublishClassify→`kk daily`, dailyPublishPartial, dailyPatchSurfdash, dailyRunReport) stay in the runner until `kk-daily-ai-voice.yaml` retires (design §8).
+
+Tension recorded: destination is `plugins/kk/scripts/` (capability scripts), not a product plugin kind dir — stage logic is agent-capability-adjacent; revisit if a `scripts` kind ever formalizes.
+
+Codemod lessons (applied in /tmp/stages-apply3.ts): export-prefix must land on the decl line, not an absorbed comment start (`export //` is invalid and biome strips it); rebuild-from-HEAD ground truth caught a stale pre-rebase input early. Gate compliance fixes rode along as c8ab8179: store.ts countPoolItems via FileSystem seam (`apps/cli/src/commands/store.ts:31` region), daily.ts bound-local parse bindings (`apps/cli/src/commands/daily.ts:100` region), sync-structural daily.ts added to `.spur/rules/strict/runtime-boundaries.yaml` allowlist (same class as stage.ts), coverage restored by `apps/cli/tests/commands/daily.test.ts:281` region (works-dir resolution incl. corrupt-config fallthrough, run-report no-candidates/cached paths, malformed-targets fold).
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/kk/workflows/kk-daily-ai-voice2.yaml:1 is kind: dag with the §6 node map; validate run recorded in Testing; kk-daily-ai-voice.yaml absent from branch diff (byte-identical) (feature R1) |
+| R2 | MET | plugins/kk/workflows/kk-daily-ai-voice2.yaml head chain (ledger sync, anchors, file.read.into-var, kk store extract --exclude-used); asserted in apps/cli/tests/voice2-dag.test.ts:1 head-chain suite (feature R1) |
+| R3 | MET | apps/cli/tests/voice2-dag.test.ts:1 rejects bun -e/jq/path arithmetic; all node actions are kk commands, agent.run, spur workflow run or file.read.into-var (feature R4) |
+| R4 | MET | plugins/kk/workflows/kk-daily-safety.yaml:1 kind: state-machine, bounded by safety_max_revise; voice2 safety node runs spur workflow run with work_dir/run_date; review node pause: true (apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:1) (feature R5) |
+| R5 | MET | apps/cli/tests/voice2-dag.test.ts:1 fan-out condition kk store pool-count --min 1, run-report/ledger dependOn extract, empty-pool no-content E2E; apps/cli/tests/commands/daily.test.ts:1 run-report no-content paths (feature R3) |
+| R6 | MET | apps/cli/tests/voice2-dag.test.ts:1 publish-classify dependsOn every publish leaf policy all + publish_enabled=false condition; soft channels keep exit-0 kk stages (feature R4) |
+| R7 | MET | plugins/kk/scripts/daily-stages.ts:1 (24 moved daily-* bodies, plugin-owned); lazy dispatch via plugins/kk/scripts/kk-workflow-stages.ts kk stage <name>; tests follow the move (apps/cli/tests/kk-workflow-stages.test.ts:1, kk-daily-ai-voice-workflow.test.ts:1 runnerSource concat, plugins/kk/tests/verdict-confidence.test.ts:1); 6 untouched voice-only stages remain in runner (feature R4) |
+| R8 | MET | plugins/kk/workflows/kk-daily-ai-voice2.yaml orders mark-used after publish-classify with ledger append final; asserted in apps/cli/tests/voice2-dag.test.ts:1 (feature R1) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: R1 — kk-daily-ai-voice2 is a DAG that starts from the store | MET | test | apps/cli/tests/voice2-dag.test.ts:1 dag-shape suite |
+| Scenario: R2 — Independent branches of the daily DAG run concurrently and fan in | MET | test | apps/cli/tests/voice2-dag.test.ts:1 fan-out/fan-in assertions |
+| Scenario: R3 — Empty pool ends the daily DAG as no-content, not failed | MET | test | apps/cli/tests/voice2-dag.test.ts:1 + apps/cli/tests/commands/daily.test.ts:1 no-content tests |
+| Scenario: R4 — Every DAG node is a single kk command with plugin-owned logic | MET | test | apps/cli/tests/voice2-dag.test.ts:1 action allowlist + plugins/kk/scripts/daily-stages.ts:1 |
+| Scenario: R5 — The safety revise loop runs as a nested state-machine sub-workflow | MET | test | plugins/kk/workflows/kk-daily-safety.yaml:1 + apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:1 |
+| Scenario: R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level | MET | test | plugins/kk/tests/verdict-confidence.test.ts:1 (54 pass) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -129,3 +165,8 @@ Additional declared surfaces: `apps/cli/tests/commands/**` (R7 moves stages into
 - **Recovery notes (gitignored):** `.spur/run/4606d18a-5223-46e1-9d8d-d8887db48807-implement-partial.md`; `/Users/robin/.pi/agent/checkpoints/g31-runall-checkpoint.md`.
 
 ### History
+
+- 2026-10-07T23:28:13.920Z todo → wip (system)
+- 2026-10-07T23:28:14.896Z wip → testing (system)
+- 2026-10-07T23:33:58.876Z testing → done (system)
+
