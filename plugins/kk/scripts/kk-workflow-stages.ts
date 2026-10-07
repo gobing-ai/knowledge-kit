@@ -1662,6 +1662,12 @@ function dailySafetyGate(args: string[]): void {
         const risky = usesDisposition
             ? escalatedFindings.length > 0
             : decisions.includes('RISK') || report?.escalate === true;
+        // 20261007 amendment: a report that self-classifies with dispositions must also self-grade
+        // its confidence (HIGH|MEDIUM|LOW), mirroring the 20261003 verdict-confidence hardening.
+        // Legacy reports (no disposition field) stay exempt — R3 back-compat unchanged.
+        const reportConfidence = report?.confidence;
+        const reportConfidenceOk =
+            reportConfidence === 'HIGH' || reportConfidence === 'MEDIUM' || reportConfidence === 'LOW';
         const verdictFindings = Array.isArray(verdict?.findings) ? (verdict.findings as Record<string, unknown>[]) : [];
         const verdictFails = verdictFindings.filter((finding) => finding?.status === 'fail');
         // What a BLOCK *is* decides who can answer it. Dropping a blocked platform answers the
@@ -1686,7 +1692,9 @@ function dailySafetyGate(args: string[]): void {
         const confidenceOk = confidence === 'HIGH' || confidence === 'MEDIUM' || confidence === 'LOW';
         const verdictValue = String(verdict?.verdict ?? '');
         const outOfContract =
-            (verdictValue !== 'PASS' && verdictValue !== 'FAIL' && verdictValue !== 'NEEDS_REVISION') || !confidenceOk;
+            (verdictValue !== 'PASS' && verdictValue !== 'FAIL' && verdictValue !== 'NEEDS_REVISION') ||
+            !confidenceOk ||
+            (usesDisposition && !reportConfidenceOk);
         const nonPass = verdictValue !== 'PASS' || !confidenceOk;
         // Integrity = the finding survives any target choice: PII reported on a blocked platform, an
         // out-of-contract verdict, a non-PASS that documents nothing, or a `fail` outside the
@@ -1708,10 +1716,21 @@ function dailySafetyGate(args: string[]): void {
         } else if (malformed) {
             reason = 'content-safety report missing or malformed';
         } else if (outOfContract) {
-            // 20261003 hardening, unchanged: a verdict outside PASS|FAIL|NEEDS_REVISION, or any
-            // verdict without a HIGH/MEDIUM/LOW confidence, is not a verdict — block, never revise
+            // 20261003 hardening (verdict) + 20261007 amendment (report): a verdict outside
+            // PASS|FAIL|NEEDS_REVISION, any verdict without a HIGH/MEDIUM/LOW confidence, or a
+            // disposition-contract report without one, is not reviewable — block, never revise
             // against it (there is no contract to read findings from).
-            reason = `content-judge verdict out of contract (${verdictValue || 'missing'}/${confidenceOk ? 'ok' : 'no confidence'})`;
+            reason = `content contract violation: ${[
+                verdictValue !== 'PASS' && verdictValue !== 'FAIL' && verdictValue !== 'NEEDS_REVISION'
+                    ? `verdict ${verdictValue || 'missing'}`
+                    : '',
+                !confidenceOk ? 'verdict confidence missing (need HIGH/MEDIUM/LOW)' : '',
+                usesDisposition && !reportConfidenceOk
+                    ? `report confidence ${String(reportConfidence ?? 'missing')} (need HIGH/MEDIUM/LOW)`
+                    : '',
+            ]
+                .filter(Boolean)
+                .join(', ')}`;
         } else if (nonPass || blockedPlatforms.length > 0) {
             const trigger =
                 blockedPlatforms.length > 0

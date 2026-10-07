@@ -418,6 +418,7 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
                         },
                     ],
                     escalate: false,
+                    confidence: 'HIGH',
                 },
                 PASS_VERDICT,
             );
@@ -441,6 +442,7 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
                     },
                 ],
                 escalate: true,
+                confidence: 'HIGH',
             },
             PASS_VERDICT,
         );
@@ -448,6 +450,41 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('escalate');
         rmSync(dir, { recursive: true, force: true });
     });
+
+    // The contract that classifies with dispositions must also self-grade its confidence
+    // (HIGH|MEDIUM|LOW) — missing or out-of-enum blocks, mirroring the verdict hardening.
+    const DISPOSITIONS_REPORT = {
+        platforms: [
+            {
+                platform: 'xiaoyuzhou',
+                decision: 'RISK',
+                findings: [
+                    { category: 4, item: 'XY-01', evidenceGap: true, disposition: 'gap' },
+                    { category: 1, item: 'XY-03', disposition: 'note' },
+                ],
+            },
+        ],
+        escalate: false,
+    };
+
+    it.each([
+        ['missing confidence level', undefined],
+        ['unrecognized confidence level', 'SURE'],
+        ['lowercase confidence level', 'high'],
+        ['non-string confidence level', 1],
+        ['empty-string confidence level', ''],
+    ])('20261007 contract: a disposition report with a %s → block', (_name, confidence) => {
+        const dir = setup({ ...DISPOSITIONS_REPORT, confidence }, PASS_VERDICT);
+        expect(gate(dir)).toStartWith('block|');
+    });
+
+    it.each(['HIGH', 'MEDIUM', 'LOW'])(
+        '20261007 contract: report confidence %s keeps gap/note RISK at recorded-risk exclude',
+        (confidence) => {
+            const dir = setup({ ...DISPOSITIONS_REPORT, confidence }, PASS_VERDICT);
+            expect(gate(dir)).toStartWith('exclude|');
+        },
+    );
 
     it('drafts edited after the review was requested → block (an old PASS does not carry over)', () => {
         const dir = setup(OK_REPORT, PASS_VERDICT);

@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.32.0
+version: 1.32.1
 created_at: 2026-05-28
 updated_at: 2026-10-07
 edit_rules: 99 §6.1
@@ -1208,6 +1208,7 @@ illustration across failures is deferred until observed.
 2. **R2, the gate.** `daily-safety-gate` escalates on a clean pass (PASS verdict, no BLOCK) only when the report carries a `disposition: "escalate"` finding. RISK whose findings are all `gap`/`note`/`fix` lands in `exclude` with an empty `excludedPlatforms` — published at recorded risk, the residual-risk record preserved in the status/stamp.
 3. **R3, fail-closed back-compat.** A report with no `disposition` field anywhere keeps the legacy rule: any `RISK` decision or report-level `escalate: true` escalates. The narrowed rule must be earned by the reviewer explicitly marking findings.
 4. **R4, evidence gaps stay visible.** `evidenceGap: true` remains mandatory reporting; a gap is `disposition: "gap"` — recorded, surfaced in the gate reason, never a silent auto-`OK`. What changes is only that a gap alone no longer forces pre-publish human review on an unattended run.
+5. **R5, report confidence (amendment, 2026-10-07).** A report on the disposition contract must also carry report-level `confidence: HIGH | MEDIUM | LOW` — the reviewer's self-graded certainty in its own decisions and dispositions, mirroring the 20261003 verdict-confidence hardening. The gate blocks a disposition-contract report whose confidence is missing or out-of-enum. Legacy reports (no `disposition` field) stay exempt, so R3's back-compat is unchanged.
 
 **Why.** The 2026-10-07 06:00 scheduler run classified three platform RISKs on a clean judge PASS whose findings were all evidence gaps and note-class items the reviewer itself dispositioned as non-blocking — the escalate branch routed the run to the HITL `review` state, and because an unattended run cannot answer, the job failed. Reviewer-marked escalation keeps the human decision where it belongs; recorded-but-answerable risk no longer converts an unattended run into a failed job.
 

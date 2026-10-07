@@ -98,6 +98,7 @@ One JSON report per invocation, written to the path the caller provides (default
 {
   "content_ref": "<path or id of reviewed Content>",
   "mode": "detect-only | detect+revise",
+  "confidence": "HIGH | MEDIUM | LOW",
   "platforms": [
     {
       "platform": "<reference file name>",
@@ -145,6 +146,13 @@ Report-level `escalate: true` is set **iff at least one finding carries `disposi
 `kk-daily-ai-voice` gate escalates only on `disposition: "escalate"`; a report with no
 `disposition` field anywhere keeps the legacy behavior (any RISK decision or report-level
 escalate pauses a run) — fail-closed back-compat.
+
+Report-level `confidence` (`HIGH | MEDIUM | LOW`) is the reviewer's self-graded certainty in the
+report's decisions and dispositions, graded the same way as the content-judge verdict confidence.
+A disposition-contract report **must** carry a valid `confidence`: the daily gate blocks a report
+that classifies with dispositions whose confidence is missing or outside the enum (fail-closed,
+mirroring the 20261003 verdict-confidence hardening). Legacy reports (no `disposition` field)
+remain exempt.
 
 ## Relation to content-judge
 
