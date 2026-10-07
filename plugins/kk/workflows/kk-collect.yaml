@@ -128,16 +128,19 @@ states:
 
   - id: label
     description: >-
-      Label the stored items (`kk store label --run … --new-ids …`, task 0209). Until 0209 lands the action
-      is a no-op `true` that exits 0, then stamps its own result file so the routing guard below has a
-      positive success contract (R5).
+      Label the stored items through the kk decision catalog (`kk store label --run … --new-ids …`,
+      task 0209): heuristic-first, so the model is consulted only for items the keyword pass files
+      `non-ai` while seeing an AI signal, and a degraded backend records the heuristic value with
+      `source: default` instead of failing. stdout is the `{labeled, model, fallback}` contract and
+      doubles as the routing guard's positive artifact: the guard below only accepts a non-empty
+      file, so a command that failed before printing still routes to `release-failed`.
     onEnter:
       - kind: shell
         onError: continue
         options:
-          command: |
-            true
-            printf '%s\n' 'deferred-0209' > "${vars.work_dir}/label-result.txt"
+          command: >-
+            kk store label --run "${vars.__runId}" --new-ids "${vars.work_dir}/new-ids.json"
+            > "${vars.work_dir}/label-result.txt"
 
   - id: release
     description: >-
@@ -223,7 +226,7 @@ transitions:
 
   - from: label
     to: release
-    description: "Labels written (or the 0209 no-op stamped its result) -> release and record"
+    description: "Labels written (label-result.txt holds the {labeled, model, fallback} line) -> release and record"
     guard:
       kind: shell
       options:

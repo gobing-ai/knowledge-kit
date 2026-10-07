@@ -63,14 +63,14 @@ import {
 afterAll(cleanupTempState);
 
 describe('openStore', () => {
-    it('applies migration 0001 once, journals it, and keeps the schema', async () => {
+    it('applies the migrations once, journals them, and keeps the schema', async () => {
         const dir = makeTempDir();
         const { store, dbPath } = await openTempStore(dir);
-        expect(store.appliedMigrations).toBe(1);
+        expect(store.appliedMigrations).toBe(2);
         await store.close();
 
         const raw = readRaw(dbPath);
-        const journal = raw.query('SELECT id FROM __kk_store_migrations').all() as Array<{ id: string }>;
+        const journal = raw.query('SELECT id FROM __kk_store_migrations ORDER BY id').all() as Array<{ id: string }>;
         const tables = raw.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{
             name: string;
         }>;
@@ -79,7 +79,7 @@ describe('openStore', () => {
             .all() as Array<{ name: string }>;
         raw.close();
 
-        expect(journal.map((row) => row.id)).toEqual(['0001_kk_store_init']);
+        expect(journal.map((row) => row.id)).toEqual(['0001_kk_store_init', '0002_labels_confidence_run_id']);
         expect(tables.map((row) => row.name)).toEqual([
             '__kk_store_migrations',
             'collect_runs',
@@ -181,11 +181,11 @@ describe('openStore', () => {
         const dbPath = join(dir, 'race.db');
         const [a, b] = await Promise.all([openStore({ path: dbPath }), openStore({ path: dbPath })]);
 
-        expect(a.appliedMigrations + b.appliedMigrations).toBe(1);
+        expect(a.appliedMigrations + b.appliedMigrations).toBe(2);
         const raw = readRaw(dbPath);
         const journal = raw.query('SELECT COUNT(*) AS n FROM __kk_store_migrations').get() as { n: number };
         raw.close();
-        expect(journal.n).toBe(1);
+        expect(journal.n).toBe(2);
         await a.close();
         await b.close();
     });

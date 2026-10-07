@@ -14,8 +14,31 @@ export const KK_MIGRATION_JOURNAL = '__kk_store_migrations';
 /**
  * Every store migration, in apply order. Append-only: a released id is never
  * edited, so an already-migrated database always matches a fresh one.
+ *
+ * `0001`'s DDL is derived from the live `defineTable(...).createTableSql`, so a
+ * fresh database's `0001` already carries every column a later migration adds.
+ * The later `ALTER TABLE … ADD COLUMN` therefore repeats a column on a fresh
+ * database and adds it on an older one; {@link applyKkMigrations} tolerates the
+ * duplicate, which is what makes the two paths converge.
  */
-export const KK_MIGRATIONS: readonly KkMigration[] = [{ id: '0001_kk_store_init', sql: KK_STORE_V1_SQL }];
+export const KK_MIGRATIONS: readonly KkMigration[] = [
+    { id: '0001_kk_store_init', sql: KK_STORE_V1_SQL },
+    {
+        id: '0002_labels_confidence_run_id',
+        sql: 'ALTER TABLE labels ADD COLUMN confidence INTEGER; ALTER TABLE labels ADD COLUMN run_id TEXT;',
+    },
+];
+
+/**
+ * True when `error` is SQLite's `ALTER TABLE … ADD COLUMN` rejection of a column
+ * that already exists. Column DDL is derived from the live schema, so a fresh
+ * `0001` creates a column a later migration's `ALTER` then tries to add — the
+ * statement is already-satisfied, not a failure. Matched on the message because
+ * bun:sqlite (the only driver here) exposes no error code across drivers.
+ */
+function isDuplicateColumnError(error: unknown): boolean {
+    return error instanceof Error && error.message.startsWith('duplicate column name');
+}
 
 /** Split a `;`-separated SQL body into individual statements (the adapter executes one per `exec`). */
 export function splitSqlStatements(sql: string): string[] {
@@ -54,11 +77,18 @@ async function allMigrationsJournaled(adapter: DbAdapter, migrations: readonly K
  * Apply the store's embedded migrations, journaling each applied id in
  * `__kk_store_migrations`.
  *
+ * One statement class is tolerated: a `duplicate column name` from `ALTER TABLE …
+ * ADD COLUMN` means the column is already present (a fresh `0001` derives its DDL
+ * from the live schema, so it carries a later migration's columns too), so the
+ * statement is skipped — and reported to `onSkippedStatement` when given — while
+ * every other error still fails closed.
+ *
  * @returns the number applied by this call (0 when the journal was already complete).
  */
 export async function applyKkMigrations(
     adapter: DbAdapter,
     migrations: readonly KkMigration[] = KK_MIGRATIONS,
+    onSkippedStatement?: (statement: string) => void,
 ): Promise<number> {
     if (await allMigrationsJournaled(adapter, migrations)) return 0;
 
@@ -75,7 +105,12 @@ export async function applyKkMigrations(
         if (existing != null) continue;
 
         for (const statement of splitSqlStatements(migration.sql)) {
-            await adapter.exec(statement);
+            try {
+                await adapter.exec(statement);
+            } catch (error) {
+                if (!isDuplicateColumnError(error)) throw error;
+                onSkippedStatement?.(statement);
+            }
         }
         // Journal with ON CONFLICT DO NOTHING: two processes may migrate the same file
         // concurrently (`kk store migrate` runs before the collect lock is held), and

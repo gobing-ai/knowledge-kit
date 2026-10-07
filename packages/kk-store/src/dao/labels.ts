@@ -17,6 +17,10 @@ export interface LabelInput {
     source: LabelSource;
     /** Score decisions only; `null` for choice decisions. */
     score?: number | null;
+    /** The model answer's confidence 0–1; `null` for a heuristic row or an absent payload. */
+    confidence?: number | null;
+    /** The collect run the pass belongs to (`kk store label --run`). */
+    runId?: string | null;
     labeledAt?: number;
 }
 
@@ -37,6 +41,8 @@ export class LabelsDao extends EntityDao<typeof labels, typeof labels.itemId> {
     upsertLabel(input: LabelInput, now = Date.now()): Promise<LabelRecord> {
         const labeledAt = input.labeledAt ?? now;
         const score = input.score ?? null;
+        const confidence = input.confidence ?? null;
+        const runId = input.runId ?? null;
         return super.upsert(
             {
                 itemId: input.itemId,
@@ -45,10 +51,12 @@ export class LabelsDao extends EntityDao<typeof labels, typeof labels.itemId> {
                 score,
                 maker: input.maker,
                 source: input.source,
+                confidence,
+                runId,
                 labeledAt,
             },
             [labels.itemId, labels.decisionId],
-            { value: input.value, score, maker: input.maker, source: input.source, labeledAt },
+            { value: input.value, score, maker: input.maker, source: input.source, confidence, runId, labeledAt },
         );
     }
 

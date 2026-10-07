@@ -151,3 +151,11 @@ workflows:
   paths:
     - /Users/robin/node_modules/@gobing-ai/spur/config/workflows/
     - plugins/kk/workflows
+
+# ── Decisions (ADR-134) ──
+# The kk item-label catalog, served to `kk store label` through `spur decision run`
+# (design kk-collect-and-daily-voice2.md §4). Project-relative, so the paths resolve
+# from the repo root on any checkout.
+decisions:
+  paths:
+    - plugins/kk/decisions
