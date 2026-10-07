@@ -225,3 +225,11 @@ Rule of thumb: any reply that names a version, URL, or library/API behaviour end
 `Confidence: HIGH|MEDIUM|LOW` line plus at least one `path:line` / URL citation. This is the
 response-side twin of the repo's own `.spur/rules/structure/verification-confidence-level.sh`, which
 enforces the same enum on every `Verification (` block in documents (commit c2e9c960).
+
+## 2026-10-07 runall-e93-481b (task 0215, E93 ADR-032)
+- kk-core `PluginKindSchema` values: `ingestion` / `generator` / `publish` — collection dirs are `ingestions|generations|publishings`, but manifest `kind` for generators is `"generator"` (not `"generation"`). A wrong value = discovery `malformed` diagnostic = "unknown plugin" usage errors downstream.
+- Spur rule `cli-no-parse-at-module-scope` bans `.parse(` (incl. JSON.parse) in `apps/cli/src/cli.ts` + `src/commands/*.ts` → parse JSON in `src/invoke.ts` (sanctioned seam) and export the helper; don't suppress.
+- Bun `spawnSync` result `stdout`/`stderr` are typed nullable → `(proc.stdout ?? Buffer.alloc(0)).toString()`.
+- `spur task record --transition testing` from `todo` is denied: walk `wip` first. Done gate blocks on any unchecked checklist box AND DD-09 subset rule — never author task AC rows like "`bun run gate` passes." that aren't feature scenarios; gate checks belong in pipeline checks, not AC.
+- ADR-117 trace outage pattern: stale lib `inline-run.generated.mjs` vs task-pipeline v5 → run row never registered → terminal `--close` returns `RUN_NOT_FOUND` (sibling of `NO_ACTION_ROWS`). Document, never backfill.
+- ADR-032 probe contract: probe prints ONE final JSON line `{status, profileDir?, detail}`; kk prints only that + exit mapping (0 verified / 1 refused / else error); raw probe stdio never echoed. 30s default probe timeout in `checkOne`.
