@@ -401,6 +401,54 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         expect(gate(setup({ platforms: [{ decision: 'OK' }], escalate: true }, PASS_VERDICT))).toStartWith('escalate|');
     });
 
+    it(
+        '20261007 disposition contract: gap/note RISK on a clean PASS → exclude at recorded risk' +
+            ' (empty exclusions, stamp written), not escalate',
+        () => {
+            const dir = setup(
+                {
+                    platforms: [
+                        {
+                            platform: 'xiaoyuzhou',
+                            decision: 'RISK',
+                            findings: [
+                                { category: 4, item: 'XY-01', evidenceGap: true, disposition: 'gap' },
+                                { category: 1, item: 'XY-03', disposition: 'note' },
+                            ],
+                        },
+                    ],
+                    escalate: false,
+                },
+                PASS_VERDICT,
+            );
+            expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+            expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('exclude');
+            const stamp = readJson<{ status: string; excludedPlatforms: string[] }>(at(dir, 'safety-judge_stamp.json'));
+            expect(stamp.status).toBe('exclude');
+            expect(stamp.excludedPlatforms).toEqual([]);
+            rmSync(dir, { recursive: true, force: true });
+        },
+    );
+
+    it('20261007 disposition contract: a disposition:"escalate" finding still escalates on a clean PASS', () => {
+        const dir = setup(
+            {
+                platforms: [
+                    {
+                        platform: 'xiaoyuzhou',
+                        decision: 'RISK',
+                        findings: [{ category: 2, item: 'XY-09', disposition: 'escalate' }],
+                    },
+                ],
+                escalate: true,
+            },
+            PASS_VERDICT,
+        );
+        expect(runStage(['daily-safety-gate', dir, STAMP]).status).toBe(0);
+        expect(readFileSync(at(dir, 'safety-judge_status.txt'), 'utf-8')).toBe('escalate');
+        rmSync(dir, { recursive: true, force: true });
+    });
+
     it('drafts edited after the review was requested → block (an old PASS does not carry over)', () => {
         const dir = setup(OK_REPORT, PASS_VERDICT);
         writeFileSync(join(dir, '24-script', `${STAMP}_08_script_voicescript.yaml`), 'segments: [edited]\n');

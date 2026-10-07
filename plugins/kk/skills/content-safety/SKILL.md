@@ -67,13 +67,14 @@ it as a category-4 finding (quoted as evidence) and apply the decision rules exa
 
 A platform file is a snapshot. When its `Last verified` date is older than the content's run
 date by more than 90 days, or a takedown/feedback event post-dates it, treat its rules as
-`unverified` for this review (`evidenceGap: true`, escalate) and say so in the report.
+`unverified` for this review (`evidenceGap: true`, `disposition: "gap"`) and say so in the report.
 
 ## Decision per platform
 
 For each requested platform, load `references/platforms/<platform>.md` and decide. A requested
 platform with **no reference file** is unsupported: emit `BLOCK` with `evidenceGap: true` and
-`escalate: true` for it; rules come only from that platform's own reference file.
+`disposition: "escalate"` for it (no rules at all is a genuine operator decision); rules come
+only from that platform's own reference file.
 
 - `OK` — no finding reaches a block rule.
 - `RISK` — findings exist but are warn-grade (e.g. evidence gap on this platform); submission is
@@ -84,8 +85,9 @@ platform with **no reference file** is unsupported: emit `BLOCK` with `evidenceG
   never offsets a high-risk finding.**
 
 If the platform file's evidence status is `unknown`/`unverified` for the rule a finding rests on,
-the finding is reported with `evidenceGap: true` and the decision escalates to manual review —
-a silent auto-`OK` on gapped evidence is a contract violation.
+the finding is reported with `evidenceGap: true` and `disposition: "gap"` — risk recorded on the
+report, never a silent auto-`OK` (that combination is a contract violation). A gap alone does not
+require pre-publish human review; only `disposition: "escalate"` does (20261007).
 
 ## Output contract
 
@@ -106,7 +108,8 @@ One JSON report per invocation, written to the path the caller provides (default
           "item": "<platform review-item id, or generic>",
           "evidence": "<quoted passage / location>",
           "detail": "<why this is a finding>",
-          "evidenceGap": false
+          "evidenceGap": false,
+          "disposition": "note | fix | gap | escalate"
         }
       ],
       "revision": {
@@ -125,6 +128,23 @@ One JSON report per invocation, written to the path the caller provides (default
 
 `escalate: true` + printed report path is required whenever evidence is missing for a finding's
 rule. Never emit `OK` with `evidenceGap` findings; that combination is a contract violation.
+
+### Finding dispositions (20261007)
+
+Every finding carries `disposition`, telling the consumer what answering it requires:
+
+| `disposition` | Meaning | Set when |
+|---|---|---|
+| `note` | Recorded context judgment / verified-OK observation; no action | 字词命中 without mainline risk, checks that passed with commentary |
+| `fix` | Fixable by deletion / desensitization / disclosure; revision proposed in `detect+revise` | Categories 3–5 findings the drafts can be edited to resolve |
+| `gap` | Evidence gap: the rule text is unverified for this review; risk recorded, review not forced | `evidenceGap: true` findings on an otherwise sound draft |
+| `escalate` | Unresolved admission risk an operator must decide before submission | Category-2 residue that survives exclusion, no-reference-file platforms, anything the operator must answer by hand |
+
+Report-level `escalate: true` is set **iff at least one finding carries `disposition:
+"escalate"`**; `escalation_reason` names those findings. Consumers that key on this field: the
+`kk-daily-ai-voice` gate escalates only on `disposition: "escalate"`; a report with no
+`disposition` field anywhere keeps the legacy behavior (any RISK decision or report-level
+escalate pauses a run) — fail-closed back-compat.
 
 ## Relation to content-judge
 
@@ -163,8 +183,11 @@ travel with the draft still block (a PII finding on a blocked platform, or a jud
 outside the admission criteria: prohibited claims / disclosure / data-handling), while
 **admission-only findings** (the CN 资质口径 / 播报形态 rules) drop the platform
 they name from that run and let every other target publish; the drop is recorded in the verdict
-stamp's `excludedPlatforms` and honoured by the per-target publish stages. A `RISK` decision or
-`escalate: true` still forces the human review even when the run is otherwise unattended.
+stamp's `excludedPlatforms` and honoured by the per-target publish stages. On an otherwise clean
+pass (PASS verdict, no BLOCK), only findings marked `disposition: "escalate"` force the human
+review (20261007); evidence-gap and note/fix-class RISK stay recorded and publish at recorded
+risk (gate status `exclude`, empty `excludedPlatforms`). A report with no `disposition` field
+keeps the legacy behavior — any RISK decision or `escalate: true` pauses.
 
 The report is bound to the exact draft bytes: editing a draft after the verdict invalidates it, and
 the remediation loop re-requests a fresh review for that reason. The earlier deterministic gate is

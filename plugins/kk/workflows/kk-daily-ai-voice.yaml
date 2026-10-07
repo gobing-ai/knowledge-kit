@@ -723,7 +723,7 @@ transitions:
 
   - from: safety-judge
     to: review
-    description: "pass without skip_review, or escalate (RISK / evidence gap) -> operator review; skip_review never bypasses an escalation"
+    description: "pass without skip_review, or escalate (a finding marked disposition:\"escalate\"; legacy reports: any RISK/escalate) -> operator review; skip_review never bypasses an escalation"
     guard:
       kind: shell
       options:

@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.31.0
+version: 1.32.0
 created_at: 2026-05-28
-updated_at: 2026-10-05
+updated_at: 2026-10-07
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1195,6 +1195,23 @@ illustration across failures is deferred until observed.
 **Why.** Each browser channel already ships a `profile-check.ts login|check`, but an operator has to know six script paths, their per-channel env vars and their differing output formats. 0193/0194 lost a day to a session that looked healthy and wasn't (0214). One verb answers "can this channel publish right now?" across channels, and `--json` lets a workflow preflight gate on it. Folding this into `status` would turn a deterministic inventory check into a slow, profile-dependent and flaky one.
 
 **Detail:** feature E93; `docs/04_DESIGN.md` `plugin` noun section (same commit as the surface code).
+
+---
+
+## ADR-033: The safety gate escalates only on findings the reviewer marked `disposition: "escalate"`
+
+**Status:** Accepted · **Date:** 2026-10-07 · **Amends:** the 0189 R10 gate classification as adjusted 20261005 (any RISK decision or report-level `escalate: true` on a clean pass pauses)
+
+**Decision.**
+
+1. **R1, the finding contract.** Every `kk:content-safety` finding carries `disposition: note | fix | gap | escalate`. `note`/`fix`/`gap` findings are recorded on the report but never pause an unattended run; only `disposition: "escalate"` (category-2 residue that survives exclusion, no-reference-file platforms, anything an operator must answer by hand) sets report-level `escalate: true` and escalates.
+2. **R2, the gate.** `daily-safety-gate` escalates on a clean pass (PASS verdict, no BLOCK) only when the report carries a `disposition: "escalate"` finding. RISK whose findings are all `gap`/`note`/`fix` lands in `exclude` with an empty `excludedPlatforms` — published at recorded risk, the residual-risk record preserved in the status/stamp.
+3. **R3, fail-closed back-compat.** A report with no `disposition` field anywhere keeps the legacy rule: any `RISK` decision or report-level `escalate: true` escalates. The narrowed rule must be earned by the reviewer explicitly marking findings.
+4. **R4, evidence gaps stay visible.** `evidenceGap: true` remains mandatory reporting; a gap is `disposition: "gap"` — recorded, surfaced in the gate reason, never a silent auto-`OK`. What changes is only that a gap alone no longer forces pre-publish human review on an unattended run.
+
+**Why.** The 2026-10-07 06:00 scheduler run classified three platform RISKs on a clean judge PASS whose findings were all evidence gaps and note-class items the reviewer itself dispositioned as non-blocking — the escalate branch routed the run to the HITL `review` state, and because an unattended run cannot answer, the job failed. Reviewer-marked escalation keeps the human decision where it belongs; recorded-but-answerable risk no longer converts an unattended run into a failed job.
+
+**Detail:** `plugins/kk/scripts/kk-workflow-stages.ts` `dailySafetyGate`; `plugins/kk/skills/content-safety/SKILL.md` finding contract; `plugins/kk/workflows/kk-daily-ai-voice.yaml` safety-judge edges; `docs/design/kk-daily-ai-voice.md` gate section and `docs/04_DESIGN.md` daily workflow row (same commit as the code).
 
 ---
 

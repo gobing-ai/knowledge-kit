@@ -1622,9 +1622,13 @@ function dailySafetyPrep(args: string[]): void {
  *
  * - `revise`  — non-PASS and the remediation budget is not spent: re-review after the drafts change.
  * - `exclude` — admission-only residue (the CN 资质口径 / 播报形态 findings): the platforms that
- *               BLOCKed are dropped from this run and every other target publishes normally.
- * - `escalate` — a RISK decision or `escalate: true` with an otherwise clean pass: human review.
- * - `pass`    — explicit PASS verdict, unchanged drafts, no BLOCK/RISK.
+ *               BLOCKed are dropped from this run and every other target publishes normally. Also
+ *               the 20261007 narrowing: RISK whose findings are all gap/note/fix publishes at
+ *               recorded risk with nothing dropped (empty `excludedPlatforms`).
+ * - `escalate` — a finding the reviewer marked `disposition: "escalate"` on an otherwise clean
+ *               pass: human review. Legacy reports (no `disposition` field anywhere) keep the old
+ *               rule — any RISK decision or report-level `escalate: true` pauses (20261007 ADR).
+ * - `pass`    — explicit PASS verdict, unchanged drafts, no BLOCK and no RISK finding at all.
  * - `block`   — draft integrity: PII reported on a blocked platform, or a judge must-pass `fail`
  *               outside `jurisdictional-rules` (prohibited claims / disclosure / data-handling);
  *               also an unreadable or out-of-contract report/verdict, a non-PASS that documents
@@ -1645,8 +1649,19 @@ function dailySafetyGate(args: string[]): void {
         const decisions = platforms.map((platform) => platform?.decision);
         const digest = safetyDigest(workDir, runDate);
         const revisions = readSafetyReviseCount(workDir);
-        // A RISK decision or an explicit escalation is a human decision even on a clean verdict.
-        const risky = decisions.includes('RISK') || report?.escalate === true;
+        const platformFindings = (platform: Record<string, unknown>): Record<string, unknown>[] =>
+            Array.isArray(platform?.findings) ? (platform.findings as Record<string, unknown>[]) : [];
+        // 20261007 narrowing (operator decision): on a clean pass, only a finding the reviewer
+        // explicitly marked `disposition: "escalate"` is a human decision. Evidence gaps, note-class
+        // and fix-class RISK are recorded but route to `exclude` at recorded risk instead of pausing
+        // an unattended run. Back-compat, fail-closed: a report with no `disposition` field keeps the
+        // legacy rule — any RISK decision or report-level escalate pauses.
+        const allFindings = platforms.flatMap(platformFindings);
+        const usesDisposition = allFindings.some((finding) => typeof finding?.disposition === 'string');
+        const escalatedFindings = allFindings.filter((finding) => finding?.disposition === 'escalate');
+        const risky = usesDisposition
+            ? escalatedFindings.length > 0
+            : decisions.includes('RISK') || report?.escalate === true;
         const verdictFindings = Array.isArray(verdict?.findings) ? (verdict.findings as Record<string, unknown>[]) : [];
         const verdictFails = verdictFindings.filter((finding) => finding?.status === 'fail');
         // What a BLOCK *is* decides who can answer it. Dropping a blocked platform answers the
@@ -1656,8 +1671,6 @@ function dailySafetyGate(args: string[]): void {
         // PII cannot be answered by choosing targets. The rest of the draft-integrity class is owned
         // by the judge's must-pass criteria below (no-prohibited-claims / disclosure-presence /
         // data-handling), which is where an independent reviewer can grade it.
-        const platformFindings = (platform: Record<string, unknown>): Record<string, unknown>[] =>
-            Array.isArray(platform?.findings) ? (platform.findings as Record<string, unknown>[]) : [];
         const blockedPlatforms = platforms.filter((platform) => platform?.decision === 'BLOCK');
         const excludedPlatforms = blockedPlatforms.map((platform) => String(platform?.platform ?? '')).filter(Boolean);
         const piiBlock = blockedPlatforms.some((platform) =>
@@ -1725,7 +1738,15 @@ function dailySafetyGate(args: string[]): void {
             }
         } else if (risky) {
             status = 'escalate';
-            reason = 'RISK decision or escalation — human review required';
+            reason = usesDisposition
+                ? `a finding is marked disposition:"escalate" (${escalatedFindings.map((f) => String(f?.item ?? '?')).join(', ')}) — human review required`
+                : 'RISK decision or escalation — human review required';
+        } else if (usesDisposition && decisions.includes('RISK')) {
+            // 20261007 narrowing: RISK whose findings are all gap/note/fix publishes at recorded
+            // risk instead of pausing an unattended run; the exclude stamp keeps the residual-risk
+            // record and the FSM routes it to wrap-docs like any admission-only exclusion.
+            status = 'exclude';
+            reason = 'RISK decisions carry only gap/note/fix dispositions — recorded, publishing at recorded risk';
         } else status = 'pass';
         if (status === 'pass' || status === 'escalate' || status === 'exclude') {
             sted('write', stampFile, () => writeJsonText(stampFile, { digest, status, excludedPlatforms }));
