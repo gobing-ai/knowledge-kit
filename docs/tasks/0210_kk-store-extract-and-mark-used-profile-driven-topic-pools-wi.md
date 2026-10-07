@@ -4,7 +4,7 @@ name: "kk store extract and mark-used: profile-driven topic pools with cross-day
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-07T17:58:10.174Z"
+updated_at: "2026-10-07T23:24:02.169Z"
 feature_id: G31
 priority: P1
 tags:
@@ -133,24 +133,24 @@ Each entry cites the first changed line per file (`file:line`).
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: MEDIUM
+- Confidence: HIGH
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/kk-store/src/profile.ts:169` `parseProfile` rejects unknown keys/decision ids/malformed predicates/non-positive `limit` with `ProfileInvalidError`; `plugins/kk/decisions/extract/ai-news.yaml:13` ships the design predicates; `apps/cli/tests/store-extract.test.ts:289` asserts exit 1 + `kk.store.profile.invalid:` + no `--out`; unit `packages/kk-store/tests/profile.test.ts:30`. Unchanged since pass 2 (no production edit). |
-| R2 | MET | One `ItemsDao.selectByProfile` (`packages/kk-store/src/dao/items.ts:236`): `labels` join per `where` key, `first_seen_at >= now - window`, workflow-scoped `NOT EXISTS` (`:285`); `apps/cli/src/commands/store.ts:773` `toPoolDoc` writes `Doc[]` with `metadata.labels`. Re-run this stage: `store extract --topic ai-news --db .works/test-artifacts/0210/kk-store-extract.db` → `{"count":2}` exit 0. |
-| R3 | MET | `apps/cli/src/commands/store.ts:794` always writes the file then prints `{count}`; `apps/cli/tests/store-extract.test.ts:227` asserts exit 0, stdout `{"count":0}`, byte-identical `[]\n`. |
-| R4 | MET | `apps/cli/src/commands/store.ts:833` writes one `episode_usage` row per distinct Doc id; `apps/cli/tests/store-extract.test.ts:335` asserts `{"marked":2}`, idempotent retry, and duplicate-id collapse per `(item_id, workflow, run_id)`. |
-| R5 | MET | `apps/cli/tests/fixtures/extract/ai-research.yaml:8` copied verbatim over the same seeded DB returns the two research items (`{"count":2}`) with no code change; `apps/cli/tests/store-extract.test.ts:258` asserts the shipped `ai-news.yaml` is untouched. |
-| R6 | MET | `apps/cli/src/commands/store.ts:794` reads profile → opens store → `selectByProfile` → `--out`; no spawn/plugin discovery on that path; `apps/cli/tests/store-extract.test.ts:186` asserts `items`/`labels`/`episode_usage`/`collect_runs` counts identical before/after. |
-| R7 | MET | 4/4 clauses. C1 `docs/00_ADR.md:1157` ADR-030 `Accepted · Date: 2026-10-06 (feature G31 store, shipped — tasks 0206, 0208–0210)`. C2 `docs/03_ARCHITECTURE.md:122` `**Persistent store (shipped — ADR-030; tasks 0206, 0208–0210)**` drops "not yet built". C3 `docs/04_DESIGN.md:65-73` + `:88-89` list the six `store` verbs and `kk schedule render`. C4 (amended) `docs/05_FEATURES.md:97` G31 `⏳ active` / "**NOT done**", 0213 outstanding. |
+| R1 | MET | `packages/kk-store/src/profile.ts:93` ProfileInvalidError raised by profile parsing at `packages/kk-store/src/profile.ts:110`; `packages/kk-store/tests/profile.test.ts:30`, `packages/kk-store/tests/profile.test.ts:68` |
+| R2 | MET | `packages/kk-store/src/dao/items.ts:236` selectByProfile with the workflow-scoped exclusion at `packages/kk-store/src/dao/items.ts:285`; `packages/kk-store/tests/dao/items.test.ts:128` |
+| R3 | MET | `apps/cli/src/commands/store.ts:811` extractAction prints count at `apps/cli/src/commands/store.ts:833`; `apps/cli/tests/store-extract.test.ts:227` (empty pool) |
+| R4 | MET | `apps/cli/src/commands/store.ts:850` markUsedAction; `apps/cli/tests/store-extract.test.ts:335` |
+| R5 | MET | `apps/cli/tests/store-extract.test.ts:258` second topic profile over the same store, no code change |
+| R6 | MET | `apps/cli/src/commands/store.ts:811` reads profile, opens store, selects, writes out; invalid profile maps to its code at `apps/cli/src/commands/store.ts:838`; `apps/cli/tests/store-extract.test.ts:194` |
+| R7 | MET | ADR-030 at `docs/00_ADR.md:1159` (shipped), `docs/03_ARCHITECTURE.md:122` (shipped), `docs/04_DESIGN.md:90`. Fix pass: `docs/05_FEATURES.md:98` recorded G31 as active/NOT done with 0213 backlog although G31 and 0213 are done; row corrected and `apps/cli/tests/store-docs.test.ts:70` now binds the 05 status cell to the feature file status (falsified: reverting the row to active fails the test) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — AI-news extraction selects the episode pool from labels | MET | test | `apps/cli/tests/store-extract.test.ts:159` selects exactly the two labelled candidates in urgency order, asserts the full `Doc` incl. `metadata.labels`, excludes the 30-day/unlabelled/research items; `:289` shows an unknown decision id is rejected, not silently widening. Artifact `.works/test-artifacts/0210/ai-news-pool.json:1`. |
-| AC2 — A second topic is extractable without re-collecting | MET | test | `apps/cli/tests/store-extract.test.ts:258` runs `--topic ai-research` from `apps/cli/tests/fixtures/extract/ai-research.yaml:8` on the same seeded DB, no code change, store counts unchanged. |
-| AC3 — Items aired in an episode never re-enter a later pool | MET | test | `apps/cli/tests/store-extract.test.ts:335`: after `mark-used --workflow kk-daily-ai-voice2`, `extract --exclude-used kk-daily-ai-voice2` → `{"count":0}` for the same and a later run, while another workflow still gets both items. `NOT EXISTS (… u.workflow = ?)` at `packages/kk-store/src/dao/items.ts:285`. |
-| AC4 — Architecture docs record the store decision | MET | test | `apps/cli/tests/store-docs.test.ts:35-78` — four `it` blocks binding R7 C1–C4: `:36-43` ADR-030 section must contain `shipped`; `:45-49` the **Persistent store** paragraph (`:29-33`, sliced to its first blank line) must contain `shipped` and must not contain "not yet built"; `:51-65` 04 must list all six `store` verbs + `kk schedule render`; `:67-78` the 05 G31 row's status cell (`split(' |
+| AC1 — AI-news extraction selects the episode pool from labels | MET | test | `apps/cli/tests/store-extract.test.ts:159` |
+| AC2 — A second topic is extractable without re-collecting | MET | test | `apps/cli/tests/store-extract.test.ts:258` |
+| AC3 — Items aired in an episode never re-enter a later pool | MET | test | `apps/cli/tests/store-extract.test.ts:335`, `packages/kk-store/tests/dao/items.test.ts:180` |
+| AC4 — Architecture docs record the store decision | MET | test | `apps/cli/tests/store-docs.test.ts:39`, `apps/cli/tests/store-docs.test.ts:48`, `apps/cli/tests/store-docs.test.ts:54`, `apps/cli/tests/store-docs.test.ts:70` — 5 pass / 0 fail this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

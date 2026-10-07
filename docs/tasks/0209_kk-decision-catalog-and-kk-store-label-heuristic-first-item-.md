@@ -4,7 +4,7 @@ name: "kk decision catalog and kk store label: heuristic-first item labeling"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.075Z
-updated_at: "2026-10-07T17:16:20.835Z"
+updated_at: "2026-10-07T23:22:13.575Z"
 feature_id: G31
 priority: P1
 tags:
@@ -165,17 +165,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/decisions/kk-items.yaml:12` (`$schema` + `version: 1`); `:20-113` five dash-named ids (all match `^[a-z][a-z0-9_-]*$`), `kk-item-category` choice criteria `ai-news/ai-technical/ai-research/ai-industry/non-ai` with `fallback: non-ai`, four `kk-item-*` score decisions with 6 rubric strings (levels 0–5) and `fallback: 2`, and `title`/`source` string parameters on every decision. Pinned by `plugins/kk/tests/decision-catalog.test.ts:53-110`. |
-| R2 | MET | `.spur/config.yaml:159-161` registers project-relative `plugins/kk/decisions`; live `spur decision status --json` → `ok: true`, `loadErrors: []`, `duplicateIds: []`, all five `kk-item-*` ids served. |
-| R3 | MET | `plugins/generations/episode-plan-gen/src/index.ts:680` adds `label` mode; `:917-933` `labelDocs` is a bare `docs.map` — no cap, dedup, filter or top-N — annotating every doc with `category`/`scores`/`needs_model`; `plan`/`filter` untouched. `apps/cli` reaches it only via `kk executor run` (`apps/cli/src/commands/store.ts:420-421`), no plugin-source import. Caveat: the Plan's "30 fixture docs uncapped" unit test does not exist (review P3); the no-cap claim rests on the code reading plus the 3-doc E2E — a coverage note, not a requirement gap. |
-| R4 | MET | `apps/cli/src/commands/store.ts:599-733` registers `label` with `--run`/`--new-ids` (`.requiredOption`), `--maker fm-local`, `--mode heuristic`, `--db`; `:567-590` writes one `labels` row per listed item × decision. `labels.confidence` + `labels.run_id` added by migration `0002_labels_confidence_run_id` (`packages/kk-store/src/migrations.ts:24-32`) backed by `packages/kk-store/src/schema/labels.ts:22-25` and `packages/kk-store/src/dao/labels.ts:41-62`. Convergence reproduced: fresh `0001`+`0002` and a rewound 0206-era DB both journal `[0001, 0002]` and end with byte-identical 11-column `labels` sets (`.works/test-artifacts/0209/kk-store-labels-convergence.json`; `packages/kk-store/tests/migrations.test.ts:108-177`, green). |
-| R5 | MET | `apps/cli/src/commands/store.ts:567-590` routes in heuristic mode only when the plugin set `metadata.needs_model`, and every listed item under `--mode decision`; `:473-503` spawns `spur decision run <id> --param title=… --param source=… --evidence <scratch> --maker <m> --json` as an arg array (no shell) and parses `{value, confidence, source, reason, maker}`. Tests: zero spawns for confident items (`apps/cli/tests/store-label.test.ts:214`), only the ambiguous item routed (`:257`), every item in decision mode (`:296`). Divergence: the gate is `classifyCategory === 'non-ai' && hasAiSignal` (`plugins/generations/episode-plan-gen/src/index.ts:431-455`) where `hasAiSignal` also accepts an AI-mapped tag or curated source, i.e. "AI keyword" is implemented as "any AI-side signal" — a defensible superset mirroring the classifier's own evidence (review P4). |
-| R6 | MET | `apps/cli/src/commands/store.ts:528-571` stores the heuristic value with `source: default` for a `source: default` payload, an out-of-vocabulary value, and a `spur decision run` spawn failure; stdout is `{labeled, model, fallback}`. Executable: `apps/cli/tests/store-label.test.ts:320` (backend answers `source: default` with a *different* value → heuristic value retained) and `:354` (unspawnable `spur` → `source: default`, exit 0). |
+| R1 | MET | `plugins/kk/decisions/kk-items.yaml:13` versioned catalog of five kk-item ids; `plugins/kk/tests/decision-catalog.test.ts:54` |
+| R2 | MET | `.spur/config.yaml:161` registers `plugins/kk/decisions`; `spur decision status --json` this run → ok true, loadErrors [], five kk-item ids; `plugins/kk/tests/decision-catalog.test.ts:71` |
+| R3 | MET | `plugins/generations/episode-plan-gen/src/index.ts:680` adds label mode, `plugins/generations/episode-plan-gen/src/index.ts:917` labelDocs annotates every doc |
+| R4 | MET | `apps/cli/src/commands/store.ts:915` registers label; `apps/cli/src/commands/store.ts:676` labelAction, row write via `apps/cli/src/commands/store.ts:571`; `apps/cli/tests/store-label.test.ts:235` |
+| R5 | MET | Routing at `apps/cli/src/commands/store.ts:623` (decision mode or plugin needs_model, read at `apps/cli/src/commands/store.ts:446`); spawn at `apps/cli/src/commands/store.ts:514`; `apps/cli/tests/store-label.test.ts:279` |
+| R6 | MET | Fallback via `apps/cli/src/commands/store.ts:547` and `apps/cli/src/commands/store.ts:571` records the heuristic value with source default; `apps/cli/tests/store-label.test.ts:398`, `apps/cli/tests/store-label.test.ts:423` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Newly inserted items are labeled through the kk decision catalog | MET | test | `apps/cli/tests/store-label.test.ts:214` (heuristic-only labeling writes 5 rows/item, no model spawn), `:296` (decision mode writes model rows carrying `run_id`), `:416` (only the `--new-ids` ids labeled); live artifact `.works/test-artifacts/0209/live/live-labels.json` (real `spur decision run` against `plugins/kk/decisions/kk-items.yaml`). |
-| AC2 — Decision backend failure falls back to the heuristic label and is recorded | MET | test | `apps/cli/tests/store-label.test.ts:320` (`source: default` with a divergent model value keeps the heuristic value, recorded row) and `:354` (spawn failure → `source: default`, exit 0, `{labeled, model, fallback}`); `apps/cli/src/commands/store.ts:528-571` records it. |
+| AC1 — Newly inserted items are labeled through the kk decision catalog | MET | test | `apps/cli/tests/store-label.test.ts:235`, `apps/cli/tests/store-label.test.ts:279`; full suite this run green for store-label |
+| AC2 — Decision backend failure falls back to the heuristic label and is recorded | MET | test | `apps/cli/tests/store-label.test.ts:398`, `apps/cli/tests/store-label.test.ts:423`, `apps/cli/tests/store-label.test.ts:457` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
