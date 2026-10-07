@@ -79,6 +79,7 @@ describe('AC4 — the architecture docs record the store decision', () => {
         // Only the STATUS cell: the notes cell legitimately says "done" about individual tasks.
         const statusCell = (row?.split('|')[3] ?? '').trim().toLowerCase();
         const featureFile = readdirSync(join(REPO, 'docs/features')).find((name) => name.startsWith('G31_'));
+        expect(featureFile).toBeDefined();
         const featureStatus = read(`docs/features/${featureFile}`).match(/^status:\s*(\S+)/m)?.[1];
         expect(featureStatus).toBeDefined();
         expect(statusCell.includes('done')).toBe(featureStatus === 'done');
