@@ -4,7 +4,7 @@ name: kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned 
 status: todo
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-07T06:44:09.327Z"
+updated_at: "2026-10-07T22:04:30.799Z"
 feature_id: G11
 priority: P1
 tags:
@@ -119,5 +119,9 @@ If `kk store pool-count` is not already provided by 0210's `extract` output, add
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
+
+- **Parked partial:** branch `sp/wip-0211-partial-20261007-202740` (commit `ebd38fb7`, "chore(0211): park the partial 0211 implementation (UNVERIFIED, R7 incomplete)") holds the implement dispatch that died on a provider error 2026-10-07 after 58 min. Produces validating `kk-daily-ai-voice2.yaml` + `kk-daily-safety.yaml`, the `kk daily` noun module, tests, and cli/ledger/store edits — but R7 (plugin-owned stages in `kk-workflow-stages.ts`) is NOT done and nothing is verified.
+- **Resume path:** branch is based on `7552b050` (task 0213), 17 commits behind main — rebase onto main (expect conflicts in `cli.ts`/`ledger.ts`/`store.ts`), finish R7, then run the pipeline. Do not merge the branch as-is: it is uncertified by design.
+- **Recovery notes (gitignored):** `.spur/run/4606d18a-5223-46e1-9d8d-d8887db48807-implement-partial.md`; `/Users/robin/.pi/agent/checkpoints/g31-runall-checkpoint.md`.
 
 ### History
