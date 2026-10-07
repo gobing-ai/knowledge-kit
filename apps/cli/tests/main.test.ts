@@ -53,6 +53,7 @@ describe('kk main exit seam', () => {
         for (const args of [[], ['--help'], ['-h']]) {
             const { code, out } = await run(args);
             expect(code).toBe(0);
+            expect(out).toContain('daily');
             expect(out).toContain('executor');
             expect(out).toContain('plugin');
             expect(out).toContain('stage');
@@ -64,6 +65,7 @@ describe('kk main exit seam', () => {
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
             // `plugin|plugins` — the loose line-start regex could not see that.
             expect(visibleCommandNames(out).sort()).toEqual([
+                'daily',
                 'executor',
                 'help',
                 'ledger',

@@ -81,12 +81,15 @@ const VARS_REF = /\$\{vars\.([\w.]+)\}/g;
 function load(rel: string): Workflow {
     const parsed = Bun.YAML.parse(readFileSync(join(REPO, rel), 'utf-8')) as {
         vars?: Record<string, string>;
-        transitions: RawTransition[];
+        transitions?: RawTransition[];
     };
     return {
         rel,
         vars: { ...(parsed.vars ?? {}) },
-        transitions: parsed.transitions.map((t) => ({
+        // A `kind: dag` workflow has no top-level transitions (task 0211) — and today carries no
+        // `jq -r .*verdict` guards either, so an empty list scans it correctly. If the DAG ever
+        // grows verdict guards inside node conditions, teach load() to unwrap nodes instead.
+        transitions: (parsed.transitions ?? []).map((t) => ({
             from: t.from,
             to: t.to,
             description: t.description ?? '',
@@ -493,7 +496,10 @@ describe('every judge-verdict consumer verifies confidence', () => {
     });
 
     it('the stage-level consumer (daily-safety-gate) also enforces it', () => {
-        const stages = readFileSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'), 'utf-8');
+        // R7 (0211): the daily stage bodies moved to the lazy sibling — scan the concatenation.
+        const stages =
+            readFileSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'), 'utf-8') +
+            readFileSync(join(REPO, 'plugins/kk/scripts/daily-stages.ts'), 'utf-8');
         const gate = stages.slice(stages.indexOf('function dailySafetyGate'));
         // 20261005: the gate names the whole enum (a positive allow-list); match either polarity so
         // the scan checks the contract — every level present — not one spelling of it.

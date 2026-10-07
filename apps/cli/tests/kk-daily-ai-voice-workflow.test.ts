@@ -19,10 +19,11 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
     const workflowPath = join(import.meta.dir, '../../../plugins/kk/workflows/kk-daily-ai-voice.yaml');
     const yaml = readFileSync(workflowPath, 'utf-8');
     // 0133: the stage bodies (paths, cache predicates, plugin argv) live in the shared runner.
-    const runnerSource = readFileSync(
-        join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'),
-        'utf-8',
-    );
+    // R7 (0211): the daily-* bodies moved to the lazy sibling — the runner and sibling are one
+    // logical surface, so assertions scan their concatenation.
+    const runnerSource =
+        readFileSync(join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts'), 'utf-8') +
+        readFileSync(join(import.meta.dir, '../../../plugins/kk/scripts/daily-stages.ts'), 'utf-8');
     // 0144: absolute path injected into the integration fake kk's `stage` delegation.
     const stagesAbs = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
 
