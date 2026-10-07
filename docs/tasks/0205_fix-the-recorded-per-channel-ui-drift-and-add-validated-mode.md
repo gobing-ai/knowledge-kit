@@ -4,7 +4,7 @@ name: Fix the recorded per-channel UI drift and add validated mode dispatch
 status: done
 template: feature-impl
 created_at: 2026-10-05T18:00:10.115Z
-updated_at: "2026-10-07T22:25:15.616Z"
+updated_at: "2026-10-07T22:37:39.929Z"
 feature_id: E92
 
 done_forced: "false"
@@ -175,13 +175,13 @@ Each entry cites the first changed line per file (`file:line`).
 |-------------|--------|----------|
 | R1 | MET | Corrections in channel code at commit 635234ba plus discovery-doc dispositions: xhs drift 1-7 dispositioned at `docs/design/xhs-ui-discovery.md:42-70`; wechatmp drift list `docs/design/wechatmp-ui-discovery.md:54-68` with dispositions `docs/design/wechatmp-ui-discovery.md:188-200`; x post-mode exclusion `docs/design/x-article-ui-discovery.md:5-8`; infoq/juejin/substack recorded-candidate → verdict tables (`docs/design/juejin-ui-discovery.md:18-28`, `docs/design/substack-ui-discovery.md:22-34`) |
 | R2 | MET | Declared mode lists with named refusal before profile/browser: `plugins/publishings/infoq-pub/src/index.ts:193-232`, `plugins/publishings/juejin-pub/src/index.ts:156-195`, `plugins/publishings/substack-pub/src/index.ts:147-181`, `plugins/publishings/x-pub/src/index.ts:90-99`, `plugins/publishings/wechatmp-pub/src/modes.ts:27-88`, `plugins/publishings/xhs-pub/src/index.ts:230-233`; refusal tests e.g. `plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:534`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1890`; bun test over the six channel suites re-run 2026-10-07: 303 pass / 0 fail |
-| R3 | MET | Real-console draft saves with observed signals in .spur/run/discovery/ (infoq-walk3, juejin-walk2, x-walk3, substack-walk4, wechatmp-attended, xhs-draft-signal-cdp JSON, all re-listed this run); xhs signal wired at `plugins/publishings/xhs-pub/src/flow.ts:72` |
+| R3 | MET | Real-console draft saves with observed signals in .spur/run/discovery/ (infoq-walk3, juejin-walk2, x-walk3, substack-walk4, wechatmp-attended, xhs-draft-signal-cdp JSON, all re-listed this run); xhs signal wired at `plugins/publishings/xhs-pub/src/flow.ts:72`; ok:false on an unobserved signal tested per channel at `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:735`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1137`, `plugins/publishings/x-pub/tests/x-pub.test.ts:375`, `plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:310`, `plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:321`, `plugins/publishings/substack-pub/tests/substack-pub.test.ts:364` |
 | R5 | MET | Gaps fixed or excluded with reason: 贴图 dialog-validation signal and 视频/播客 artifact gating (`docs/design/wechatmp-ui-discovery.md:188-200`), xhs 视频/发播客 artifact gating (`docs/design/xhs-ui-discovery.md:67-70`), x post mode (`docs/design/x-article-ui-discovery.md:5-8`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | R2 — A channel exposes its modes as validated operations and refuses an unknown one before opening a browser | MET | test | bun test over the six channel suites re-run 2026-10-07: 303 pass / 0 fail; refusal asserted at `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:434` and `plugins/publishings/x-pub/tests/x-pub.test.ts:706` |
-| R3 — Each corrected flow saves a draft through the real console with an observed signal | MET | command | `ls .spur/run/discovery/infoq-walk3.json .spur/run/discovery/juejin-walk2.json .spur/run/discovery/x-walk3.json .spur/run/discovery/substack-walk4.json .spur/run/discovery/wechatmp-attended.json .spur/run/discovery/xhs-draft-signal-cdp.json` → all six present (re-run 2026-10-07) |
+| R3 — Each corrected flow saves a draft through the real console with an observed signal | MET | test | `ls .spur/run/discovery/infoq-walk3.json .spur/run/discovery/juejin-walk2.json .spur/run/discovery/x-walk3.json .spur/run/discovery/substack-walk4.json .spur/run/discovery/wechatmp-attended.json .spur/run/discovery/xhs-draft-signal-cdp.json` → all six present (re-run 2026-10-07); ok:false on an unobserved signal tested per channel at `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:735`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1137`, `plugins/publishings/x-pub/tests/x-pub.test.ts:375`, `plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:310`, `plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:321`, `plugins/publishings/substack-pub/tests/substack-pub.test.ts:364` |
 | R5 — Recorded gaps are fixed or explicitly excluded with a reason | MET | command | `rg -n "excluded" docs/design` re-run 2026-10-07 → exclusions with reasons in the xhs, wechatmp and x-article discovery docs |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
