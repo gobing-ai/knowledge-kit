@@ -62,6 +62,7 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                    [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>]
                    [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
+kk store migrate [--db <path>]
 ```
 
 | Command | Description | Status |
@@ -70,10 +71,12 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 | `executor fan-in` | Merge N `Doc[]` files into one (§1.5) | shipped (A21) |
 | `executor fan-out` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (A21) |
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
+| `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
-> registrations). The first-layer nouns are exactly `executor` and `plugin` (ADR-011, feature
-> **A21**); the engines shipped with **A2** / **B6** keep their flags and exit codes, only the
+> registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
+> extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206); the
+> engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
 > still reach the same engines but are not listed in `kk --help`. §1.5/§1.6 are callable today. The
 > spec's `--dedupe` flag is deliberately deferred, not shipped — see §1.5.
@@ -334,6 +337,24 @@ gitignored artifact) is never loaded and editing the runner takes effect without
 source fallback applies only to a genuine checkout whose package copy is missing. Runner and sidecar
 resolution, and the delegated stage names, are in §7.
 
+### 1.9 `store` — shipped (task 0206)
+
+`kk store migrate [--db <path>]` brings the kk SQLite store's schema up to date. It is the first verb
+of the first-layer `store` noun, alongside `executor` / `plugin` / `stage`. It resolves the database
+path as explicit `--db` → `store.db_path` in the kk config → `.works/kk.db` (a leading `~` expands; a
+relative path resolves against cwd; the parent directory is created), applies every unjournaled
+migration from `packages/kk-store`'s append-only `KK_MIGRATIONS` list, and prints
+`{"db": <path>, "applied": <n>}`. It is **idempotent** — a second run against the same database
+reports `applied: 0` from the `__kk_store_migrations` journal, taking no write lock. A failure exits 1
+with `kk.store.migrate.failed: <cause>` (a `CommanderError` `main()` maps to the exit code).
+
+The store opens WAL (`PRAGMA journal_mode = WAL`) and `busy_timeout = 30000` on every open, and a
+failed migration closes the adapter before rethrowing, so a rejected open never leaks the handle.
+`packages/kk-store/src/db.ts` owns that sequence; the noun owns only path resolution and the printed
+shape. The schema is created from `defineTable(...).createTableSql`, so there is no hand-written DDL
+to drift — see §4 for the package surface and `.spur/rules/boundary/dao-boundary.yaml` for the
+ts-db/drizzle confinement rules.
+
 ## 2. Configuration keys
 
 Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness config stays under
@@ -445,6 +466,25 @@ Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfe
 | `discoverPlugins(root)`, `discoverAllPlugins(opts)`, `resolvePluginRoots(opts)`, `listByKind`, `getByName` | functions | Per-root scan, merged multi-root discovery, root resolution, and registry filtering (ADR-012) |
 | `PluginRecord`, `PluginOrigin`, `DiscoverAllOptions`, `DiscoveryDiagnostic`, `DiscoveryResult` | interfaces | Structured discovery output types (`misplaced`, `kind_mismatch`, `shadowed` codes; `origin` on every record) |
 | `renderContentMarkdown(content)`, `renderContentMarkdownFile(in, out)`, `main()` | functions | Content → research-report markdown (frozen template) + `--in`/`--out` file/CLI wrapper (task 0058). **C5 (ADR-013):** drops the `## Outline` replay (applied to the byte-identical `plugins/kk/scripts/render-md.ts` copy too); references tail resolves cite ids to cached files |
+
+### `@gobing-ai/kk-store` (`packages/kk-store`)
+
+The kk-owned SQLite store (ADR-030): schema, embedded migrations, DAOs, and the store path resolver.
+It is the **only** package permitted to import `@gobing-ai/ts-db` or `drizzle-orm`, enforced by
+`.spur/rules/boundary/dao-boundary.yaml`. The public surface is deliberately ts-db-free — no ts-db
+type crosses `src/index.ts`.
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `openStore(opts)`, `Store`, `SQLITE_BUSY_TIMEOUT_MS` | function / interface / const | Lazily imports `createDbAdapter`, opens `{ driver: 'bun-sqlite', url: path }`, sets WAL + `busy_timeout`, applies `KK_MIGRATIONS`, returns the DAO bundle plus `appliedMigrations`; closes the adapter when a migration fails |
+| `resolveStorePath(configFile?, explicitPath?)`, `DEFAULT_STORE_DB_PATH` | function / const | `--db` → `store.db_path` → `.works/kk.db`; expands `~`, resolves a relative path against cwd, creates parent dirs. Async: file IO goes through ts-runtime's `FileSystem` seam (the repo's `no-direct-fs-io` rule), and config path is passed in because `apps/cli` depends on this package, never the reverse |
+| `canonicalUrl(url)`, `itemId(doc)` | functions | Pure identity helpers: lowercase scheme/host, drop the fragment and `utm_*`/`ref`/`ref_src`/`fbclid`/`gclid`, sort the remaining query params, strip the trailing slash (root excepted). `itemId` = `sha256(canonicalUrl)`, or `sha256(title + body)` for a URL-less Doc |
+| `ItemsDao`, `CollectRunsDao`, `LabelsDao`, `EpisodeUsageDao`, `LocksDao` | classes | ts-db `EntityDao` subclasses over `items`, `collect_runs`, `labels`, `episode_usage`, `locks`. `ItemsDao.upsertDocs(runId, docs)` upserts in one transaction and deletes that item's `labels` rows when `content_hash` changes; `LocksDao.acquire(name, runId, ttlMs)` is the single-flight primitive (a stale holder is stolen past `acquired_at + ttl_ms`) |
+| `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `EpisodeUsageRecord`, `LockRecord`, … | types | Row and input types for the DAOs above |
+
+Migrations are embedded `KkMigration[]` (`{id, sql}`, append-only; `0001_kk_store_init` today) whose
+DDL is derived from each `defineTable(...).createTableSql` — there is no hand-written DDL file — and
+journaled in `__kk_store_migrations(id TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`.
 
 ### `@gobing-ai/publish-harness` (`packages/publish-harness`)
 

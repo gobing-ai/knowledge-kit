@@ -1,0 +1,21 @@
+{
+    "name": "@gobing-ai/kk-store",
+    "type": "module",
+    "private": true,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-db": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:"
+    },
+    "devDependencies": {
+        "@types/bun": "1.3.14"
+    },
+    "version": "0.0.15"
+}

@@ -1,13 +1,22 @@
 $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
-# DAO / database boundary rules — keep DB access centralized in packages/domain,
-# drizzle confined to schema authoring, and table DDL derived (not hand-written).
-# Enforces ADR-011 (ts-db consumed as a facade; tables are a single source of truth).
+# Store/DAO boundary rules — keep ts-db consumption centralized in packages/kk-store,
+# drizzle confined to kk-store's schema authoring, and table DDL derived (not hand-written).
+# Enforces ADR-030 (the kk store package owns SQLite) and the ADR-011 lineage: ts-db is
+# consumed as a facade by DAO files only, and tables have a single source of truth.
+#
+# Retargeted from spur's `packages/domain` scaffold (task 0206 R8): the four rules below are
+# scoped to `packages/kk-store`. spur's `no-hand-written-ddl-for-drizzle-tables` and
+# `no-sql-text-imports` are NOT carried over — both guarded spur's domain DDL/`.sql`
+# workflow, which this repo does not have (kk-store embeds its migrations, so
+# `raw-sql-only-in-kk-store` is the substantive DDL guard). The
+# `apps/cli/src/index.ts` ts-db exemption spur needed is dropped too: no app file imports
+# ts-db here, so the exemption would only widen the hole.
 rules:
-  - id: ts-db-only-in-domain
+  - id: ts-db-only-in-kk-store
     description: >
-      @gobing-ai/ts-db may only be imported inside packages/domain. Apps and
-      other packages must consume persistence through @gobing-ai/spur-domain
-      DAOs, never the raw adapter. (ADR-011)
+      @gobing-ai/ts-db may only be imported inside packages/kk-store. Apps, other
+      packages and plugins consume persistence through the @gobing-ai/kk-store
+      DAOs, never the raw adapter or a table definition. (ADR-030)
     severity: error
     evaluator:
       type: forbidden-import
@@ -20,25 +29,20 @@ rules:
         scope:
           include:
             - "apps/**/src/**/*.ts"
-            - "packages/app/src/**/*.ts"
-            - "packages/config/src/**/*.ts"
-            - "packages/contracts/src/**/*.ts"
+            - "packages/**/src/**/*.ts"
+            - "plugins/**/src/**/*.ts"
           exclude:
+            - "packages/kk-store/**"
             - "**/node_modules/**"
             - "**/tests/**"
-            # apps/cli/src/index.ts carries a side-effect import of ts-db as a
-            # bundler hint for Bun --compile. The import does not use ts-db APIs;
-            # it ensures the dynamic import('@gobing-ai/ts-db') calls from within
-            # ts-runtime resolve at runtime from the compiled binary's bunfs.
-            # Spur-domain still owns all functional ts-db usage.
-            - "apps/cli/src/index.ts"
+            - "**/dist/**"
 
-  - id: drizzle-only-in-domain-schema
+  - id: drizzle-only-in-kk-store-schema
     description: >
-      drizzle-orm is an internal detail of the ts-db facade. Spur may import it
-      ONLY in packages/domain/src/schema/ (table authoring via defineTable column
-      builders). DAOs, analytics, apps, and other packages must use the ts-db
-      vocabulary (EntityDao/BaseDao + predicate spec), never drizzle. (ADR-011)
+      drizzle-orm is an internal detail of the ts-db facade. It may be imported ONLY
+      in packages/kk-store/src/schema/ (table authoring via defineTable column
+      builders). DAOs, apps, plugins and other packages use the ts-db vocabulary
+      (EntityDao/BaseDao + predicate spec), never drizzle. (ADR-011, ADR-030)
     severity: error
     evaluator:
       type: forbidden-import
@@ -53,16 +57,18 @@ rules:
           include:
             - "apps/**/src/**/*.ts"
             - "packages/**/src/**/*.ts"
+            - "plugins/**/src/**/*.ts"
           exclude:
-            - "packages/domain/src/schema/**"
+            - "packages/kk-store/src/schema/**"
             - "**/node_modules/**"
             - "**/tests/**"
+            - "**/dist/**"
 
   - id: tables-via-defineTable
     description: >
-      Tables must be defined with defineTable() (from @gobing-ai/ts-db/schema),
-      not bare sqliteTable() — so DDL and zod derive from one source. Allowed only
-      under packages/domain/src/schema/. (ADR-011)
+      Tables must be defined with defineTable() (from @gobing-ai/ts-db/schema), not
+      bare sqliteTable() — so DDL and zod derive from one source. Allowed only under
+      packages/kk-store/src/schema/ (where the store's five tables live). (ADR-030)
     severity: error
     evaluator:
       type: rg
@@ -71,36 +77,19 @@ rules:
     include:
       - "apps/**/src/**/*.ts"
       - "packages/**/src/**/*.ts"
+      - "plugins/**/src/**/*.ts"
     exclude:
+      - "packages/kk-store/src/schema/**"
       - "**/node_modules/**"
       - "**/tests/**"
+      - "**/dist/**"
 
-  - id: no-hand-written-ddl-for-drizzle-tables
-    description: >
-      Domain tables derive their CREATE TABLE via createTableSql (single source of
-      truth) — do not hand-write DDL. Exempt: the CLI migration journal and
-      package-owned schema SQL re-exported from ts-libs. (ADR-011)
-    severity: error
-    evaluator:
-      type: rg
-      config:
-        # Match DDL statement form (CREATE/ALTER/DROP TABLE <name> ... '(' or ';'),
-        # not the bare words in prose/comments. Inline `(?i)` replaces the JS
-        # `flags: i` — the rg evaluator honors inline flags, not a `flags` field.
-        pattern: "(?i)(CREATE|ALTER|DROP)\\s+TABLE\\s+(IF\\s+(NOT\\s+)?EXISTS\\s+)?[\"'`]?[A-Za-z_][A-Za-z0-9_]*[\"'`]?\\s*[(;]"
-    include:
-      - "apps/**/src/**/*.ts"
-      - "packages/**/src/**/*.ts"
-    exclude:
-      - "packages/domain/src/migrations.ts"
-      - "**/node_modules/**"
-      - "**/tests/**"
-
-  - id: raw-sql-only-in-domain
+  - id: raw-sql-only-in-kk-store
     description: >
       Raw SQL string literals (SELECT/INSERT/UPDATE/DELETE) must stay inside
-      packages/domain (the DAO/migration layer). Apps and other packages query
-      through @gobing-ai/spur-domain DAOs. (ADR-011)
+      packages/kk-store (its DAOs, migrations and the lock/upsert statements the store
+      owns). Apps, other packages and plugins query through @gobing-ai/kk-store DAOs —
+      the store is the one place that knows the schema. (ADR-030)
     severity: error
     evaluator:
       type: rg
@@ -108,26 +97,10 @@ rules:
         pattern: "(SELECT |INSERT INTO|UPDATE |DELETE FROM)"
     include:
       - "apps/**/src/**/*.ts"
-      - "packages/app/src/**/*.ts"
-      - "packages/config/src/**/*.ts"
-      - "packages/contracts/src/**/*.ts"
-    exclude:
-      - "**/node_modules/**"
-      - "**/tests/**"
-
-  - id: no-sql-text-imports
-    description: >
-      .sql text-imports (import ... from './x.sql' with { type: 'text' }) are
-      non-portable through build/publish and are forbidden. Inline SQL in .ts or
-      derive DDL via createTableSql instead. (ADR-011)
-    severity: error
-    evaluator:
-      type: rg
-      config:
-        pattern: "from\\s+['\"][^'\"]*\\.sql['\"]"
-    include:
-      - "apps/**/src/**/*.ts"
       - "packages/**/src/**/*.ts"
+      - "plugins/**/src/**/*.ts"
     exclude:
+      - "packages/kk-store/**"
       - "**/node_modules/**"
       - "**/tests/**"
+      - "**/dist/**"

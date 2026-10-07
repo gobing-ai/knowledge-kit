@@ -47,6 +47,7 @@
     },
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/kk-store": "workspace:*",
         "@gobing-ai/ts-infra": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",

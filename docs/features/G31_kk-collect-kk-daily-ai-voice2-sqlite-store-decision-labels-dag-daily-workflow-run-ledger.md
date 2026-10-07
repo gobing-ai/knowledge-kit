@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-10-07T03:50:34.546Z"
-updated_at: "2026-10-07T05:01:34.905Z"
+updated_at: "2026-10-07T06:07:00.530Z"
 ---
 
 # G31: kk-collect + kk-daily-ai-voice2: SQLite store, decision labels, DAG daily workflow, run ledger
@@ -144,6 +144,16 @@ Scenario: R13 — Architecture docs record the store decision
   When docs/00_ADR.md, docs/03_ARCHITECTURE.md, and docs/04_DESIGN.md are inspected
   Then ADR-030 records the kk-owned SQLite store with status shipped
   And 04 lists every kk store and kk schedule verb in the same commit as its code
+
+@core
+Scenario: R14 — Verdict and decision surfaces carry a HIGH, MEDIUM, or LOW confidence level
+  # covers: I22
+  Given a label or judge verdict emitted by a kk-collect or kk-daily-ai-voice2 surface
+  When the consumer reads that verdict
+  Then it carries exactly one confidence level from HIGH, MEDIUM, and LOW
+  And a verdict whose confidence is missing or outside that enum is refused rather than treated as a pass
+  And the refusal names the offending value
+
 ```
 
 ## Tasks

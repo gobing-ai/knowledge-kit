@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "kk-store package: ts-db SQLite store, migrations, config path, boundary rules"
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-10-07T03:58:06.070Z
-updated_at: "2026-10-07T05:06:45.289Z"
+updated_at: "2026-10-07T06:11:11.359Z"
 feature_id: G31
 priority: P1
 tags:
@@ -70,7 +70,7 @@ Invariants:
 - WAL + busy_timeout are set on every open.
 - ts-db is imported lazily so `import '@gobing-ai/kk-store'` costs nothing until `openStore`.
 
-Files: `packages/kk-store/{package.json,tsconfig.json,src/index.ts,src/db.ts,src/migrations.ts,src/canonical-url.ts,src/config.ts,src/schema/*.ts,src/dao/*.ts,tests/kk-store.test.ts}`, `apps/cli/src/commands/store.ts`, `apps/cli/src/cli.ts`, `apps/cli/package.json` (`@gobing-ai/kk-store: workspace:*`), `.spur/rules/boundary/dao-boundary.yaml`, `docs/04_DESIGN.md` (kk store row).
+Files: `packages/kk-store/{package.json,tsconfig.json,src/index.ts,src/db.ts,src/migrations.ts,src/canonical-url.ts,src/config.ts,src/schema/*.ts,src/dao/*.ts,tests/kk-store.test.ts}`, `apps/cli/src/commands/store.ts`, `apps/cli/src/cli.ts`, `apps/cli/package.json` (`@gobing-ai/kk-store: workspace:*`), `.spur/rules/boundary/dao-boundary.yaml`, `docs/04_DESIGN.md` (kk store row), `bun.lock` (catalog dependency lock entry). The spawned-CLI test for `kk store migrate` lives at `apps/cli/tests/commands/store.test.ts`.
 Key signatures:
 - `openStore(opts: { path: string }): Promise<Store>`
 - `interface Store { items: ItemsDao; collectRuns: CollectRunsDao; labels: LabelsDao; usage: EpisodeUsageDao; locks: LocksDao; close(): Promise<void> }`
@@ -106,3 +106,6 @@ Key signatures:
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-07T06:11:11.359Z todo → wip (system)
+
