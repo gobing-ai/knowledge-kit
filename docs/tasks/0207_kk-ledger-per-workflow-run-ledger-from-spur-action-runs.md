@@ -4,7 +4,7 @@ name: "kk ledger: per-workflow run ledger from spur action_runs"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.074Z
-updated_at: "2026-10-07T23:34:30.987Z"
+updated_at: "2026-10-07T23:42:32.843Z"
 feature_id: G71
 priority: P1
 tags:
@@ -128,17 +128,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/commands/ledger.ts:50` spawns the trace via an argv executor (no shell), `apps/cli/src/commands/ledger.ts:144` appends one section; `apps/cli/tests/ledger.test.ts:250`; live re-run against the installed spur wrote `.works/test-artifacts/0207/live-spur-sync/` (20 kk-daily-ai-voice + 15 task-pipeline sections) |
+| R1 | MET | `apps/cli/src/commands/ledger.ts:50` spawns the trace via an argv executor (no shell), `apps/cli/src/commands/ledger.ts:150` appends one section; `apps/cli/tests/ledger.test.ts:250`; live re-run against the installed spur wrote `.works/test-artifacts/0207/live-spur-sync/` (20 kk-daily-ai-voice + 15 task-pipeline sections) |
 | R2 | MET | `apps/cli/src/ledger.ts:286` header + marker, `apps/cli/src/ledger.ts:170` duration format; golden `apps/cli/tests/ledger.test.ts:138`, boundaries `apps/cli/tests/ledger.test.ts:211` |
 | R3 | MET | `apps/cli/src/ledger.ts:197` groups action events by node in first-seen order, `apps/cli/src/ledger.ts:245` sums duration and derives status; `apps/cli/tests/ledger.test.ts:138` |
 | R4 | MET | `apps/cli/src/ledger.ts:250` marks a step unknown when any agent action lacks exact cost (estimated never read), `apps/cli/src/ledger.ts:271` renders an em dash for non-agent steps; `apps/cli/tests/ledger.test.ts:170`; live run fa1ea1ec renders 3 unknown agent steps and header `(+3 unknown)`, matching its raw trace (3 agent actions, exact and estimated both null) |
 | R5 | MET | `apps/cli/src/ledger.ts:229` escapes pipes and cuts to 120, `apps/cli/src/ledger.ts:245` summary → failing error → ok; `apps/cli/tests/ledger.test.ts:192`, `apps/cli/tests/ledger.test.ts:284` |
-| R6 | MET | `apps/cli/src/ledger.ts:320` skips running and marker-present runs, oldest first; `apps/cli/src/commands/ledger.ts:168`; `apps/cli/tests/ledger.test.ts:314`; live: second task-pipeline sync appended [] and kept 15 sections, the 5 running runs were skipped |
-| R7 | MET | `apps/cli/src/commands/ledger.ts:66` maps not-found / spawn failure / running, `apps/cli/src/commands/ledger.ts:198` exits 1 via CommanderError; `apps/cli/tests/ledger.test.ts:350`, `apps/cli/tests/commands/ledger.test.ts:67`; live: a running run printed kk.ledger.run.running and an unknown id printed kk.ledger.trace.not-found, with no ledger directory created |
+| R6 | MET | `apps/cli/src/ledger.ts:320` skips running and marker-present runs, oldest first; `apps/cli/src/commands/ledger.ts:174`; `apps/cli/tests/ledger.test.ts:314`; live: second task-pipeline sync appended [] and kept 15 sections, the 5 running runs were skipped |
+| R7 | MET | `apps/cli/src/commands/ledger.ts:66` maps not-found / spawn failure / running, `apps/cli/src/commands/ledger.ts:204` exits 1 via CommanderError; `apps/cli/src/commands/ledger.ts:118` refuses a non-stem workflow name as kk.ledger.workflow.invalid before any spawn or write; `apps/cli/tests/ledger.test.ts:350`, `apps/cli/tests/ledger.test.ts:438`, `apps/cli/tests/commands/ledger.test.ts:67`; live: `../escape` refused, a running run printed kk.ledger.run.running and an unknown id printed kk.ledger.trace.not-found, with no ledger directory created |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Each workflow run appends a summary row block to its ledger | MET | test | `apps/cli/tests/ledger.test.ts:250`, `apps/cli/tests/ledger.test.ts:314` — `bun test apps/cli/tests/ledger.test.ts apps/cli/tests/commands/ledger.test.ts` 14 pass / 0 fail this run; live sync against real traces under `.works/test-artifacts/0207/live-spur-sync/` |
+| AC1 — Each workflow run appends a summary row block to its ledger | MET | test | `apps/cli/tests/ledger.test.ts:250`, `apps/cli/tests/ledger.test.ts:314` — `bun test apps/cli/tests/ledger.test.ts apps/cli/tests/commands/ledger.test.ts` 15 pass / 0 fail this run (110 pass across all ledger-touching suites incl. the 0211 daily caller); live sync against real traces under `.works/test-artifacts/0207/live-spur-sync/` |
 | AC2 — Unreported token usage renders as unknown, never estimated | MET | test | `apps/cli/tests/ledger.test.ts:170` (absent, null-exact and estimated-only all render unknown); live run fa1ea1ec cross-checked against its raw trace |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 

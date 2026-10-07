@@ -435,6 +435,39 @@ describe('kk ledger', () => {
         expect(existsSync(join(works, 'kk-collect/ledger.md'))).toBe(false);
     });
 
+    it('refuses a --workflow name that is not a flat file stem, before spawning or writing (R7)', async () => {
+        const dir = tempDir();
+        const works = join(dir, '.works');
+        // A spawn would be a bug: this stub records that it ran.
+        const spawned = join(dir, 'spawned');
+        const tripwire = join(dir, 'spur-tripwire.sh');
+        writeFileSync(tripwire, `#!/bin/sh\ntouch "${spawned}"\necho '{"entries":[]}'\n`);
+        chmodSync(tripwire, 0o755);
+
+        for (const workflow of ['../escape', join(dir, 'abs'), 'a/b', '.hidden', '']) {
+            for (const verb of [['append', '--run', TOKEN_MODES_RUN], ['sync']]) {
+                const result = await run(
+                    ['ledger', verb[0] as string, '--workflow', workflow, ...verb.slice(1), '--works-dir', works],
+                    {
+                        KK_SPUR_BIN: tripwire,
+                    },
+                );
+                expect(result.code).toBe(1);
+                expect(result.err).toContain('kk.ledger.workflow.invalid');
+            }
+        }
+        expect(existsSync(spawned)).toBe(false);
+        expect(existsSync(join(dir, 'escape'))).toBe(false);
+        expect(existsSync(join(dir, 'abs'))).toBe(false);
+        expect(existsSync(works)).toBe(false);
+
+        // Real workflow names stay accepted.
+        const ok = await run(['ledger', 'sync', '--workflow', 'kk.v2_x-collect', '--works-dir', works], {
+            KK_SPUR_BIN: tripwire,
+        });
+        expect(ok.code).toBe(0);
+    });
+
     it('exits non-zero when --workflow or --run is missing and writes no ledger', async () => {
         const dir = tempDir();
         const works = join(dir, '.works');

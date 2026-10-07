@@ -559,7 +559,9 @@ future ones — gets authoritative timing and token figures without kk-owned tim
 - Result cells: the first line of `<work-dir>/<node>.summary.txt` when the file exists, else the
   first failing action's `error`, else `ok`; pipes are escaped and the cell is cut to 120 chars.
 - Failures exit 1 with `kk.ledger.<reason>` and leave the ledger untouched: `run.running`,
-  `trace.not-found`, `trace.spawn-failed`, `trace.invalid`, `list.invalid`, `write.failed`.
+  `trace.not-found`, `trace.spawn-failed`, `trace.invalid`, `list.invalid`, `write.failed`, and
+  `workflow.invalid` for a `--workflow` that is not a flat file stem (`[A-Za-z0-9][A-Za-z0-9._-]*`;
+  refused before any spawn, so the ledger can never land outside `--works-dir`).
   `KK_SPUR_BIN` overrides the `spur` binary (tests, non-PATH installs).
 
 ### 1.11 `schedule` — shipped (task 0208)

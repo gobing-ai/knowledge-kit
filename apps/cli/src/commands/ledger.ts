@@ -111,8 +111,14 @@ async function readSummaries(
     return summaries;
 }
 
-/** `<works-dir>/<workflow>/ledger.md`, absolute. */
+/**
+ * `<works-dir>/<workflow>/ledger.md`, absolute. The workflow name becomes a path segment, so it
+ * must be a flat file stem: `..`, a separator or an absolute path would write outside the works dir.
+ */
 function ledgerFilePath(worksDir: string, workflow: string): string {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(workflow)) {
+        throw new LedgerError('workflow.invalid', `'${workflow}' is not a workflow name (letters, digits, . _ -)`);
+    }
     return resolve(worksDir, workflow, 'ledger.md');
 }
 
@@ -143,8 +149,8 @@ async function writeLedger(fs: FileSystem, ledgerPath: string, content: string):
  */
 async function appendAction(options: LedgerAppendOptions): Promise<void> {
     const fs = createNodeFileSystem();
-    const ledgerPath = ledgerFilePath(options.worksDir, options.workflow);
     try {
+        const ledgerPath = ledgerFilePath(options.worksDir, options.workflow);
         const trace = readTrace(options.run);
         const existing = await readLedger(fs, ledgerPath);
         if (ledgerHasRun(existing ?? '', options.run)) {
@@ -167,8 +173,8 @@ async function appendAction(options: LedgerAppendOptions): Promise<void> {
  */
 export async function syncLedger(options: LedgerSyncOptions): Promise<void> {
     const fs = createNodeFileSystem();
-    const ledgerPath = ledgerFilePath(options.worksDir, options.workflow);
     try {
+        const ledgerPath = ledgerFilePath(options.worksDir, options.workflow);
         const existing = await readLedger(fs, ledgerPath);
         const missing = selectMissingRuns(listTraces(options.workflow), existing ?? '');
         let content = existing;

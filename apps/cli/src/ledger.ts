@@ -16,6 +16,7 @@ export type LedgerReason =
     | 'trace.spawn-failed'
     | 'run.running'
     | 'list.invalid'
+    | 'workflow.invalid'
     | 'write.failed';
 
 /** Failure raised by the ledger core; `code` carries the `kk.ledger.<reason>` contract. */
