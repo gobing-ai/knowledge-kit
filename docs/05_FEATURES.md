@@ -24,6 +24,8 @@ sync: [T4]
 >
 > **2026-08-12 (F repurposed):** root **F** repurposed from the cancelled E2E vertical to the **kk plugin collection** — parent for all `plugins/kk` capabilities (skills, commands, subagents); kk-judge migrated **B7 → F1**. F is no longer a cancelled root; **G/H** remain historical cancelled roots. (Slot freed by removing the cancelled F file; `cancelled` is terminal in spur.)
 >
+> **2026-10-07 (G repurposed):** root **G** re-minted as the **kk workflows** parent (one child per workflow; former Q → G31 + G11 + G71). Cancelled roots are now **H** only. ADR-001 amendment 2026-10-07.
+>
 > **2026-08-12 (D5 → F2):** the WT agent-skill harvest moved under **F** to honor that collection boundary. F2 is narrowed to one fat `topic` skill for topic-core authoring; remaining WT families require later intake.
 >
 > **2026-08-07 (0037):** LLM-as-judge repositioned from fourth plugin kind to **agent skills + `agent.run`**
@@ -87,7 +89,17 @@ sync: [T4]
 | F7 | Audio-authoring skill extraction (wayfinder map) | ✅ done | 3 | 0077 `kk:audio-authoring` skill (solo mode, `434a01a`); 0078 rewrote `kk-solo-podcast` onto the skill (`c4ab400`); 0079 e2e verified dry-path + revise/duration mechanics; feature closed done 2026-08-24 |
 | F9 | Explain-things skill and tell-me command | ✅ done | 3 | task `0083` done; fat `explain-things` skill + one-level `references/views.md`, thin `/tell-me`; smallest-view default, ELI5 opt-in, HTML last-resort; no aliases/subagent/CLI noun; verify PASS + Shippable PASS |
 | F41 | kk-itc end-to-end (rough idea → multi-platform publish) | ✅ done | 3 | tasks `0149`–`0154` done; var-gated auto/unslop/judge-revise path + publish tail (materialize → plan → gate → fan-out/browser loop → report) + illustrations/adapt in `plugins/kk/workflows/kk-itc.yaml`; `kk stage itc-*` helpers in `itc-stages.ts`; `/workflow-run` kk-itc profile flags; draft-default publish rule (ADR-022); satellites `docs/design/kk-itc-end-to-end.md`; no new workflow file, `kk` noun or slash command (verified 0154) |
-| **G** | PublishPlugin rewrite epic | ❌ cancelled | — | absorbed into **E** (now **E4** suite harvest) |
+| **G** | kk workflows (repurposed 2026-10-07) | ⏳ planned | — | parent: one child per `plugins/kk/workflows/*.yaml`; shipped workflow features keep their IDs (see children Notes) |
+| G1 | kk-daily-ai-voice | ⏳ planned | — | home node; historical: F6, F61*, L, L1, N, O |
+| G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ⏳ ready | — | tasks `0211`, `0212`; ADR-031; satellite `docs/design/kk-collect-and-daily-voice2.md` |
+| G2 | kk-itc | ⏳ planned | — | home node; historical: F4, F41 |
+| G3 | kk-collect | ⏳ planned | — | home node |
+| G31 | kk-collect: SQLite store, 4h collection, decision labels, topic extraction | ⏳ ready | — | tasks `0206`, `0208`–`0210`; ADR-030 |
+| G4 | kk-solo-podcast | ⏳ planned | — | home node; historical: F5 |
+| G5 | kk-storm-research | ⏳ planned | — | home node; historical: C3–C5 |
+| G6 | kk-ingest-generate-publish | ⏳ planned | — | home node; historical: B5 |
+| G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
+| G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
 | **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |

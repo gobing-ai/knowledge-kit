@@ -111,6 +111,18 @@ documents deliberate per-run serialization. **Authoring a `parallel` node does n
 Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary sequential steps
 (ADR-007 R4). Engine-level concurrency is deferred, not rejected.
 
+**DAG workflows (accepted design — ADR-031; not yet built).** Still true for `state-machine` and
+`transition-flow`. Since `0.5.16` the engine also runs `kind: dag`: each wave of ready nodes is
+dispatched with `Promise.all` (`src/dag.ts`), so independent steps run concurrently. Constraints
+kk designs around: one action per node, no back-edges (loops → nested state-machine via
+`spur workflow run`), fail-fast on any node failure, wave-level waiting (a successor waits for
+its wave's slowest node), and last-writer-wins `setVars` — DAG nodes pass data by files under
+`work_dir`. First user: `kk-daily-ai-voice2` (`docs/design/kk-collect-and-daily-voice2.md`).
+
+**Persistent store (accepted design — ADR-030; not yet built).** `@gobing-ai/kk-store` owns the
+only SQLite file (`store.db_path`); `kk store *` verbs are its sole CLI surface and the only
+ts-db importer (boundary rules). `kk-collect` writes it every 4h; DAG workflows read it.
+
 ### XHS image-card path (ADR-024)
 
 `kk:xhs-images` reads source content and writes an ordered card plan and saved prompts. Each card is one `image-gen` job using an XHS preset; the skill collects the resulting `metadata.images[]` entries into one `Content` carrying the XHS note. `xhs-pub` validates the ordered local paths, attaches them through its browser transport, and returns a `Result` from observed draft or publication state. The agent handles content judgment and spend confirmation; product plugins retain image bytes, browser actions, and result validation. A failed card can resume from its saved prompt without repeating successful paid jobs.

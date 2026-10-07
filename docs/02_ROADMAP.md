@@ -27,7 +27,7 @@ sync: [T5]
 | **Phase 3 — Generator + authoring depth** | ⏳ **current** | **D4**, **D5**, **F2**, **C4**, **F3**, **F4**, **F5**, **F6**, **E8**, **E9** | Own STORM generator (**D4**, done) · Voicebox TTS generator (**D5**, done — task `0070`) · topic-core authoring skill (**F2**, done) · daily-usable STORM research (**C4**, done — successor to **C3**) · ITC generating skill (**F3**, done — task `0068`) · IT-content workflow + product YAML home (**F4**, done — task `0069`) · Solo-podcast workflow (**F5**, done — task `0071`) · Daily AI news voice workflow and plugins (**F6**, done — tasks `0072`–`0074`) · XHS image-card authoring and publishing (**E8**, done — tasks `0167`, `0168`, `0174`) · reusable browser sessions (**E9**, planned — upstream ts-libs `0088` → XHS dogfood `0177`) |
 | LLM wiki (conditional) | 🌫️ fog | **I** | Undecided; go/no-go research spike first |
 
-Cancelled roots (historical only): **G** (publish suite → **E4**), **H** (STORM/harvest → D4; former D5 rehomed as **F2**).
+Cancelled roots (historical only): **H** (STORM/harvest → D4; former D5 rehomed as **F2**). **G** was repurposed 2026-10-07 as the kk workflows parent (former G publish suite → **E4**).
 
 ## Phase 2 sequencing
 

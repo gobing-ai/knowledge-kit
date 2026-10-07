@@ -192,6 +192,19 @@ Feature tree reorganized under foundation hygiene (**A1**) before Phase-1 plugin
 
 Root **F** is no longer a cancelled root. It is repurposed as the **kk plugin collection** parent: all `plugins/kk` capabilities (agent skills, slash commands, subagents) live under F or a child feature; kk-judge migrated **B7 → F1** (intake task `0038`). The 2026-07-29 statement "F/G/H are historical cancelled roots only" now holds for **G/H only**. The cancelled F slot was freed by removing its file (`cancelled` is terminal in spur — no lifecycle transition out); the allocator re-minted F as the first free root letter.
 
+### Amendment — 2026-10-07 (G repurposed: kk workflows)
+
+Root **G** is no longer a cancelled root. It is repurposed as the **kk workflows** parent: one
+direct child per product workflow under `plugins/kk/workflows/` (G1 kk-daily-ai-voice, G2 kk-itc,
+G3 kk-collect, G4 kk-solo-podcast, G5 kk-storm-research, G6 kk-ingest-generate-publish) plus G7
+for capabilities shared across workflows (run ledger). Change features are grandchildren
+(G11 voice2 DAG, G31 kk-collect store, G71 run ledger). The cancelled G slot (PublishPlugin
+rewrite epic, no linked tasks, absorbed into E4) was freed by removing its file, the same
+procedure as the F repurpose. The "historical cancelled roots" set is now **H only**.
+**Why:** workflow work was landing on ad-hoc roots (L, L1, N, O, Q) with no shared home.
+Shipped features keep their IDs (they are cited by ADRs, design docs and commits); each G child's
+Notes link them instead of renaming.
+
 ### Amendment — 2026-08-12 (WT topic-core harvest rehomed D5 → F2)
 
 The WT agent-skill harvest moves from **D5** to **F2** under the kk plugin collection; its first
@@ -1139,7 +1152,31 @@ illustration across failures is deferred until observed.
 
 ---
 
+## ADR-030: Collected items live in a kk-owned SQLite store behind one package
+
+**Status:** Accepted (design) · **Date:** 2026-10-06
+
+**Decision.** Collected `Doc[]`, their labels, collect provenance and episode usage persist in one SQLite file (`store.db_path`, default `<works_dir>/kk.db`) owned by a new `@gobing-ai/kk-store` workspace: `@gobing-ai/ts-db` adapter, drizzle schema, DAOs, versioned migrations, WAL + `busy_timeout`. ts-db is importable only inside `packages/kk-store`, drizzle only inside its `src/schema/` — enforced by `spur rule` boundary rules (spur `packages/domain` pattern). Labels come from a kk-owned `spur decision` catalog (heuristic first, model on demand, `source: default` on degrade); topic extraction is a profile file compiled to one DAO query. Markdown core-facts remain a per-run artifact.
+
+**Why.** Per-day JSON forces every episode to re-collect (~32 min on 20261006) and makes labels throwaway; a durable labeled store moves collection off the episode path and turns a new topic into a profile, not a pipeline. Resolves the "Config / persistent state" deferral below.
+
+**Detail:** `docs/design/kk-collect-and-daily-voice2.md` §2–§4; feature G31.
+
+---
+
+## ADR-031: Product workflows may be `kind: dag`; nodes pass data by files
+
+**Status:** Accepted (design) · **Date:** 2026-10-06
+
+**Decision.** A product workflow may use the engine's `kind: dag` (ts-dual-workflow-engine ≥ 0.5.16: concurrent waves, `dependsOn`, `condition` skip, `pause`, durable resume). Each node is exactly one `kk` command, one `agent.run`, or one `spur workflow run` (loops live in a nested state-machine). Nodes exchange data through fixed paths under `work_dir`, never through vars (concurrent `setVars` is last-writer-wins). Non-blocking targets exit 0 on soft failure because the DAG is fail-fast. This amends ADR-007 R4: `kk` still owns steps and fan-in/fan-out *within* a step; the engine may now run independent steps concurrently.
+
+**Why.** The serial FSM runs article/cover/script and the publish channels back-to-back although they are independent; the engine now executes DAG waves concurrently (probe: two 1 s nodes in 1.2 s).
+
+**Detail:** `docs/design/kk-collect-and-daily-voice2.md` §6; `03_ARCHITECTURE` § Execution substrate; feature G11.
+
+---
+
 ## Decisions deliberately deferred
 
-- **Config / persistent state** — none yet; add as a `packages/*` workspace when needed.
+- **Config / persistent state** — resolved by ADR-030 (`@gobing-ai/kk-store`).
 - **Interactive prompts, colored output** — out of scope until a command requires them.
