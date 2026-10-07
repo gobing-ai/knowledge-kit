@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -16,8 +16,11 @@ import { join } from 'node:path';
  *    say "not yet built" (the DAG-workflow and generator-input-dispatch notes), so a whole-file
  *    assertion would be both wrong and brittle.
  * 3. `docs/04_DESIGN.md` stops listing any of the six `kk store` verbs, or `kk schedule render`.
- * 4. `docs/05_FEATURES.md` starts recording G31 as `done` while task 0213 (G31 scenario R14) is
- *    still outstanding — the false status task 0210's R7 clause 4 was amended to forbid.
+ * 4. `docs/05_FEATURES.md` records a G31 status that disagrees with the feature file — `done`
+ *    while work is outstanding (the false status task 0210's R7 clause 4 forbids), or still
+ *    `active` after the feature closed.
+ * 5. The G31 confidence-surface inventory (task 0213 R1) disappears, or one of its `file:line`
+ *    anchors stops resolving (file gone, or line past EOF).
  *
  * The command form of the same check (used by the verify pass as the AC4 evidence):
  *   grep -c 'shipped' <(sed -n '/^\*\*Persistent store/p' docs/03_ARCHITECTURE.md)
@@ -64,16 +67,29 @@ describe('AC4 — the architecture docs record the store decision', () => {
         expect(design).toContain('kk schedule render');
     });
 
-    it('05_FEATURES does not record G31 done while 0213 is outstanding', () => {
+    it('05_FEATURES records G31 with its real status (done iff the feature file says done)', () => {
         const row = read('docs/05_FEATURES.md')
             .split('\n')
             .find((line) => /^\|\s*G31\s*\|/.test(line));
         expect(row).toBeDefined();
-        // The STATUS cell must not claim done. Asserting on the whole row would be wrong: the notes
-        // cell legitimately contains the word "done" while describing which of G31's tasks ARE done.
+        // Only the STATUS cell: the notes cell legitimately says "done" about individual tasks.
         const statusCell = (row?.split('|')[3] ?? '').trim().toLowerCase();
-        expect(statusCell).not.toBe('done');
+        const featureFile = readdirSync(join(REPO, 'docs/features')).find((name) => name.startsWith('G31_'));
+        const featureStatus = read(`docs/features/${featureFile}`).match(/^status:\s*(\S+)/m)?.[1];
+        expect(featureStatus).toBeDefined();
+        expect(statusCell.includes('done')).toBe(featureStatus === 'done');
         expect(row).toContain('0213');
-        expect(row).toContain('backlog');
+    });
+
+    it('the G31 confidence-surface inventory exists and every anchor resolves', () => {
+        const design = read('docs/design/kk-collect-and-daily-voice2.md');
+        const start = design.indexOf('### Confidence surfaces');
+        expect(start).toBeGreaterThan(-1);
+        const table = design.slice(start).split('\n## ')[0] ?? '';
+        const anchors = [...table.matchAll(/`([\w./-]+\.\w+):(\d+)`/g)];
+        expect(anchors.length).toBeGreaterThanOrEqual(7);
+        for (const [, file, line] of anchors) {
+            expect(read(file as string).split('\n').length).toBeGreaterThanOrEqual(Number(line));
+        }
     });
 });

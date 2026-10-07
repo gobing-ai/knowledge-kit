@@ -95,7 +95,7 @@ sync: [T4]
 | G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ⏳ ready | — | tasks `0211`, `0212`; ADR-031; satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G2 | kk-itc | ⏳ planned | — | home node; historical: F4, F41 |
 | G3 | kk-collect | ⏳ planned | — | home node |
-| G31 | kk-collect: SQLite store, 4h collection, decision labels, topic extraction | ⏳ active | — | **NOT done** — tasks `0206` (store + `migrate`), `0208` (`lock`/`ingest`, `kk-collect`, `schedule render`), `0209` (decision catalog + `label`) and `0210` (`extract`/`mark-used`, topic profiles) are done; `0213` (verify the HIGH\|MEDIUM\|LOW confidence level on the kk-collect and voice2 verdict/decision surfaces, R14) is still `backlog`. ADR-030 **shipped**; satellite `docs/design/kk-collect-and-daily-voice2.md` |
+| G31 | kk-collect: SQLite store, 4h collection, decision labels, topic extraction | ✅ done | — | tasks `0206` (store + `migrate`), `0208` (`lock`/`ingest`, `kk-collect`, `schedule render`), `0209` (decision catalog + `label`), `0210` (`extract`/`mark-used`, topic profiles) and `0213` (HIGH\|MEDIUM\|LOW confidence on the kk-collect label verdict, R14) done. ADR-030 **shipped**; satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G4 | kk-solo-podcast | ⏳ planned | — | home node; historical: F5 |
 | G5 | kk-storm-research | ⏳ planned | — | home node; historical: C3–C5 |
 | G6 | kk-ingest-generate-publish | ⏳ planned | — | home node; historical: B5 |

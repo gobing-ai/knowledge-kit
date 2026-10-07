@@ -104,6 +104,23 @@ order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
 outside kk-store). A new topic = a new profile file (R11). A topic-specific *decision* can be
 added later as an extra catalog entry without schema change (labels are row-per-decision).
 
+### Confidence surfaces (G31 R14, task 0213)
+
+Every G31 surface that emits or consumes a pass-like label outcome, and whether it carries the
+closed `HIGH|MEDIUM|LOW` level. `apps/cli/tests/store-docs.test.ts` resolves each citation.
+
+| Surface | Role | Anchor | Carries |
+| --- | --- | --- | --- |
+| Row level derivation | emit | `packages/kk-store/src/dao/labels.ts:39` | yes — model 0–1 mapped; heuristic/default is `LOW` |
+| `kk store label` row write | emit | `apps/cli/src/commands/store.ts:586` | yes |
+| `labels.confidence` column | persist | `packages/kk-store/src/schema/labels.ts:28` | yes (migration `0002`) |
+| Label DAO upsert / read | persist | `packages/kk-store/src/dao/labels.ts:103` | yes |
+| Pass level (weakest row) | emit | `packages/kk-store/src/dao/labels.ts:50` | yes |
+| `kk store label` verdict line | emit | `apps/cli/src/commands/store.ts:705` | yes — `{verdict, confidence, …}` |
+| `kk-collect` `label → release` guard | consume | `plugins/kk/workflows/kk-collect.yaml:242` | yes — absent/out-of-enum refused by name |
+| `kk store extract` | consume | `apps/cli/src/commands/store.ts:811` | named gap — selects by label value, not a verdict consumer |
+| `kk-daily-ai-voice2` judge/safety gates | consume | — | named gap — workflow not built (G11/G71) |
+
 ## 5. `kk-collect.yaml` (state-machine — simple sequence, failure edges explicit)
 
 | State | Action | On failure |
