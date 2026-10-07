@@ -4,7 +4,7 @@ name: kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned 
 status: todo
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-07T05:06:32.745Z"
+updated_at: "2026-10-07T06:44:09.327Z"
 feature_id: G11
 priority: P1
 tags:
@@ -51,6 +51,7 @@ Design: docs/design/kk-collect-and-daily-voice2.md §6. Engine facts were verifi
 - [ ] AC3 — Empty pool ends the daily DAG as no-content, not failed
 - [ ] AC4 — Every DAG node is a single kk command with plugin-owned logic
 - [ ] AC5 — The safety revise loop runs as a nested state-machine sub-workflow
+- [ ] AC6 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level
 
 Testing: before writing code, list every way the unit can fail (failure-first list in the task), then code; prove behavior with one E2E-style bun:test over a temp dir / temp DB, leaving a repeatable artifact under .works/test-artifacts/.
 
@@ -101,6 +102,7 @@ If `kk store pool-count` is not already provided by 0210's `extract` output, add
 
   Copy the traces and ledger to `.works/test-artifacts/0211/`.
 - [ ] `docs/04_DESIGN.md` + satellite §6 sync; `bun run gate`.
+- [ ] Safety sub-workflow judge verdicts carry HIGH|MEDIUM|LOW (AC6): read the confidence from the verdict in the revise loop and in the draft-admission gate through the shared confidence-aware filter, and prove with fixtures that a missing/out-of-enum level is refused, named, and never deadlocks the loop (pattern: plugins/kk/tests/verdict-confidence.test.ts).
 
 ### Solution
 

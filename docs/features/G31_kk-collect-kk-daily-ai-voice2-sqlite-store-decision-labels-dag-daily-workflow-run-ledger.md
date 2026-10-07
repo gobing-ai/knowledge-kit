@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-10-07T03:50:34.546Z"
-updated_at: "2026-10-07T06:07:00.530Z"
+updated_at: "2026-10-07T06:43:53.814Z"
 ---
 
 # G31: kk-collect + kk-daily-ai-voice2: SQLite store, decision labels, DAG daily workflow, run ledger
@@ -148,10 +148,10 @@ Scenario: R13 — Architecture docs record the store decision
 @core
 Scenario: R14 — Verdict and decision surfaces carry a HIGH, MEDIUM, or LOW confidence level
   # covers: I22
-  Given a label or judge verdict emitted by a kk-collect or kk-daily-ai-voice2 surface
-  When the consumer reads that verdict
+  Given a label or decision emitted by a kk-collect surface (the decision catalog or kk store label)
+  When the consumer reads that label or decision
   Then it carries exactly one confidence level from HIGH, MEDIUM, and LOW
-  And a verdict whose confidence is missing or outside that enum is refused rather than treated as a pass
+  And a label or decision whose confidence is missing or outside that enum is refused rather than treated as a pass
   And the refusal names the offending value
 
 ```
@@ -171,6 +171,8 @@ Scenario: R14 — Verdict and decision surfaces carry a HIGH, MEDIUM, or LOW con
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+Voice2 verdict surfaces are NOT covered here: G31 Scope puts the daily DAG workflow (G11) and the run ledger (G71) out of scope, so R14 is limited to kk-collect decisions. The kk-daily-ai-voice2 safety sub-workflow judge verdicts are G11 R9.
 
 ## History
 
