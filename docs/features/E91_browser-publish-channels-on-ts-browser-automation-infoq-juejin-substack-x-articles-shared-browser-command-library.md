@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-30T03:54:58.376Z"
-updated_at: "2026-10-07T05:53:02.408Z"
+updated_at: "2026-10-07T22:55:03.964Z"
 ---
 
 # E91: Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library
@@ -150,22 +150,6 @@ Feature: Browser publish channels on ts-browser-automation
     Given an authenticated channel profile and a draft-scoped run
     When the publisher performs one real-transport run
     Then it stops at a saved draft, never activates the site publish control, and records the observed draft signal
-
-
-  Scenario: AC1 — profile session dogfood on the persisted juejin profile
-  Given the persisted operator profile `~/.config/kk/browser-profiles/juejin` (session alive since 0202)
-  When `bun plugins/publishings/juejin-pub/src/profile-check.ts check` runs against it
-  Then it exits 0 reporting `status: "verified"` (login leg only if the session expired)
-
-  Scenario: AC2 — measured contract confirmed against the 0202 discovery record
-  Given `docs/design/juejin-ui-discovery.md` records the measured editor contract
-  When the plugin constants (editor URL + rewrite rule, title/body selectors, the autosave toasts, draft evidence) are compared live
-  Then every constant matches the measured contract or is corrected and pinned in the plugin tests
-
-  Scenario: AC3 — one draft-only run through the real transport
-  Given the verified profile and the plugin source
-  When `bun plugins/publishings/juejin-pub/src/index.ts --in <content> --out <result>` runs once with draft-only content
-  Then the result JSON reports `ok: true` with draft evidence, and no live/publish control is activated
 
 ```
 
