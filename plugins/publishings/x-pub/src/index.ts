@@ -208,6 +208,11 @@ export const ARTICLE_CONFIG: ChannelBrowserConfig = {
     homeUrl: X_ARTICLES_URL,
     isAuthenticated: isArticleAuthenticated,
     loginTimeoutMs: LOGIN_TIMEOUT_MS,
+    // X login-walls headless article loads (measured 0216: the headless pass refuses even on a live
+    // profile), so the default headless-first + headed-fallback spends two deadlines per check and
+    // blows kk's 30s probe-kill (spawn SIGTERM → error instead of refused). One headed pass, like
+    // infoq's WAF, keeps the probe inside the budget.
+    checkHeadedOnly: true,
 };
 
 function errorMessage(error: unknown): string {

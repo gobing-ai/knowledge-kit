@@ -148,6 +148,8 @@ export interface SessionCheckOptions {
     profileDir: string;
     timeoutMs?: number;
     launcher?: BrowserLauncher;
+    /** 0216: skip the headless pass and probe headed only (manual `check --headed`). */
+    headedOnly?: boolean;
 }
 
 /**
@@ -174,6 +176,7 @@ export async function checkXhsProfileSession(opts: SessionCheckOptions): Promise
             profileDir: opts.profileDir,
             launcher: opts.launcher,
             timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
+            headedOnly: opts.headedOnly === true,
         },
     );
 }

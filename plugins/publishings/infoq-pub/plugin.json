@@ -2,6 +2,7 @@
     "name": "infoq-pub",
     "kind": "publish",
     "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
     "version": "1.0.0",
     "description": "Publish plugin for InfoQ CN (xie.infoq.cn): article drafts through the InfoQ editor via script browser transport (ts-browser-automation)"
 }

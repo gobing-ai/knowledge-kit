@@ -6,7 +6,8 @@
  *  - `login` recovers an absent/expired session headed via the upstream
  *    `loginWithProfile`, polled with the same XHS-owned readiness gate the publish
  *    flow uses;
- *  - `check` reopens the existing profile headless and reports the session as
+ *  - `check` reopens the existing profile (headless by default; `--headed` skips the headless
+ *    pass and probes headed only, 0216) and reports the session as
  *    `verified` or `refused` — a site refusal, expired session, or missing profile
  *    is an explicit failed readiness, never a success. The upstream launcher never
  *    creates a profile headless, so a check cannot fabricate a session from a
@@ -64,7 +65,7 @@ export async function loginProfile(opts: ProfileLoginOptions): Promise<void> {
     });
 }
 
-/** `login|check [--profile <dir>] [--timeout <ms>]`; profile precedence matches the publish flow. */
+/** `login|check [--profile <dir>] [--timeout <ms>] [--headed]`; profile precedence matches the publish flow. */
 export async function main(
     argv: string[] = process.argv.slice(2),
     launcher?: BrowserLauncher,
@@ -73,13 +74,19 @@ export async function main(
     let command: string;
     let profileDir: string;
     let timeoutMs: number | undefined;
+    let headed = false;
     try {
         const { positionals, values } = parseArgs({
             args: argv,
             allowPositionals: true,
-            options: { profile: { type: 'string' }, timeout: { type: 'string' } },
+            options: {
+                profile: { type: 'string' },
+                timeout: { type: 'string' },
+                headed: { type: 'boolean' },
+            },
         });
         command = positionals[0] ?? 'check';
+        headed = values.headed === true;
         if (values.timeout !== undefined) {
             timeoutMs = Number(values.timeout);
             if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
@@ -89,9 +96,9 @@ export async function main(
         profileDir = resolveChannelProfileDir(CHANNEL, values.profile);
     } catch (error) {
         echoError(
-            `profile-check: ${error instanceof Error ? error.message : String(error)} — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>]`,
+            `profile-check: ${error instanceof Error ? error.message : String(error)} — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`,
         );
-        return 1;
+        return 2;
     }
     if (command === 'login') {
         try {
@@ -105,20 +112,23 @@ export async function main(
     }
     if (command !== 'check') {
         echoError(
-            `profile-check: unknown command '${command}' — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>]`,
+            `profile-check: unknown command '${command}' — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`,
         );
-        return 1;
+        return 2;
     }
     // ADR-025: a manual session check is a real console visit, so it draws on the shared 2h
     // automation budget rather than a separate one. `login` is deliberately uncapped above: it is
     // operator-interactive, so capping it would only block recovery from an expired session.
     const cap = guard.allow('check');
     if (!cap.allowed) {
-        echoError(`profile-check: ${cap.reason}`);
+        // The budget refusal is still a readiness verdict (0216 contract): emit the JSON line so
+        // `kk plugin check` reports a refusal with the operator hint instead of a malformed probe.
+        echo(JSON.stringify({ status: 'refused', profileDir, detail: `xhs readiness refused: ${cap.reason}` }));
+        echoError(cap.reason);
         return 1;
     }
     guard.record('check');
-    const outcome = await checkXhsProfileSession({ profileDir, timeoutMs, launcher });
+    const outcome = await checkXhsProfileSession({ profileDir, timeoutMs, launcher, headedOnly: headed });
     echo(JSON.stringify(outcome));
     if (outcome.status !== 'verified') {
         echoError(outcome.detail);

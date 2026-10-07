@@ -74,23 +74,56 @@ export function storageStatePath(profileDir: string): string {
     return `${profileDir}/storage-state.json`;
 }
 
-/** Headless session preflight: throws (incl. BrowserProfileMissingError) when the profile cannot drive the console. */
-export async function checkWechatSession(profileDir: string): Promise<void> {
-    const { page, context } = await openWithState(profileDir, true);
+/** Headless session preflight: throws (incl. BrowserProfileMissingError) when the profile cannot drive the console.
+ * 0216: `headless: false` probes headed only and `timeoutMs` overrides the ready deadline. */
+export async function checkWechatSession(
+    profileDir: string,
+    opts: { headless?: boolean; timeoutMs?: number } = {},
+): Promise<void> {
+    const { page, context } = await openWithState(profileDir, opts.headless ?? true);
     try {
-        await pollLogin(page);
+        await pollLogin(page, opts.timeoutMs);
     } finally {
         await context.close();
     }
 }
 
-async function pollLogin(page: Page): Promise<void> {
-    const ready = await waitUntil(() => Promise.resolve(isConsoleReady(page)), CONSOLE_READY_TIMEOUT_MS, 1000);
+async function pollLogin(page: Page, timeoutMs?: number): Promise<void> {
+    const deadline = timeoutMs ?? CONSOLE_READY_TIMEOUT_MS;
+    const ready = await waitUntil(() => Promise.resolve(isConsoleReady(page)), deadline, 1000);
     if (ready) return;
     throw new Error(
-        `Authentication was not confirmed within ${CONSOLE_READY_TIMEOUT_MS}ms — the saved session state has ` +
+        `Authentication was not confirmed within ${deadline}ms — the saved session state has ` +
             'likely expired: re-run `bun src/profile-check.ts login` to sign in again.',
     );
+}
+
+/** Headed one-time login: open the console, wait for the QR scan to land on `/cgi-bin/home`, let
+ *  the console finish its post-auth Set-Cookies, then capture the durable storageState file —
+ *  mp.weixin.qq.com grant cookies do not survive a Chromium restart, so the saved state (not the
+ *  profile cookie store) is the session artifact the publish flow re-injects. Shared by the CLI
+ *  (`profile-check login`, 0216) so the publish flow and the probe use one login path. */
+export async function openWechatLogin(opts: { profileDir: string; timeoutMs?: number }): Promise<void> {
+    const timeoutMs = opts.timeoutMs ?? 180_000;
+    const context = await openPersistentBrowser({
+        profileDir: opts.profileDir,
+        headless: false,
+        launcher: kkBrowserLauncher,
+    });
+    try {
+        const page = context.pages()[0] ?? (await context.newPage());
+        await page.goto(CONSOLE_URL);
+        const ready = await waitUntil(
+            () => Promise.resolve(page.url().includes(CONSOLE_HOME_FRAGMENT)),
+            timeoutMs,
+            1000,
+        );
+        if (!ready) throw new Error(`QR scan not completed within ${timeoutMs / 1000}s`);
+        await page.waitForTimeout(10_000); // settle: let the console finish its post-auth Set-Cookies
+        await context.storageState({ path: storageStatePath(opts.profileDir) });
+    } finally {
+        await context.close();
+    }
 }
 
 /** Launch, inject the saved login cookies, and land on the console. Caller owns closing the context. */

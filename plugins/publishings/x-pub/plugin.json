@@ -2,6 +2,7 @@
     "name": "x-pub",
     "kind": "publish",
     "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
     "version": "1.0.0",
     "description": "post via official tweets API; article via script browser transport (ts-browser-automation)"
 }

@@ -228,7 +228,8 @@ export async function checkChannelSession(
 }
 
 /**
- * `login|check [--profile <dir>] [--timeout <ms>]` for one channel.
+ * `login|check [--profile <dir>] [--timeout <ms>] [--headed]` for one channel. `--headed` (0216)
+ * checks headed only, skipping the headless pass.
  *
  * `login` opens the headed browser and returns only once the site readiness predicate passes;
  * `check` runs {@link checkChannelSession}. Exit codes: 0 verified, 1 refused, 2 usage error.
@@ -245,18 +246,24 @@ export async function runProfileCli(
         ((line: string) => {
             echo(line);
         });
-    const usage = `usage: ${config.channel} profile-check [login|check] [--profile <dir>] [--timeout <ms>]`;
+    const usage = `usage: ${config.channel} profile-check [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`;
 
     let command: string;
     let profileDir: string;
     let timeoutMs: number | undefined;
+    let headed = false;
     try {
         const { positionals, values } = parseArgs({
             args: argv,
             allowPositionals: true,
-            options: { profile: { type: 'string' }, timeout: { type: 'string' } },
+            options: {
+                profile: { type: 'string' },
+                timeout: { type: 'string' },
+                headed: { type: 'boolean' },
+            },
         });
         command = positionals[0] ?? 'check';
+        headed = values.headed === true;
         if (command !== 'login' && command !== 'check') {
             throw new Error(`unknown command '${command}'`);
         }
@@ -289,18 +296,17 @@ export async function runProfileCli(
         }
     }
 
+    // `--headed` (0216) skips the headless pass entirely — the same shape as a `checkHeadedOnly`
+    // config — so WAF-451 operators can force the headed probe per invocation. The JSON verdict is
+    // deliberately the LAST line on stdout: `kk plugin check` parses it, so no human hint may follow.
     const result = await checkChannelSession(config, {
         profileDir,
         launcher: deps.launcher,
-        headedOnly: config.checkHeadedOnly === true,
+        headedOnly: headed || config.checkHeadedOnly === true,
         timeoutMs,
     });
     stdout(JSON.stringify(result));
-    if (result.status === 'verified') {
-        return 0;
-    }
-    stdout(`${config.channel} profile check refused: ${result.detail}`);
-    return 1;
+    return result.status === 'verified' ? 0 : 1;
 }
 
 /**

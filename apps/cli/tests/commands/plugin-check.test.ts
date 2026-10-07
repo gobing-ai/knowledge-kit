@@ -174,6 +174,26 @@ describe('plugin status stays static with the check field (AC5 / R6)', () => {
     });
 });
 
+describe('six browser channels declare probes (0216, AC1)', () => {
+    const REAL_ROOT = join(import.meta.dir, '../../../../plugins');
+    const CHANNELS = ['infoq-pub', 'juejin-pub', 'substack-pub', 'x-pub', 'xhs-pub', 'wechatmp-pub'];
+
+    it('plugin status --json lists check for exactly the six browser publish channels, no others', async () => {
+        const { code, out } = await runCaptured(['plugin', 'status', '--json', '--plugins-root', REAL_ROOT]);
+        const report = JSON.parse(out) as StatusJson;
+        expect(code).toBe(0);
+
+        const withCheck = report.plugins.filter((p) => p.kind === 'publish' && p.check !== undefined);
+        expect(withCheck.map((p) => p.name).sort()).toEqual([...CHANNELS].sort());
+        for (const name of CHANNELS) {
+            const row = report.plugins.find((p) => p.name === name);
+            expect(row?.check).toBeDefined();
+            expect(isAbsolute(row?.check ?? '')).toBe(true);
+            expect(row?.check).toContain(join('plugins', 'publishings', name, 'src', 'profile-check.ts'));
+        }
+    });
+});
+
 describe('manifest check entry missing on disk (review triage, 0215)', () => {
     it('check reports error and login exits 1 instead of an unhandled spawn throw', async () => {
         const root = mkdtempSync(join(tmpdir(), 'kk-noentry-'));

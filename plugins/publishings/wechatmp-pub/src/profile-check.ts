@@ -1,48 +1,90 @@
-import { resolveBrowserProfileDir } from '@gobing-ai/publish-harness';
-import { kkBrowserLauncher, waitUntil } from '@gobing-ai/publish-harness/browser';
-import { openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
-import { echo } from '@gobing-ai/ts-utils';
-import { checkWechatSession, storageStatePath } from './index';
+/**
+ * WeChat MP profile-session capability (0216, ADR-032 probe contract).
+ *
+ * `login` opens the console headed and resolves once the QR scan lands on `/cgi-bin/home`, then
+ * captures the durable `storageState` file — mp.weixin.qq.com grant cookies do not survive a
+ * Chromium restart, so the saved state (not the profile cookie store) is the session artifact.
+ * `check` reopens the profile with that state re-injected and reports `verified` or `refused`
+ * as the LAST line on stdout, one JSON object — `kk plugin check` parses it. Exit codes:
+ * 0 verified, 1 refused, 2 usage error. No cookie, token or storageState value is ever printed;
+ * the profile directory is the only detail that leaves the process.
+ */
+import { parseArgs } from 'node:util';
+import { resolveChannelProfileDir } from '@gobing-ai/publish-harness/browser';
+import { echo, echoError } from '@gobing-ai/ts-utils';
+import { CHANNEL, checkWechatSession, openWechatLogin } from './index';
 
-const CONSOLE_URL = 'https://mp.weixin.qq.com/';
+const USAGE = 'usage: wechatmp profile-check [login|check] [--profile <dir>] [--timeout <ms>] [--headed]';
 const LOGIN_TIMEOUT_MS = 180_000;
-const LOGGED_IN_FRAGMENT = '/cgi-bin/home';
 
-const profileDir = resolveBrowserProfileDir('wechatmp', process.env.WECHATMP_PROFILE_DIR);
-const verb = process.argv[2] ?? 'check';
+interface WechatVerdict {
+    status: 'verified' | 'refused';
+    profileDir: string;
+    detail: string;
+}
 
-try {
-    if (verb === 'login') {
-        echo(
-            `wechatmp login: opening the console in a headed browser — scan the QR once (timeout ${LOGIN_TIMEOUT_MS / 1000}s)`,
-        );
-        const context = await openPersistentBrowser({ profileDir, headless: false, launcher: kkBrowserLauncher });
-        try {
-            const page = context.pages()[0] ?? (await context.newPage());
-            await page.goto(CONSOLE_URL);
-            const ready = await waitUntil(
-                () => Promise.resolve(page.url().includes(LOGGED_IN_FRAGMENT)),
-                LOGIN_TIMEOUT_MS,
-                1000,
-            );
-            if (!ready) throw new Error(`QR scan not completed within ${LOGIN_TIMEOUT_MS / 1000}s`);
-            await page.waitForTimeout(10_000); // settle: let the console finish its post-auth Set-Cookies
-            // The Chromium profile store drops the grant cookies on restart even though they carry
-            // multi-day expiries — the durable session artifact is the captured storageState file,
-            // which the publish flow re-injects into every launch.
-            await context.storageState({ path: storageStatePath(profileDir) });
-            echo(`wechatmp login: session saved in ${storageStatePath(profileDir)}`);
-        } finally {
-            await context.close();
+export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+    let command: string;
+    let profileDir: string;
+    let timeoutMs: number | undefined;
+    let headed = false;
+    try {
+        const { positionals, values } = parseArgs({
+            args: argv,
+            allowPositionals: true,
+            options: {
+                profile: { type: 'string' },
+                timeout: { type: 'string' },
+                headed: { type: 'boolean' },
+            },
+        });
+        command = positionals[0] ?? 'check';
+        if (command !== 'login' && command !== 'check') {
+            throw new Error(`unknown command '${command}'`);
         }
-    } else if (verb === 'check') {
-        await checkWechatSession(profileDir);
-        echo(`wechatmp session: OK (${profileDir})`);
-    } else {
-        echo('usage: bun src/profile-check.ts login|check');
-        process.exit(1);
+        headed = values.headed === true;
+        if (values.timeout !== undefined) {
+            timeoutMs = Number(values.timeout);
+            if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+                throw new Error(`--timeout must be a non-negative number of ms, got '${values.timeout}'`);
+            }
+        }
+        profileDir = resolveChannelProfileDir(CHANNEL, values.profile);
+    } catch (error) {
+        echoError(`wechatmp profile-check: ${error instanceof Error ? error.message : String(error)} — ${USAGE}`);
+        return 2;
     }
-} catch (error: unknown) {
-    echo(`wechatmp ${verb}: failed — ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
+
+    if (command === 'login') {
+        try {
+            await openWechatLogin({ profileDir, timeoutMs: timeoutMs ?? LOGIN_TIMEOUT_MS });
+            echo(`wechatmp profile login verified: ${profileDir}`);
+            return 0;
+        } catch (error) {
+            echoError(`wechatmp profile login failed: ${error instanceof Error ? error.message : String(error)}`);
+            return 1;
+        }
+    }
+
+    let verdict: WechatVerdict;
+    try {
+        await checkWechatSession(profileDir, { headless: !headed, timeoutMs });
+        verdict = {
+            status: 'verified',
+            profileDir,
+            detail: `authenticated wechatmp console session observed ${headed ? 'via a headed pass' : 'headlessly'} via profile ${profileDir} (read-only)`,
+        };
+    } catch (error) {
+        verdict = {
+            status: 'refused',
+            profileDir,
+            detail: `wechatmp readiness refused: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+    echo(JSON.stringify(verdict));
+    return verdict.status === 'verified' ? 0 : 1;
+}
+
+if (import.meta.main) {
+    process.exit(await main());
 }

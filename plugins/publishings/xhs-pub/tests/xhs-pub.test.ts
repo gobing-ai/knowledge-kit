@@ -1548,16 +1548,63 @@ describe('xhs-pub profile-check CLI (0177)', () => {
         }
     });
 
-    test('unknown command and invalid --timeout fail with usage', async () => {
+    test('unknown command and invalid --timeout fail with usage (exit 2, 0216 contract)', async () => {
         const err = createBufferTarget();
         const restore = setDefaultOutputTargets({ stderr: err });
         try {
-            expect(await profileCheckMain(['nonsense'], fakeLauncher(consoleContext(true)))).toBe(1);
+            expect(await profileCheckMain(['nonsense'], fakeLauncher(consoleContext(true)))).toBe(2);
             expect(err.text()).toContain('usage');
-            expect(await profileCheckMain(['check', '--timeout', 'later'])).toBe(1);
+            expect(await profileCheckMain(['check', '--timeout', 'later'])).toBe(2);
             expect(err.text()).toContain('--timeout');
         } finally {
             restore();
+        }
+    });
+
+    test('check --headed (0216): probes headed only, never headless', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        const requests: Array<{ profileDir: string; headless: boolean }> = [];
+        try {
+            const code = await profileCheckMain(
+                ['check', '--headed', '--profile', '/tmp/kk-xhs-headed', '--timeout', '50'],
+                fakeLauncher(consoleContext(false), requests),
+            );
+            expect(code).toBe(1);
+            expect(requests.map((request) => request.headless)).toEqual([false]);
+            const verdict = JSON.parse(out.text()) as { status: string };
+            expect(verdict.status).toBe('refused');
+        } finally {
+            restore();
+        }
+    });
+
+    test('check under a spent 2h budget refuses with a JSON verdict line, never a browser (0216 contract)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-budget-'));
+        const statePath = join(dir, 'state.json');
+        try {
+            await writeFile(statePath, JSON.stringify({ check: '2026-09-28T09:30:00Z' }));
+            const guard = createAutomationGuard({ statePath, now: NOW });
+            const out = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stdout: out });
+            try {
+                const code = await profileCheckMain(
+                    ['check', '--profile', '/tmp/kk-xhs-budget'],
+                    async () => {
+                        throw new Error('no browser may open under a spent budget');
+                    },
+                    guard,
+                );
+                expect(code).toBe(1);
+                const verdict = JSON.parse(out.text()) as { status: string; detail: string };
+                expect(verdict.status).toBe('refused');
+                expect(verdict.detail).toContain("'check' already ran");
+            } finally {
+                restore();
+            }
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
         }
     });
 });

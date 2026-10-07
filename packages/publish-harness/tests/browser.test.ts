@@ -242,6 +242,37 @@ describe('runProfileCli', () => {
         expect(requests.map((request) => request.headless)).toEqual([false]);
     });
 
+    test('--headed (0216) checks headed only, beating the default headless-first passes', async () => {
+        const lines: string[] = [];
+        const { launcher, requests } = makeLauncher();
+        const code = await runProfileCli(CONFIG, ['check', '--headed'], { launcher, stdout: collect(lines) });
+
+        expect(code).toBe(0);
+        expect(requests.map((request) => request.headless)).toEqual([false]);
+    });
+
+    test('the usage string lists --headed (0216 surface)', async () => {
+        const lines: string[] = [];
+        const code = await runProfileCli(CONFIG, ['banish'], { stdout: collect(lines) });
+
+        expect(code).toBe(2);
+        expect(lines.join('\n')).toContain('--headed');
+    });
+
+    test('check prints the JSON verdict as the LAST stdout line even when refused (0216 probe parse)', async () => {
+        const lines: string[] = [];
+        const { launcher } = makeLauncher(() => {
+            throw new BrowserProfileMissingError(DEFAULT_DIR);
+        });
+        const code = await runProfileCli(CONFIG, ['check'], { launcher, stdout: collect(lines) });
+
+        expect(code).toBe(1);
+        const verdict = JSON.parse(lines[lines.length - 1] ?? '') as { status: string; detail: string };
+        expect(verdict.status).toBe('refused');
+        expect(verdict.detail).toContain('run the login command first');
+        expect(lines).toHaveLength(1);
+    });
+
     test('unknown verb is a usage error (exit 2) and never launches a browser', async () => {
         const lines: string[] = [];
         const { launcher, requests } = makeLauncher();

@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: "publish-harness default launcher: full-Chromium channel + stealth launch so headed login and headless check share one cookie store"
-status: todo
+status: done
 template: issue
 created_at: 2026-10-07T17:59:24.600Z
-updated_at: "2026-10-07T18:16:37.191Z"
+updated_at: "2026-10-07T20:45:58.482Z"
 feature_id: E91
 
 ac_numbering: task-local
 ac_altitude: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/run/0214-verdict.json
 ---
 
 ## 0214. publish-harness default launcher: full-Chromium channel + stealth launch so headed login and headless check share one cookie store
@@ -28,10 +30,10 @@ The fix seam is the `BrowserLauncher` that every browser publish channel opens p
 
 ### Requirements
 
-- [ ] R1. `@gobing-ai/publish-harness/browser` exports a default `BrowserLauncher`. It launches with `channel` from `KK_BROWSER_CHANNEL` (default `chromium`; `chrome` uses installed Google Chrome), `--disable-blink-features=AutomationControlled`, `ignoreDefaultArgs: ['--enable-automation']`, and an init script that hides `navigator.webdriver`. It keeps the library launcher's semantics: owner-only (0o700) profile dir creation, `BrowserProfileMissingError` for a missing profile when headless, and busy/missing-browser error mapping.
-- [ ] R2. `checkChannelSession`, `runProfileCli`, and every browser publish plugin (infoq, juejin, substack, x, wechatmp, xhs) use that launcher whenever no launcher is injected.
-- [ ] R3. A session written by a headed launch through the harness launcher stays readable by a later headless launch of the same profile. This is proved by an E2E check that leaves a repeatable artifact.
-- [ ] R4. `docs/04_DESIGN.md` documents `KK_BROWSER_CHANNEL` and the launcher defaults in the same commit.
+- [x] R1. `@gobing-ai/publish-harness/browser` exports a default `BrowserLauncher`. It launches with `channel` from `KK_BROWSER_CHANNEL` (default `chromium`; `chrome` uses installed Google Chrome), `--disable-blink-features=AutomationControlled`, `ignoreDefaultArgs: ['--enable-automation']`, and an init script that hides `navigator.webdriver`. It keeps the library launcher's semantics: owner-only (0o700) profile dir creation, `BrowserProfileMissingError` for a missing profile when headless, and busy/missing-browser error mapping.
+- [x] R2. `checkChannelSession`, `runProfileCli`, and every browser publish plugin (infoq, juejin, substack, x, wechatmp, xhs) use that launcher whenever no launcher is injected.
+- [x] R3. A session written by a headed launch through the harness launcher stays readable by a later headless launch of the same profile. This is proved by an E2E check that leaves a repeatable artifact.
+- [x] R4. `docs/04_DESIGN.md` documents `KK_BROWSER_CHANNEL` and the launcher defaults in the same commit.
 
 ### Acceptance Criteria
 
@@ -88,18 +90,37 @@ Every browser channel opened profiles through the ts-browser-automation default 
 
 ### Testing
 
-- E2E (AC3): `cd packages/publish-harness && bun run e2e:launcher` writes `.spur/run/e2e/0214-launcher-session.json`.
-  - 2026-10-07: `pass: true`. kkBrowserLauncher keeps the cookie headed→headless and headless→headed. The playwright-default control loses it in both directions.
-  - `KK_BROWSER_CHANNEL=chrome` also passes.
-- Unit tests:
-  - `packages/publish-harness/tests/browser.test.ts` → `createKkBrowserLauncher (0214)`: default and chrome channel, stealth options, headless refusal before launch, blank path, error mapping.
-  - `tests/profile-dir.test.ts`: 0o700 create, headless refusal, adopt, file rejection.
-  - wechatmp/xhs binding tests updated.
-- `bun run gate`: exit 0. 1960 pass, 0 fail, 53 + 2 rules pass, coverage 98.42% lines.
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | packages/publish-harness/src/browser.ts:111 createKkBrowserLauncher — channel from KK_BROWSER_CHANNEL (default chromium, :128), AutomationControlled arg, ignoreDefaultArgs ['--enable-automation'], navigator.webdriver init script; headless missing-profile refusal before launch; unit suite 'createKkBrowserLauncher (0214)' in packages/publish-harness/tests/browser.test.ts (55 pass with profile-dir suite) |
+| R2 | MET | browser.ts:204 `launcher: opts.launcher ?? kkBrowserLauncher` — checkChannelSession/runProfileCli default to the harness launcher; no plugin-local launcher default remains (grep clean) |
+| R3 | MET | E2E artifact .spur/run/e2e/0214-launcher-session.json (2026-10-07): kkBrowserLauncher kept cookies headed→headless and headless→headed (kept:true both directions); playwright-default control lost them both ways; KK_BROWSER_CHANNEL=chrome pass:true; check result written as JSON artifact |
+| R4 | MET | docs/04_DESIGN.md names KK_BROWSER_CHANNEL with default and allowed values (env row, 2 occurrences) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | command | bun test packages/publish-harness/tests/browser.test.ts packages/publish-harness/tests/profile-dir.test.ts — 55 pass / 0 fail; stealth options + channel + headless refusal asserted |
+| AC2 | MET | code | browser.ts:204 default launcher wiring; plugins unchanged go through harness launcher |
+| AC3 | MET | artifact | .spur/run/e2e/0214-launcher-session.json pass:true, both directions kept:true + control rows |
+| AC4 | MET | doc | docs/04_DESIGN.md KK_BROWSER_CHANNEL row |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Fresh-context verification of the implemented tree against this task's claims (2026-10-07).
+
+| Priority | Dimension | Finding | Disposition |
+| --- | --- | --- | --- |
+| P3 | correctness | Cookie persistence across headed/headless is environment-dependent (Playwright build layout can change across versions); guarded by the E2E artifact which pins both directions + chrome channel. | ACCEPTED — artifact re-runnable via `bun run e2e:launcher` |
+| P3 | security | Stealth options (AutomationControlled off, --enable-automation dropped, webdriver init script) reduce bot detection but are not an anonymity guarantee; scope is OAuth login acceptance only. | ACCEPTED — matches ADR-032 scope |
+| P4 | ops | KK_BROWSER_CHANNEL=chrome requires Google Chrome installed; error message names the install command. | ACCEPTED |
+
+Residual risk: none new; artifact-based cookie persistence is environment-dependent by nature but was reproduced in both directions plus the chrome channel.
+Disposition: implementation verified against all four AC — no open findings. Shippable.
 
 ### References
 
@@ -109,3 +130,8 @@ Every browser channel opened profiles through the ts-browser-automation default 
 - Blocks: 0193, 0194
 
 ### History
+
+- 2026-10-07T20:45:25.632Z todo → wip (system)
+- 2026-10-07T20:45:27.510Z wip → testing (system)
+- 2026-10-07T20:45:58.387Z testing → done (system)
+
