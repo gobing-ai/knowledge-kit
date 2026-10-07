@@ -4,9 +4,10 @@ name: "Operator dogfood for substack-pub: profile-check login -> check -> one dr
 status: todo
 template: issue
 created_at: 2026-10-05T13:41:38.676Z
-updated_at: "2026-10-07T16:25:47.338Z"
+updated_at: "2026-10-07T17:59:28.378Z"
 feature_id: E91
 
+dependencies: ["0214"]
 ---
 
 ## 0193. Operator dogfood for substack-pub: profile-check login -> check -> one draft run; re-measure editor URL/body paste/draft signal
@@ -51,6 +52,15 @@ Then the result JSON reports `ok: true` with a draft id taken from `/publish/pos
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Q&A entry — 2026-10-07T17:07:33.395Z
+
+Pre-run measurements, 2026-10-07 (probe scripts `.spur/run/discovery/probe-substack-0193.ts` and `cookies-substack-0193.ts`):
+- Publication URL is `https://robinmin.substack.com`. The dashboard URL `…/publish/home` is rejected by `resolvePublicationUrl`; use the root.
+- After the operator's `profile-check.ts login` reported success, `check` still returns `refused` (both the headless pass and the headed fallback).
+- Drift, editor URL: `editorUrl()` returns `<base>/publish/post/new`, which now lands on `<base>/new` showing "Page not found". Yesterday's working walk (`walk-substack4.ts:10`) used `<base>/publish/post`.
+- Drift, body selector: the walk clicked `div.tiptap.ProseMirror`. The plugin uses `.ProseMirror[contenteditable="true"]`, which is unverified.
+- Session: after login, the profile holds only `.substack.com substack.lli` and no `substack.sid` session cookie. Headless `/publish/post` redirects to `substack.com/sign-in?…for_pub=robinmin` ("This page is private"). Hypothesis (unverified): the session cookie is either not persisted past browser close or never set for the publication.
 
 ### Design
 

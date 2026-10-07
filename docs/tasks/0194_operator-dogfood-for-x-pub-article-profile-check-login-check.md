@@ -4,9 +4,10 @@ name: "Operator dogfood for x-pub-article: profile-check login -> check -> one d
 status: todo
 template: issue
 created_at: 2026-10-05T13:41:38.888Z
-updated_at: "2026-10-07T16:25:56.667Z"
+updated_at: "2026-10-07T17:59:28.579Z"
 feature_id: E91
 
+dependencies: ["0214"]
 ---
 
 ## 0194. Operator dogfood for x-pub-article: profile-check login -> check -> one draft run; re-measure compose-articles URL/selectors/edit-URL pattern, with and without a cover
@@ -51,6 +52,14 @@ Then each run (without and with a cover) reports `ok: true` with a draft id from
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Q&A entry — 2026-10-07T17:36:31.058Z
+
+Pre-run state, 2026-10-07:
+- Operator logged in with Google OAuth through `bun .spur/run/discovery/login-x3.ts` (stealth launch; see `.spur/context/pitfalls.md` 2026-10-07). `x-login3.json`: `authenticated: true` on `x.com/compose/articles`.
+- The plugin's `profile-check.ts check` still refuses right after that login on the same profile (both the headless pass and the headed fallback), so the readiness predicate (`ARTICLE_SELECTORS.write`/`title` plus `LOGIN_URL_RE`) has drifted. R2 starts there.
+- Lead: X now bounces deep links to `/i/jf/onboarding/web?...mode=login`, which `LOGIN_URL_RE` (`src/index.ts:169`) does not match.
+- The plugin's `profile-check.ts login` cannot pass Google OAuth: the shared launcher in `ts-browser-automation@0.5.15` has no launch options. Re-login with `login-x3.ts`, not the plugin CLI.
 
 ### Design
 

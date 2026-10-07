@@ -10,10 +10,11 @@ import {
 import {
     checkChannelSession,
     createShadowFinder,
+    kkBrowserLauncher,
     resolveChannelProfileDir,
     type ShadowCdpSession,
 } from '@gobing-ai/publish-harness/browser';
-import { type BrowserLauncher, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
+import type { BrowserLauncher } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
 import { type AutomationGuard, createAutomationGuard } from './automation-guard';
@@ -93,15 +94,15 @@ export async function isXhsConsoleReady(page: XhsPage): Promise<boolean> {
 }
 
 /**
- * Production launcher: the upstream typed persistent-context opener (0177). Named so the
+ * Production launcher: the harness kk launcher (0214; full-Chromium channel + stealth). Named so the
  * migration is provable offline — tests assert this binding, never launch a real browser.
  */
-export const defaultLauncher = openPersistentBrowser;
+export const defaultLauncher = kkBrowserLauncher.launch;
 
 /**
  * Build the default page opener. The launcher is injected so the seam (page wrapping, shadow
  * probe wiring, context close, launch-failure message) is testable without launching a browser;
- * production uses the upstream typed `openPersistentBrowser` (@gobing-ai/ts-browser-automation).
+ * production uses the harness `kkBrowserLauncher` (@gobing-ai/publish-harness/browser, 0214).
  */
 export function makeDefaultOpenPage(
     launch: (options: { profileDir: string; headless: boolean }) => Promise<unknown> = defaultLauncher,

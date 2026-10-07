@@ -8,7 +8,8 @@
     },
     "scripts": {
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "e2e:launcher": "bun scripts/e2e-launcher-session.ts ../../.spur/run/e2e/0214-launcher-session.json"
     },
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",

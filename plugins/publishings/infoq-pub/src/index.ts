@@ -13,6 +13,7 @@ import {
     checkChannelSession,
     DEFAULT_SIGNAL_CONTAINERS,
     expectOutcome,
+    kkBrowserLauncher,
     markdownToHtml,
     pasteHtml,
     readScopedSignal,
@@ -210,7 +211,7 @@ export function resolveOperation(
 export class InfoqBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
-    private readonly launcher?: BrowserLauncher;
+    private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
     private readonly checkTimeoutMs: number;
 
@@ -219,7 +220,7 @@ export class InfoqBrowserTransport implements PublishTransport {
         deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number; checkTimeoutMs?: number } = {},
     ) {
         this.driver = driver;
-        this.launcher = deps.launcher;
+        this.launcher = deps.launcher ?? kkBrowserLauncher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
         this.checkTimeoutMs = deps.checkTimeoutMs ?? CHECK_TIMEOUT_MS;
     }

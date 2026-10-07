@@ -13,6 +13,7 @@ import {
     checkChannelSession,
     expectOutcome,
     fillCodeMirror,
+    kkBrowserLauncher,
     readScopedSignal,
     resolveChannelProfileDir,
     resolveSelector,
@@ -173,7 +174,7 @@ export function resolveOperation(
 export class JuejinBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
-    private readonly launcher?: BrowserLauncher;
+    private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
     private readonly checkTimeoutMs: number;
 
@@ -182,7 +183,7 @@ export class JuejinBrowserTransport implements PublishTransport {
         deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number; checkTimeoutMs?: number } = {},
     ) {
         this.driver = driver;
-        this.launcher = deps.launcher;
+        this.launcher = deps.launcher ?? kkBrowserLauncher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
         this.checkTimeoutMs = deps.checkTimeoutMs ?? CHECK_TIMEOUT_MS;
     }

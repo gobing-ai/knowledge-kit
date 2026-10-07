@@ -2,6 +2,7 @@ import { afterAll, describe, expect, mock, spyOn, test } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
+import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
 import * as tsBrowserAutomation from '@gobing-ai/ts-browser-automation';
 import type { BrowserContext, Page } from 'playwright';
 import { CONSOLE_URL, WechatmpBrowserTransport } from '../src/index';
@@ -145,7 +146,7 @@ describe('wechatmp-pub default launcher (stubbed browser, no openPage injected)'
             },
         });
 
-        expect(launches).toEqual([{ profileDir, headless: true }]);
+        expect(launches).toEqual([{ profileDir, headless: true, launcher: kkBrowserLauncher }]);
         expect(injected).toEqual(SAVED_COOKIES);
         // The replay happens per origin FIRST; the console is the last navigation.
         expect(gotos).toEqual(['https://mp.weixin.qq.com', CONSOLE_URL]);
@@ -188,7 +189,7 @@ describe('wechatmp-pub default launcher (stubbed browser, no openPage injected)'
         });
 
         // The shipped preflight is headless and reads the same resolved profile dir.
-        expect(launches).toEqual([{ profileDir, headless: true }]);
+        expect(launches).toEqual([{ profileDir, headless: true, launcher: kkBrowserLauncher }]);
         expect(gotos).toEqual([]);
         expect(result.ok).toBe(false);
         expect(result.error).toContain('no saved console profile');

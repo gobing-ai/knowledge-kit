@@ -1,14 +1,19 @@
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
     type BrowserLauncher,
+    BrowserProfileBusyError,
     BrowserProfileMissingError,
+    InvalidProfileDirError,
     type IsAuthenticatedPredicate,
     loginWithProfile,
+    PlaywrightUnavailableError,
     withProfilePage,
 } from '@gobing-ai/ts-browser-automation';
 import { echo } from '@gobing-ai/ts-utils';
-import type { Page } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 import { resolveBrowserProfileDir, trySelectors } from './index';
+import { ensureProfileDir } from './profile-dir';
 
 /** Upstream seam types re-exported so a channel plugin needs one import for its config and deps. */
 export type { BrowserLauncher, IsAuthenticatedPredicate };
@@ -55,7 +60,7 @@ export interface ChannelSessionResult {
 export interface ChannelSessionOptions {
     /** Existing profile directory to reopen read-only. */
     profileDir: string;
-    /** Launcher override (tests / custom browser provisioning). */
+    /** Launcher override (tests / custom browser provisioning); default {@link kkBrowserLauncher}. */
     launcher?: BrowserLauncher;
     /** `false` keeps a refusal to the single headless pass (publish preflight). Default true. */
     headedFallback?: boolean;
@@ -70,7 +75,7 @@ export interface ChannelSessionOptions {
  * instead of the default ts-utils `echo` stdout target.
  */
 export interface ProfileCliDeps {
-    /** Launcher override (tests / custom browser provisioning). */
+    /** Launcher override (tests / custom browser provisioning); default {@link kkBrowserLauncher}. */
     launcher?: BrowserLauncher;
     /** Line-writer override; defaults to the ts-utils `echo` stdout seam. */
     stdout?: (line: string) => void;
@@ -85,6 +90,73 @@ const DEFAULT_CHECK_TIMEOUT_MS = 30_000;
 const DEFAULT_STEP_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 500;
 const ATTACH_POLL_MS = 100;
+
+/**
+ * kk's default {@link BrowserLauncher} (0214). Everywhere a channel opens a profile without an
+ * injected launcher, it goes through this one rather than the ts-browser-automation default, for two reasons:
+ *
+ * - `channel` (`KK_BROWSER_CHANNEL`, default `chromium`): Playwright's default headless run uses a separate
+ *   `chromium_headless_shell` binary whose cookie store cannot read what the headed full-Chromium
+ *   login wrote, and reopening a profile across the two wipes it (repro 2026-10-07,
+ *   `.spur/run/discovery/cookie-persist-repro2.ts`/`3.ts`). Full Chromium in new-headless mode
+ *   shares one store. `chrome` drives installed Google Chrome.
+ * - Stealth: Google OAuth refuses a browser flagged as automated ("This browser or app may not be
+ *   secure"), so drop `--enable-automation` and the AutomationControlled blink feature, and hide
+ *   `navigator.webdriver`.
+ *
+ * Profile semantics match upstream `createPersistentLauncher` (not exported): an existing dir is
+ * adopted as-is, a headed launch creates a missing one owner-only (0o700), and a headless launch
+ * never creates one.
+ */
+export function createKkBrowserLauncher(
+    loadPlaywright: () => Promise<typeof import('playwright')> = () => import('playwright'),
+): BrowserLauncher {
+    return {
+        async launch(request): Promise<BrowserContext> {
+            if (request.profileDir.trim() === '') throw new InvalidProfileDirError();
+            const profileDir = resolve(request.profileDir);
+            await ensureProfileDir(profileDir, request.headless);
+            let playwright: typeof import('playwright');
+            try {
+                playwright = await loadPlaywright();
+            } catch (error) {
+                throw new PlaywrightUnavailableError(
+                    'The "playwright" dependency is not installed. Run `bunx playwright install chromium`.',
+                    { cause: error },
+                );
+            }
+            const channel = process.env.KK_BROWSER_CHANNEL?.trim() || 'chromium';
+            let context: BrowserContext;
+            try {
+                context = await playwright.chromium.launchPersistentContext(profileDir, {
+                    headless: request.headless,
+                    channel,
+                    args: ['--disable-blink-features=AutomationControlled'],
+                    ignoreDefaultArgs: ['--enable-automation'],
+                });
+            } catch (error) {
+                const message = errorMessage(error);
+                if (/singleton|already in use|in use by another/i.test(message)) {
+                    throw new BrowserProfileBusyError(profileDir, error);
+                }
+                if (/playwright install|executable doesn't exist/i.test(message)) {
+                    throw new PlaywrightUnavailableError(
+                        `Browser channel '${channel}' is not installed. Run \`bunx playwright install chromium\` (or install Google Chrome for KK_BROWSER_CHANNEL=chrome).`,
+                        { cause: error },
+                    );
+                }
+                throw error;
+            }
+            await context.addInitScript(() => {
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            });
+            return context;
+        },
+    };
+}
+
+/** The production launcher. `launch` never reads `this`, so it may be passed detached (xhs `defaultLauncher`). */
+export const kkBrowserLauncher: BrowserLauncher = createKkBrowserLauncher();
 
 /**
  * Resolves the persistent profile directory for a channel.
@@ -129,7 +201,7 @@ export async function checkChannelSession(
                     url: config.homeUrl,
                     isAuthenticated: config.isAuthenticated,
                     timeoutMs,
-                    launcher: opts.launcher,
+                    launcher: opts.launcher ?? kkBrowserLauncher,
                 },
                 async () => true,
             );
@@ -207,7 +279,7 @@ export async function runProfileCli(
                 url: config.homeUrl,
                 isAuthenticated: config.isAuthenticated,
                 timeoutMs: timeoutMs ?? config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS,
-                launcher: deps.launcher,
+                launcher: deps.launcher ?? kkBrowserLauncher,
             });
             stdout(`${config.channel} profile login verified: ${profileDir}`);
             return 0;

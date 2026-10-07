@@ -146,3 +146,7 @@ rules:
             # — the seam is text-only and cannot produce an fd (same fd-transport class
             # as podcast-pub binary bytes).
             - "plugins/generations/voice-gen/src/voicebox-server.ts"
+            # publish-harness profile-dir guard (0214): owner-only (0o700) mkdir of a
+            # browser profile that holds session cookies; the ts-runtime ensureDir seam
+            # takes no mode. Mirrors ts-browser-automation's own sanctioned launcher exception.
+            - "packages/publish-harness/src/profile-dir.ts"

@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { homedir } from 'node:os';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     type BrowserLauncher,
+    BrowserProfileBusyError,
     BrowserProfileMissingError,
+    InvalidProfileDirError,
     LoginTimeoutError,
+    PlaywrightUnavailableError,
     type ProfileLaunchRequest,
 } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
@@ -12,6 +16,7 @@ import type { BrowserContext, Page } from 'playwright';
 import {
     type ChannelBrowserConfig,
     checkChannelSession,
+    createKkBrowserLauncher,
     createShadowFinder,
     expectOutcome,
     fillCodeMirror,
@@ -613,5 +618,107 @@ describe('main entry isolation (R5)', () => {
 
         expect(source).not.toContain('./browser');
         expect(source).not.toContain('ts-browser-automation');
+    });
+});
+
+describe('createKkBrowserLauncher (0214)', () => {
+    let root: string;
+    const savedChannel = process.env.KK_BROWSER_CHANNEL;
+
+    beforeEach(async () => {
+        root = await mkdtemp(join(tmpdir(), 'kk-launcher-'));
+        delete process.env.KK_BROWSER_CHANNEL;
+    });
+    afterEach(async () => {
+        await rm(root, { recursive: true, force: true });
+        if (savedChannel === undefined) delete process.env.KK_BROWSER_CHANNEL;
+        else process.env.KK_BROWSER_CHANNEL = savedChannel;
+    });
+
+    /** Fake playwright recording the launch options; `fail` makes launchPersistentContext throw it. */
+    function fakePlaywright(fail?: Error) {
+        const launches: { dir: string; options: Record<string, unknown> }[] = [];
+        const initScripts: unknown[] = [];
+        const load = async () =>
+            ({
+                chromium: {
+                    async launchPersistentContext(dir: string, options: Record<string, unknown>) {
+                        launches.push({ dir, options });
+                        if (fail) throw fail;
+                        return {
+                            addInitScript: async (script: unknown) => {
+                                initScripts.push(script);
+                            },
+                        };
+                    },
+                },
+            }) as unknown as typeof import('playwright');
+        return { load, launches, initScripts };
+    }
+
+    test('defaults to the full Chromium channel with the stealth options and webdriver init script', async () => {
+        const pw = fakePlaywright();
+        const profileDir = join(root, 'p');
+
+        await createKkBrowserLauncher(pw.load).launch({ profileDir, headless: false });
+
+        expect(pw.launches).toHaveLength(1);
+        expect(pw.launches[0]?.dir).toBe(profileDir);
+        expect(pw.launches[0]?.options).toMatchObject({
+            headless: false,
+            channel: 'chromium',
+            args: ['--disable-blink-features=AutomationControlled'],
+            ignoreDefaultArgs: ['--enable-automation'],
+        });
+        expect(pw.initScripts).toHaveLength(1);
+    });
+
+    test('KK_BROWSER_CHANNEL=chrome selects installed Google Chrome; blank falls back to chromium', async () => {
+        const pw = fakePlaywright();
+        await Bun.write(join(root, 'p', '.keep'), '');
+
+        process.env.KK_BROWSER_CHANNEL = 'chrome';
+        await createKkBrowserLauncher(pw.load).launch({ profileDir: join(root, 'p'), headless: true });
+        process.env.KK_BROWSER_CHANNEL = '  ';
+        await createKkBrowserLauncher(pw.load).launch({ profileDir: join(root, 'p'), headless: true });
+
+        expect(pw.launches.map((l) => l.options.channel)).toEqual(['chrome', 'chromium']);
+    });
+
+    test('a missing profile is refused headless before any launch', async () => {
+        const pw = fakePlaywright();
+        const profileDir = join(root, 'absent');
+
+        await expect(createKkBrowserLauncher(pw.load).launch({ profileDir, headless: true })).rejects.toBeInstanceOf(
+            BrowserProfileMissingError,
+        );
+        expect(pw.launches).toHaveLength(0);
+        expect(await stat(profileDir).catch(() => null)).toBeNull();
+    });
+
+    test('rejects a blank profile path', async () => {
+        await expect(
+            createKkBrowserLauncher(fakePlaywright().load).launch({ profileDir: ' ', headless: false }),
+        ).rejects.toBeInstanceOf(InvalidProfileDirError);
+    });
+
+    test('maps busy-profile, missing-browser and missing-peer failures to typed errors', async () => {
+        const profileDir = join(root, 'p');
+        const launch = (load: () => Promise<typeof import('playwright')>) =>
+            createKkBrowserLauncher(load).launch({ profileDir, headless: false });
+
+        await expect(
+            launch(fakePlaywright(new Error('ProcessSingleton: profile already in use')).load),
+        ).rejects.toBeInstanceOf(BrowserProfileBusyError);
+        await expect(launch(fakePlaywright(new Error("Executable doesn't exist at /x")).load)).rejects.toBeInstanceOf(
+            PlaywrightUnavailableError,
+        );
+        await expect(
+            launch(async () => {
+                throw new Error('Cannot find package playwright');
+            }),
+        ).rejects.toBeInstanceOf(PlaywrightUnavailableError);
+        const other = new Error('boom');
+        await expect(launch(fakePlaywright(other).load)).rejects.toBe(other);
     });
 });

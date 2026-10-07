@@ -6,7 +6,7 @@ import {
     type PublishTransportPayload,
     resolveBrowserProfileDir,
 } from '@gobing-ai/publish-harness';
-import { waitUntil } from '@gobing-ai/publish-harness/browser';
+import { kkBrowserLauncher, waitUntil } from '@gobing-ai/publish-harness/browser';
 import { BrowserProfileMissingError, openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
@@ -95,7 +95,7 @@ async function pollLogin(page: Page): Promise<void> {
 
 /** Launch, inject the saved login cookies, and land on the console. Caller owns closing the context. */
 async function openWithState(profileDir: string, headless: boolean): Promise<{ page: Page; context: BrowserContext }> {
-    const context = await openPersistentBrowser({ profileDir, headless });
+    const context = await openPersistentBrowser({ profileDir, headless, launcher: kkBrowserLauncher });
     try {
         const stateFile = storageStatePath(profileDir);
         let state:

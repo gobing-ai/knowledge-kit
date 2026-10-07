@@ -5,12 +5,8 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
-import {
-    type BrowserLauncher,
-    BrowserProfileMissingError,
-    LoginTimeoutError,
-    openPersistentBrowser,
-} from '@gobing-ai/ts-browser-automation';
+import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
+import { type BrowserLauncher, BrowserProfileMissingError, LoginTimeoutError } from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
@@ -1383,12 +1379,12 @@ describe('xhs-pub profile precedence (preserved, 0177)', () => {
     });
 });
 
-describe('xhs-pub default launcher routes through @gobing-ai/ts-browser-automation (0177)', () => {
-    test('the production default launcher is the upstream openPersistentBrowser, called headed', async () => {
+describe('xhs-pub default launcher routes through the harness kk launcher (0177, 0214)', () => {
+    test('the production default launcher is kkBrowserLauncher.launch, called headed', async () => {
         // Structural proof of AC1, offline: the production seam binds the upstream typed API.
         // (mock.module('playwright') does not intercept the published package's dynamic import,
         // so a behavioral test here would risk a real browser launch — never do that.)
-        expect(defaultLauncher).toBe(openPersistentBrowser);
+        expect(defaultLauncher).toBe(kkBrowserLauncher.launch);
 
         const launched: Array<{ profileDir: string; headless: boolean }> = [];
         const closed: string[] = [];

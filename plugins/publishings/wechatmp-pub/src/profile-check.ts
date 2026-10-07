@@ -1,5 +1,5 @@
 import { resolveBrowserProfileDir } from '@gobing-ai/publish-harness';
-import { waitUntil } from '@gobing-ai/publish-harness/browser';
+import { kkBrowserLauncher, waitUntil } from '@gobing-ai/publish-harness/browser';
 import { openPersistentBrowser } from '@gobing-ai/ts-browser-automation';
 import { echo } from '@gobing-ai/ts-utils';
 import { checkWechatSession, storageStatePath } from './index';
@@ -16,7 +16,7 @@ try {
         echo(
             `wechatmp login: opening the console in a headed browser — scan the QR once (timeout ${LOGIN_TIMEOUT_MS / 1000}s)`,
         );
-        const context = await openPersistentBrowser({ profileDir, headless: false });
+        const context = await openPersistentBrowser({ profileDir, headless: false, launcher: kkBrowserLauncher });
         try {
             const page = context.pages()[0] ?? (await context.newPage());
             await page.goto(CONSOLE_URL);

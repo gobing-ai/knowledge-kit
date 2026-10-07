@@ -21,7 +21,7 @@
  * the full recipe lives in docs/design/xhs-image-cards.md.
  */
 import { parseArgs } from 'node:util';
-import { resolveChannelProfileDir } from '@gobing-ai/publish-harness/browser';
+import { kkBrowserLauncher, resolveChannelProfileDir } from '@gobing-ai/publish-harness/browser';
 import { type BrowserLauncher, loginWithProfile } from '@gobing-ai/ts-browser-automation';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import { type AutomationGuard, createAutomationGuard } from './automation-guard';
@@ -60,7 +60,7 @@ export async function loginProfile(opts: ProfileLoginOptions): Promise<void> {
         url: PUBLISH_URL,
         isAuthenticated: (page) => isXhsConsoleReady(wrapPlaywrightPage(page)),
         timeoutMs: opts.timeoutMs ?? LOGIN_TIMEOUT_MS,
-        launcher: opts.launcher,
+        launcher: opts.launcher ?? kkBrowserLauncher,
     });
 }
 

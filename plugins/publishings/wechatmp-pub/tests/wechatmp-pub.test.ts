@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
+import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
 import * as tsBrowserAutomation from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Page } from 'playwright';
@@ -1365,7 +1366,7 @@ describe('browser seam (stubbed openPersistentBrowser)', () => {
         try {
             await checkWechatSession(profileDir);
             expect(launches).toBe(1);
-            expect(openSpy).toHaveBeenCalledWith({ profileDir, headless: true });
+            expect(openSpy).toHaveBeenCalledWith({ profileDir, headless: true, launcher: kkBrowserLauncher });
         } finally {
             mock.restore();
             await rm(profileDir, { recursive: true, force: true });

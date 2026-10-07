@@ -12,6 +12,7 @@ import {
     type ChannelBrowserConfig,
     checkChannelSession,
     expectOutcome,
+    kkBrowserLauncher,
     markdownToHtml,
     pasteHtml,
     resolveChannelProfileDir,
@@ -164,12 +165,12 @@ export function resolveOperation(
 export class SubstackBrowserTransport implements PublishTransport {
     public readonly kind = 'browser';
     public readonly driver: BrowserDriver;
-    private readonly launcher?: BrowserLauncher;
+    private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
 
     constructor(driver: BrowserDriver = 'script', deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number } = {}) {
         this.driver = driver;
-        this.launcher = deps.launcher;
+        this.launcher = deps.launcher ?? kkBrowserLauncher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
     }
 
