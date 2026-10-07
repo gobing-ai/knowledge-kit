@@ -63,6 +63,10 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                    [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
 kk store migrate [--db <path>]
+kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
+kk store lock release --name <lock> --run <id> [--db <path>]
+kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
+kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
 kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 ```
@@ -74,13 +78,16 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 | `executor fan-out` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (A21) |
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
+| `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
+| `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs`, write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
+| `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
 | `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
 | `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
 > registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
 > extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206) and
-`ledger` (§1.10, task 0207); the
+`ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208); the
 > engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
 > still reach the same engines but are not listed in `kk --help`. §1.5/§1.6 are callable today. The
@@ -360,6 +367,27 @@ shape. The schema is created from `defineTable(...).createTableSql`, so there is
 to drift — see §4 for the package surface and `.spur/rules/boundary/dao-boundary.yaml` for the
 ts-db/drizzle confinement rules.
 
+`kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]` takes the named
+single-flight lock through `LocksDao.acquire` and prints `{"acquired":true}`, or
+`{"skipped":"locked","holder":<run>}` — **both exit 0**: a skip is the scheduler's normal overlap
+answer, not a failure, and stdout is the lock contract the workflow's guard reads. The claim is
+re-entrant for the same `--run`, and a claim older than its recorded TTL is stolen, which is what
+covers a crashed holder. `--ttl` defaults to `7200000` (2 h: the observed 20261006 collection ran
+~32 min); `kk-collect` pins `--ttl 21600000` so a run is never overtaken mid-collect.
+`kk store lock release --name <lock> --run <id>` frees the lock **iff** that run still owns it and
+prints `{released}` (`false` when the claim was already stolen or released). Failure exits 1 with
+`kk.store.lock.failed: <cause>`.
+
+`kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]` is the collector's
+write path: it validates the input against `DocListSchema`, records the run's `collect_runs` row
+(`start` → `finish` with the counts), upserts through `ItemsDao.upsertDocs` (one batch, so a
+rejected write stores nothing) and prints `{inserted, updated, unchanged}`. `--new-ids` receives
+the ids the next label pass must decide: the inserted ids plus the already-stored ids whose content
+changed (whose `labels` rows the upsert deleted in the same batch). The DAO reports only the
+inserted half, so the invalidated half is derived from the stored `title`/`body` **before** the
+upsert — the two fields `content_hash` covers. Failure exits 1 with `kk.store.ingest.failed: <cause>`
+and writes no `--new-ids` file.
+
 ### 1.10 `ledger` — shipped (task 0207)
 
 `kk ledger` maintains a per-workflow run ledger at `<works-dir>/<workflow>/ledger.md` (default
@@ -392,6 +420,25 @@ future ones — gets authoritative timing and token figures without kk-owned tim
 - Failures exit 1 with `kk.ledger.<reason>` and leave the ledger untouched: `run.running`,
   `trace.not-found`, `trace.spawn-failed`, `trace.invalid`, `list.invalid`, `write.failed`.
   `KK_SPUR_BIN` overrides the `spur` binary (tests, non-PATH installs).
+
+### 1.11 `schedule` — shipped (task 0208)
+
+`kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` prints the scheduling
+artifact for a shipped workflow from `plugins/kk/schedules/{launchd.plist.tmpl,cron.tmpl}`, with
+`{{repo}}` bound to the `--repo` checkout (default: cwd). **Installing it is an operator action** —
+`spur` has no scheduler and kk never writes a crontab or a `LaunchAgents` plist, so the command's
+only side effect is the text it prints (`plugins/kk/README.md` §Schedule documents the two
+install lines).
+
+| Platform | Rendered artifact |
+| ---------- | ------------------ |
+| `launchd` | plist for `ai.gobing.kk-collect`: `StartInterval` 14400 (4 h), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
+| `cron` | `0 */4 * * * cd <repo> && spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
+
+Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to the running
+package's copy, so a checkout without the templates still renders. An unknown schedule or platform
+exits 1 with `kk.schedule.render.failed: <cause>` and prints nothing — a typo must never emit a
+partial schedule.
 
 ## 2. Configuration keys
 
@@ -833,6 +880,7 @@ File: `.spur/config.yaml`
 | Aihot news ingestion | `docs/design/aihot-ingest.md` | Ingestion plugin fetching curated AI news items from aihot.virxact.com into Doc[] (F6 **shipped** 2026-08-21) |
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
 | Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`gemini` -> gemini-tts default (2026-09-29), `voicebox` -> voice-gen, `ominivoice` -> omni-voice-gen; unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial); daily audio defaults to MP3 with ID3 tags (0171), and `intro-music` joins from the raw render to a distinct `.intro.wav` output (0176) (F61 destination; restructured 2026-09-06 by 0097); the `xhs-write`/`xhs-publish` pair appends a Xiaohongshu card draft (lead-item card plan agent.run -> pinned `xhs-card` x `xhs-knowledge` presets -> `kk stage daily-xhs-render` -> `kk stage daily-publish-xhs`, draft unless `xhs_live`) as an independent, non-blocking target that never enters `publish_status` (E8); the `wechat-publish` state appends a WeChat MP draft (article → `kk stage daily-publish-wechat` → `wechatmp-pub` console browser transport, draft unless `wechat_live`) on the same independent, non-blocking terms (2026-09-29); a publishing run (`publish_enabled`) passes the `safety-review` → `safety-judge` verdict gate between `script` and `review`/`wrap-docs` (0189 R10: `kk stage daily-safety-prep <work_dir> <run_date> <platforms>` + `kk:content-safety` agent.run + `kk:content-judge` compliance agent.run + `kk stage daily-safety-gate <work_dir> <run_date> <safety_max_revise>` → `safety_status` pass\|escalate\|exclude\|revise\|block; the safety verdict must carry a `HIGH\|MEDIUM\|LOW` confidence level — missing or out-of-enum values block (20261003); 20261005 the gate adjusts instead of halting: `revise` loops the drafts through `safety-revise` (`kk:content-safety` detect+revise agent.run + `kk stage daily-safety-revise`, budget `safety_max_revise`, default 2) back into `safety-review`, `exclude` drops the admission-blocked platforms from the run and publishes the rest (the stamp's `excludedPlatforms`, honoured by the per-target stages), escalate always pauses at `review`, and `daily-publish-prep` refuses drafts without a matching pass\|escalate\|exclude digest stamp — only draft-integrity findings (a PII finding on a blocked platform, or a must-pass `fail` outside the admission criteria), an out-of-contract verdict, or edited-after-review drafts reach `failed`); on a `block` the drafts are quarantined to `24-script/.quarantine-<run_date>-judge-block/` instead of being deleted, and the run continues to its normal terminal, so a rejected draft stays on disk for inspection rather than being re-judged in place (20261005); `daily-publish-classify` also records the independent channels' state (en/ja locales, XHS, WeChat, surfdash CMS re-sync) in `31-publish/<run_date>_17_publish_completeness.json` and warns on any gap — those channels never enter `publish_status`, so a hand-driven tail that skips them is otherwise invisible (20261003)|
+| kk-collect workflow | `docs/design/kk-collect-and-daily-voice2.md` §3, §5 | Product state-machine for standalone 4-hourly collection (task 0208, G31): `lock` (`kk ledger sync` + workspace composition + `kk store lock acquire`, a held claim routes `skipped`) → `collect` (`kk executor fan-in --source` aihot/last30days/horizon with the 45 m horizon leash + `kk stage daily-collect-facts`) → `store` (`kk store ingest`) → `label` (`kk store label`, task 0209 — a no-op `true` until it lands) → `release` (`kk store lock release` + `kk ledger append`); `collect`/`store`/`label` failures route to `release-failed` (a state-machine aborts on a failed action without transitioning, so those actions continue-on-error behind a positive-artifact guard) so the lock is never left behind. Collection only: it never generates, renders audio or publishes, and the store is the sole state it shares with the daily workflow. `plugins/kk/schedules/` + `kk schedule render` provide the operator-installed 4 h launchd/cron trigger **shipped (task 0208)** |
 | kk-collect + daily voice2 | `docs/design/kk-collect-and-daily-voice2.md` | `@gobing-ai/kk-store` (ts-db SQLite, `store.db_path`, boundary rules), `kk store migrate\|lock\|ingest\|label\|extract\|mark-used`, `kk ledger append\|sync\|cutover-check`, `kk schedule render`, kk decision catalog + extraction profiles, 4h `kk-collect` state-machine, `kk-daily-ai-voice2` DAG (ADR-030/031, features G31 / G11 / G71 — **planned**) |
 | Daily voice script plan | `docs/design/daily-voice-script-plan.md` | `script-write` agent.run -> per-item script plan (intro/outro/lead/insight) under a checked-in style contract; dailynews-gen validates + builds from it, template fallback stamped `scriptSource` in the run report (F613 **shipped** 2026-09-25 by 0161+0162: `kk stage daily-script-style` snapshot, `script_write_enabled`+zh guarded `script-write` state with `onError: continue`, `NEWS_REPORT_SCRIPT_FILE` -> `脚本来源` line) |
 | Image-gen runtime fallback | `docs/features/D6_image-gen-runtime-fallback.md` | Opt-in `metadata.imageGen.fallback` on the image-gen envelope: absent = strict fail-fast (one provider, original error), `true` = retry down AUTO_ORDER (minus NEVER_AUTO), a list = retry in exactly that order; `metadata.attempts` records every failed provider try `{image, provider, model, errorClass, message}` (present only when non-empty), policy rejections never fall back, and each paid retry is WARN-logged on stderr first (D6 **shipped** 2026-09-25 by 0164–0166) |

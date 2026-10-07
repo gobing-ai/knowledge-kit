@@ -58,11 +58,20 @@ describe('kk main exit seam', () => {
             expect(out).toContain('stage');
             expect(out).toContain('store');
             expect(out).toContain('ledger');
+            expect(out).toContain('schedule');
             // Exact visible command list: the kk nouns plus Commander's built-in
             // `help` command (`kk help executor` is a shipped path). No legacy names
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
             // `plugin|plugins` — the loose line-start regex could not see that.
-            expect(visibleCommandNames(out).sort()).toEqual(['executor', 'help', 'ledger', 'plugin', 'stage', 'store']);
+            expect(visibleCommandNames(out).sort()).toEqual([
+                'executor',
+                'help',
+                'ledger',
+                'plugin',
+                'schedule',
+                'stage',
+                'store',
+            ]);
         }
     });
 

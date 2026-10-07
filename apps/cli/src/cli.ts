@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { registerExecutorCommand } from './commands/executor';
 import { registerLedgerCommand } from './commands/ledger';
 import { registerPluginCommand } from './commands/plugin';
+import { registerScheduleCommand } from './commands/schedule';
 import { registerStageCommand } from './commands/stage';
 import { registerStoreCommand } from './commands/store';
 import { CLI_CONFIG } from './config';
@@ -23,6 +24,7 @@ export function createProgram(): Command {
     registerExecutorCommand(program);
     registerLedgerCommand(program);
     registerPluginCommand(program);
+    registerScheduleCommand(program);
     registerStageCommand(program);
     registerStoreCommand(program);
 

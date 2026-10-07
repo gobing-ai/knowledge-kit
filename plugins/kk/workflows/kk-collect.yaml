@@ -1,0 +1,249 @@
+---
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-collect
+kind: state-machine
+description: >-
+  Standalone 4-hourly collection into the kk store (task 0208, feature G31): take the single-flight lock
+  → fan-in ingest every source (aihot + last30days + horizon) + render the core-facts markdown → upsert the
+  Doc[] into the store → label the new and label-invalidated items (0209; a no-op until then) → release the
+  lock and record the run. It never generates, renders audio or publishes; the store is the only state it
+  shares with the daily voice workflow, which reads it back through the extract verb.
+initialState: lock
+terminalStates:
+  - done
+  - skipped
+  - failed
+failureStates:
+  - failed
+
+vars:
+  # Effective workspace, projected by `lock` from `.spur/runs/kk-collect/work-dir.txt` (shell actions
+  # cannot set vars). Empty at launch: `.works/kk-collect/<stamp>` is composed in the lock state (R4).
+  work_dir: ""
+  # Run stamp, `$(date -u +%Y%m%dT%H%MZ)` by default. A caller may pin it (an in-minute re-run, a
+  # test); the empty default keeps the scheduled derivation authoritative.
+  stamp: ""
+  # Run id, injected by spur at launch (0674 R5 / R8; the engine's equivalent of a `run.id`
+  # builtin — a shell command may only reference declared vars). It is the lock owner and the
+  # `collect_runs` / ledger identity.
+  __runId: ""
+  # Per-source collection parameters, seeded into the plugin source configs by `lock`.
+  limit: "10"
+  last30days_topic: "AI news"
+  horizon_hours: "4"
+  plugins_path: ""
+
+states:
+  - id: lock
+    description: >-
+      Sync the ledger, compose the run workspace and acquire the store lock — the single-flight guard that
+      makes two overlapping ticks one collection (R1, AC3). Writes <work_dir>/lock.json; the transition guard
+      routes a held lock to `skipped`.
+    onEnter:
+      - kind: shell
+        options:
+          # Reporting only: a ledger failure must never abort a tick before the lock is even taken.
+          onError: continue
+          command: >-
+            kk ledger sync --workflow kk-collect
+      - kind: shell
+        options:
+          # stamp: the pinned var, else the UTC minute (R4). work_dir: `.works/kk-collect/<stamp>` (R4),
+          # written to the anchor file the engine reads back into vars.work_dir below — shell actions
+          # cannot set vars. The three source configs mirror daily-prepare's shape, because
+          # `kk executor fan-in --source <plugin>:<file>` refuses a missing input file.
+          command: >-
+            stamp="${vars.stamp}"; [ -n "$stamp" ] || stamp="$(date -u +%Y%m%dT%H%MZ)";
+            workDir=".works/kk-collect/$stamp";
+            mkdir -p "$workDir/10-ingest" .spur/runs/kk-collect;
+            printf '%s\n' "$workDir" > .spur/runs/kk-collect/work-dir.txt;
+            printf '%s\n' "$stamp" > .spur/runs/kk-collect/stamp.txt;
+            printf '%s\n' "{\"limit\": ${vars.limit}}" > "$workDir/10-ingest/source.json";
+            printf '%s\n' "{\"topic\": \"${vars.last30days_topic}\"}" > "$workDir/10-ingest/last30days.json";
+            printf '%s\n' "{\"hours\": ${vars.horizon_hours}}" > "$workDir/10-ingest/horizon.json"
+      - kind: file.read.into-var
+        options:
+          path: .spur/runs/kk-collect/work-dir.txt
+          var: work_dir
+      - kind: file.read.into-var
+        options:
+          path: .spur/runs/kk-collect/stamp.txt
+          var: stamp
+      - kind: shell
+        options:
+          # The claim is re-entrant for the same run and is stolen once its TTL has
+          # passed, so a crashed holder costs at most one tick (the TTL below deliberately outlives the
+          # 4 h cadence and every plausible collect duration, so a slow run is never overtaken). stdout
+          # IS the lock contract, and the guard below reads it back:
+          # `{"acquired":true}` or `{"skipped":"locked","holder":<run>}` (R1).
+          command: >-
+            kk store lock acquire --name collect --run "${vars.__runId}" --ttl 21600000 > "${vars.work_dir}/lock.json"
+
+  - id: collect
+    description: >-
+      Fan-in every ingestion source into the run's blended Doc[] (same sources and timeout overrides as
+      kk-daily-ai-voice's collect state) and render the core-facts markdown with the existing stage (R3/R4).
+    onEnter:
+      - kind: shell
+        # onError: continue on both actions, with the artifact guard below as the positive success
+        # contract: a state-machine aborts the run on a failed action without taking a transition, so a
+        # hard failure here would leave the lock behind. The run still ends `failed` — through
+        # `release-failed`, which releases the lock first.
+        onError: continue
+        options:
+          # horizon-ingest's latency straddles the fan-in 30m per-source default (0098/0099), so it gets
+          # the same 45m leash the daily workflow pins. Writes <work_dir>/10-ingest/<stamp>_02_collect_blended.json.
+          # A single failed source degrades to an error entry in the merge (exit 0, surviving docs kept);
+          # only an all-sources failure exits 1 and leaves the file unwritten.
+          command: >-
+            kk executor fan-in
+            --source "aihot-ingest:${vars.work_dir}/10-ingest/source.json"
+            --source "last30days-ingest:${vars.work_dir}/10-ingest/last30days.json"
+            --source "horizon-ingest:${vars.work_dir}/10-ingest/horizon.json"
+            --source-timeout-override "horizon-ingest:2700000"
+            --out "${vars.work_dir}/10-ingest/${vars.stamp}_02_collect_blended.json"
+      - kind: shell
+        onError: continue
+        options:
+          # R4: the shipped stage, unmodified — no new code in kk-workflow-stages.ts. Writes
+          # <work_dir>/20-facts/<stamp>_02_collect_core-facts.md.
+          command: >-
+            kk stage daily-collect-facts "${vars.work_dir}" "${vars.stamp}" "${vars.plugins_path}"
+
+  - id: store
+    description: >-
+      Upsert the collected Doc[] into the store (items + collect_runs) and write the labelling input (R2).
+      A failure routes to `release-failed`: the lock must never be left behind.
+    onEnter:
+      - kind: shell
+        # onError: continue — a store failure is release-and-fail, not a hard abort that would keep the
+        # lock. The transition guard reads the result file this step writes.
+        onError: continue
+        options:
+          command: >-
+            kk store ingest --run "${vars.__runId}"
+            --in "${vars.work_dir}/10-ingest/${vars.stamp}_02_collect_blended.json"
+            --new-ids "${vars.work_dir}/new-ids.json"
+            > "${vars.work_dir}/store-result.json"
+
+  - id: label
+    description: >-
+      Label the stored items (`kk store label --run … --new-ids …`, task 0209). Until 0209 lands the action
+      is a no-op `true` that exits 0, then stamps its own result file so the routing guard below has a
+      positive success contract (R5).
+    onEnter:
+      - kind: shell
+        onError: continue
+        options:
+          command: |
+            true
+            printf '%s\n' 'deferred-0209' > "${vars.work_dir}/label-result.txt"
+
+  - id: release
+    description: >-
+      Release the lock and record the run in the ledger (R7). The append runs with onError: continue
+      because a run's own trace is still `running` while a state executes, so `kk ledger append` refuses
+      it (`kk.ledger.run.running`, exit 1); the section is written by the next tick's `lock` →
+      `kk ledger sync`, which is the backfill contract of docs/design/kk-collect-and-daily-voice2.md §7.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk store lock release --name collect --run "${vars.__runId}"
+      - kind: shell
+        onError: continue
+        options:
+          command: >-
+            kk ledger append --workflow kk-collect --run "${vars.__runId}"
+
+  - id: release-failed
+    description: >-
+      Release the lock on a failed run before failing: a claim left by a failed tick would stall the next
+      four hours of collection even though the TTL would eventually cover it.
+    onEnter:
+      - kind: shell
+        onError: continue
+        options:
+          command: >-
+            kk store lock release --name collect --run "${vars.__runId}"
+
+  - id: done
+    description: "Terminal — collection stored; the daily workflow reads it back through `kk store extract`"
+
+  - id: skipped
+    description: "Terminal — another run held the lock inside its TTL; nothing was collected or stored"
+
+  - id: failed
+    description: "Terminal — collection or storage failed; the lock was released on the way out"
+
+transitions:
+  - from: lock
+    to: skipped
+    description: "The lock is held by another run inside its TTL -> nothing to do (exit 0, single-flight)"
+    guard:
+      kind: shell
+      options:
+        command: 'jq -e .skipped "${vars.work_dir}/lock.json" > /dev/null'
+
+  - from: lock
+    to: collect
+    description: "Lock acquired -> collect every source"
+    guard:
+      kind: always
+
+  - from: collect
+    to: store
+    description: "Blended Doc[] written and core facts rendered -> store it"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test -s "${vars.work_dir}/10-ingest/${vars.stamp}_02_collect_blended.json" &&
+          test -s "${vars.work_dir}/20-facts/${vars.stamp}_02_collect_core-facts.md"
+
+  - from: collect
+    to: release-failed
+    description: "A source set that failed outright, or a failed core-facts render -> release the lock and fail"
+    guard:
+      kind: always
+
+  - from: store
+    to: label
+    description: "Ingest reported its counts (store-result.json) -> label the new and invalidated items"
+    guard:
+      kind: shell
+      options:
+        command: 'test -s "${vars.work_dir}/store-result.json"'
+
+  - from: store
+    to: release-failed
+    description: "The store write failed -> release the lock and fail the run"
+    guard:
+      kind: always
+
+  - from: label
+    to: release
+    description: "Labels written (or the 0209 no-op stamped its result) -> release and record"
+    guard:
+      kind: shell
+      options:
+        command: 'test -s "${vars.work_dir}/label-result.txt"'
+
+  - from: label
+    to: release-failed
+    description: "The label pass failed -> release the lock and fail the run"
+    guard:
+      kind: always
+
+  - from: release
+    to: done
+    description: "Lock released and the ledger appended -> done"
+    guard:
+      kind: always
+
+  - from: release-failed
+    to: failed
+    description: "Lock released after a failed step -> failed"
+    terminalReason: failed-check
+    guard:
+      kind: always
