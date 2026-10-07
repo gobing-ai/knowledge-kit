@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import {
@@ -852,10 +851,10 @@ async function extractAction(options: ExtractOptions): Promise<void> {
  * a missing file, an empty file, a shape neither consumer writes — counts as 0, which is the
  * answer the guard needs, not an error: the caller's question is "is there anything to do?".
  */
-function countPoolItems(path: string): number {
-    if (!existsSync(path)) return 0;
+async function countPoolItems(fs: FileSystem, path: string): Promise<number> {
+    if (!(await fs.exists(path))) return 0;
     try {
-        const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+        const parsed: unknown = parseJson(await fs.readFile(path));
         if (Array.isArray(parsed)) return parsed.length;
         const docs = (parsed as { metadata?: { docs?: unknown } } | null)?.metadata?.docs;
         return Array.isArray(docs) ? docs.length : 0;
@@ -878,7 +877,8 @@ async function poolCountAction(options: PoolCountOptions): Promise<void> {
         if (!Number.isInteger(min) || min < 0) {
             throw new Error(`--min must be a non-negative integer, got '${options.min}'`);
         }
-        const count = countPoolItems(options.file);
+        const fs = createNodeFileSystem();
+        const count = await countPoolItems(fs, options.file);
         consoleOutput.write(JSON.stringify({ count, min }));
         if (count < min) {
             throw new Error(`'${options.file}' holds ${count} item(s), below --min ${min}`);

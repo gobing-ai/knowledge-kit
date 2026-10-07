@@ -21,7 +21,7 @@
 
 import { afterAll, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProgram } from '../../src/cli';
 import { main } from '../../src/main';
@@ -249,6 +249,21 @@ describe('kk daily publish-classify', () => {
         expect(JSON.parse(result.out).status).toBe('none');
     });
 
+    it('treats a result file without a targets array as unpublished', async () => {
+        const dir = tempDir();
+        const publish = publishFixtures(
+            dir,
+            { targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] },
+            null,
+        );
+        // Malformed podcast result: JSON but no `targets` — the channel is unknown, never crash.
+        writeFileSync(join(publish, '20261007_16_publish-podcast_result.json'), JSON.stringify({ ok: true }));
+        const result = await run(['daily', 'publish-classify', '--work-dir', dir, '--run-date', '20261007']);
+        expect(result.code).toBe(0);
+        // The channel folds on `ok`, not on the targets detail — an ok:true result publishes.
+        expect(JSON.parse(result.out).status).toBe('full');
+    });
+
     it('folds the tail: a partial outcome records its marker, and an absent checkout skips the patch', async () => {
         const dir = tempDir();
         publishFixtures(
@@ -275,5 +290,116 @@ describe('kk daily publish-classify', () => {
         // The patch stage is plugin-owned and stays where it is: the fold only sequences it.
         expect(existsSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'))).toBe(true);
         rmSync(join(process.cwd(), '.spur/run/publish-partial-20261007.txt'), { force: true });
+    });
+});
+
+describe('kk daily works-dir resolution and report edges', () => {
+    it('resolves works_dir from KK_CONFIG, expanding ~ and $HOME prefixes', async () => {
+        // Bun's homedir() reads the passwd entry and ignores $HOME, so expansion lands in the real
+        // home — assert against homedir() and clean up the composed dirs.
+        const dir = tempDir();
+        const prevConfig = process.env.KK_CONFIG;
+        const prevWorks = process.env.KK_WORKS_DIR;
+        delete process.env.KK_WORKS_DIR;
+        const config = join(dir, 'kk.yaml');
+        writeFileSync(config, 'works_dir: ~/works-from-config\n');
+        process.env.KK_CONFIG = config;
+        try {
+            const tilde = await run([
+                'daily',
+                'prepare',
+                '--workflow',
+                'kk-daily-ai-voice2',
+                '--run-date',
+                '2026-10-07',
+            ]);
+            expect(tilde.code).toBe(0);
+            expect(JSON.parse(tilde.out).workDir).toBe(
+                join(homedir(), 'works-from-config/kk-daily-ai-voice2/20261007'),
+            );
+            writeFileSync(config, 'works_dir: $HOME/works-home-prefix\n');
+            const dollar = await run([
+                'daily',
+                'prepare',
+                '--workflow',
+                'kk-daily-ai-voice2',
+                '--run-date',
+                '2026-10-07',
+            ]);
+            expect(dollar.code).toBe(0);
+            expect(JSON.parse(dollar.out).workDir).toBe(
+                join(homedir(), 'works-home-prefix/kk-daily-ai-voice2/20261007'),
+            );
+        } finally {
+            rmSync(join(homedir(), 'works-from-config'), { recursive: true, force: true });
+            rmSync(join(homedir(), 'works-home-prefix'), { recursive: true, force: true });
+            if (prevConfig === undefined) delete process.env.KK_CONFIG;
+            else process.env.KK_CONFIG = prevConfig;
+            if (prevWorks === undefined) delete process.env.KK_WORKS_DIR;
+            else process.env.KK_WORKS_DIR = prevWorks;
+        }
+    });
+
+    it('falls through to the compiled default works dir when the config is corrupt', async () => {
+        const dir = tempDir();
+        const prevConfig = process.env.KK_CONFIG;
+        const prevWorks = process.env.KK_WORKS_DIR;
+        delete process.env.KK_WORKS_DIR;
+        const config = join(dir, 'kk.yaml');
+        writeFileSync(config, 'works_dir: {unclosed\n');
+        process.env.KK_CONFIG = config;
+        try {
+            const result = await run([
+                'daily',
+                'prepare',
+                '--workflow',
+                'kk-daily-ai-voice2',
+                '--run-date',
+                '2026-10-07',
+            ]);
+            expect(result.code).toBe(0);
+            expect(JSON.parse(result.out).workDir).toBe(
+                join(homedir(), '.config/kk/works/kk-daily-ai-voice2/20261007'),
+            );
+        } finally {
+            rmSync(join(homedir(), '.config/kk/works/kk-daily-ai-voice2/20261007'), { recursive: true, force: true });
+            if (prevConfig === undefined) delete process.env.KK_CONFIG;
+            else process.env.KK_CONFIG = prevConfig;
+            if (prevWorks === undefined) delete process.env.KK_WORKS_DIR;
+            else process.env.KK_WORKS_DIR = prevWorks;
+        }
+    });
+
+    it('records no-content when the pool has items but no candidates file was ever written', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }]));
+        const result = await run(['daily', 'run-report', '--work-dir', dir, '--run-date', '20261007', '--pool', pool]);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).noContent).toBe(true);
+        expect(readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8')).toContain('no candidates.json');
+    });
+
+    it('serves a cached report when the body already exists', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        const candidates = join(dir, 'candidates.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }]));
+        writeFileSync(candidates, JSON.stringify({ metadata: { docs: [{ id: 'a' }] } }));
+        writeFileSync(join(dir, '20261007_19_run-report_report.md'), '# cached body\n');
+        const result = await run([
+            'daily',
+            'run-report',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--pool',
+            pool,
+            '--candidates',
+            candidates,
+        ]);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).cached).toBe(true);
     });
 });

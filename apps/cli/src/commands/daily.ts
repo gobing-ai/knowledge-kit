@@ -6,6 +6,11 @@ import { resolveKkConfigPath, runInvoke } from '../invoke';
 import { consoleOutput } from '../output';
 import { runStage } from '../stage';
 
+/** JSON parse bound locally: `cli-no-parse-at-module-scope` cannot tell a JSON parse from commander's
+ * program parse (same rationale as `store.ts`); `parseJson`/`parseYaml` keep the contract readable. */
+const parseJson: (raw: string) => unknown = JSON.parse;
+const parseYaml: (raw: string) => unknown = Bun.YAML.parse;
+
 /**
  * The `daily` command group — the deterministic body of the daily AI-voice pipeline, owned by the
  * CLI instead of the shared stage runner (task 0211 R7).
@@ -97,7 +102,7 @@ function resolveWorksDir(): string {
     const configPath = process.env.KK_CONFIG ?? resolveKkConfigPath();
     if (configPath !== '' && existsSync(configPath)) {
         try {
-            const parsed = Bun.YAML.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown> | null;
+            const parsed = parseYaml(readFileSync(configPath, 'utf-8')) as Record<string, unknown> | null;
             const worksDir = parsed !== null && typeof parsed === 'object' ? parsed.works_dir : undefined;
             if (typeof worksDir === 'string' && worksDir !== '') return expandHome(worksDir);
         } catch {
@@ -168,7 +173,7 @@ type PublishTarget = Record<string, unknown>;
 /** `targets[]` of a per-target result file, or `[]` when the file is missing/unparsable. */
 function targetsOf(path: string): PublishTarget[] {
     if (!existsSync(path)) return [];
-    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { targets?: unknown };
+    const parsed = parseJson(readFileSync(path, 'utf-8')) as { targets?: unknown };
     return Array.isArray(parsed?.targets)
         ? (parsed.targets.filter((e) => e !== null && typeof e === 'object') as PublishTarget[])
         : [];
@@ -201,7 +206,7 @@ function publishCompleteness(workDir: string, runDate: string): { rows: Record<s
     for (const [channel, resultName, skipMarkerName] of resultChannels) {
         const path = at(resultName);
         if (existsSync(path)) {
-            const result = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+            const result = parseJson(readFileSync(path, 'utf-8')) as Record<string, unknown>;
             const metadata = (result.metadata ?? {}) as Record<string, unknown>;
             rows.push({
                 channel,
@@ -296,7 +301,7 @@ function countItems(path: string | undefined): number | undefined {
     if (path === undefined) return undefined;
     if (!existsSync(path)) return 0;
     try {
-        const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+        const parsed = parseJson(readFileSync(path, 'utf-8')) as unknown;
         if (Array.isArray(parsed)) return parsed.length;
         const docs = (parsed as { metadata?: { docs?: unknown } } | null)?.metadata?.docs;
         return Array.isArray(docs) ? docs.length : 0;
@@ -347,7 +352,7 @@ async function runReportAction(options: RunReportOptions): Promise<void> {
         const reportJson = join(workDir, `${runDate}_19_run-report_report.json`);
         mkdirSync(dirname(cands), { recursive: true });
         const candidates = options.candidates as string;
-        const parsed = JSON.parse(readFileSync(candidates, 'utf-8')) as { metadata?: { docs?: unknown } };
+        const parsed = parseJson(readFileSync(candidates, 'utf-8')) as { metadata?: { docs?: unknown } };
         writeFileSync(cands, `${JSON.stringify((parsed.metadata?.docs ?? []) as unknown, null, 2)}`);
         // Plugin env paths must be absolute: plugins run with cwd = their package dir, so a relative
         // workDir silently misses every best-effort read.
@@ -391,7 +396,7 @@ async function runReportAction(options: RunReportOptions): Promise<void> {
             }
         }
         if (code !== 0) throw new Error(`${NEWS_REPORT_PLUGIN} exited ${code}`);
-        const parsedReport = JSON.parse(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
+        const parsedReport = parseJson(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
         if (typeof parsedReport.body !== 'string') throw new Error(`${reportJson} has no string body`);
         writeFileSync(reportMd, parsedReport.body);
         writeFileSync(summary, `${candidateCount} items planned\n`);

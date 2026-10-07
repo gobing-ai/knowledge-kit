@@ -142,6 +142,10 @@ rules:
             # path resolution — same class as config.ts/plugin.ts (seam would force an
             # async API change for no gain).
             - "apps/cli/src/stage.ts"
+            # daily.ts: sync-structural fs probes/read/writes in the deterministic daily command
+            # bodies (task 0211 R7) — every caller is a synchronous commander action helper, so
+            # the seam would force an async API change for no gain (same class as stage.ts).
+            - "apps/cli/src/commands/daily.ts"
             # voicebox-server: openSync log fd is handed to the detached spawn's stdio
             # — the seam is text-only and cannot produce an fd (same fd-transport class
             # as podcast-pub binary bytes).
