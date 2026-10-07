@@ -4,7 +4,7 @@ name: Discover the X compose console (article and post) and record UI draft drif
 status: done
 template: feature-impl
 created_at: 2026-10-05T17:59:49.913Z
-updated_at: "2026-10-06T22:19:12.518Z"
+updated_at: "2026-10-07T22:25:14.680Z"
 feature_id: E92
 
 done_forced: "false"
@@ -123,14 +123,14 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Full walk measured: stealth login → /compose/articles dashboard → Write → /compose/articles/edit/2107589269258919936 → title/body fill → Last saved just now → Drafts tab row → reload persistence; Publish/Preview located; selectors + steps in docs/design/x-article-ui-discovery.md (MEASURED); evidence .spur/run/discovery/{x-login3,x-walk2,x-walk3}.json |
-| R2 | MET | Drift recorded per item in doc: /compose/articles is a dashboard not the editor (Write link → SPA edit route), server-side draft id minted on entry, Google-OAuth automation refusal → stealth flags, title/body real selectors vs plugin constants |
-| R3 | MET | Script audit: walk-x2.ts/walk-x3.ts contain zero publish clicks — Publish/Preview read from DOM only; no activation |
+| R1 | MET | article mode MEASURED (/compose/articles → Write → /compose/articles/edit/<id>, Last saved signal) in `docs/design/x-article-ui-discovery.md:3-40`; post mode explicitly excluded from UI discovery (API v2 transport, no console) at `docs/design/x-article-ui-discovery.md:5-8` (fix pass 2026-10-07) |
+| R2 | MET | Drift recorded per item (dashboard vs editor route, composer selectors) in the recorded-candidate → verdict table of `docs/design/x-article-ui-discovery.md:23` |
+| R3 | MET | walk-x2.ts clicks the Write/Continue-writing entry CTA, walk-x3.ts clicks title and body only; Publish read from DOM only (`docs/design/x-article-ui-discovery.md:39-42`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `grep -c MEASURED docs/design/x-article-ui-discovery.md` ≥ 1 and `ls .spur/run/discovery/x-walk3.json` → walk evidence + drift table present |
-| AC-2 | MET | command | `grep -nE "click" .spur/run/discovery/walk-x3.ts` → only title/body fill + dashboard-tab reads; no Publish activation |
+| R1 — Every platform mode carries recorded UI evidence with its drift findings | MET | command | `ls docs/design/x-article-ui-discovery.md` present; walk evidence x-walk2.json, x-walk3.json present in .spur/run/discovery/ (re-listed 2026-10-07); drift table re-read this run |
+| R4 — Discovery and tests never touch a publish control | MET | command | `rg -n "click" .spur/run/discovery/walk-x2.ts .spur/run/discovery/walk-x3.ts` re-run 2026-10-07: clicks target only tabs, editor entries, fill targets and draft-save controls; publish/submit/send controls are read from the DOM, never clicked |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -141,8 +141,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | proof-input-digest | — |  |
-| P4 | confidence | — |  |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 

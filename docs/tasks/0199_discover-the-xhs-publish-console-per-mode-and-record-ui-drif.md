@@ -4,7 +4,7 @@ name: Discover the xhs publish console per mode and record UI drift
 status: done
 template: feature-impl
 created_at: 2026-10-05T17:59:44.252Z
-updated_at: "2026-10-06T17:31:25.794Z"
+updated_at: "2026-10-07T22:25:09.341Z"
 feature_id: E92
 
 done_forced: "false"
@@ -88,14 +88,14 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | 4 modes × (pierce json + png) + 图文 frames + shadow probe in .spur/run/discovery/; entry URL, ordered steps, selectors, signals, draft-vs-publish affordances tabulated in docs/design/xhs-ui-discovery.md |
-| R2 | MET | Drift #1–#7 per item: current plugin constant vs observed value vs draft-path impact, in docs/design/xhs-ui-discovery.md §Drift |
-| R3 | MET | Script audit of .spur/run/discovery/*.ts: zero publish/save clicks; only tab-coordinate clicks + form-state setInputFiles; publish controls located and read only |
+| R1 | MET | Four modes (上传图文/上传视频/写长文/发播客) each with pierce JSON + PNG in .spur/run/discovery/; entry URL, step order, selectors, signals and draft-vs-publish affordances tabulated in `docs/design/xhs-ui-discovery.md:1-41` |
+| R2 | MET | Drift list per item (current constant / observed / draft-path impact) at `docs/design/xhs-ui-discovery.md:42-52`; drift #7 and the first-cycle limits now carry their 0205 resolutions at `docs/design/xhs-ui-discovery.md:54-70` (fix pass 2026-10-07) |
+| R3 | MET | xhs-walk.ts clicks only mode tabs, entry controls (新的创作/上传音频) and the later 暂存离开 draft-save probe; 发布 is collected by text match and never clicked |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `ls .spur/run/discovery/` → 4 modes × json+png + frames + shadow probe present; `grep -c '## Drift' docs/design/xhs-ui-discovery.md` > 0 |
-| AC-4 | MET | command | `grep -nE "\.click\( |
+| R1 — Every platform mode carries recorded UI evidence with its drift findings | MET | command | `ls docs/design/xhs-ui-discovery.md` present; walk evidence xhs-{上传图文,上传视频,写长文,发播客}-pierce.json + PNGs present in .spur/run/discovery/ (re-listed 2026-10-07); drift table re-read this run |
+| R4 — Discovery and tests never touch a publish control | MET | command | `rg -n "click" .spur/run/discovery/xhs-walk.ts` re-run 2026-10-07: clicks target only tabs, editor entries, fill targets and draft-save controls; publish/submit/send controls are read from the DOM, never clicked |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

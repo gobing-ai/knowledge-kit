@@ -4,7 +4,7 @@ name: Fix the recorded per-channel UI drift and add validated mode dispatch
 status: done
 template: feature-impl
 created_at: 2026-10-05T18:00:10.115Z
-updated_at: "2026-10-06T22:38:05.057Z"
+updated_at: "2026-10-07T22:25:15.616Z"
 feature_id: E92
 
 done_forced: "false"
@@ -173,18 +173,16 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Every drift item corrected or excluded with reason: x edit-URL regex validated + dashboard drift handled; substack publication-host entry + exact Title placeholder; wechatmp type=77&createType=N deep-link + 贴图 textarea title + dialog-validation signal; infoq geekbang entry + hydration; juejin hydration + phone-bind DOM persistence — corrections in channel modules (635234ba), exclusions with reasons in discovery docs |
-| R2 | MET | Union refusals gate-fixed: declared mode lists + named unsupported-operation error before browser/profile; covered by offline tests (bun run gate green at 635234ba, 1949 tests) |
-| R3 | MET | Each corrected channel's real-console draft save observed: infoq 已保存 + reload (/draft/405943), juejin 保存成功 + URL rewrite (7693358476032786442), x Last saved + Drafts row (2107589269258919936), substack Saved + URL (219172498), wechatmp 文章 appmsgid (100000899); ok:false signal-timeout naming implemented in plugins with tests; walk evidence .spur/run/discovery/*.json |
-| R5 | MET | Recorded gaps fixed or excluded with reason: 贴图 dialog-validation signal (appmsgid 文章-only by platform design), 视频/播客 artifact-gated save bar, infoq headless-451 WAF, xhs 图文 mode — dispositions in docs/design/{wechatmp,xhs,infoq,juejin,x-article,substack}-ui-discovery.md |
+| R1 | MET | Corrections in channel code at commit 635234ba plus discovery-doc dispositions: xhs drift 1-7 dispositioned at `docs/design/xhs-ui-discovery.md:42-70`; wechatmp drift list `docs/design/wechatmp-ui-discovery.md:54-68` with dispositions `docs/design/wechatmp-ui-discovery.md:188-200`; x post-mode exclusion `docs/design/x-article-ui-discovery.md:5-8`; infoq/juejin/substack recorded-candidate → verdict tables (`docs/design/juejin-ui-discovery.md:18-28`, `docs/design/substack-ui-discovery.md:22-34`) |
+| R2 | MET | Declared mode lists with named refusal before profile/browser: `plugins/publishings/infoq-pub/src/index.ts:193-232`, `plugins/publishings/juejin-pub/src/index.ts:156-195`, `plugins/publishings/substack-pub/src/index.ts:147-181`, `plugins/publishings/x-pub/src/index.ts:90-99`, `plugins/publishings/wechatmp-pub/src/modes.ts:27-88`, `plugins/publishings/xhs-pub/src/index.ts:230-233`; refusal tests e.g. `plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:534`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1890`; bun test over the six channel suites re-run 2026-10-07: 303 pass / 0 fail |
+| R3 | MET | Real-console draft saves with observed signals in .spur/run/discovery/ (infoq-walk3, juejin-walk2, x-walk3, substack-walk4, wechatmp-attended, xhs-draft-signal-cdp JSON, all re-listed this run); xhs signal wired at `plugins/publishings/xhs-pub/src/flow.ts:72` |
+| R5 | MET | Gaps fixed or excluded with reason: 贴图 dialog-validation signal and 视频/播客 artifact gating (`docs/design/wechatmp-ui-discovery.md:188-200`), xhs 视频/发播客 artifact gating (`docs/design/xhs-ui-discovery.md:67-70`), x post mode (`docs/design/x-article-ui-discovery.md:5-8`) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `ls docs/design/*-ui-discovery.md |
-| AC-2 | MET | command | `bun test` union-refusal cases green at 635234ba (fingerprint sha256:716bd170…a67f) — modes exposed as validated operations, unknown refused pre-browser |
-| AC-3 | MET | command | `ls .spur/run/discovery/{infoq-walk3,juejin-walk2,x-walk3,substack-walk4,wechatmp-attended}.json` → five observed-signal real-console draft saves |
-| AC-4 | MET | command | `grep -rn -i "publish" .spur/run/discovery/*.ts |
-| AC-5 | MET | command | `grep -c "排除\|exclusion\|gated" docs/design/wechatmp-ui-discovery.md docs/design/xhs-ui-discovery.md` > 0 → recorded gaps fixed or excluded with reason |
+| R2 — A channel exposes its modes as validated operations and refuses an unknown one before opening a browser | MET | test | bun test over the six channel suites re-run 2026-10-07: 303 pass / 0 fail; refusal asserted at `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:434` and `plugins/publishings/x-pub/tests/x-pub.test.ts:706` |
+| R3 — Each corrected flow saves a draft through the real console with an observed signal | MET | command | `ls .spur/run/discovery/infoq-walk3.json .spur/run/discovery/juejin-walk2.json .spur/run/discovery/x-walk3.json .spur/run/discovery/substack-walk4.json .spur/run/discovery/wechatmp-attended.json .spur/run/discovery/xhs-draft-signal-cdp.json` → all six present (re-run 2026-10-07) |
+| R5 — Recorded gaps are fixed or explicitly excluded with a reason | MET | command | `rg -n "excluded" docs/design` re-run 2026-10-07 → exclusions with reasons in the xhs, wechatmp and x-article discovery docs |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -195,8 +193,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | proof-input-digest | — |  |
-| P4 | confidence | — |  |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 

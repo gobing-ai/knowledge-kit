@@ -49,11 +49,22 @@ On the filled 图文 form, CDP `DOM.getDocument(depth:-1, pierce:true)`:
 | 4 | Image accept | `.png|.jpe?g|.webp` | `accept=".jpg,.jpeg,.png,.webp"` | ✅ matches |
 | 5 | Video accept | mp4-family list | input present, accept matches list | ✅ (post-file flow unprobed) |
 | 6 | Mode dispatch | name-based pre-browser refusal (ADR-029) | modes additionally URL-addressable via `target=` | none; informational for validated dispatch |
-| 7 | 写长文 editor | light-DOM `div.tiptap.ProseMirror` selectors | editor mounts inside an iframe this cycle | **unresolved — operator-attended item for 0205**: probe frame contents before touching `ARTICLE_EDITOR` |
+| 7 | 写长文 editor | light-DOM `div.tiptap.ProseMirror` selectors | first cycle saw an iframe; the 0205 attended probe (`.spur/run/discovery/xhs-long-article-editor.json`) found a single main-frame page with `div.tiptap.ProseMirror` and a light-DOM `暂存离开` | **resolved — no drift**: `ARTICLE_EDITOR` (`plugins/publishings/xhs-pub/src/flow.ts:50`) kept |
 
-## Limits of this cycle (recorded, not resolved)
+## Limits of the first cycle
 
 Per the attended-cycle rail: 上传视频/发播客 post-file flows, the 长文 iframe editor internals, and
 the draft-save toast (`保存成功`) success signal were **not** exercised this cycle. 0205's attended
 fix walk must capture them before changing those flows. `PUBLISH_URL` published-marker
 (`published=true`) untouched — no publish attempted.
+
+**Resolved by 0205's attended walk (2026-10-05, evidence `.spur/run/discovery/`):**
+
+- Draft-save signal: `暂存离开` clicked through the closed shadow root via CDP produced `保存成功` plus the
+  `草稿箱(N)` counter, URL unchanged (`xhs-draft-signal-cdp.json`); a plain Playwright click times out
+  (`xhs-draft-signal.json`). Wired as `DRAFT_TOASTS` + the counter read in `plugins/publishings/xhs-pub/src/flow.ts:72`.
+- 写长文 editor: see drift #7 — main-frame tiptap, no drift.
+- 上传视频 / 发播客 post-file draft saves: **excluded from unattended capture** — both are artifact-gated
+  (the video note composer was observed behind its upload overlay, `xhs-video-editor.json`; 发播客 opens the
+  `creator-modal-sty` upload modal, `xhs-podcast-dialog.json`). The plugin refuses a missing artifact
+  before any browser opens (`validateModeInput`, `plugins/publishings/xhs-pub/src/index.ts:238`).

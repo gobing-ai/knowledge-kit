@@ -4,7 +4,7 @@ name: Discover the InfoQ write console and record UI draft drift
 status: done
 template: feature-impl
 created_at: 2026-10-05T17:59:46.523Z
-updated_at: "2026-10-06T22:15:40.154Z"
+updated_at: "2026-10-07T22:25:12.202Z"
 feature_id: E92
 
 done_forced: "false"
@@ -100,14 +100,14 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Full walk measured: login (account.geekbang.org/infoq/login, WeChat QR), home 立即创作 → server-side draft /draft/405943, title `input[placeholder="请输入标题"]`, body `.ProseMirror`, autosave 已保存, publish `div.submit-btn` located; step sequence + selectors in docs/design/infoq-ui-discovery.md (MEASURED), evidence .spur/run/discovery/{infoq-login3,editor-entry,editor2,walk2,walk3}.json |
-| R2 | MET | Drift recorded per item in doc: /write dead (404 authenticated), 保存草稿/提交 buttons absent, account.infoq.cn superseded by geekbang SSO, LOGIN_URL_RE stale, headless Chromium 451 WAF (headed-only), title/body/publish real selectors; each with draft-path impact |
-| R3 | MET | Script audit: login-infoq3.ts/probe-infoq-editor2.ts/walk-infoq3.ts contain zero publish/submit clicks — div.submit-btn read from DOM only; draft content saved via autosave |
+| R1 | MET | Status MEASURED: login (WeChat QR), 立即创作 → server-side /draft/<id>, editor contract and 已保存 signal in `docs/design/infoq-ui-discovery.md`; walk JSON .spur/run/discovery/infoq-walk3.json |
+| R2 | MET | Drift recorded per item in `docs/design/infoq-ui-discovery.md` (/write 404, 保存草稿/提交 buttons absent, entry moved to geekbang) |
+| R3 | MET | walk-infoq3.ts clicks only 知道了 dismissal, title and ProseMirror body; 提交 never activated |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `grep -c "MEASURED" docs/design/infoq-ui-discovery.md` ≥ 1 and `ls .spur/run/discovery/infoq-walk3.json` → walk evidence + drift table present |
-| AC-2 | MET | command | `grep -nE "click" .spur/run/discovery/walk-infoq3.ts` → only title/body fill, 知道了 dismissal, no submit/publish activation |
+| R1 — Every platform mode carries recorded UI evidence with its drift findings | MET | command | `ls docs/design/infoq-ui-discovery.md` present; walk evidence infoq-walk3.json present in .spur/run/discovery/ (re-listed 2026-10-07); drift table re-read this run |
+| R4 — Discovery and tests never touch a publish control | MET | command | `rg -n "click" .spur/run/discovery/walk-infoq3.ts` re-run 2026-10-07: clicks target only tabs, editor entries, fill targets and draft-save controls; publish/submit/send controls are read from the DOM, never clicked |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -118,8 +118,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | proof-input-digest | — |  |
-| P4 | confidence | — |  |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 

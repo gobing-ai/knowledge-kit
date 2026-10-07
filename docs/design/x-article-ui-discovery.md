@@ -2,6 +2,11 @@
 
 ## Status: MEASURED — login + draft-save signal proven
 
+**Mode coverage.** x declares two operations (`X_OPERATIONS`, `plugins/publishings/x-pub/src/index.ts:90`):
+`article` is the browser composer measured below; `post` is **excluded from UI discovery** because it
+publishes through the API v2 transport (`POST /2/tweets`, `plugins/publishings/x-pub/src/index.ts:39`) and
+has no console UI, entry URL or draft affordance to measure.
+
 - Profile created at `~/.config/kk/browser-profiles/x` (X_PROFILE_DIR / KK_BROWSER_PROFILE_DIR override);
   operator login completed 2026-10-06 (account 咸话咸说@tangmian).
 - Evidence artifacts (`.spur/run/discovery/`): `x-login3.json`, `x-walk2.json`, `x-walk3.json`;

@@ -185,13 +185,17 @@ These are **account configuration** items for the operator, not plugin defects; 
 surface them as an actionable result rather than a generic failure (the platform's own dialog text is
 the message to relay).
 
-## 6. Still to do for this task
+## 6. First-pass open items — dispositions
 
-- [ ] 封面: satisfy `从正文选择` (or confirm that a body image + 默认首图为封面 completes the article for the platform).
-- [ ] 视频: attach the scratch clip through the modal and capture its draft signal.
-- [ ] 播客: attach audio + cover through the modal and capture its draft signal.
-- [ ] 贴图: attach an image and capture its draft signal.
-- [ ] Record the per-mode field matrix (title limit, author, cover rule, required artifact) for fix task 0205.
+The first pass left five open items; the second and third passes (header notes above) closed them:
+
+- 封面: no file input; the 文章 draft saves without a cover (platform marks it 请补充封面图 at 发表,
+  not at draft) — recorded in §5.2. Cover is a 发表 precondition, outside the draft path.
+- 视频 / 播客: **excluded from unattended capture** — the media modal covers the save bar
+  (artifact-gated, §5.2); `本地上传` stays attended-only (third pass, item 4).
+- 贴图: resolved — `保存为草稿` opens a validating save-settings dialog; no `appmsgid` by platform
+  design (third pass, items 1–3).
+- Per-mode field matrix: recorded in §5.1 and §5.2 and consumed by task 0205.
 
 ## 7. Safety
 

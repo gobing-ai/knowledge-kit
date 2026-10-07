@@ -4,7 +4,7 @@ name: Discover the Juejin editor and record UI draft drift
 status: done
 template: feature-impl
 created_at: 2026-10-05T17:59:47.657Z
-updated_at: "2026-10-06T22:18:05.683Z"
+updated_at: "2026-10-07T22:25:13.070Z"
 feature_id: E92
 
 done_forced: "false"
@@ -107,14 +107,14 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Full walk measured on the live session: /editor/drafts/new?v=2 (15s hydration) → title fill → 保存成功 → URL /editor/drafts/7693358476032786442 → reload persistence; publish BUTTON.xitu-btn:发布 + 草稿箱 located; selectors + step sequence in docs/design/juejin-ui-discovery.md (MEASURED); evidence .spur/run/discovery/{juejin-bind,juejin-walk2}.json |
-| R2 | MET | Drift recorded per item in doc: 15s editor hydration (8s click timeout aborts), phone-bind dialog fields persist in DOM after binding (readiness must key on title input), phone binding as account-level prerequisite (operator completed SMS bind, phoneBound:true, 2m22s) |
-| R3 | MET | Script audit: walk-juejin2.ts contains zero publish clicks — 发布/草稿箱 buttons read from DOM only; save via UI 保存 control only |
+| R1 | MET | Status MEASURED: /editor/drafts/new?v=2 (15s hydration) → title fill → 保存成功 → URL rewrite, in `docs/design/juejin-ui-discovery.md:3-30`; walk JSON .spur/run/discovery/juejin-walk2.json |
+| R2 | MET | Drift recorded per item (hydration timeout, phone-bind dialog persistence) in the recorded-candidate → verdict table of `docs/design/juejin-ui-discovery.md:18` |
+| R3 | MET | walk-juejin2.ts clicks only title and body host; 发布 read from DOM only |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `grep -c MEASURED docs/design/juejin-ui-discovery.md` ≥ 1 and `ls .spur/run/discovery/juejin-walk2.json` → walk evidence + drift table present |
-| AC-2 | MET | command | `grep -nE "click" .spur/run/discovery/walk-juejin2.ts` → only title fill + 保存 click; no 发布 activation |
+| R1 — Every platform mode carries recorded UI evidence with its drift findings | MET | command | `ls docs/design/juejin-ui-discovery.md` present; walk evidence juejin-walk2.json present in .spur/run/discovery/ (re-listed 2026-10-07); drift table re-read this run |
+| R4 — Discovery and tests never touch a publish control | MET | command | `rg -n "click" .spur/run/discovery/walk-juejin2.ts` re-run 2026-10-07: clicks target only tabs, editor entries, fill targets and draft-save controls; publish/submit/send controls are read from the DOM, never clicked |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -125,8 +125,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | proof-input-digest | — |  |
-| P4 | confidence | — |  |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 

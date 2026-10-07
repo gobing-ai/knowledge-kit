@@ -4,7 +4,7 @@ name: Discover the Substack editor and record UI draft drift
 status: done
 template: feature-impl
 created_at: 2026-10-05T17:59:48.787Z
-updated_at: "2026-10-06T22:18:40.353Z"
+updated_at: "2026-10-07T22:25:13.882Z"
 feature_id: E92
 
 done_forced: "false"
@@ -114,14 +114,14 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Full walk measured: stealth login from substack.com → publication robinmin.substack.com resolved from session settings → /publish/post → title/subtitle/body fill → Saved ≤20s → URL /publish/post/219172498 → reload persistence; Continue + Preview located; selectors + steps in docs/design/substack-ui-discovery.md (MEASURED); evidence .spur/run/discovery/{substack-login,substack-pub-probe,substack-walk3,substack-walk4}.json |
-| R2 | MET | Drift recorded per item in doc: substack.com/publish/post bounces to Explore (publication-host entry required), sidebar file-input selector trap (exact placeholder="Title" anchor), Google-OAuth automation refusal fixed by stealth launch (flags enumerated), SUBSTACK_PUBLICATION_URL resolvable from session (no config needed) |
-| R3 | MET | Script audit: login-substack.ts/walk-substack4.ts contain zero publish clicks — Continue button and Preview read from DOM only; no activation |
+| R1 | MET | Status MEASURED: login, publication-host entry robinmin.substack.com/publish/post, editor contract and Saved signal in `docs/design/substack-ui-discovery.md:3-30`; walk JSON .spur/run/discovery/substack-walk4.json |
+| R2 | MET | Drift recorded per item (substack.com/publish/post bounces to Explore; exact Title placeholder) in `docs/design/substack-ui-discovery.md:22-30` |
+| R3 | MET | walk-substack4.ts clicks only title and tiptap body; Continue/Preview never activated |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `grep -c MEASURED docs/design/substack-ui-discovery.md` ≥ 1 and `ls .spur/run/discovery/substack-walk4.json` → walk evidence + drift table present |
-| AC-2 | MET | command | `grep -nE "click" .spur/run/discovery/walk-substack4.ts` → only title/subtitle/body fill + save-indicator polls; no Continue/Preview activation |
+| R1 — Every platform mode carries recorded UI evidence with its drift findings | MET | command | `ls docs/design/substack-ui-discovery.md` present; walk evidence substack-walk4.json present in .spur/run/discovery/ (re-listed 2026-10-07); drift table re-read this run |
+| R4 — Discovery and tests never touch a publish control | MET | command | `rg -n "click" .spur/run/discovery/walk-substack4.ts` re-run 2026-10-07: clicks target only tabs, editor entries, fill targets and draft-save controls; publish/submit/send controls are read from the DOM, never clicked |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -132,8 +132,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | proof-input-digest | — |  |
-| P4 | confidence | — |  |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 

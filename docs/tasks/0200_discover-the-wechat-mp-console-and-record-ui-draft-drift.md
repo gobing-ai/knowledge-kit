@@ -4,7 +4,7 @@ name: Discover the WeChat MP console and record UI draft drift
 status: done
 template: feature-impl
 created_at: 2026-10-05T17:59:45.382Z
-updated_at: "2026-10-06T22:21:24.588Z"
+updated_at: "2026-10-07T22:25:11.417Z"
 feature_id: E92
 
 done_forced: "false"
@@ -135,15 +135,15 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | All four modes evidenced: 文章 (entry URL + token + full selector set + appmsgid draft signal, draft 100000899); 贴图 (editor selectors + save-settings dialog chain, walks v6–v9); 视频 (vue picker entry + 本地上传 reachable, save bar artifact-gated); 播客 (same entry template). Steps/selectors/signals in docs/design/wechatmp-ui-discovery.md header block + third-pass blockquote; evidence .spur/run/discovery/wechatmp-*.json + walk-wechatmp6–9.ts |
-| R2 | MET | Draft-save signal captured per mode: 文章 URL appmsgid rewrite; 贴图 保存为草稿 → blocking save-settings dialog (标题 textarea enforced despite 选填, 作者 required, 正文 0/1000) — no appmsgid on 贴图 route (measured 4×); 视频/播客 save bar appears only after artifact attach (gating recorded as the observed behavior). 发表 located in DOM, never activated (script audit) |
-| R3 | MET | Artifact/field matrix + fail-fast points recorded: video file for 视频; audio+cover for 播客; image-set rules for 贴图; title required 文章/optional-enforced 贴图; fail-fast at entry picker or dialog validation |
-| R4 | MET | Drift list recorded: new-tab editor + token persistence (storageState), main-frame ProseMirror body, createType dispatch 0/8/5/7, deep-link template type=77&createType=N correction, 贴图 title TEXTAREA drift, 视频 picker vue-gated — all with draft-path impact |
+| R1 | MET | Four modes with createType and landing route at `docs/design/wechatmp-ui-discovery.md:25-40`; console entry and session token at `docs/design/wechatmp-ui-discovery.md:17-18`; editor anatomy and selectors at `docs/design/wechatmp-ui-discovery.md:41-53`; walk evidence .spur/run/discovery/wechatmp-attended.json |
+| R2 | MET | Per-mode save signal table at `docs/design/wechatmp-ui-discovery.md:91-120` (文章 草稿箱 row and appmsgid URL rewrite; 贴图 validating save dialog per third pass `docs/design/wechatmp-ui-discovery.md:5`; 视频/播客 artifact-gated bar); 发表 recorded at `docs/design/wechatmp-ui-discovery.md:98` and never clicked (walk-wechatmp9.ts clicks title/author/body/保存为草稿 only) |
+| R3 | MET | Artifact and field matrix with fail-fast points at `docs/design/wechatmp-ui-discovery.md:121-160` (文章 fields, 视频/播客 modal artifacts, title 0/20); stale first-pass open items replaced with dispositions at `docs/design/wechatmp-ui-discovery.md:188-200` (fix pass 2026-10-07) |
+| R4 | MET | Drift list vs wechatmp-pub at `docs/design/wechatmp-ui-discovery.md:54-68` covering new-tab editor, session token, main-frame ProseMirror body and createType dispatch |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC-1 | MET | command | `grep -c "第三轮实测\|W11\|W12" docs/design/wechatmp-ui-discovery.md` ≥ 1 and `ls .spur/run/discovery/wechatmp-attended.json` → four-mode evidence + drift table present |
-| AC-2 | MET | command | `grep -nE "\.click\(" .spur/run/discovery/walk-wechatmp9.ts` → only tab/menu/保存为草稿 clicks; 发表 read from DOM only |
+| R1 — Every platform mode carries recorded UI evidence with its drift findings | MET | command | `ls .spur/run/discovery/wechatmp-attended.json` present; drift list section re-read at `docs/design/wechatmp-ui-discovery.md:54-68` this run |
+| R4 — Discovery and tests never touch a publish control | MET | command | `rg -n "click" .spur/run/discovery/walk-wechatmp9.ts` re-run 2026-10-07: clicks hit title, author, dialog textarea and 保存为草稿 only; 发表 never clicked |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -154,8 +154,7 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | proof-input-digest | — |  |
-| P4 | confidence | — |  |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
