@@ -37,7 +37,10 @@ export const LOGIN_URL_RE = /(\/sign-in|substack\.com\/account\/login)/;
 
 /**
  * Selectors seeded from the wt script (`substack-playwright.ts:84-136`); each list is tried in
- * order and the operator dogfood (0193) re-measures them. `send` is Substack's
+ * order. Measured live 2026-10-07 (0193): title `textarea[placeholder="Title"]` and body
+ * `.ProseMirror[contenteditable="true"]` both hit, harness paste verified; both subtitle
+ * candidates miss — the current editor UI has no subtitle field, so they are kept as
+ * last-known and only resolve when `metadata.subtitle` is set. `send` is Substack's
  * `Send to everyone now` — it emails every subscriber — so both live controls (E91-D5) are
  * reached only from the `public` branch, after the draft branch has already returned.
  */
@@ -65,15 +68,18 @@ const LIVE_URL_RE = /\/p\/[^/?#]+|\/publish\/posts\/published/;
 const PUBLICATION_URL_SOURCES = 'SUBSTACK_PUBLICATION_URL (or --publication <url>)';
 
 /**
- * The publication's new-post editor: `${base}/publish/post/new`, where the base is the
- * publication URL without its trailing `/` or `/publish` (seed `substack-playwright.ts:237-244`).
+ * The publication's post editor: `${base}/publish/post`, where the base is the publication URL
+ * without its trailing `/` or `/publish` (seed `substack-playwright.ts:237-244`). The legacy
+ * `/publish/post/new` route autosaves locally ("Saved") but never becomes a post entity, so the
+ * URL never rewrites to `/publish/post/<id>` and the draft signal never fires — measured live
+ * 2026-10-07 (0193 A/B: `new` no rewrite, bare route rewrote to `/publish/post/219348810`).
  */
 export function editorUrl(publicationUrl: string): string {
     const base = publicationUrl
         .trim()
         .replace(/\/$/, '')
         .replace(/\/publish$/, '');
-    return `${base}/publish/post/new`;
+    return `${base}/publish/post`;
 }
 
 /**
@@ -98,7 +104,7 @@ export function resolvePublicationUrl(explicit?: string): { url: string } | { er
         return { error: `substack publication URL must be https:, got '${trimmed}' — set ${PUBLICATION_URL_SOURCES}` };
     }
     // Nested editor paths are rejected (residual 0197): `…/publish/posts` used to pass validation
-    // and then be mangled by `editorUrl` (`…/publish/posts/publish/post/new`), so a misconfigured
+    // and then be mangled by `editorUrl` (`…/publish/posts/publish/post`), so a misconfigured
     // run reported an expired session instead of a configuration error. A trailing `/publish` is
     // accepted and stripped by `editorUrl` — that is the documented shape.
     const trimmedPath = parsed.pathname.replace(/\/+$/, '');
@@ -315,7 +321,7 @@ export class SubstackBrowserTransport implements PublishTransport {
     }
 }
 
-/** Draft evidence is URL-only by design: Substack's autosave rewrites `/publish/post/new`. */
+/** Draft evidence is URL-only by design: Substack's autosave rewrites `/publish/post/<id>`. */
 async function probeDraft(page: Page): Promise<string | null> {
     const url = page.url();
     return DRAFT_URL_RE.test(url) ? url : null;

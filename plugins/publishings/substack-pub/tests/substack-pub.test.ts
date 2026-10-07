@@ -33,7 +33,7 @@ const content: Content = { title: 'Parity', body: 'Body.', format: 'markdown' };
 const liveContent: Content = { ...content, metadata: { publishStatus: 'public' } };
 
 const PUBLICATION_URL = 'https://robin.substack.com/publish';
-const EDITOR_URL = 'https://robin.substack.com/publish/post/new';
+const EDITOR_URL = 'https://robin.substack.com/publish/post';
 const DRAFT_URL = 'https://robin.substack.com/publish/post/19283746';
 const LIVE_URL = 'https://robin.substack.com/p/why-knowledge-kit';
 const PUBLISHED_URL = 'https://robin.substack.com/publish/posts/published';
@@ -215,7 +215,7 @@ describe('substack-pub frozen surface (R1, R6)', () => {
         ]);
     });
 
-    test('editorUrl derives the new-post URL from the publication base', () => {
+    test('editorUrl derives the post-editor URL from the publication base', () => {
         expect(editorUrl('https://robin.substack.com/publish')).toBe(EDITOR_URL);
         expect(editorUrl('https://robin.substack.com/publish/')).toBe(EDITOR_URL);
         expect(editorUrl('https://robin.substack.com')).toBe(EDITOR_URL);
