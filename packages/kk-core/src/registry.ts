@@ -13,6 +13,8 @@ export interface PluginRecord {
     name: string;
     kind: PluginKind;
     entry: string;
+    /** Readiness-probe entry (ADR-032) resolved to an absolute path; absent when the manifest declares none. */
+    check?: string;
     dir: string;
     manifestPath: string;
     origin: PluginOrigin;
@@ -393,6 +395,7 @@ function consumeManifest(
         name: manifest.name,
         kind: manifest.kind,
         entry: manifest.entry,
+        ...(manifest.check !== undefined ? { check: resolve(dirPath, manifest.check) } : {}),
         dir: dirPath,
         manifestPath,
         origin,

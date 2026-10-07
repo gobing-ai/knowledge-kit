@@ -21,7 +21,7 @@ sync: [T3]
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
-| [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | planned (E93) |
+| [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs (E93, 0215); six channels pending (0216) |
 | [fan-in-and-fan-out-specification.md](design/fan-in-and-fan-out-specification.md) | Sequential `executor fan-in` / `fan-out` | shipped (B6) |
 | [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
 | [generator-plugin-specification.md](design/generator-plugin-specification.md) | Generator kind contract | shipped (D3) |
@@ -63,6 +63,9 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                    [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>]
                    [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
+kk plugin check [<name>…] [--kind <kind>] [--json] [--headed] [--timeout <ms>]
+                 [--plugins-root <dir>] [--plugins-path <dir> …]
+kk plugin login <name> [--plugins-root <dir>] [--plugins-path <dir> …]
 ```
 
 | Command | Description | Status |
@@ -71,6 +74,8 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 | `executor fan-in` | Merge N `Doc[]` files into one (§1.5) | shipped (A21) |
 | `executor fan-out` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (A21) |
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
+| `plugin check` | Run each plugin's live readiness probe (`check` field, ADR-032; verdicts `verified`/`refused`/`error`/`unsupported`; §`plugin check`) | shipped (E93, 0215) |
+| `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
 > registrations). The first-layer nouns are exactly `executor` and `plugin` (ADR-011, feature
@@ -143,6 +148,35 @@ with the artifact preserved.
    exits `2` when `--plugins-root` and `--plugins-path` are combined.
 
 **Implementation:** `apps/cli/src/commands/plugin.ts` (`registerPluginCommand`).
+
+### `plugin check`
+
+| Option | Type | Required | Default | Description |
+| -------- | ------ | ---------- | --------- | ------------- |
+| `<name>…` | string[] | no | all discovered | Probe only these plugins; an unknown name is a usage error (exit `2`) |
+| `--kind <kind>` | string | no | — | Filter by plugin kind (`ingestion`, `generator`, `publish`); invalid value exits `1` |
+| `--json` | boolean | no | `false` | Emit the machine-readable verdict report |
+| `--headed` | boolean | no | `false` | Forward `--headed` to each probe (opt-in visible browser; headless is the default) |
+| `--timeout <ms>` | number | no | 30000 | Forward `--timeout` to each probe; a probe exceeding it is killed and reported `error`, never `refused` (ADR-032 R3) |
+| `--plugins-root <dir>` / `--plugins-path <dir>` | as `plugin status` | no | — | Same exclusive-root semantics; combining them exits `2` (ADR-012 R6) |
+
+**Behavior (ADR-032):** for every selected `PluginRecord` with a manifest `check` field, spawns
+`<check> check [--headed] [--timeout <ms>]` through the sanctioned spawn seam (`spawnPluginProbe`,
+`apps/cli/src/invoke.ts`) with piped stdio, the same operator-config env as `executor run`, and the
+`KK_PLUGIN_KIND`/`KK_PLUGIN_NAME` env. Records without `check` are reported `unsupported` without spawning
+(`status` still spawns no probe at all — R2). The last non-empty stdout line is parsed as
+`{ status, profileDir?, detail }`; `verified`/`refused` are trusted only when the probe exited `0`/`1`, any
+other combination (crash, timeout, unknown status string, missing/malformed final line) collapses to `error`
+with detail `probe exit <n> (malformed probe output)` — raw probe stdout/stderr is never echoed (R5).
+Probes run sequentially. Exit code: `0` when every verdict is `verified` or `unsupported`, `1` when any probe
+is `refused`/`error`. Under `--json`: `{ ok, plugins: [{ name, kind, status, profileDir?, detail }] }` where
+`ok` mirrors the exit code.
+
+### `plugin login`
+
+`kk plugin login <name>` takes one plugin that has a `check` field, spawns `<check> login` with **inherited**
+stdio (interactive browser/credential flow), and exits with the probe's code. A missing/unknown plugin or one
+without `check` is a usage error naming the `check` field (exit `2`); the probe's exit code propagates otherwise.
 
 ### 1.5 `executor fan-in` — shipped (A21; engine B6)
 
@@ -294,6 +328,7 @@ wrapper as its entire integration seam (e.g. `omni-voice-gen`'s `bin/omni-voice-
 | `description` | string | no | shipped | Informational |
 | `accepts` | `('brief' \| 'docs')[]` | no | **specified — not implemented** (D) | Generator-only. Declares which input shapes the plugin handles; defaults to both when absent. Lets a mismatch fail at **resolve time** rather than inside the plugin |
 | `operations` | `Record<string, { input: 'doc-list' \| 'markdown', output: 'doc-list' \| 'markdown' }>` | no | shipped (0110 I3) | Named non-Result operations the plugin accepts (e.g. podcast-pub `show-notes`: doc-list → markdown). Only declared operations can receive non-`Content` inputs; undeclared array dispatch is rejected pre-spawn |
+| `check` | string (min 1) | no | shipped (E93, 0215) | Relative path to the live-readiness probe entry. Present ⇒ `kk plugin check`/`login` spawn it (ADR-032 probe contract, §`plugin check`); absent ⇒ the plugin is `unsupported` for live checks. Resolved to an absolute path on `PluginRecord.check` |
 
 **Resolve-time validation (shipped).** `kk executor run` resolves the manifest, selects the contract with
 `kindContract(record.kind)` (`apps/cli/src/invoke.ts:271`), and validates the input file with

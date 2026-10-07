@@ -9,6 +9,7 @@ import {
 } from '@gobing-ai/kk-core';
 import { echoError } from '@gobing-ai/ts-utils';
 import { type Command, CommanderError } from 'commander';
+import { type ProbeVerdict, probeVerdict, spawnPluginLogin, spawnPluginProbe } from '../invoke';
 import { consoleOutput } from '../output';
 
 /**
@@ -143,13 +144,171 @@ function statusAction(options: StatusOptions): void {
             const ver = p.version ? ` (v${p.version})` : '';
             const desc = p.description ? ` - ${p.description}` : '';
             const health = p.healthy ? 'healthy' : 'unhealthy';
-            consoleOutput.write(`  • ${p.name}${ver}: ${p.entry}${desc} [${health}]\n`);
+            const check = p.check !== undefined ? ` check: ${p.check}` : '';
+            consoleOutput.write(`  • ${p.name}${ver}: ${p.entry}${desc} [${health}]${check}\n`);
         }
     }
 
     if (!report.healthy) {
         printDiagnostics(report);
         throw new CommanderError(1, 'kk.plugin.unhealthy', 'plugin diagnostics found');
+    }
+}
+
+/** One per-plugin row of the `plugin check` report (ADR-032 R4). */
+interface CheckRow {
+    name: string;
+    kind: PluginKind;
+    status: 'verified' | 'refused' | 'error' | 'unsupported';
+    profileDir?: string;
+    detail?: string;
+}
+
+/** Options accepted by the `plugin check` verb. */
+interface CheckOptions {
+    kind?: string;
+    json?: boolean;
+    headed?: boolean;
+    timeout?: string;
+    pluginsRoot?: string;
+    pluginsPath?: string[];
+}
+
+/** Options accepted by the `plugin login` verb. */
+interface LoginOptions {
+    pluginsRoot?: string;
+    pluginsPath?: string[];
+}
+
+/** Reject `--plugins-root` + `--plugins-path` combinations (ADR-012 R6), shared by check/login. */
+function assertExclusiveRoots(pluginsRoot: string | undefined, pluginsPath: string[] | undefined): void {
+    if (pluginsRoot !== undefined && (pluginsPath?.length ?? 0) > 0) {
+        echoError('--plugins-root and --plugins-path are mutually exclusive (ADR-012 R6)');
+        throw new CommanderError(
+            2,
+            'kk.plugin.root-path-conflict',
+            '--plugins-root and --plugins-path are mutually exclusive',
+        );
+    }
+}
+
+/** Run the readiness probe for one plugin (or report why there is no verdict). */
+function checkOne(record: PluginRecord, options: CheckOptions): CheckRow {
+    if (record.check === undefined) {
+        return { name: record.name, kind: record.kind, status: 'unsupported' };
+    }
+    if (!existsSync(record.check)) {
+        return { name: record.name, kind: record.kind, status: 'error', detail: 'probe entry missing' };
+    }
+    // Documented default (docs/04_DESIGN.md): a hung browser probe must never wedge the run.
+    const timeoutMs = options.timeout !== undefined ? Number(options.timeout) : 30_000;
+    const result = spawnPluginProbe({
+        entryPath: record.check,
+        cwd: record.dir,
+        subcommand: 'check',
+        headed: options.headed,
+        timeoutMs,
+        pluginKind: record.kind,
+        pluginName: record.name,
+    });
+    const verdict: ProbeVerdict = probeVerdict(result.exitCode, result.stdout);
+    return {
+        name: record.name,
+        kind: record.kind,
+        status: verdict.status,
+        ...(verdict.profileDir !== undefined ? { profileDir: verdict.profileDir } : {}),
+        ...(verdict.detail !== undefined ? { detail: verdict.detail } : {}),
+    };
+}
+
+/**
+ * `plugin check` action — spawn `<check> check` per selected plugin sequentially
+ * (ADR-032: browser profiles are single-writer and the engine is sequential).
+ * Exits 0 only when no plugin is refused or errored; unsupported never fails.
+ */
+function checkAction(names: string[], options: CheckOptions): void {
+    assertExclusiveRoots(options.pluginsRoot, options.pluginsPath);
+    if (options.kind !== undefined && !isPluginKind(options.kind)) {
+        echoError(`Invalid plugin kind: ${options.kind}`);
+        throw new CommanderError(1, 'kk.plugin.invalid-kind', `invalid plugin kind: ${options.kind}`);
+    }
+    let timeoutMs: number | undefined;
+    if (options.timeout !== undefined) {
+        timeoutMs = Number(options.timeout);
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+            throw new CommanderError(2, 'kk.plugin.invalid-timeout', `invalid --timeout: ${options.timeout}`);
+        }
+    }
+
+    const discovery = discoverAllPlugins({ pluginsRoot: options.pluginsRoot, extraPaths: options.pluginsPath });
+    const records =
+        options.kind !== undefined ? discovery.plugins.filter((p) => p.kind === options.kind) : discovery.plugins;
+    if (names.length > 0) {
+        const known = new Set(records.map((r) => r.name));
+        const unknown = names.filter((n) => !known.has(n));
+        if (unknown.length > 0) {
+            echoError(`unknown plugin: ${unknown.join(', ')}`);
+            throw new CommanderError(2, 'kk.plugin.unknown-name', `unknown plugin: ${unknown.join(', ')}`);
+        }
+    }
+    const selected = names.length > 0 ? records.filter((r) => names.includes(r.name)) : records;
+
+    const rows: CheckRow[] = [];
+    for (const record of selected) {
+        rows.push(checkOne(record, options));
+    }
+
+    const failed = rows.some((r) => r.status === 'refused' || r.status === 'error');
+    if (options.json) {
+        consoleOutput.write(`${JSON.stringify({ ok: !failed, plugins: rows }, null, 2)}\n`);
+    } else {
+        for (const r of rows) {
+            const detail = r.detail !== undefined ? ` — ${r.detail}` : '';
+            const profileDir = r.profileDir !== undefined ? ` (${r.profileDir})` : '';
+            consoleOutput.write(`  • ${r.name} [${r.kind}]: ${r.status}${detail}${profileDir}\n`);
+        }
+    }
+    if (failed) {
+        throw new CommanderError(1, 'kk.plugin.check-failed', 'plugin check found refused or errored plugins');
+    }
+}
+
+/**
+ * `plugin login` action — run the plugin's interactive login probe with
+ * inherited stdio and exit with its code. Unknown plugin or missing `check`
+ * is a usage error naming the missing field (ADR-032 R5).
+ */
+function loginAction(name: string, options: LoginOptions): void {
+    assertExclusiveRoots(options.pluginsRoot, options.pluginsPath);
+    const discovery = discoverAllPlugins({ pluginsRoot: options.pluginsRoot, extraPaths: options.pluginsPath });
+    const record = discovery.plugins.find((p) => p.name === name);
+    if (record === undefined) {
+        echoError(`unknown plugin: ${name}`);
+        throw new CommanderError(2, 'kk.plugin.login-usage', `unknown plugin: ${name}`);
+    }
+    if (record.check === undefined) {
+        echoError(`plugin "${name}" declares no check entry (plugin.json: check)`);
+        throw new CommanderError(
+            2,
+            'kk.plugin.login-usage',
+            `plugin "${name}" declares no check entry (plugin.json: check)`,
+        );
+    }
+    // Mirror checkOne: a manifest pointing at a deleted entry is an environment
+    // error (exit 1), not an unhandled spawn throw.
+    if (!existsSync(record.check)) {
+        echoError(`probe entry missing: ${record.check}`);
+        throw new CommanderError(1, 'kk.plugin.login-failed', `probe entry missing: ${record.check}`);
+    }
+    const code = spawnPluginLogin({
+        entryPath: record.check,
+        cwd: record.dir,
+        subcommand: 'login',
+        pluginKind: record.kind,
+        pluginName: record.name,
+    });
+    if (code !== 0) {
+        throw new CommanderError(code, 'kk.plugin.login-failed', `login probe exited with code ${code}`);
     }
 }
 
@@ -185,6 +344,25 @@ export function registerPluginCommand(program: Command): void {
         'List discovered plugins grouped by kind with a per-plugin health mark',
         false,
     );
+
+    // Readiness probes (ADR-032): opt-in verbs that may launch browsers. status
+    // stays side-effect-free; check/login own the spawn path.
+    plugin
+        .command('check [names...]')
+        .description('Run each selected plugin’s readiness probe; exits nonzero on refused or errored plugins')
+        .option('--kind <kind>', 'Filter plugins by kind (ingestion, generator, publish)')
+        .option('--json', 'Output machine-readable verdict rows')
+        .option('--headed', 'Run probes with a visible browser window')
+        .option('--timeout <ms>', 'Per-plugin probe timeout in milliseconds')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
+        .action(checkAction);
+    plugin
+        .command('login <name>')
+        .description('Run the plugin’s interactive login probe with inherited stdio')
+        .option('--plugins-root <dir>', 'Exclusive root containing plugins (isolation/tests only)')
+        .option('--plugins-path <dir>', 'Extra plugin root to union with defaults (repeatable)', collectPath, [])
+        .action(loginAction);
     // Hidden one-release aliases (ADR-011 R4): same engine, same JSON contract,
     // not listed in `kk --help` or `kk plugin --help`.
     registerStatusVerb(plugin, 'list', 'Alias for `plugin status` (deprecated)', true);

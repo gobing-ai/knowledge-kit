@@ -21,6 +21,10 @@ export const PluginManifestSchema = z.looseObject({
     name: z.string().min(1),
     kind: PluginKindSchema,
     entry: z.string().min(1),
+    // Optional readiness-probe entry (ADR-032): a script spawned by `kk plugin
+    // check` / `kk plugin login`, relative to the plugin dir. Status stays
+    // side-effect-free; probes are opt-in per verb.
+    check: z.string().min(1).optional(),
     version: z.string().optional(),
     description: z.string().optional(),
     // Declared auxiliary operations (0110 I3): the executor validates and

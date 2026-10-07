@@ -1,0 +1,1 @@
+{ "name": "e2e-unsupported", "kind": "generator", "entry": "entry.ts", "description": "E93 fixture: no probe declared" }

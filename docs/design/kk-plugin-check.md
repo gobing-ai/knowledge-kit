@@ -1,7 +1,7 @@
 # kk plugin check / login — live channel readiness probe
 
 > Feature **E93** · Decision **ADR-032** (amends ADR-011 R3) · Tasks **0215** (verbs + manifest), **0216** (six channels)
-> Status: planned
+> Status: shipped verbs + manifest (0215); channel migration + live verification pending (0216)
 
 ## Problem
 
@@ -41,9 +41,13 @@ The field is optional and holds a path relative to the plugin dir. It is validat
 ## Probe contract (ADR-032 R4)
 
 ```text
-<check> check [--profile <dir>] [--timeout <ms>] [--headed]
-<check> login [--profile <dir>] [--timeout <ms>]
+<check> check [--headed] [--timeout <ms>]
+<check> login
 ```
+
+Shipped in 0215 as above: `check` forwards the operator's `--headed`/`--timeout` only; `login` takes no flags and
+inherits stdio. (Planned-stage prose listed `--profile`; the shipped contract keeps profile discovery inside the
+probe — kk never chooses the profile dir.)
 
 - Exit codes: 0 means verified, 1 means refused, 2 means error.
 - The last non-empty stdout line is `{ "status": "...", "profileDir"?: "...", "detail": "..." }`.

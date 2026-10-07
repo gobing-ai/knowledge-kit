@@ -1,0 +1,7 @@
+{
+    "name": "e2e-broken",
+    "kind": "publish",
+    "entry": "entry.ts",
+    "check": "check.ts",
+    "description": "E93 fixture: malformed probe"
+}

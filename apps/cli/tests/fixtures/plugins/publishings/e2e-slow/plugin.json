@@ -1,0 +1,7 @@
+{
+    "name": "e2e-slow",
+    "kind": "publish",
+    "entry": "entry.ts",
+    "check": "check.ts",
+    "description": "E93 fixture: timeout probe"
+}

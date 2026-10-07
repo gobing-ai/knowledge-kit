@@ -1,0 +1,8 @@
+{
+    "name": "e2e-verified",
+    "kind": "publish",
+    "entry": "entry.ts",
+    "check": "check.ts",
+    "version": "0.0.1",
+    "description": "E93 fixture: always verified"
+}

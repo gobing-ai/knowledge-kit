@@ -119,7 +119,9 @@ function pluginEntryCmd(opts: PluginEntrySpawnOptions): string[] {
 }
 
 /** Build the spawn env: operator-config env under `process.env`, anchored at the kk invocation root. */
-function pluginEntryEnv(opts: PluginEntrySpawnOptions): Record<string, string | undefined> {
+function pluginEntryEnv(
+    opts: Pick<PluginEntrySpawnOptions, 'pluginKind' | 'pluginName'>,
+): Record<string, string | undefined> {
     const fromConfig =
         opts.pluginKind !== undefined && opts.pluginName !== undefined
             ? pluginEnvFromConfig(opts.pluginKind, opts.pluginName)
@@ -131,6 +133,123 @@ function pluginEntryEnv(opts: PluginEntrySpawnOptions): Record<string, string | 
         ...fromConfig,
         ...process.env,
         KNOWLEDGE_KIT_PROJECT_ROOT: process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
+    };
+}
+
+/** Options for the ADR-032 readiness-probe / login spawn (`plugin check` + `plugin login`). */
+export interface PluginProbeSpawnOptions {
+    /** Absolute path to the probe entry (plugin.json `check`, resolved by the registry). */
+    entryPath: string;
+    /** Working directory for the spawned process (the plugin package dir). */
+    cwd: string;
+    /** Probe subcommand: `check` (readiness) or `login` (interactive). */
+    subcommand: 'check' | 'login';
+    /** Forward `--headed` to the probe (check only). */
+    headed?: boolean;
+    /** Forward `--timeout <ms>` to the probe and enforce it on the spawn (check only). */
+    timeoutMs?: number;
+    /** When set with `pluginName`, merge `plugins.<collection>.<name>.env` from KK_CONFIG. */
+    pluginKind?: PluginKind;
+    /** Plugin manifest name used to look up operator-config env. */
+    pluginName?: string;
+}
+
+/** Build the probe command: bun executes `.ts`/`.js` probes; anything else must be directly executable. */
+function pluginProbeCmd(opts: PluginProbeSpawnOptions): string[] {
+    const flags =
+        opts.subcommand === 'check'
+            ? [
+                  ...(opts.headed ? ['--headed'] : []),
+                  ...(opts.timeoutMs !== undefined ? ['--timeout', String(opts.timeoutMs)] : []),
+              ]
+            : [];
+    return opts.entryPath.endsWith('.ts') || opts.entryPath.endsWith('.js')
+        ? [process.execPath, opts.entryPath, opts.subcommand, ...flags]
+        : [opts.entryPath, opts.subcommand, ...flags];
+}
+
+/**
+ * Spawn a plugin's readiness probe synchronously with captured streams (ADR-032).
+ * A timeout kill or an unlaunchable probe surfaces as exit code 2 — the ADR-032
+ * `error` verdict — never as `refused` (1).
+ */
+export function spawnPluginProbe(opts: PluginProbeSpawnOptions): PluginEntrySpawnResult {
+    let proc: ReturnType<typeof Bun.spawnSync>;
+    try {
+        proc = Bun.spawnSync(pluginProbeCmd(opts), {
+            cwd: opts.cwd,
+            env: pluginEntryEnv(opts),
+            stdout: 'pipe',
+            stderr: 'pipe',
+            timeout: opts.timeoutMs,
+        });
+    } catch {
+        return { exitCode: 2, stdout: '', stderr: 'probe failed to start' };
+    }
+    return {
+        exitCode: proc.exitCode ?? (proc.signalCode !== null ? 2 : 1),
+        stdout: (proc.stdout ?? Buffer.alloc(0)).toString().trim(),
+        stderr: (proc.stderr ?? Buffer.alloc(0)).toString().trim(),
+    };
+}
+
+/**
+ * Spawn a plugin's interactive `login` probe with inherited stdio (ADR-032) and
+ * return its exit code. Streams pass through so the operator can interact.
+ */
+export function spawnPluginLogin(opts: PluginProbeSpawnOptions): number {
+    const proc = Bun.spawnSync(pluginProbeCmd(opts), {
+        cwd: opts.cwd,
+        env: pluginEntryEnv(opts),
+        stdin: 'inherit',
+        stdout: 'inherit',
+        stderr: 'inherit',
+    });
+    return proc.exitCode ?? 1;
+}
+
+/** Verdict derived from a probe spawn outcome; raw probe output never survives. */
+export interface ProbeVerdict {
+    status: 'verified' | 'refused' | 'error';
+    profileDir?: string;
+    detail?: string;
+}
+
+/**
+ * Map a probe spawn outcome to its verdict (ADR-032 R3): `verified` (exit 0),
+ * `refused` (exit 1) or `error` (exit 2, another code, a crash, a timeout, or a
+ * no/malformed final JSON line). Only status/profileDir/detail survive; raw
+ * probe stdout/stderr — which can carry page text or tokens — never does.
+ */
+export function probeVerdict(exitCode: number, stdout: string): ProbeVerdict {
+    const last = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '')
+        .at(-1);
+    let parsed: unknown;
+    try {
+        parsed = last === undefined ? undefined : JSON.parse(last);
+    } catch {
+        parsed = undefined;
+    }
+    const fields =
+        typeof parsed === 'object' && parsed !== null
+            ? (parsed as { status?: unknown; profileDir?: unknown; detail?: unknown })
+            : undefined;
+    const status = typeof fields?.status === 'string' ? fields.status : undefined;
+    if ((status === 'verified' || status === 'refused') && (exitCode === 0 || exitCode === 1)) {
+        return {
+            status,
+            ...(typeof fields?.profileDir === 'string' ? { profileDir: fields.profileDir } : {}),
+            ...(typeof fields?.detail === 'string' ? { detail: fields.detail } : {}),
+        };
+    }
+    return {
+        status: 'error',
+        ...(status === undefined
+            ? { detail: `probe exit ${exitCode} (malformed probe output)` }
+            : { detail: `probe exit ${exitCode}` }),
     };
 }
 
