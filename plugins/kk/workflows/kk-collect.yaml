@@ -238,13 +238,10 @@ transitions:
         # missing or outside HIGH|MEDIUM|LOW reads as `PASS!`, which no accept guard matches. The
         # refusal names the offending value on stderr before the transition falls through to
         # `release-failed` — fail-closed, and never a deadlock (that state is `always`).
+        # Kept at 3 logical commands: spur's ADR-115 composition lint errors on a guard above 5.
         command: >-
-          verdictFile="${vars.work_dir}/label-result.txt";
-          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "$verdictFile" 2>/dev/null)";
-          [ -n "$v" ] || v="<none>";
-          c="$(jq -r '.confidence // "<absent>"' "$verdictFile" 2>/dev/null)"; [ -n "$c" ] || c="<unreadable>";
-          { test "$v" = PASS; } || echo "kk-collect.label.confidence-refused: verdict '$v' carries confidence '$c', not HIGH|MEDIUM|LOW" >&2;
-          test "$v" = PASS
+          test "$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "${vars.work_dir}/label-result.txt" 2>/dev/null)" = PASS ||
+          { echo "kk-collect.label.confidence-refused: verdict '$(jq -r '.verdict // "<none>"' "${vars.work_dir}/label-result.txt" 2>/dev/null)' carries confidence '$(jq -r '.confidence // "<absent>"' "${vars.work_dir}/label-result.txt" 2>/dev/null)', not HIGH|MEDIUM|LOW" >&2; false; }
 
   - from: label
     to: release-failed
