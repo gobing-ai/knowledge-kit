@@ -562,6 +562,10 @@ The shared workflow stage runner landed as a first-layer verb: `kk stage <stage>
 workflow steps, so `executor` remains the uniform single-plugin step and no plugin operation moves
 to it. Detail: `docs/04_DESIGN.md` §1.8 and §7.
 
+### Amendment — 2026-10-07 (`plugin check` / `plugin login`, ADR-032)
+
+R3's "`kk plugin status` is the only inspection verb" is **amended**: ADR-032 adds `kk plugin check` (live, read-only readiness probe) and `kk plugin login` (interactive). `status` keeps its static inventory + health contract unchanged.
+
 ---
 
 ## ADR-012 — Multi-root plugin discovery; built-ins ship with kk (2026-08-13)
@@ -1173,6 +1177,24 @@ illustration across failures is deferred until observed.
 **Why.** The serial FSM runs article/cover/script and the publish channels back-to-back although they are independent; the engine now executes DAG waves concurrently (probe: two 1 s nodes in 1.2 s).
 
 **Detail:** `docs/design/kk-collect-and-daily-voice2.md` §6; `03_ARCHITECTURE` § Execution substrate; feature G11.
+
+---
+
+## ADR-032: `kk plugin check` / `kk plugin login` probe a channel's live readiness; `status` stays static
+
+**Status:** Accepted (design) · **Date:** 2026-10-07 · **Amends:** ADR-011 R3 (`status` is no longer the only `plugin` verb)
+
+**Decision.**
+
+1. **R1, the verbs.** `kk plugin check [<name>…] [--kind <kind>] [--json] [--headed]` is read-only. It runs each selected plugin's own readiness probe and exits nonzero when any probe refuses. `kk plugin login <name>` runs that plugin's interactive login. Both are new verbs under the existing `plugin` noun.
+2. **R2, `status` stays static.** `kk plugin status` remains discovery plus manifest/entry health: offline, fast, and free of side effects. A live probe never runs from `status`.
+3. **R3, manifest opt-in.** A plugin exposes its probe through an optional `plugin.json` field (`check`: an entry path relative to the plugin dir). A plugin without the field reports `unsupported`. That is not a failure, so API-only channels opt in on their own schedule.
+4. **R4, probe contract.** kk runs `<entry> check|login [--profile <dir>] [--timeout <ms>]`. Exit codes are `0` verified, `1` refused, `2` usage. The `check` stdout ends with one JSON line `{ status, profileDir?, detail }`, the existing `runProfileCli` `ChannelSessionResult` shape. kk reports only this verdict. Probe stdout is never echoed to the operator beyond `detail`.
+5. **R5, safety.** `check` never clicks, never creates a profile, and never prints a cookie, token or page body. It is headless by default; `--headed` opts in to the headed fallback (needed for infoq's WAF-451). `login` is the only path that opens a browser for interaction.
+
+**Why.** Each browser channel already ships a `profile-check.ts login|check`, but an operator has to know six script paths, their per-channel env vars and their differing output formats. 0193/0194 lost a day to a session that looked healthy and wasn't (0214). One verb answers "can this channel publish right now?" across channels, and `--json` lets a workflow preflight gate on it. Folding this into `status` would turn a deterministic inventory check into a slow, profile-dependent and flaky one.
+
+**Detail:** feature E93; `docs/04_DESIGN.md` `plugin` noun section (same commit as the surface code).
 
 ---
 
