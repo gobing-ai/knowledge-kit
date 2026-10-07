@@ -123,3 +123,14 @@ exceeds that (it used to sleep out the ~19h horizon, which looked like a wedged 
 A stored voice lasts 1 year (200 stored voices per project, shared with prompted voices). Before
 `expire_time`, repeat export → create → replace the id in the operator map. Delete the scratch
 clips when the new id is wired. Do not commit the wavs or the voice id.
+
+> **2026-10-07 observed:** that 1-year figure did not hold — the 2026-09-24 voice
+> (`voice_e6zevk798ecg`) started returning HTTP 404 "The voice was not found or the caller does not
+> have access/permission to access it" on 10-06/10-07, 13 days after creation (built-in voices kept
+> working, so key/model/request shape were fine). Treat a mid-life 404 as **voice death, not a bug**:
+> re-create via the en-pair path above (zh pair still 500s on 2026-10-07), swap the id in the
+> operator map, and smoke-test one zh segment before the next daily run. Symptom in the daily log:
+> `kk stage daily-generate` exit 1 with the 404 on segment 1 of ~23 queued.
+>
+> Renewal log: 2026-09-24 created → 2026-10-07 re-created (en pair, `voice_gl10j67aaj7j`). Consider
+> a weekly one-segment probe if this recurs; no automated probe today.
