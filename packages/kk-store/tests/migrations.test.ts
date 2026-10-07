@@ -89,8 +89,11 @@ describe('applyKkMigrations (0209 R4)', () => {
         // Both apply, because a fresh 0001 derives its DDL from the live schema and
         // therefore already holds the two columns 0002 adds.
         expect(applied).toBe(2);
+        // `confidence` is TEXT: the column holds the HIGH|MEDIUM|LOW verdict enum (task 0213),
+        // and 0002 declares the same type so a migrated database converges on a fresh one
+        // (the convergence case below compares column TYPES).
         expect(skipped).toEqual([
-            'ALTER TABLE labels ADD COLUMN confidence INTEGER',
+            'ALTER TABLE labels ADD COLUMN confidence TEXT',
             'ALTER TABLE labels ADD COLUMN run_id TEXT',
         ]);
         expect(journalIds(dbPath)).toEqual(['0001_kk_store_init', '0002_labels_confidence_run_id']);

@@ -131,9 +131,12 @@ states:
       Label the stored items through the kk decision catalog (`kk store label --run … --new-ids …`,
       task 0209): heuristic-first, so the model is consulted only for items the keyword pass files
       `non-ai` while seeing an AI signal, and a degraded backend records the heuristic value with
-      `source: default` instead of failing. stdout is the `{labeled, model, fallback}` contract and
-      doubles as the routing guard's positive artifact: the guard below only accepts a non-empty
-      file, so a command that failed before printing still routes to `release-failed`.
+      `source: default` instead of failing. stdout is the `{verdict, confidence, labeled, model,
+      fallback}` contract and doubles as the routing guard's positive artifact: `verdict: PASS`
+      carries exactly one `HIGH | MEDIUM | LOW` level (the weakest level among the pass's rows,
+      G31 R14), and the guard below reads that line so a missing or out-of-enum level is refused
+      rather than read as a pass — a command that failed before printing emits no verdict at all
+      and is refused the same way.
     onEnter:
       - kind: shell
         onError: continue
@@ -226,15 +229,26 @@ transitions:
 
   - from: label
     to: release
-    description: "Labels written (label-result.txt holds the {labeled, model, fallback} line) -> release and record"
+    description: "Labels written and the pass verdict is PASS with a HIGH|MEDIUM|LOW confidence -> release and record"
     guard:
       kind: shell
       options:
-        command: 'test -s "${vars.work_dir}/label-result.txt"'
+        # The pass verdict is read through the same confidence-aware jq filter the judge gates use
+        # (byte-identical, so the one contract cannot drift): a `verdict: PASS` whose `confidence` is
+        # missing or outside HIGH|MEDIUM|LOW reads as `PASS!`, which no accept guard matches. The
+        # refusal names the offending value on stderr before the transition falls through to
+        # `release-failed` — fail-closed, and never a deadlock (that state is `always`).
+        command: >-
+          verdictFile="${vars.work_dir}/label-result.txt";
+          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "$verdictFile" 2>/dev/null)";
+          [ -n "$v" ] || v="<none>";
+          c="$(jq -r '.confidence // "<absent>"' "$verdictFile" 2>/dev/null)"; [ -n "$c" ] || c="<unreadable>";
+          { test "$v" = PASS; } || echo "kk-collect.label.confidence-refused: verdict '$v' carries confidence '$c', not HIGH|MEDIUM|LOW" >&2;
+          test "$v" = PASS
 
   - from: label
     to: release-failed
-    description: "The label pass failed -> release the lock and fail the run"
+    description: "The label pass failed, or its verdict carried no HIGH|MEDIUM|LOW confidence -> release the lock and fail the run"
     guard:
       kind: always
 

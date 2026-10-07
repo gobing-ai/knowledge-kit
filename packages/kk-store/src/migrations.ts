@@ -25,7 +25,11 @@ export const KK_MIGRATIONS: readonly KkMigration[] = [
     { id: '0001_kk_store_init', sql: KK_STORE_V1_SQL },
     {
         id: '0002_labels_confidence_run_id',
-        sql: 'ALTER TABLE labels ADD COLUMN confidence INTEGER; ALTER TABLE labels ADD COLUMN run_id TEXT;',
+        // `confidence` is TEXT, matching the live `defineTable` DDL: `0001`'s SQL is derived from the
+        // schema, so a fresh database already creates the column as TEXT and this ALTER is skipped
+        // (duplicate column). A database migrated from the pre-0213 shape gets TEXT here, so fresh and
+        // migrated converge — the oracle in tests/migrations.test.ts compares column TYPES.
+        sql: 'ALTER TABLE labels ADD COLUMN confidence TEXT; ALTER TABLE labels ADD COLUMN run_id TEXT;',
     },
 ];
 

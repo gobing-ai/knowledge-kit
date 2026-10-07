@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G31"
 name: "kk-collect: SQLite store, 4h collection, decision labels, topic extraction"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-07T03:50:34.546Z"
-updated_at: "2026-10-07T07:00:08.789Z"
+updated_at: "2026-10-07T19:18:14.893Z"
 ---
 
 # G31: kk-collect + kk-daily-ai-voice2: SQLite store, decision labels, DAG daily workflow, run ledger
@@ -165,7 +165,7 @@ Scenario: R14 — Verdict and decision surfaces carry a HIGH, MEDIUM, or LOW con
 | 0208 | kk-collect workflow: standalone 4h collection into the store | done |
 | 0209 | kk decision catalog and kk store label: heuristic-first item labeling | done |
 | 0210 | kk store extract and mark-used: profile-driven topic pools with cross-day dedup | done |
-| 0213 | Verify the confidence level (HIGH\|MEDIUM\|LOW) on kk-collect and kk-daily-ai-voice2 verdict and decision surfaces | backlog |
+| 0213 | Verify the confidence level (HIGH\|MEDIUM\|LOW) on kk-collect and kk-daily-ai-voice2 verdict and decision surfaces | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -176,4 +176,6 @@ Voice2 verdict surfaces are NOT covered here: G31 Scope puts the daily DAG workf
 
 - 2026-10-07T04:52:37.118Z moved Q → G31 (system)
 - 2026-10-07T07:00:08.789Z backlog → active (system)
+- 2026-10-07T19:18:14.018Z active → verifying (system)
+- 2026-10-07T19:18:14.893Z verifying → done (system)
 

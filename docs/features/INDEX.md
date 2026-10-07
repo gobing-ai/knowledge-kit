@@ -65,7 +65,7 @@
         └── [backlog] **G11**: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over ([G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md](./G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md))
     ├── [backlog] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
     ├── [backlog] **G3**: kk-collect ([G3_kk-collect.md](./G3_kk-collect.md))
-        └── [active] **G31**: kk-collect: SQLite store, 4h collection, decision labels, topic extraction ([G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md](./G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md))
+        └── [done] **G31**: kk-collect: SQLite store, 4h collection, decision labels, topic extraction ([G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md](./G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md))
     ├── [backlog] **G4**: kk-solo-podcast ([G4_kk-solo-podcast.md](./G4_kk-solo-podcast.md))
     ├── [backlog] **G5**: kk-storm-research ([G5_kk-storm-research.md](./G5_kk-storm-research.md))
     ├── [backlog] **G6**: kk-ingest-generate-publish ([G6_kk-ingest-generate-publish.md](./G6_kk-ingest-generate-publish.md))

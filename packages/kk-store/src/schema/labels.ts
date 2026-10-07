@@ -19,8 +19,13 @@ export const labelsTable = defineTable('labels', {
     score: integer('score'),
     maker: text('maker').notNull(),
     source: text('source').notNull(),
-    /** Decision confidence 0–1 for a model answer; `null` for heuristic rows or an absent payload. */
-    confidence: integer('confidence'),
+    /**
+     * The verdict's confidence level — one of {@link LABEL_CONFIDENCE_LEVELS}, or `null` only for a
+     * row written before the level existed. Declared `text` deliberately: the column holds the
+     * HIGH|MEDIUM|LOW enum (task 0213), and declaring it `integer` (task 0209) made it a
+     * mixed-domain column that silently defeated any numeric query.
+     */
+    confidence: text('confidence'),
     /** The collect run the pass belongs to (`kk store label --run`). */
     runId: text('run_id'),
     labeledAt: integer('labeled_at').notNull(),

@@ -21,7 +21,18 @@ export {
     type EpisodeUsageRecord,
 } from './dao/episode-usage';
 export { type ItemRecord, ItemsDao, type StoredDoc, type UpsertDocsResult } from './dao/items';
-export { type LabelInput, type LabelRecord, type LabelSource, LabelsDao } from './dao/labels';
+export {
+    HIGH_CONFIDENCE_MIN,
+    LABEL_CONFIDENCE_LEVELS,
+    type LabelConfidence,
+    type LabelInput,
+    type LabelRecord,
+    type LabelSource,
+    LabelsDao,
+    labelConfidence,
+    MEDIUM_CONFIDENCE_MIN,
+    verdictConfidence,
+} from './dao/labels';
 export { type LockRecord, LocksDao } from './dao/locks';
 export { type OpenStoreOptions, openStore, SQLITE_BUSY_TIMEOUT_MS, type Store } from './db';
 export {

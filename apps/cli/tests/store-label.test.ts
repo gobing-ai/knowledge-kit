@@ -20,6 +20,11 @@
  * 10. `--mode` outside `heuristic|decision` → caller mistake, exit 1 (R4).
  * 11. A written row drops the decision's `confidence` or the `--run` value → the store cannot
  *     report per-decision reliability or trace a label back to its collect run (R4).
+ * 12. A row's `confidence` is not exactly one of `HIGH`, `MEDIUM`, `LOW` — or the model's 0–1
+ *     payload is stored raw — → the G31 R14 verdict contract is unmet: the level is derived at
+ *     this boundary, never defaulted, and a heuristic or degraded row can only earn `LOW`.
+ * 13. The printed verdict line carries no level, or the pass claims a level stronger than its
+ *     least certain row → the `kk-collect` `label` guard has nothing to refuse on.
  *
  * Everything runs against a temp dir + temp DB and a stubbed `spur` (`KK_SPUR_BIN`), so no
  * network, model or operator store is touched. The labels table dump is copied to
@@ -41,6 +46,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
+import { LABEL_CONFIDENCE_LEVELS } from '@gobing-ai/kk-store';
 import { main } from '../src/main';
 import { captureOutput } from './capture';
 
@@ -96,8 +102,12 @@ const DECISION_IDS = [
 ] as const;
 
 /** An accepted model answer per decision — the choice as a label, the four scores as levels 0–5. */
-function acceptedAnswers(category: string, levels: [number, number, number, number]): Record<string, unknown> {
-    const meta = { confidence: 0.95, source: 'model', reason: 'accepted', maker: 'fm-local' };
+function acceptedAnswers(
+    category: string,
+    levels: [number, number, number, number],
+    confidence = 0.95,
+): Record<string, unknown> {
+    const meta = { confidence, source: 'model', reason: 'accepted', maker: 'fm-local' };
     return {
         'kk-item-category': { ...meta, value: category },
         'kk-item-quality': { ...meta, value: levels[0] },
@@ -158,7 +168,7 @@ function labelRows(db: string): Array<{
     decision_id: string;
     value: string;
     score: number | null;
-    confidence: number | null;
+    confidence: string | null;
     run_id: string;
     maker: string;
     source: string;
@@ -173,13 +183,24 @@ function labelRows(db: string): Array<{
         decision_id: string;
         value: string;
         score: number | null;
-        confidence: number | null;
+        confidence: string | null;
         run_id: string;
         maker: string;
         source: string;
     }>;
     raw.close();
     return rows;
+}
+
+/**
+ * The verdict line `kk store label` prints (G31 R14): `PASS` plus exactly one
+ * `HIGH | MEDIUM | LOW` level, then the counters R6 reports.
+ */
+function verdictLine(
+    counts: { labeled: number; model: number; fallback: number },
+    confidence: string,
+): Record<string, unknown> {
+    return { verdict: 'PASS', confidence, ...counts };
 }
 
 /** The id at `index` of a seeded run — a short seed is a broken test, never a silent skip. */
@@ -227,7 +248,7 @@ describe('kk store label (0209 R4/R5)', () => {
             KK_SPUR_BIN: stub,
         });
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 10, model: 0, fallback: 0 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 10, model: 0, fallback: 0 }, 'LOW'));
 
         for (const id of seeded.ids) {
             const rows = rowsFor(seeded.db, id);
@@ -242,10 +263,11 @@ describe('kk store label (0209 R4/R5)', () => {
         expect(rowsFor(seeded.db, aiNews).get('kk-item-category')?.value).toBe('ai-news');
         expect(rowsFor(seeded.db, nonAi).get('kk-item-category')?.value).toBe('non-ai');
         expect(existsSync(join(dir, 'spawns.log'))).toBe(false); // R5 — not one decision spawn
-        // R4 — every row carries the run, and a heuristic row has no model confidence.
+        // R4 — every row carries the run and exactly one HIGH|MEDIUM|LOW level; a heuristic row
+        // has no model evidence to cite, so it can only earn LOW (G31 R14).
         for (const row of labelRows(seeded.db)) {
             expect(row.run_id).toBe('run-1');
-            expect(row.confidence).toBeNull();
+            expect(row.confidence).toBe('LOW');
         }
 
         saveArtifact(
@@ -271,7 +293,7 @@ describe('kk store label (0209 R4/R5)', () => {
             KK_SPUR_BIN: stub,
         });
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 10, model: 5, fallback: 0 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 10, model: 5, fallback: 0 }, 'LOW'));
 
         const spawns = readFileSync(join(dir, 'spawns.log'), 'utf-8').trim().split('\n');
         expect(spawns.sort()).toEqual([...DECISION_IDS].sort()); // exactly the ambiguous item's five
@@ -293,6 +315,86 @@ describe('kk store label (0209 R4/R5)', () => {
         expect(rowsFor(seeded.db, confident).get('kk-item-category')?.source).toBe('heuristic');
     });
 
+    it('R14 — every row earns exactly one HIGH|MEDIUM|LOW level and the pass reports the weakest', async () => {
+        // The numeric 0–1 payload never reaches the store: the level is derived at this boundary,
+        // and the pass's own level is the weakest among its rows (a pass is never more certain than
+        // its least certain verdict).
+        const levels: [number, string][] = [
+            [0.95, 'HIGH'],
+            [0.8, 'HIGH'],
+            [0.6, 'MEDIUM'],
+            [0.5, 'MEDIUM'],
+            [0.3, 'LOW'],
+        ];
+        for (const [confidence, expected] of levels) {
+            const dir = tempDir();
+            const seeded = await seed(dir, [
+                doc('confident', 'Something ships', 'A body about the release.', { source: 'aihot' }),
+            ]);
+            const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2], confidence));
+
+            const result = await run(
+                [
+                    'store',
+                    'label',
+                    '--run',
+                    'run-1',
+                    '--new-ids',
+                    seeded.newIds,
+                    '--mode',
+                    'decision',
+                    '--db',
+                    seeded.db,
+                ],
+                { KK_SPUR_BIN: stub },
+            );
+            expect(result.code, result.err).toBe(0);
+            expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 5, model: 5, fallback: 0 }, expected));
+            const rows = labelRows(seeded.db);
+            expect(rows).toHaveLength(5);
+            for (const row of rows) {
+                expect(LABEL_CONFIDENCE_LEVELS.some((level) => level === row.confidence)).toBe(true);
+                expect(row.confidence).toBe(expected);
+            }
+            saveArtifact(
+                `kk-store-label-level-${expected}-${confidence}.json`,
+                `${JSON.stringify({ output: JSON.parse(result.out), rows }, null, 2)}\n`,
+            );
+        }
+    });
+
+    it('R14 — a mixed pass carries a level on every row and reports its weakest one', async () => {
+        const dir = tempDir();
+        // The ambiguous item is routed (heuristic files it `non-ai` while seeing an AI signal) and
+        // earns HIGH; the confident item stays on the keyword heuristic, which can only earn LOW.
+        const seeded = await seed(dir, [
+            doc('ambiguous', 'Prices rise', 'OpenAI raised prices this week.', {
+                source: 'rss',
+                tags: ['geopolitics'],
+            }),
+            doc('confident', 'Something ships', 'A body about the release.', { source: 'aihot' }),
+        ]);
+        const stub = stubSpur(dir, acceptedAnswers('ai-industry', [5, 4, 3, 2]));
+
+        const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--db', seeded.db], {
+            KK_SPUR_BIN: stub,
+        });
+        expect(result.code, result.err).toBe(0);
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 10, model: 5, fallback: 0 }, 'LOW'));
+
+        const rows = labelRows(seeded.db);
+        expect(rows.filter((row) => row.source === 'model').map((row) => row.confidence)).toEqual(
+            rows.filter((row) => row.source === 'model').map(() => 'HIGH'),
+        );
+        expect(rows.filter((row) => row.source === 'heuristic').map((row) => row.confidence)).toEqual(
+            rows.filter((row) => row.source === 'heuristic').map(() => 'LOW'),
+        );
+        for (const row of rows) {
+            expect(LABEL_CONFIDENCE_LEVELS.some((level) => level === row.confidence)).toBe(true);
+        }
+        saveArtifact('kk-store-label-level-mixed.json', `${JSON.stringify({ rows }, null, 2)}\n`);
+    });
+
     it('--mode decision routes every listed item and records model rows', async () => {
         const dir = tempDir();
         const seeded = await seed(dir, [
@@ -305,14 +407,15 @@ describe('kk store label (0209 R4/R5)', () => {
             { KK_SPUR_BIN: stub },
         );
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 5, model: 5, fallback: 0 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 5, model: 5, fallback: 0 }, 'HIGH'));
         for (const row of rowsFor(seeded.db, idAt(seeded.ids, 0)).values()) {
             expect(row.source).toBe('model');
             expect(row.maker).toBe('fm-local');
         }
-        // R4 — a model row records the decision's parsed confidence and the `--run` value.
+        // R4 — a model row records the decision's parsed confidence as an earned level (0.95 ≥
+        // HIGH_CONFIDENCE_MIN) and the `--run` value; the pass inherits the same HIGH.
         for (const row of labelRows(seeded.db)) {
-            expect(row.confidence).toBe(0.95);
+            expect(row.confidence).toBe('HIGH');
             expect(row.run_id).toBe('run-1');
         }
     });
@@ -335,7 +438,7 @@ describe('kk store label (0209 R4/R5)', () => {
             KK_SPUR_BIN: stub,
         });
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 5, model: 0, fallback: 5 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 5, model: 0, fallback: 5 }, 'LOW'));
 
         const rows = rowsFor(seeded.db, idAt(seeded.ids, 0));
         for (const row of rows.values()) {
@@ -364,7 +467,7 @@ describe('kk store label (0209 R4/R5)', () => {
             KK_SPUR_BIN: join(dir, 'no-such-spur'),
         });
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 5, model: 0, fallback: 5 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 5, model: 0, fallback: 5 }, 'LOW'));
         expect(rowsFor(seeded.db, idAt(seeded.ids, 0)).get('kk-item-category')?.value).toBe('non-ai');
     });
 
@@ -399,7 +502,7 @@ describe('kk store label (0209 R4/R5)', () => {
             KK_SPUR_BIN: stub,
         });
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 5, model: 3, fallback: 2 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 5, model: 3, fallback: 2 }, 'LOW'));
 
         const rows = rowsFor(seeded.db, idAt(seeded.ids, 0));
         expect(rows.get('kk-item-category')).toEqual({
@@ -425,7 +528,7 @@ describe('kk store label (0209 R4/R5)', () => {
 
         const result = await run(['store', 'label', '--run', 'run-1', '--new-ids', subset, '--db', seeded.db]);
         expect(result.code, result.err).toBe(0);
-        expect(JSON.parse(result.out)).toEqual({ labeled: 5, model: 0, fallback: 0 });
+        expect(JSON.parse(result.out)).toEqual(verdictLine({ labeled: 5, model: 0, fallback: 0 }, 'LOW'));
         const rows = labelRows(seeded.db);
         expect(new Set<string>(rows.map((row) => row.item_id))).toEqual(new Set<string>([idAt(seeded.ids, 0)]));
 

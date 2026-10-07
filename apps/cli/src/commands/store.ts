@@ -5,11 +5,14 @@ import {
     type ExtractProfile,
     type ItemsDao,
     itemId,
+    type LabelConfidence,
+    labelConfidence,
     openStore,
     ProfileInvalidError,
     parseProfile,
     resolveStorePath,
     type StoredDoc,
+    verdictConfidence,
 } from '@gobing-ai/kk-store';
 import {
     createNodeFileSystem,
@@ -321,8 +324,12 @@ interface LabelRow {
     decisionId: string;
     value: string;
     score: number | null;
-    /** The routed decision's confidence, or `null` for a heuristic-only row (R4). */
-    confidence: number | null;
+    /**
+     * The verdict's `HIGH` | `MEDIUM` | `LOW` level (G31 R14): the routed decision's numeric
+     * confidence mapped into the closed enum at this boundary, `LOW` for a heuristic-only or
+     * degraded row. Never `null` — every row this pass writes carries exactly one level.
+     */
+    confidence: LabelConfidence;
     /** The collect run this pass belongs to (`--run`), stamped on every row (R4). */
     runId: string;
     source: 'heuristic' | 'model' | 'default';
@@ -557,7 +564,9 @@ function scoreOf(decisionId: string, value: string): number | null {
  * when the item went to `spur decision run`, `result` is that call's payload (`undefined` on a
  * spawn failure). A `source: default` payload, a failure, and an out-of-vocabulary value all land
  * on the heuristic value with `source: default`; only an accepted, in-vocabulary `source: model`
- * answer replaces it.
+ * answer replaces it. The verdict's numeric confidence (`result?.confidence`, 0–1) is mapped into
+ * the `HIGH | MEDIUM | LOW` enum here, at the emit boundary: the store keeps the level, never the
+ * raw number, and every row gets one (G31 R14).
  */
 function labelRow(
     decisionId: string,
@@ -568,13 +577,13 @@ function labelRow(
     maker: string,
     runId: string,
 ): LabelRow | null {
-    const confidence = routed ? (result?.confidence ?? null) : null;
+    const modelConfidence = routed ? (result?.confidence ?? null) : null;
     const rowOf = (value: string, source: LabelRow['source'], by: string): LabelRow => ({
         itemId: item.id,
         decisionId,
         value,
         score: scoreOf(decisionId, value),
-        confidence,
+        confidence: labelConfidence(source, modelConfidence),
         runId,
         source,
         maker: by,
@@ -649,7 +658,7 @@ async function labelItem(
 /**
  * `kk store label --run <id> --new-ids <path> [--maker fm-local] [--mode heuristic|decision] [--db <path>]`
  * — write one `labels` row per decision for the ids the last `kk store ingest` filed (R4), and print
- * `{labeled, model, fallback}` (R6).
+ * `{verdict, confidence, labeled, model, fallback}` (R6).
  *
  * Heuristic-first (R5): every listed item is annotated by the plugin's own keyword heuristic through
  * `kk executor run episode-plan-gen` in `EPISODE_PLAN_MODE=label`, so apps/cli imports no plugin
@@ -657,6 +666,12 @@ async function labelItem(
  * go to `spur decision run`; `--mode decision` sends every item. A degraded backend stores the
  * heuristic value with `source: default` and the command still exits 0 — a collect run must never
  * fail on labels.
+ *
+ * The printed line is the pass's verdict (G31 R14): `verdict: PASS` plus exactly one
+ * `HIGH | MEDIUM | LOW` level, the weakest level among the rows this pass wrote. The
+ * `kk-collect` workflow's `label` guard reads that line through the same confidence-aware `jq`
+ * filter the judge gates use, so a verdict whose level is missing or outside the enum is refused
+ * instead of read as a pass.
  */
 async function labelAction(options: LabelOptions): Promise<void> {
     try {
@@ -689,6 +704,8 @@ async function labelAction(options: LabelOptions): Promise<void> {
             }
             consoleOutput.write(
                 JSON.stringify({
+                    verdict: 'PASS',
+                    confidence: verdictConfidence(rows.map((row) => row.confidence)),
                     labeled: rows.length,
                     model: rows.filter((row) => row.source === 'model').length,
                     fallback: rows.filter((row) => row.source === 'default').length,
@@ -897,7 +914,7 @@ export function registerStoreCommand(program: Command): void {
     store
         .command('label')
         .description(
-            'Label the listed items: one labels row per decision, heuristic-first; prints {labeled, model, fallback}',
+            'Label the listed items: one labels row per decision, heuristic-first; prints the {verdict, confidence} line plus {labeled, model, fallback}',
         )
         .requiredOption('--run <id>', 'Collect run id the labels belong to')
         .requiredOption('--new-ids <path>', 'Input path listing the item ids this pass must decide')
