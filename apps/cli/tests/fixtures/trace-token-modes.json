@@ -1,0 +1,112 @@
+{
+    "run": {
+        "runId": "3f2a4b5c-1111-4222-8333-444455556666",
+        "workflowName": "kk-collect",
+        "status": "done",
+        "startedAt": "2026-10-07T13:00:00.000Z",
+        "completedAt": "2026-10-07T13:41:12.000Z",
+        "durationMs": 2472000
+    },
+    "events": [
+        {
+            "kind": "phase",
+            "phase": "collect",
+            "status": "running",
+            "startedAt": "2026-10-07T13:00:00.100Z",
+            "completedAt": null
+        },
+        {
+            "kind": "action",
+            "node": "collect",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 4200,
+            "ok": true,
+            "error": null
+        },
+        {
+            "kind": "transition",
+            "from": "collect",
+            "to": "translate",
+            "trigger": null,
+            "at": "2026-10-07T13:00:04.400Z"
+        },
+        {
+            "kind": "action",
+            "node": "translate",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 362000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": {
+                    "totals": { "inputTokens": 6700000, "outputTokens": 59000, "cacheReadTokens": 1234 },
+                    "cacheHit": null,
+                    "estimated": false
+                },
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "translate",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 1000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": null,
+                "estimated": {
+                    "totals": { "inputTokens": 999, "outputTokens": 111 },
+                    "cacheHit": null,
+                    "estimated": true
+                }
+            }
+        },
+        {
+            "kind": "action",
+            "node": "article-write",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 1000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": {
+                    "totals": { "inputTokens": 1200, "outputTokens": 340 },
+                    "cacheHit": null,
+                    "estimated": false
+                },
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "article-write",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 1000,
+            "ok": true,
+            "error": null,
+            "cost": {
+                "exact": {
+                    "totals": { "inputTokens": 800, "outputTokens": 60 },
+                    "cacheHit": null,
+                    "estimated": false
+                },
+                "estimated": null
+            }
+        },
+        {
+            "kind": "action",
+            "node": "summarize",
+            "actionKind": "agent.run",
+            "status": "done",
+            "durationMs": 1000,
+            "ok": true,
+            "error": null
+        }
+    ]
+}

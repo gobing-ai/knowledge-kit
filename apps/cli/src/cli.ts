@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { registerExecutorCommand } from './commands/executor';
+import { registerLedgerCommand } from './commands/ledger';
 import { registerPluginCommand } from './commands/plugin';
 import { registerStageCommand } from './commands/stage';
 import { registerStoreCommand } from './commands/store';
@@ -20,6 +21,7 @@ export function createProgram(): Command {
         .option('-v, --verbose', 'enable verbose diagnostics');
 
     registerExecutorCommand(program);
+    registerLedgerCommand(program);
     registerPluginCommand(program);
     registerStageCommand(program);
     registerStoreCommand(program);

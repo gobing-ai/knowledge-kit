@@ -63,6 +63,8 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                    [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
 kk store migrate [--db <path>]
+kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
+kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 ```
 
 | Command | Description | Status |
@@ -72,10 +74,13 @@ kk store migrate [--db <path>]
 | `executor fan-out` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (A21) |
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
+| `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
+| `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
 
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
 > registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
-> extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206); the
+> extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206) and
+`ledger` (§1.10, task 0207); the
 > engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
 > still reach the same engines but are not listed in `kk --help`. §1.5/§1.6 are callable today. The
@@ -354,6 +359,39 @@ failed migration closes the adapter before rethrowing, so a rejected open never 
 shape. The schema is created from `defineTable(...).createTableSql`, so there is no hand-written DDL
 to drift — see §4 for the package surface and `.spur/rules/boundary/dao-boundary.yaml` for the
 ts-db/drizzle confinement rules.
+
+### 1.10 `ledger` — shipped (task 0207)
+
+`kk ledger` maintains a per-workflow run ledger at `<works-dir>/<workflow>/ledger.md` (default
+`--works-dir .works`), rendered from `spur workflow trace --json` so every workflow — including
+future ones — gets authoritative timing and token figures without kk-owned timing files.
+
+| Arg / Option | Type | Required | Default | Description |
+| -------------- | ------ | ---------- | --------- | ------------- |
+| `--workflow <name>` | string | yes | — | Workflow name; selects `<works-dir>/<name>/ledger.md` |
+| `--run <run-id>` | string | yes (`append`) | — | Run id to render |
+| `--works-dir <dir>` | string | no | `.works` | Ledger root directory |
+| `--work-dir <dir>` | string | no | — | Workflow `work_dir`; source of `<node>.summary.txt` result cells |
+
+- `append` is the workflow's final node; `sync` is the first one, so a fail-fast DAG that never
+  reaches `append` still gets a row (see `docs/design/kk-collect-and-daily-voice2.md` §7).
+- Section shape: `## <startedAt UTC minute> · run <id first 8> · <status> · <XhYmZs> ·
+  tokens: <in>/<out> (+<n> unknown)` plus an `<!-- run:<full id> -->` marker. The marker is the
+  idempotency key: a run whose marker is already present is never appended twice, and `sync` skips
+  it. The file is append-only; `sync` writes at most once per invocation and reports the run ids it
+  added in `appended` (`[]` when nothing changed).
+- The step table (`| Step | Status | Duration | Tokens in/out | Result |`) groups `events[]`
+  entries with `kind: "action"` by `node`, in first-seen order; a node's several actions collapse
+  into one row (durations summed), and the row is `failed` when any of its actions failed.
+- Tokens are only ever reported figures: a step with no `agent.run` action renders `—`, an agent
+  step sums `cost.exact.totals.{inputTokens,outputTokens}`, and any agent action whose `cost.exact`
+  is null (including `cost.estimated`-only rows) renders `unknown` for the whole step and increments
+  the header's unknown count. Estimated usage is never rendered.
+- Result cells: the first line of `<work-dir>/<node>.summary.txt` when the file exists, else the
+  first failing action's `error`, else `ok`; pipes are escaped and the cell is cut to 120 chars.
+- Failures exit 1 with `kk.ledger.<reason>` and leave the ledger untouched: `run.running`,
+  `trace.not-found`, `trace.spawn-failed`, `trace.invalid`, `list.invalid`, `write.failed`.
+  `KK_SPUR_BIN` overrides the `spur` binary (tests, non-PATH installs).
 
 ## 2. Configuration keys
 

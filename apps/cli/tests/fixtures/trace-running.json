@@ -1,0 +1,22 @@
+{
+    "run": {
+        "runId": "4c725438-6036-47ed-91ea-215f27cd96c6",
+        "workflowName": "task-pipeline",
+        "status": "running",
+        "startedAt": "2026-10-07T07:14:51.359Z",
+        "completedAt": null,
+        "durationMs": null,
+        "outcome": "running"
+    },
+    "events": [
+        {
+            "kind": "action",
+            "node": "precheck",
+            "actionKind": "shell",
+            "status": "done",
+            "durationMs": 259,
+            "ok": true,
+            "error": null
+        }
+    ]
+}

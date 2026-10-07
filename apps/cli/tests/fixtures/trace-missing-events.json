@@ -1,0 +1,12 @@
+{
+    "run": {
+        "runId": "b419ba8d-71cf-4a28-93f1-d064d2c712d0",
+        "workflowName": "task-pipeline",
+        "status": "done",
+        "startedAt": "2026-10-07T07:00:07.814Z",
+        "completedAt": "2026-10-07T07:14:12.341Z",
+        "durationMs": 844527,
+        "outcome": "success"
+    },
+    "entries": []
+}
