@@ -23,6 +23,9 @@ import { join, resolve } from 'node:path';
  * rather than trusted.
  */
 const runner = join(import.meta.dir, '../../../plugins/kk/scripts/kk-workflow-stages.ts');
+// R7 (0211): the daily-* stage bodies live in this sibling; a runner copy can only run a daily
+// stage when the sibling ships beside it.
+const dailyStages = join(import.meta.dir, '../../../plugins/kk/scripts/daily-stages.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -2059,10 +2062,11 @@ describe('F613 (0162) — script-write stage wiring', () => {
 
     it('daily-script-style fails loud naming the sidecar when no copy resolves (R1)', () => {
         withTempDir((dir) => {
-            // A lone copy of the runner: its directory holds no sibling sidecars, so the
-            // whole chain misses and `requireSidecar` must name the remediation.
+            // Runner + sibling with no sidecar copies anywhere: the lazy daily-stage load
+            // succeeds, then the whole sidecar chain misses and `requireSidecar` names it.
             const loneRunner = join(dir, 'kk-workflow-stages.ts');
             copyFileSync(runner, loneRunner);
+            copyFileSync(dailyStages, join(dir, 'daily-stages.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },
