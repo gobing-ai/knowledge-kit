@@ -1585,17 +1585,16 @@ describe('xhs-pub profile-check CLI (0177)', () => {
         const statePath = join(dir, 'state.json');
         try {
             await writeFile(statePath, JSON.stringify({ check: '2026-09-28T09:30:00Z' }));
-            const guard = createAutomationGuard({ statePath, now: NOW });
+            const guard = createAutomationGuard({ statePath, now: () => new Date('2026-09-28T10:00:00Z') });
+            const spentLauncher: BrowserLauncher = {
+                launch: async () => {
+                    throw new Error('no browser may open under a spent budget');
+                },
+            };
             const out = createBufferTarget();
             const restore = setDefaultOutputTargets({ stdout: out });
             try {
-                const code = await profileCheckMain(
-                    ['check', '--profile', '/tmp/kk-xhs-budget'],
-                    async () => {
-                        throw new Error('no browser may open under a spent budget');
-                    },
-                    guard,
-                );
+                const code = await profileCheckMain(['check', '--profile', '/tmp/kk-xhs-budget'], spentLauncher, guard);
                 expect(code).toBe(1);
                 const verdict = JSON.parse(out.text()) as { status: string; detail: string };
                 expect(verdict.status).toBe('refused');

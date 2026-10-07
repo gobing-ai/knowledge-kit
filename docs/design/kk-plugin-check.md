@@ -1,7 +1,7 @@
 # kk plugin check / login — live channel readiness probe
 
 > Feature **E93** · Decision **ADR-032** (amends ADR-011 R3) · Tasks **0215** (verbs + manifest), **0216** (six channels)
-> Status: shipped verbs + manifest (0215); channel migration + live verification pending (0216)
+> Status: shipped — verbs + manifest (0215), all six browser channels on the contract (0216)
 
 ## Problem
 
@@ -54,8 +54,10 @@ probe — kk never chooses the profile dir.)
 - kk spawns the probe with `process.execPath` and the same operator-config env as `kk executor run`
   (`pluginEntryCmd` / `pluginEntryEnv`, `apps/cli/src/invoke.ts:115-122`). Channel settings such as
   `SUBSTACK_PUBLICATION_URL` therefore reach the probe without new flags.
-- `runProfileCli` (`packages/publish-harness/src/browser.ts:238`) already implements this contract. 0216 adds
-  `--headed` there and moves xhs-pub and wechatmp-pub onto it.
+- `runProfileCli` (`packages/publish-harness/src/browser.ts:238`) implements this contract, including the
+  0216 `--headed` flag. 0216 moved xhs-pub and wechatmp-pub onto it (previously bespoke scripts), gave all
+  six channels a manifest `check` entry, and set `checkHeadedOnly: true` for x-pub (X login-walls headless
+  article loads, so the headless pass is dead weight that blew kk's 30s probe-kill).
 
 ## Safety (ADR-032 R5)
 
@@ -75,5 +77,7 @@ probe — kk never chooses the profile dir.)
 
 - 0215: an E2E run over fixture plugins (verified, refused, error and unsupported probes) writes
   `.spur/run/e2e/E93-plugin-check.json`.
-- 0216: a live `kk plugin check --kind publish --json` run against the operator profiles, recorded in the task's Testing
-  section with no secrets.
+- 0216: a live `kk plugin check --kind publish --json` run against the operator profiles recorded
+  `.spur/run/e2e/E93-plugin-check-live.json`: infoq/juejin/wechatmp/x `verified`, xhs `refused` by the 2h
+  automation budget (with the operator hint), substack `error` (exit 2 — `SUBSTACK_PUBLICATION_URL` unset),
+  non-browser channels `unsupported`. No secrets in the artifact.

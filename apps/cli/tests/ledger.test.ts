@@ -389,13 +389,13 @@ describe('kk ledger', () => {
         mkdirSync(ARTIFACT_DIR, { recursive: true });
         writeFileSync(
             join(ARTIFACT_DIR, 'ledger-failure-reasons.txt'),
-            [
+            `${[
                 `running: exit ${running.code} ${running.err.trim()}`,
                 `unknown: exit ${unknown.code} ${unknown.err.trim()}`,
                 `malformed: exit ${malformed.code} ${malformed.err.trim()}`,
                 `no-binary: exit ${noBinary.code} ${noBinary.err.trim()}`,
                 `ledger created: ${existsSync(ledgerPath)}`,
-            ].join('\n') + '\n',
+            ].join('\n')}\n`,
         );
     });
 
