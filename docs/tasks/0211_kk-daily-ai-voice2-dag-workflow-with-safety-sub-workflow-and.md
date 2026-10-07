@@ -89,6 +89,10 @@ Files:
 
 If `kk store pool-count` is not already provided by 0210's `extract` output, add it in this task: `kk store pool-count <file> --min n` exits 0 if the count is at least n, else 1.
 
+
+
+Additional declared surfaces: `apps/cli/tests/commands/**` (R7 moves stages into `kk` subcommands, and the repo rule `require-corresponding-test` requires a mirrored test for every new command module) and `apps/cli/tests/main.test.ts` (the `kk --help` visible-command list gains any new first-layer noun). G11 R9 (AC6) is the owning criterion for the voice2 judge/safety confidence levels; G31 R14 covers kk-collect only, so do not duplicate that work here.
+
 ### Plan
 
 - [ ] Failure-first list (empty pool, one branch fails, soft channel fails, safety block, revise bound hit, pause/resume of the operator review, publish disabled, sub-workflow binary missing).

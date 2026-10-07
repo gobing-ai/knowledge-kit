@@ -27,8 +27,8 @@ interface LedgerAppendOptions {
     workDir?: string;
 }
 
-/** Options accepted by `kk ledger sync`. */
-interface LedgerSyncOptions {
+/** Options accepted by `kk ledger sync` (also the `kk daily prepare --ledger-sync` seam). */
+export interface LedgerSyncOptions {
     workflow: string;
     worksDir: string;
     workDir?: string;
@@ -165,7 +165,7 @@ async function appendAction(options: LedgerAppendOptions): Promise<void> {
  * workflow that the ledger does not record yet, oldest first (R6). One write for the
  * whole batch, so a trace read that fails leaves the ledger untouched.
  */
-async function syncAction(options: LedgerSyncOptions): Promise<void> {
+export async function syncLedger(options: LedgerSyncOptions): Promise<void> {
     const fs = createNodeFileSystem();
     const ledgerPath = ledgerFilePath(options.worksDir, options.workflow);
     try {
@@ -226,5 +226,5 @@ export function registerLedgerCommand(program: Command): void {
         .requiredOption('--workflow <name>', 'Workflow name (ledger file <works-dir>/<name>/ledger.md)')
         .option('--works-dir <dir>', 'Ledger root directory', DEFAULT_WORKS_DIR)
         .option('--work-dir <dir>', 'Workflow work_dir, for <node>.summary.txt result cells')
-        .action(syncAction);
+        .action(syncLedger);
 }

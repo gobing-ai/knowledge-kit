@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { registerDailyCommand } from './commands/daily';
 import { registerExecutorCommand } from './commands/executor';
 import { registerLedgerCommand } from './commands/ledger';
 import { registerPluginCommand } from './commands/plugin';
@@ -21,6 +22,7 @@ export function createProgram(): Command {
         .version(CLI_CONFIG.binaryVersion)
         .option('-v, --verbose', 'enable verbose diagnostics');
 
+    registerDailyCommand(program);
     registerExecutorCommand(program);
     registerLedgerCommand(program);
     registerPluginCommand(program);

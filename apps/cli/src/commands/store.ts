@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
 import {
@@ -730,6 +731,12 @@ interface ExtractOptions {
     db?: string;
 }
 
+/** Options accepted by `kk store pool-count`. */
+interface PoolCountOptions {
+    file: string;
+    min: string;
+}
+
 /** Options accepted by `kk store mark-used`. */
 interface MarkUsedOptions {
     workflow: string;
@@ -840,6 +847,48 @@ async function extractAction(options: ExtractOptions): Promise<void> {
 }
 
 /**
+ * Item count of a daily pool artifact: a `Doc[]` array (what `extract` writes) or an object
+ * carrying `metadata.docs` (the QC candidates file the content branch produces). Anything else —
+ * a missing file, an empty file, a shape neither consumer writes — counts as 0, which is the
+ * answer the guard needs, not an error: the caller's question is "is there anything to do?".
+ */
+function countPoolItems(path: string): number {
+    if (!existsSync(path)) return 0;
+    try {
+        const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+        if (Array.isArray(parsed)) return parsed.length;
+        const docs = (parsed as { metadata?: { docs?: unknown } } | null)?.metadata?.docs;
+        return Array.isArray(docs) ? docs.length : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * `kk store pool-count <file> --min <n>` — the workflow-guard predicate over a pool artifact:
+ * exit 0 when the file holds at least `n` items, exit 1 (naming the count) otherwise.
+ *
+ * A DAG node's `condition` is a shell predicate, and `plugins/kk/workflows/*` may not use inline
+ * jq (ADR-115 boundary), so the count has to be a `kk` verb. It prints `{count, min}` either way
+ * so the same line is the evidence in a trace whether the guard passed or refused.
+ */
+async function poolCountAction(options: PoolCountOptions): Promise<void> {
+    try {
+        const min = Number(options.min);
+        if (!Number.isInteger(min) || min < 0) {
+            throw new Error(`--min must be a non-negative integer, got '${options.min}'`);
+        }
+        const count = countPoolItems(options.file);
+        consoleOutput.write(JSON.stringify({ count, min }));
+        if (count < min) {
+            throw new Error(`'${options.file}' holds ${count} item(s), below --min ${min}`);
+        }
+    } catch (error) {
+        failLoud('kk.store.pool-count.empty', error);
+    }
+}
+
+/**
  * `kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]` — record every
  * item the run used in `episode_usage`, so a later `extract --exclude-used` skips them (R4).
  *
@@ -941,6 +990,13 @@ export function registerStoreCommand(program: Command): void {
         .requiredOption('--out <path>', 'Output Doc[] JSON path (the fan-in blended.json shape)')
         .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
         .action(extractAction);
+
+    store
+        .command('pool-count')
+        .description('Guard predicate: exit 0 when the pool file holds at least --min items (prints {count, min})')
+        .argument('<file>', 'Pool artifact: a Doc[] JSON file or an object carrying metadata.docs')
+        .requiredOption('--min <n>', 'Minimum item count for exit 0')
+        .action((file: string, options: { min: string }) => poolCountAction({ file, min: options.min }));
 
     store
         .command('mark-used')

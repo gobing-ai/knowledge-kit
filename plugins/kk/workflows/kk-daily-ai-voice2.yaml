@@ -1,0 +1,648 @@
+name: kk-daily-ai-voice2
+kind: dag
+description: >-
+  Daily AI tech-sharing pipeline for the 「AI 乱炖」 column of show 「咸话咸说」, rebuilt as a static
+  dependency DAG over the kk store (task 0211, ADR-031, design docs/design/kk-collect-and-daily-voice2.md §6).
+  It starts from the store, not from ingestion: `kk store extract` selects today's pool from the
+  labels `kk-collect` (0208/0209) wrote, and the store's `episode_usage` ledger is the cross-day
+  dedup. The daily work is unchanged after that — plan → content QC → article/cover/script →
+  content safety (nested state machine, kk-daily-safety.yaml) → operator review → audio → publish
+  (surfdash + podcast) → independent soft channels (xhs, wechat, locales) → classify → ledger. It
+  supersedes kk-daily-ai-voice.yaml, which stays untouched until cut-over §8.
+vars:
+  # Composed by the `prepare` node (`kk daily prepare`), then read back into vars through the
+  # single-node read chain below — shell actions cannot set vars, and a concurrent `setVars` merge
+  # is last-writer-wins, so the DAG exchanges data by fixed paths under work_dir, never by vars.
+  work_dir: ""
+  # Digits-only run-date stamp the artifact names carry; projected from <work_dir>/run-date.txt.
+  run_date: ""
+  # Store extract window (kk store extract --window). The old workflow's ingestion window was
+  # intrinsic to the fan-in; here it is the pool's freshness bound (kk-collect refreshes every 4h).
+  window: "24h"
+  language: "zh"
+  voice_profile: "robin-news"
+  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts).
+  # Same default as kk-daily-ai-voice: gemini-tts (20260929 operator override, verified live).
+  vdriver: "gemini"
+  intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
+  surfdash_root: "/Users/robin/xprojects/surfdash"
+  title: ""
+  skip_review: "false"
+  transcode_mp3: "true"
+  podcast_artist: "Robin Min"
+  podcast_album: "咸话咸说"
+  cover_enabled: "true"
+  cover_provider: "minimax"
+  cover_model: "image-01"
+  cover_fallback: ""
+  xhs_enabled: "true"
+  xhs_cards: "4"
+  xhs_style: "xhs-knowledge"
+  xhs_provider: "minimax"
+  xhs_model: "image-01"
+  # ADR-022 rail: draft-box only. "true" posts live and stays a launch-time opt-in.
+  xhs_live: "false"
+  wechat_enabled: "true"
+  wechat_live: "false"
+  wechat_collection: "AI 乱炖"
+  plan_max_items: "20"
+  plan_translate_enabled: "true"
+  article_write_enabled: "true"
+  script_write_enabled: "true"
+  plugins_path: ""
+  # Content-safety budget and platforms, forwarded to the nested kk-daily-safety state machine.
+  safety_max_revise: "2"
+  safety_platforms: "xiaoyuzhou,apple-podcasts,wechatmp"
+  publish_enabled: "false"
+  agent: "inline"
+  # QC pins — lockstep with episode-plan-gen's DEFAULT_FILTER_CONFIG (env wins), same as voice1.
+  qc_categories: "ai-news,ai-technical,ai-research,ai-industry"
+  qc_min_quality: "2"
+  qc_min_importance: "3"
+  qc_min_urgency: "2"
+  qc_min_impact: "1"
+  qc_min_episode_items: "8"
+  episode_min_minutes: "15"
+  episode_max_minutes: "20"
+  # Run id, injected by spur at launch (0674 R5/R8) — the episode_usage / ledger / mark-used
+  # identity. A shell command may only reference declared vars.
+  __runId: ""
+
+# One action per node (engine: DagNodeDef.action), no back-edges (ADR-031). A node whose deps are
+# ALL skipped is skipped; a done+skipped mix proceeds — which is how the empty-pool path still
+# reaches run-report and ledger (they list `extract` in dependsOn, G11 R3).
+#
+# NODES ARE DECLARED IN TOPOLOGICAL ORDER (every node after all of its `dependsOn`). The engine
+# settles skips in one sweeping pass over this list, in declaration order, and stops as soon as a
+# pass finds no ready node — a node declared before a dependency that becomes `skipped` later in
+# that same pass stays `pending` and the run ends `dag-unreachable-nodes` instead of `done`.
+#
+# Fail-fast is the other half: any failed node fails the run, so every non-blocking channel (xhs,
+# wechat, locales) keeps its exit-0-on-soft-failure kk stage, and `onError: continue` stays where
+# voice1 had it. Wave-level waiting is the accepted ceiling (design §6): a node starts when its own
+# deps settle, but its whole wave is awaited before the next wave is dispatched.
+nodes:
+  - id: prepare
+    description: >-
+      Sync the workflow ledger and compose today's workspace: `kk daily prepare` writes the effective
+      work_dir to .spur/runs/kk-daily-ai-voice2/work-dir.txt, the run date to <work_dir>/run-date.txt,
+      the artifact directories and the safety revise budget. `kk ledger sync` records runs that
+      already finished without a ledger row (failed ones included) — a fail-fast DAG never reaches
+      its own `ledger` node, so the next run's prepare is the backfill (design §7).
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
+
+  - id: read-work-dir
+    description: "Project the effective work_dir into vars (single-node wave: nothing has fanned out yet)"
+    dependsOn: [prepare]
+    action:
+      kind: file.read.into-var
+      options:
+        path: .spur/runs/kk-daily-ai-voice2/work-dir.txt
+        var: work_dir
+
+  - id: read-run-date
+    description: "Project the digits-only run-date stamp into vars (single-node wave, after work_dir is known)"
+    dependsOn: [read-work-dir]
+    action:
+      kind: file.read.into-var
+      options:
+        path: ${vars.work_dir}/run-date.txt
+        var: run_date
+
+  - id: extract
+    description: >-
+      Select today's episode pool from the kk store: the ai-news topic profile over the labels
+      kk-collect wrote, minus everything this workflow already used (episode_usage). Writes
+      <work_dir>/10-collect/pool.json (the fan-in blended.json shape) and prints {count}. An empty
+      pool writes [] and exits 0 — the run's no-content path, not a failure.
+    dependsOn: [read-run-date]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk store extract --topic ai-news --window "${vars.window}" --exclude-used kk-daily-ai-voice2
+          --out "${vars.work_dir}/10-collect/pool.json"
+
+  - id: plan
+    description: >-
+      Score/dedup/select + annotate the pool into the episode plan (episode-plan-gen; annotate rides
+      inside planEpisode). The labels extract inlined into metadata replace its keyword re-scoring.
+      Guarded on the pool: an empty pool skips the whole content subtree, and run-report/ledger
+      still run.
+    dependsOn: [extract]
+    condition:
+      kind: shell
+      options:
+        command: 'kk store pool-count "${vars.work_dir}/10-collect/pool.json" --min 1'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}"
+
+  - id: qc-content
+    description: >-
+      Content QC: filter the plan's annotated candidates by category allowlist + score thresholds
+      (episode-plan-gen --mode filter). Writes 21-plan/<date>_04_quality-control-content_candidates.json,
+      whose length guards the whole content fan-out below — a pool that filtered to zero items ends
+      the run as no-content instead of building an empty episode.
+    dependsOn: [plan]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}" "${vars.qc_min_episode_items}"
+
+  # ---- content branches: translate / prose article / cover / script author (concurrent) ----
+  - id: plan-translate
+    description: "Translate the needsTranslation plan items into the output plan.json via agent.run"
+    dependsOn: [qc-content]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.plan_translate_enabled}" = "true"
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a copy discipline).
+        input: |
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
+          For needsTranslation items, adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — full coverage, not a summary: keep every fact, number, name, quote and hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× the source.
+          Titles read as a news event; keep product/model names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
+          Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
+          Keep other fields (id, sourceUri, mediaType, metadata) as-is; no comments or trailing commas.
+          Output strictly valid JSON — a same-length, same-order array — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
+        expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
+        allowAppend: false
+
+  - id: article-write
+    description: "Write the tech-sharing prose article from the translated plan via agent.run (3-format split: surfdash gets prose, not a news list)"
+    dependsOn: [qc-content]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.article_write_enabled}" = "true"
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        # ADR-115 error tier: keep this prompt <= 1000 chars. No title line: the canonical episode
+        # title is computed by daily-article-gen (0189 R4).
+        input: |
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — metadata.docs (Doc[]) is the translated plan; don't edit it.
+          Write a tech-sharing prose article in natural simplified Chinese for the 「AI 乱炖」 column (show 「咸话咸说」， tools/papers/hands-on practice 随聊): no title line (the pipeline computes it), an intro paragraph (2–3 sentences), then one section per item (## numbered title, 2–4 sentences of flowing prose, source link [来源：<label>](<sourceUri>) inline), a closing paragraph tying items together.
+          选题边界：只写技术内容；某条主线若属政治/外交或贸易管制/军事/公共政策争议/社会公共事件，跳过该条并在文末加一行「> 注：<N> 条条目因选题边界未写入：<id>（<原因>）、<id>（<原因>）」。
+          事实纪律：每个事实取自该条计划内容，不虚构、不引他处；数字与主体不得放大；引语只能归属其原句主语；保留「据报道/称/承诺」等限定词；导语/收束不加计划外程度词；材料不足就少写或不写，不凑数。
+          Narrative register — smooth transitions, no list-like bulleting, no scaffold labels (「可做角度」「背景」「潜在影响」), no hedging (「读者宜另行核实」「仍待验证」). 「」 quotes.
+          Output the markdown to ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md.
+        expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md
+        allowAppend: false
+
+  - id: article
+    description: >-
+      Generate the dated daily article Content from the episode plan (daily-article-gen template).
+      Depends on the QC candidates (so the prose/translate nodes can be disabled without skipping
+      this node: a done dependency in the mix keeps it runnable) as well as on both authoring nodes,
+      and it carries the same candidates guard — a pool that filtered to zero items must not build
+      an empty article.
+    dependsOn: [qc-content, plan-translate, article-write]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-article "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: cover-brief
+    description: "Author the cover subject from the lead plan item via agent.run (F614; onError: continue — a bad brief falls back to the format default subject in the render stage)"
+    dependsOn: [qc-content]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.cover_enabled}" = "true"
+          && test ! -f "${vars.work_dir}/23-cover/${vars.run_date}_07_cover_cover.png"
+    action:
+      kind: agent.run
+      # A bad or failed brief must never halt the run: the stage falls back to the format's default
+      # subject and keeps the same pinned format/style/provider/model.
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of plan docs; don't edit it.
+          Take item 1 only (its "title" and "metadata.brief") — the episode's lead story. If item 1's mainline is public affairs (politics/diplomacy, trade controls, military, policy disputes, social events), take the first in-scope item instead.
+          Write one concrete visual scene in English, ≤240 characters, that a viewer would connect to that story: objects, settings, symbols, metaphor.
+          No text, letters, numbers, logos, brand marks, flags, or recognizable real people. No style, color, lighting, or composition words — the preset owns those.
+          Output strictly valid JSON {"subject": "..."} to ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json.
+        expectFile: ${vars.work_dir}/23-cover/${vars.run_date}_07_cover-brief.json
+        allowAppend: false
+
+  - id: cover
+    description: "Render the daily cover through the pinned daily-news presets (F614)"
+    dependsOn: [cover-brief]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-cover "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.cover_provider}" "${vars.cover_model}" "${vars.cover_fallback}"
+
+  - id: cover-normalize
+    description: "Normalize the rendered cover (dimensions/format pins) so every consumer sees the same asset"
+    dependsOn: [cover]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-cover-normalize "${vars.work_dir}" "${vars.run_date}"
+
+  - id: script-style
+    description: "Snapshot the shipped zh style contract into the work dir (separate node: it is also an audit input for the revision loop)"
+    dependsOn: [qc-content]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-script-style "${vars.work_dir}" "${vars.run_date}"
+
+  - id: script-write
+    description: "Author the per-item script plan (intro/outro + lead/insight per doc id) from the plan via agent.run; onError: continue — a failed plan falls back to templates (F613)"
+    dependsOn: [script-style]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.script_write_enabled}" = "true"
+          && test "${vars.language}" = "zh"
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps, duration budget and banned phrases.
+          For each doc write a `lead` (a spoken bridge, not containing the title) and an `insight` (grounded only in that doc's facts: keep its numbers and hedges（据报道）, add no new degree words).
+          intro/outro hook only in-scope items; no greeting or sign-off — the builder adds both. 选题边界：政治/外交、贸易管制、军事、公共政策争议、社会公共事件条目绝不复述；读文章 22-article/*_06_article-write_body.md，其文末注记点名的 id 一并进 excluded，各配中文原因。
+          Output only JSON {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}],"excluded":[{"id":"…","reason":"…"}]} to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json. Exactly one `items` entry per doc not in `excluded`.
+        expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
+        allowAppend: false
+
+  - id: script
+    description: >-
+      Compile the episode plan Doc[] into structured broadcast VoiceScript YAML Content. Depends on
+      `article` so the node still runs when the plan-authoring nodes were disabled or skipped (the
+      builder falls back to templates) — but not when the whole content branch is skipped.
+    dependsOn: [article, script-style, script-write]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}"
+
+  # ---- content safety: a nested state machine (no sub-workflow action exists; ADR-031) ----
+  - id: safety
+    description: >-
+      Content safety as a nested state machine (kk-daily-safety.yaml): review → judge → bounded
+      revise loop → clean|block. It blocks here (and only here), so a non-zero exit means the drafts
+      must not publish — `block` or an integrity failure. The launcher vars the parent run exports
+      are stripped at the nested-spur boundary (the same two `NESTED_SPUR_UNSET` vars the stage
+      runner strips, kk-workflow-stages.ts): without it `spur workflow run` refuses to start inside
+      an active run. Non-publishing runs skip the gate entirely, exactly like voice1.
+    dependsOn: [script]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
+          spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
+          --vars '{"work_dir":"${vars.work_dir}","run_date":"${vars.run_date}","safety_max_revise":"${vars.safety_max_revise}","safety_platforms":"${vars.safety_platforms}","agent":"${vars.agent}"}'
+          --quiet --no-plan
+
+  - id: review
+    description: >-
+      Operator review of the safety-gated drafts: `pause: true` stops the run here and RESUME is the
+      approval (the engine marks a paused node done on resume, so this node carries no action);
+      cancelling the run is the rejection. Same contract as voice1's HITL confirmation, now a node
+      instead of a state. Skipped when skip_review=true or when there is nothing to publish.
+    dependsOn: [safety]
+    pause: true
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.skip_review}" != "true"'
+
+  # ---- audio branch ----
+  - id: generate
+    description: "Invoke the voice driver plugin (vdriver: gemini -> gemini-tts) to generate the audio"
+    dependsOn: [script, safety, review]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}"
+
+  - id: intro
+    description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"
+    dependsOn: [generate]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
+
+  - id: duration
+    description: "Fail loud unless final episode duration sits in the 15–20 min window (duration authoritative)"
+    dependsOn: [intro]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}"
+
+  # ---- publish-prep branch ----
+  - id: wrap-docs
+    description: "Wrap VoiceScript into Doc[] input for the voice generator plugin (also the publish-prep input)"
+    dependsOn: [script, review]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
+
+  - id: publish-prep
+    description: "Merge article Content with the MP3 (rejects a non-.mp3 enclosure) and stamp its ID3 tags — the publish seam's input"
+    dependsOn: [wrap-docs]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-prep "${vars.work_dir}" "${vars.run_date}" "${vars.podcast_artist}" "${vars.podcast_album}"
+
+  # ---- audio QC: fans in the audio branch and the publish seam ----
+  - id: quality
+    description: >-
+      Verify audio quality, speech rate, and silence/repetition QC metrics. Depends on the audio
+      tail, wrap-docs and publish-prep (the seam's merge is part of the audited bytes); publish-prep
+      being skipped on a non-publishing run does not skip the audit.
+    dependsOn: [duration, wrap-docs, publish-prep]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-quality-report "${vars.work_dir}" "${vars.run_date}"
+
+  - id: publish-surfdash
+    description: "Publish the merged Content to surfdash (single target); its result.json is what show-notes links and what patch-surfdash (folded into publish-classify) patches"
+    dependsOn: [publish-prep]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-surfdash "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: show-notes
+    description: "Render timeline show notes from the episode plan (podcast-pub show-notes op; article URL from the surfdash result postPath — a surfdash failure degrades to the legacy full-body layout)"
+    dependsOn: [quality, publish-surfdash]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-show-notes "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.title}"
+
+  - id: publish-podcast
+    description: "Publish the episode through podcast-pub with the rendered show notes (metadata.showNotes)"
+    dependsOn: [show-notes]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-podcast "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  # ---- independent soft channels: xhs, wechat, locales (exit 0 on soft failure; fail-fast DAG) ----
+  - id: xhs-write
+    description: "Plan the XHS card series from the lead plan item via agent.run; onError: continue — a failed plan skips the XHS target, never the run"
+    dependsOn: [script, review]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.xhs_enabled}" = "true"
+    action:
+      kind: agent.run
+      onError: continue
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        # ADR-115 error tier: keep this prompt <= 1000 chars.
+        input: |
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
+          Take item 1 only (its "title" and "metadata.brief") — the lead story.
+          Write an XHS note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags). 选题边界：公共事务主线不写入，只写技术内容。
+          Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
+          Ground every "copy", "points" and "sourcePoint" in that story — no invented facts. No text, letters, numbers, logos or real people in "subject".
+          Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
+        expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
+        allowAppend: false
+
+  - id: xhs-render
+    description: "Render the card series through the pinned xhs-card/xhs-knowledge presets; onError: continue — the publish node names the missing series and stays soft"
+    dependsOn: [xhs-write]
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}"
+
+  - id: xhs-publish
+    description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status, and xhs-pub's own headless preflight + publish cap make a sessionless run fail soft (exit 0)"
+    dependsOn: [xhs-render]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}"
+
+  - id: wechat-publish
+    description: "Publish the daily article to the WeChat MP draft box via wechatmp-pub — draft, or live only when wechat_live=true; independent and non-blocking (a sessionless profile refuses fast, exit 0)"
+    dependsOn: [publish-prep]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true" && test "${vars.wechat_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-publish-wechat "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.wechat_live}" "${vars.wechat_collection}"
+
+  - id: translate-localize
+    description: "Locales — surfdash-pub scaffolds the en/ja drafts (deterministic, plugin-owned) and writes one marker file per locale naming the draft to translate"
+    dependsOn: [publish-surfdash]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-translate-localize "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}"
+
+  - id: translate
+    description: >-
+      Agent translates both scaffolded locale drafts in place. The two draft paths are read from the
+      marker files at their fixed paths (no var projection after the fan-out: concurrent setVars is
+      last-writer-wins, design §6), and an empty marker means that locale is absent. Non-blocking:
+      the sync node and publish-classify treat the locales as an independent channel.
+    dependsOn: [translate-localize]
+    action:
+      kind: agent.run
+      options:
+        role: scribe
+        agent: ${vars.agent}
+        input: |
+          Translate the en/ja draft posts of the zh article. Read the two marker files at these fixed paths — each holds one draft path, or is empty when that locale was not scaffolded:
+          English: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_en-post-path.txt
+          Japanese: ${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_ja-post-path.txt
+          For each: if the marker is empty or unreadable, skip that locale. Otherwise edit the named file in place — translate the frontmatter title and the whole markdown body to natural English/Japanese respectively. Keep frontmatter keys, dates, URLs, code, and the assets/ image reference untouched. Set draft: false (the translated post publishes to the site) and remove any canonical: frontmatter line pointing at a different locale's URL.
+          Keep frontmatter valid YAML: double-quote any value containing ': '. Read the surfdash translator glossary if present at the surfdash checkout root under .agents/skills/surfdash-translator/glossary.md and apply its terminology.
+          Do not wait for operator confirmation. Each edited file must end fully in its target language.
+
+  - id: translate-sync
+    description: "Sync the translated en/ja drafts into the surfdash CMS (the zh post path rides the marker file)"
+    dependsOn: [translate]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-translate-sync "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.work_dir}/31-publish/${vars.run_date}_20_translate-localize_zh-post-path.txt"
+
+  # ---- fan-in: classify the publish outcome, then close the run ----
+  - id: publish-classify
+    description: >-
+      Fan-in of every publish leaf (surfdash, podcast, xhs, wechat, locales) with policy `all`:
+      classifies the sequenced surfdash → podcast outcomes into publish-status.txt full|partial|none
+      (exit 0 in all three), records the independent channels' completeness, and folds in the
+      surfdash post-patching + the partial-publish marker that voice1 ran as separate states (a
+      classify is the only node that knows the status). Non-publishing runs skip the whole subtree.
+    dependsOn: [publish-podcast, publish-surfdash, xhs-publish, wechat-publish, translate-sync]
+    dependencyPolicy: all
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk daily publish-classify --work-dir "${vars.work_dir}" --run-date "${vars.run_date}"
+          --surfdash-root "${vars.surfdash_root}" --plugins-path "${vars.plugins_path}" --fold-tail
+
+  - id: mark-used
+    description: >-
+      Record the items this run used in the store's episode_usage (the cross-day dedup): runs after
+      publish-classify, so a run that failed to classify records nothing. Skipped on an empty pool
+      (there is no plan to mark).
+    dependsOn: [publish-classify, extract]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk store mark-used --workflow kk-daily-ai-voice2 --run "${vars.__runId}"
+          --in "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
+
+  - id: run-report
+    description: >-
+      Assemble the per-run report from the existing artifacts (news-report-gen; output-only, never
+      throws) and record the pool outcome next to it: `no-content` when the store pool was empty or
+      filtered to zero items. It lists `extract` in dependsOn, so an empty pool still runs it (the
+      engine's skip rule: all-deps-skipped skips a node, a done+skipped mix proceeds).
+    dependsOn: [mark-used, publish-classify, extract]
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk daily run-report --work-dir "${vars.work_dir}" --run-date "${vars.run_date}"
+          --plugins-path "${vars.plugins_path}" --qc-min-quality "${vars.qc_min_quality}"
+          --qc-min-importance "${vars.qc_min_importance}" --qc-min-urgency "${vars.qc_min_urgency}"
+          --qc-min-impact "${vars.qc_min_impact}" --pool "${vars.work_dir}/10-collect/pool.json"
+          --candidates "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json"
+
+  - id: ledger
+    description: >-
+      Final node: append this run's section to .works/kk-daily-ai-voice2/ledger.md. It lists
+      `extract` in dependsOn so an empty-pool run still records (with the run-report's `no-content`
+      line as its Result). onError: continue — a run's own trace is still `running` while a node
+      executes, so `kk ledger append` refuses it (exit 1); the next run's `prepare` backfills
+      through `kk ledger sync`.
+    dependsOn: [run-report, extract]
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk ledger append --workflow kk-daily-ai-voice2 --run "${vars.__runId}" --work-dir "${vars.work_dir}"

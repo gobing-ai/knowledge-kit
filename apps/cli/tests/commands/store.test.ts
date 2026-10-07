@@ -45,6 +45,7 @@ describe('registerStoreCommand', () => {
             'ingest',
             'label',
             'extract',
+            'pool-count',
             'mark-used',
         ]);
 
@@ -169,5 +170,42 @@ describe('kk store migrate', () => {
             join(ARTIFACT_DIR, 'kk-store-migrate-error.txt'),
             `exit: ${result.code}\nstderr: ${result.err.trim()}\n`,
         );
+    });
+});
+
+describe('kk store pool-count (0211 R5)', () => {
+    it('is 0 when the pool file holds at least --min items, 1 when it does not', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }, { id: 'b' }]));
+        const enough = await run(['store', 'pool-count', pool, '--min', '2']);
+        expect(enough.code).toBe(0);
+        expect(JSON.parse(enough.out)).toEqual({ count: 2, min: 2 });
+        const short = await run(['store', 'pool-count', pool, '--min', '3']);
+        expect(short.code).toBe(1);
+        expect(short.err).toContain('kk.store.pool-count.empty');
+        expect(JSON.parse(short.out)).toEqual({ count: 2, min: 3 });
+    });
+
+    it('counts the QC candidates shape (metadata.docs) and treats a missing file as an empty pool', async () => {
+        const dir = tempDir();
+        const candidateFile = join(dir, 'candidates.json');
+        writeFileSync(candidateFile, JSON.stringify({ metadata: { docs: [{ id: 'a' }] } }));
+        expect((await run(['store', 'pool-count', candidateFile, '--min', '1'])).code).toBe(0);
+        const missing = await run(['store', 'pool-count', join(dir, 'absent.json'), '--min', '1']);
+        expect(missing.code).toBe(1);
+        expect(JSON.parse(missing.out)).toEqual({ count: 0, min: 1 });
+        // An empty Doc[] — what `kk store extract` writes for an empty pool — is exactly that case.
+        writeFileSync(join(dir, 'empty.json'), '[]');
+        expect((await run(['store', 'pool-count', join(dir, 'empty.json'), '--min', '1'])).code).toBe(1);
+    });
+
+    it('refuses a negative --min loudly', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        writeFileSync(pool, '[]');
+        const result = await run(['store', 'pool-count', pool, '--min', '-1']);
+        expect(result.code).toBe(1);
+        expect(result.err).toContain('--min must be a non-negative integer');
     });
 });

@@ -1,0 +1,444 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { type Command, CommanderError } from 'commander';
+import { resolveKkConfigPath, runInvoke } from '../invoke';
+import { consoleOutput } from '../output';
+import { runStage } from '../stage';
+
+/**
+ * The `daily` command group — the deterministic body of the daily AI-voice pipeline, owned by the
+ * CLI instead of the shared stage runner (task 0211 R7).
+ *
+ * `kk-daily-ai-voice2` is a static DAG whose nodes may carry exactly one action each, so the three
+ * daily steps that a DAG node needs as ONE `kk` command live here: `prepare` (ledger sync +
+ * workspace composition + the fixed anchor files the read chain projects into vars),
+ * `publish-classify` (the publish fan-in, including the surfdash post-patching and the
+ * partial-publish record the flat workflow ran as separate states) and `run-report` (the run
+ * report, plus the `no-content` record an empty store pool produces). Their bodies moved out of
+ * `plugins/kk/scripts/kk-workflow-stages.ts`; the voice1 stages of the same names keep their own
+ * copies until `kk-daily-ai-voice.yaml` retires (design §8), so nothing about the flat workflow
+ * changes here.
+ */
+
+/** Artifact directories of a daily run workspace (the same layout the stage runner composes). */
+const DAILY_DIRS = [
+    '10-ingest',
+    '20-facts',
+    '21-plan',
+    '22-article',
+    '23-cover',
+    '25-xhs',
+    '24-script',
+    '30-audio',
+    '31-publish',
+] as const;
+
+/** Report/QC thresholds `kk daily run-report` forwards to news-report-gen as env. */
+const NEWS_REPORT_PLUGIN = 'news-report-gen';
+
+/** Options accepted by `kk daily prepare`. */
+interface DailyPrepareOptions {
+    workflow: string;
+    workDir?: string;
+    runDate?: string;
+    ledgerSync?: boolean;
+    worksDir?: string;
+}
+
+/** Options accepted by `kk daily publish-classify`. */
+interface PublishClassifyOptions {
+    workDir: string;
+    runDate: string;
+    surfdashRoot?: string;
+    pluginsPath?: string;
+    foldTail?: boolean;
+}
+
+/** Options accepted by `kk daily run-report`. */
+interface RunReportOptions {
+    workDir: string;
+    runDate: string;
+    pluginsPath?: string;
+    qcMinQuality?: string;
+    qcMinImportance?: string;
+    qcMinUrgency?: string;
+    qcMinImpact?: string;
+    pool?: string;
+    candidates?: string;
+}
+
+/**
+ * Fail loud: print the `kk.daily.<reason>` contract line and throw a `CommanderError` that
+ * `main()` maps to exit code 1 (command modules never terminate the process directly).
+ */
+function failLoud(code: string, error: unknown): never {
+    const cause = error instanceof Error ? error.message : String(error);
+    const message = `${code}: ${cause}`;
+    consoleOutput.error(message);
+    throw new CommanderError(1, code, message);
+}
+
+/** Expand the `~/` and `$HOME/` prefixes the kk config examples use. */
+function expandHome(path: string): string {
+    if (path.startsWith('~/')) return join(homedir(), path.slice(2));
+    if (path.startsWith('$HOME/')) return join(homedir(), path.slice('$HOME/'.length));
+    return path;
+}
+
+/**
+ * works_dir for composed daily workspaces — `KK_WORKS_DIR` env > config `works_dir` > the compiled
+ * default `~/.config/kk/works`. An unreadable config falls through to the default; composition
+ * never fails a run.
+ */
+function resolveWorksDir(): string {
+    const fromEnv = process.env.KK_WORKS_DIR;
+    if (fromEnv) return fromEnv;
+    const configPath = process.env.KK_CONFIG ?? resolveKkConfigPath();
+    if (configPath !== '' && existsSync(configPath)) {
+        try {
+            const parsed = Bun.YAML.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown> | null;
+            const worksDir = parsed !== null && typeof parsed === 'object' ? parsed.works_dir : undefined;
+            if (typeof worksDir === 'string' && worksDir !== '') return expandHome(worksDir);
+        } catch {
+            // fall through to the compiled default
+        }
+    }
+    return join(homedir(), '.config/kk/works');
+}
+
+/** `date +%Y%m%d` — the digits-only run-date stamp the artifact names carry. */
+function formatRunDate(now: Date = new Date()): string {
+    const month = `${now.getMonth() + 1}`.padStart(2, '0');
+    const day = `${now.getDate()}`.padStart(2, '0');
+    return `${now.getFullYear()}${month}${day}`;
+}
+
+/**
+ * `kk daily prepare --workflow <w> [--work-dir <dir>] [--run-date <stamp>] [--ledger-sync]` —
+ * compose the run workspace and anchor it for the workflow's read chain.
+ *
+ * A dashed or digits-only `--run-date` names the workspace the same way (dashes stripped), so a
+ * resumed run whose persisted `run_date` var already carries the digits-only `run-date.txt` value
+ * re-derives the same directory. Writes `<work_dir>/run-date.txt`, the safety revise budget,
+ * the `kk --version` stamp, `.spur/runs/<workflow>/work-dir.txt` (the cwd-relative anchor the
+ * workflow's `file.read.into-var` node reads — shell actions cannot set vars) and voice1's
+ * `10-ingest/*` source configs. `--ledger-sync` additionally appends every finished run of the
+ * workflow that the ledger does not record yet; a failed sync is a warning, never an aborted run.
+ */
+async function prepareAction(options: DailyPrepareOptions): Promise<void> {
+    try {
+        const dirDate = options.runDate ? options.runDate.replaceAll('-', '') : formatRunDate();
+        const workDir = resolve(
+            options.workDir || join(options.worksDir ?? resolveWorksDir(), options.workflow, dirDate),
+        );
+        for (const dir of DAILY_DIRS) mkdirSync(join(workDir, dir), { recursive: true });
+        writeFileSync(join(workDir, 'run-date.txt'), `${dirDate}\n`);
+        // The remediation budget belongs to the attempt, not to the day: a fresh run (or a
+        // same-day retry) starts with the full revise allowance.
+        writeFileSync(join(workDir, '.safety-revise-count'), '0\n');
+        const anchorDir = join('.spur', 'runs', options.workflow);
+        mkdirSync(anchorDir, { recursive: true });
+        writeFileSync(join(anchorDir, 'work-dir.txt'), `${workDir}\n`);
+        // Voice1's collect inputs: the flat workflow's prepare state still composes them here.
+        writeFileSync(join(workDir, '10-ingest/source.json'), `${JSON.stringify({})}\n`);
+        writeFileSync(join(workDir, '10-ingest/last30days.json'), `${JSON.stringify({})}\n`);
+        writeFileSync(join(workDir, '10-ingest/horizon.json'), `${JSON.stringify({})}\n`);
+        consoleOutput.write(JSON.stringify({ workDir, runDate: dirDate, workflow: options.workflow }));
+
+        if (options.ledgerSync === true) {
+            try {
+                const { syncLedger } = await import('./ledger');
+                await syncLedger({ workflow: options.workflow, worksDir: '.works', workDir });
+            } catch (error) {
+                // Reporting only: a ledger failure must never abort a run before it has started.
+                consoleOutput.error(
+                    `kk.daily.prepare.ledger-sync-failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+            }
+        }
+    } catch (error) {
+        failLoud('kk.daily.prepare.failed', error);
+    }
+}
+
+/** One publish target as the per-target result files record it. */
+type PublishTarget = Record<string, unknown>;
+
+/** `targets[]` of a per-target result file, or `[]` when the file is missing/unparsable. */
+function targetsOf(path: string): PublishTarget[] {
+    if (!existsSync(path)) return [];
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { targets?: unknown };
+    return Array.isArray(parsed?.targets)
+        ? (parsed.targets.filter((e) => e !== null && typeof e === 'object') as PublishTarget[])
+        : [];
+}
+
+/**
+ * State of the publish tail's independent channels (`locales`, `xhs`, `wechat`, `cms-resync`).
+ *
+ * They never enter `publish_status` (ADR-022/025/026), so a `full` status file can hide a tail that
+ * skipped every one of them — 20261002 shipped zh-only surfdash with no XHS and no WeChat draft and
+ * nothing in the run's artifacts said so. Recorded beside the status file so the gap is visible.
+ */
+function publishCompleteness(workDir: string, runDate: string): { rows: Record<string, string>[]; missing: string[] } {
+    const at = (name: string): string => join(workDir, '31-publish', `${runDate}_${name}`);
+    const markerFilled = (path: string): boolean => existsSync(path) && readFileSync(path, 'utf-8').trim() !== '';
+    const rows: Record<string, string>[] = [];
+    const localesDone = ['en', 'ja'].every((locale) =>
+        markerFilled(at(`20_translate-localize_${locale}-post-path.txt`)),
+    );
+    rows.push({
+        channel: 'locales',
+        state: localesDone ? 'done' : 'not-run',
+        detail: localesDone ? 'en/ja drafts scaffolded' : 'translate markers absent (en/ja never scaffolded)',
+    });
+    const resultChannels: [string, string, string][] = [
+        ['xhs', '19_publish-xhs_result.json', ''],
+        ['wechat', '20_publish-wechat_result.json', ''],
+        ['cms-resync', '23_patch-surfdash_sync-result.json', '23_patch-surfdash_emdash-resync.txt'],
+    ];
+    for (const [channel, resultName, skipMarkerName] of resultChannels) {
+        const path = at(resultName);
+        if (existsSync(path)) {
+            const result = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+            const metadata = (result.metadata ?? {}) as Record<string, unknown>;
+            rows.push({
+                channel,
+                state: result.ok === true ? 'done' : 'failed',
+                detail:
+                    result.ok === true
+                        ? typeof metadata.publishStatus === 'string'
+                            ? metadata.publishStatus
+                            : 'ok'
+                        : String(result.error ?? 'ok=false'),
+            });
+            continue;
+        }
+        const skipMarker = skipMarkerName === '' ? '' : at(skipMarkerName);
+        rows.push(
+            skipMarker !== '' && existsSync(skipMarker)
+                ? { channel, state: 'skipped', detail: readFileSync(skipMarker, 'utf-8').trim() }
+                : { channel, state: 'not-run', detail: 'no result artifact' },
+        );
+    }
+    return { rows, missing: rows.filter((row) => row.state !== 'done').map((row) => String(row.channel)) };
+}
+
+/**
+ * `kk daily publish-classify --work-dir <dir> --run-date <stamp> [--fold-tail]` — the publish
+ * fan-in: classify the sequenced surfdash → podcast outcomes into `full|partial|none`, write
+ * `<date>_17_publish_result.json` + `_publish-status.txt` + `_completeness.json`, and print the
+ * status line (exit 0 in all three — routing is the caller's).
+ *
+ * With `--fold-tail` it also runs the two tail states the flat workflow kept apart because only
+ * the classifier knows the status: `daily-publish-partial` when the outcome is `partial`, and
+ * `daily-patch-surfdash` whenever a surfdash post exists (cover + podcast cross-link patching,
+ * CMS re-sync). Both are plugin-owned stages of the same names — this command only sequences them.
+ */
+async function publishClassifyAction(options: PublishClassifyOptions): Promise<void> {
+    try {
+        const { workDir, runDate } = options;
+        const dir = join(workDir, '31-publish');
+        const resultPath = join(dir, `${runDate}_17_publish_result.json`);
+        const statusPath = join(dir, `${runDate}_17_publish_publish-status.txt`);
+        // Both per-target files must exist: the pre-0133 `jq -s … || echo '[]'` chain could not read
+        // a missing one (jq exits 2 after printing the slurped partial), which drove status to
+        // `none`. Classifying over whichever file happens to exist would report `full` for a publish
+        // that never dispatched — the failure masking this rule exists to prevent.
+        const surfdash = join(dir, `${runDate}_14_publish-surfdash_result.json`);
+        const podcast = join(dir, `${runDate}_16_publish-podcast_result.json`);
+        const bothWritten = existsSync(surfdash) && existsSync(podcast);
+        const targets = bothWritten ? [...targetsOf(surfdash), ...targetsOf(podcast)] : [];
+        const okCount = targets.filter((entry) => entry.ok === true && entry.status === 'published').length;
+        const total = targets.length;
+        const status = okCount > 0 && okCount === total ? 'full' : okCount > 0 ? 'partial' : 'none';
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(resultPath, `${JSON.stringify({ ok: okCount === total && total > 0, targets }, null, 2)}`);
+        writeFileSync(statusPath, status);
+        const completeness = publishCompleteness(workDir, runDate);
+        writeFileSync(
+            join(dir, `${runDate}_17_publish_completeness.json`),
+            `${JSON.stringify({ runDate, ...completeness }, null, 2)}`,
+        );
+        consoleOutput.write(
+            JSON.stringify({ status, published: okCount, targets: total, missing: completeness.missing }),
+        );
+        if (completeness.missing.length > 0) {
+            consoleOutput.error(
+                `WARNING: publish completeness — ${completeness.missing.join(', ')} did not complete. Independent channels never enter publish_status; re-run their stages for this work dir.`,
+            );
+        }
+
+        if (options.foldTail === true) {
+            if (status === 'partial') {
+                const code = runStage(['daily-publish-partial', workDir, runDate]);
+                if (code !== 0) failLoud('kk.daily.publish-classify.partial-failed', new Error(`exit ${code}`));
+            }
+            const root = options.surfdashRoot ?? process.env.KK_SURFDASH_ROOT ?? '';
+            if (status !== 'none' && root !== '') {
+                const code = runStage(['daily-patch-surfdash', workDir, runDate, root, options.pluginsPath ?? '']);
+                if (code !== 0) failLoud('kk.daily.publish-classify.patch-failed', new Error(`exit ${code}`));
+            }
+        }
+    } catch (error) {
+        if (error instanceof CommanderError) throw error;
+        failLoud('kk.daily.publish-classify.failed', error);
+    }
+}
+
+/**
+ * Item count of a pool/candidates JSON: a `Doc[]` array, or an object carrying `metadata.docs`.
+ * An absent, empty or differently shaped file counts as 0 — the caller's question is "is there a
+ * pool to report on?", and `undefined` is reserved for the option simply not being given.
+ */
+function countItems(path: string | undefined): number | undefined {
+    if (path === undefined) return undefined;
+    if (!existsSync(path)) return 0;
+    try {
+        const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+        if (Array.isArray(parsed)) return parsed.length;
+        const docs = (parsed as { metadata?: { docs?: unknown } } | null)?.metadata?.docs;
+        return Array.isArray(docs) ? docs.length : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * `kk daily run-report --work-dir <dir> --run-date <stamp> …` — assemble the per-run report from the
+ * artifacts that exist, and record the pool outcome next to it.
+ *
+ * An empty store pool (or a pool that content-QC filtered to zero items) is not a failure: the run
+ * report says so and `<work_dir>/run-report.summary.txt` carries the one-line `no-content` result
+ * the ledger's Result cell reads. The report itself is `news-report-gen`'s output, invoked through
+ * the same plugin-entry seam every other kk command uses.
+ */
+async function runReportAction(options: RunReportOptions): Promise<void> {
+    try {
+        const { workDir, runDate } = options;
+        const reportMd = join(workDir, `${runDate}_19_run-report_report.md`);
+        const summary = join(workDir, 'run-report.summary.txt');
+        const poolCount = countItems(options.pool);
+        const candidateCount = countItems(options.candidates);
+        mkdirSync(workDir, { recursive: true });
+        if (poolCount === 0 || candidateCount === 0) {
+            const reason =
+                poolCount === 0
+                    ? 'no-content: the store pool was empty (kk store extract found no unused items)'
+                    : 'no-content: content QC admitted zero of the pooled items';
+            const body = `# Daily run ${runDate} — no content\n\n${reason}\n\nNo article, audio or publish\nartifact was produced; nothing was marked used.\n`;
+            writeFileSync(reportMd, body);
+            writeFileSync(summary, `${reason}\n`);
+            consoleOutput.write(JSON.stringify({ runDate, noContent: true, reason, report: reportMd }));
+            return;
+        }
+        if (existsSync(reportMd)) {
+            consoleOutput.write(JSON.stringify({ runDate, noContent: false, report: reportMd, cached: true }));
+            return;
+        }
+        if (candidateCount === undefined) {
+            const reason = 'run-report: no candidates.json and no pool count — nothing to report';
+            writeFileSync(summary, `${reason}\n`);
+            consoleOutput.write(JSON.stringify({ runDate, noContent: true, reason, report: '' }));
+            return;
+        }
+        const cands = join(workDir, '21-plan', `${runDate}_19_run-report_episode-plan.json`);
+        const reportJson = join(workDir, `${runDate}_19_run-report_report.json`);
+        mkdirSync(dirname(cands), { recursive: true });
+        const candidates = options.candidates as string;
+        const parsed = JSON.parse(readFileSync(candidates, 'utf-8')) as { metadata?: { docs?: unknown } };
+        writeFileSync(cands, `${JSON.stringify((parsed.metadata?.docs ?? []) as unknown, null, 2)}`);
+        // Plugin env paths must be absolute: plugins run with cwd = their package dir, so a relative
+        // workDir silently misses every best-effort read.
+        const absWorkDir = resolve(workDir);
+        const env: Record<string, string> = {
+            QC_MIN_QUALITY: options.qcMinQuality ?? '',
+            QC_MIN_IMPORTANCE: options.qcMinImportance ?? '',
+            QC_MIN_URGENCY: options.qcMinUrgency ?? '',
+            QC_MIN_IMPACT: options.qcMinImpact ?? '',
+            NEWS_REPORT_REJECTED_FILE: join(
+                absWorkDir,
+                '21-plan',
+                `${runDate}_04_quality-control-content_candidates.rejected.json`,
+            ),
+            NEWS_REPORT_TIMING_FILE: join(absWorkDir, 'step-timing.json'),
+            NEWS_REPORT_QC_FILE: join(absWorkDir, '30-audio', `${runDate}_11_generate_content.json`),
+            NEWS_REPORT_PLAN_AUDIT_FILE: join(absWorkDir, '21-plan', `${runDate}_03_plan_plan.json.audit.json`),
+            NEWS_REPORT_BLENDED_FILE: join(absWorkDir, '10-ingest', `${runDate}_02_collect_blended.json`),
+            NEWS_REPORT_SCRIPT_FILE: join(absWorkDir, '24-script', `${runDate}_08_script_content.json`),
+            NEWS_REPORT_DATE: runDate,
+        };
+        const previous = new Map<string, string | undefined>();
+        for (const [key, value] of Object.entries(env)) {
+            previous.set(key, process.env[key]);
+            process.env[key] = value;
+        }
+        let code: number;
+        try {
+            code = await runInvoke({
+                plugin: NEWS_REPORT_PLUGIN,
+                inPath: cands,
+                outPath: reportJson,
+                ...(options.pluginsPath === undefined || options.pluginsPath === ''
+                    ? {}
+                    : { pluginsPath: [options.pluginsPath] }),
+            });
+        } finally {
+            for (const [key, value] of previous) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+        }
+        if (code !== 0) throw new Error(`${NEWS_REPORT_PLUGIN} exited ${code}`);
+        const parsedReport = JSON.parse(readFileSync(reportJson, 'utf-8')) as { body?: unknown };
+        if (typeof parsedReport.body !== 'string') throw new Error(`${reportJson} has no string body`);
+        writeFileSync(reportMd, parsedReport.body);
+        writeFileSync(summary, `${candidateCount} items planned\n`);
+        consoleOutput.write(JSON.stringify({ runDate, noContent: false, report: reportMd }));
+    } catch (error) {
+        if (error instanceof CommanderError) throw error;
+        failLoud('kk.daily.run-report.failed', error);
+    }
+}
+
+/**
+ * Register the `daily` command group: the three deterministic daily steps a `kk-daily-ai-voice2`
+ * DAG node needs as a single `kk` command (R7/AC4).
+ */
+export function registerDailyCommand(program: Command): void {
+    const daily = program.command('daily').description('Run the daily AI-voice pipeline steps');
+
+    daily
+        .command('prepare')
+        .description('Compose the run workspace, write its anchor files, and optionally sync the ledger')
+        .requiredOption('--workflow <name>', 'Workflow the workspace and anchor belong to')
+        .option('--work-dir <dir>', 'Explicit work dir (default: <works_dir>/<workflow>/<run-date>)')
+        .option('--run-date <stamp>', 'Run date (dashed or digits; default: today, UTC-independent)')
+        .option('--ledger-sync', 'Also append finished runs the workflow ledger is missing (warn-only on failure)')
+        .action(prepareAction);
+
+    daily
+        .command('publish-classify')
+        .description('Classify the publish outcomes full|partial|none and write the status artifact')
+        .requiredOption('--work-dir <dir>', 'Run work dir')
+        .requiredOption('--run-date <stamp>', 'Digits-only run-date stamp')
+        .option('--fold-tail', 'Also run the partial record and the surfdash post-patch for this outcome')
+        .option('--surfdash-root <dir>', 'Surfdash checkout the post-patch commits to')
+        .option('--plugins-path <dir>', 'Additive plugin root for the tail stages')
+        .action(publishClassifyAction);
+
+    daily
+        .command('run-report')
+        .description('Assemble the run report; records no-content when the pool/QC produced nothing')
+        .requiredOption('--work-dir <dir>', 'Run work dir')
+        .requiredOption('--run-date <stamp>', 'Digits-only run-date stamp')
+        .option('--plugins-path <dir>', 'Additive plugin root for the report generator')
+        .option('--pool <path>', 'Pool Doc[] the run extracted (the no-content signal)')
+        .option('--candidates <path>', 'QC candidates file (the report input)')
+        .option('--qc-min-quality <n>', 'QC quality threshold forwarded to the report generator')
+        .option('--qc-min-importance <n>', 'QC importance threshold forwarded to the report generator')
+        .option('--qc-min-urgency <n>', 'QC urgency threshold forwarded to the report generator')
+        .option('--qc-min-impact <n>', 'QC impact threshold forwarded to the report generator')
+        .action(runReportAction);
+}
