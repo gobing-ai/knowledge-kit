@@ -52,3 +52,4 @@ Tasks 0200–0204 all in `testing`. Recipe replay per task: (a) spur task show �
 - `spur feature advance E92` walked verifying→done after 0205 PASS (guard strict check went 0 unverified). `feature sync` alone stalls at verifying when strict L4 fails.
 - Run runall-e92-0205 closed before final re-verify (23 rows) — final PASS evidence lives in .spur/memory/evidence/0205-verdict.json + .spur/run/0205-verdict.json.
 - NEXT: FF-merge branch to main, update marker .spur/run/batch-e92-wt.json (main repo).
+- 2026-10-07T22:24:38Z dev-runall E91 --worktree: ABORTED pre-run. (1) spur feature check E91 --strict exit 1 — L3.ac-bdd-error duplicate scenario 'AC3 — one draft-only run through the real transport' (lines 148 + 165; second is a Gherkin example inside a code fence parsed as live AC) + L3.ac-bdd-invalid. (2) WT-1 dirty tree: docs/design/x-article-ui-discovery.md (+5 uncommitted). No worktree/marker/tasks touched.
