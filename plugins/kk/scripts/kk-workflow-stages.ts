@@ -50,6 +50,7 @@ import {
     readFileSync,
     realpathSync,
     renameSync,
+    rmSync,
     statSync,
     unlinkSync,
     writeFileSync,
@@ -1806,7 +1807,7 @@ function dailyGenerate(args: string[]): void {
         voicebox: 'voice-gen',
         gemini: 'gemini-tts',
     };
-    const voiceGenerator = VOICE_DRIVERS[vdriver];
+    let voiceGenerator = VOICE_DRIVERS[vdriver];
     if (!voiceGenerator) {
         failWith(
             1,
@@ -1821,6 +1822,41 @@ function dailyGenerate(args: string[]): void {
             if (qc?.passed === true) {
                 console.log(`audio cached: ${content} (QC passed)`);
                 return;
+            }
+        }
+        // Gemini quota probe (20261006): the 06:00 cron hit gemini-3.8-flash-tts 429 with a
+        // multi-hour retry-after after the shared key's window drained overnight. One tiny
+        // render (~1 request) before the real episode; ANY probe failure (quota, key, network)
+        // flips this run to the local voicebox driver instead of dying mid-episode — voicebox
+        // needs no key. Operator decision 20261006: keep the gemini default + auto-fallback.
+        if (vdriver === 'gemini') {
+            const probeDir = join(workDir, '30-audio');
+            const probeIn = join(probeDir, '.gemini-probe-in.json');
+            const probeOut = join(probeDir, '.gemini-probe-out.json');
+            const docsList = readJson(docs) as Array<Record<string, unknown>>;
+            if (docsList.length > 0) {
+                writeJsonText(probeIn, [{ ...docsList[0], body: 'Hello.' }]);
+                const probe = spawnSync(
+                    'kk',
+                    ['executor', 'run', 'gemini-tts', '--in', probeIn, '--out', probeOut, ...pluginsArgs(pluginsPath)],
+                    { encoding: 'utf8', timeout: 120_000, env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 } },
+                );
+                for (const stale of [
+                    probeIn,
+                    probeOut,
+                    probeOut.replace(/\.json$/, '.wav'),
+                    probeOut.replace(/\.json$/, '.mp3'),
+                ])
+                    rmSync(stale, { force: true });
+                if (probe.status !== 0) {
+                    const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
+                    console.log(
+                        `generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`,
+                    );
+                    voiceGenerator = VOICE_DRIVERS.voicebox;
+                } else {
+                    console.log('generate: gemini quota probe ok');
+                }
             }
         }
         kk(['executor', 'run', voiceGenerator, '--in', docs, '--out', content, ...pluginsArgs(pluginsPath)], {
