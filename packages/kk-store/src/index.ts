@@ -20,7 +20,19 @@ export {
     type EpisodeUsageInput,
     type EpisodeUsageRecord,
 } from './dao/episode-usage';
-export { type ItemRecord, ItemsDao, type UpsertDocsResult } from './dao/items';
+export { type ItemRecord, ItemsDao, type StoredDoc, type UpsertDocsResult } from './dao/items';
 export { type LabelInput, type LabelRecord, type LabelSource, LabelsDao } from './dao/labels';
 export { type LockRecord, LocksDao } from './dao/locks';
 export { type OpenStoreOptions, openStore, SQLITE_BUSY_TIMEOUT_MS, type Store } from './db';
+export {
+    type CompileProfileOptions,
+    compileProfile,
+    DEFAULT_EXTRACT_LIMIT,
+    type ExtractProfile,
+    ITEM_DECISION_IDS,
+    ProfileInvalidError,
+    type ProfileOrder,
+    type ProfilePredicate,
+    type ProfileQuery,
+    parseProfile,
+} from './profile';

@@ -67,6 +67,9 @@ kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
 kk store lock release --name <lock> --run <id> [--db <path>]
 kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
 kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]
+kk store extract --topic <t> [--window 24h] [--limit <n>] [--exclude-used <workflow>]
+                 --out <Doc[].json> [--db <path>]
+kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]
 kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
 kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
@@ -82,6 +85,8 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 | `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs`, write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store label` | Label the ids `ingest` filed — one `labels` row per decision through the kk decision catalog, heuristic-first; prints `{labeled, model, fallback}` (§1.9) | shipped (task 0209) |
+| `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined); prints `{count}` (§1.9) | shipped (task 0210) |
+| `store mark-used` | Record the items one run used in `episode_usage` (idempotent); prints `{marked}` (§1.9) | shipped (task 0210) |
 | `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
 | `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
 | `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
@@ -351,7 +356,7 @@ gitignored artifact) is never loaded and editing the runner takes effect without
 source fallback applies only to a genuine checkout whose package copy is missing. Runner and sidecar
 resolution, and the delegated stage names, are in §7.
 
-### 1.9 `store` — shipped (task 0206)
+### 1.9 `store` — shipped (tasks 0206, 0208–0210)
 
 `kk store migrate [--db <path>]` brings the kk SQLite store's schema up to date. It is the first verb
 of the first-layer `store` noun, alongside `executor` / `plugin` / `stage`. It resolves the database
@@ -413,6 +418,57 @@ out-of-vocabulary value or a spawn failure stores the **heuristic value** with `
 pass exits 0 and a collect run never fails on labels. stdout is `{labeled, model, fallback}`, and the
 scratch under `<new-ids dir>/label/` is removed on the way out. Usage errors (a missing or malformed
 `--new-ids`, an unknown `--mode`) exit 1 with `kk.store.label.failed: <cause>`.
+
+`kk store extract --topic <t> [--window 24h] [--limit <n>] [--exclude-used <workflow>]
+--out <Doc[].json> [--db <path>]` is the read path an episode workflow starts from — the answer to
+"which stored items belong in this topic's pool?". The topic names a **profile file**
+(`plugins/kk/decisions/extract/<topic>.yaml`), resolved from the working checkout first and the
+installed package's own checkout second, exactly as `kk schedule render` resolves its templates;
+the CLI never spawns a plugin, so extraction neither ingests nor labels (§1.5 stays the only plugin
+entry).
+
+The profile shape is `{ topic, where, order, limit }`:
+
+```yaml
+topic: ai-news
+where:
+  kk-item-category: { in: [ai-news, ai-industry] }
+  kk-item-quality: { gte: 3 }
+  kk-item-importance: { gte: 3 }
+order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
+```
+
+`where` keys are decision ids from the kk item-label catalog (an unknown top-level key, an unknown
+decision id, a malformed predicate or a non-positive `limit` exits 1 with
+`kk.store.profile.invalid: <cause>`); each predicate is `{in: [...]}` or `{gte|gte: n}`. `order`
+entries are `"<decision-id> asc|desc"` or `"first_seen_at asc|desc"`, most significant first, with
+`i.id ASC` as the final tiebreak. `limit` defaults to the profile's own cap, or the episode cap
+(20) when the profile omits it; `--limit` overrides both.
+
+`packages/kk-store/src/profile.ts` owns `parseProfile` / `compileProfile`;
+`ItemsDao.selectByProfile` owns the SQL as one parameterized statement: a `labels` self-join per
+`where` key, `i.first_seen_at >= now - --window`, and a `NOT EXISTS (SELECT 1 FROM episode_usage …)`
+when `--exclude-used <workflow>` is given — so no SQL leaves `packages/kk-store`. A decision named
+only by `order` left-joins (an item without that label is sorted, not dropped), while a `where`
+decision with no `labels` row excludes the item: its join **is** the predicate.
+
+The pool is written to `--out` as `Doc[]` in the fan-in `blended.json` shape — `id`, `title`, `body`,
+`sourceUri`, `mediaType` and the stored metadata plus `metadata.labels: { <decision-id>: value }`
+(every stored answer for the item) — so `episode-plan-gen` consumes either file unchanged. stdout is
+`{count}` and the store is only read (no `items`/`labels`/`collect_runs` writes). An **empty pool**
+writes `[]`, prints `{"count":0}` and still exits 0: the workflow conditions on `count`, not on the
+exit code. `--window` must be `'<n>s|m|h|d'` and `--limit` a positive integer; every other failure
+(an unknown topic, a bad window or limit, an unreadable database) exits 1 with
+`kk.store.extract.failed: <cause>`.
+
+`kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]` writes the cross-day
+dedup ledger: one `episode_usage(item_id, workflow, run_id, used_at)` row per Doc in `--in`, keyed
+`(item_id, workflow, run_id)` so a retried run overwrites rather than duplicates and repeated ids in
+one input collapse to one row. The Doc's own `id` is the store id (`extract` emits it and
+`episode-plan-gen` spreads it). stdout is `{marked}`; a failure exits 1 with
+`kk.store.mark-used.failed: <cause>`. A later `extract --exclude-used <workflow>` then omits those
+items for **that workflow** — the invariant is per workflow, so a second run of the same workflow
+still never re-aired an item.
 
 ### 1.10 `ledger` — shipped (task 0207)
 

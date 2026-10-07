@@ -35,11 +35,18 @@ async function run(args: string[]): Promise<{ code: number; out: string; err: st
 }
 
 describe('registerStoreCommand', () => {
-    it('registers the store noun with migrate, lock, ingest and label and their options', () => {
+    it('registers the store noun with migrate, lock, ingest, label, extract and mark-used and their options', () => {
         const program = createProgram();
         const store = program.commands.find((command) => command.name() === 'store');
         expect(store).toBeDefined();
-        expect(store?.commands.map((command) => command.name())).toEqual(['migrate', 'lock', 'ingest', 'label']);
+        expect(store?.commands.map((command) => command.name())).toEqual([
+            'migrate',
+            'lock',
+            'ingest',
+            'label',
+            'extract',
+            'mark-used',
+        ]);
 
         const lock = store?.commands.find((command) => command.name() === 'lock');
         expect(lock?.commands.map((command) => command.name())).toEqual(['acquire', 'release']);
@@ -58,6 +65,40 @@ describe('registerStoreCommand', () => {
             '--run',
             '--new-ids',
         ]);
+
+        const extract = store?.commands.find((command) => command.name() === 'extract');
+        expect(extract?.options.map((option) => option.long)).toEqual([
+            '--topic',
+            '--window',
+            '--limit',
+            '--exclude-used',
+            '--out',
+            '--db',
+        ]);
+        expect(extract?.options.find((option) => option.long === '--window')?.defaultValue).toBe('24h');
+        expect(extract?.options.filter((option) => option.mandatory).map((option) => option.long)).toEqual([
+            '--topic',
+            '--out',
+        ]);
+
+        const markUsed = store?.commands.find((command) => command.name() === 'mark-used');
+        expect(markUsed?.options.map((option) => option.long)).toEqual(['--workflow', '--run', '--in', '--db']);
+        expect(markUsed?.options.filter((option) => option.mandatory).map((option) => option.long)).toEqual([
+            '--workflow',
+            '--run',
+            '--in',
+        ]);
+    });
+
+    it('exits non-zero when extract is called without --topic/--out (commander required options)', async () => {
+        const capture = captureOutput();
+        let code: number;
+        try {
+            code = await main(['node', 'kk', 'store', 'extract']);
+        } finally {
+            capture.restore();
+        }
+        expect(code).not.toBe(0);
     });
 
     it('exits non-zero when label is called without --run/--new-ids (commander required options)', async () => {

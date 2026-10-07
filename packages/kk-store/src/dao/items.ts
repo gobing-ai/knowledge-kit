@@ -2,10 +2,54 @@ import type { Doc } from '@gobing-ai/kk-core';
 import type { DbAdapter, DbBatchOp } from '@gobing-ai/ts-db';
 import { EntityDao } from '@gobing-ai/ts-db';
 import { canonicalUrlForDoc, itemId } from '../canonical-url';
+import type { ProfileQuery } from '../profile';
 import { items } from '../schema/items';
 
 /** One `items` row as stored. */
 export type ItemRecord = typeof items.$inferSelect;
+
+/**
+ * One item selected by a profile query: the stored columns plus every `labels`
+ * row for that item, so a caller assembles its pool Doc without a second read.
+ */
+export interface StoredDoc {
+    id: string;
+    title: string;
+    body: string;
+    /** `items.canonical_url` — the Doc's `sourceUri`; `null` for a URL-less item. */
+    sourceUri: string | null;
+    mediaType: string | null;
+    /** Parsed `items.metadata_json` — the Doc metadata as ingested. */
+    metadata: Record<string, unknown>;
+    /** Decision id → stored value (`kk-item-category`, `kk-item-<dimension>`). */
+    labels: Record<string, string>;
+}
+
+/**
+ * One raw `items` row as the adapter returns it. `queryAll` answers in SQLite's own column
+ * names (unlike `EntityDao`, which maps to the camelCase select type), so the snake_case
+ * fields here are the contract with the statement above, not a style slip.
+ */
+interface ItemRow {
+    id: string;
+    title: string;
+    body: string;
+    canonical_url: string | null;
+    media_type: string | null;
+    metadata_json: string;
+}
+
+/** `items.metadata_json` as an object; a corrupt cell degrades to `{}` rather than failing a pool read. */
+function parseMetadataJson(raw: string): Record<string, unknown> {
+    try {
+        const parsed: unknown = JSON.parse(raw);
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {};
+    } catch {
+        return {};
+    }
+}
 
 /** Outcome of {@link ItemsDao.upsertDocs} for one run. */
 export interface UpsertDocsResult {
@@ -177,6 +221,106 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
 
         await this.adapter.batch(operations);
         return { inserted, updated, unchanged, newIds };
+    }
+
+    /**
+     * One profile query's pool: the matching `items` rows, each with every stored
+     * decision answer inlined and ordered by decision id (R2).
+     *
+     * One statement, so a pool is a single consistent read of the WAL store — the
+     * scheduled collector may be committing beside it. A `where` decision with no
+     * `labels` row excludes the item (its join is the predicate); a decision named
+     * only by `order` left-joins, so an unlabelled item is sorted, not dropped.
+     * `i.id ASC` is the final tiebreak: one database and one `now` yield one order.
+     */
+    async selectByProfile(query: ProfileQuery): Promise<StoredDoc[]> {
+        const whereDecisions = new Set(query.where.map((predicate) => predicate.decisionId));
+        const aliases = new Map<string, string>();
+        const joins: string[] = [];
+        const params: unknown[] = [];
+        const aliasFor = (decisionId: string): string => {
+            const existing = aliases.get(decisionId);
+            if (existing !== undefined) return existing;
+            const alias = `l${aliases.size}`;
+            aliases.set(decisionId, alias);
+            joins.push(
+                `${whereDecisions.has(decisionId) ? 'JOIN' : 'LEFT JOIN'} labels ${alias} ` +
+                    `ON ${alias}.item_id = i.id AND ${alias}.decision_id = ?`,
+            );
+            params.push(decisionId);
+            return alias;
+        };
+
+        // Every join (and its decision-id parameter) is registered before any WHERE parameter is
+        // pushed: the join `?`s sit before the WHERE `?`s in the statement, so interleaving the
+        // two would bind each value to the wrong placeholder.
+        for (const predicate of query.where) aliasFor(predicate.decisionId);
+        for (const term of query.order) {
+            if (!('column' in term)) aliasFor(term.decisionId);
+        }
+
+        const conditions: string[] = [];
+        for (const predicate of query.where) {
+            const alias = aliasFor(predicate.decisionId);
+            if (predicate.op === 'in') {
+                conditions.push(`${alias}.value IN (${predicate.values.map(() => '?').join(', ')})`);
+                params.push(...predicate.values);
+                continue;
+            }
+            conditions.push(`CAST(${alias}.value AS INTEGER) ${predicate.op === 'gte' ? '>=' : '<='} ?`);
+            params.push(predicate.value);
+        }
+
+        const order: string[] = query.order.map((term) => {
+            const direction = term.direction === 'desc' ? 'DESC' : 'ASC';
+            return 'column' in term
+                ? `i.${term.column} ${direction}`
+                : `CAST(${aliasFor(term.decisionId)}.value AS INTEGER) ${direction}`;
+        });
+        order.push('i.id ASC');
+
+        conditions.push('i.first_seen_at >= ?');
+        params.push(query.now - query.windowMs);
+        if (query.excludeWorkflow !== undefined) {
+            conditions.push('NOT EXISTS (SELECT 1 FROM episode_usage u WHERE u.item_id = i.id AND u.workflow = ?)');
+            params.push(query.excludeWorkflow);
+        }
+        params.push(query.limit);
+
+        const rows = await this.adapter.queryAll<ItemRow>(
+            `SELECT i.id, i.title, i.body, i.canonical_url, i.media_type, i.metadata_json FROM items i\n` +
+                `${joins.join('\n')}\nWHERE ${conditions.join(' AND ')}\n` +
+                `ORDER BY ${order.join(', ')}\nLIMIT ?`,
+            ...params,
+        );
+        if (rows.length === 0) return [];
+
+        const labelsByItem = await this.labelsFor(rows.map((row) => row.id));
+        return rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            body: row.body,
+            sourceUri: row.canonical_url,
+            mediaType: row.media_type,
+            metadata: parseMetadataJson(row.metadata_json),
+            labels: labelsByItem.get(row.id) ?? {},
+        }));
+    }
+
+    /** Every stored decision answer for `ids`, keyed by item id, in decision-id order. */
+    private async labelsFor(ids: readonly string[]): Promise<Map<string, Record<string, string>>> {
+        const placeholders = ids.map(() => '?').join(', ');
+        const rows = await this.adapter.queryAll<{ item_id: string; decision_id: string; value: string }>(
+            `SELECT item_id, decision_id, value FROM labels WHERE item_id IN (${placeholders}) ORDER BY item_id, decision_id`,
+            ...ids,
+        );
+        const byItem = new Map<string, Record<string, string>>();
+        for (const row of rows) {
+            const labels = byItem.get(row.item_id) ?? {};
+            labels[row.decision_id] = row.value;
+            byItem.set(row.item_id, labels);
+        }
+        return byItem;
     }
 
     /** Id → stored `content_hash` for the ids that already exist. */

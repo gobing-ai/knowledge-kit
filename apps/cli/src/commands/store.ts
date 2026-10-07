@@ -1,6 +1,16 @@
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { type Content, ContentSchema, type Doc, DocListSchema } from '@gobing-ai/kk-core';
-import { type ItemsDao, itemId, openStore, resolveStorePath } from '@gobing-ai/kk-store';
+import {
+    compileProfile,
+    type ExtractProfile,
+    type ItemsDao,
+    itemId,
+    openStore,
+    ProfileInvalidError,
+    parseProfile,
+    resolveStorePath,
+    type StoredDoc,
+} from '@gobing-ai/kk-store';
 import {
     createNodeFileSystem,
     type FileSystem,
@@ -26,6 +36,26 @@ const LABEL_PLUGIN = 'episode-plan-gen';
 
 /** Scratch dir under the `--new-ids` directory: the heuristic's in/out files and one evidence body per item. */
 const LABEL_SCRATCH_DIR = 'label';
+
+/**
+ * Checkout-relative location of the topic profiles (R1). `kk store extract --topic t` reads
+ * `<profile dir>/<t>.yaml` from the working checkout first, then from this module's own checkout
+ * — the same two-candidate resolution `kk schedule render` uses for its templates, so a topic
+ * works from any cwd that carries the profiles and from a package install that does not.
+ */
+const PROFILE_DIR_REL = 'plugins/kk/decisions/extract';
+
+/** Package/checkout root: this module sits at `<root>/apps/cli/src/commands/`. */
+const CHECKOUT_ROOT = resolve(import.meta.dir, '../../../..');
+
+/** A topic is a file-name slug, never a path — `..` or a separator must not escape the profile dir. */
+const TOPIC_SLUG = /^[a-z0-9][a-z0-9-]*$/;
+
+/** `--window` duration units, in milliseconds. */
+const WINDOW_UNITS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+
+/** Default `kk store extract --window`: the daily workflow's 24h pool (design §4). */
+const DEFAULT_EXTRACT_WINDOW = '24h';
 
 /** The category decision id and the choice labels the catalog declares for it (R1). */
 const CATEGORY_DECISION_ID = 'kk-item-category';
@@ -163,11 +193,11 @@ async function lockReleaseAction(options: LockReleaseOptions): Promise<void> {
  * ts-runtime file seam plus the executor's DocListSchema wording), so `kk store ingest`
  * rejects the same shapes `kk executor fan-in` rejects.
  */
-async function readDocList(fs: FileSystem, path: string): Promise<Doc[]> {
+async function readDocList(fs: FileSystem, path: string, label: string): Promise<Doc[]> {
     if (!(await fs.exists(path))) {
         throw new Error(`input file not found: ${path}`);
     }
-    return readPluginJson(fs, path, DocListSchema, `Store ingest input '${path}'`, 'is not a Doc[]');
+    return readPluginJson(fs, path, DocListSchema, label, 'is not a Doc[]');
 }
 
 /**
@@ -216,7 +246,7 @@ async function writeNewIds(fs: FileSystem, path: string, ids: readonly string[])
 async function ingestAction(options: IngestOptions): Promise<void> {
     try {
         const fs = createNodeFileSystem();
-        const docs = await readDocList(fs, options.in);
+        const docs = await readDocList(fs, options.in, `Store ingest input '${options.in}'`);
         const dbPath = await resolveStorePath(resolveKkConfigPath(), options.db);
         const store = await openStore({ path: dbPath });
         try {
@@ -673,14 +703,161 @@ async function labelAction(options: LabelOptions): Promise<void> {
     }
 }
 
+/** Options accepted by `kk store extract`. */
+interface ExtractOptions {
+    topic: string;
+    window: string;
+    limit?: string;
+    excludeUsed?: string;
+    out: string;
+    db?: string;
+}
+
+/** Options accepted by `kk store mark-used`. */
+interface MarkUsedOptions {
+    workflow: string;
+    run: string;
+    in: string;
+    db?: string;
+}
+
+/**
+ * `--window <n><s|m|h|d>` as milliseconds. A duration without a unit, a zero window or an
+ * unparseable value is a caller mistake — a silently defaulted window would change the pool.
+ */
+function parseWindow(raw: string): number {
+    const match = /^(\d+)([smhd])$/.exec(raw.trim());
+    const amount = match?.[1];
+    const unit = match?.[2];
+    if (amount === undefined || unit === undefined) {
+        throw new Error(`--window must be '<n>s|m|h|d' (e.g. 24h), got '${raw}'`);
+    }
+    const milliseconds = Number(amount) * (WINDOW_UNITS[unit] ?? 0);
+    if (milliseconds <= 0) {
+        throw new Error(`--window must be greater than zero, got '${raw}'`);
+    }
+    return milliseconds;
+}
+
+/** `--limit <n>` as a positive integer; `0` or a fraction is a caller mistake, never an empty pool. */
+function parseLimit(raw: string): number {
+    const limit = Number(raw);
+    if (!Number.isInteger(limit) || limit < 1) {
+        throw new Error(`--limit must be a positive integer, got '${raw}'`);
+    }
+    return limit;
+}
+
+/**
+ * The profile file for `topic`, from the working checkout first and this module's own checkout
+ * second (a package install carries the profiles beside the CLI).
+ */
+async function resolveProfilePath(fs: FileSystem, topic: string): Promise<string> {
+    if (!TOPIC_SLUG.test(topic)) {
+        throw new Error(`--topic must be a lowercase slug (e.g. ai-news), got '${topic}'`);
+    }
+    const candidates = [
+        resolve(process.cwd(), PROFILE_DIR_REL, `${topic}.yaml`),
+        resolve(CHECKOUT_ROOT, PROFILE_DIR_REL, `${topic}.yaml`),
+    ];
+    for (const path of candidates) {
+        if (await fs.exists(path)) return path;
+    }
+    throw new Error(`no profile for topic '${topic}': expected one of ${candidates.join(' or ')}`);
+}
+
+/**
+ * One stored item as the pool's `Doc` — the fan-in `blended.json` shape plus `metadata.labels`
+ * (decision id → stored value), so episode-plan-gen consumes the pool unchanged (R2).
+ */
+function toPoolDoc(item: StoredDoc): Doc {
+    return {
+        id: item.id,
+        title: item.title,
+        body: item.body,
+        ...(item.sourceUri === null ? {} : { sourceUri: item.sourceUri }),
+        ...(item.mediaType === null ? {} : { mediaType: item.mediaType }),
+        metadata: { ...item.metadata, labels: item.labels },
+    };
+}
+
+/**
+ * `kk store extract --topic <t> [--window 24h] [--limit n] [--exclude-used <workflow>]`
+ * `--out <Doc[].json> [--db <path>]` — compile the topic profile into one store query, write the
+ * pool as `Doc[]` and print `{count}` (R2/R3).
+ *
+ * The store is only ever read: extract spawns no plugin, so it neither ingests nor labels (R6).
+ * An empty pool writes `[]`, prints `{"count":0}` and still exits 0 — the caller conditions on
+ * `count`, not on the exit code. A profile the compiler rejects exits 1 with
+ * `kk.store.profile.invalid`; every other failure is `kk.store.extract.failed`.
+ */
+async function extractAction(options: ExtractOptions): Promise<void> {
+    try {
+        const fs = createNodeFileSystem();
+        const profilePath = await resolveProfilePath(fs, options.topic);
+        const profile: ExtractProfile = parseProfile(await fs.readFile(profilePath));
+        if (profile.topic !== options.topic) {
+            throw new ProfileInvalidError(
+                `profile '${profilePath}' declares topic '${profile.topic}', not '${options.topic}'`,
+            );
+        }
+        const query = compileProfile(profile, {
+            windowMs: parseWindow(options.window),
+            now: Date.now(),
+            ...(options.limit === undefined ? {} : { limit: parseLimit(options.limit) }),
+            ...(options.excludeUsed === undefined ? {} : { excludeWorkflow: options.excludeUsed }),
+        });
+        const dbPath = await resolveStorePath(resolveKkConfigPath(), options.db);
+        const store = await openStore({ path: dbPath });
+        try {
+            const docs = (await store.items.selectByProfile(query)).map(toPoolDoc);
+            await fs.ensureDir(dirname(options.out));
+            await fs.writeFile(options.out, `${JSON.stringify(docs, null, 2)}\n`);
+            consoleOutput.write(JSON.stringify({ count: docs.length }));
+        } finally {
+            await store.close();
+        }
+    } catch (error) {
+        failLoud(error instanceof ProfileInvalidError ? 'kk.store.profile.invalid' : 'kk.store.extract.failed', error);
+    }
+}
+
+/**
+ * `kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]` — record every
+ * item the run used in `episode_usage`, so a later `extract --exclude-used` skips them (R4).
+ *
+ * Rows are keyed `(item_id, workflow, run_id)`, so a retried run overwrites rather than duplicates,
+ * and the input's duplicate ids collapse to one write. The Doc's own `id` is the store id — extract
+ * emits it and episode-plan-gen spreads it, so both of the workflow's inputs carry it verbatim.
+ */
+async function markUsedAction(options: MarkUsedOptions): Promise<void> {
+    try {
+        const fs = createNodeFileSystem();
+        const docs = await readDocList(fs, options.in, `Store mark-used input '${options.in}'`);
+        const dbPath = await resolveStorePath(resolveKkConfigPath(), options.db);
+        const store = await openStore({ path: dbPath });
+        try {
+            const ids = [...new Set(docs.map((doc) => doc.id))];
+            for (const id of ids) {
+                await store.usage.markUsed({ itemId: id, workflow: options.workflow, runId: options.run });
+            }
+            consoleOutput.write(JSON.stringify({ marked: ids.length }));
+        } finally {
+            await store.close();
+        }
+    } catch (error) {
+        failLoud('kk.store.mark-used.failed', error);
+    }
+}
+
 /**
  * Register the `store` command group — the kk SQLite store surface.
  *
  * `migrate` brings the schema up; `lock` is the single-flight guard the scheduled
  * `kk-collect` tick takes before collecting; `ingest` is the write path that turns one run's
  * collected `Doc[]` into `items` rows plus its `collect_runs` provenance; `label` is the
- * heuristic-first decision pass over the ids `ingest` filed. The extract/mark-used verbs land on
- * the same noun as their store DAOs ship.
+ * heuristic-first decision pass over the ids `ingest` filed; `extract` is the read path that
+ * turns one topic profile into the episode pool; `mark-used` writes the cross-day dedup ledger.
  */
 export function registerStoreCommand(program: Command): void {
     const store = program.command('store').description('Operate the knowledge-kit store (SQLite)');
@@ -732,4 +909,28 @@ export function registerStoreCommand(program: Command): void {
         )
         .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
         .action(labelAction);
+
+    store
+        .command('extract')
+        .description('Select a topic pool from the stored labels via a profile; writes Doc[] and prints {count}')
+        .requiredOption('--topic <topic>', `Topic profile name (reads ${PROFILE_DIR_REL}/<topic>.yaml)`)
+        .option(
+            '--window <duration>',
+            "Only items first seen within this window ('<n>s|m|h|d')",
+            DEFAULT_EXTRACT_WINDOW,
+        )
+        .option('--limit <n>', 'Pool cap (default: the profile limit, else 20)')
+        .option('--exclude-used <workflow>', 'Exclude items this workflow already used (episode_usage)')
+        .requiredOption('--out <path>', 'Output Doc[] JSON path (the fan-in blended.json shape)')
+        .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
+        .action(extractAction);
+
+    store
+        .command('mark-used')
+        .description('Record the items one run used in episode_usage (idempotent); prints {marked}')
+        .requiredOption('--workflow <name>', 'Workflow that used the items (the dedup key)')
+        .requiredOption('--run <id>', 'Run id that used the items')
+        .requiredOption('--in <path>', 'Input Doc[] JSON file (the extracted pool or the plan)')
+        .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
+        .action(markUsedAction);
 }

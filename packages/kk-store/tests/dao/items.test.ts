@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import type { Doc } from '@gobing-ai/kk-core';
-import { itemId } from '../../src/index';
+import { itemId, type Store } from '../../src/index';
+import type { ProfileQuery } from '../../src/profile';
 import { cleanupTempState, DOC_WITH_URL, DOC_WITHOUT_URL, makeTempDir, openTempStore, sha256Hex } from '../helpers';
 
 afterAll(cleanupTempState);
@@ -105,5 +106,151 @@ describe('ItemsDao.upsertDocs', () => {
             unchanged: 0,
             newIds: [],
         });
+    });
+});
+
+/**
+ * Failure-first list for `ItemsDao.selectByProfile` — before the code:
+ *
+ * 1. A `where` predicate is ignored, so an item outside the category or below the score returns.
+ * 2. An item missing a `where` decision's `labels` row leaks into the pool (the join must be inner).
+ * 3. An item with `first_seen_at` before `now - windowMs` returns.
+ * 4. `--exclude-used` does not exclude: a used item re-enters the pool.
+ * 5. `excludeWorkflow` also excludes another workflow's usage (it must match that workflow exactly).
+ * 6. `limit` is ignored, so a capped pool is not capped.
+ * 7. Order terms are dropped — the decision ordering, the `first_seen_at` ordering and the
+ *    `i.id ASC` tiebreak must all hold.
+ * 8. A decision named only by `order` drops the item (that join must be a left join).
+ * 9. `labels` are missing from the returned row, or a label value is not the stored one.
+ * 10. `metadata_json` is not parsed into `metadata`.
+ * 11. An empty pool throws instead of returning `[]`.
+ */
+describe('ItemsDao.selectByProfile', () => {
+    /** The four seeded items, keyed by the slug their ids are derived from. */
+    const SEED: Record<'newsA' | 'newsB' | 'research' | 'stale', Doc> = {
+        newsA: { id: 'news-a', title: 'Item news-a', body: 'body of news-a', sourceUri: 'https://example.com/news-a' },
+        newsB: { id: 'news-b', title: 'Item news-b', body: 'body of news-b', sourceUri: 'https://example.com/news-b' },
+        research: { id: 'research', title: 'Item research', body: 'body of research', metadata: { source: 'rss' } },
+        stale: { id: 'stale', title: 'Item stale', body: 'body of stale', sourceUri: 'https://example.com/stale' },
+    };
+
+    /** Seed the four items at distinct first-seen stamps plus their decision labels. */
+    async function seed(): Promise<Store> {
+        const { store } = await openTempStore(makeTempDir(), 'profile.db');
+        await store.items.upsertDocs('run-1', [SEED.stale], 1);
+        await store.items.upsertDocs('run-1', [SEED.newsA], 900);
+        await store.items.upsertDocs('run-1', [SEED.newsB], 950);
+        await store.items.upsertDocs('run-1', [SEED.research], 960);
+        const label = (doc: Doc, decisionId: string, value: string) =>
+            store.labels.upsertLabel({
+                itemId: itemId(doc),
+                decisionId,
+                value,
+                maker: 'heuristic',
+                source: 'heuristic',
+            });
+        for (const [doc, category, quality, urgency] of [
+            [SEED.newsA, 'ai-news', '4', '2'],
+            [SEED.newsB, 'ai-industry', '3', '5'],
+            [SEED.research, 'ai-research', '4', '3'],
+            [SEED.stale, 'ai-news', '5', '5'],
+        ] as const) {
+            await label(doc, 'kk-item-category', category);
+            await label(doc, 'kk-item-quality', quality);
+            await label(doc, 'kk-item-urgency', urgency);
+        }
+        return store;
+    }
+
+    /** Design §4's ai-news profile, compiled: a 100 ms window ending at 1000, so `stale` falls outside. */
+    const AI_NEWS_QUERY: ProfileQuery = {
+        where: [
+            { decisionId: 'kk-item-category', op: 'in', values: ['ai-news', 'ai-industry'] },
+            { decisionId: 'kk-item-quality', op: 'gte', value: 3 },
+        ],
+        order: [
+            { decisionId: 'kk-item-urgency', direction: 'desc' },
+            { column: 'first_seen_at', direction: 'desc' },
+        ],
+        windowMs: 100,
+        now: 1_000,
+        limit: 20,
+    };
+
+    it('selects the labelled pool in order with labels and parsed metadata inlined', async () => {
+        const store = await seed();
+        const pool = await store.items.selectByProfile(AI_NEWS_QUERY);
+
+        expect(pool.map((item) => item.id)).toEqual([itemId(SEED.newsB), itemId(SEED.newsA)]);
+        expect(pool[0]?.title).toBe('Item news-b');
+        expect(pool[0]?.sourceUri).toBe('https://example.com/news-b');
+        expect(pool[0]?.body).toBe('body of news-b');
+        expect(pool[0]?.metadata).toEqual({});
+        expect(pool[0]?.labels).toEqual({
+            'kk-item-category': 'ai-industry',
+            'kk-item-quality': '3',
+            'kk-item-urgency': '5',
+        });
+    });
+
+    it('keeps a url-less item metadata and excludes one missing a where-key label', async () => {
+        const store = await seed();
+        const research = await store.items.selectByProfile({
+            ...AI_NEWS_QUERY,
+            where: [{ decisionId: 'kk-item-category', op: 'in', values: ['ai-research'] }],
+        });
+        expect(research.map((item) => item.metadata)).toEqual([{ source: 'rss' }]);
+        expect(research[0]?.sourceUri).toBeNull();
+
+        const missing = await store.items.selectByProfile({
+            ...AI_NEWS_QUERY,
+            where: [{ decisionId: 'kk-item-importance', op: 'gte', value: 1 }],
+        });
+        expect(missing).toEqual([]);
+    });
+
+    it('excludes an item outside the window', async () => {
+        const store = await seed();
+        const pool = await store.items.selectByProfile(AI_NEWS_QUERY);
+        expect(pool.map((item) => item.id)).not.toContain(itemId(SEED.stale));
+
+        const all = await store.items.selectByProfile({ ...AI_NEWS_QUERY, windowMs: 10_000 });
+        expect(all.map((item) => item.id)).toContain(itemId(SEED.stale));
+    });
+
+    it('keeps an item whose order-only decision has no label row', async () => {
+        const store = await seed();
+        const pool = await store.items.selectByProfile({
+            ...AI_NEWS_QUERY,
+            order: [{ decisionId: 'kk-item-impact', direction: 'asc' }],
+        });
+        expect(pool).toHaveLength(2);
+        expect(pool.map((item) => item.labels['kk-item-impact'])).toEqual([undefined, undefined]);
+    });
+
+    it('excludes items the workflow already used, and only that workflow', async () => {
+        const store = await seed();
+        await store.usage.markUsed({
+            itemId: itemId(SEED.newsB),
+            workflow: 'kk-daily-ai-voice2',
+            runId: 'run-9',
+        });
+
+        const excluded = await store.items.selectByProfile({ ...AI_NEWS_QUERY, excludeWorkflow: 'kk-daily-ai-voice2' });
+        expect(excluded.map((item) => item.id)).toEqual([itemId(SEED.newsA)]);
+
+        const other = await store.items.selectByProfile({ ...AI_NEWS_QUERY, excludeWorkflow: 'another-workflow' });
+        expect(other).toHaveLength(2);
+    });
+
+    it('applies the limit and returns [] for an empty pool', async () => {
+        const store = await seed();
+        expect(await store.items.selectByProfile({ ...AI_NEWS_QUERY, limit: 1 })).toHaveLength(1);
+        expect(
+            await store.items.selectByProfile({
+                ...AI_NEWS_QUERY,
+                where: [{ decisionId: 'kk-item-category', op: 'in', values: ['non-ai'] }],
+            }),
+        ).toEqual([]);
     });
 });
