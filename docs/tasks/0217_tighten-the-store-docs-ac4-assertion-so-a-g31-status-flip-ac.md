@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Tighten the store-docs AC4 assertion so a G31 status flip actually fails it
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-07T20:52:26.659Z
-updated_at: "2026-10-07T21:18:23.055Z"
+updated_at: "2026-10-07T23:43:16.941Z"
 feature_id: G
 
 priority: P3
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 0.5
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0217-verdict.json
 ---
 
 ## 0217. Tighten the store-docs AC4 assertion so a G31 status flip actually fails it
@@ -45,11 +47,11 @@ test tidy-up would misstate G31's status. No G31 behaviour is reopened by this t
 
 ### Requirements
 
-- [ ] R1. Case 4 of `apps/cli/tests/store-docs.test.ts` asserts that 05's G31 **status cell** says `done` (substring, case-insensitive — catches `✅ done`) **if and only if** the G31 feature file's frontmatter `status` is `done`. The stale `toContain('0213')` / `toContain('backlog')` assertions are removed.
-- [ ] R2. `docs/05_FEATURES.md`'s G31 row is synced to corpus truth: status cell `✅ done`; notes cell records 0206/0208/0209/0210/0213 all done (no "NOT done", no "still `backlog`"); ADR-030 **shipped** and the satellite design link kept.
-- [ ] R3. Mutation probe: temporarily set the G31 status cell back to `⏳ active` → case 4 goes red; restore → green. Probe output recorded in Testing.
-- [ ] R4. The test header's failure-first item 4 is rewritten to state the agreement invariant and why it is a substring match bound to the feature file (not a bare-token compare, not a hard-coded task WBS), so the next editor does not relax it.
-- [ ] R5. `bun test apps/cli/tests/store-docs.test.ts`, `bun run lint`, and `bun run test-pre-check` pass.
+- [x] R1. Case 4 of `apps/cli/tests/store-docs.test.ts` asserts that 05's G31 **status cell** says `done` (substring, case-insensitive — catches `✅ done`) **if and only if** the G31 feature file's frontmatter `status` is `done`. The stale `toContain('0213')` / `toContain('backlog')` assertions are removed.
+- [x] R2. `docs/05_FEATURES.md`'s G31 row is synced to corpus truth: status cell `✅ done`; notes cell records 0206/0208/0209/0210/0213 all done (no "NOT done", no "still `backlog`"); ADR-030 **shipped** and the satellite design link kept.
+- [x] R3. Mutation probe: temporarily set the G31 status cell back to `⏳ active` → case 4 goes red; restore → green. Probe output recorded in Testing.
+- [x] R4. The test header's failure-first item 4 is rewritten to state the agreement invariant and why it is a substring match bound to the feature file (not a bare-token compare, not a hard-coded task WBS), so the next editor does not relax it.
+- [x] R5. `bun test apps/cli/tests/store-docs.test.ts`, `bun run lint`, and `bun run test-pre-check` pass.
 
 **Out of scope:** a generic 05-vs-corpus drift rule for all rows (file separately if wanted); re-pointing task 0210's AC4 evidence line numbers (`store-docs.test.ts:67-78`) — 0210 is `done` and its record is historical; the parent `G` row's status.
 
@@ -126,15 +128,49 @@ Keep the existing comment that the notes cell legitimately contains "done" (so o
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `apps/cli/tests/store-docs.test.ts`
+    - Header failure-first item 4 rewritten: states the two-way agreement invariant, why the cell compare is a substring match (05 spells completed rows `✅ done`), and that no task WBS is hard-coded (R4).
+    - Case 4 renamed to `05_FEATURES records G31's status as the feature file does` (R1).
+    - Case body reads `docs/features/G31_*.md` frontmatter via `readdirSync` + `readFileSync` + `/^status:\s*"?(\w+)"?/m`, then asserts `statusCell.includes('done')` iff `featureStatus === 'done'`; stale `toContain('0213')`/`toContain('backlog')` removed (R1).
+- `docs/05_FEATURES.md:98`
+    - G31 row synced: status cell `✅ done`; notes record tasks `0206`/`0208`/`0209`/`0210`/`0213` as done; ADR-030 **shipped** + satellite link kept; column layout and `\|` escapes preserved (R2).
+
+Rationale: the old bare-token `not.toBe('done')` could not bind on `✅ done`, and the stale contains-assertions enforced the expired "0213 outstanding" condition — agreement with the feature file is the invariant clause 4 was always protecting. Test change and row sync land in one commit so the tree is never red in between.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | apps/cli/tests/store-docs.test.ts:71-86 — two-way agreement (statusCell includes done iff feature frontmatter status is done), stale 0213/backlog assertions removed |
+| R2 | MET | docs/05_FEATURES.md:98 — G31 row status cell ✅ done; notes record 0206/0208/0209/0210/0213 done; ADR-030 shipped + satellite kept |
+| R3 | MET | Mutation probe 2026-10-07: cell set to ⏳ active → case 4 fail (3 pass / 1 fail); restored → 4 pass / 0 fail (bun test apps/cli/tests/store-docs.test.ts) |
+| R4 | MET | apps/cli/tests/store-docs.test.ts:19-25 — header item 4 states the agreement invariant, substring rationale, feature-file binding, no hard-coded WBS |
+| R5 | MET | bun test 4 pass / 0 fail; bun run lint exit 0; bun run test-pre-check 51/51 rules pass |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — The 05 G31 status cell must agree with the G31 feature status (req: R1, R4) | MET | test | apps/cli/tests/store-docs.test.ts:71-86 |
+| Scenario: AC2 — The 05 G31 row records G31 as done (req: R2) | MET | test | apps/cli/tests/store-docs.test.ts:84 pins the cell against docs/05_FEATURES.md:98 |
+| Scenario: AC3 — A mutation of the status cell turns the case red (req: R3) | MET | test | mutation probe: ⏳ active → (fail) 3 pass / 1 fail; restored → 4 pass / 0 fail |
+| Scenario: AC4 — Gates stay clean (req: R5) | MET | command | bun run lint exit 0; bun run test-pre-check 51/51 rules pass; bun test 4 pass / 0 fail |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+SECUA + traceability review of the worktree diff (2026-10-07): **PASS** — R1–R5 all MET (see Testing), no P1/P2 findings.
+
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P4 | correctness | apps/cli/tests/store-docs.test.ts:71-86 | Miss paths fail fast: undefined featureFile/featureStatus hit clean toBeDefined failures before any secondary error |
+| P4 | robustness | docs/features/ | A second G31_* file would make find() pick the first match; none exists (accepted per Design) |
+| P4 | hygiene | — | No suppressions, no skipped tests, no any-types; mutation probe binds the assertion both ways |
+
+Disposition: committed on `sp/run-0217-ac6d372`, FF-merged to `main`.
 
 ### References
 
@@ -145,4 +181,7 @@ Keep the existing comment that the notes cell legitimately contains "done" (so o
 ### History
 
 - 2026-10-07T21:18:23.055Z backlog → todo (system)
+- 2026-10-07T23:41:39.527Z todo → wip (system)
+- 2026-10-07T23:43:15.084Z wip → testing (system)
+- 2026-10-07T23:43:16.757Z testing → done (system)
 
