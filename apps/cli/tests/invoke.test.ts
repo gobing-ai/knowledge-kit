@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
-import { pluginEnvFromConfig, runInvoke, spawnPluginEntryAsync } from '../src/invoke';
+import { pluginEnvFromConfig, probeVerdict, runInvoke, spawnPluginEntryAsync } from '../src/invoke';
 import { captureOutput, silenceOutput } from './capture';
 
 function pluginDirOf(root: string, kind: PluginKind, name: string): string {
@@ -900,6 +900,25 @@ setInterval(() => {}, 1000);
             });
 
             expect(res).toBe(1);
+        });
+    });
+});
+
+describe('probeVerdict (ADR-032 probe contract)', () => {
+    it('carries the detail of a final error line so the operator sees the cause', () => {
+        const out = 'human hint\n{"status":"error","detail":"set SUBSTACK_PUBLICATION_URL"}\n';
+        expect(probeVerdict(2, out)).toEqual({ status: 'error', detail: 'probe exit 2: set SUBSTACK_PUBLICATION_URL' });
+    });
+
+    it('never upgrades a verdict whose exit code disagrees with its status', () => {
+        expect(probeVerdict(0, '{"status":"error","detail":"boom"}').status).toBe('error');
+        expect(probeVerdict(2, '{"status":"verified"}')).toEqual({ status: 'error', detail: 'probe exit 2' });
+    });
+
+    it('keeps the line text out of the detail when the final line is not JSON', () => {
+        expect(probeVerdict(2, '{"status":"error"}\npage text with a token')).toEqual({
+            status: 'error',
+            detail: 'probe exit 2 (malformed probe output)',
         });
     });
 });

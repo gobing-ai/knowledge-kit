@@ -188,8 +188,10 @@ with the artifact preserved.
 `KK_PLUGIN_KIND`/`KK_PLUGIN_NAME` env. Records without `check` are reported `unsupported` without spawning
 (`status` still spawns no probe at all — R2). The last non-empty stdout line is parsed as
 `{ status, profileDir?, detail }`; `verified`/`refused` are trusted only when the probe exited `0`/`1`, any
-other combination (crash, timeout, unknown status string, missing/malformed final line) collapses to `error`
-with detail `probe exit <n> (malformed probe output)` — raw probe stdout/stderr is never echoed (R5).
+other combination collapses to `error`. A missing/malformed final line gives detail
+`probe exit <n> (malformed probe output)`; a well-formed `{"status":"error","detail":…}` line (the probes'
+exit-2 path, e.g. substack's unset `SUBSTACK_PUBLICATION_URL`) gives `probe exit <n>: <detail>`; any other
+status/exit mismatch gives `probe exit <n>`. Raw probe stdout/stderr is never echoed (R5).
 Probes run sequentially. Exit code: `0` when every verdict is `verified` or `unsupported`, `1` when any probe
 is `refused`/`error`. Under `--json`: `{ ok, plugins: [{ name, kind, status, profileDir?, detail }] }` where
 `ok` mirrors the exit code.

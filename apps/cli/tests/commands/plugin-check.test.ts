@@ -192,6 +192,32 @@ describe('six browser channels declare probes (0216, AC1)', () => {
             expect(row?.check).toContain(join('plugins', 'publishings', name, 'src', 'profile-check.ts'));
         }
     });
+
+    it('substack with no publication URL reports error naming SUBSTACK_PUBLICATION_URL (0216, AC4)', async () => {
+        const saved = { url: process.env.SUBSTACK_PUBLICATION_URL, config: process.env.KK_CONFIG };
+        delete process.env.SUBSTACK_PUBLICATION_URL;
+        // An absent config file keeps the operator's real publication URL out of the probe env.
+        process.env.KK_CONFIG = join(tmpdir(), 'kk-no-such-config.yaml');
+        try {
+            const { code, out } = await runCaptured([
+                'plugin',
+                'check',
+                '--json',
+                '--plugins-root',
+                REAL_ROOT,
+                'substack-pub',
+            ]);
+            const report = JSON.parse(out) as CheckJson;
+            expect(code).not.toBe(0);
+            expect(rowFor(report, 'substack-pub')?.status).toBe('error');
+            expect(rowFor(report, 'substack-pub')?.detail).toContain('SUBSTACK_PUBLICATION_URL');
+        } finally {
+            if (saved.url === undefined) delete process.env.SUBSTACK_PUBLICATION_URL;
+            else process.env.SUBSTACK_PUBLICATION_URL = saved.url;
+            if (saved.config === undefined) delete process.env.KK_CONFIG;
+            else process.env.KK_CONFIG = saved.config;
+        }
+    });
 });
 
 describe('manifest check entry missing on disk (review triage, 0215)', () => {

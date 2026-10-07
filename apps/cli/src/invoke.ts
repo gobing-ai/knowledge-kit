@@ -245,12 +245,13 @@ export function probeVerdict(exitCode: number, stdout: string): ProbeVerdict {
             ...(typeof fields?.detail === 'string' ? { detail: fields.detail } : {}),
         };
     }
-    return {
-        status: 'error',
-        ...(status === undefined
-            ? { detail: `probe exit ${exitCode} (malformed probe output)` }
-            : { detail: `probe exit ${exitCode}` }),
-    };
+    if (status === undefined) {
+        return { status: 'error', detail: `probe exit ${exitCode} (malformed probe output)` };
+    }
+    // A deliberate `error` verdict's detail is probe-authored (e.g. a missing env var), unlike raw
+    // stdout, so it is the one error-path text worth showing the operator.
+    const cause = status === 'error' && typeof fields?.detail === 'string' ? `: ${fields.detail}` : '';
+    return { status: 'error', detail: `probe exit ${exitCode}${cause}` };
 }
 
 /**

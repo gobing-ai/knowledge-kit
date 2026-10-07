@@ -50,12 +50,14 @@ inherits stdio. (Planned-stage prose listed `--profile`; the shipped contract ke
 probe — kk never chooses the profile dir.)
 
 - Exit codes: 0 means verified, 1 means refused, 2 means error.
-- The last non-empty stdout line is `{ "status": "...", "profileDir"?: "...", "detail": "..." }`.
+- The last non-empty stdout line is `{ "status": "...", "profileDir"?: "...", "detail": "..." }`, on the exit-2
+  usage path too (`{"status":"error","detail":…}`), so kk can show the cause.
 - kk spawns the probe with `process.execPath` and the same operator-config env as `kk executor run`
   (`pluginEntryCmd` / `pluginEntryEnv`, `apps/cli/src/invoke.ts:115-122`). Channel settings such as
   `SUBSTACK_PUBLICATION_URL` therefore reach the probe without new flags.
 - `runProfileCli` (`packages/publish-harness/src/browser.ts:238`) implements this contract, including the
-  0216 `--headed` flag. 0216 moved xhs-pub and wechatmp-pub onto it (previously bespoke scripts), gave all
+  0216 `--headed` flag. xhs-pub and wechatmp-pub keep bespoke CLIs (xhs draws on the ADR-025 automation
+  budget; wechatmp checks its own console session) that follow the same contract. 0216 gave all
   six channels a manifest `check` entry, and set `checkHeadedOnly: true` for x-pub (X login-walls headless
   article loads, so the headless pass is dead weight that blew kk's 30s probe-kill).
 
@@ -64,7 +66,8 @@ probe — kk never chooses the profile dir.)
 - `check` never clicks a control and never creates a profile, because a headless launch refuses a missing profile
   (`ensureProfileDir`, 0214).
 - kk echoes only `status`, `profileDir` and `detail`. Raw probe stdout and stderr, cookies and tokens are never printed.
-  A malformed final line becomes `error` with the exit code, not the line text.
+  A malformed final line becomes `error` with the exit code, not the line text; only a well-formed `error`
+  verdict's probe-authored `detail` is shown.
 - Headless is the default; `--headed` is opt-in. Probes run sequentially because browser profiles are single-writer.
 
 ## Out of scope
@@ -80,4 +83,6 @@ probe — kk never chooses the profile dir.)
 - 0216: a live `kk plugin check --kind publish --json` run against the operator profiles recorded
   `.spur/run/e2e/E93-plugin-check-live.json`: infoq/juejin/wechatmp/x `verified`, xhs `refused` by the 2h
   automation budget (with the operator hint), substack `error` (exit 2 — `SUBSTACK_PUBLICATION_URL` unset),
-  non-browser channels `unsupported`. No secrets in the artifact.
+  non-browser channels `unsupported`. No secrets in the artifact. The E92/E93 re-verify (2026-10-07) made the
+  substack row name its cause: `.spur/run/e2e/E93-substack-recheck.json` reports `probe exit 2: substack
+  publication URL is required: set SUBSTACK_PUBLICATION_URL …`.
