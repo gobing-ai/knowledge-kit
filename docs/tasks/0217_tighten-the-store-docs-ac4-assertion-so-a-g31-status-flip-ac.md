@@ -4,7 +4,7 @@ name: Tighten the store-docs AC4 assertion so a G31 status flip actually fails i
 status: done
 template: feature-impl
 created_at: 2026-10-07T20:52:26.659Z
-updated_at: "2026-10-07T23:43:16.941Z"
+updated_at: "2026-10-07T23:55:40.747Z"
 feature_id: G
 
 priority: P3
@@ -146,18 +146,18 @@ Rationale: the old bare-token `not.toBe('done')` could not bind on `✅ done`, a
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | apps/cli/tests/store-docs.test.ts:71-86 — two-way agreement (statusCell includes done iff feature frontmatter status is done), stale 0213/backlog assertions removed |
-| R2 | MET | docs/05_FEATURES.md:98 — G31 row status cell ✅ done; notes record 0206/0208/0209/0210/0213 done; ADR-030 shipped + satellite kept |
-| R3 | MET | Mutation probe 2026-10-07: cell set to ⏳ active → case 4 fail (3 pass / 1 fail); restored → 4 pass / 0 fail (bun test apps/cli/tests/store-docs.test.ts) |
-| R4 | MET | apps/cli/tests/store-docs.test.ts:19-25 — header item 4 states the agreement invariant, substring rationale, feature-file binding, no hard-coded WBS |
-| R5 | MET | bun test 4 pass / 0 fail; bun run lint exit 0; bun run test-pre-check 51/51 rules pass |
+| R1 | MET | `apps/cli/tests/store-docs.test.ts:74-86` — status cell includes done iff G31 feature frontmatter status is done; hard-coded toContain('0213') removed by re-verify fix 4a520691; featureFile guard added 60dd476a |
+| R2 | MET | `docs/05_FEATURES.md:98` — G31 status cell ✅ done; notes record 0206/0208/0209/0210/0213 done; ADR-030 shipped + satellite link kept |
+| R3 | MET | Mutation probe 2026-10-07 re-verify on final code: cell set to ⏳ active → 4 pass / 1 fail (case 4 red); restored → 5 pass / 0 fail (bun test apps/cli/tests/store-docs.test.ts) |
+| R4 | MET | `apps/cli/tests/store-docs.test.ts:19-25` — header item 4 states the agreement invariant, substring rationale (✅ done), feature-file binding, no task WBS (rewritten in 4a520691) |
+| R5 | MET | bun test store-docs 5 pass / 0 fail; bun run lint exit 0; bun run test-pre-check All 51 rules passed |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: AC1 — The 05 G31 status cell must agree with the G31 feature status (req: R1, R4) | MET | test | apps/cli/tests/store-docs.test.ts:71-86 |
-| Scenario: AC2 — The 05 G31 row records G31 as done (req: R2) | MET | test | apps/cli/tests/store-docs.test.ts:84 pins the cell against docs/05_FEATURES.md:98 |
-| Scenario: AC3 — A mutation of the status cell turns the case red (req: R3) | MET | test | mutation probe: ⏳ active → (fail) 3 pass / 1 fail; restored → 4 pass / 0 fail |
-| Scenario: AC4 — Gates stay clean (req: R5) | MET | command | bun run lint exit 0; bun run test-pre-check 51/51 rules pass; bun test 4 pass / 0 fail |
+| Scenario: AC1 — The 05 G31 status cell must agree with the G31 feature status (req: R1, R4) | MET | test | `apps/cli/tests/store-docs.test.ts:74-86` |
+| Scenario: AC2 — The 05 G31 row records G31 as done (req: R2) | MET | test | `apps/cli/tests/store-docs.test.ts:85` binds `docs/05_FEATURES.md:98` status cell to G31 status done |
+| Scenario: AC3 — A mutation of the status cell turns the case red (req: R3) | MET | test | mutation probe: ⏳ active → 4 pass / 1 fail; restored → 5 pass / 0 fail |
+| Scenario: AC4 — Gates stay clean (req: R5) | MET | command | bun run lint exit 0; bun run test-pre-check 51/51 rules pass; bun test 5 pass / 0 fail |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
