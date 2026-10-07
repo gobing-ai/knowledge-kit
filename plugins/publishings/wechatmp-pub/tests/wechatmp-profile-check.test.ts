@@ -74,9 +74,13 @@ describe('wechatmp-pub profile-check CLI (0216, ADR-032 probe contract)', () => 
             return fakeContext(consoleHomePage()) as never;
         });
         try {
-            const { code, err } = await run(['banish']);
+            const { code, out, err } = await run(['banish']);
             expect(code).toBe(2);
             expect(err).toContain('usage: wechatmp profile-check');
+            expect(JSON.parse(out.trim().split('\n').at(-1) ?? '')).toEqual({
+                status: 'error',
+                detail: "unknown command 'banish'",
+            });
             expect(opened).toHaveLength(0);
         } finally {
             spy.mockRestore();

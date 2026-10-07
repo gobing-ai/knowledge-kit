@@ -559,6 +559,9 @@ describe('substack-pub profile-check CLI (R5 / AC3)', () => {
 
         expect(code).toBe(2);
         expect(lines.join('\n')).toContain('SUBSTACK_PUBLICATION_URL');
+        const verdict = JSON.parse(lines.at(-1) ?? '') as { status: string; detail: string };
+        expect(verdict.status).toBe('error');
+        expect(verdict.detail).toContain('SUBSTACK_PUBLICATION_URL');
         expect(fake.requests).toEqual([]);
     });
 

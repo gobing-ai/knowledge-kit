@@ -51,7 +51,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         }
         profileDir = resolveChannelProfileDir(CHANNEL, values.profile);
     } catch (error) {
-        echoError(`wechatmp profile-check: ${error instanceof Error ? error.message : String(error)} — ${USAGE}`);
+        const message = error instanceof Error ? error.message : String(error);
+        echoError(`wechatmp profile-check: ${message} — ${USAGE}`);
+        echo(JSON.stringify({ status: 'error', detail: message }));
         return 2;
     }
 

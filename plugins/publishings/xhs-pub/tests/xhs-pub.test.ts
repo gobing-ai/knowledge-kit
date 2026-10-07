@@ -1549,11 +1549,16 @@ describe('xhs-pub profile-check CLI (0177)', () => {
     });
 
     test('unknown command and invalid --timeout fail with usage (exit 2, 0216 contract)', async () => {
+        const out = createBufferTarget();
         const err = createBufferTarget();
-        const restore = setDefaultOutputTargets({ stderr: err });
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
         try {
             expect(await profileCheckMain(['nonsense'], fakeLauncher(consoleContext(true)))).toBe(2);
             expect(err.text()).toContain('usage');
+            expect(JSON.parse(out.text().trim().split('\n').at(-1) ?? '')).toEqual({
+                status: 'error',
+                detail: "unknown command 'nonsense'",
+            });
             expect(await profileCheckMain(['check', '--timeout', 'later'])).toBe(2);
             expect(err.text()).toContain('--timeout');
         } finally {

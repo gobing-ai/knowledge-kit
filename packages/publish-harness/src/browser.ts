@@ -276,6 +276,7 @@ export async function runProfileCli(
         profileDir = resolveChannelProfileDir(config.channel, values.profile);
     } catch (error) {
         stdout(`${config.channel} profile-check: ${errorMessage(error)} — ${usage}`);
+        stdout(JSON.stringify({ status: 'error', detail: errorMessage(error) }));
         return 2;
     }
 

@@ -65,6 +65,15 @@ export async function loginProfile(opts: ProfileLoginOptions): Promise<void> {
     });
 }
 
+/** Exit 2 with the human usage on stderr and the ADR-032 `error` verdict as the last stdout line. */
+function usageError(message: string): number {
+    echoError(
+        `profile-check: ${message} — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`,
+    );
+    echo(JSON.stringify({ status: 'error', detail: message }));
+    return 2;
+}
+
 /** `login|check [--profile <dir>] [--timeout <ms>] [--headed]`; profile precedence matches the publish flow. */
 export async function main(
     argv: string[] = process.argv.slice(2),
@@ -95,10 +104,7 @@ export async function main(
         }
         profileDir = resolveChannelProfileDir(CHANNEL, values.profile);
     } catch (error) {
-        echoError(
-            `profile-check: ${error instanceof Error ? error.message : String(error)} — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`,
-        );
-        return 2;
+        return usageError(error instanceof Error ? error.message : String(error));
     }
     if (command === 'login') {
         try {
@@ -111,10 +117,7 @@ export async function main(
         }
     }
     if (command !== 'check') {
-        echoError(
-            `profile-check: unknown command '${command}' — usage: profile-check.ts [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`,
-        );
-        return 2;
+        return usageError(`unknown command '${command}'`);
     }
     // ADR-025: a manual session check is a real console visit, so it draws on the shared 2h
     // automation budget rather than a separate one. `login` is deliberately uncapped above: it is

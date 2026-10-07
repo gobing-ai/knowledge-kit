@@ -281,6 +281,7 @@ describe('runProfileCli', () => {
         expect(code).toBe(2);
         expect(lines.join('\n')).toContain("unknown command 'banish'");
         expect(lines.join('\n')).toContain('usage:');
+        expect(JSON.parse(lines.at(-1) ?? '')).toEqual({ status: 'error', detail: "unknown command 'banish'" });
         expect(requests).toHaveLength(0);
     });
 

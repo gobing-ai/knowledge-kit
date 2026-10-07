@@ -63,6 +63,8 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2), deps: Pr
     const publication = resolvePublicationUrl(publicationUrl);
     if ('error' in publication) {
         stdout(`substack profile-check: ${publication.error} — ${USAGE}`);
+        // Last line is the ADR-032 verdict so `kk plugin check` can name the missing variable.
+        stdout(JSON.stringify({ status: 'error', detail: publication.error }));
         return 2;
     }
     const config: ChannelBrowserConfig = channelConfig(publication.url);
