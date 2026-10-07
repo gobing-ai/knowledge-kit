@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-09-30T03:54:58.376Z"
-updated_at: "2026-10-05T05:36:59.583Z"
+updated_at: "2026-10-07T05:53:02.408Z"
 ---
 
 # E91: Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library
@@ -129,6 +129,44 @@ Feature: Browser publish channels on ts-browser-automation
     Given medium-pub publishes through MEDIUM_INTEGRATION_TOKEN
     When the Medium token API keeps accepting posts
     Then no Medium browser transport is added and the deferral is recorded in docs/04_DESIGN.md
+
+  @core
+  Scenario: AC1 — profile session dogfood on the operator profile
+    # covers: I4
+    Given the channel's browser profile directory used by the operator
+    When profile-check login and check run against the real site
+    Then the session is live for the operator profile and the check reports the logged-in state
+
+  @core
+  Scenario: AC2 — measured drift corrected and recorded
+    # covers: I2
+    Given the channel's recorded UI constants and the current measured surface
+    When the dogfood pass re-measures editor URL, selectors and the draft signal
+    Then stale constants are corrected in the publisher and the drift is recorded with measured values
+
+  @core
+  Scenario: AC3 — one draft-only run through the real transport
+    # covers: I4
+    Given an authenticated channel profile and a draft-scoped run
+    When the publisher performs one real-transport run
+    Then it stops at a saved draft, never activates the site publish control, and records the observed draft signal
+
+
+  Scenario: AC1 — profile session dogfood on the persisted juejin profile
+  Given the persisted operator profile `~/.config/kk/browser-profiles/juejin` (session alive since 0202)
+  When `bun plugins/publishings/juejin-pub/src/profile-check.ts check` runs against it
+  Then it exits 0 reporting `status: "verified"` (login leg only if the session expired)
+
+  Scenario: AC2 — measured contract confirmed against the 0202 discovery record
+  Given `docs/design/juejin-ui-discovery.md` records the measured editor contract
+  When the plugin constants (editor URL + rewrite rule, title/body selectors, the autosave toasts, draft evidence) are compared live
+  Then every constant matches the measured contract or is corrected and pinned in the plugin tests
+
+  Scenario: AC3 — one draft-only run through the real transport
+  Given the verified profile and the plugin source
+  When `bun plugins/publishings/juejin-pub/src/index.ts --in <content> --out <result>` runs once with draft-only content
+  Then the result JSON reports `ok: true` with draft evidence, and no live/publish control is activated
+
 ```
 
 ## Tasks

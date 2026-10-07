@@ -34,6 +34,8 @@ export interface ChannelBrowserConfig {
     isAuthenticated: IsAuthenticatedPredicate;
     /** Deadline for the interactive login wait (default 180_000). */
     loginTimeoutMs?: number;
+    /** Check headed only — for channels whose WAF 451s every headless load (measured infoq 0201/0191). {@link runProfileCli} plumbs it to {@link checkChannelSession}. */
+    checkHeadedOnly?: boolean;
 }
 
 /** Outcome of a channel session check: what was observed, or the refusal reason. */
@@ -57,6 +59,8 @@ export interface ChannelSessionOptions {
     launcher?: BrowserLauncher;
     /** `false` keeps a refusal to the single headless pass (publish preflight). Default true. */
     headedFallback?: boolean;
+    /** Skip the headless pass entirely and check headed only (WAF-451 channels); beats `headedFallback: false`. */
+    headedOnly?: boolean;
     /** Deadline per pass (default 30_000). */
     timeoutMs?: number;
 }
@@ -109,7 +113,11 @@ export async function checkChannelSession(
     opts: ChannelSessionOptions,
 ): Promise<ChannelSessionResult> {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS;
-    const passes: readonly boolean[] = opts.headedFallback === false ? [true] : [true, false];
+    const passes: readonly boolean[] = opts.headedOnly
+        ? [false]
+        : opts.headedFallback === false
+          ? [true]
+          : [true, false];
     let lastDetail = `${config.channel} readiness was never probed`;
 
     for (const headless of passes) {
@@ -129,7 +137,7 @@ export async function checkChannelSession(
                 status: 'verified',
                 profileDir: opts.profileDir,
                 detail: `authenticated ${config.channel} session observed ${
-                    headless ? 'headlessly' : 'via headed fallback'
+                    headless ? 'headlessly' : 'via a headed pass'
                 } via profile ${opts.profileDir} (read-only)`,
             };
         } catch (error) {
@@ -212,6 +220,7 @@ export async function runProfileCli(
     const result = await checkChannelSession(config, {
         profileDir,
         launcher: deps.launcher,
+        headedOnly: config.checkHeadedOnly === true,
         timeoutMs,
     });
     stdout(JSON.stringify(result));

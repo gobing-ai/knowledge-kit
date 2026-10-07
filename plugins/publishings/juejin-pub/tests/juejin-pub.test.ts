@@ -197,8 +197,8 @@ function makeFakeLauncher(options: FakeLauncherOptions = {}): LauncherHandle {
     return { launcher, requests, calls, closeCount: () => closes };
 }
 
-function transport(fake: LauncherHandle, stepTimeoutMs = 200): JuejinBrowserTransport {
-    return new JuejinBrowserTransport('script', { launcher: fake.launcher, stepTimeoutMs });
+function transport(fake: LauncherHandle, stepTimeoutMs = 200, checkTimeoutMs = 200): JuejinBrowserTransport {
+    return new JuejinBrowserTransport('script', { launcher: fake.launcher, stepTimeoutMs, checkTimeoutMs });
 }
 
 /** The `确定并发布` click log entry — the control a draft run must never touch (E91-D5). */
@@ -275,8 +275,10 @@ describe('juejin-pub draft flow (R2, R3 / AC1)', () => {
         expect(result.metadata?.publishStatus).toBe('draft');
         expect(result.metadata?.driver).toBe('script');
         expect(result.metadata?.profileDir).toBe(DEFAULT_DIR);
-        // One headless preflight pass, then the headed editor visit (options.headless is opt-in).
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, false]);
+        // One headed-only preflight pass (0192: the headless editor readiness is flaky — it
+        // verified in 2.9 s once and burned 30 s the next pass — so headless is never probed),
+        // then the headed editor visit (options.headless is opt-in).
+        expect(fake.requests.map((request) => request.headless)).toEqual([false, false]);
         expect(fake.requests.map((request) => request.profileDir)).toEqual([DEFAULT_DIR, DEFAULT_DIR]);
         expect(fake.calls).toContain('fill:input.title-input|Parity');
         // The markdown body goes through the shared CodeMirror fill, never through HTML paste.
@@ -300,7 +302,7 @@ describe('juejin-pub draft flow (R2, R3 / AC1)', () => {
 
     test('a 保存成功 label that only exists in the pasted body is not an observed save (0196)', async () => {
         const fake = makeFakeLauncher({ page: { onBodyFill: 'none', bodySignal: '保存成功' } });
-        const result = await transport(fake, 30).publish({ content });
+        const result = await transport(fake, 30, 30).publish({ content });
 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('no outcome observed within 30ms');
@@ -308,7 +310,7 @@ describe('juejin-pub draft flow (R2, R3 / AC1)', () => {
 
     test('the save key is pressed at most once when the autosave shows nothing', async () => {
         const fake = makeFakeLauncher({ page: { onKeySave: 'url' } });
-        const result = await transport(fake, 30).publish({ content });
+        const result = await transport(fake, 30, 30).publish({ content });
 
         expect(result.ok).toBe(true);
         expect(result.url).toBe(DRAFT_URL);
@@ -318,7 +320,7 @@ describe('juejin-pub draft flow (R2, R3 / AC1)', () => {
 
     test('an unobserved draft signal fails naming the label and the timeout', async () => {
         const fake = makeFakeLauncher({ page: {} });
-        const result = await transport(fake, 30).publish({ content });
+        const result = await transport(fake, 30, 30).publish({ content });
 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('juejin draft save');
@@ -329,7 +331,7 @@ describe('juejin-pub draft flow (R2, R3 / AC1)', () => {
 
     test('an editor that never receives the body fails instead of drafting an empty article', async () => {
         const fake = makeFakeLauncher({ page: { emptyBody: true, onBodyFill: 'url' } });
-        const result = await transport(fake, 30).publish({ content });
+        const result = await transport(fake, 30, 30).publish({ content });
 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('editor text is empty');
@@ -433,29 +435,29 @@ describe('juejin-pub session failures (R5 / AC3)', () => {
 
     test('an expired session reports the login command instead of a stack', async () => {
         const fake = makeFakeLauncher({ page: { landedUrl: LOGIN_URL } });
-        const result = await transport(fake, 30).publish({ content });
+        const result = await transport(fake, 30, 30).publish({ content });
 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('session preflight refused');
-        expect(result.error).toContain('headless juejin readiness refused');
+        expect(result.error).toContain('headed juejin readiness refused');
         expect(result.error).toContain(LOGIN_HINT);
         expect(result.error?.split('\n')).toHaveLength(1);
         expect(result.error).not.toContain('    at ');
-        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: true }]);
+        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: false }]);
     });
 
     test('a session that expires before the editor visit reports the login command', async () => {
         const fake = makeFakeLauncher({
             pages: [{}, { landedUrl: LOGIN_URL }],
         });
-        const result = await transport(fake, 30).publish({ content });
+        const result = await transport(fake, 30, 30).publish({ content });
 
         expect(result.ok).toBe(false);
         expect(result.error).toContain('Authentication was not confirmed within 30ms');
         expect(result.error).toContain(LOGIN_HINT);
         expect(result.error?.split('\n')).toHaveLength(1);
         expect(result.error).not.toContain('    at ');
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, false]);
+        expect(fake.requests.map((request) => request.headless)).toEqual([false, false]);
     });
 });
 
@@ -482,7 +484,7 @@ describe('juejin-pub profile resolution (R5)', () => {
     test('options.headless true keeps the editor visit headless', async () => {
         const fake = makeFakeLauncher({ page: { onBodyFill: 'url' } });
         await transport(fake).publish({ content, options: { headless: true } });
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, true]);
+        expect(fake.requests.map((request) => request.headless)).toEqual([false, true]);
     });
 });
 

@@ -1,8 +1,10 @@
 /**
  * InfoQ profile-session capability (R5, AC3).
  *
- * `login` opens the editor in a headed browser and resolves only once InfoQ's readiness
- * predicate passes; `check` reopens the profile headlessly and reports `verified` or `refused`.
+ * `login` opens the InfoQ home in a headed browser and resolves only once the readiness
+ * predicate passes (hydrated write entry, no visible 登录 control); `check` reopens the profile
+ * headlessly and reports `verified` or `refused` — on InfoQ a headless pass always 451s at the
+ * WAF (measured 0201 + 0191), so a refusal is retried once headed.
  * Arg parsing, profile precedence (`--profile` > `INFOQ_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` >
  * `~/.config/kk/browser-profiles/infoq`) and the exit codes (0 verified, 1 refused, 2 usage
  * error) all live in the shared `runProfileCli` (0183), so the publish preflight and this CLI

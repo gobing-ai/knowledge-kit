@@ -188,6 +188,20 @@ describe('checkChannelSession', () => {
         expect(requests.map((request) => request.headless)).toEqual([true, false]);
     });
 
+    test('headedOnly checks headed only and never probes headless', async () => {
+        const { launcher, requests } = makeLauncher((request) => {
+            if (request.headless) throw new LoginTimeoutError('headless console never confirmed');
+        });
+        const result = await checkChannelSession(CONFIG, {
+            profileDir: DEFAULT_DIR,
+            launcher,
+            headedOnly: true,
+        });
+
+        expect(result.status).toBe('verified');
+        expect(requests.map((request) => request.headless)).toEqual([false]);
+    });
+
     test('headedFallback false keeps a refusal to the single headless pass', async () => {
         const { launcher, requests } = makeLauncher(() => {
             throw new LoginTimeoutError('headless console never confirmed');
@@ -210,6 +224,18 @@ describe('runProfileCli', () => {
             lines.push(line);
         };
     }
+
+    test('checkHeadedOnly config checks headed only via the CLI', async () => {
+        const lines: string[] = [];
+        const { launcher, requests } = makeLauncher();
+        const code = await runProfileCli({ ...CONFIG, checkHeadedOnly: true }, ['check'], {
+            launcher,
+            stdout: collect(lines),
+        });
+
+        expect(code).toBe(0);
+        expect(requests.map((request) => request.headless)).toEqual([false]);
+    });
 
     test('unknown verb is a usage error (exit 2) and never launches a browser', async () => {
         const lines: string[] = [];

@@ -53,6 +53,10 @@ export const SELECTORS = {
 
 const STEP_TIMEOUT_MS = 30_000;
 const LOGIN_TIMEOUT_MS = 180_000;
+/** Preflight budget (0192): the headless editor pass is non-deterministic — it verified in 2.9 s
+ * for the CLI check but the identical readiness predicate burned 30 s in the publish preflight —
+ * so the preflight runs headed only with the measured hydration headroom (mirrors infoq 0191). */
+const CHECK_TIMEOUT_MS = 60_000;
 /** Juejin autosaves the draft on input: the design's window before the one manual save key press. */
 const AUTOSAVE_TIMEOUT_MS = 5_000;
 const SAVE_KEY = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
@@ -78,6 +82,9 @@ export const CONFIG: ChannelBrowserConfig = {
     homeUrl: EDITOR_URL,
     isAuthenticated,
     loginTimeoutMs: LOGIN_TIMEOUT_MS,
+    // The headless editor readiness is flaky (verified 2.9 s once, burned 30 s the next pass), so
+    // the profile-check CLI checks headed only instead of betting on a headless editor load.
+    checkHeadedOnly: true,
 };
 
 /** Validated live-run inputs: the publish popup cannot confirm without both (R4). */
@@ -168,11 +175,16 @@ export class JuejinBrowserTransport implements PublishTransport {
     public readonly driver: BrowserDriver;
     private readonly launcher?: BrowserLauncher;
     private readonly stepTimeoutMs: number;
+    private readonly checkTimeoutMs: number;
 
-    constructor(driver: BrowserDriver = 'script', deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number } = {}) {
+    constructor(
+        driver: BrowserDriver = 'script',
+        deps: { launcher?: BrowserLauncher; stepTimeoutMs?: number; checkTimeoutMs?: number } = {},
+    ) {
         this.driver = driver;
         this.launcher = deps.launcher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
+        this.checkTimeoutMs = deps.checkTimeoutMs ?? CHECK_TIMEOUT_MS;
     }
 
     public async publish(payload: PublishTransportPayload): Promise<Result> {
@@ -195,13 +207,16 @@ export class JuejinBrowserTransport implements PublishTransport {
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
         const profileDir = resolveChannelProfileDir(CHANNEL, override);
 
-        // ADR-025 preflight: an unauthenticated or absent profile must never produce a headed
-        // visit, so the read-only headless check runs first and a refusal stays a fast refusal.
+        // ADR-025 preflight: an unauthenticated or absent profile must never reach the editor
+        // flow, so the session check runs first and a refusal stays a fast refusal. Juejin's
+        // headless editor readiness is non-deterministic (0192: CLI check verified in 2.9 s, the
+        // same predicate refused after 30 s in this preflight), so — like infoq (0191) — the
+        // check runs headed only; a missing/expired profile still refuses before any flow.
         const session = await checkChannelSession(CONFIG, {
             profileDir,
             launcher: this.launcher,
-            headedFallback: false,
-            timeoutMs: this.stepTimeoutMs,
+            headedOnly: true,
+            timeoutMs: this.checkTimeoutMs,
         });
         if (session.status !== 'verified') {
             return fail(`${CHANNEL} session preflight refused: ${session.detail} — run: ${LOGIN_INSTRUCTION}`);
