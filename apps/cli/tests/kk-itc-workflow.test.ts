@@ -291,7 +291,11 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
             {
                 cwd: join(import.meta.dir, '../../..'),
                 // The test may run inside a pipeline step — never leak the guard into the child.
-                env: { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined },
+                env: {
+                    ...process.env,
+                    SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+                    SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
+                },
                 stdout: 'pipe',
                 stderr: 'pipe',
             },
@@ -395,7 +399,11 @@ describe('kk-itc illustrate + adapt (0152)', () => {
             {
                 cwd: join(import.meta.dir, '../../..'),
                 // The test may run inside a pipeline step — never leak the guard into the child.
-                env: { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined },
+                env: {
+                    ...process.env,
+                    SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+                    SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
+                },
                 stdout: 'pipe',
                 stderr: 'pipe',
             },

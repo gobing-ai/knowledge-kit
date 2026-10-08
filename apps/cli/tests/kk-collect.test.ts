@@ -352,7 +352,12 @@ describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
         const configFile = join(root, 'config.yaml');
         const db = join(root, 'kk.db');
         writeFileSync(configFile, `store:\n  db_path: ${db}\n`);
-        const env = { KK_PLUGIN_PATH: pluginsRoot, KK_CONFIG: configFile, SPUR_WORKFLOW_RUN_ACTIVE: undefined };
+        const env = {
+            KK_PLUGIN_PATH: pluginsRoot,
+            KK_CONFIG: configFile,
+            SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+            SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
+        };
         const stampOne = '20261007T0000Z';
         const stampTwo = '20261007T0400Z';
         const stampThree = '20261007T0800Z';
@@ -486,6 +491,7 @@ describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
                 KK_PLUGIN_PATH: degradedPlugins,
                 KK_CONFIG: degradedConfig,
                 SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+                SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
             }),
         );
         expect(degraded.code, `degraded: ${degraded.stderr}`).toBe(0);
@@ -501,7 +507,12 @@ describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
         const deadDb = join(root, 'dead.db');
         writeFileSync(deadConfig, `store:\n  db_path: ${deadDb}\n`);
         fakePlugins(deadPlugins, [], { fail: ['aihot-ingest', 'last30days-ingest', 'horizon-ingest'] });
-        const deadEnv = { KK_PLUGIN_PATH: deadPlugins, KK_CONFIG: deadConfig, SPUR_WORKFLOW_RUN_ACTIVE: undefined };
+        const deadEnv = {
+            KK_PLUGIN_PATH: deadPlugins,
+            KK_CONFIG: deadConfig,
+            SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+            SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
+        };
         const dead = withKkShim(() => runWorkflow(root, 'kk-collect-dead', '20261007T1300Z', deadEnv));
         expect(dead.summary.finalState).toBe('failed');
         const deadLock = await run([
@@ -534,6 +545,7 @@ describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
             KK_PLUGIN_PATH: storePlugins,
             KK_CONFIG: storeConfig,
             SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+            SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
         };
         const storeFailed = withKkShim(() => runWorkflow(root, 'kk-collect-store-failed', storeStamp, storeEnv));
         expect(storeFailed.summary.finalState).toBe('failed');

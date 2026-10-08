@@ -162,7 +162,11 @@ describe('kk-itc publish tail (0151)', () => {
             {
                 cwd: REPO,
                 // The test may run inside a pipeline step — never leak the guard into the child.
-                env: { ...process.env, SPUR_WORKFLOW_RUN_ACTIVE: undefined },
+                env: {
+                    ...process.env,
+                    SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+                    SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
+                },
                 stdout: 'pipe',
                 stderr: 'pipe',
             },
