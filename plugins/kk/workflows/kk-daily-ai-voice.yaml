@@ -52,6 +52,8 @@ vars:
   # "true" retries down AUTO_ORDER, anything else is a comma-separated provider list. The empty
   # default keeps F614's pinned look the default; availability trades against it only on opt-in.
   cover_fallback: ""
+  # 0219 R3: image-gen vendor fallback for the XHS render; "" restores strict fail-fast.
+  xhs_fallback: "true"
   # E8: XHS image-card target. Cards are planned from the lead plan item (the same source the
   # cover uses) and rendered through the pinned xhs-card/xhs-knowledge presets, then the xhs-pub
   # headed browser saves them into the creator draft box.
@@ -471,7 +473,7 @@ states:
         onError: continue
         options:
           command: >-
-            kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}"
+            kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}"
 
   - id: xhs-publish
     description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status. xhs-pub itself enforces a headless session preflight and a 2h publish/check cap (ADR-025), so a sessionless or capped run fails soft with a named reason and the run continues"

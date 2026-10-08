@@ -171,8 +171,10 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // The stage owns the pinned render, exactly like F614's cover: one render path, no image
         // skill in the YAML (a second path would let the card look drift from the preset).
         expect(block).toContain(
-            `kk stage daily-xhs-render "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_cards}" "${'$'}{vars.xhs_style}" "${'$'}{vars.xhs_provider}" "${'$'}{vars.xhs_model}"`,
+            `kk stage daily-xhs-render "${workDir}" "${runDate}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_cards}" "${'$'}{vars.xhs_style}" "${'$'}{vars.xhs_provider}" "${'$'}{vars.xhs_model}" "${'$'}{vars.xhs_fallback}"`,
         );
+        // 0219: the shipped default opts the render into vendor fallback; "" is strict fail-fast.
+        expect(yaml).toContain('xhs_fallback: "true"');
         expect(yaml).not.toContain('kk:xhs-images');
         // Draft is the shipped default; live needs the explicit launch-time switch (ADR-022).
         expect(yaml).toContain('xhs_live: "false"');

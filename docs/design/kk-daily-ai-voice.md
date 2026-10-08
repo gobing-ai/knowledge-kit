@@ -165,7 +165,12 @@ follows the cover's split (F614): the agent authors **copy only**, the stage own
   `layout`, `subject` and the `sourcePoint` it is grounded in. `kk stage daily-xhs-render` then
   validates that plan (count, cover-first, per-field non-empty, char caps) and renders one card per
   `kk executor run image-gen` call, sequentially, through the pinned `xhs-card` format × the
-  `xhs_style` preset with the `xhs_provider`/`xhs_model` pin. It packages `cards.json` + `content.json`
+  `xhs_style` preset with the `xhs_provider`/`xhs_model` pin. The `xhs_fallback` var (0219, shipped
+  `"true"`; `""` restores strict fail-fast) threads the cover stage's vendor-fallback opt-in into
+  the render envelopes, so one transient provider timeout no longer loses the XHS channel; a card
+  whose render still fails names itself — `xhs render: card <NN> failed (image-gen exit <S>); cards
+  before it are kept — re-run daily-xhs-render to resume from card <NN>` — and earlier cards stay
+  on disk, never re-billed. It packages `cards.json` + `content.json`
   (`metadata.publishStatus: draft`).
 - `xhs-publish` — `kk stage daily-publish-xhs` resolves `draft` (default) or `public` (`xhs_live`),
   writes the payload, and runs `kk executor run xhs-pub` (its default `script` driver — ADR-024).

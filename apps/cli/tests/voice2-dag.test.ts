@@ -430,6 +430,14 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(dag.nodes.find((node) => node.id === 'review')?.dependsOn).toEqual(['safety']);
     });
 
+    it('threads the 0219 xhs_fallback opt-in into the 8-arg daily-xhs-render call', () => {
+        const yaml = readFileSync(WORKFLOW, 'utf-8');
+        expect(yaml).toContain('xhs_fallback: "true"');
+        expect(yaml).toContain(
+            `kk stage daily-xhs-render "${'$'}{vars.work_dir}" "${'$'}{vars.run_date}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_cards}" "${'$'}{vars.xhs_style}" "${'$'}{vars.xhs_provider}" "${'$'}{vars.xhs_model}" "${'$'}{vars.xhs_fallback}"`,
+        );
+    });
+
     it('leaves kk-daily-ai-voice.yaml byte-identical (R1)', () => {
         expect(existsSync(VOICE1)).toBe(true);
         const diff = Bun.spawnSync(

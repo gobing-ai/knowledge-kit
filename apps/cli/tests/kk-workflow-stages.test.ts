@@ -1161,6 +1161,57 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    const writeXhsPlan = (dir: string) => {
+        const xhs = join(dir, '25-xhs');
+        mkdirSync(xhs, { recursive: true });
+        writeFileSync(
+            join(xhs, '20260101_18_xhs_plan.json'),
+            JSON.stringify({
+                title: '今日 AI 速览',
+                body: '正文 #AI',
+                cards: [xhsCard('cover', '今日头条', 'lead fact'), xhsCard('content', '模型发布', 'detail fact')],
+            }),
+        );
+    };
+
+    it('daily-xhs-render threads the opt-in fallback into every envelope, strictly when absent (0219 AC1)', () => {
+        const envelope = (fallbackArg?: string) => {
+            let imageGen: Record<string, unknown> = {};
+            withTempDir((dir) => {
+                writeXhsPlan(dir);
+                const record = join(dir, 'kk-argv.jsonl');
+                const env = fakeXhsKk(dir, record, 'image-gen');
+                const args = ['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''];
+                if (fallbackArg !== undefined) args.push(fallbackArg);
+                const result = run(args, env);
+                expect(result.status).toBe(0);
+                const envelopes = JSON.parse(
+                    readFileSync(join(dir, '25-xhs', 'cards', 'card-01.in.json'), 'utf-8'),
+                ) as { metadata: { imageGen: Record<string, unknown> } }[];
+                imageGen = envelopes.at(0)?.metadata.imageGen ?? {};
+            });
+            return imageGen;
+        };
+        expect(envelope('true').fallback).toBe(true);
+        expect(envelope('google, openai').fallback).toStrictEqual(['google', 'openai']);
+        expect(envelope().fallback).toBeUndefined();
+        expect(envelope('').fallback).toBeUndefined();
+    });
+
+    it('daily-xhs-render names the failed card and exits with image-gen status, keeping earlier cards (0219 AC2)', () => {
+        withTempDir((dir) => {
+            writeXhsPlan(dir);
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen', 7);
+            const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', '', 'true'], env);
+            expect(result.status).toBe(7);
+            expect(result.stderr).toContain('xhs render: card 01 failed');
+            expect(result.stderr).toContain('re-run daily-xhs-render to resume');
+            expect(() => readFileSync(join(dir, '25-xhs', 'cards.json'))).toThrow();
+            expect(() => readFileSync(join(dir, '25-xhs', 'content.json'))).toThrow();
+        });
+    });
+
     it('daily-xhs-render with every artifact already on disk spends nothing but still packages (E8 0181)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');

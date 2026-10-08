@@ -35,6 +35,8 @@ vars:
   cover_provider: "minimax"
   cover_model: "image-01"
   cover_fallback: ""
+  # 0219 R3: image-gen vendor fallback for the XHS render; "" restores strict fail-fast.
+  xhs_fallback: "true"
   xhs_enabled: "true"
   xhs_cards: "4"
   xhs_style: "xhs-knowledge"
@@ -515,7 +517,7 @@ nodes:
       onError: continue
       options:
         command: >-
-          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}"
+          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}"
 
   - id: xhs-publish
     description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status, and xhs-pub's own headless preflight + publish cap make a sessionless run fail soft (exit 0)"

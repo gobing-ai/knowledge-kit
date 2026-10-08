@@ -272,6 +272,18 @@ export function dailyArticle(args: string[]): void {
  * invalid brief degrades to the format's default subject (R4) — a plugin failure still fails
  * the stage, matching the pre-F614 cover behavior.
  */
+// Shared opt-in fallback parse (D6 0166 R7; 0219 R1): '' keeps strict fail-fast (the caller
+// omits the key), 'true' retries down image-gen's AUTO_ORDER, anything else is a comma-split,
+// trimmed candidate list. Unknown names are rejected by image-gen, not here.
+export function imageFallback(fallback: string): true | string[] {
+    return fallback === 'true'
+        ? true
+        : fallback
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
+}
+
 export function dailyCover(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = '', fallback = ''] = args;
     const briefPath = join(workDir, '23-cover', `${runDate}_07_cover-brief.json`);
@@ -297,15 +309,7 @@ export function dailyCover(args: string[]): void {
         // D6 0166 R7: runtime-fallback opt-in. '' (the shipped var default) keeps strict fail-fast —
         // F614's pinned look stays the default; 'true' = retry down AUTO_ORDER; anything else is a
         // comma-split, trimmed candidate list. Unknown names are rejected by image-gen, not here.
-        if (fallback !== '') {
-            imageGen.fallback =
-                fallback === 'true'
-                    ? true
-                    : fallback
-                          .split(',')
-                          .map((s) => s.trim())
-                          .filter(Boolean);
-        }
+        if (fallback !== '') imageGen.fallback = imageFallback(fallback);
         sted('write', envPath, () =>
             writeJsonText(envPath, [{ id: 'daily-cover', title: runDate, body: '', metadata: { imageGen } }]),
         );
@@ -1412,7 +1416,16 @@ export function dailyWrapDocs(args: string[]): void {
  * a card whose recorded artifact is still on disk is not re-rendered — and not re-billed.
  */
 export function dailyXhsRender(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', countArg = '', style = '', provider = '', model = ''] = args;
+    const [
+        workDir = '',
+        runDate = '',
+        pluginsPath = '',
+        countArg = '',
+        style = '',
+        provider = '',
+        model = '',
+        fallback = '',
+    ] = args;
     const count = Number.parseInt(countArg, 10);
     const planPath = join(workDir, '25-xhs', `${runDate}_18_xhs_plan.json`);
     const cardsDir = join(workDir, '25-xhs', 'cards');
@@ -1448,6 +1461,8 @@ export function dailyXhsRender(args: string[]): void {
                 };
                 if (provider !== '') imageGen.provider = provider;
                 if (model !== '') imageGen.model = model;
+                // 0219 R1: same opt-in as the cover stage — '' keeps strict fail-fast.
+                if (fallback !== '') imageGen.fallback = imageFallback(fallback);
                 sted('write', envPath, () =>
                     writeJsonText(envPath, [
                         { id: `xhs-card-${card.index}`, title: runDate, body: '', metadata: { imageGen } },
@@ -1457,7 +1472,17 @@ export function dailyXhsRender(args: string[]): void {
                 // card copy is typeset by image-gen's composer, never prompted), and the
                 // first failure stops the spend — later cards stay unrendered for a resume
                 // run to pick up.
-                kk(['executor', 'run', 'image-gen', '--in', envPath, '--out', out, ...pluginsArgs(pluginsPath)]);
+                const status = kk(
+                    ['executor', 'run', 'image-gen', '--in', envPath, '--out', out, ...pluginsArgs(pluginsPath)],
+                    { soft: true },
+                );
+                // 0219 R2: name the failed card so a hand re-run resumes without re-billing.
+                if (status !== 0) {
+                    failWith(
+                        status,
+                        `xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}`,
+                    );
+                }
                 artifact = firstArtifact(requireJson(out, 'xhs render'));
             }
             if (artifact === null) failWith(1, `xhs render: card ${card.index} recorded no image artifact (${out})`);
