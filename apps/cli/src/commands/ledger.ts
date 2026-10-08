@@ -178,9 +178,12 @@ export async function syncLedger(options: LedgerSyncOptions): Promise<void> {
         const existing = await readLedger(fs, ledgerPath);
         const missing = selectMissingRuns(listTraces(options.workflow), existing ?? '');
         let content = existing;
-        for (const runId of missing) {
+        for (const [index, runId] of missing.entries()) {
             const trace = readTrace(runId);
-            const summaries = await readSummaries(fs, options.workDir, trace);
+            // The trace carries no per-run work dir, and one `--work-dir` holds what its latest attempt
+            // wrote — so only the newest missing run reads it; older backfills fall back (R5).
+            const workDir = index === missing.length - 1 ? options.workDir : undefined;
+            const summaries = await readSummaries(fs, workDir, trace);
             content = appendLedgerSection(content, options.workflow, renderLedgerSection(trace, { summaries }));
         }
         if (missing.length > 0) {
@@ -211,8 +214,8 @@ function failLoud(error: unknown): never {
 /**
  * Register the `ledger` command group — the per-workflow run ledger surface.
  *
- * `append` is the final node of a workflow; `sync` is the first one, so a fail-fast
- * DAG that never reaches `append` still gets recorded (docs/design design §7, task 0207).
+ * `sync` runs at a workflow's first node and records every finished run; a final-node
+ * `append` sees its own run still `running` and exits 1 (docs/design design §7, task 0207).
  */
 export function registerLedgerCommand(program: Command): void {
     const ledger = program.command('ledger').description('Maintain per-workflow run ledgers');
@@ -231,6 +234,6 @@ export function registerLedgerCommand(program: Command): void {
         .description('Append every finished run missing from the ledger, oldest first')
         .requiredOption('--workflow <name>', 'Workflow name (ledger file <works-dir>/<name>/ledger.md)')
         .option('--works-dir <dir>', 'Ledger root directory', DEFAULT_WORKS_DIR)
-        .option('--work-dir <dir>', 'Workflow work_dir, for <node>.summary.txt result cells')
+        .option('--work-dir <dir>', 'Workflow work_dir, for <node>.summary.txt result cells (newest missing run only)')
         .action(syncLedger);
 }

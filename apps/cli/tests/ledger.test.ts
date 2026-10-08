@@ -347,6 +347,37 @@ describe('kk ledger', () => {
         writeFileSync(join(ARTIFACT_DIR, 'ledger-kk-itc.md'), content);
     });
 
+    it('sync reads --work-dir summaries for the newest missing run only, never older backfills (R5/R6)', async () => {
+        const dir = tempDir();
+        const works = join(dir, '.works');
+        const workDir = join(dir, 'work');
+        mkdirSync(workDir, { recursive: true });
+        // One work dir holds whatever the latest attempt wrote; an older run must not inherit it.
+        writeFileSync(join(workDir, 'implement.summary.txt'), 'stale from a later attempt\n');
+        writeFileSync(join(workDir, 'check.summary.txt'), 'newest summary\n');
+        const list = JSON.stringify({
+            entries: [
+                { runId: FAILED_RUN, status: 'done', startedAt: '2026-10-07T02:00:00.000Z' },
+                { runId: AGENT_DONE_RUN, status: 'done', startedAt: '2026-10-07T01:00:00.000Z' },
+            ],
+            total: 2,
+        });
+        const stub = stubSpur(
+            dir,
+            { [AGENT_DONE_RUN]: 'trace-agent-done.json', [FAILED_RUN]: 'trace-failed.json' },
+            list,
+        );
+
+        const result = await run(
+            ['ledger', 'sync', '--workflow', 'kk-itc', '--works-dir', works, '--work-dir', workDir],
+            { KK_SPUR_BIN: stub },
+        );
+        expect(result.code).toBe(0);
+        const content = readFileSync(join(works, 'kk-itc/ledger.md'), 'utf-8');
+        expect(content).toContain('newest summary');
+        expect(content).not.toContain('stale from a later attempt');
+    });
+
     it('exits 1 without touching the ledger for running, unknown or malformed traces (R7)', async () => {
         const dir = tempDir();
         const works = join(dir, '.works');
