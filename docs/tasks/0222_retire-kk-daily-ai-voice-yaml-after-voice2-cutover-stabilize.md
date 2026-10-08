@@ -4,8 +4,9 @@ name: Retire kk-daily-ai-voice.yaml after voice2 cutover stabilizes
 status: todo
 template: issue
 created_at: 2026-10-08T16:50:37.488Z
-updated_at: "2026-10-08T16:50:37.792Z"
+updated_at: "2026-10-08T20:46:24.431Z"
 
+feature_id: G1
 ---
 
 ## 0222. Retire kk-daily-ai-voice.yaml after voice2 cutover stabilizes

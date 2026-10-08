@@ -4,7 +4,7 @@ name: "voice2 rollout: cut-over check, end-to-end dogfood, docs sync"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.077Z
-updated_at: "2026-10-08T20:39:58.999Z"
+updated_at: "2026-10-08T21:15:47.592Z"
 feature_id: G11
 priority: P2
 tags:
@@ -113,21 +113,21 @@ Each entry cites the first changed line per file (`file:line`).
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
-- Confidence: HIGH
+- Verdict: PARTIAL (from verdict artifact)
+- Confidence: MEDIUM
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | apps/cli/src/ledger.ts:1 (parseLedger/classifyTargetSet/cutoverCheck), verb apps/cli/src/commands/ledger.ts; 16 tests apps/cli/tests/cutover.test.ts:1; real-binary runs saved .works/test-artifacts/0212/cutover-check.txt and cutover-check-ready.txt ({"ready":true,"streak":5}, exit 0) |
-| R2 | MET | kk-collect runs 73d06323+55e781fb filled store (56 items/280 labels/2 collect_runs); voice2 run 4a9b22f0 done draft-only: audio 30-audio/20261007_11_generate_content.mp3+wav metadata.qc.passed=true score=100 1020.9s/25 segments (evidence .works/test-artifacts/0212/run-4a9b22f0-audio-qc.json); ledgers: voice1 20 sections + voice2 12 sections (.works/test-artifacts/0212/ledger-rows.txt) |
-| R3 | MET | docs/00_ADR.md:1171 ADR-031 implemented; docs/03_ARCHITECTURE.md:114 shipped note; docs/04_DESIGN.md:1033 row shipped; docs/05_FEATURES.md:95 G11 done |
-| R4 | MET | follow-ups filed: 0222 (retire voice1 yaml), 0223 (gemini TTS probe/429 gap), 0224 (orphaned stage children) |
+| R1 | MET | `apps/cli/src/ledger.ts:379` parseLedger, `apps/cli/src/ledger.ts:463` cutoverCheck, verb `apps/cli/src/commands/ledger.ts:298`; bun test cutover.test.ts + commands/ledger.test.ts 18 pass / 0 fail (2026-10-08 re-run); real binary `kk ledger cutover-check --candidate kk-daily-ai-voice2 --baseline kk-daily-ai-voice --runs 5` printed {ready,streak,required,reasons} and exit 0 |
+| R2 | PARTIAL | Original run 4a9b22f0 artifacts and worktree DB deleted post-merge (task Notes); not reproducible this run. Fresh main-tree evidence: kk-collect run 1cc1cb2c done (only 1 of 2 runs); voice2 run 38e53162 produced article, cover, script under .works/kk-daily-ai-voice2/20261008 but generate (audio) and xhs-render stalled at 40m/38m with no output; .works/kk-daily-ai-voice2/ledger.md absent |
+| R3 | MET | `docs/00_ADR.md:1173` ADR-031 implemented; `docs/03_ARCHITECTURE.md:114` shipped note; `docs/04_DESIGN.md:1038` row shipped; `docs/05_FEATURES.md:95` G11 done |
+| R4 | MET | 0222 retire task filed; feature_id was empty, fixed this run via spur task update 0222 --feature G1 (now G1) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Cut-over criterion is defined and measurable | MET | test | apps/cli/tests/cutover.test.ts:1 (16 tests incl. red-run/mid-streak/target-mismatch/missing-baseline classes); `kk ledger cutover-check` exits 0 with measured streak+reasons (.works/test-artifacts/0212/cutover-check-ready.txt) |
-| End-to-end dogfood produces an episode from a collect-filled store | MET | command | run 4a9b22f0 done, draft-only; store 56 items/280 labels; article+script+audio(qc.passed score=100 1020.9s)+cover+xhs under .works/kk-daily-ai-voice2/20261007/; both ledger.md files carry runs |
-| Architecture docs record the DAG workflow decision | MET | command | docs/00_ADR.md:1171, docs/03_ARCHITECTURE.md:114, docs/04_DESIGN.md:1033, docs/05_FEATURES.md:95; retire follow-up 0222 + 0223/0224 filed via spur task create |
+| R6 — Cut-over criterion is defined and measurable | MET | test | `apps/cli/tests/cutover.test.ts:1` 18 pass / 0 fail with commands/ledger.test.ts; real-binary cutover-check exit 0 with ready/streak/reasons |
+| R7 — End-to-end dogfood produces an episode from a collect-filled store | PARTIAL | command | prior run 4a9b22f0 evidence deleted; fresh run 38e53162 stalled before audio; only 1 fresh kk-collect run |
+| R8 — Architecture docs record the DAG workflow decision | MET | command | grep -c of shipped markers in ADR/03/04/05 each returned 1 (exit 0): `docs/00_ADR.md:1173`, `docs/03_ARCHITECTURE.md:114`, `docs/04_DESIGN.md:1038`, `docs/05_FEATURES.md:95` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -154,4 +154,8 @@ PASS (self-review, SECUA-lite): diff matches R1–R4; both ledger summary bridge
 ### Notes
 
 2026-10-08 post-merge: the `sp/run-0212-e7d51f81` worktree holding the dogfood `.works/` evidence was removed after the merge to `main` (043f4813); the untracked run dirs, `ledger.md` copies, `kk.db` snapshots and `cutover-check*.txt`/`run-4a9b22f0-audio-qc.json`/`ledger-rows.txt` files under its `.works/` are no longer on disk (`.works` is not git-tracked). Surviving evidence: the inline values quoted in Review/Testing above, verdict `.spur/run/0212-verdict.json`, dogfood run of record `4a9b22f0` (reachable via `spur task run-link 0212`), and the repeatable fixtures `.works/test-artifacts/0212/cutover-fixtures.md` + `README.md` (regenerable with `bun test apps/cli/tests/cutover.test.ts`). First live merged-tip voice2 run (draft-only, 20261008): workflow run `38e53162`.
+
+
+
+2026-10-08 re-verify (`--force --fix all`): the merged-tip run `38e53162` hung 45 min in `xhs-render` — image-gen's Chromium card compose stalled because Playwright's `route.fulfill()` of the ~8 MB Noto SC fonts over its pipe never returns under Bun 1.3.14 (~1 in 3 cycles; `DEBUG=pw:api` shows two `fulfill started` with no completion). Fixed in `plugins/generations/image-gen/src/compose/chromium.ts`: fonts + card HTML now come from an in-process loopback `Bun.serve` (page `goto`, no pipe transfer), plus a 120 s compose deadline as backstop (`plugins/generations/image-gen/tests/compose-deadline.test.ts`). Evidence: 15/15 standalone compose pairs clean (`bun scripts/compose-e2e-artifact.ts without`, previously 1/3 stalled); full evidence script deterministic; the 20261008 card series re-rendered (4 cards, `25-xhs/content.json`). A second `kk-collect` run `b68efe19` joined `1cc1cb2c` (store 60 items / 300 labels). Follow-up 0222 re-homed to G1 (R4).
 
