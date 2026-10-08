@@ -724,6 +724,35 @@ function resolveWorksDir(): string {
     return join(homedir(), '.config/kk/works');
 }
 
+/**
+ * `collect-prepare <stamp> <limit> <topic> <horizonHours>` — kk-collect's workspace: the pinned stamp
+ * (else the UTC minute, `YYYYMMDDTHHMMZ`), the cwd-relative `.works/kk-collect/<stamp>` work dir, the
+ * anchor files the workflow reads back into vars (shell actions cannot set vars), and the three
+ * source configs `kk executor fan-in --source <plugin>:<file>` requires. Configs go through
+ * `writeJsonText` so a topic carrying quotes or backslashes stays valid JSON.
+ */
+function collectPrepare(args: string[]): void {
+    const [stampArg = '', limit = '', topic = '', horizonHours = ''] = args;
+    const stamp = stampArg || new Date().toISOString().replace(/[-:]/g, '').slice(0, 13).concat('Z');
+    const workDir = join('.works', 'kk-collect', stamp);
+    const anchorDir = join('.spur', 'runs', 'kk-collect');
+    sted('mkdir', join(workDir, '10-ingest'), () => mkdirSync(join(workDir, '10-ingest'), { recursive: true }));
+    sted('mkdir', anchorDir, () => mkdirSync(anchorDir, { recursive: true }));
+    sted('write', join(anchorDir, 'work-dir.txt'), () =>
+        writeFileSync(join(anchorDir, 'work-dir.txt'), `${workDir}\n`),
+    );
+    sted('write', join(anchorDir, 'stamp.txt'), () => writeFileSync(join(anchorDir, 'stamp.txt'), `${stamp}\n`));
+    sted('write', join(workDir, '10-ingest/source.json'), () =>
+        writeJsonText(join(workDir, '10-ingest/source.json'), { limit: Number(limit) }),
+    );
+    sted('write', join(workDir, '10-ingest/last30days.json'), () =>
+        writeJsonText(join(workDir, '10-ingest/last30days.json'), { topic }),
+    );
+    sted('write', join(workDir, '10-ingest/horizon.json'), () =>
+        writeJsonText(join(workDir, '10-ingest/horizon.json'), { hours: Number(horizonHours) }),
+    );
+}
+
 function dailyCollectFacts(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const content = join(workDir, '20-facts', `${runDate}_02_collect_content.json`);
@@ -1525,6 +1554,9 @@ if (import.meta.main)
             break;
         case 'daily-collect-facts':
             dailyCollectFacts(rest);
+            break;
+        case 'collect-prepare':
+            collectPrepare(rest);
             break;
         case 'daily-plan': {
             const { dailyPlan } = await loadDailyStages();

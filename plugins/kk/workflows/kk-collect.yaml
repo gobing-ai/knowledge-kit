@@ -50,17 +50,10 @@ states:
         options:
           # stamp: the pinned var, else the UTC minute (R4). work_dir: `.works/kk-collect/<stamp>` (R4),
           # written to the anchor file the engine reads back into vars.work_dir below — shell actions
-          # cannot set vars. The three source configs mirror daily-prepare's shape, because
-          # `kk executor fan-in --source <plugin>:<file>` refuses a missing input file.
+          # cannot set vars. The stage also writes the three source configs (daily-prepare's shape),
+          # because `kk executor fan-in --source <plugin>:<file>` refuses a missing input file.
           command: >-
-            stamp="${vars.stamp}"; [ -n "$stamp" ] || stamp="$(date -u +%Y%m%dT%H%MZ)";
-            workDir=".works/kk-collect/$stamp";
-            mkdir -p "$workDir/10-ingest" .spur/runs/kk-collect;
-            printf '%s\n' "$workDir" > .spur/runs/kk-collect/work-dir.txt;
-            printf '%s\n' "$stamp" > .spur/runs/kk-collect/stamp.txt;
-            printf '%s\n' "{\"limit\": ${vars.limit}}" > "$workDir/10-ingest/source.json";
-            printf '%s\n' "{\"topic\": \"${vars.last30days_topic}\"}" > "$workDir/10-ingest/last30days.json";
-            printf '%s\n' "{\"hours\": ${vars.horizon_hours}}" > "$workDir/10-ingest/horizon.json"
+            kk stage collect-prepare "${vars.stamp}" "${vars.limit}" "${vars.last30days_topic}" "${vars.horizon_hours}"
       - kind: file.read.into-var
         options:
           path: .spur/runs/kk-collect/work-dir.txt

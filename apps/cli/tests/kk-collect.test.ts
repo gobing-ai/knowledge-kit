@@ -151,9 +151,25 @@ interface WorkflowRun {
 }
 
 /** Run `spur workflow run <kk-collect.yaml>` for real (no `--dry-run`) from `cwd`. */
-function runWorkflow(cwd: string, runId: string, stamp: string, env: Record<string, string | undefined>): WorkflowRun {
+function runWorkflow(
+    cwd: string,
+    runId: string,
+    stamp: string,
+    env: Record<string, string | undefined>,
+    vars: Record<string, string> = {},
+): WorkflowRun {
     const result = Bun.spawnSync(
-        ['spur', 'workflow', 'run', WORKFLOW, '--run-id', runId, '--json', '--vars', JSON.stringify({ stamp })],
+        [
+            'spur',
+            'workflow',
+            'run',
+            WORKFLOW,
+            '--run-id',
+            runId,
+            '--json',
+            '--vars',
+            JSON.stringify({ stamp, ...vars }),
+        ],
         { cwd, env: { ...process.env, ...env }, stdout: 'pipe', stderr: 'pipe' },
     );
     let summary: { status?: string; finalState?: string } = {};
@@ -346,6 +362,16 @@ describe('kk store ingest (0208 R2)', () => {
 });
 
 describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
+    it('stays within the ADR-115 composition limits (no lint findings)', () => {
+        const result = Bun.spawnSync(['spur', 'workflow', 'validate', WORKFLOW, '--json', '--no-logo'], {
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        const report = JSON.parse(result.stdout.toString()) as { valid: boolean; composition: { findings: unknown[] } };
+        expect(report.valid).toBe(true);
+        expect(report.composition.findings).toEqual([]);
+    });
+
     it('collects standalone into the store, updates without duplicating, and is single-flight', async () => {
         const root = tempDir('kk-collect-run-');
         const pluginsRoot = join(root, 'fake-plugins');
@@ -366,9 +392,16 @@ describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
 
         fakePlugins(pluginsRoot, [doc('one', 'first body'), doc('two', 'second body'), doc('three', 'third body')]);
 
-        const first = withKkShim(() => runWorkflow(root, 'kk-collect-1', stampOne, env));
+        // A topic carrying JSON metacharacters: the source configs must still be valid JSON.
+        const topic = 'AI "agents" \\ news';
+        const first = withKkShim(() => runWorkflow(root, 'kk-collect-1', stampOne, env, { last30days_topic: topic }));
         expect(first.code, `run 1: ${first.stderr}`).toBe(0);
         expect(first.summary.finalState).toBe('done');
+        const ingestConfig = (name: string): unknown =>
+            JSON.parse(readFileSync(join(workDirOne, '10-ingest', name), 'utf-8'));
+        expect(ingestConfig('source.json')).toEqual({ limit: 10 });
+        expect(ingestConfig('last30days.json')).toEqual({ topic });
+        expect(ingestConfig('horizon.json')).toEqual({ hours: 4 });
 
         // AC1 — every collected item is stored, and the lock is released on the normal exit.
         const newIdsOne = JSON.parse(readFileSync(join(workDirOne, 'new-ids.json'), 'utf-8')) as string[];
