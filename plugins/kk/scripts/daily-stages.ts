@@ -261,6 +261,18 @@ export function dailyArticle(args: string[]): void {
     });
 }
 
+// Shared opt-in fallback parse (D6 0166 R7; 0219 R1): '' keeps strict fail-fast (the caller
+// omits the key), 'true' retries down image-gen's AUTO_ORDER, anything else is a comma-split,
+// trimmed candidate list. Unknown names are rejected by image-gen, not here.
+function imageFallback(fallback: string): true | string[] {
+    return fallback === 'true'
+        ? true
+        : fallback
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
+}
+
 /**
  * F614 R2/R4: validate the agent-written cover brief in the order R4 names — the first failing
  * check is the fallback reason; `reason: null` carries the trimmed subject.
@@ -272,18 +284,6 @@ export function dailyArticle(args: string[]): void {
  * invalid brief degrades to the format's default subject (R4) — a plugin failure still fails
  * the stage, matching the pre-F614 cover behavior.
  */
-// Shared opt-in fallback parse (D6 0166 R7; 0219 R1): '' keeps strict fail-fast (the caller
-// omits the key), 'true' retries down image-gen's AUTO_ORDER, anything else is a comma-split,
-// trimmed candidate list. Unknown names are rejected by image-gen, not here.
-export function imageFallback(fallback: string): true | string[] {
-    return fallback === 'true'
-        ? true
-        : fallback
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean);
-}
-
 export function dailyCover(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', provider = '', model = '', fallback = ''] = args;
     const briefPath = join(workDir, '23-cover', `${runDate}_07_cover-brief.json`);

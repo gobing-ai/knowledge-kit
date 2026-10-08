@@ -4,7 +4,7 @@ name: Harden daily XHS render against transient provider timeouts (vendor fallba
 status: done
 template: feature-impl
 created_at: 2026-10-07T22:09:47.119Z
-updated_at: "2026-10-08T20:06:32.335Z"
+updated_at: "2026-10-08T21:41:18.077Z"
 feature_id: F61
 
 done_forced: "false"
@@ -72,8 +72,8 @@ Corrections to the original draft: the stage lives in `daily-stages.ts`, not `kk
 
 ### Solution
 
-- `plugins/kk/scripts/daily-stages.ts:275,1411`:
-  - Extracted shared `imageFallback(fallback: string): true | string[]` helper (0219 R1).
+- `plugins/kk/scripts/daily-stages.ts:267,1418`:
+  - Extracted a module-local `imageFallback(fallback: string): true | string[]` helper (0219 R1); re-verify 2026-10-08 moved it above the dailyCover doc block (it had split JSDoc from dailyCover) and dropped the unused export.
   - Added 8th `fallback = ''` arg to `dailyXhsRender`, setting `imageGen.fallback = imageFallback(fallback)` when non-empty.
   - Wrapped `kk(..., { soft: true })` in card render loop; on non-zero exit, invokes `failWith(status, \`xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}\`)` (0219 R2).
 - `plugins/kk/workflows/kk-daily-ai-voice.yaml` & `kk-daily-ai-voice2.yaml`:
@@ -89,12 +89,26 @@ Corrections to the original draft: the stage lives in `daily-stages.ts`, not `kk
 
 ### Testing
 
-- Focused tests passed:
-  - `bun test apps/cli/tests/kk-workflow-stages.test.ts apps/cli/tests/voice2-dag.test.ts apps/cli/tests/kk-daily-ai-voice-workflow.test.ts plugins/generations/image-gen/tests/fallback.test.ts plugins/kk/tests/` (257 passed, 0 failed).
-- Gate passed:
-  - `bun run lint` (Biome 2.5.5 clean, TypeScript typecheck clean).
-  - `bun run build` (all workspaces clean).
-  - `bun run test` (2188 tests passed, 0 failed, 2 pre-existing skipped).
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/scripts/daily-stages.ts:267` shared `imageFallback` parse; used by the cover stage at `plugins/kk/scripts/daily-stages.ts:312` and the XHS render at `plugins/kk/scripts/daily-stages.ts:1465` ('' leaves no key). Tested by `apps/cli/tests/kk-workflow-stages.test.ts:1230-1252`. |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:1475-1485` soft kk call, then failWith(status) names the card and the resume hint; the sequential stop-on-first-failure loop is kept. Tested by `apps/cli/tests/kk-workflow-stages.test.ts:1254-1266` (exit 7, named message, nothing packaged). |
+| R3 | MET | `plugins/kk/workflows/kk-daily-ai-voice.yaml:56` and `plugins/kk/workflows/kk-daily-ai-voice2.yaml:39` ship xhs_fallback "true" with the strict-restore comment; 8-arg render calls at `plugins/kk/workflows/kk-daily-ai-voice.yaml:476` and `plugins/kk/workflows/kk-daily-ai-voice2.yaml:520`. |
+| R4 | MET | `docs/04_DESIGN.md:1042` row gains `<fallback>` with semantics and default; `docs/design/kk-daily-ai-voice.md:170-175` §7 bullet names xhs_fallback and the named-card resume failure; both landed in commit 0edcabb1 with the code (T3). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1230-1252` asserts true, ['google','openai'], and no key for '' and absent; the pre-existing xhs-render tests in the same file pass unchanged (focused run 169 pass / 0 fail). |
+| AC2 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1254-1266` asserts exit 7, stderr `xhs render: card 01 failed` and `re-run daily-xhs-render to resume`, and no cards.json/content.json. |
+| AC3 | MET | test | `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:174-177` pins the 8-arg line and xhs_fallback "true"; `apps/cli/tests/voice2-dag.test.ts:433-438` pins the same for voice2. |
+| AC4 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1816-1835` daily-cover fallback test (absent / true / comma list) passes unchanged after the helper extraction and this run's helper relocation. |
+| AC5 | MET | command | `bun run gate` exit 0 this run: format + build + lint + rules + tests, 2210 pass / 2 skip (pre-existing Chromium E2E self-skip) / 0 fail, lines 98.63%; `plugins/generations/image-gen/tests/fallback.test.ts:168-193` (fallback true retries down AUTO_ORDER) green, timeout classed transient per `plugins/generations/image-gen/tests/provider-errors.test.ts:19`. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
@@ -104,13 +118,12 @@ Corrections to the original draft: the stage lives in `daily-stages.ts`, not `kk
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | security | plugins/kk/scripts/daily-stages.ts:275 | No credentials or untrusted inputs handled |
-| P4 | architecture | plugins/kk/scripts/daily-stages.ts:1411 | Reuses image-gen fallback machinery cleanly |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 - Feature F61 (daily AI voice destination); E8 / F615 (XHS card target); D6 tasks 0164-0166 (image-gen runtime fallback); F614 (cover pin).
-- Code: `plugins/kk/scripts/daily-stages.ts:275` (dailyCover), `:1411` (dailyXhsRender); `plugins/generations/image-gen/src/index.ts:393-450`; `providers/types.ts:347` (resolveFallbackOrder); `providers/errors.ts`.
+- Code: `plugins/kk/scripts/daily-stages.ts:287` (dailyCover), `:1418` (dailyXhsRender); `plugins/generations/image-gen/src/index.ts:393-450`; `providers/types.ts:347` (resolveFallbackOrder); `providers/errors.ts`.
 - Evidence: `.works/kk-daily-ai-voice/20261007/25-xhs/`.
 - Sibling: task 0220 (same dogfood, publish-completeness ordering).
 
