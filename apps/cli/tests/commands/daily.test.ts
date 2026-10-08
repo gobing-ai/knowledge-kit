@@ -116,6 +116,14 @@ describe('kk daily prepare', () => {
             delete process.env.KK_SPUR_BIN;
         }
     });
+
+    it('prepare uses default run-date formatRunDate() when omitted', async () => {
+        const dir = tempDir();
+        process.env.KK_WORKS_DIR = join(dir, 'works');
+        const result = await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2']);
+        expect(result.code).toBe(0);
+        rmSync(join(process.cwd(), '.spur', 'runs', 'kk-daily-ai-voice2'), { recursive: true, force: true });
+    });
 });
 
 describe('kk daily run-report', () => {
