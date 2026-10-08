@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E91"
 name: "Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-09-30T03:54:58.376Z"
-updated_at: "2026-10-07T22:55:03.964Z"
+updated_at: "2026-10-08T00:03:52.138Z"
 ---
 
 # E91: Browser publish channels on ts-browser-automation (InfoQ, Juejin, Substack, X articles) + shared browser command library
@@ -181,4 +181,6 @@ Feature: Browser publish channels on ts-browser-automation
 
 - 2026-09-30T04:13:51.021Z moved Q → E91 (system)
 - 2026-10-05T05:36:59.583Z backlog → active (system)
+- 2026-10-08T00:01:17.048Z active → verifying (system)
+- 2026-10-08T00:03:52.138Z verifying → done (system)
 

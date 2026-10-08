@@ -1577,3 +1577,21 @@ Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
   one unverified area (live browser editor/toast behavior per channel) is explicitly out of this
   doc-evolve scope and recorded as the residual tasks 0190/0195–0198.
 -->
+
+## 2026-10-07 — E91 0193/0194 dogfood learnings
+
+1. **Probe-first beats secondhand Q&A.** Both substack (editorUrl) and x-article (title mount, cover
+   Apply) drifts were localized by differential DOM probes against the live composer, not by guessing.
+   Keep `.spur/run/probe-*.ts` scratch out of lint scope (gitignored dir) and import publish-harness
+   relatively in scratch probes (workspace names don't resolve under `bun <file>`).
+2. **X article title is two-step**: `twitter-article-title` is a collapsed display div; the real
+   textarea mounts only after clicking it. `fill()` refuses the div — always resolve-or-click first.
+3. **X add-photos picker swallows setInputFiles**; set `fileInput` directly, then click the "Edit
+   media" crop dialog's Apply, and assert a rendered non-avatar twimg image. A transport that reports
+   ok without an observed postcondition will silently drop covers.
+4. **Verdict artifacts validate strictly**: requirement/AC row statuses must be `MET` (not `pass`),
+   and every check row needs `status`; Solution anchors must be repo-relative full paths — plugin-
+   relative shorthand (`src/index.ts:181`) fails `L4.stale-line-anchor` even when correct.
+5. **wrapup-pipeline workflow is unreliable in this env** (shimmed shells fail at task-resolve; agent
+   steps hung historically) — inline the wrap: doc drift edit, learnings/metrics appends, then
+   `spur feature advance <id> --json`.
