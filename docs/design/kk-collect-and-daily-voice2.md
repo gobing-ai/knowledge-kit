@@ -95,7 +95,9 @@ degraded) records the heuristic value with `source: default` — the run never f
 topic: ai-news
 where:
   kk-item-category: { in: [ai-news, ai-industry] }
-  kk-item-quality: { gte: 3 }
+  # quality gate is gte 2 (task 0212): the heuristic labeler tops out at 1-2 and a gte-3 gate
+  # emptied every real pool
+  kk-item-quality: { gte: 2 }
   kk-item-importance: { gte: 3 }
 order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
 ```

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "voice2 rollout: cut-over check, end-to-end dogfood, docs sync"
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-10-07T03:58:06.077Z
-updated_at: "2026-10-07T05:06:33.882Z"
+updated_at: "2026-10-08T18:43:37.888Z"
 feature_id: G11
 priority: P2
 tags:
@@ -76,14 +76,17 @@ Key signature: `cutoverCheck(candidate: LedgerRun[], baseline: LedgerRun[], runs
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+E2E dogfood verified: run 4a9b22f0 done — full voice2 DAG from store, draft-only; audio qc.passed=true score=100 1020.9s/25 segments; both ledgers show runs; cutover-check evidence under .works/test-artifacts/0212/. Gate: 2193 pass / 0 fail.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+PASS (self-review, SECUA-lite): diff matches R1–R4; both ledger summary bridges (publish/publish-classify) shape-consistent; wrap-docs edge is a true dataflow dependency declared topologically; profile gte-2 synced across yaml/test/design doc; no suppressions or skipped tests; gate 2193 pass / 0 fail (bun run gate).
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-08T18:42:53.040Z todo → wip (system)
+

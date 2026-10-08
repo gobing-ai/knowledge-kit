@@ -111,7 +111,7 @@ documents deliberate per-run serialization. **Authoring a `parallel` node does n
 Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary sequential steps
 (ADR-007 R4). Engine-level concurrency is deferred, not rejected.
 
-**DAG workflows (accepted design — ADR-031; not yet built).** Still true for `state-machine` and
+**DAG workflows (ADR-031; shipped 2026-10-08, tasks 0211–0212).** Still true for `state-machine` and
 `transition-flow`. Since `0.5.16` the engine also runs `kind: dag`: each wave of ready nodes is
 dispatched with `Promise.all` (`src/dag.ts`), so independent steps run concurrently. Constraints
 kk designs around: one action per node, no back-edges (loops → nested state-machine via

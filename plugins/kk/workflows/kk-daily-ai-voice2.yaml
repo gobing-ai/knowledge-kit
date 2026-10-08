@@ -367,9 +367,28 @@ nodes:
         command: 'test "${vars.skip_review}" != "true"'
 
   # ---- audio branch ----
+  # wrap-docs must be DECLARED BEFORE generate: the DAG requires nodes in topological order, and
+  # generate consumes wrap-docs's _10_wrap-docs_docs.json as its TTS input (0212 dogfood finding —
+  # an edge to a later-declared node wedges the dispatcher with generate never dispatched).
+  - id: wrap-docs
+    description: "Wrap VoiceScript into Doc[] input for the voice generator plugin (also the publish-prep input)"
+    dependsOn: [script, review]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
+
   - id: generate
     description: "Invoke the voice driver plugin (vdriver: gemini -> gemini-tts) to generate the audio"
-    dependsOn: [script, safety, review]
+    # wrap-docs is a data dependency, not a sibling: daily-generate reads its _10_wrap-docs_docs.json
+    # as the TTS input. Without this edge the two nodes race in the same wave (0212 dogfood finding).
+    dependsOn: [script, safety, review, wrap-docs]
     condition:
       kind: shell
       options:
@@ -400,20 +419,6 @@ nodes:
           kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}"
 
   # ---- publish-prep branch ----
-  - id: wrap-docs
-    description: "Wrap VoiceScript into Doc[] input for the voice generator plugin (also the publish-prep input)"
-    dependsOn: [script, review]
-    condition:
-      kind: shell
-      options:
-        command: >-
-          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
-    action:
-      kind: shell
-      options:
-        command: >-
-          kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
-
   - id: publish-prep
     description: "Merge article Content with the MP3 (rejects a non-.mp3 enclosure) and stamp its ID3 tags — the publish seam's input"
     dependsOn: [wrap-docs]

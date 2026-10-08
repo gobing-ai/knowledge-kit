@@ -47,7 +47,7 @@ describe('registerLedgerCommand', () => {
         expect(ledger).toBeDefined();
 
         const verbs = ledger?.commands.map((command) => command.name());
-        expect(verbs).toEqual(['append', 'sync']);
+        expect(verbs).toEqual(['append', 'sync', 'cutover-check']);
 
         const append = ledger?.commands.find((command) => command.name() === 'append');
         expect(append?.options.map((option) => option.long)).toEqual([
@@ -60,6 +60,14 @@ describe('registerLedgerCommand', () => {
 
         const sync = ledger?.commands.find((command) => command.name() === 'sync');
         expect(sync?.options.map((option) => option.long)).toEqual(['--workflow', '--works-dir', '--work-dir']);
+
+        const cutover = ledger?.commands.find((command) => command.name() === 'cutover-check');
+        expect(cutover?.options.map((option) => option.long)).toEqual([
+            '--candidate',
+            '--baseline',
+            '--runs',
+            '--works-dir',
+        ]);
     });
 });
 

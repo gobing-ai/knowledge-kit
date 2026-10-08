@@ -13,6 +13,9 @@
 topic: ai-news
 where:
   kk-item-category: { in: [ai-news, ai-industry] }
-  kk-item-quality: { gte: 3 }
+  # quality 2, not 3: real ingest bodies (last30days/aihot summaries) are stub-length, so the
+  # heuristic labeler tops out at 1-2 and a gte-3 gate empties every real pool (task 0212 dogfood
+  # finding). Raise this back when a full-text ingest source lands.
+  kk-item-quality: { gte: 2 }
   kk-item-importance: { gte: 3 }
 order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]

@@ -33,7 +33,7 @@ describe('parseProfile', () => {
         expect(profile.topic).toBe('ai-news');
         expect(profile.where).toEqual([
             { decisionId: 'kk-item-category', op: 'in', values: ['ai-news', 'ai-industry'] },
-            { decisionId: 'kk-item-quality', op: 'gte', value: 3 },
+            { decisionId: 'kk-item-quality', op: 'gte', value: 2 },
             { decisionId: 'kk-item-importance', op: 'gte', value: 3 },
         ]);
         expect(profile.order).toEqual([
