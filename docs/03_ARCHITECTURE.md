@@ -122,7 +122,7 @@ its wave's slowest node), and last-writer-wins `setVars` — DAG nodes pass data
 **Persistent store (shipped — ADR-030; tasks 0206, 0208–0210).** `@gobing-ai/kk-store` owns the
 only SQLite file (`store.db_path`); `kk store migrate|lock|ingest|label|extract|mark-used` is its
 sole CLI surface and the package is the only ts-db importer (boundary rules). `kk-collect` writes it
-every 4h; DAG workflows read it. `extract` compiles a topic profile
+every 6 h (04/10/16/22 local); DAG workflows read it. `extract` compiles a topic profile
 (`plugins/kk/decisions/extract/<topic>.yaml`) into one `ItemsDao.selectByProfile` query — a
 `labels` self-join per `where` decision, `first_seen_at >= now - window`, `NOT EXISTS episode_usage`
 when `--exclude-used` — and writes the pool as `Doc[]` with the stored labels inlined under

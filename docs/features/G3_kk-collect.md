@@ -6,14 +6,14 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:25.525Z"
-updated_at: "2026-10-07T04:53:46.045Z"
+updated_at: "2026-10-08T18:18:21.798Z"
 ---
 
 # G3: kk-collect
 
 ## Goal
 
-Home for the standalone 4-hourly collection workflow `plugins/kk/workflows/kk-collect.yaml` and the kk-owned SQLite store it fills.
+Home for the standalone 6-hourly (04:00/10:00/16:00/22:00 local) collection workflow `plugins/kk/workflows/kk-collect.yaml` and the kk-owned SQLite store it fills.
 
 ## Scope
 

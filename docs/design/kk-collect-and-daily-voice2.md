@@ -8,7 +8,7 @@ ADR-030 (store) and ADR-031 (DAG workflows) are the binding decisions.
 ## 1. Shape
 
 ```
-launchd/cron (every 4h)                         operator / cron (daily)
+launchd/cron (every 6h)                         operator / cron (daily)
         │                                                │
   kk-collect.yaml  (state-machine, 5 states)       kk-daily-ai-voice2.yaml  (kind: dag)
   lock → collect → store → label → ledger          extract → … fan-out … → fan-in → ledger
@@ -133,8 +133,8 @@ closed `HIGH|MEDIUM|LOW` level. `apps/cli/tests/store-docs.test.ts` resolves eac
 
 Run dir: `.works/kk-collect/<YYYYMMDD-HHmm>/` (docs.json, core-facts.md, label-report.json).
 
-**Schedule (I2).** Spur has no scheduler. kk ships `plugins/kk/schedules/kk-collect.plist.tmpl`
-and `kk-collect.cron.tmpl` (`0 */4 * * *`), rendered by `kk schedule render kk-collect
+**Schedule (I2).** Spur has no scheduler. kk ships `plugins/kk/schedules/launchd.plist.tmpl`
+and `cron.tmpl` (`0 4,10,16,22 * * *`), rendered by `kk schedule render kk-collect
 --platform launchd|cron` to stdout. Installing (`launchctl bootstrap` / `crontab`) is an operator
 action documented in the satellite; kk never edits the operator's crontab.
 

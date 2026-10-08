@@ -6,14 +6,14 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-10-07T03:50:34.546Z"
-updated_at: "2026-10-07T19:18:14.893Z"
+updated_at: "2026-10-08T18:18:46.542Z"
 ---
 
 # G31: kk-collect + kk-daily-ai-voice2: SQLite store, decision labels, DAG daily workflow, run ledger
 
 ## Goal
 
-Take data collection off the daily-episode critical path and make collected content a durable, labeled, multi-topic asset: a 4-hourly `kk-collect` workflow persists every ingested item into a migrated SQLite store (`@gobing-ai/ts-db`), tags new items through a `spur decision` label catalog, and serves deterministic topic pools (ai-news first) to downstream workflows with cross-day usage dedup.
+Take data collection off the daily-episode critical path and make collected content a durable, labeled, multi-topic asset: a 6-hourly `kk-collect` workflow persists every ingested item into a migrated SQLite store (`@gobing-ai/ts-db`), tags new items through a `spur decision` label catalog, and serves deterministic topic pools (ai-news first) to downstream workflows with cross-day usage dedup.
 
 ## Scope
 

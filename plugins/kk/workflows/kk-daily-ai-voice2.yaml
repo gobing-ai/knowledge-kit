@@ -17,7 +17,7 @@ vars:
   # Digits-only run-date stamp the artifact names carry; projected from <work_dir>/run-date.txt.
   run_date: ""
   # Store extract window (kk store extract --window). The old workflow's ingestion window was
-  # intrinsic to the fan-in; here it is the pool's freshness bound (kk-collect refreshes every 4h).
+  # intrinsic to the fan-in; here it is the pool's freshness bound (kk-collect refreshes every 6h).
   window: "24h"
   language: "zh"
   voice_profile: "robin-news"

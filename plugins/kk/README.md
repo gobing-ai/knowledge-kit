@@ -35,7 +35,7 @@ the platform — **installing it is an operator action** (kk never writes a cron
 `LaunchAgents` plist):
 
 ```bash
-# launchd (macOS): every 4 h (StartInterval 14400), one shared log
+# launchd (macOS): every 6 h at 04:00/10:00/16:00/22:00 local (StartCalendarInterval), one shared log
 # 1. the log directory must exist — launchd opens StandardOutPath but never creates its parent
 mkdir -p "$PWD/.works/kk-collect"
 # 2. render + bootstrap (the plist carries the PATH launchd's default lacks)
@@ -43,7 +43,7 @@ kk schedule render kk-collect --platform launchd --repo "$PWD" \
   > ~/Library/LaunchAgents/ai.gobing.kk-collect.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.kk-collect.plist
 
-# cron: the same 4-hourly cadence (the rendered line carries its own mkdir + PATH).
+# cron: the same 6-hourly cadence (the rendered line carries its own mkdir + PATH).
 # Merge, never replace: `| crontab -` discards every other job in the operator's crontab.
 crontab -l > /tmp/kk-collect.cron 2>/dev/null || :
 kk schedule render kk-collect --platform cron --repo "$PWD" >> /tmp/kk-collect.cron

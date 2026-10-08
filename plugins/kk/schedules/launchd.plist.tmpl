@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- kk-collect — standalone 4-hourly collection into the kk store.
+<!-- kk-collect — standalone 6-hourly collection (04:00/10:00/16:00/22:00 local) into the kk store.
 
      Rendered by `kk schedule render kk-collect --platform launchd --repo <checkout>`; kk never
      installs it. Operator action (plugins/kk/README.md §Schedule):
@@ -9,8 +9,10 @@
            > ~/Library/LaunchAgents/ai.gobing.kk-collect.plist
          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.kk-collect.plist
 
-     StartInterval 14400 s = 4 h. The engine runs one node at a time and `kk store lock` is the
-     single-flight guard, so overlap is answered with `skipped`, never with two collectors. -->
+     StartCalendarInterval fires at 04:00/10:00/16:00/22:00 local wall-clock time (6 h cadence);
+     hours the machine is asleep through coalesce into one run at wake (launchd.plist(5)), where cron
+     would skip. The engine runs one node at a time and `kk store lock` is the single-flight guard,
+     so overlap is answered with `skipped`, never with two collectors. -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -30,8 +32,33 @@
     </array>
     <key>WorkingDirectory</key>
     <string>{{repo}}</string>
-    <key>StartInterval</key>
-    <integer>14400</integer>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>4</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>10</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>22</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
     <!-- The job environment applies only AFTER exec, so it is not what resolves `spur` above —
          it is what the workflow's own children need (`kk`, `jq`, `bun` are all `#!/usr/bin/env bun`
          or PATH-resolved). -->

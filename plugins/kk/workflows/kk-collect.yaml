@@ -3,7 +3,7 @@
 name: kk-collect
 kind: state-machine
 description: >-
-  Standalone 4-hourly collection into the kk store (task 0208, feature G31): take the single-flight lock
+  Standalone 6-hourly (04:00/10:00/16:00/22:00 local) collection into the kk store (task 0208, feature G31): take the single-flight lock
   → fan-in ingest every source (aihot + last30days + horizon) + render the core-facts markdown → upsert the
   Doc[] into the store → label the new and label-invalidated items (0209; a no-op until then) → release the
   lock and record the run. It never generates, renders audio or publishes; the store is the only state it
@@ -65,8 +65,8 @@ states:
       - kind: shell
         options:
           # The claim is re-entrant for the same run and is stolen once its TTL has
-          # passed, so a crashed holder costs at most one tick (the TTL below deliberately outlives the
-          # 4 h cadence and every plausible collect duration, so a slow run is never overtaken). stdout
+          # passed, so a crashed holder costs at most one tick (the TTL below covers the
+          # 6 h cadence and every plausible collect duration, so a slow run is never overtaken). stdout
           # IS the lock contract, and the guard below reads it back:
           # `{"acquired":true}` or `{"skipped":"locked","holder":<run>}` (R1).
           command: >-

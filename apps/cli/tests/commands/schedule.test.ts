@@ -9,11 +9,11 @@
  * 3. a template that cannot be read (a `--repo` without `plugins/kk/schedules/`, when the
  *    running package's own copy is also absent) exits 1 naming the path — never prints an
  *    empty schedule;
- * 4. the launchd render must carry `StartInterval` 14400 (4 h), the exact
- *    `spur workflow run plugins/kk/workflows/kk-collect.yaml` ProgramArguments and both
- *    stream paths at `.works/kk-collect/launchd.log`, with `--repo` bound as the working
+ * 4. the launchd render must carry `StartCalendarInterval` at 04:00/10:00/16:00/22:00 local
+ *    (6 h), the exact `spur workflow run plugins/kk/workflows/kk-collect.yaml` ProgramArguments
+ *    and both stream paths at `.works/kk-collect/launchd.log`, with `--repo` bound as the working
  *    directory — a schedule that runs in the wrong checkout silently collects nothing;
- * 5. the cron render must carry the four-hourly expression (hour field every 4) plus the same
+ * 5. the cron render must carry the six-hourly expression (hours 4,10,16,22) plus the same
  *    program and log path;
  * 6. rendering must never install anything (no launchctl/crontab write): the command's
  *    only side effect is stdout.
@@ -49,6 +49,12 @@ function plistStringValue(plist: string, key: string): string {
     return plist.split(`<key>${key}</key>`)[1]?.match(/<string>([\s\S]*?)<\/string>/)?.[1] ?? '';
 }
 
+/** The `<integer>` values of a plist `<array>` block named `key`. */
+function plistArrayIntegers(plist: string, key: string): number[] {
+    const block = plist.split(`<key>${key}</key>`)[1]?.split('</array>')[0] ?? '';
+    return [...block.matchAll(/<integer>([\s\S]*?)<\/integer>/g)].map((match) => Number(match[1]));
+}
+
 describe('registerScheduleCommand', () => {
     it('R6 — registers the schedule noun with the render verb and its options', () => {
         const program = createProgram();
@@ -64,16 +70,15 @@ describe('registerScheduleCommand', () => {
 });
 
 describe('kk schedule render', () => {
-    it('R6/AC4 — the launchd render schedules kk-collect every 4 h from the given repo', async () => {
+    it('R6/AC4 — the launchd render schedules kk-collect 6-hourly at 04/10/16/22 local from the given repo', async () => {
         const result = await run(['schedule', 'render', 'kk-collect', '--platform', 'launchd', '--repo', REPO]);
 
         expect(result.code).toBe(0);
         expect(result.err).toBe('');
         const plist = result.out;
         expect(plist).toContain('<?xml version="1.0" encoding="UTF-8"?>');
-        // StartInterval 14400 s = 4 h.
-        expect(plist).toContain('<key>StartInterval</key>');
-        expect(plist.split('<key>StartInterval</key>')[1]?.split('\n')[1]?.trim()).toBe('<integer>14400</integer>');
+        // StartCalendarInterval Hour,Minute pairs — 04:00/10:00/16:00/22:00 local (6 h cadence).
+        expect(plistArrayIntegers(plist, 'StartCalendarInterval')).toEqual([4, 0, 10, 0, 16, 0, 22, 0]);
         expect(plistArrayValues(plist, 'ProgramArguments')).toEqual([
             'spur',
             'workflow',
@@ -98,13 +103,13 @@ describe('kk schedule render', () => {
         expect(plist).not.toContain('{{');
     });
 
-    it('R6/AC4 — the cron render is `0 */4 * * *` running the same workflow into the same log', async () => {
+    it('R6/AC4 — the cron render is `0 4,10,16,22 * * *` running the same workflow into the same log', async () => {
         const result = await run(['schedule', 'render', 'kk-collect', '--platform', 'cron', '--repo', REPO]);
 
         expect(result.code).toBe(0);
         expect(result.err).toBe('');
         const line = result.out.trim().split('\n').at(-1) ?? '';
-        expect(line).toStartWith('0 */4 * * * ');
+        expect(line).toStartWith('0 4,10,16,22 * * * ');
         expect(line).toContain('spur workflow run plugins/kk/workflows/kk-collect.yaml');
         expect(line).toContain(`${REPO}/.works/kk-collect/launchd.log`);
         expect(line).toContain(`cd ${REPO}`);
