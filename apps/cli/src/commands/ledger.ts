@@ -3,8 +3,11 @@ import { createNodeFileSystem, type FileSystem, NodeSyncProcessExecutor } from '
 import { type Command, CommanderError } from 'commander';
 import {
     appendLedgerSection,
+    cutoverCheck,
     LedgerError,
     ledgerHasRun,
+    type ParsedLedger,
+    parseLedger,
     parseTraceJson,
     parseTraceListJson,
     renderLedgerSection,
@@ -17,6 +20,14 @@ import { consoleOutput } from '../output';
 
 /** Default ledger root: `<cwd>/.works/<workflow>/ledger.md`. */
 const DEFAULT_WORKS_DIR = '.works';
+
+/** Options accepted by `kk ledger cutover-check`. */
+interface CutoverCheckOptions {
+    candidate: string;
+    baseline: string;
+    runs: string;
+    worksDir: string;
+}
 
 /** Options accepted by `kk ledger append`. */
 interface LedgerAppendOptions {
@@ -212,6 +223,52 @@ function failLoud(error: unknown): never {
 }
 
 /**
+ * `kk ledger cutover-check --candidate <name> --baseline <name> --runs <n>` (task 0212 R1) —
+ * read-only readiness probe for retiring the legacy workflow: exits 0 always and prints
+ * `{ ready, streak, required, reasons }`; only the workflow-name guard still exits 1.
+ */
+async function cutoverCheckAction(options: CutoverCheckOptions): Promise<void> {
+    const fs = createNodeFileSystem();
+    let candidatePath: string;
+    let baselinePath: string;
+    try {
+        candidatePath = ledgerFilePath(options.worksDir, options.candidate);
+        baselinePath = ledgerFilePath(options.worksDir, options.baseline);
+    } catch (error) {
+        failLoud(error);
+    }
+    const fileReasons: string[] = [];
+    const parsed: ParsedLedger[] = [];
+    for (const [label, path] of [
+        ['candidate', candidatePath],
+        ['baseline', baselinePath],
+    ] as const) {
+        try {
+            if (!(await fs.exists(path))) {
+                fileReasons.push(`${label}: no ledger at ${path}`);
+                parsed.push({ runs: [], malformed: [] });
+                continue;
+            }
+            const ledger = parseLedger(await fs.readFile(path));
+            for (const bad of ledger.malformed) {
+                fileReasons.push(`${label} ledger: malformed section (${bad})`);
+            }
+            parsed.push(ledger);
+        } catch (error) {
+            fileReasons.push(`${label}: unreadable (${error instanceof Error ? error.message : String(error)})`);
+            parsed.push({ runs: [], malformed: [] });
+        }
+    }
+    const candidateRuns = parsed[0]?.runs ?? [];
+    const baselineRuns = parsed[1]?.runs ?? [];
+    const verdict =
+        fileReasons.length > 0
+            ? { ready: false, streak: 0, required: Number(options.runs), reasons: fileReasons }
+            : cutoverCheck(candidateRuns, baselineRuns, Number(options.runs));
+    consoleOutput.write(JSON.stringify(verdict));
+}
+
+/**
  * Register the `ledger` command group — the per-workflow run ledger surface.
  *
  * `sync` runs at a workflow's first node and records every finished run; a final-node
@@ -236,4 +293,15 @@ export function registerLedgerCommand(program: Command): void {
         .option('--works-dir <dir>', 'Ledger root directory', DEFAULT_WORKS_DIR)
         .option('--work-dir <dir>', 'Workflow work_dir, for <node>.summary.txt result cells (newest missing run only)')
         .action(syncLedger);
+
+    ledger
+        .command('cutover-check')
+        .description(
+            'Read-only cutover readiness probe: newest N candidate runs all done and each matches the same-day baseline target set (exit 0 always, ready is the signal)',
+        )
+        .requiredOption('--candidate <name>', 'Candidate workflow name (the one to cut over to)')
+        .requiredOption('--baseline <name>', 'Baseline workflow name (the legacy one to retire)')
+        .requiredOption('--runs <n>', 'How many newest candidate runs must qualify')
+        .option('--works-dir <dir>', 'Ledger root directory', DEFAULT_WORKS_DIR)
+        .action(cutoverCheckAction);
 }

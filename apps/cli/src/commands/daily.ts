@@ -261,6 +261,12 @@ async function publishClassifyAction(options: PublishClassifyOptions): Promise<v
         mkdirSync(dir, { recursive: true });
         writeFileSync(resultPath, `${JSON.stringify({ ok: okCount === total && total > 0, targets }, null, 2)}`);
         writeFileSync(statusPath, status);
+        // The ledger's Result cell for the publish-classify node (task 0212 R1): `kk ledger append`
+        // reads `<node>.summary.txt`, so cutover-check can compare target sets across ledgers.
+        writeFileSync(
+            join(workDir, 'publish-classify.summary.txt'),
+            `${JSON.stringify({ status, published: okCount, targets: total })}\n`,
+        );
         const completeness = publishCompleteness(workDir, runDate);
         writeFileSync(
             join(dir, `${runDate}_17_publish_completeness.json`),

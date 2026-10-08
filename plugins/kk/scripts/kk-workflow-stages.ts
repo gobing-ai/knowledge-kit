@@ -1162,6 +1162,13 @@ function dailyPublishClassify(args: string[]): void {
         const status = okCount > 0 && okCount === total ? 'full' : okCount > 0 ? 'partial' : 'none';
         sted('write', result, () => writeJqText(result, { ok: okCount === total && total > 0, targets }));
         sted('write', statusFile, () => writeRaw(statusFile, status));
+        // The ledger's Result cell for the legacy `publish` node (task 0212 R1): same target-set
+        // shape the voice2 classify writes to publish-classify.summary.txt, so cutover-check can
+        // compare baseline and candidate ledgers during the cutover window.
+        const summaryFile = join(workDir, 'publish.summary.txt');
+        sted('write', summaryFile, () =>
+            writeRaw(summaryFile, `${JSON.stringify({ status, published: okCount, targets: total })}\n`),
+        );
         const completeness = publishCompleteness(workDir, runDate);
         const completenessFile = join(workDir, '31-publish', `${runDate}_17_publish_completeness.json`);
         sted('write', completenessFile, () => writeJqText(completenessFile, { runDate, ...completeness }));

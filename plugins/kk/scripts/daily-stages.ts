@@ -572,7 +572,10 @@ export function dailyPlan(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = '', planMaxItems = ''] = args;
     const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
     const planDocs = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
-    const blended = join(workDir, '10-ingest', `${runDate}_02_collect_blended.json`);
+    // voice2's extract node writes 10-collect/pool.json; voice1's fan-in still writes the blended
+    // file. Prefer the pool when it exists so both DAGs share this stage (0212 dogfood finding).
+    const pool = join(workDir, '10-collect', 'pool.json');
+    const blended = isFile(pool) ? pool : join(workDir, '10-ingest', `${runDate}_02_collect_blended.json`);
     timed(workDir, 'plan', () => {
         if (isFile(planDocs)) {
             console.log(`plan cached: ${planDocs}`);
@@ -1246,7 +1249,7 @@ export function dailyShowNotes(args: string[]): void {
         const excluded = new Set<string>();
         if (typeof articleBody === 'string') {
             for (const note of articleBody.matchAll(/未写入[：:](.*)/g)) {
-                for (const id of note[1].matchAll(/(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16}/g)) {
+                for (const id of note[1].matchAll(/(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16,64}/g)) {
                     excluded.add(id[0]);
                     const colon = id[0].indexOf(':');
                     if (colon !== -1) excluded.add(id[0].slice(colon + 1));

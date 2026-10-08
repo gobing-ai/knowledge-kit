@@ -209,7 +209,14 @@ interface RunOutcome {
  */
 function runDag(
     cwd: string,
-    options: { runId: string; pool: string; candidates: string; sleepMs?: number; realRunReport?: boolean },
+    options: {
+        runId: string;
+        pool: string;
+        candidates: string;
+        sleepMs?: number;
+        realRunReport?: boolean;
+        vars?: Record<string, string>;
+    },
 ): RunOutcome {
     const binDir = tempDir(`voice2-bin-${options.runId}-`);
     const works = tempDir(`voice2-works-${options.runId}-`);
@@ -226,6 +233,7 @@ function runDag(
         article_write_enabled: 'false',
         script_write_enabled: 'false',
         run_date: '2026-10-07',
+        ...options.vars,
     };
     const result = withKkShim(binDir, () =>
         Bun.spawnSync(
@@ -583,7 +591,7 @@ describe('kk-daily-ai-voice2 — empty pool ends the run as no-content (AC3)', (
 });
 
 describe('kk-daily-ai-voice2 — independent branches run concurrently and fan in (AC2)', () => {
-    it('overlaps the qc-content wave and still reaches the fan-in ordering', () => {
+    it('waits for wrap-docs before generate and still reaches the fan-in ordering', () => {
         const cwd = tempDir('voice2-full-');
         const outcome = runDag(cwd, {
             runId: 'voice2-concurrent',
@@ -592,13 +600,16 @@ describe('kk-daily-ai-voice2 — independent branches run concurrently and fan i
             sleepMs: 2,
         });
         expect(outcome.status).toBe('done');
-        // Both siblings of the post-script wave ran, each holding a 2 s sleep: a serial scheduler
-        // would space their starts by >= 2 s, a concurrent one dispatches them in the same wave.
+        // 0212 race fix: generate depends on wrap-docs, whose outputs it consumes — the render must
+        // not start in the same wave as the wrap-docs write. wrap-docs holds a 2 s sleep, so
+        // starting >= 2 s after wrap-docs proves generate waited for its COMPLETION, not merely its
+        // declaration. (Residual AC2 overlap — xhs-write ‖ generate's render — runs through
+        // agent.run branches, which this fixture stubs out; run 4a9b22f0 exercised it end to end.)
         const generate = callTimes(outcome, 'stage daily-generate')[0];
         const wrapDocs = callTimes(outcome, 'stage daily-wrap-docs')[0];
         expect(generate).toBeDefined();
         expect(wrapDocs).toBeDefined();
-        expect(Math.abs((generate as number) - (wrapDocs as number))).toBeLessThan(2_000);
+        expect(generate as number).toBeGreaterThanOrEqual((wrapDocs as number) + 2_000);
         // The fan-in still saw every leaf's outcome: publish stays disabled here, so the whole
         // subtree (including publish-classify) is skipped by its condition, and the run reaches the
         // tail nodes that list `extract`.

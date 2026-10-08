@@ -324,3 +324,200 @@ export function selectMissingRuns(entries: readonly TraceListEntry[], markdown: 
         .sort((left, right) => (left.startedAt ?? '').localeCompare(right.startedAt ?? ''))
         .map((entry) => entry.runId);
 }
+
+// ---- cutover-check (task 0212 R1) ----
+
+/** One `| Step | ... | Result |` row of a ledger section's step table. */
+export interface LedgerStep {
+    node: string;
+    status: string;
+    result: string;
+}
+
+/** One ledger section: a finished workflow run as the 0207 renderer wrote it. */
+export interface LedgerRun {
+    runId: string;
+    /** Heading's UTC minute (`2026-10-07T14:05Z`); the same-day baseline pairing keys off this. */
+    startedAt: string;
+    status: string;
+    steps: LedgerStep[];
+}
+
+/** `parseLedger` output: the run sections plus any headings that never became one. */
+export interface ParsedLedger {
+    runs: LedgerRun[];
+    /** Section headings with no `<!-- run:... -->` marker, in file order (reported, never fatal). */
+    malformed: string[];
+}
+
+/** Readiness verdict: exit 0 always — `ready` is the signal, `reasons` the evidence. */
+export interface CutoverVerdict {
+    ready: boolean;
+    /** Newest consecutive `done` candidate runs. */
+    streak: number;
+    required: number;
+    reasons: string[];
+}
+
+/** The candidate's classify node id; the legacy baseline spells it `publish`. */
+const CLASSIFY_NODE = 'publish-classify';
+
+/** One table row split into trimmed cells; escaped pipes (`\|`) survive the split. */
+const ESCAPED_PIPE_SENTINEL = '\u0000';
+function rowCells(row: string): string[] {
+    const cells = row.replaceAll('\\|', ESCAPED_PIPE_SENTINEL).split('|');
+    cells.shift();
+    cells.pop();
+    return cells.map((cell) => cell.replaceAll(ESCAPED_PIPE_SENTINEL, '|').trim());
+}
+
+/**
+ * Parse the 0207 ledger format (`## <ts> · run <id> · <status> · ...` sections with a
+ * `<!-- run:<id> -->` marker and a step table). A heading without its marker is malformed:
+ * recorded in `.malformed`, never fatal — cutover-check is read-only and must keep answering.
+ */
+export function parseLedger(markdown: string): ParsedLedger {
+    const runs: LedgerRun[] = [];
+    const malformed: string[] = [];
+    let heading: string | null = null;
+    let headingText = '';
+    let startedAt = '';
+    let status = 'unknown';
+    let runId: string | null = null;
+    let steps: LedgerStep[] = [];
+    const flush = (): void => {
+        if (heading === null) {
+            return;
+        }
+        if (runId === null) {
+            malformed.push(headingText);
+        } else {
+            runs.push({ runId, startedAt, status, steps });
+        }
+        heading = null;
+        runId = null;
+        steps = [];
+    };
+    for (const line of markdown.split('\n')) {
+        if (line.startsWith('## ')) {
+            flush();
+            const fields = line.slice(3).trim().split(' · ');
+            heading = fields[0] ?? '';
+            headingText = line.slice(3).trim();
+            startedAt = heading;
+            status = fields[2] ?? 'unknown';
+            continue;
+        }
+        if (heading === null) {
+            continue;
+        }
+        const marker = /<!-- run:(\S+) -->/.exec(line);
+        if (marker !== null) {
+            runId = marker[1] ?? '';
+            continue;
+        }
+        if (line.startsWith('| ')) {
+            const cells = rowCells(line);
+            const [node, stepStatus, , , result] = cells;
+            if (cells.length === 5 && node !== undefined && node !== 'Step' && !node.startsWith('-')) {
+                steps.push({ node, status: stepStatus ?? 'unknown', result: result ?? '' });
+            }
+        }
+    }
+    flush();
+    return { runs, malformed };
+}
+
+/** The run's classify step, under either node spelling. */
+function classifyStep(run: LedgerRun): LedgerStep | undefined {
+    return run.steps.find((step) => step.node === CLASSIFY_NODE || step.node === 'publish');
+}
+
+/**
+ * The classify Result cell as a target-set signature (`full:2/2`), or null when the cell does
+ * not carry one — pre-cutover ledgers hold `ok` there and cannot prove parity.
+ */
+export function classifyTargetSet(result: string): string | null {
+    let raw: unknown;
+    try {
+        raw = JSON.parse(result);
+    } catch {
+        return null;
+    }
+    if (
+        isRecord(raw) &&
+        typeof raw.status === 'string' &&
+        typeof raw.published === 'number' &&
+        typeof raw.targets === 'number'
+    ) {
+        return `${raw.status}:${raw.published}/${raw.targets}`;
+    }
+    return null;
+}
+
+/**
+ * The cutover criterion: the newest `runs` candidate sections are all `done` and each one's
+ * classify target set matches the newest same-day baseline run's. Pure — the command folds in
+ * file-level reasons (missing ledgers, malformed sections) on top.
+ */
+export function cutoverCheck(candidate: LedgerRun[], baseline: LedgerRun[], runs: number): CutoverVerdict {
+    const verdict: CutoverVerdict = { ready: false, streak: 0, required: runs, reasons: [] };
+    if (!Number.isInteger(runs) || runs < 1) {
+        verdict.reasons.push(`args: --runs must be a positive integer, got ${runs}`);
+        return verdict;
+    }
+    const ordered = [...candidate].sort(
+        (left, right) => left.startedAt.localeCompare(right.startedAt) || left.runId.localeCompare(right.runId),
+    );
+    for (let index = ordered.length - 1; index >= 0 && ordered[index]?.status === 'done'; index--) {
+        verdict.streak++;
+    }
+    const window = ordered.slice(-runs);
+    if (window.length < runs) {
+        verdict.reasons.push(`candidate: ${window.length} of ${runs} required runs recorded`);
+    }
+    // Newest-first baseline runs per UTC day — the pairing partner of a candidate run.
+    const byDay = new Map<string, LedgerRun[]>();
+    for (const run of [...baseline].sort((left, right) => right.startedAt.localeCompare(left.startedAt))) {
+        const day = run.startedAt.slice(0, 10);
+        const peers = byDay.get(day);
+        if (peers === undefined) {
+            byDay.set(day, [run]);
+        } else {
+            peers.push(run);
+        }
+    }
+    for (const run of window) {
+        const short = run.runId.slice(0, 8);
+        if (run.status !== 'done') {
+            verdict.reasons.push(`candidate ${short}: run ${run.status}`);
+        }
+        const step = classifyStep(run);
+        if (step === undefined) {
+            verdict.reasons.push(`candidate ${short}: no classify step`);
+            continue;
+        }
+        const mine = classifyTargetSet(step.result);
+        if (mine === null) {
+            verdict.reasons.push(`candidate ${short}: classify result is not a target set`);
+            continue;
+        }
+        const day = run.startedAt.slice(0, 10);
+        const peer = byDay.get(day)?.[0];
+        if (peer === undefined) {
+            verdict.reasons.push(`baseline: no ${day} run`);
+            continue;
+        }
+        const peerStep = classifyStep(peer);
+        const theirs = peerStep === undefined ? null : classifyTargetSet(peerStep.result);
+        if (theirs === null) {
+            verdict.reasons.push(`baseline ${peer.runId.slice(0, 8)}: no comparable target set`);
+            continue;
+        }
+        if (mine !== theirs) {
+            verdict.reasons.push(`${day}: target set mismatch candidate ${mine} vs baseline ${theirs}`);
+        }
+    }
+    verdict.ready = verdict.reasons.length === 0 && window.length === runs && verdict.streak >= runs;
+    return verdict;
+}

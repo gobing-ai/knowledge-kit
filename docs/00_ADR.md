@@ -1170,7 +1170,7 @@ illustration across failures is deferred until observed.
 
 ## ADR-031: Product workflows may be `kind: dag`; nodes pass data by files
 
-**Status:** Accepted (design) · **Date:** 2026-10-06
+**Status:** Accepted; implemented (tasks 0211–0212, first green run `4a9b22f0` 2026-10-08) · **Date:** 2026-10-06
 
 **Decision.** A product workflow may use the engine's `kind: dag` (ts-dual-workflow-engine ≥ 0.5.16: concurrent waves, `dependsOn`, `condition` skip, `pause`, durable resume). Each node is exactly one `kk` command, one `agent.run`, or one `spur workflow run` (loops live in a nested state-machine). Nodes exchange data through fixed paths under `work_dir`, never through vars (concurrent `setVars` is last-writer-wins). Non-blocking targets exit 0 on soft failure because the DAG is fail-fast. This amends ADR-007 R4: `kk` still owns steps and fan-in/fan-out *within* a step; the engine may now run independent steps concurrently.
 

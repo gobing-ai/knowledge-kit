@@ -140,7 +140,7 @@ const LEADING_H1_RE = /^#(?!#)\s*[^\n]+\n+/.source;
 
 /** ids the article-write note marks as dropped on the topic boundary, e.g. 「…未写入：<id>（原因）、<id>（原因）」. */
 const NOTE_EXCLUDED_RE = /未写入[：:](.*)/g;
-const HEX_ID_RE = /(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16}/g;
+const HEX_ID_RE = /(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16,64}/g;
 
 /** Parse the boundary-note ids out of an article body so references/metadata never cite excluded docs (judge finding 2026-10-02). */
 export function excludedIdsFromNote(body: string | undefined): Set<string> {
