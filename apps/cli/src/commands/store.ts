@@ -230,6 +230,24 @@ async function invalidatedIds(items: ItemsDao, docs: readonly Doc[]): Promise<st
     return invalidated;
 }
 
+/**
+ * Per-plugin attribution counts from the blended docs' `metadata.sources[].file` — the
+ * `collect_runs.source_counts_json` payload. A doc fused from several plugins counts once per
+ * plugin; a doc without source attribution counts nowhere (the map stays smaller, never wrong).
+ */
+function sourceCountsOf(docs: readonly Doc[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const doc of docs) {
+        const sources = doc.metadata?.sources;
+        if (!Array.isArray(sources)) continue;
+        for (const source of sources) {
+            const file = (source as { file?: unknown } | null)?.file;
+            if (typeof file === 'string' && file !== '') counts[file] = (counts[file] ?? 0) + 1;
+        }
+    }
+    return counts;
+}
+
 /** Write the labelling input (`--new-ids`), creating its parent directory. */
 async function writeNewIds(fs: FileSystem, path: string, ids: readonly string[]): Promise<void> {
     await fs.ensureDir(dirname(path));
@@ -254,7 +272,7 @@ async function ingestAction(options: IngestOptions): Promise<void> {
         const store = await openStore({ path: dbPath });
         try {
             const invalidated = await invalidatedIds(store.items, docs);
-            await store.collectRuns.start({ runId: options.run });
+            await store.collectRuns.start({ runId: options.run, sourceCounts: sourceCountsOf(docs) });
             const result = await store.items.upsertDocs(options.run, docs);
             await store.collectRuns.finish(options.run, {
                 status: 'done',
@@ -316,6 +334,8 @@ interface DecisionResult {
     source: string;
     reason: string;
     maker: string;
+    /** Backend wall-clock cost of the consult; absent on a spawn/parse failure. */
+    durationMs?: number;
 }
 
 /** One `labels` row to write, plus the source its report counter belongs to. */
@@ -611,6 +631,15 @@ function labelRow(
  * heuristic mode only items the plugin flagged (`metadata.needs_model`) reach `spur decision run`
  * — the R5 cost contract and the report's `model`/`fallback` split both live here.
  */
+/** One item's labelling: the rows to upsert plus the model-consult cost the pass paid. */
+interface LabelItemOutcome {
+    rows: LabelRow[];
+    /** `spur decision run` invocations attempted (heuristic-only items cost zero). */
+    consults: number;
+    /** Summed backend `durationMs` across those consults; absent usage counts as 0. */
+    consultMs: number;
+}
+
 async function labelItem(
     fs: FileSystem,
     scratch: string,
@@ -619,13 +648,20 @@ async function labelItem(
     mode: LabelMode,
     maker: string,
     runId: string,
-): Promise<LabelRow[]> {
+): Promise<LabelItemOutcome> {
     const routed = mode === 'decision' || annotation?.needsModel === true;
     let decide: ((decisionId: string) => DecisionResult | undefined) | null = null;
+    let consults = 0;
+    let consultMs = 0;
     if (routed) {
         const evidencePath = join(scratch, `evidence-${item.id}.md`);
         await fs.writeFile(evidencePath, item.body);
-        decide = (decisionId) => runDecision(decisionId, item, evidencePath, maker);
+        decide = (decisionId) => {
+            consults += 1;
+            const result = runDecision(decisionId, item, evidencePath, maker);
+            consultMs += result?.durationMs ?? 0;
+            return result;
+        };
     }
     const rows: LabelRow[] = [];
     const category = labelRow(
@@ -652,13 +688,13 @@ async function labelItem(
         );
         if (row !== null) rows.push(row);
     }
-    return rows;
+    return { rows, consults, consultMs };
 }
 
 /**
  * `kk store label --run <id> --new-ids <path> [--maker fm-local] [--mode heuristic|decision] [--db <path>]`
  * — write one `labels` row per decision for the ids the last `kk store ingest` filed (R4), and print
- * `{verdict, confidence, labeled, model, fallback}` (R6).
+ * `{verdict, confidence, labeled, model, fallback, consults, consultMs}` (R6).
  *
  * Heuristic-first (R5): every listed item is annotated by the plugin's own keyword heuristic through
  * `kk executor run episode-plan-gen` in `EPISODE_PLAN_MODE=label`, so apps/cli imports no plugin
@@ -685,10 +721,21 @@ async function labelAction(options: LabelOptions): Promise<void> {
             const items = await readLabelItems(store.items, ids);
             const annotations = await heuristicAnnotations(fs, scratch, options.run, items);
             const rows: LabelRow[] = [];
+            let consults = 0;
+            let consultMs = 0;
             for (const item of items) {
-                rows.push(
-                    ...(await labelItem(fs, scratch, item, annotations.get(item.id), mode, options.maker, options.run)),
+                const outcome = await labelItem(
+                    fs,
+                    scratch,
+                    item,
+                    annotations.get(item.id),
+                    mode,
+                    options.maker,
+                    options.run,
                 );
+                rows.push(...outcome.rows);
+                consults += outcome.consults;
+                consultMs += outcome.consultMs;
             }
             for (const row of rows) {
                 await store.labels.upsertLabel({
@@ -709,6 +756,8 @@ async function labelAction(options: LabelOptions): Promise<void> {
                     labeled: rows.length,
                     model: rows.filter((row) => row.source === 'model').length,
                     fallback: rows.filter((row) => row.source === 'default').length,
+                    consults,
+                    consultMs,
                 }),
             );
         } finally {
@@ -963,7 +1012,7 @@ export function registerStoreCommand(program: Command): void {
     store
         .command('label')
         .description(
-            'Label the listed items: one labels row per decision, heuristic-first; prints the {verdict, confidence} line plus {labeled, model, fallback}',
+            'Label the listed items: one labels row per decision, heuristic-first; prints the {verdict, confidence} line plus {labeled, model, fallback, consults, consultMs}',
         )
         .requiredOption('--run <id>', 'Collect run id the labels belong to')
         .requiredOption('--new-ids <path>', 'Input path listing the item ids this pass must decide')

@@ -401,7 +401,7 @@ describe('kk-collect workflow E2E (0208 AC1–AC3)', () => {
             JSON.parse(readFileSync(join(workDirOne, '10-ingest', name), 'utf-8'));
         expect(ingestConfig('source.json')).toEqual({ limit: 10 });
         expect(ingestConfig('last30days.json')).toEqual({ topic });
-        expect(ingestConfig('horizon.json')).toEqual({ hours: 4 });
+        expect(ingestConfig('horizon.json')).toEqual({ hours: 6 });
 
         // AC1 — every collected item is stored, and the lock is released on the normal exit.
         const newIdsOne = JSON.parse(readFileSync(join(workDirOne, 'new-ids.json'), 'utf-8')) as string[];

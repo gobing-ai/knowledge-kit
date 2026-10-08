@@ -194,13 +194,21 @@ function labelRows(db: string): Array<{
 
 /**
  * The verdict line `kk store label` prints (G31 R14): `PASS` plus exactly one
- * `HIGH | MEDIUM | LOW` level, then the counters R6 reports.
+ * `HIGH | MEDIUM | LOW` level, then the counters R6 reports. `consults` counts every
+ * decision attempt — model rows and degraded fallbacks alike; the stub emits no
+ * `durationMs`, so `consultMs` is 0 here.
  */
 function verdictLine(
     counts: { labeled: number; model: number; fallback: number },
     confidence: string,
 ): Record<string, unknown> {
-    return { verdict: 'PASS', confidence, ...counts };
+    return {
+        verdict: 'PASS',
+        confidence,
+        consults: counts.model + counts.fallback,
+        consultMs: 0,
+        ...counts,
+    };
 }
 
 /** The id at `index` of a seeded run — a short seed is a broken test, never a silent skip. */

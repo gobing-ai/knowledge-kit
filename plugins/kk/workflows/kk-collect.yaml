@@ -30,7 +30,9 @@ vars:
   # Per-source collection parameters, seeded into the plugin source configs by `lock`.
   limit: "10"
   last30days_topic: "AI news"
-  horizon_hours: "4"
+  # Matches the 6h tick cadence: a trailing lookback shorter than the interval leaves a blind
+  # gap between ticks (dogfood 2026-10-08 P3); equal windows just dedup on re-ingest.
+  horizon_hours: "6"
   plugins_path: ""
 
 states:

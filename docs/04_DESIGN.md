@@ -89,8 +89,8 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 | `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215+0216) |
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
-| `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs`, write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
-| `store label` | Label the ids `ingest` filed — one `labels` row per decision through the kk decision catalog, heuristic-first; prints `{verdict, confidence, labeled, model, fallback}` (§1.9) | shipped (task 0209; verdict confidence 0213) |
+| `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
+| `store label` | Label the ids `ingest` filed — one `labels` row per decision through the kk decision catalog, heuristic-first; prints `{verdict, confidence, labeled, model, fallback, consults, consultMs}` (§1.9) | shipped (task 0209; verdict confidence 0213) |
 | `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined); prints `{count}` (§1.9) | shipped (task 0210) |
 | `store mark-used` | Record the items one run used in `episode_usage` (idempotent); prints `{marked}` (§1.9) | shipped (task 0210) |
 | `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
@@ -425,8 +425,10 @@ prints `{released}` (`false` when the claim was already stolen or released). Fai
 
 `kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]` is the collector's
 write path: it validates the input against `DocListSchema`, records the run's `collect_runs` row
-(`start` → `finish` with the counts), upserts through `ItemsDao.upsertDocs` (one batch, so a
-rejected write stores nothing) and prints `{inserted, updated, unchanged}`. `--new-ids` receives
+(`start` → `finish` with the counts, `source_counts` derived from the blended docs'
+`metadata.sources[].file` so per-plugin attribution is queryable), upserts through
+`ItemsDao.upsertDocs` (one batch, so a rejected write stores nothing) and prints
+`{inserted, updated, unchanged}`. `--new-ids` receives
 the ids the next label pass must decide: the inserted ids plus the already-stored ids whose content
 changed (whose `labels` rows the upsert deleted in the same batch). The DAO reports only the
 inserted half, so the invalidated half is derived from the stored `title`/`body` **before** the
@@ -454,7 +456,10 @@ source=… --evidence <body file> --maker <maker> --json`; `--mode decision` rou
 with `source: default` (`no-backend`, `timeout`, `error`, `low-confidence`), an unparseable payload, an
 out-of-vocabulary value or a spawn failure stores the **heuristic value** with `source: default`: the
 pass exits 0 and a collect run never fails on labels. stdout is `{verdict, confidence, labeled,
-model, fallback}`, and the scratch under `<new-ids dir>/label/` is removed on the way out. Usage
+model, fallback, consults, consultMs}` — `consults` counts the `spur decision run` invocations the
+pass attempted and `consultMs` sums their reported `durationMs` (the decision backend does not report
+token usage), both observable without parsing `decision_logs`. The scratch under
+`<new-ids dir>/label/` is removed on the way out. Usage
 errors (a missing or malformed `--new-ids`, an unknown `--mode`) exit 1 with
 `kk.store.label.failed: <cause>`.
 
