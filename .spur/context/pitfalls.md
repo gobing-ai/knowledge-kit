@@ -32,3 +32,8 @@
 - **Per-tree provenance**: a `--worktree` pipeline run's provenance DB lives in the worktree; `--persist-out` copies only `.spur/run/*` artifacts, NOT `.spur/memory/runs/*.state.json`. Deleting the worktree orphans the run — re-link from the invoking tree with `spur task run-link <wbs> --run-id <id>` BEFORE it's needed by a done-gate.
 - **BSD sed has no `\U`**: `$(echo $s | sed 's/^./\U&/')` emits the lowercase letter unchanged → `spur task update --section solution` fails silently when stdout is swallowed. Spell section names out.
 - **Parallel-session collisions**: main can absorb the same task's substance while your run executes (here: 4 commits incl. an equivalent-or-superset store-docs fix). Cheap detector: `git merge --ff-only` refusal + `git merge-tree <base> main <branch> | grep -c '<<<<<<<'`. When main holds the superset, drop the branch — never merge a subset over it.
+## 2026-10-08 · task 0212
+- Do NOT rely on the `/tmp` PATH shim across sessions (tmp cleanup purged it) — global `kk` resolves to the main repo build; recreate the shim or run stages via the source entry.
+- Engine PIDs killed via `kill` leave orphaned `kk stage` bun processes holding the voicebox single-job slot (0224). Kill the stage child PIDs too, then `spur workflow clean --json`.
+- Foreground `timeout=3000` killed the engine mid-run once (orphan e9ad943d) — always launch long workflows detached (nohup + disown) and poll.
+- Gemini TTS probe passes then the first real segment 429s on the weekly quota (~21h horizon) — probe is not admission proof (0223).

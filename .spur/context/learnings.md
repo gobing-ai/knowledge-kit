@@ -236,3 +236,12 @@ enforces the same enum on every `Verification (` block in documents (commit c2e9
 - 0218: test-spawned `spur workflow run --dry-run` walks pass `--no-log` — the two-file run-record write contends under concurrent spur use (refine 5-8x); assertions unaffected (stdout JSON summary is the evidence).
 - 0218: `spur task verdict --from-answer` answer schema: Req/AC statuses are MET|PARTIAL|UNMET (not PASS); AC ids must match full scenario titles; evidence types constrained (static-ref is NOT executable evidence — cite a command/test run instead).
 - 0218: proof-input digest (`inline-run-setup --fingerprint`) scopes spec sections only — Review/Solution/Testing/status writes don't invalidate it; re-capture before record anyway.
+## 2026-10-08 · task 0212 (voice2 rollout)
+- DAG workflows must declare nodes in topological order: an edge to a later-declared node silently wedges the dispatcher (generate never dispatched).
+- Dataflow deps must be explicit edges: generate raced wrap-docs in the same wave until `generate dependsOn wrap-docs` was added; the AC2 test now proves generate waits for wrap-docs completion (start + 2s sleep).
+- `dailyPlan` prefers `10-collect/pool.json`, falls back to voice1's blended file — lets voice1/voice2 share the stage.
+- ai-news extract profile quality gate is gte 2 (heuristic labeler tops out at 1-2; gte 3 emptied every real pool).
+- `kk ledger append` refuses a run still `running` (by design) — backfill with `kk ledger sync --workflow <w> --work-dir <dir>` after the run finalizes.
+- Rerunning a stale work_dir after a date rollover: pin `run_date` in `--vars`, or the DAG creates a fresh empty work dir.
+- Stage-level caching shows 0s durations = cache hits; agent-node re-runs invalidate downstream caches (fresh TTS render ~2.5h via voicebox).
+- cutover-check compares ledger Result cells; both workflows write `<node>.summary.txt` (publish/publish-classify) as the Result source.
