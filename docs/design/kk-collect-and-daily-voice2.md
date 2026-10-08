@@ -117,15 +117,15 @@ closed `HIGH|MEDIUM|LOW` level. `apps/cli/tests/store-docs.test.ts` resolves eac
 | Label DAO upsert / read | persist | `packages/kk-store/src/dao/labels.ts:103` | yes |
 | Pass level (weakest row) | emit | `packages/kk-store/src/dao/labels.ts:50` | yes |
 | `kk store label` verdict line | emit | `apps/cli/src/commands/store.ts:705` | yes — `{verdict, confidence, …}` |
-| `kk-collect` `label → release` guard | consume | `plugins/kk/workflows/kk-collect.yaml:242` | yes — absent/out-of-enum refused by name |
-| `kk store extract` | consume | `apps/cli/src/commands/store.ts:811` | named gap — selects by label value, not a verdict consumer |
+| `kk-collect` `label → release` guard | consume | `plugins/kk/workflows/kk-collect.yaml:236` | yes — absent/out-of-enum refused by name |
+| `kk store extract` | consume | `apps/cli/src/commands/store.ts:817` | named gap — selects by label value, not a verdict consumer |
 | `kk-daily-ai-voice2` judge/safety gates | consume | — | named gap — workflow not built (G11/G71) |
 
 ## 5. `kk-collect.yaml` (state-machine — simple sequence, failure edges explicit)
 
 | State | Action | On failure |
 | --- | --- | --- |
-| `lock` | `kk store migrate && kk store lock acquire --name collect --run $__runId` | `failed`; skipped ⇒ `done-skipped` |
+| `lock` | `kk ledger sync` + `kk stage collect-prepare <stamp> <limit> <topic> <hours>` (work dir + JSON-safe ingest params) + `kk store migrate && kk store lock acquire --name collect --run $__runId` | `failed`; skipped ⇒ `done-skipped` |
 | `collect` | `kk executor fan-in --source aihot-ingest --source last30days-ingest --source horizon-ingest --out <run>/docs.json` + core-facts markdown render (existing `daily-collect-facts` logic moved into the `core-facts-gen` plugin) | `release` → `failed` |
 | `store` | `kk store ingest --run $__runId --in <run>/docs.json` | `release` → `failed` |
 | `label` | `kk store label --run $__runId --catalog plugins/kk/decisions` | (never fails, see §4) |
@@ -198,11 +198,11 @@ receive only file paths from fixed layout + vars.
 
 ## 7. Ledger (I15–I16)
 
-`kk ledger append --workflow <name> --run <run-id>` is the final node / final state. A fail-fast
-DAG never reaches it, so the first node of every run (`prepare` / `lock`) runs `kk ledger sync
---workflow <name>`, which appends any finished run ids missing from the ledger (failed ones
-included) from `spur workflow trace --workflow <name> --json` (`.entries[].runId`). One code path,
-idempotent by run id.
+The first node of every run (`prepare` / `lock`) runs `kk ledger sync --workflow <name>`, which
+appends every finished run id missing from the ledger (failed ones included) from `spur workflow
+trace --workflow <name> --json` (`.entries[].runId`). That is how a run gets its section: the
+final-node `kk ledger append --run <run-id>` sees its own run still `running` and exits 1 (swallowed
+by `onError: continue`), and a fail-fast DAG never reaches it. Idempotent by run id.
 
 Source: `spur workflow trace <run-id> --json` → `{ run: { runId, workflowName, status, startedAt,
 completedAt, durationMs, outcome }, events: [...] }`. Rows come from `events[]` with
@@ -223,7 +223,8 @@ Tokens: non-agent nodes `—`. Agent nodes read `cost.exact.totals.{inputTokens,
 `unavailable`, e.g. `plan-translate` on `f2d6921f`: 6.70M in / 59k out). When `cost.exact` is null
 — including when only `cost.estimated` exists — the cell is `unknown` and the header counts it.
 Never estimated. `Result` = the step's one-line
-summary file (`<step>.summary.txt`) when the kk command writes one, else exit status.
+summary file (`<step>.summary.txt`) when the kk command writes one, else exit status; `sync` reads
+summaries for the newest missing run only (no per-run work dir in the trace).
 
 ## 8. Rollout and cut-over (I22)
 

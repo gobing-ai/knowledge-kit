@@ -4,7 +4,7 @@ name: "kk-collect workflow: standalone 4h collection into the store"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.075Z
-updated_at: "2026-10-07T23:22:11.616Z"
+updated_at: "2026-10-08T04:27:38.455Z"
 feature_id: G31
 priority: P1
 tags:
@@ -129,19 +129,19 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/src/commands/store.ts:151` lockAcquireAction writes acquired at `apps/cli/src/commands/store.ts:158` or skipped with holder at `apps/cli/src/commands/store.ts:162`, both exit 0; release at `apps/cli/src/commands/store.ts:179`; tests `apps/cli/tests/kk-collect.test.ts:169`, `packages/kk-store/tests/dao/locks.test.ts:28` |
-| R2 | MET | `apps/cli/src/commands/store.ts:249` ingestAction upserts at `apps/cli/src/commands/store.ts:258` and writes new ids via `apps/cli/src/commands/store.ts:234`; tests `apps/cli/tests/kk-collect.test.ts:269`, `packages/kk-store/tests/dao/items.test.ts:51` |
-| R3 | MET | `plugins/kk/workflows/kk-collect.yaml:37` lock → `plugins/kk/workflows/kk-collect.yaml:82` collect → `plugins/kk/workflows/kk-collect.yaml:113` store → `plugins/kk/workflows/kk-collect.yaml:129` label → `plugins/kk/workflows/kk-collect.yaml:148` release → done, with skipped/failed terminals at `plugins/kk/workflows/kk-collect.yaml:12`. Fix pass: spur's ADR-115 composition lint had made `spur workflow validate` exit 1 (label→release guard, 10 logical commands > 5); the guard was rewritten to 3 commands at `plugins/kk/workflows/kk-collect.yaml:242` and validate now exits 0 |
-| R4 | MET | `plugins/kk/workflows/kk-collect.yaml:111` calls the unmodified daily-collect-facts stage; E2E `apps/cli/tests/kk-collect.test.ts:349` |
-| R5 | MET | `plugins/kk/workflows/kk-collect.yaml:145` runs kk store label with run id and new-ids (0209 landed, so the interim stub is superseded) |
+| R1 | MET | `apps/cli/src/commands/store.ts:151` lockAcquireAction writes acquired at `apps/cli/src/commands/store.ts:158` or skipped with holder at `apps/cli/src/commands/store.ts:162`, both exit 0; release at `apps/cli/src/commands/store.ts:179`; tests `apps/cli/tests/kk-collect.test.ts:185`, `packages/kk-store/tests/dao/locks.test.ts:28` |
+| R2 | MET | `apps/cli/src/commands/store.ts:249` ingestAction upserts at `apps/cli/src/commands/store.ts:258` and writes new ids via `apps/cli/src/commands/store.ts:234`; tests `apps/cli/tests/kk-collect.test.ts:285`, `packages/kk-store/tests/dao/items.test.ts:51` |
+| R3 | MET | `plugins/kk/workflows/kk-collect.yaml:37` lock → `plugins/kk/workflows/kk-collect.yaml:75` collect → `plugins/kk/workflows/kk-collect.yaml:106` store → `plugins/kk/workflows/kk-collect.yaml:122` label → `plugins/kk/workflows/kk-collect.yaml:141` release → done, with skipped/failed terminals at `plugins/kk/workflows/kk-collect.yaml:12`. Fix pass: spur's ADR-115 composition lint had made `spur workflow validate` exit 1 (label→release guard, 10 logical commands > 5); the guard was rewritten to 3 commands at `plugins/kk/workflows/kk-collect.yaml:236` and validate now exits 0 |
+| R4 | MET | `plugins/kk/workflows/kk-collect.yaml:104` calls the unmodified daily-collect-facts stage; E2E `apps/cli/tests/kk-collect.test.ts:375` |
+| R5 | MET | `plugins/kk/workflows/kk-collect.yaml:138` runs kk store label with run id and new-ids (0209 landed, so the interim stub is superseded) |
 | R6 | MET | `apps/cli/src/commands/schedule.ts:71` renderAction selects from `apps/cli/src/commands/schedule.ts:26` and reads via `apps/cli/src/commands/schedule.ts:53`; `kk schedule render kk-collect --platform cron` this run printed a `0 */4 * * *` line; tests `apps/cli/tests/commands/schedule.test.ts:53` |
-| R7 | MET | `plugins/kk/workflows/kk-collect.yaml:158` releases the lock then `plugins/kk/workflows/kk-collect.yaml:163` appends the ledger; failure path releases at `plugins/kk/workflows/kk-collect.yaml:174`; `apps/cli/tests/kk-collect.test.ts:473` |
+| R7 | MET | `plugins/kk/workflows/kk-collect.yaml:151` releases the lock then `plugins/kk/workflows/kk-collect.yaml:156` appends the ledger; failure path releases at `plugins/kk/workflows/kk-collect.yaml:167`; `apps/cli/tests/kk-collect.test.ts:457` (ledger appended once per run after release), `apps/cli/tests/kk-collect.test.ts:511` (failure paths release the lock) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — kk-collect runs ingestion standalone and persists every item to the store | MET | test | `apps/cli/tests/kk-collect.test.ts:349` E2E describe; green in this run's `bun test apps/cli/tests/kk-collect.test.ts plugins/kk/tests/verdict-confidence.test.ts` (57/57) after the guard fix |
-| AC2 — Re-collecting an already stored item updates it without duplicating | MET | test | `apps/cli/tests/kk-collect.test.ts:349` run 2, plus `packages/kk-store/tests/dao/items.test.ts:36` |
-| AC3 — Overlapping collect runs are single-flight | MET | test | `apps/cli/tests/kk-collect.test.ts:169`, `packages/kk-store/tests/kk-store.test.ts:179` (concurrent openers) |
+| AC1 — kk-collect runs ingestion standalone and persists every item to the store | MET | test | `apps/cli/tests/kk-collect.test.ts:375` E2E describe; green in this run's `bun test apps/cli/tests/kk-collect.test.ts plugins/kk/tests/verdict-confidence.test.ts` (60/60) |
+| AC2 — Re-collecting an already stored item updates it without duplicating | MET | test | `apps/cli/tests/kk-collect.test.ts:375` run 2, plus `packages/kk-store/tests/dao/items.test.ts:36` |
+| AC3 — Overlapping collect runs are single-flight | MET | test | `apps/cli/tests/kk-collect.test.ts:185`, `packages/kk-store/tests/kk-store.test.ts:179` (concurrent openers) |
 | AC4 — A launchd/cron template schedules kk-collect every 4 hours | MET | command | `bun apps/cli/src/index.ts schedule render kk-collect --platform cron` → `0 */4 * * *` entry running `spur workflow run plugins/kk/workflows/kk-collect.yaml`; `apps/cli/tests/commands/schedule.test.ts:67` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 

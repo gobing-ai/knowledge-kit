@@ -4,7 +4,7 @@ name: "kk-store package: ts-db SQLite store, migrations, config path, boundary r
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.070Z
-updated_at: "2026-10-07T23:22:09.422Z"
+updated_at: "2026-10-08T04:27:34.553Z"
 feature_id: G31
 priority: P1
 tags:
@@ -78,7 +78,7 @@ Key signatures:
 - `interface Store { items: ItemsDao; collectRuns: CollectRunsDao; labels: LabelsDao; usage: EpisodeUsageDao; locks: LocksDao; close(): Promise<void> }`
 - `applyKkMigrations(adapter, migrations = KK_MIGRATIONS): Promise<number>`
 - `canonicalUrl(url: string): string`
-- `resolveStorePath(configFile: string): string`
+- `resolveStorePath(configFile?: string, explicitPath?: string): Promise<string>` — async (ts-runtime `FileSystem` seam, `no-direct-fs-io`); `explicitPath` (`--db`) wins over `store.db_path`
 
 ### Plan
 
@@ -172,12 +172,12 @@ Each entry cites the first changed line per file (`file:line`).
 | R4 | MET | DAOs extend EntityDao: `packages/kk-store/src/dao/items.ts:139`, `packages/kk-store/src/dao/labels.ts:93`, `packages/kk-store/src/dao/locks.ts:32`, `packages/kk-store/src/dao/collect-runs.ts:28`, `packages/kk-store/src/dao/episode-usage.ts:20`; DAO tests `packages/kk-store/tests/dao/items.test.ts:10`, `packages/kk-store/tests/dao/locks.test.ts:7` |
 | R5 | MET | Pure canonicaliser at `packages/kk-store/src/canonical-url.ts:46`; covered by `packages/kk-store/tests/canonical-url.test.ts:7` |
 | R6 | MET | `packages/kk-store/src/config.ts:57` resolves explicit path, then config, then the default at `packages/kk-store/src/config.ts:6`; home expansion at `packages/kk-store/src/config.ts:14`; tests `packages/kk-store/tests/config.test.ts:9` through `packages/kk-store/tests/config.test.ts:58` |
-| R7 | MET | `apps/cli/src/commands/store.ts:128` migrateAction prints db and applied at `apps/cli/src/commands/store.ts:134`, registered at `apps/cli/src/commands/store.ts:883`; `apps/cli/tests/commands/store.test.ts:38`; surface documented at `docs/04_DESIGN.md:399` |
+| R7 | MET | `apps/cli/src/commands/store.ts:128` migrateAction prints db and applied at `apps/cli/src/commands/store.ts:134`, registered at `apps/cli/src/commands/store.ts:928` (wired at `apps/cli/src/cli.ts:31`); `apps/cli/tests/commands/store.test.ts:38`; surface documented at `docs/04_DESIGN.md:399` |
 | R8 | MET | `.spur/rules/boundary/dao-boundary.yaml:15`, `.spur/rules/boundary/dao-boundary.yaml:40`, `.spur/rules/boundary/dao-boundary.yaml:67`, `.spur/rules/boundary/dao-boundary.yaml:87`; `bun run test-pre-check` → All 51 rules passed (this run) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Store path resolves from kk config with a works-dir default | MET | test | `packages/kk-store/tests/config.test.ts:9` (works-dir default) and `packages/kk-store/tests/config.test.ts:21` (config value); full `bun run test` this run: 2130 pass, sole failure unrelated (scripts/bundle-plugins.test.ts timeout) |
+| AC1 — Store path resolves from kk config with a works-dir default | MET | test | `packages/kk-store/tests/config.test.ts:9` (works-dir default) and `packages/kk-store/tests/config.test.ts:21` (config value); full `bun run test` this run: 2182 pass / 0 fail / 2 skip (pre-existing, not G31), coverage 98.61% lines |
 | AC2 — ts-db and drizzle imports are confined to the kk-store package | MET | command | `bun run test-pre-check` → All 51 rules passed, incl. `.spur/rules/boundary/dao-boundary.yaml:15` and `.spur/rules/boundary/dao-boundary.yaml:40` |
 | AC3 — Store schema evolves only through versioned migrations | MET | test | `packages/kk-store/tests/kk-store.test.ts:66` (applied once, journal row), `packages/kk-store/tests/migrations.test.ts:120` (convergence) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)

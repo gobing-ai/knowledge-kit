@@ -4,7 +4,7 @@ name: "kk store extract and mark-used: profile-driven topic pools with cross-day
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-07T23:24:02.169Z"
+updated_at: "2026-10-08T04:03:49.871Z"
 feature_id: G31
 priority: P1
 tags:
@@ -139,18 +139,18 @@ Each entry cites the first changed line per file (`file:line`).
 |-------------|--------|----------|
 | R1 | MET | `packages/kk-store/src/profile.ts:93` ProfileInvalidError raised by profile parsing at `packages/kk-store/src/profile.ts:110`; `packages/kk-store/tests/profile.test.ts:30`, `packages/kk-store/tests/profile.test.ts:68` |
 | R2 | MET | `packages/kk-store/src/dao/items.ts:236` selectByProfile with the workflow-scoped exclusion at `packages/kk-store/src/dao/items.ts:285`; `packages/kk-store/tests/dao/items.test.ts:128` |
-| R3 | MET | `apps/cli/src/commands/store.ts:811` extractAction prints count at `apps/cli/src/commands/store.ts:833`; `apps/cli/tests/store-extract.test.ts:227` (empty pool) |
-| R4 | MET | `apps/cli/src/commands/store.ts:850` markUsedAction; `apps/cli/tests/store-extract.test.ts:335` |
+| R3 | MET | `apps/cli/src/commands/store.ts:817` extractAction prints count at `apps/cli/src/commands/store.ts:839`; `apps/cli/tests/store-extract.test.ts:227` (empty pool) |
+| R4 | MET | `apps/cli/src/commands/store.ts:899` markUsedAction; `apps/cli/tests/store-extract.test.ts:335` |
 | R5 | MET | `apps/cli/tests/store-extract.test.ts:258` second topic profile over the same store, no code change |
-| R6 | MET | `apps/cli/src/commands/store.ts:811` reads profile, opens store, selects, writes out; invalid profile maps to its code at `apps/cli/src/commands/store.ts:838`; `apps/cli/tests/store-extract.test.ts:194` |
-| R7 | MET | ADR-030 at `docs/00_ADR.md:1159` (shipped), `docs/03_ARCHITECTURE.md:122` (shipped), `docs/04_DESIGN.md:90`. Fix pass: `docs/05_FEATURES.md:98` recorded G31 as active/NOT done with 0213 backlog although G31 and 0213 are done; row corrected and `apps/cli/tests/store-docs.test.ts:70` now binds the 05 status cell to the feature file status (falsified: reverting the row to active fails the test) |
+| R6 | MET | `apps/cli/src/commands/store.ts:817` reads profile, opens store, selects, writes out; invalid profile maps to its code at `apps/cli/src/commands/store.ts:844`; `apps/cli/tests/store-extract.test.ts:194` |
+| R7 | MET | ADR-030 at `docs/00_ADR.md:1159` (shipped), `docs/03_ARCHITECTURE.md:122` (shipped), `docs/04_DESIGN.md:90`. Fix pass: `docs/05_FEATURES.md:98` recorded G31 as active/NOT done with 0213 backlog although G31 and 0213 are done; row corrected and `apps/cli/tests/store-docs.test.ts:74` now binds the 05 status cell to the feature file status (falsified: reverting the row to active fails the test) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — AI-news extraction selects the episode pool from labels | MET | test | `apps/cli/tests/store-extract.test.ts:159` |
 | AC2 — A second topic is extractable without re-collecting | MET | test | `apps/cli/tests/store-extract.test.ts:258` |
 | AC3 — Items aired in an episode never re-enter a later pool | MET | test | `apps/cli/tests/store-extract.test.ts:335`, `packages/kk-store/tests/dao/items.test.ts:180` |
-| AC4 — Architecture docs record the store decision | MET | test | `apps/cli/tests/store-docs.test.ts:39`, `apps/cli/tests/store-docs.test.ts:48`, `apps/cli/tests/store-docs.test.ts:54`, `apps/cli/tests/store-docs.test.ts:70` — 5 pass / 0 fail this run |
+| AC4 — Architecture docs record the store decision | MET | test | `apps/cli/tests/store-docs.test.ts:43`, `apps/cli/tests/store-docs.test.ts:52`, `apps/cli/tests/store-docs.test.ts:58`, `apps/cli/tests/store-docs.test.ts:74` — 5 pass / 0 fail this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

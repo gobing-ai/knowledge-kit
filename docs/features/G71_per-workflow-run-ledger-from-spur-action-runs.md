@@ -6,7 +6,7 @@ status: done
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:37.924Z"
-updated_at: "2026-10-07T07:48:55.723Z"
+updated_at: "2026-10-08T04:49:30.854Z"
 ---
 
 # G71: Per-workflow run ledger from spur action_runs
@@ -29,8 +29,8 @@ Feature: Per-workflow run ledger from spur action_runs
 Scenario: R1 — Each workflow run appends a summary row block to its ledger
   # covers: I15, I16
   Given a completed kk-collect or voice2 run
-  When kk ledger append --run <run-id> runs as the final node
-  Then .works/<workflow-name>/ledger.md gains one run section with a per-step table of step, status, duration, tokens, and result
+  When the run has finished and kk ledger sync runs at the next run's first node (the final-node kk ledger append cannot record its own still-running run)
+  Then .works/<workflow-name>/ledger.md gains exactly one run section with a per-step table of step, status, duration, tokens, and result
   And durations come from spur action_runs, not wall-clock guesses
 
 

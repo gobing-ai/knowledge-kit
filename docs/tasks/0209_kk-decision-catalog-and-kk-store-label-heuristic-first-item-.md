@@ -4,7 +4,7 @@ name: "kk decision catalog and kk store label: heuristic-first item labeling"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.075Z
-updated_at: "2026-10-07T23:22:13.575Z"
+updated_at: "2026-10-08T04:03:43.458Z"
 feature_id: G31
 priority: P1
 tags:
@@ -168,7 +168,7 @@ Each entry cites the first changed line per file (`file:line`).
 | R1 | MET | `plugins/kk/decisions/kk-items.yaml:13` versioned catalog of five kk-item ids; `plugins/kk/tests/decision-catalog.test.ts:54` |
 | R2 | MET | `.spur/config.yaml:161` registers `plugins/kk/decisions`; `spur decision status --json` this run → ok true, loadErrors [], five kk-item ids; `plugins/kk/tests/decision-catalog.test.ts:71` |
 | R3 | MET | `plugins/generations/episode-plan-gen/src/index.ts:680` adds label mode, `plugins/generations/episode-plan-gen/src/index.ts:917` labelDocs annotates every doc |
-| R4 | MET | `apps/cli/src/commands/store.ts:915` registers label; `apps/cli/src/commands/store.ts:676` labelAction, row write via `apps/cli/src/commands/store.ts:571`; `apps/cli/tests/store-label.test.ts:235` |
+| R4 | MET | `apps/cli/src/commands/store.ts:964` registers label; `apps/cli/src/commands/store.ts:676` labelAction, row write via `apps/cli/src/commands/store.ts:571`; `apps/cli/tests/store-label.test.ts:235` |
 | R5 | MET | Routing at `apps/cli/src/commands/store.ts:623` (decision mode or plugin needs_model, read at `apps/cli/src/commands/store.ts:446`); spawn at `apps/cli/src/commands/store.ts:514`; `apps/cli/tests/store-label.test.ts:279` |
 | R6 | MET | Fallback via `apps/cli/src/commands/store.ts:547` and `apps/cli/src/commands/store.ts:571` records the heuristic value with source default; `apps/cli/tests/store-label.test.ts:398`, `apps/cli/tests/store-label.test.ts:423` |
 

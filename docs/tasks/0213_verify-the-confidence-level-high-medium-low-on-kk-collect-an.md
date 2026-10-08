@@ -4,7 +4,7 @@ name: Verify the confidence level (HIGH|MEDIUM|LOW) on kk-collect and kk-daily-a
 status: done
 template: feature-impl
 created_at: 2026-10-07T06:07:21.798Z
-updated_at: "2026-10-07T23:23:51.402Z"
+updated_at: "2026-10-08T04:27:40.140Z"
 feature_id: G31
 
 ac_altitude: task-local
@@ -197,17 +197,17 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Inventory at `docs/design/kk-collect-and-daily-voice2.md:107` (9 surfaces, carries/named-gap per row). Fix pass: the original lived only in a pruned `.spur/run` report, so it was rebuilt from current code into the design satellite; anchors resolved by `apps/cli/tests/store-docs.test.ts:84` |
+| R1 | MET | Inventory at `docs/design/kk-collect-and-daily-voice2.md:107` (9 surfaces, carries/named-gap per row). Fix pass: the original lived only in a pruned `.spur/run` report, so it was rebuilt from current code into the design satellite; anchors resolved by `apps/cli/tests/store-docs.test.ts:88` |
 | R2 | MET | Row level derived at `apps/cli/src/commands/store.ts:580` inside labelRow; pass-level print at `apps/cli/src/commands/store.ts:705`; `apps/cli/tests/store-label.test.ts:318`, `packages/kk-store/tests/dao/labels.test.ts:73` |
-| R3 | MET | `plugins/kk/workflows/kk-collect.yaml:242` guard reads the verdict through the confidence-aware jq filter and refuses by name at `plugins/kk/workflows/kk-collect.yaml:244`; refusal format documented at `docs/04_DESIGN.md:475`. Rewritten this run to 3 logical commands so spur workflow validate exits 0; byte-identical filter retained |
-| R4 | MET | `plugins/kk/tests/verdict-confidence.test.ts:317` extracts the real guard string from the YAML; fixtures at `plugins/kk/tests/verdict-confidence.test.ts:338`; 52 checks green this run |
+| R3 | MET | `plugins/kk/workflows/kk-collect.yaml:236` guard reads the verdict through the confidence-aware jq filter and refuses by name at `plugins/kk/workflows/kk-collect.yaml:237`; refusal format documented at `docs/04_DESIGN.md:475`. Rewritten this run to 3 logical commands so spur workflow validate exits 0; byte-identical filter retained |
+| R4 | MET | `plugins/kk/tests/verdict-confidence.test.ts:320` extracts the real guard string from the YAML; fixtures at `plugins/kk/tests/verdict-confidence.test.ts:341`; 54 checks green this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — Verdict and decision surfaces carry a HIGH, MEDIUM, or LOW confidence level | MET | test | `apps/cli/tests/store-label.test.ts:318`, `apps/cli/tests/store-label.test.ts:366`, `packages/kk-store/tests/dao/labels.test.ts:38` |
-| AC2 | MET | test | `apps/cli/tests/store-docs.test.ts:84` asserts the inventory at `docs/design/kk-collect-and-daily-voice2.md:107` exists and every anchor resolves (5 pass; falsified by pointing one anchor past EOF → 1 fail) |
-| AC3 — Given a fixture verdict whose confidence is absent or outside HIGH, MEDIUM, LOW, when the consumer reads it, then the verdict is not treated as a pass, the routing stays fail-closed rather than deadlocking, and the refusal names the offending value. | MET | test | `plugins/kk/tests/verdict-confidence.test.ts:395`, `plugins/kk/tests/verdict-confidence.test.ts:338`; green after the guard rewrite (57/57 with kk-collect) |
-| AC4 — The proof executes the real guard/consumer strings over the fixtures, is repeatable, and records its artifact path in `## Testing`. | MET | test | `plugins/kk/tests/verdict-confidence.test.ts:317` reads the YAML guard; artifact `.spur/run/verdict-confidence/summary.json` regenerated this run (ok true, 52 checks) |
+| AC2 | MET | test | `apps/cli/tests/store-docs.test.ts:88` asserts the inventory at `docs/design/kk-collect-and-daily-voice2.md:107` exists and every anchor resolves (5 pass; falsified by pointing one anchor past EOF → 1 fail) |
+| AC3 — Given a fixture verdict whose confidence is absent or outside HIGH, MEDIUM, LOW, when the consumer reads it, then the verdict is not treated as a pass, the routing stays fail-closed rather than deadlocking, and the refusal names the offending value. | MET | test | `plugins/kk/tests/verdict-confidence.test.ts:398`, `plugins/kk/tests/verdict-confidence.test.ts:341`; green after the guard rewrite (60/60 with kk-collect this run) |
+| AC4 — The proof executes the real guard/consumer strings over the fixtures, is repeatable, and records its artifact path in `## Testing`. | MET | test | `plugins/kk/tests/verdict-confidence.test.ts:320` reads the YAML guard; artifact `.spur/run/verdict-confidence/summary.json` regenerated this run (ok true, 54 checks) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
