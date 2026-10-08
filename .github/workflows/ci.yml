@@ -33,11 +33,11 @@ jobs:
       - name: Install spur
         # The kk workflow integration tests drive the real engine (`spur workflow run`),
         # and refuse to skip silently when the binary is missing. Pinned so a spur release
-        # cannot silently redefine the engine under test. 0.3.95 is the engine the
-        # kk-daily-ai-voice workflow was authored against: older embedded schemas reject
-        # `onError: continue` on onEnter steps.
+        # cannot silently redefine the engine under test. 0.4.0 accepts `kind: dag`
+        # (kk-daily-ai-voice2). 0.3.95 only accepts transition-flow, so those runs come
+        # back with status unknown. 0.4.0 still accepts `onError: continue` on onEnter.
         run: |
-          bun install --global @gobing-ai/spur@0.3.95
+          bun install --global @gobing-ai/spur@0.4.0
           echo "$(bun pm bin -g)" >> "$GITHUB_PATH"
 
       # Build first so cross-package type imports resolve during typecheck.
