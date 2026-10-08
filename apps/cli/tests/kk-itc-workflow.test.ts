@@ -283,6 +283,7 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
                 '--run-id',
                 `kk-itc-dryrun-${Date.now()}`,
                 '--dry-run',
+                '--no-log',
                 '--json',
                 '--vars',
                 JSON.stringify({ work_dir: workDir, auto: 'true', judge: 'true', unslop: 'true' }),
@@ -299,6 +300,7 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
         expect(summary.finalState).toBe('done');
+        // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
     }, 30_000);
 });
 
@@ -377,6 +379,7 @@ describe('kk-itc illustrate + adapt (0152)', () => {
                 '--run-id',
                 `kk-itc-dryrun-0152-${Date.now()}`,
                 '--dry-run',
+                '--no-log',
                 '--json',
                 '--vars',
                 JSON.stringify({
@@ -403,5 +406,6 @@ describe('kk-itc illustrate + adapt (0152)', () => {
         expect(summary.finalState).toBe('done');
         // AC1 behavioral proof: the spend vars route the walk through illustrate (+1 transition vs base)
         expect(summary.transitionsTaken).toBe(14);
+        // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
     }, 30_000);
 });

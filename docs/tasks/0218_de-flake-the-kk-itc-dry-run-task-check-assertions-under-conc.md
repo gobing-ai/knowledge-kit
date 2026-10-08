@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: De-flake the kk-itc dry-run task-check assertions under concurrent load
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-07T20:52:27.448Z
-updated_at: "2026-10-07T21:18:23.422Z"
+updated_at: "2026-10-08T00:17:40.302Z"
 feature_id: G2
 
 priority: P2
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 1
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0218-verdict.json
 ---
 
 ## 0218. De-flake the kk-itc dry-run task-check assertions under concurrent load
@@ -49,11 +51,11 @@ Impact: a feature's verification receipt records FAIL for an environmental flake
 
 ### Requirements
 
-- [ ] R1. Re-measure and record in Testing the wall time of one kk-itc dry-run walk, idle and under 8-way concurrent spur load, with and without `--no-log` (the refine table is the baseline; the task's numbers must come from the implementer's own run).
-- [ ] R2. All three kk-itc dry-run walk spawns pass `--no-log`: `apps/cli/tests/kk-itc-workflow.test.ts` (0149 and 0152 cases) and `apps/cli/tests/kk-itc-publish-tail.test.ts` (0151 case). Assertions on `exitCode`, `status`, `finalState` and `transitionsTaken` are unchanged.
-- [ ] R3. Each of the three cases keeps its `30_000` timeout and carries a one-line comment naming the measured cost (idle and 8-way loaded) so a slow run can be told from a hung one. The timeout is not raised.
-- [ ] R4. Under the reproduced load (8 concurrent default-logging walks looping in the background), the three walk cases pass; and `bun run test` passes on the final tree.
-- [ ] R5. A full test run no longer adds `kk-itc-dryrun-*` / `kk-itc-tail-*` files to `.spur/memory/runs`.
+- [x] R1. Re-measure and record in Testing the wall time of one kk-itc dry-run walk, idle and under 8-way concurrent spur load, with and without `--no-log` (the refine table is the baseline; the task's numbers must come from the implementer's own run).
+- [x] R2. All three kk-itc dry-run walk spawns pass `--no-log`: `apps/cli/tests/kk-itc-workflow.test.ts` (0149 and 0152 cases) and `apps/cli/tests/kk-itc-publish-tail.test.ts` (0151 case). Assertions on `exitCode`, `status`, `finalState` and `transitionsTaken` are unchanged.
+- [x] R3. Each of the three cases keeps its `30_000` timeout and carries a one-line comment naming the measured cost (idle and 8-way loaded) so a slow run can be told from a hung one. The timeout is not raised.
+- [x] R4. Under the reproduced load (8 concurrent default-logging walks looping in the background), the three walk cases pass; and `bun run test` passes on the final tree.
+- [x] R5. A full test run no longer adds `kk-itc-dryrun-*` / `kk-itc-tail-*` files to `.spur/memory/runs`.
 
 **Out of scope:** deleting the existing orphaned run records (operator-local, gitignored state — report the count, let the operator prune); spur-side contention with `--no-log` (upstream); other test files that spawn `spur workflow run` without `--dry-run`.
 
@@ -131,15 +133,62 @@ The load loops deliberately keep logging on (that is the concurrent-use conditio
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change map (test-infrastructure only, behavior-preserving):
+
+- `apps/cli/tests/kk-itc-workflow.test.ts:286` (0149 case), `:382` (0152 case), `apps/cli/tests/kk-itc-publish-tail.test.ts:151` (0151 case) — added `'--no-log'` immediately after `'--dry-run'` in each spawn argv; opts the walk out of the two-file run-record write that contends under concurrent spur use (refine measured 5–8×). Nothing in the tests reads the record; assertions (`exitCode`, `status`, `finalState`, `transitionsTaken`) unchanged.
+- Same three files, directly above each case's `}, 30_000);` (`:303`, `:409`, `:174`) — one-line comment naming the measured cost (idle ~0.7–1.1s, ~2.2s with 8 concurrent walks) and stating 30s is headroom, not a budget. Timeout value untouched.
+
+Rationale: the flake was the run-record write contending under load, not the walk itself; removing the unused write keeps the black-box spawn pattern and every assertion intact.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Measured (Testing section): idle-log 0.73/0.75/0.77s; idle-nolog 0.60/0.68/0.90s; 8-way-log max 2.22s; 8-way-nolog max 1.98s — implementer's own run, refine table cited as baseline |
+| R2 | MET | `--no-log` present at exactly 3 spawn sites: kk-itc-workflow.test.ts:286,382 + kk-itc-publish-tail.test.ts:151; assertion lines untouched (exitCode/status/finalState/transitionsTaken) |
+| R3 | MET | All three `30_000` timeouts unchanged; comments at :303/:409/:174 name idle (~0.7–1.1s) and 8-way (~2.2s) measured cost |
+| R4 | MET | AC4 reproduction: 8 looping default-logging walks + both files → 26 pass/0 fail (9.72s); `bun run test` on final tree inside `bun run spur-check` → 2177 pass / 2 skip / 0 fail (skips pre-existing environment-conditionals) |
+| R5 | MET | kk-itc-dryrun-*/kk-itc-tail-* count in .spur/memory/runs: 0 before → 0 after targeted runs and full gate |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — The walk cost is measured, not guessed (req: R1) | MET | command | R1 timing runs recorded in Testing section; four wall times + reduction stated |
+| AC2 — The three walk cases skip the run record and still prove the walk reaches done (req: R2, R5) | MET | test | bun test both files: 26 pass/0 fail with --no-log at all 3 sites; run-record count 0→0 |
+| AC3 — The timeout stays 30s and documents its headroom (req: R3) | MET | command | grep on final tree: "}, 30_000);" ×3 (workflow.test.ts, publish-tail.test.ts) + measured-cost comment in 2/2 files — output captured in verify answer |
+| AC4 — The walks pass under the load that exposed the flake (req: R4) | MET | test | Loaded reproduction 26/26 (9.72s); final-tree spur-check 2177 pass / 0 fail |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Verdict: PASS — 0×P1, 0×P2 (host-inline review, `--agent inline`, `--auto`; three fragments merged per super-reviewer output format).
+
+**Priority findings table**
+
+| Priority | Count | Findings |
+| --- | --- | --- |
+| P1 | 0 | none |
+| P2 | 0 | none |
+| P3 | 0 | none |
+| P4 | 2 | comment lines exceed Biome `lineWidth` 120 (formatter does not wrap comments; lint gate passes) — kk-itc-workflow.test.ts:303,409, kk-itc-publish-tail.test.ts:174; measured-cost comment duplicated across 3 sites (deliberate: three similar lines beat a premature abstraction) |
+
+**Functional traceability** — every requirement maps to in-tree evidence:
+
+| Req | Evidence |
+| --- | --- |
+| R1 assertions under load | `kk-itc-workflow.test.ts:286,382`, `kk-itc-publish-tail.test.ts:151` assert exitCode 0 / status done / finalState done (+ `transitionsTaken: 14` at workflow.test.ts:411); frozen load reproduction passed 26/26 in 9.72s vs 4.71s idle (run log, gate log) |
+| R2 `--no-log` after `--dry-run`, 3 sites | Diff: exactly 3 insertions at workflow.test.ts:286,382 and publish-tail.test.ts:151 |
+| R3 one-line measured-cost comment above `30_000` | workflow.test.ts:303,409, publish-tail.test.ts:174; numbers are the implementer's R1 measurements (~0.7–1.1s idle, ~2.2s at 8-way), refine's 5–8× contention ratio cited |
+| R4 reproduction passes | R4 executed per the Design's frozen loop: 8 looping default-logging walks + both test files → 26 pass / 0 fail; load-* records cleaned after |
+| R5 no run records on final tree | `.spur/memory/runs` kk-itc-dryrun/tail count: 0 before, 0 after both test runs |
+
+**SECUA** — Security: test-only change, no new inputs/secrets. Efficiency: the change removes record-write contention the tests never read. Correctness: `--no-log` opts out of record writing only; dry-run semantics and stdout JSON summary unchanged (walk verified `done` with 8 transitions during R1). Usability: comments explain the non-obvious WHY with measured numbers. Architecture: black-box CLI spawn pattern preserved; no new imports, no cross-workspace imports.
+
+**Architectural depth** — no deepening warranted: behavior-preserving test-infrastructure fix; module boundaries untouched.
 
 ### References
 
@@ -150,4 +199,7 @@ The load loops deliberately keep logging on (that is the concurrent-use conditio
 ### History
 
 - 2026-10-07T21:18:23.422Z backlog → todo (system)
+- 2026-10-08T00:01:41.755Z todo → wip (system)
+- 2026-10-08T00:17:21.472Z wip → testing (system)
+- 2026-10-08T00:17:40.293Z testing → done (system)
 

@@ -148,6 +148,7 @@ describe('kk-itc publish tail (0151)', () => {
                 '--run-id',
                 `kk-itc-tail-${Date.now()}`,
                 '--dry-run',
+                '--no-log',
                 '--json',
                 '--vars',
                 JSON.stringify({
@@ -170,5 +171,6 @@ describe('kk-itc publish tail (0151)', () => {
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
         expect(summary.finalState).toBe('done');
+        // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
     }, 30_000);
 });
