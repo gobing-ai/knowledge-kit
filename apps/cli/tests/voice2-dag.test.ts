@@ -752,4 +752,55 @@ describe('kk daily — the DAG nodes’ commands', () => {
         expect(parsed.status).toBe('full');
         expect(parsed.missing).not.toContain('cms-resync');
     });
+
+    it('publish-classify snapshots completeness after the folded patch writes its own artifact (0220 AC5)', async () => {
+        // The seeded case above passes under either order; this one does not. The folded
+        // daily-patch-surfdash (real checkout on main, no plugins-path) writes the emdash-resync skip
+        // marker itself, so only a snapshot taken after the fold sees cms-resync=skipped.
+        const dir = tempDir('kk-daily-classify-order-');
+        const surfdash = join(dir, 'surfdash');
+        mkdirSync(surfdash, { recursive: true });
+        for (const args of [
+            ['init', '-q', '-b', 'main'],
+            ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'],
+        ]) {
+            expect(Bun.spawnSync(['git', '-C', surfdash, ...args]).exitCode).toBe(0);
+        }
+        const publish = join(dir, '31-publish');
+        mkdirSync(publish, { recursive: true });
+        writeFileSync(
+            join(publish, '20261007_14_publish-surfdash_result.json'),
+            JSON.stringify({
+                targets: [
+                    {
+                        target: 'surfdash-pub',
+                        ok: true,
+                        status: 'published',
+                        metadata: { postPath: join(surfdash, 'articles/zh/post/index.md') },
+                    },
+                ],
+            }),
+        );
+        writeFileSync(
+            join(publish, '20261007_16_publish-podcast_result.json'),
+            JSON.stringify({ targets: [{ target: 'podcast-pub', ok: true, status: 'published' }] }),
+        );
+        const result = await run([
+            'daily',
+            'publish-classify',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--fold-tail',
+            '--surfdash-root',
+            surfdash,
+        ]);
+        expect(result.code).toBe(0);
+        expect(existsSync(join(publish, '20261007_23_patch-surfdash_emdash-resync.txt'))).toBe(true);
+        const completeness = JSON.parse(
+            readFileSync(join(publish, '20261007_17_publish_completeness.json'), 'utf-8'),
+        ) as { rows: { channel: string; state: string }[] };
+        expect(completeness.rows.find((row) => row.channel === 'cms-resync')?.state).toBe('skipped');
+    });
 });

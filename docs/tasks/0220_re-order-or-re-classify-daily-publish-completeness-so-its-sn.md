@@ -4,7 +4,7 @@ name: Re-order or re-classify daily publish-completeness so its snapshot reflect
 status: done
 template: feature-impl
 created_at: 2026-10-07T22:09:50.052Z
-updated_at: "2026-10-08T20:28:19.771Z"
+updated_at: "2026-10-08T21:50:37.054Z"
 feature_id: F61
 
 done_forced: "false"
@@ -86,21 +86,39 @@ A smaller accuracy gap: `locales` is `done` once both en/ja post-path markers ar
   - Added `kk stage daily-publish-completeness "${vars.work_dir}" "${vars.run_date}"` to `run-report` onEnter before `daily-run-report` (0220 R2).
 - `apps/cli/tests/kk-workflow-stages.test.ts:585-690`:
   - Retargeted completeness tests to `daily-publish-completeness`, added sync-result test cases (AC1), and added test asserting `daily-publish-classify` writes no completeness (AC2).
-- `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:235-325`:
+- `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:235-325,804-815`:
   - Pinned 31 daily stages, included `daily-publish-completeness`, and verified run-report execution order (AC4).
 - `apps/cli/tests/voice2-dag.test.ts:710-745`:
   - Added test asserting fold-tail reflects cms-resync in terminal completeness with single-line stdout (AC5).
 - `docs/04_DESIGN.md:1031` & `docs/design/kk-daily-ai-voice.md:103-118`:
   - Updated design docs and hand-driven tail instructions with `daily-publish-completeness` (0220 R5).
 
+- Re-verify 2026-10-08: `apps/cli/tests/voice2-dag.test.ts:756-805` adds an order-sensitive AC5 case (the folded `daily-patch-surfdash` writes its own emdash-resync marker, so the snapshot must show `cms-resync=skipped`). The pre-seeded case at :722 passes under either order; the new case fails against 94064ad8^ ("not-run") and passes now.
+
 ### Testing
 
-- Focused tests passed:
-  - `bun test apps/cli/tests/kk-workflow-stages.test.ts apps/cli/tests/kk-daily-ai-voice-workflow.test.ts apps/cli/tests/voice2-dag.test.ts apps/cli/tests/commands/daily.test.ts` (142 passed, 0 failed).
-- Gate passed:
-  - `bun run lint` (Biome 2.5.5 clean, TypeScript typecheck clean across all 30 workspaces).
-  - `bun run build` (all workspaces clean).
-  - `bun run test` (2191 tests passed, 0 failed, 2 pre-existing skipped; funcs 98.63%, lines 98.26%).
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:1177-1197` new daily-publish-completeness verb writes `_17_publish_completeness.json`, prints the `publish-completeness:` and WARNING lines on stderr only, dispatched at `plugins/kk/scripts/kk-workflow-stages.ts:1712`; `plugins/kk/scripts/kk-workflow-stages.ts:1172` classify no longer writes completeness. Tested by `apps/cli/tests/kk-workflow-stages.test.ts:585-736`. |
+| R2 | MET | `plugins/kk/workflows/kk-daily-ai-voice.yaml:524-534` run-report onEnter runs daily-publish-completeness before daily-run-report; description updated at `plugins/kk/workflows/kk-daily-ai-voice.yaml:525`. Tested by `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:804-815`. |
+| R3 | MET | `apps/cli/src/commands/daily.ts:232-246` local publishCompleteness copy deleted; after the fold-tail block runStage(['daily-publish-completeness', workDir, runDate]) runs and `missing` is read back for the one-line status object. Tested by `apps/cli/tests/voice2-dag.test.ts:722-805`. |
+| R4 | MET | `plugins/kk/scripts/kk-workflow-stages.ts:1221-1252` locales done only with both markers filled and `24_translate-sync_sync-result.json` ok:true; failed with the result error; "en/ja scaffolded, never synced" when absent. Tested by `apps/cli/tests/kk-workflow-stages.test.ts:706-736`. |
+| R5 | MET | `docs/04_DESIGN.md:1036` completeness clause names the new verb and its run-report placement; `docs/design/kk-daily-ai-voice.md:103-116` §4 paragraph covers terminal placement, the none path, and the hand-driven-tail instruction; same commit 94064ad8 as the code (T3). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:674-704` all results present gives locales/cms-resync done with no WARNING; `apps/cli/tests/kk-workflow-stages.test.ts:706-736` absent sync result gives locales not-run "never synced" plus WARNING, and ok:false gives locales failed with the error detail; `apps/cli/tests/kk-workflow-stages.test.ts:617-633` shows cms-resync not-run when its result is absent. |
+| AC2 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:605-615` classify writes status `full`, no `_17_publish_completeness.json`, no completeness line; existing classification tests green (focused run 153 pass / 0 fail). |
+| AC3 | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:617-704` the three completeness tests run daily-publish-completeness with exit 0 in every case, including everything missing; the nothing-missing fixture seeds the 24_ sync result. |
+| AC4 | MET | test | `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:317` pins the call line in the delegated-call list; `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:804-815` asserts it precedes daily-run-report inside the run-report block. |
+| AC5 | MET | test | `apps/cli/tests/voice2-dag.test.ts:722-754` seeded cms sync result is absent from a single-line stdout `missing`; added this run, `apps/cli/tests/voice2-dag.test.ts:756-805` has the folded patch write its own emdash-resync marker and asserts cms-resync=skipped. That test fails on the pre-0220 daily.ts (Received "not-run") and passes now, so it proves the snapshot follows the fold-tail. |
+| AC6 | MET | command | `bun run gate` exit 0 this run: format + build + lint + rules + tests, 2211 pass / 2 skip (pre-existing Chromium E2E self-skip) / 0 fail, lines 98.63%. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
@@ -110,13 +128,12 @@ A smaller accuracy gap: `locales` is `done` once both en/ja post-path markers ar
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | correctness | plugins/kk/scripts/kk-workflow-stages.ts:1210 | Locales status now verified against 24_ translate-sync result |
-| P4 | architecture | apps/cli/src/commands/daily.ts:240 | Deduped publishCompleteness onto shared stage verb |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 - Feature F61; completeness introduced 20261003 (`docs/design/kk-daily-ai-voice.md` §4 "Publish completeness"); ADR-022/025/026 (independent non-blocking channels).
-- Code: `plugins/kk/scripts/kk-workflow-stages.ts:1146` (dailyPublishClassify), `:1200` (publishCompleteness); `apps/cli/src/commands/daily.ts:189` (duplicate), `:248` (publishClassifyAction); `apps/cli/src/stage.ts:81` (runStage forwards stdout).
+- Code: `plugins/kk/scripts/kk-workflow-stages.ts:1147` (dailyPublishClassify), `:1177` (dailyPublishCompleteness), `:1214` (publishCompleteness); `apps/cli/src/commands/daily.ts:193` (publishClassifyAction; its duplicate publishCompleteness was deleted by 94064ad8); `apps/cli/src/stage.ts:81` (runStage forwards stdout).
 - Evidence: `.works/kk-daily-ai-voice/20261007/31-publish/` mtimes.
 - Sibling: task 0219 (same dogfood; the XHS gap in that snapshot was real).
 
