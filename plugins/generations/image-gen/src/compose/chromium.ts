@@ -5,39 +5,52 @@
  * the HTML card, measures every [data-field] box against the safe area (R2),
  * and screenshots the result. The browser is always closed in `finally`.
  *
- * Font loading: uses `page.route()` to serve fonts from disk by URL, keeping
- * the HTML small. The HTML references fonts by a stable `kk-font://` URL
- * scheme; the route intercept fulfils each request with the disk bytes.
+ * Font loading: an in-process `Bun.serve` on 127.0.0.1 serves the card HTML and
+ * the two font files, and the page navigates to it. Fonts used to go through
+ * `page.route()` + `route.fulfill()`, but pushing the ~8 MB OTFs over
+ * Playwright's pipe under Bun 1.3.14 stalls intermittently (fulfill never
+ * returns, `document.fonts.ready` never settles — 0212 dogfood, ~1 in 3 runs).
  *
- * The transport is Playwright's default; under Bun 1.3.14 a Chromium launch
- * cycle can occasionally hang (leaving the browser's process tree behind),
- * so the E2E test skips under `bun test` and the evidence script runs each
- * variant pair in its own subprocess with a bounded timeout + retry.
+ * The E2E test still skips under `bun test` (Playwright's launch blocks that
+ * runner's event loop); the evidence script runs each variant pair in its own
+ * subprocess. `compose` carries a deadline as the backstop for any other stall.
  *
  * Missing Playwright or Chromium surfaces as an actionable error naming the
  * install command.
  */
 
 import { join } from 'node:path';
-import { readBytes } from '../bytes';
 import type { CardComposer, CardInput } from './card';
 import { cardHtml } from './card';
 
 const FONTS_DIR = join(import.meta.dir, '..', '..', 'assets', 'fonts');
 
-/** Stable URL prefix for font routes; never hits the network. */
-const FONT_ROUTE_BASE = 'http://kk-fonts.local/';
+/** A healthy compose takes seconds; two minutes only trips on a stalled Chromium cycle. */
+const COMPOSE_TIMEOUT_MS = 120_000;
 
 /**
- * Build a map of fontName → route URL. The HTML references these URLs;
- * `page.route()` intercepts and returns the disk bytes.
+ * Loopback server for one compose: `/` is the card HTML, `/fonts/<name>` serves only the
+ * fonts the card declares (no other path reaches the disk). Same origin, so no CORS.
  */
-function fontRouteUrls(fontNames: string[]): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const name of fontNames) {
-        map.set(name, `${FONT_ROUTE_BASE}${encodeURIComponent(name)}`);
-    }
-    return map;
+function serveCard(input: CardInput): { url: string; stop: () => void } {
+    const fontNames = [input.compose.fonts.headline, input.compose.fonts.body];
+    let html = '';
+    const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        fetch: (request) => {
+            const path = decodeURIComponent(new URL(request.url).pathname);
+            if (path === '/') return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+            const name = path.slice('/fonts/'.length);
+            if (path.startsWith('/fonts/') && fontNames.includes(name)) {
+                return new Response(Bun.file(join(FONTS_DIR, name)), { headers: { 'content-type': 'font/otf' } });
+            }
+            return new Response('not found', { status: 404 });
+        },
+    });
+    const url = `http://127.0.0.1:${server.port}/`;
+    html = cardHtml(input, new Map(fontNames.map((name) => [name, `${url}fonts/${encodeURIComponent(name)}`])));
+    return { url, stop: () => server.stop(true) };
 }
 
 /**
@@ -45,7 +58,33 @@ function fontRouteUrls(fontNames: string[]): Map<string, string> {
  * in production via `makeChromiumComposer()`.
  */
 export class ChromiumComposer implements CardComposer {
+    private readonly timeoutMs: number;
+
+    constructor(options: { timeoutMs?: number } = {}) {
+        this.timeoutMs = options.timeoutMs ?? COMPOSE_TIMEOUT_MS;
+    }
+
+    /**
+     * Render under a deadline. A stalled Playwright cycle (see header) otherwise hangs the plugin
+     * forever with nothing on disk to resume from (0212 dogfood, run 38e53162: 40 min in compose);
+     * rejecting lets `main()` exit nonzero so the caller's stage fails and stays resumable.
+     */
     async compose(input: CardInput): Promise<Uint8Array> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const deadline = new Promise<never>((_, reject) => {
+            timer = setTimeout(
+                () => reject(new Error(`compose: Chromium did not finish within ${this.timeoutMs}ms (stalled launch)`)),
+                this.timeoutMs,
+            );
+        });
+        try {
+            return await Promise.race([this.render(input), deadline]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    protected async render(input: CardInput): Promise<Uint8Array> {
         // Dynamic import so missing Playwright gives a clear error at call time.
         let chromium: import('playwright').BrowserType;
         try {
@@ -57,12 +96,7 @@ export class ChromiumComposer implements CardComposer {
             );
         }
 
-        const fontNames = [input.compose.fonts.headline, input.compose.fonts.body];
-        const fontUrls = fontRouteUrls(fontNames);
-
-        // Build HTML with font URLs (small — no base64 inline).
-        const html = cardHtml(input, fontUrls);
-
+        const card = serveCard(input);
         let browser: import('playwright').Browser | undefined;
         try {
             try {
@@ -77,24 +111,7 @@ export class ChromiumComposer implements CardComposer {
                 deviceScaleFactor: 1,
             });
 
-            // Serve fonts from disk via route interception; no network, no base64 blob.
-            await page.route(`${FONT_ROUTE_BASE}**`, async (route) => {
-                const url = new URL(route.request().url());
-                const fontName = decodeURIComponent(url.pathname.slice(1));
-                const fontPath = join(FONTS_DIR, fontName);
-                try {
-                    const bytes = await readBytes(fontPath);
-                    await route.fulfill({
-                        status: 200,
-                        contentType: 'font/otf',
-                        body: Buffer.from(bytes),
-                    });
-                } catch {
-                    await route.abort();
-                }
-            });
-
-            await page.setContent(html, { waitUntil: 'domcontentloaded' });
+            await page.goto(card.url, { waitUntil: 'domcontentloaded' });
             // Wait for fonts to load; passed as a string expression to avoid DOM lib dependency.
             await page.evaluate('document.fonts.ready');
 
@@ -137,6 +154,7 @@ export class ChromiumComposer implements CardComposer {
             return new Uint8Array(screenshot);
         } finally {
             await browser?.close();
+            card.stop();
         }
     }
 }
