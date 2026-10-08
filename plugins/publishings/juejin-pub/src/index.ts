@@ -231,8 +231,8 @@ export class JuejinBrowserTransport implements PublishTransport {
                     profileDir,
                     url: EDITOR_URL,
                     isAuthenticated,
-                    // Headed by default (sites bot-wall headless loads); the headless preflight
-                    // above is the unattended pass, `options.headless === true` the opt-in.
+                    // Headed by default (sites bot-wall headless loads; the preflight above is headed-only
+                    // since 0192), `options.headless === true` the opt-in.
                     headless: payload.options?.headless === true,
                     launcher: this.launcher,
                     // The session is already preflight-verified, so the post-goto confirmation is

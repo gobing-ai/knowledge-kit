@@ -1,4 +1,5 @@
 import { trySelectors } from '@gobing-ai/publish-harness';
+import { waitUntil } from '@gobing-ai/publish-harness/browser';
 
 /**
  * The console's page seam (ADR-029) and the helpers every xhs operation shares.
@@ -10,6 +11,9 @@ import { trySelectors } from '@gobing-ai/publish-harness';
  */
 
 export const POLL_MS = 500;
+
+// The shared poll (0184 R2); re-exported so flow/index keep importing it from here.
+export { waitUntil };
 export const STEP_TIMEOUT_MS = 30_000;
 
 /** The console's mode tab bar; it mounts late and renders every tab several times over. */
@@ -118,23 +122,6 @@ export async function clickCreatorTab(
             `mode entry: no in-viewport '${label}' tab found (only aria-hidden or off-screen clones matched) — the mode was not entered`,
         );
     }
-}
-
-/**
- * Poll `predicate` every `pollMs` until the deadline, then evaluate it one final time. The trailing
- * call matters: the condition often becomes true exactly at the boundary.
- */
-export async function waitUntil(
-    predicate: () => Promise<boolean>,
-    timeoutMs: number,
-    pollMs = POLL_MS,
-): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        if (await predicate()) return true;
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-    }
-    return predicate();
 }
 
 export function wrapPlaywrightPage(raw: unknown, shadow?: ShadowProbe): XhsPage {
