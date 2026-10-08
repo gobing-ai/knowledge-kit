@@ -4,7 +4,7 @@ name: "publish-harness default launcher: full-Chromium channel + stealth launch 
 status: done
 template: issue
 created_at: 2026-10-07T17:59:24.600Z
-updated_at: "2026-10-07T20:45:58.482Z"
+updated_at: "2026-10-08T00:26:08.452Z"
 feature_id: E91
 
 ac_numbering: task-local
@@ -93,20 +93,21 @@ Every browser channel opened profiles through the ts-browser-automation default 
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | packages/publish-harness/src/browser.ts:111 createKkBrowserLauncher — channel from KK_BROWSER_CHANNEL (default chromium, :128), AutomationControlled arg, ignoreDefaultArgs ['--enable-automation'], navigator.webdriver init script; headless missing-profile refusal before launch; unit suite 'createKkBrowserLauncher (0214)' in packages/publish-harness/tests/browser.test.ts (55 pass with profile-dir suite) |
-| R2 | MET | browser.ts:204 `launcher: opts.launcher ?? kkBrowserLauncher` — checkChannelSession/runProfileCli default to the harness launcher; no plugin-local launcher default remains (grep clean) |
-| R3 | MET | E2E artifact .spur/run/e2e/0214-launcher-session.json (2026-10-07): kkBrowserLauncher kept cookies headed→headless and headless→headed (kept:true both directions); playwright-default control lost them both ways; KK_BROWSER_CHANNEL=chrome pass:true; check result written as JSON artifact |
-| R4 | MET | docs/04_DESIGN.md names KK_BROWSER_CHANNEL with default and allowed values (env row, 2 occurrences) |
+| R1 | MET | `packages/publish-harness/src/browser.ts:111` `createKkBrowserLauncher`, `packages/publish-harness/src/browser.ts:128` channel from `KK_BROWSER_CHANNEL` default chromium, `packages/publish-harness/src/browser.ts:134-135` AutomationControlled/`--enable-automation`, `packages/publish-harness/src/browser.ts:151` webdriver init script, `packages/publish-harness/src/browser.ts:159` `kkBrowserLauncher`. |
+| R2 | MET | `packages/publish-harness/src/browser.ts:204,290` default launcher in `checkChannelSession`/`runProfileCli`; plugins: `plugins/publishings/infoq-pub/src/index.ts:223`, `plugins/publishings/juejin-pub/src/index.ts:186`, `plugins/publishings/substack-pub/src/index.ts:179`, `plugins/publishings/x-pub/src/index.ts:268`, `plugins/publishings/xhs-pub/src/index.ts:100`, `plugins/publishings/wechatmp-pub/src/index.ts:111`. |
+| R3 | MET | E2E re-run this pass, artifact `.spur/run/e2e/0214-launcher-session.json` `pass:true`; script `packages/publish-harness/scripts/e2e-launcher-session.ts:1`. |
+| R4 | MET | `docs/04_DESIGN.md:658` `KK_BROWSER_CHANNEL` row; `docs/04_DESIGN.md:747` launcher export row with defaults and E2E command. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | command | bun test packages/publish-harness/tests/browser.test.ts packages/publish-harness/tests/profile-dir.test.ts — 55 pass / 0 fail; stealth options + channel + headless refusal asserted |
-| AC2 | MET | code | browser.ts:204 default launcher wiring; plugins unchanged go through harness launcher |
-| AC3 | MET | artifact | .spur/run/e2e/0214-launcher-session.json pass:true, both directions kept:true + control rows |
-| AC4 | MET | doc | docs/04_DESIGN.md KK_BROWSER_CHANNEL row |
+| AC1 — harness launcher applies channel and stealth options (req: R1) | MET | test | `packages/publish-harness/tests/browser.test.ts:656` createKkBrowserLauncher tests pass in the focused run. |
+| AC2 — plugins default to the harness launcher (req: R2) | MET | test | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:1383-1387` asserts `defaultLauncher` is `kkBrowserLauncher.launch`; `plugins/publishings/wechatmp-pub/tests/wechatmp-default-launcher.test.ts:5-11` exercises the production default seam; both pass this pass (107 + 272 focused, 0 fail). Remaining plugins wire `deps.launcher ?? kkBrowserLauncher` at the R2 anchors. |
+| AC3 — headed-written cookie survives a headless reopen (req: R3) | MET | command | `.spur/run/e2e/0214-launcher-session.json` regenerated this pass, `pass:true`. |
+| AC4 — surface documented (req: R4) | MET | command | `grep -n KK_BROWSER_CHANNEL docs/04_DESIGN.md` run this pass → 2 hits: env row `docs/04_DESIGN.md:658` and launcher export row `docs/04_DESIGN.md:747` (defaults + E2E command). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -115,8 +116,8 @@ Fresh-context verification of the implemented tree against this task's claims (2
 
 | Priority | Dimension | Finding | Disposition |
 | --- | --- | --- | --- |
-| P3 | correctness | Cookie persistence across headed/headless is environment-dependent (Playwright build layout can change across versions); guarded by the E2E artifact which pins both directions + chrome channel. | ACCEPTED — artifact re-runnable via `bun run e2e:launcher` |
-| P3 | security | Stealth options (AutomationControlled off, --enable-automation dropped, webdriver init script) reduce bot detection but are not an anonymity guarantee; scope is OAuth login acceptance only. | ACCEPTED — matches ADR-032 scope |
+| P3 | correctness | Cookie persistence across headed/headless is environment-dependent (Playwright build layout can change across versions); guarded by the E2E artifact which pins both directions + chrome channel. | DEFERRED — accepted residual risk; re-check after Playwright upgrades via `bun run e2e:launcher` (packages/publish-harness/package.json:12; re-run 2026-10-07, pass:true) |
+| P3 | security | Stealth options (AutomationControlled off, --enable-automation dropped, webdriver init script) reduce bot detection but are not an anonymity guarantee; scope is OAuth login acceptance only. | DEFERRED — accepted residual risk; scope is OAuth login acceptance (ADR-032), no anonymity claim |
 | P4 | ops | KK_BROWSER_CHANNEL=chrome requires Google Chrome installed; error message names the install command. | ACCEPTED |
 
 Residual risk: none new; artifact-based cookie persistence is environment-dependent by nature but was reproduced in both directions plus the chrome channel.

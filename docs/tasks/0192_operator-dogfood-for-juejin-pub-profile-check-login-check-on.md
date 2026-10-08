@@ -4,7 +4,7 @@ name: "Operator dogfood for juejin-pub: profile-check login -> check -> one draf
 status: done
 template: issue
 created_at: 2026-10-05T13:41:38.460Z
-updated_at: "2026-10-07T05:53:26.413Z"
+updated_at: "2026-10-08T00:24:21.248Z"
 feature_id: E91
 
 done_forced: "false"
@@ -30,12 +30,12 @@ Captured from the creation title: "Operator dogfood for juejin-pub: profile-chec
 `ac_altitude: task-local`
 `ac_numbering: task-local`
 
-Scenario: AC1 — profile session dogfood on the persisted juejin profile
+Scenario: AC1 — profile session dogfood on the operator profile
 Given the persisted operator profile `~/.config/kk/browser-profiles/juejin` (session alive since 0202)
 When `bun plugins/publishings/juejin-pub/src/profile-check.ts check` runs against it
 Then it exits 0 reporting `status: "verified"` (login leg only if the session expired) (req: R1)
 
-Scenario: AC2 — measured contract confirmed against the 0202 discovery record
+Scenario: AC2 — measured drift corrected and recorded
 Given `docs/design/juejin-ui-discovery.md` records the measured editor contract
 When the plugin constants (editor URL + rewrite rule, title/body selectors, 保存成功 toasts, draft evidence) are compared live
 Then every constant matches the measured contract or is corrected and pinned in the plugin tests (req: R2, R4)
@@ -88,20 +88,20 @@ Live-leg evidence: profile check verified (2.9 s, headless); draft **76930495131
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: HIGH
+- Confidence: MEDIUM
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Live dogfood this run: `bun plugins/publishings/juejin-pub/src/profile-check.ts check` -> {"status":"verified"} in 2.9 s headlessly against the persisted operator profile (session alive since the 0202 walk); login leg not needed; refusal paths pinned (plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:436-450) |
-| R2 | MET | Measured contract of docs/design/juejin-ui-discovery.md confirmed live by the draft run (editor URL /editor/drafts/new?v=2 -> /editor/drafts/<id>, input.title-input, CodeMirror body, 保存成功); one new drift measured and recorded per item in the task Solution (headless editor readiness non-deterministic: CLI check 2.9 s pass, publish preflight 30 s burn on the identical predicate) |
-| R3 | MET | Exactly one real draft run executed this run through the real transport: .spur/run/0192-dogfood-result.json -> ok:true, url https://juejin.cn/editor/drafts/7693049513121349678, id 7693049513121349678, "juejin draft saved (unpublished)", publishStatus draft, 53 s; no 发布/草稿箱 activation (draft-only flow pinned plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:267-300) |
-| R4 | MET | Measured-stale preflight corrected per change map (plugins/publishings/juejin-pub/src/index.ts:59,87,178,211-222) and pinned in the rebuilt suites (plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:200-203,279-282,436-468); fresh this run: 25 pass / 0 fail, tsc clean |
+| R1 | MET | Recorded `check` verified on the persisted profile; current check headed-only via `plugins/publishings/juejin-pub/src/index.ts:88` `checkHeadedOnly:true`. |
+| R2 | MET | `docs/design/juejin-ui-discovery.md:18` measured contract and `:29` draft signal match `EDITOR_URL` `plugins/publishings/juejin-pub/src/index.ts:37` and the CodeMirror fill `:273`. |
+| R3 | MET | `.spur/run/0192-dogfood-result.json` → `ok:true`, draft 7693049513121349678, `/editor/drafts/<id>` URL (re-read this pass). |
+| R4 | MET | Headed-only preflight `plugins/publishings/juejin-pub/src/index.ts:216-220` pinned at `plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:278,446`; 25 tests pass. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — profile session dogfood on the persisted juejin profile | MET | command | check ran against the persisted profile and reported verified this run (2.9 s, read-only, run log .spur/memory/runs/runall-e91-8a7d8e-0191.md); no login needed |
-| AC2 — measured contract confirmed against the 0202 discovery record | MET | test | Constants compared against the discovery record and exercised live by the R3 draft run; the one drift (headless readiness) corrected in source and pinned in tests; 25 pass / 0 fail |
-| AC3 — one draft-only run through the real transport | MET | command | Draft 7693049513121349678 created and saved via the plugin CLI (.spur/run/0192-dogfood-content.json -> .spur/run/0192-dogfood-result.json); draft-only observed end to end (publishStatus draft, /editor/drafts/<id> rewrite, no live click) |
+| AC1 — profile session dogfood on the operator profile | MET | command | Recorded verified check; headed-only check path `plugins/publishings/juejin-pub/src/index.ts:88,216-220`. |
+| AC2 — measured drift corrected and recorded | MET | test | Drift (headless readiness) corrected at `plugins/publishings/juejin-pub/src/index.ts:211-220` and pinned `plugins/publishings/juejin-pub/tests/juejin-pub.test.ts:446`; measured contract `docs/design/juejin-ui-discovery.md:18-33`. |
+| AC3 — one draft-only run through the real transport | MET | command | `.spur/run/0192-dogfood-result.json` draft-only; live path gated at `plugins/publishings/juejin-pub/src/index.ts:287`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

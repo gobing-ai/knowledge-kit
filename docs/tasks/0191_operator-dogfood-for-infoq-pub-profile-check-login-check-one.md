@@ -4,7 +4,7 @@ name: "Operator dogfood for infoq-pub: profile-check login -> check -> one draft
 status: done
 template: issue
 created_at: 2026-10-05T13:41:38.183Z
-updated_at: "2026-10-07T05:29:27.300Z"
+updated_at: "2026-10-08T00:24:20.717Z"
 feature_id: E91
 
 done_forced: "false"
@@ -111,20 +111,20 @@ is the pass that can never succeed.
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: HIGH
+- Confidence: MEDIUM
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Live dogfood executed this run on the operator profile: `bun plugins/publishings/infoq-pub/src/profile-check.ts check` → status verified, 6.7 s, read-only (output captured in run log .spur/memory/runs/runall-e91-8a7d8e-0191.md); contract pinned by session-failure + verified-path suites plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:375-420; check-mode drift remediation pinned in packages/publish-harness/tests/browser.test.ts (headedOnly: never probes headless; CLI plumb of checkHeadedOnly) |
-| R2 | MET | Measured contract recorded per item (docs/tasks/0191_operator-dogfood-for-infoq-pub-profile-check-login-check-one.md:73-103) on measured basis docs/design/infoq-ui-discovery.md:41; corrected constants plugins/publishings/infoq-pub/src/index.ts:41,43,50,60,74,83,90 + this run's fresh re-measure (SIGNAL_CONTAINERS save-status scope, post-paste input nudge at the draft flow); pinned by frozen-surface suite plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:204 — 26 pass / 0 fail this run, and all editor constants independently re-proven live by the R3 draft run |
-| R3 | MET | Exactly one real draft run executed this run through the real transport: `.spur/run/0191-dogfood-result.json` → ok:true, url https://xie.infoq.cn/draft/405967, id 405967, "infoq draft saved (unpublished)", publishStatus draft; the 已保存 save signal was observed (now via the save-status scope); submit never activated (message says draft; no live switch). Flow pinned incl. never-clicks-submit (plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:258-328) |
-| R4 | MET | All measured-stale values corrected per change map (plugins/publishings/infoq-pub/src/index.ts:41,43,50,60,74,83,90,219,263,339,349 + SIGNAL_CONTAINERS and the preflight headedOnly/60 s options; plugins/publishings/infoq-pub/src/profile-check.ts:4) and pinned in the rebuilt suites (plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:72,204,258,330,375; packages/publish-harness/tests/browser.test.ts headedOnly cases); fresh this run: 26 + 46 pass / 0 fail, tsc clean; removed symbols have no external importers |
+| R1 | MET | Operator login/check outcomes recorded in the task; current check path `plugins/publishings/infoq-pub/src/index.ts:136` `checkHeadedOnly:true` + `runProfileCli` `packages/publish-harness/src/browser.ts:239`. |
+| R2 | MET | `docs/design/infoq-ui-discovery.md:25` measured editor contract, `:39` draft-save signal; constants `plugins/publishings/infoq-pub/src/index.ts:43-67`. |
+| R3 | MET | `.spur/run/0191-dogfood-result.json` → `ok:true`, id 405967, `https://xie.infoq.cn/draft/405967`, publishStatus draft (re-read this pass). |
+| R4 | MET | `plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:35` pins `/draft/<id>`, `:272` headed-only preflight, `:310-315` entry failure; 26 tests pass. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — profile session dogfood on the operator profile | MET | command | Login was completed by the operator (WeChat QR, profile /Users/robin/.config/kk/browser-profiles/infoq, persisted); official check returned verified read-only this run (run log .spur/memory/runs/runall-e91-8a7d8e-0191.md); refusal paths remain pinned (plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:375-420) |
-| AC2 — measured drift corrected and recorded | MET | test | Drift recorded per item in docs/tasks/0191_operator-dogfood-for-infoq-pub-profile-check-login-check-one.md:73-103 and extended this run with three fresh measurements (headed hydration tail 2.5–35 s, save-status indicator with timestamp, pasteHtml input-event gap), each with its fix pinned in suites (packages/publish-harness/tests/browser.test.ts; plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:204,258-328); fresh 46 + 26 pass / 0 fail |
-| AC3 — one draft-only run through the real transport | MET | command | Draft 405967 created and saved via `kk executor run infoq-pub` (.spur/run/0191-dogfood-content.json → .spur/run/0191-dogfood-result.json); draft-only observed end to end (publishStatus draft, no submit click, result message "draft saved (unpublished)") |
+| AC1 — profile session dogfood on the operator profile | MET | command | Recorded verified login/check on `~/.config/kk/browser-profiles/infoq`; check path is headed-only (`plugins/publishings/infoq-pub/src/index.ts:136,244-252`). |
+| AC2 — measured drift corrected and recorded | MET | test | Corrections pinned at `plugins/publishings/infoq-pub/tests/infoq-pub.test.ts:35,272,310`; drift recorded in `docs/design/infoq-ui-discovery.md:11-41`. |
+| AC3 — one draft-only run through the real transport | MET | command | `.spur/run/0191-dogfood-result.json` draft 405967, no submit (`div.submit-btn` only on public, `plugins/publishings/infoq-pub/src/index.ts:338-349`). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

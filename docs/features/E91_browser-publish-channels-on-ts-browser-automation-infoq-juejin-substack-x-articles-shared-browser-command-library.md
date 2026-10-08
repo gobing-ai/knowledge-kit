@@ -164,15 +164,16 @@ Feature: Browser publish channels on ts-browser-automation
 | 0186 | Juejin publisher saves drafts via ts-browser-automation | done |
 | 0187 | Substack publisher saves drafts via ts-browser-automation | done |
 | 0188 | X article operation saves drafts via ts-browser-automation | done |
-| 0190 | Residuals from 0183 | backlog |
-| 0191 | Operator dogfood for infoq-pub: profile-check login -> check -> one draft run; re-measure EDITOR_URL/selectors/draft signal | todo |
-| 0192 | Operator dogfood for juejin-pub: profile-check login -> check -> one draft run; re-measure editor URL/CodeMirror selectors/draft signal | todo |
-| 0193 | Operator dogfood for substack-pub: profile-check login -> check -> one draft run; re-measure editor URL/body paste/draft signal | todo |
-| 0194 | Operator dogfood for x-pub-article: profile-check login -> check -> one draft run; re-measure compose-articles URL/selectors/edit-URL pattern, with and without a cover | todo |
-| 0195 | Residuals from 0185 | backlog |
-| 0196 | Residuals from 0186 | backlog |
-| 0197 | Residuals from 0187 | backlog |
-| 0198 | Residuals from 0187 | backlog |
+| 0190 | Residuals from 0183 | cancelled |
+| 0191 | Operator dogfood for infoq-pub: profile-check login -> check -> one draft run; re-measure EDITOR_URL/selectors/draft signal | done |
+| 0192 | Operator dogfood for juejin-pub: profile-check login -> check -> one draft run; re-measure editor URL/CodeMirror selectors/draft signal | done |
+| 0193 | Operator dogfood for substack-pub: profile-check login -> check -> one draft run; re-measure editor URL/body paste/draft signal | done |
+| 0194 | Operator dogfood for x-pub-article: profile-check login -> check -> one draft run; re-measure compose-articles URL/selectors/edit-URL pattern, with and without a cover | done |
+| 0195 | Residuals from 0185 | cancelled |
+| 0196 | Residuals from 0186 | cancelled |
+| 0197 | Residuals from 0187 | cancelled |
+| 0198 | Residuals from 0187 | cancelled |
+| 0214 | publish-harness default launcher: full-Chromium channel + stealth launch so headed login and headless check share one cookie store | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes

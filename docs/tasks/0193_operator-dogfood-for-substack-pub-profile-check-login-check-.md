@@ -4,7 +4,7 @@ name: "Operator dogfood for substack-pub: profile-check login -> check -> one dr
 status: done
 template: issue
 created_at: 2026-10-05T13:41:38.676Z
-updated_at: "2026-10-07T23:31:59.844Z"
+updated_at: "2026-10-08T00:24:21.866Z"
 feature_id: E91
 
 dependencies: ["0214"]
@@ -113,19 +113,20 @@ Operator dogfood of the substack-pub channel on the live publication (https://ro
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: HIGH
+- Confidence: MEDIUM
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | profile-check.ts login → 'substack profile login verified' (exit 0, 3.7s); check → {"status":"verified"} headless (exit 0). Session persistence measured: editor rendered without re-sign-in across browser restarts in probes 16:21–16:28. |
-| R2 | MET | Live A/B probe (.spur/run/probe-0193-ab.ts): /publish/post/new never rewrites the URL ("Saved" only, no post entity); /publish/post rewrote to /publish/post/219348810. Drift found in editorUrl() — fixed to `${base}/publish/post` and doc-commented. Selector inventory (probe-0193-measure.ts): title textarea[placeholder="Title"] HIT (plugin candidate #2), body .ProseMirror[contenteditable="true"] HIT, harness pasteHtml ok; subtitle candidates both MISS (no subtitle field in current editor UI — recorded, constants left, transport only resolves subtitle when metadata.subtitle is set). |
-| R3 | MET | One draft-only run through the real transport: plugins/publishings/substack-pub/src/index.ts --in .spur/run/0193-draft-content.json --out .spur/run/0193-draft-result.json → {ok:true, url:…/publish/post/219348889, id:219348889} after the editorUrl fix (first attempt failed with 'no draft signal in 30s' pre-fix — kept as negative evidence). |
+| R1 | MET | Recorded login/check on the substack profile (`.spur/run/0193-login.log`); CLI `plugins/publishings/substack-pub/src/profile-check.ts:71`. |
+| R2 | MET | `docs/design/substack-ui-discovery.md:22` measured contract (bare `/publish/post`), `:35` draft signal; subtitle absent (kept last-known, `plugins/publishings/substack-pub/src/index.ts:41-49`). |
+| R3 | MET | `.spur/run/0193-draft-result.json` → `ok:true`, id 219348889, `/publish/post/219348889` (re-read this pass). |
+| R4 | MET | `editorUrl()` `plugins/publishings/substack-pub/src/index.ts:77` pinned at `plugins/publishings/substack-pub/tests/substack-pub.test.ts:36`; DESIGN `docs/04_DESIGN.md:656,865` corrected this pass. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Draft-only run succeeds through the real transport | MET | command | bun plugins/publishings/substack-pub/src/index.ts --in .spur/run/0193-draft-content.json --out .spur/run/0193-draft-result.json → exit 0, Result ok:true with draft URL https://robinmin.substack.com/publish/post/219348889 |
-| Every stale constant is corrected and pinned in tests | MET | command | editorUrl fixed in src/index.ts (single source; residual-0197 comment updated); tests/substack-pub.test.ts EDITOR_URL re-pinned to /publish/post; bun test plugins/publishings/substack-pub → 37 pass, 0 fail |
-| Safety: no public/send controls activated (E91-D5) | MET | observation | All probes and the R3 run used the draft branch only; Continue/Preview/Send observed presence-only in DOM inventory, never clicked |
+| AC1 — profile session dogfood on the operator profile | MET | command | Recorded verified login/check (`.spur/run/0193-login.log`). |
+| AC2 — measured drift corrected and recorded | MET | test | Route correction pinned `plugins/publishings/substack-pub/tests/substack-pub.test.ts:36`; recorded `docs/design/substack-ui-discovery.md:22-39`. |
+| AC3 — one draft-only run through the real transport | MET | command | `.spur/run/0193-draft-result.json` draft-only; Continue/Send only on public (`plugins/publishings/substack-pub/src/index.ts:286-307`). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

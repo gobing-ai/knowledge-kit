@@ -4,7 +4,7 @@ name: "Operator dogfood for x-pub-article: profile-check login -> check -> one d
 status: done
 template: issue
 created_at: 2026-10-05T13:41:38.888Z
-updated_at: "2026-10-07T23:51:10.074Z"
+updated_at: "2026-10-08T00:24:36.718Z"
 feature_id: E91
 
 dependencies: ["0214"]
@@ -92,20 +92,20 @@ Live dogfood on the operator profile (~/.config/kk/browser-profiles/x), measured
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: HIGH
+- Confidence: MEDIUM
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | profile-check login exit 0 (4.4s, session persisted); check exit 0 status=verified headed-only (checkHeadedOnly: true; headless login-wall per 0216). Articles entitlement confirmed: composer loads and draft entities were created. |
-| R2 | MET | Live walk measured 2026-10-07: X_ARTICLES_URL loads unredirected (LOGIN_URL_RE unexercised this run; unauth -> /i/flow/login matches per 2026-10-06 discovery); write c1 [data-testid=empty_state_button_text] hit; title is TWO-STEP (twitter-article-title div shows '(Needs title)', real textarea[placeholder='Add a title'] mounts on click); body c1 .DraftEditor-editorContainer [contenteditable=true] hit, pasteHtml ok; addPhotos button present ('Add photos or video') but its click swallows the set file; fileInput [data-testid=fileInput] accept image/jpeg,png,webp; ARTICLE_EDIT_RE verified (/edit/2107977774007017472 et al.); LIVE_URL_ID_RE and publish controls unexercised/presence-only (draft-only). |
-| R3 | MET | Run 1 no cover: ok=true draft 2107978638767628288 (.spur/run/0194-draft-result.json). Run 2 with cover: ok=true draft 2107980698334453760, cover attachment observed in-flow (expectOutcome 'cover image rendered in composer') after Apply (.spur/run/0194-cover-result.json). Publish control never activated; tweet composer untouched. |
-| R4 | MET | Title two-step implemented in runArticleFlow (index.ts:344-356); cover leg rewritten: no picker click, Apply confirm, observed-attachment gate (index.ts:369-392, coverAttachedScript index.ts:441); ARTICLE_SELECTORS comment updated to measured facts + date (index.ts:172-180); behavior pinned in tests/x-pub.test.ts (37 pass, incl. new Apply/attachment cases). |
+| R1 | MET | Recorded login/check on `~/.config/kk/browser-profiles/x`; `ARTICLE_CONFIG.checkHeadedOnly` `plugins/publishings/x-pub/src/index.ts:212`. |
+| R2 | MET | `docs/design/x-article-ui-discovery.md:23-34` measured composer contract (title textarea not mounted until display-div click `:29`; picker swallows set files `:34`). |
+| R3 | MET | `.spur/run/0194-draft-result.json` (no cover, id 2107978638767628288) and `.spur/run/0194-cover-result.json` (cover, id 2107980698334453760), both `ok:true` draft (re-read this pass). |
+| R4 | MET | Two-step title `plugins/publishings/x-pub/src/index.ts:344-359` and cover Apply flow `:369-390` pinned at `plugins/publishings/x-pub/tests/x-pub.test.ts:72,86,300,420`; DESIGN `docs/04_DESIGN.md:867` corrected this pass. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | cli | login exit 0; check JSON status=verified (headed) |
-| AC2 | MET | probe | Drift found and fixed: title mounts on display-div click; cover picker click harmful. Recorded in Solution; corrected+dated in src, pinned in tests |
-| AC3 | MET | transport-run | Two draft-only CLI runs ok=true with edit-URL draft ids; cover run shows in-flow attachment evidence; no publish activation |
+| AC1 — profile session dogfood on the operator profile | MET | command | Recorded verified login/check; headed-only check via `plugins/publishings/x-pub/src/index.ts:212`. |
+| AC2 — measured drift corrected and recorded | MET | test | Pinned at `plugins/publishings/x-pub/tests/x-pub.test.ts:72,300,420`; recorded `docs/design/x-article-ui-discovery.md:1,23-40`. |
+| AC3 — one draft-only run through the real transport | MET | command | Both `.spur/run/0194-*-result.json` draft-only; publish only on public (`plugins/publishings/x-pub/src/index.ts:446-448`). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
