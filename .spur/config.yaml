@@ -160,3 +160,6 @@ decisions:
   paths:
     - plugins/kk/decisions
   maker: fm-local
+  makers:
+    kk-item-category: fm-local
+    kk-item-quality: laya-local

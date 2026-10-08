@@ -65,7 +65,7 @@ and `drizzle/`). Both run in `bun run gate` via `spur rule run`.
 | `kk store migrate` | apply pending migrations | 0 / 1 |
 | `kk store lock acquire\|release --name collect --run <id> [--ttl 7200000]` | single-flight; held lock ⇒ prints `{"skipped":"locked"}`, exit 0 + writes `.skip` marker | 0 |
 | `kk store ingest --run <id> --in <docs.json>` | upsert `Doc[]`, record `collect_runs`, print `{inserted, updated, unchanged}`, write `new-ids.json` | 0 / 1 |
-| `kk store label --run <id> --catalog <dir> [--maker fm-local]` | label items in `new-ids.json` (+ invalidated); catalog loads checked with `spur decision status --json` (`ok`, empty `loadErrors`) — there is no `decision validate` verb | 0 (degraded ⇒ heuristic, `source: default`) |
+| `kk store label --run <id> --new-ids <path> [--maker <name>]` | label items in `new-ids.json` (+ invalidated); the maker defaults to `.spur/config.yaml` `decisions.maker`; catalog loads checked with `spur decision status --json` (`ok`, empty `loadErrors`) — there is no `decision validate` verb | 0 (degraded ⇒ heuristic, `source: default`) |
 | `kk store extract --topic <name> --window 24h --limit N --out <docs.json> [--exclude-used <workflow>]` | profile query → `Doc[]` (labels inlined into `metadata`) | 0 (empty pool ⇒ `[]` + `pool-empty` marker) |
 | `kk store mark-used --workflow <w> --run <id> --in <plan.json>` | write `episode_usage` | 0 / 1 |
 

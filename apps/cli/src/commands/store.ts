@@ -523,7 +523,7 @@ async function removeScratch(fs: FileSystem, scratch: string): Promise<void> {
 /**
  * Serve one decision for one item through the sanctioned external-command seam (`KK_SPUR_BIN`
  * override mirrors `kk ledger`): `spur decision run <id> --param title=… --param source=…
- * --evidence <body file> --maker <maker> --json`.
+ * --evidence <body file> [--maker <maker>] --json`.
  *
  * `undefined` means "no usable answer" — a spawn failure, a non-zero exit (unknown id, catalog
  * load error) or unparseable stdout — which R6 treats exactly like `source: default`.
@@ -690,7 +690,7 @@ async function labelItem(
 }
 
 /**
- * `kk store label --run <id> --new-ids <path> [--maker fm-local] [--mode heuristic|decision] [--db <path>]`
+ * `kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]`
  * — write one `labels` row per decision for the ids the last `kk store ingest` filed (R4), and print
  * `{verdict, confidence, labeled, model, fallback, consults, consultMs}` (R6).
  *
