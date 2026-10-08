@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G2"
 name: "kk-itc"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:25.292Z"
-updated_at: "2026-10-08T00:17:39.474Z"
+updated_at: "2026-10-08T03:14:38.696Z"
 ---
 
 # G2: kk-itc
@@ -47,4 +47,6 @@ Historical features (IDs kept): F4, F41.
 ## History
 
 - 2026-10-08T00:17:39.474Z backlog → active (system)
+- 2026-10-08T03:14:37.372Z active → verifying (system)
+- 2026-10-08T03:14:38.696Z verifying → done (system)
 

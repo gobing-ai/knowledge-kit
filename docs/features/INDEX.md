@@ -64,7 +64,7 @@
 [backlog] **G**: kk workflows ([G_kk-workflows.md](./G_kk-workflows.md))
     ├── [backlog] **G1**: kk-daily-ai-voice ([G1_kk-daily-ai-voice.md](./G1_kk-daily-ai-voice.md))
         └── [backlog] **G11**: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over ([G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md](./G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md))
-    ├── [active] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
+    ├── [done] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
     ├── [backlog] **G3**: kk-collect ([G3_kk-collect.md](./G3_kk-collect.md))
         └── [done] **G31**: kk-collect: SQLite store, 4h collection, decision labels, topic extraction ([G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md](./G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md))
     ├── [backlog] **G4**: kk-solo-podcast ([G4_kk-solo-podcast.md](./G4_kk-solo-podcast.md))
