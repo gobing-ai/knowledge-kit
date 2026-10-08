@@ -180,57 +180,6 @@ function targetsOf(path: string): PublishTarget[] {
 }
 
 /**
- * State of the publish tail's independent channels (`locales`, `xhs`, `wechat`, `cms-resync`).
- *
- * They never enter `publish_status` (ADR-022/025/026), so a `full` status file can hide a tail that
- * skipped every one of them — 20261002 shipped zh-only surfdash with no XHS and no WeChat draft and
- * nothing in the run's artifacts said so. Recorded beside the status file so the gap is visible.
- */
-function publishCompleteness(workDir: string, runDate: string): { rows: Record<string, string>[]; missing: string[] } {
-    const at = (name: string): string => join(workDir, '31-publish', `${runDate}_${name}`);
-    const markerFilled = (path: string): boolean => existsSync(path) && readFileSync(path, 'utf-8').trim() !== '';
-    const rows: Record<string, string>[] = [];
-    const localesDone = ['en', 'ja'].every((locale) =>
-        markerFilled(at(`20_translate-localize_${locale}-post-path.txt`)),
-    );
-    rows.push({
-        channel: 'locales',
-        state: localesDone ? 'done' : 'not-run',
-        detail: localesDone ? 'en/ja drafts scaffolded' : 'translate markers absent (en/ja never scaffolded)',
-    });
-    const resultChannels: [string, string, string][] = [
-        ['xhs', '19_publish-xhs_result.json', ''],
-        ['wechat', '20_publish-wechat_result.json', ''],
-        ['cms-resync', '23_patch-surfdash_sync-result.json', '23_patch-surfdash_emdash-resync.txt'],
-    ];
-    for (const [channel, resultName, skipMarkerName] of resultChannels) {
-        const path = at(resultName);
-        if (existsSync(path)) {
-            const result = parseJson(readFileSync(path, 'utf-8')) as Record<string, unknown>;
-            const metadata = (result.metadata ?? {}) as Record<string, unknown>;
-            rows.push({
-                channel,
-                state: result.ok === true ? 'done' : 'failed',
-                detail:
-                    result.ok === true
-                        ? typeof metadata.publishStatus === 'string'
-                            ? metadata.publishStatus
-                            : 'ok'
-                        : String(result.error ?? 'ok=false'),
-            });
-            continue;
-        }
-        const skipMarker = skipMarkerName === '' ? '' : at(skipMarkerName);
-        rows.push(
-            skipMarker !== '' && existsSync(skipMarker)
-                ? { channel, state: 'skipped', detail: readFileSync(skipMarker, 'utf-8').trim() }
-                : { channel, state: 'not-run', detail: 'no result artifact' },
-        );
-    }
-    return { rows, missing: rows.filter((row) => row.state !== 'done').map((row) => String(row.channel)) };
-}
-
-/**
  * `kk daily publish-classify --work-dir <dir> --run-date <stamp> [--fold-tail]` — the publish
  * fan-in: classify the sequenced surfdash → podcast outcomes into `full|partial|none`, write
  * `<date>_17_publish_result.json` + `_publish-status.txt` + `_completeness.json`, and print the
@@ -267,19 +216,6 @@ async function publishClassifyAction(options: PublishClassifyOptions): Promise<v
             join(workDir, 'publish-classify.summary.txt'),
             `${JSON.stringify({ status, published: okCount, targets: total })}\n`,
         );
-        const completeness = publishCompleteness(workDir, runDate);
-        writeFileSync(
-            join(dir, `${runDate}_17_publish_completeness.json`),
-            `${JSON.stringify({ runDate, ...completeness }, null, 2)}`,
-        );
-        consoleOutput.write(
-            JSON.stringify({ status, published: okCount, targets: total, missing: completeness.missing }),
-        );
-        if (completeness.missing.length > 0) {
-            consoleOutput.error(
-                `WARNING: publish completeness — ${completeness.missing.join(', ')} did not complete. Independent channels never enter publish_status; re-run their stages for this work dir.`,
-            );
-        }
 
         if (options.foldTail === true) {
             if (status === 'partial') {
@@ -292,6 +228,22 @@ async function publishClassifyAction(options: PublishClassifyOptions): Promise<v
                 if (code !== 0) failLoud('kk.daily.publish-classify.patch-failed', new Error(`exit ${code}`));
             }
         }
+
+        // 0220 R3: delegate completeness to the terminal stage after the folded tail
+        runStage(['daily-publish-completeness', workDir, runDate]);
+        const completenessPath = join(dir, `${runDate}_17_publish_completeness.json`);
+        let missing: string[] = [];
+        if (existsSync(completenessPath)) {
+            try {
+                const parsed = parseJson(readFileSync(completenessPath, 'utf-8')) as { missing?: unknown };
+                if (Array.isArray(parsed?.missing)) {
+                    missing = parsed.missing.filter((item): item is string => typeof item === 'string');
+                }
+            } catch {
+                missing = [];
+            }
+        }
+        consoleOutput.write(JSON.stringify({ status, published: okCount, targets: total, missing }));
     } catch (error) {
         if (error instanceof CommanderError) throw error;
         failLoud('kk.daily.publish-classify.failed', error);

@@ -522,8 +522,12 @@ states:
             kk stage daily-publish-partial "${vars.work_dir}" "${vars.run_date}"
 
   - id: run-report
-    description: "Assemble the per-run report (scores+aggregates+rejected counts+step timing) from existing artifacts — news-report-gen; output-only, never throws; 0117"
+    description: "Assemble the per-run report (scores+aggregates+rejected counts+step timing) from existing artifacts — news-report-gen; output-only, never throws; 0117; preceded by terminal publish-completeness snapshot (0220)"
     onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage daily-publish-completeness "${vars.work_dir}" "${vars.run_date}"
       - kind: shell
         options:
           command: >-

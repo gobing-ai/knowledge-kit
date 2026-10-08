@@ -582,7 +582,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
     // WeChat) and the CMS re-sync never ran — and nothing in the run's own artifacts said so. The
     // classify step now records their state beside the status file; publish_status is unchanged
     // (these targets stay non-blocking by design).
-    describe('daily-publish-classify publish completeness', () => {
+    describe('daily-publish-completeness publish completeness', () => {
         const stamp = '20260101';
         const seeded = (dir: string): string => {
             const publish = join(dir, '31-publish');
@@ -597,15 +597,28 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             );
             return publish;
         };
-        const completenessOf = (publish: string): { missing: string[]; rows: { channel: string; state: string }[] } =>
+        const completenessOf = (
+            publish: string,
+        ): { missing: string[]; rows: { channel: string; state: string; detail: string }[] } =>
             JSON.parse(readFileSync(join(publish, `${stamp}_17_publish_completeness.json`), 'utf-8'));
 
-        it('names every channel a hand-driven tail skipped, without touching publish_status', () => {
+        it('daily-publish-classify classifies outcomes without writing completeness (0220 AC2)', () => {
             withTempDir((dir) => {
                 const publish = seeded(dir);
                 const res = run(['daily-publish-classify', dir, stamp]);
                 expect(res.status, res.stderr).toBe(0);
                 expect(readFileSync(join(publish, `${stamp}_17_publish_publish-status.txt`), 'utf-8')).toBe('full');
+                expect(existsSync(join(publish, `${stamp}_17_publish_completeness.json`))).toBe(false);
+                expect(res.stderr).not.toContain('publish completeness');
+                expect(res.stderr).not.toContain('publish-completeness:');
+            });
+        });
+
+        it('names every channel a hand-driven tail skipped, without touching publish_status', () => {
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                const res = run(['daily-publish-completeness', dir, stamp]);
+                expect(res.status, res.stderr).toBe(0);
                 const completeness = completenessOf(publish);
                 expect(completeness.missing).toEqual(['locales', 'xhs', 'wechat', 'cms-resync']);
                 expect(completeness.rows.map((row) => `${row.channel}=${row.state}`)).toEqual([
@@ -629,6 +642,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     );
                 }
                 writeFileSync(
+                    join(publish, `${stamp}_24_translate-sync_sync-result.json`),
+                    JSON.stringify({ ok: true, target: 'surfdash' }),
+                );
+                writeFileSync(
                     join(publish, `${stamp}_19_publish-xhs_result.json`),
                     JSON.stringify({ ok: true, target: 'xhs', metadata: { publishStatus: 'draft' } }),
                 );
@@ -640,7 +657,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     join(publish, `${stamp}_23_patch-surfdash_emdash-resync.txt`),
                     'skipped: no plugins-path\n',
                 );
-                const res = run(['daily-publish-classify', dir, stamp]);
+                const res = run(['daily-publish-completeness', dir, stamp]);
                 expect(res.status, res.stderr).toBe(0);
                 const completeness = completenessOf(publish);
                 expect(completeness.rows.map((row) => `${row.channel}=${row.state}`)).toEqual([
@@ -664,6 +681,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     );
                 }
                 writeFileSync(
+                    join(publish, `${stamp}_24_translate-sync_sync-result.json`),
+                    JSON.stringify({ ok: true, target: 'surfdash' }),
+                );
+                writeFileSync(
                     join(publish, `${stamp}_19_publish-xhs_result.json`),
                     JSON.stringify({ ok: true, target: 'xhs', metadata: { publishStatus: 'draft' } }),
                 );
@@ -675,10 +696,42 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     join(publish, `${stamp}_23_patch-surfdash_sync-result.json`),
                     JSON.stringify({ ok: true, target: 'surfdash' }),
                 );
-                const res = run(['daily-publish-classify', dir, stamp]);
+                const res = run(['daily-publish-completeness', dir, stamp]);
                 expect(res.status, res.stderr).toBe(0);
                 expect(completenessOf(publish).missing).toEqual([]);
-                expect(res.stderr).not.toContain('publish completeness');
+                expect(res.stderr).not.toContain('WARNING: publish completeness');
+            });
+        });
+
+        it('locales requires ok sync result (0220 AC1)', () => {
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                for (const locale of ['en', 'ja']) {
+                    writeFileSync(
+                        join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
+                        `/sd/content/posts/articles/${locale}/x/index.md`,
+                    );
+                }
+                // Scaffolded but no sync result -> not-run with 'never synced'
+                let res = run(['daily-publish-completeness', dir, stamp]);
+                expect(res.status).toBe(0);
+                let completeness = completenessOf(publish);
+                let localesRow = completeness.rows.find((r) => r.channel === 'locales');
+                expect(localesRow?.state).toBe('not-run');
+                expect(localesRow?.detail).toContain('never synced');
+                expect(res.stderr).toContain('WARNING: publish completeness');
+
+                // With ok: false sync result -> failed with error
+                writeFileSync(
+                    join(publish, `${stamp}_24_translate-sync_sync-result.json`),
+                    JSON.stringify({ ok: false, error: 'connection reset' }),
+                );
+                res = run(['daily-publish-completeness', dir, stamp]);
+                expect(res.status).toBe(0);
+                completeness = completenessOf(publish);
+                localesRow = completeness.rows.find((r) => r.channel === 'locales');
+                expect(localesRow?.state).toBe('failed');
+                expect(localesRow?.detail).toBe('connection reset');
             });
         });
     });

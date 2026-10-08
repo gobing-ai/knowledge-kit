@@ -1169,10 +1169,17 @@ function dailyPublishClassify(args: string[]): void {
         sted('write', summaryFile, () =>
             writeRaw(summaryFile, `${JSON.stringify({ status, published: okCount, targets: total })}\n`),
         );
+        // 0220: completeness moved to terminal daily-publish-completeness stage
+        console.error(`publish: status=${status} (${okCount}/${total} targets published); routing is transition-owned`);
+    });
+}
+
+function dailyPublishCompleteness(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    timed(workDir, 'publish-completeness', () => {
         const completeness = publishCompleteness(workDir, runDate);
         const completenessFile = join(workDir, '31-publish', `${runDate}_17_publish_completeness.json`);
         sted('write', completenessFile, () => writeJqText(completenessFile, { runDate, ...completeness }));
-        console.error(`publish: status=${status} (${okCount}/${total} targets published); routing is transition-owned`);
         console.error(
             `publish-completeness: ${completeness.rows.map((row) => `${row.channel}=${row.state}`).join(' ')}`,
         );
@@ -1211,14 +1218,38 @@ function publishCompleteness(
     const at = (name: string): string => join(workDir, '31-publish', `${runDate}_${name}`);
     const markerFilled = (path: string): boolean => isFile(path) && readFileSync(path, 'utf-8').trim() !== '';
     const rows: { channel: string; state: string; detail: string }[] = [];
-    const localesDone = ['en', 'ja'].every((locale) =>
+    const localesScaffolded = ['en', 'ja'].every((locale) =>
         markerFilled(at(`20_translate-localize_${locale}-post-path.txt`)),
     );
-    rows.push({
-        channel: 'locales',
-        state: localesDone ? 'done' : 'not-run',
-        detail: localesDone ? 'en/ja drafts scaffolded' : 'translate markers absent (en/ja never scaffolded)',
-    });
+    if (!localesScaffolded) {
+        rows.push({
+            channel: 'locales',
+            state: 'not-run',
+            detail: 'translate markers absent (en/ja never scaffolded)',
+        });
+    } else {
+        const syncResultFile = at('24_translate-sync_sync-result.json');
+        const syncResult = isFile(syncResultFile) ? readJson(syncResultFile) : null;
+        if (syncResult === null) {
+            rows.push({
+                channel: 'locales',
+                state: 'not-run',
+                detail: 'en/ja scaffolded, never synced',
+            });
+        } else if (syncResult.ok === true) {
+            rows.push({
+                channel: 'locales',
+                state: 'done',
+                detail: 'en/ja drafts scaffolded',
+            });
+        } else {
+            rows.push({
+                channel: 'locales',
+                state: 'failed',
+                detail: String(syncResult.error ?? 'ok=false'),
+            });
+        }
+    }
     const resultChannels: [string, string, string][] = [
         ['xhs', '19_publish-xhs_result.json', ''],
         ['wechat', '20_publish-wechat_result.json', ''],
@@ -1677,6 +1708,9 @@ if (import.meta.main)
         }
         case 'daily-publish-classify':
             dailyPublishClassify(rest);
+            break;
+        case 'daily-publish-completeness':
+            dailyPublishCompleteness(rest);
             break;
         case 'daily-patch-surfdash':
             dailyPatchSurfdash(rest);

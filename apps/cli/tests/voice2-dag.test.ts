@@ -718,4 +718,38 @@ describe('kk daily — the DAG nodes’ commands', () => {
             readFileSync(join(publish, '20261007_17_publish_completeness.json'), 'utf-8'),
         );
     });
+
+    it('publish-classify fold-tail reflects cms-resync in terminal completeness (0220 AC5)', async () => {
+        const dir = tempDir('kk-daily-classify-fold-');
+        const publish = join(dir, '31-publish');
+        mkdirSync(publish, { recursive: true });
+        writeFileSync(
+            join(publish, '20261007_14_publish-surfdash_result.json'),
+            JSON.stringify({ targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] }),
+        );
+        writeFileSync(
+            join(publish, '20261007_16_publish-podcast_result.json'),
+            JSON.stringify({ targets: [{ target: 'podcast-pub', ok: true, status: 'published' }] }),
+        );
+        writeFileSync(
+            join(publish, '20261007_23_patch-surfdash_sync-result.json'),
+            JSON.stringify({ ok: true, target: 'surfdash' }),
+        );
+        const result = await run([
+            'daily',
+            'publish-classify',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--fold-tail',
+        ]);
+        expect(result.code).toBe(0);
+        // stdout stays a single JSON line
+        const lines = result.out.trim().split('\n');
+        expect(lines.length).toBe(1);
+        const parsed = JSON.parse(lines[0] ?? '{}') as { status: string; missing: string[] };
+        expect(parsed.status).toBe('full');
+        expect(parsed.missing).not.toContain('cms-resync');
+    });
 });

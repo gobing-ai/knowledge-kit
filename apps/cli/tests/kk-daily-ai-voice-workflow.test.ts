@@ -232,11 +232,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         // which resolves the shipped stages script from the installed package. The YAML must carry no
         // prelude remnants and exactly one delegation call per stage (25 -> 26: daily-publish-wechat
         // joined 2026-09-29 with the WeChat MP draft target; 26 -> 28: the 0189 safety prep + gate;
-        // 28 -> 29: the 20261002 episode-duration gate; 29 -> 30: the 20261005 safety-revise stage).
+        // 28 -> 29: the 20261002 episode-duration gate; 29 -> 30: the 20261005 safety-revise stage;
+        // 30 -> 31: 0220 daily-publish-completeness stage).
         for (const remnant of ['kbin="$(command -v kk', 'st="$pkg/plugins/kk/scripts', 'not found at $st']) {
             expect(yaml, `prelude remnant ${remnant}`).not.toContain(remnant);
         }
-        expect(yaml.split('kk stage daily-').length - 1).toBe(30);
+        expect(yaml.split('kk stage daily-').length - 1).toBe(31);
         // ADR-115 R3: the trimmed prompts stay under the 1000-char error tier (cover brief: F614 0163).
         for (const [step, cap] of [
             ['plan-translate', 1000],
@@ -313,6 +314,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             `kk stage daily-publish-classify "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-patch-surfdash "\${vars.work_dir}" "\${vars.run_date}" "\${vars.surfdash_root}" "\${vars.plugins_path}"`,
             `kk stage daily-publish-partial "\${vars.work_dir}" "\${vars.run_date}"`,
+            `kk stage daily-publish-completeness "\${vars.work_dir}" "\${vars.run_date}"`,
             `kk stage daily-run-report "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.qc_min_quality}" "\${vars.qc_min_importance}" "\${vars.qc_min_urgency}" "\${vars.qc_min_impact}"`,
             `kk stage daily-translate-localize "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}"`,
             `kk stage daily-translate-sync "\${vars.work_dir}" "\${vars.run_date}" "\${vars.plugins_path}" "\${vars.work_dir}/31-publish/\${vars.run_date}_20_translate-localize_zh-post-path.txt"`,
@@ -797,6 +799,18 @@ if (plugin === 'aihot-ingest') {
         // dashes (`translate-sync`, `publish-prep`, `run-report`), so a `[a-z-]+-[^.]+` pattern
         // matches healthy names and cannot distinguish a flattening.
         expect(yaml).not.toMatch(/\$\{vars\.work_dir\}\/[0-9]-[^/\s]+-[^/\s]*\.[A-Za-z]/);
+    });
+
+    it('run-report runs publish-completeness before daily-run-report (0220 AC4)', () => {
+        const runReportIdx = yaml.indexOf('id: run-report');
+        expect(runReportIdx).toBeGreaterThan(0);
+        const translateIdx = yaml.indexOf('id: translate', runReportIdx);
+        const block = yaml.slice(runReportIdx, translateIdx > 0 ? translateIdx : undefined);
+        const completenessIdx = block.indexOf('kk stage daily-publish-completeness');
+        const runReportCallIdx = block.indexOf('kk stage daily-run-report');
+        expect(completenessIdx).toBeGreaterThan(0);
+        expect(runReportCallIdx).toBeGreaterThan(0);
+        expect(completenessIdx).toBeLessThan(runReportCallIdx);
     });
 
     it('transitions run translate before patch-surfdash so all locales get patched (0148 R7)', () => {
