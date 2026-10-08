@@ -4,7 +4,7 @@ name: Enforce feature G's workflow-tree rules (R1 homes, R2 shared capabilities)
 status: done
 template: feature-impl
 created_at: 2026-10-07T23:59:24.656Z
-updated_at: "2026-10-08T02:19:25.150Z"
+updated_at: "2026-10-08T22:03:00.023Z"
 feature_id: G
 
 done_forced: "false"
@@ -96,15 +96,15 @@ Rationale: both rules are derived, not hard-coded, so a new workflow or a newly 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/tests/g-feature-tree.test.ts:65-92` — `runnerOf()` nests sub-workflows under their runner, `homes()` matches child `name` or a Goal file mention; one assertion per workflow that exactly one home exists; non-vacuity guards `:87-88`. |
-| R2 | MET | `apps/cli/tests/g-feature-tree.test.ts:94-113` — shared `kk` families derived from the YAML, `NON_INFRA_FAMILIES` excluded with the reason at `:26-30`; exactly one Scope `In:` claimer `:102`; owner check for a workflow claimer; non-empty guard `:100`. |
-| R3 | MET | Probes re-run this pass: (a) voice2 removed from G1 Goal → R1 case red (1 pass / 1 fail); (b) `ledger` removed from G7 Scope In → R2 case red (1 pass / 1 fail); restored → 2 pass / 0 fail. |
-| R4 | MET | `bun test` file 2/0; `bun run lint` exit 0; `bun run test-pre-check` 51/51; `spur feature check G --json` pass with no errors. |
+| R1 | MET | `apps/cli/tests/g-feature-tree.test.ts:65-79` — runnerOf() nests a sub-workflow under the workflow that runs it, homes() matches child name or a Goal file mention; `apps/cli/tests/g-feature-tree.test.ts:86-92` asserts exactly one home per non-example workflow, with non-vacuity guards at :87-88. Re-run: 2 pass / 0 fail. |
+| R2 | MET | `apps/cli/tests/g-feature-tree.test.ts:94-113` — shared families derived from the YAML, `NON_INFRA_FAMILIES` excluded with the reason at `apps/cli/tests/g-feature-tree.test.ts:25-30`, exactly one Scope In claimer at :102-103, owner check at :105-111, non-empty guard at :100. Live shared infra families: ledger (G7), store (G3, owner kk-collect invokes it). |
+| R3 | MET | Probes re-run this pass on a scratch copy of docs/features + plugins/kk/workflows (corpus untouched): (a) voice2 file removed from G1 Goal → R1 case fails (1 pass / 1 fail); (b) ledger dropped from G7 Scope In → R2 case fails (1 pass / 1 fail); restored → 2 pass / 0 fail. |
+| R4 | MET | `bun test apps/cli/tests/g-feature-tree.test.ts` 2/0; `bun run gate` exit 0 (2211 pass / 2 pre-existing Chromium E2E skips / 0 fail; lint and typecheck clean); `bun run test-pre-check` 51/51 rules; `spur feature check G` run below. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — Every product workflow has a child node | MET | test | `apps/cli/tests/g-feature-tree.test.ts:86-92` green; probe (a) turns it red. |
-| R2 — Workflow-shared capabilities have their own child | MET | test | `apps/cli/tests/g-feature-tree.test.ts:94-113` green; probe (b) turns it red. |
+| R1 — Every product workflow has a child node | MET | test | `apps/cli/tests/g-feature-tree.test.ts:86-92` green; probe (a) turns it red, and it goes green again on restore. |
+| R2 — Workflow-shared capabilities have their own child | MET | test | `apps/cli/tests/g-feature-tree.test.ts:94-113` green; probe (b) turns it red, and it goes green again on restore. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -119,7 +119,10 @@ Rationale: both rules are derived, not hard-coded, so a new workflow or a newly 
 
 ### References
 
-<!-- Links to the parent feature, design docs, related tasks, or external references. -->
+- Parent feature: `docs/features/G_kk-workflows.md` (AC amended at :23-41; rationale in Notes).
+- Executable check: `apps/cli/tests/g-feature-tree.test.ts` (commit 739a3a4d).
+- Children read by the check: `docs/features/G1_kk-daily-ai-voice.md`…`docs/features/G7_kk-workflow-run-ledger.md`; workflows under `plugins/kk/workflows/`.
+- Sibling under G: task 0217 (store-docs AC4 assertion).
 
 ### History
 
