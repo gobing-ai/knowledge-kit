@@ -60,7 +60,7 @@ describe('registerStoreCommand', () => {
             '--mode',
             '--db',
         ]);
-        expect(label?.options.find((option) => option.long === '--maker')?.defaultValue).toBe('fm-local');
+        expect(label?.options.find((option) => option.long === '--maker')?.defaultValue).toBeUndefined();
         expect(label?.options.find((option) => option.long === '--mode')?.defaultValue).toBe('heuristic');
         expect(label?.options.filter((option) => option.mandatory).map((option) => option.long)).toEqual([
             '--run',

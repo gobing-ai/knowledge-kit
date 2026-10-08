@@ -28,9 +28,6 @@ import { readPluginJson } from '../plugin-output';
 /** Default lock TTL for `kk store lock acquire`: 2 h (20261006 collection took ~32 min). */
 const DEFAULT_LOCK_TTL_MS = 7_200_000;
 
-/** Default maker for `kk store label`: the local model, because labelling is high volume and low stakes. */
-const DEFAULT_MAKER = 'fm-local';
-
 /** `labels.maker` for a row the plugin's keyword heuristic produced (no model was consulted). */
 const HEURISTIC_MAKER = 'heuristic';
 
@@ -299,7 +296,7 @@ async function ingestAction(options: IngestOptions): Promise<void> {
 interface LabelOptions {
     run: string;
     newIds: string;
-    maker: string;
+    maker?: string;
     mode: string;
     db?: string;
 }
@@ -535,25 +532,27 @@ function runDecision(
     decisionId: string,
     item: LabelItem,
     evidencePath: string,
-    maker: string,
+    maker?: string,
 ): DecisionResult | undefined {
     const command = process.env.KK_SPUR_BIN ?? 'spur';
+    const args = [
+        'decision',
+        'run',
+        decisionId,
+        '--param',
+        `title=${item.title}`,
+        '--param',
+        `source=${item.source}`,
+        '--evidence',
+        evidencePath,
+    ];
+    if (maker) {
+        args.push('--maker', maker);
+    }
+    args.push('--json');
     const result: ProcessResult = new NodeSyncProcessExecutor().runSync({
         command,
-        args: [
-            'decision',
-            'run',
-            decisionId,
-            '--param',
-            `title=${item.title}`,
-            '--param',
-            `source=${item.source}`,
-            '--evidence',
-            evidencePath,
-            '--maker',
-            maker,
-            '--json',
-        ],
+        args,
     });
     if (result.exitCode !== 0) return undefined;
     try {
@@ -594,10 +593,11 @@ function labelRow(
     heuristic: string | null,
     result: DecisionResult | undefined,
     routed: boolean,
-    maker: string,
+    maker: string | undefined,
     runId: string,
 ): LabelRow | null {
     const modelConfidence = routed ? (result?.confidence ?? null) : null;
+    const effectiveMaker = result?.maker ?? maker ?? 'default';
     const rowOf = (value: string, source: LabelRow['source'], by: string): LabelRow => ({
         itemId: item.id,
         decisionId,
@@ -610,18 +610,16 @@ function labelRow(
     });
     if (routed && result?.source === 'model') {
         const value = decisionValue(decisionId, result.value);
-        if (value !== null) return rowOf(value, 'model', result.maker ?? maker);
+        if (value !== null) return rowOf(value, 'model', effectiveMaker);
     }
     if (heuristic !== null) {
-        return routed
-            ? rowOf(heuristic, 'default', result?.maker ?? maker)
-            : rowOf(heuristic, 'heuristic', HEURISTIC_MAKER);
+        return routed ? rowOf(heuristic, 'default', effectiveMaker) : rowOf(heuristic, 'heuristic', HEURISTIC_MAKER);
     }
     if (routed && result !== undefined) {
         // No heuristic annotation at all (the plugin could not run): the catalog's own fallback is
         // the value to record, so the row is still written and still names its source.
         const value = decisionValue(decisionId, result.value);
-        if (value !== null) return rowOf(value, 'default', result.maker ?? maker);
+        if (value !== null) return rowOf(value, 'default', effectiveMaker);
     }
     return null;
 }
@@ -646,7 +644,7 @@ async function labelItem(
     item: LabelItem,
     annotation: Annotation | undefined,
     mode: LabelMode,
-    maker: string,
+    maker: string | undefined,
     runId: string,
 ): Promise<LabelItemOutcome> {
     const routed = mode === 'decision' || annotation?.needsModel === true;
@@ -1016,7 +1014,10 @@ export function registerStoreCommand(program: Command): void {
         )
         .requiredOption('--run <id>', 'Collect run id the labels belong to')
         .requiredOption('--new-ids <path>', 'Input path listing the item ids this pass must decide')
-        .option('--maker <name>', 'Decision maker for the catalog calls', DEFAULT_MAKER)
+        .option(
+            '--maker <name>',
+            'Decision maker override for the catalog calls (defaults to .spur/config.yaml decisions.maker)',
+        )
         .option(
             '--mode <mode>',
             "Labeling mode: 'heuristic' (default) asks the model only where the keyword pass is unsure; 'decision' asks it for every item",

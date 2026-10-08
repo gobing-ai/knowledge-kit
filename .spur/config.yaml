@@ -159,3 +159,4 @@ workflows:
 decisions:
   paths:
     - plugins/kk/decisions
+  maker: fm-local

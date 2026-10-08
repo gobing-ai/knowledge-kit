@@ -452,7 +452,7 @@ registered through `decisions.paths` in `.spur/config.yaml` and served by `spur 
 (`metadata.category`, `metadata.scores`, `metadata.needs_model`) with no cap, dedup or filter, so
 `apps/cli` imports no plugin source. In `heuristic` mode (the default) only items the heuristic files
 `non-ai` while seeing an AI signal are routed to `spur decision run <id> --param title=… --param
-source=… --evidence <body file> --maker <maker> --json`; `--mode decision` routes every item. A result
+source=… --evidence <body file> [--maker <maker>] --json` (inheriting `.spur/config.yaml` `decisions.maker` unless `--maker` is explicitly passed); `--mode decision` routes every item. A result
 with `source: default` (`no-backend`, `timeout`, `error`, `low-confidence`), an unparseable payload, an
 out-of-vocabulary value or a spawn failure stores the **heuristic value** with `source: default`: the
 pass exits 0 and a collect run never fails on labels. stdout is `{verdict, confidence, labeled,
