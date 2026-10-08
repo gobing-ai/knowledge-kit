@@ -1,4 +1,4 @@
-# x article-composer UI discovery (task 0204) — second pass, measured 2026-10-06
+# x article-composer UI discovery (task 0204) — second pass, measured 2026-10-06; re-verified 2026-10-07 (task 0194)
 
 ## Status: MEASURED — login + draft-save signal proven
 
@@ -26,11 +26,12 @@ has no console UI, entry URL or draft affordance to measure.
 | --- | --- | --- |
 | Entry URL | `https://x.com/compose/articles` is now an **Articles dashboard** (Articles/Drafts/Published tabs, "Your drafts live here") — not the composer | deep link → **drifted**, still usable as the hub |
 | Write entry | `a` with text **Write** in the hub → SPA route to **`/compose/articles/edit/<id>`**; draft row created server-side on entry | `ARTICLE_EDIT_RE /\/compose\/articles\/edit\/(\d+)/` → **still matches** (id `2107589269258919936` measured) |
-| Title | `textarea[placeholder="Add a title"]` (TEXTAREA, not INPUT) | re-measure needed in `ARTICLE_SELECTORS.title` |
-| Body | `div[contenteditable="true"]` composer + rich-text toolbar (bold/italic/strikethrough/blockquote/ul/ol/link/emoji, Body, Insert) | toolbar measured; body host is a div composer |
+| Title | `textarea[placeholder="Add a title"]` (TEXTAREA, not INPUT); on a fresh draft it is **not mounted** — the display div `[data-testid="twitter-article-title"]` shows `(Needs title)` and mounts the textarea on click (two-step) | re-measured 2026-10-07 (0194): two-step confirmed; implemented in `runArticleFlow` |
+| Body | `div[contenteditable="true"]` composer + rich-text toolbar (bold/italic/strikethrough/blockquote/ul/ol/link/emoji, Body, Insert); candidate `.DraftEditor-editorContainer [contenteditable="true"]` verified with `pasteHtml` (Draft.js) 2026-10-07 | toolbar measured; body host is a div composer |
 | Autosave | **`Last saved just now`** status next to the `Draft` chip; no manual save button | autosave signal |
 | Draft signal | edit URL id + reload persistence (`x-walk3.json`: title/body read back identical) | **proven** |
 | Live/publish | `Publish` button + `Preview` in the editor header — **located, never clicked** | article publish affordance recorded |
+| Cover | The add-photos picker (`"Add photos or video"`) **swallows a programmatically set file**; set `[data-testid="fileInput"]` directly — X opens its own **"Edit media" crop dialog** and the image renders only after **Apply** (media-edit confirm, not a publish control) | measured 2026-10-07 (0194): picker click removed from the flow; attachment is asserted via a rendered non-avatar `img[src*="twimg"]` |
 
 ## Draft-save signal (R3) — proven end to end
 
