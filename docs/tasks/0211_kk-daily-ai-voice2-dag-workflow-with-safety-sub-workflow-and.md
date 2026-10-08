@@ -4,7 +4,7 @@ name: kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned 
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-07T23:33:58.911Z"
+updated_at: "2026-10-08T03:47:43.074Z"
 feature_id: G11
 priority: P1
 tags:
@@ -127,23 +127,23 @@ Codemod lessons (applied in /tmp/stages-apply3.ts): export-prefix must land on t
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/kk/workflows/kk-daily-ai-voice2.yaml:1 is kind: dag with the §6 node map; validate run recorded in Testing; kk-daily-ai-voice.yaml absent from branch diff (byte-identical) (feature R1) |
-| R2 | MET | plugins/kk/workflows/kk-daily-ai-voice2.yaml head chain (ledger sync, anchors, file.read.into-var, kk store extract --exclude-used); asserted in apps/cli/tests/voice2-dag.test.ts:1 head-chain suite (feature R1) |
-| R3 | MET | apps/cli/tests/voice2-dag.test.ts:1 rejects bun -e/jq/path arithmetic; all node actions are kk commands, agent.run, spur workflow run or file.read.into-var (feature R4) |
-| R4 | MET | plugins/kk/workflows/kk-daily-safety.yaml:1 kind: state-machine, bounded by safety_max_revise; voice2 safety node runs spur workflow run with work_dir/run_date; review node pause: true (apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:1) (feature R5) |
-| R5 | MET | apps/cli/tests/voice2-dag.test.ts:1 fan-out condition kk store pool-count --min 1, run-report/ledger dependOn extract, empty-pool no-content E2E; apps/cli/tests/commands/daily.test.ts:1 run-report no-content paths (feature R3) |
-| R6 | MET | apps/cli/tests/voice2-dag.test.ts:1 publish-classify dependsOn every publish leaf policy all + publish_enabled=false condition; soft channels keep exit-0 kk stages (feature R4) |
-| R7 | MET | plugins/kk/scripts/daily-stages.ts:1 (24 moved daily-* bodies, plugin-owned); lazy dispatch via plugins/kk/scripts/kk-workflow-stages.ts kk stage <name>; tests follow the move (apps/cli/tests/kk-workflow-stages.test.ts:1, kk-daily-ai-voice-workflow.test.ts:1 runnerSource concat, plugins/kk/tests/verdict-confidence.test.ts:1); 6 untouched voice-only stages remain in runner (feature R4) |
-| R8 | MET | plugins/kk/workflows/kk-daily-ai-voice2.yaml orders mark-used after publish-classify with ledger append final; asserted in apps/cli/tests/voice2-dag.test.ts:1 (feature R1) |
+| R1 | MET | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:2` `kind: dag`; validate passes; `apps/cli/tests/voice2-dag.test.ts:298` shape, `:425` voice YAML byte-identical. |
+| R2 | MET | Head chain prepare → read-work-dir/read-run-date (`file.read.into-var`, `kk-daily-ai-voice2.yaml:102,111`) → extract (`:122`); no setVars/into-var after extract; asserted `voice2-dag.test.ts:298`. |
+| R3 | MET | Action kinds: 48 shell / 6 agent.run / 2 file.read.into-var; shell commands are `kk …` or the `spur workflow run` safety node (`kk-daily-ai-voice2.yaml:351-354`); no `bun -e`/`jq`; asserted `voice2-dag.test.ts:318`. |
+| R4 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:4` `kind: state-machine`, bounded by `safety_max_revise` (`:33`); voice2 safety node `kk-daily-ai-voice2.yaml:351`; review `pause: true` `:363`; asserted `voice2-dag.test.ts:414,470,496`. |
+| R5 | MET | Fan-out condition `kk store pool-count … --min 1` (`kk-daily-ai-voice2.yaml:140`); run-report/ledger depend on extract (`:624,642`); `voice2-dag.test.ts:336` + empty-pool E2E `:551` + `:650`. |
+| R6 | MET | `publish-classify` dependsOn all five leaves with `dependencyPolicy: all` (`kk-daily-ai-voice2.yaml:587-588`), publish_enabled condition `:592`; asserted `voice2-dag.test.ts:374`, `:671`. |
+| R7 | MET | 24 `daily-*` bodies in `plugins/kk/scripts/daily-stages.ts` (on main), lazily loaded by the `kk stage` dispatcher `plugins/kk/scripts/kk-workflow-stages.ts:136-141`; stage tests green in `kk-workflow-stages.test.ts`. |
+| R8 | MET | `mark-used` dependsOn publish-classify (`kk-daily-ai-voice2.yaml:605`), `ledger` final (`:642`); asserted `voice2-dag.test.ts:400`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: R1 — kk-daily-ai-voice2 is a DAG that starts from the store | MET | test | apps/cli/tests/voice2-dag.test.ts:1 dag-shape suite |
-| Scenario: R2 — Independent branches of the daily DAG run concurrently and fan in | MET | test | apps/cli/tests/voice2-dag.test.ts:1 fan-out/fan-in assertions |
-| Scenario: R3 — Empty pool ends the daily DAG as no-content, not failed | MET | test | apps/cli/tests/voice2-dag.test.ts:1 + apps/cli/tests/commands/daily.test.ts:1 no-content tests |
-| Scenario: R4 — Every DAG node is a single kk command with plugin-owned logic | MET | test | apps/cli/tests/voice2-dag.test.ts:1 action allowlist + plugins/kk/scripts/daily-stages.ts:1 |
-| Scenario: R5 — The safety revise loop runs as a nested state-machine sub-workflow | MET | test | plugins/kk/workflows/kk-daily-safety.yaml:1 + apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:1 |
-| Scenario: R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level | MET | test | plugins/kk/tests/verdict-confidence.test.ts:1 (54 pass) |
+| R1 — kk-daily-ai-voice2 is a DAG that starts from the store | MET | test | `apps/cli/tests/voice2-dag.test.ts:298` |
+| R2 — Independent branches of the daily DAG run concurrently and fan in | MET | test | `apps/cli/tests/voice2-dag.test.ts:586` (real spur DAG run, overlap + fan-in ordering) |
+| R3 — Empty pool ends the daily DAG as no-content, not failed | MET | test | `apps/cli/tests/voice2-dag.test.ts:551` |
+| R4 — Every DAG node is a single kk command with plugin-owned logic | MET | test | `apps/cli/tests/voice2-dag.test.ts:318` + `plugins/kk/scripts/daily-stages.ts` |
+| R5 — The safety revise loop runs as a nested state-machine sub-workflow | MET | test | `apps/cli/tests/voice2-dag.test.ts:414,470` |
+| R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level | MET | test | `apps/cli/tests/voice2-dag.test.ts:437-539` + `plugins/kk/tests/verdict-confidence.test.ts:183` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
