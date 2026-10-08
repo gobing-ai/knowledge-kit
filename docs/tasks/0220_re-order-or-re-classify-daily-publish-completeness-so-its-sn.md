@@ -1,12 +1,14 @@
 ---
 schema_version: 1
 name: Re-order or re-classify daily publish-completeness so its snapshot reflects finished channels
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-07T22:09:50.052Z
-updated_at: "2026-10-08T05:38:20.734Z"
+updated_at: "2026-10-08T20:28:19.771Z"
 feature_id: F61
 
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/run/0220-verdict.json
 ---
 
 ## 0220. Re-order or re-classify daily publish-completeness so its snapshot reflects finished channels
@@ -23,20 +25,20 @@ A smaller accuracy gap: `locales` is `done` once both en/ja post-path markers ar
 
 ### Requirements
 
-- [ ] R1. Contract (decided, see Q&A): completeness is a **terminal snapshot**, taken after every channel the run will attempt has run. It moves out of `daily-publish-classify` into a new stage verb `kk stage daily-publish-completeness <work_dir> <run_date>`. The verb writes the same `31-publish/<run_date>_17_publish_completeness.json` (same shape: `{runDate, rows[{channel,state,detail}], missing[]}`), prints the same `publish-completeness:` line and `WARNING: publish completeness — …` line to **stderr only**, and always exits 0. `daily-publish-classify` stops writing or warning about completeness and keeps its status/result outputs unchanged.
-- [ ] R2. `kk-daily-ai-voice.yaml`: the `run-report` state's onEnter runs `kk stage daily-publish-completeness "${vars.work_dir}" "${vars.run_date}"` as its first action, before `daily-run-report`. `run-report` is the join point both the `full` (after translate → patch-surfdash) and `partial` paths reach. Update the `publish` and `run-report` state descriptions to match.
-- [ ] R3. voice2: `kk daily publish-classify` (`apps/cli/src/commands/daily.ts`) deletes its local `publishCompleteness` copy. After the `--fold-tail` block, it calls `runStage(['daily-publish-completeness', workDir, runDate])` and reads `missing` back from the written json for its stdout status object (`{status, published, targets, missing}`, unchanged shape).
-- [ ] R4. `locales` is `done` only when both en/ja markers are filled **and** `24_translate-sync_sync-result.json` exists with `ok: true`. Markers filled + sync result `ok !== true` → `failed` (detail: the result's `error`, or `ok=false`). Markers filled + no sync result → `not-run` (detail `en/ja scaffolded, never synced`). No markers → `not-run` (today's detail). The xhs/wechat/cms-resync rows are unchanged.
-- [ ] R5. Docs in the same commit (T3): the completeness clause of the `docs/04_DESIGN.md:1031` row (new verb, terminal placement) and the "Publish completeness" paragraph in `docs/design/kk-daily-ai-voice.md` §4 (~L103-115), including the hand-driven-tail note: end the hand-driven chain with `kk stage daily-publish-completeness`.
+- [x] R1. Contract (decided, see Q&A): completeness is a **terminal snapshot**, taken after every channel the run will attempt has run. It moves out of `daily-publish-classify` into a new stage verb `kk stage daily-publish-completeness <work_dir> <run_date>`. The verb writes the same `31-publish/<run_date>_17_publish_completeness.json` (same shape: `{runDate, rows[{channel,state,detail}], missing[]}`), prints the same `publish-completeness:` line and `WARNING: publish completeness — …` line to **stderr only**, and always exits 0. `daily-publish-classify` stops writing or warning about completeness and keeps its status/result outputs unchanged.
+- [x] R2. `kk-daily-ai-voice.yaml`: the `run-report` state's onEnter runs `kk stage daily-publish-completeness "${vars.work_dir}" "${vars.run_date}"` as its first action, before `daily-run-report`. `run-report` is the join point both the `full` (after translate → patch-surfdash) and `partial` paths reach. Update the `publish` and `run-report` state descriptions to match.
+- [x] R3. voice2: `kk daily publish-classify` (`apps/cli/src/commands/daily.ts`) deletes its local `publishCompleteness` copy. After the `--fold-tail` block, it calls `runStage(['daily-publish-completeness', workDir, runDate])` and reads `missing` back from the written json for its stdout status object (`{status, published, targets, missing}`, unchanged shape).
+- [x] R4. `locales` is `done` only when both en/ja markers are filled **and** `24_translate-sync_sync-result.json` exists with `ok: true`. Markers filled + sync result `ok !== true` → `failed` (detail: the result's `error`, or `ok=false`). Markers filled + no sync result → `not-run` (detail `en/ja scaffolded, never synced`). No markers → `not-run` (today's detail). The xhs/wechat/cms-resync rows are unchanged.
+- [x] R5. Docs in the same commit (T3): the completeness clause of the `docs/04_DESIGN.md:1031` row (new verb, terminal placement) and the "Publish completeness" paragraph in `docs/design/kk-daily-ai-voice.md` §4 (~L103-115), including the hand-driven-tail note: end the hand-driven chain with `kk stage daily-publish-completeness`.
 
 ### Acceptance Criteria
 
-AC1. `kk stage daily-publish-completeness` on a fixture `31-publish/` with filled en/ja markers, `24_translate-sync_sync-result.json` `{ok:true}` and `23_patch-surfdash_sync-result.json` `{ok:true}` records `locales=done` and `cms-resync=done`. Removing the sync results flips locales to `not-run` ("never synced") and cms-resync to `not-run`, and stderr carries the `WARNING: publish completeness` line naming them. A `{ok:false,error:"x"}` sync result gives `locales=failed` with detail `x`.
-AC2. `daily-publish-classify` no longer writes `_17_publish_completeness.json` and prints no completeness line. The existing full/partial/none classification tests stay green unchanged.
-AC3. The three existing completeness tests (`apps/cli/tests/kk-workflow-stages.test.ts:585-683`) are retargeted at `daily-publish-completeness` with identical expectations, except that the "nothing missing" fixture also seeds the 24_ sync result (R4). The stage exits 0 in every case, including "everything missing".
-AC4. `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` pins the new call line in its delegated-call list (~L292-318) and asserts that, inside the `run-report` state block, `daily-publish-completeness` precedes `daily-run-report`.
-AC5. `apps/cli/tests/voice2-dag.test.ts` "publish-classify classifies partial and folds the tail" (L670) still passes. A new case with a seeded `23_patch-surfdash_sync-result.json` `{ok:true}` shows `cms-resync` absent from the stdout `missing`, proving the snapshot is taken after the fold-tail patch. stdout stays a single JSON line.
-AC6. `bun run lint` and `bun run test` pass.
+- [x] **AC1**. `kk stage daily-publish-completeness` on a fixture `31-publish/` with filled en/ja markers, `24_translate-sync_sync-result.json` `{ok:true}` and `23_patch-surfdash_sync-result.json` `{ok:true}` records `locales=done` and `cms-resync=done`. Removing the sync results flips locales to `not-run` ("never synced") and cms-resync to `not-run`, and stderr carries the `WARNING: publish completeness` line naming them. A `{ok:false,error:"x"}` sync result gives `locales=failed` with detail `x`.
+- [x] **AC2**. `daily-publish-classify` no longer writes `_17_publish_completeness.json` and prints no completeness line. The existing full/partial/none classification tests stay green unchanged.
+- [x] **AC3**. The three existing completeness tests (`apps/cli/tests/kk-workflow-stages.test.ts:585-683`) are retargeted at `daily-publish-completeness` with identical expectations, except that the "nothing missing" fixture also seeds the 24_ sync result (R4). The stage exits 0 in every case, including "everything missing".
+- [x] **AC4**. `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts` pins the new call line in its delegated-call list (~L292-318) and asserts that, inside the `run-report` state block, `daily-publish-completeness` precedes `daily-run-report`.
+- [x] **AC5**. `apps/cli/tests/voice2-dag.test.ts` "publish-classify classifies partial and folds the tail" (L670) still passes. A new case with a seeded `23_patch-surfdash_sync-result.json` `{ok:true}` shows `cms-resync` absent from the stdout `missing`, proving the snapshot is taken after the fold-tail patch. stdout stays a single JSON line.
+- [x] **AC6**. `bun run lint` and `bun run test` pass.
 
 ### Q&A
 
@@ -73,17 +75,43 @@ AC6. `bun run lint` and `bun run test` pass.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `plugins/kk/scripts/kk-workflow-stages.ts:1146-1260`:
+  - Removed completeness writing and warning from `dailyPublishClassify` (0220 R1).
+  - Added new `dailyPublishCompleteness` verb and registered `case 'daily-publish-completeness'` (0220 R1).
+  - Updated `publishCompleteness` helper: `locales` is `done` only when both en/ja markers are filled AND `24_translate-sync_sync-result.json` exists with `ok: true`; non-ok sync result sets state `failed` with error detail; missing sync result sets `not-run` with detail `en/ja scaffolded, never synced` (0220 R4).
+- `apps/cli/src/commands/daily.ts:180-280`:
+  - Removed duplicate `publishCompleteness` function (0220 R3).
+  - In `publishClassifyAction`, moved completeness snapshot after `foldTail` block, invoking `runStage(['daily-publish-completeness', workDir, runDate])` and reading `missing` from the written JSON (0220 R3).
+- `plugins/kk/workflows/kk-daily-ai-voice.yaml:520-535`:
+  - Added `kk stage daily-publish-completeness "${vars.work_dir}" "${vars.run_date}"` to `run-report` onEnter before `daily-run-report` (0220 R2).
+- `apps/cli/tests/kk-workflow-stages.test.ts:585-690`:
+  - Retargeted completeness tests to `daily-publish-completeness`, added sync-result test cases (AC1), and added test asserting `daily-publish-classify` writes no completeness (AC2).
+- `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:235-325`:
+  - Pinned 31 daily stages, included `daily-publish-completeness`, and verified run-report execution order (AC4).
+- `apps/cli/tests/voice2-dag.test.ts:710-745`:
+  - Added test asserting fold-tail reflects cms-resync in terminal completeness with single-line stdout (AC5).
+- `docs/04_DESIGN.md:1031` & `docs/design/kk-daily-ai-voice.md:103-118`:
+  - Updated design docs and hand-driven tail instructions with `daily-publish-completeness` (0220 R5).
 
 ### Testing
 
-- Focused: `bun test apps/cli/tests/kk-workflow-stages.test.ts apps/cli/tests/kk-daily-ai-voice-workflow.test.ts apps/cli/tests/voice2-dag.test.ts`.
-- Gate: `bun run lint && bun run test`.
-- E2E artifact (repeatable, no spend): copy `.works/kk-daily-ai-voice/20261007` to a temp dir and run `kk stage daily-publish-completeness <copy> 20261007`. Expect `locales=done` (markers plus the ok sync result), `xhs=done`, `wechat=done`, and `cms-resync=skipped` (the real `skipped: no plugins-path` marker), so `missing=["cms-resync"]`. That replaces today's false `locales/cms-resync=not-run`. Check that the new json's mtime is later than every `20_`/`23_`/`24_` artifact. Save the json and stderr under `.works/test-artifacts/0220/`.
+- Focused tests passed:
+  - `bun test apps/cli/tests/kk-workflow-stages.test.ts apps/cli/tests/kk-daily-ai-voice-workflow.test.ts apps/cli/tests/voice2-dag.test.ts apps/cli/tests/commands/daily.test.ts` (142 passed, 0 failed).
+- Gate passed:
+  - `bun run lint` (Biome 2.5.5 clean, TypeScript typecheck clean across all 30 workspaces).
+  - `bun run build` (all workspaces clean).
+  - `bun run test` (2191 tests passed, 0 failed, 2 pre-existing skipped; funcs 98.63%, lines 98.26%).
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | correctness | plugins/kk/scripts/kk-workflow-stages.ts:1210 | Locales status now verified against 24_ translate-sync result |
+| P4 | architecture | apps/cli/src/commands/daily.ts:240 | Deduped publishCompleteness onto shared stage verb |
 
 ### References
 
@@ -95,4 +123,5 @@ AC6. `bun run lint` and `bun run test` pass.
 ### History
 
 - 2026-10-08T05:38:20.734Z backlog → todo (system)
+- 2026-10-08T20:28:19.748Z todo → done (system)
 
