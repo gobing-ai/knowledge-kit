@@ -4,7 +4,7 @@ name: "voice2 rollout: cut-over check, end-to-end dogfood, docs sync"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.077Z
-updated_at: "2026-10-08T18:49:12.785Z"
+updated_at: "2026-10-08T20:39:58.999Z"
 feature_id: G11
 priority: P2
 tags:
@@ -150,4 +150,8 @@ PASS (self-review, SECUA-lite): diff matches R1–R4; both ledger summary bridge
 - 2026-10-08T18:42:53.040Z todo → wip (system)
 - 2026-10-08T18:48:53.111Z wip → testing (system)
 - 2026-10-08T18:49:12.777Z testing → done (system)
+
+### Notes
+
+2026-10-08 post-merge: the `sp/run-0212-e7d51f81` worktree holding the dogfood `.works/` evidence was removed after the merge to `main` (043f4813); the untracked run dirs, `ledger.md` copies, `kk.db` snapshots and `cutover-check*.txt`/`run-4a9b22f0-audio-qc.json`/`ledger-rows.txt` files under its `.works/` are no longer on disk (`.works` is not git-tracked). Surviving evidence: the inline values quoted in Review/Testing above, verdict `.spur/run/0212-verdict.json`, dogfood run of record `4a9b22f0` (reachable via `spur task run-link 0212`), and the repeatable fixtures `.works/test-artifacts/0212/cutover-fixtures.md` + `README.md` (regenerable with `bun test apps/cli/tests/cutover.test.ts`). First live merged-tip voice2 run (draft-only, 20261008): workflow run `38e53162`.
 
