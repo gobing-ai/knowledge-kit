@@ -731,7 +731,7 @@ function dailyCollectFacts(args: string[]): void {
     const blended = join(workDir, '10-ingest', `${runDate}_02_collect_blended.json`);
     timed(workDir, 'collect', () => {
         if (isFile(content) && isFile(facts)) {
-            console.log(`core facts cached: ${facts}`);
+            console.error(`core facts cached: ${facts}`);
             return;
         }
         kk(['executor', 'run', 'core-facts-gen', '--in', blended, '--out', content, ...pluginsArgs(pluginsPath)]);
@@ -970,7 +970,7 @@ export function coverNormalizeBody(workDir: string, runDate: string): void {
             // `rm -f` is silent when the file is already gone (a renamed source lands here too).
         }
     }
-    console.log(`cover normalized: ${runDate}_07_cover_cover.png`);
+    console.error(`cover normalized: ${runDate}_07_cover_cover.png`);
 }
 
 /** `metadata.images[0]` — the artifact the image-gen plugin recorded for one render. */
@@ -1136,8 +1136,10 @@ function dailyPublishClassify(args: string[]): void {
         const completeness = publishCompleteness(workDir, runDate);
         const completenessFile = join(workDir, '31-publish', `${runDate}_17_publish_completeness.json`);
         sted('write', completenessFile, () => writeJqText(completenessFile, { runDate, ...completeness }));
-        console.log(`publish: status=${status} (${okCount}/${total} targets published); routing is transition-owned`);
-        console.log(`publish-completeness: ${completeness.rows.map((row) => `${row.channel}=${row.state}`).join(' ')}`);
+        console.error(`publish: status=${status} (${okCount}/${total} targets published); routing is transition-owned`);
+        console.error(
+            `publish-completeness: ${completeness.rows.map((row) => `${row.channel}=${row.state}`).join(' ')}`,
+        );
         if (completeness.missing.length > 0) {
             const details = completeness.rows
                 .filter((row) => row.state !== 'done')
@@ -1241,7 +1243,7 @@ function dailyPublishPartial(args: string[]): void {
 function dailyPatchSurfdash(args: string[]): void {
     const [workDir = '', runDate = '', surfdashRoot = '', pluginsPath = ''] = args;
     if (!surfdashRoot || !existsSync(surfdashRoot)) {
-        console.log(`patch-surfdash: surfdash root '${surfdashRoot}' not found — skip`);
+        console.error(`patch-surfdash: surfdash root '${surfdashRoot}' not found — skip`);
         return;
     }
     timed(workDir, 'patch-surfdash', () => {
@@ -1293,7 +1295,7 @@ function dailyPatchSurfdash(args: string[]): void {
         ] as const) {
             const indexMd = join(dir, 'index.md');
             if (!existsSync(indexMd)) {
-                console.log(`patch-surfdash: ${locale} post not published (${indexMd}) — skip`);
+                console.error(`patch-surfdash: ${locale} post not published (${indexMd}) — skip`);
                 continue;
             }
             let md = readFileSync(indexMd, 'utf-8');
@@ -1356,7 +1358,7 @@ function dailyPatchSurfdash(args: string[]): void {
             // cover this way). Leave a marker for the classify step's completeness report.
             const skipMarker = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_emdash-resync.txt`);
             sted('write', skipMarker, () => writeRaw(skipMarker, 'skipped: no plugins-path\n'));
-            console.log('patch-surfdash: no plugins-path — skip emdash re-sync');
+            console.error('patch-surfdash: no plugins-path — skip emdash re-sync');
         } else {
             const syncIn = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync.json`);
             const syncResult = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
@@ -1373,15 +1375,15 @@ function dailyPatchSurfdash(args: string[]): void {
                 result !== null &&
                 (result.ok === true || (result.targets as Array<{ ok?: boolean }> | undefined)?.[0]?.ok === true);
             if (!ok) {
-                console.log(
+                console.error(
                     `patch-surfdash: WARNING: emdash re-sync failed (exit ${status}) — CMS cards keep the stale cover; fix: kk executor run surfdash-pub --in ${syncIn} --out ${syncResult} --plugins-path ${pluginsPath}`,
                 );
             } else {
-                console.log('patch-surfdash: emdash rows re-synced from patched files');
+                console.error('patch-surfdash: emdash rows re-synced from patched files');
             }
         }
         if (changed === 0) {
-            console.log('patch-surfdash: nothing to change');
+            console.error('patch-surfdash: nothing to change');
             return;
         }
         const git = (...a: string[]): void => {
@@ -1397,7 +1399,7 @@ function dailyPatchSurfdash(args: string[]): void {
             ...written,
         );
         if (process.env.SURFDASH_AUTO_PUSH !== '0') git('push', 'origin', 'main');
-        console.log(
+        console.error(
             `patch-surfdash: patched ${changed} post(s), committed${process.env.SURFDASH_AUTO_PUSH !== '0' ? ' + pushed' : ' (push skipped: SURFDASH_AUTO_PUSH=0)'}`,
         );
     });
@@ -1419,11 +1421,11 @@ function dailyRunReport(args: string[]): void {
     const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
     timed(workDir, 'run-report', () => {
         if (isFile(reportMd)) {
-            console.log(`run report cached: ${reportMd}`);
+            console.error(`run report cached: ${reportMd}`);
             return;
         }
         if (!isFile(candidates)) {
-            console.log('run-report: no candidates.json (run ended below plan step) — skip');
+            console.error('run-report: no candidates.json (run ended below plan step) — skip');
             return;
         }
         sted('write', cands, () => writeJqText(cands, metadataOf(readJson(candidates)).docs ?? []));
@@ -1458,7 +1460,7 @@ function dailyRunReport(args: string[]): void {
         const body = readJson(reportJson)?.body;
         if (typeof body !== 'string') failWith(1, `run-report: ${reportJson} has no string body`);
         sted('write', reportMd, () => writeRaw(reportMd, body));
-        console.log(`run report written: ${reportMd}`);
+        console.error(`run report written: ${reportMd}`);
     });
 }
 

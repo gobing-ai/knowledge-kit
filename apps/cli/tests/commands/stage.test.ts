@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { Command, CommanderError } from 'commander';
 import { registerStageCommand } from '../../src/commands/stage';
 import { resolveStagesScript, runStage } from '../../src/stage';
@@ -71,10 +72,29 @@ describe('kk stage verb (0144)', () => {
         });
     });
 
-    it('runStage passes the stage exit code through and inherits stdio', () => {
+    it('runStage passes the stage exit code through', () => {
         withTempDir((dir) => {
             const argv1 = fakePkg(dir, 'process.exit(5);\n');
             expect(runStage(['daily-prepare', 'unused'], process.execPath, argv1)).toBe(5);
+        });
+    });
+
+    it('runStage forwards stage stdout/stderr through the default output targets, not raw stdio', () => {
+        withTempDir((dir) => {
+            const argv1 = fakePkg(
+                dir,
+                "console.log('stage-out line'); console.error('stage-err line'); process.exit(0);\n",
+            );
+            const out = createBufferTarget();
+            const err = createBufferTarget();
+            const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+            try {
+                expect(runStage(['daily-prepare', 'unused'], process.execPath, argv1)).toBe(0);
+            } finally {
+                restore();
+            }
+            expect(out.text()).toContain('stage-out line');
+            expect(err.text()).toContain('stage-err line');
         });
     });
 

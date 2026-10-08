@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 
 /** Checkout/package-relative location of the stages runner this verb executes. */
 const STAGES_REL = 'plugins/kk/scripts/kk-workflow-stages.ts';
@@ -71,11 +72,26 @@ export function resolveStagesScript(argv1 = process.argv[1], checkoutRoot = CHEC
 }
 
 /** Run one stage (`bun <stages.ts> <stage> [args...]`) with inherited stdio; returns its exit code. */
+/**
+ * Run one stage as a subprocess, forwarding its output through the default
+ * echo/echoError targets — never raw stdio inheritance, which would bypass the
+ * output-target seam and leak stage logs into test reporters.
+ * Output arrives when the stage exits (spawnSync), not streamed.
+ */
 export function runStage(args: string[], execPath = process.execPath, argv1?: string): number {
     const script = resolveStagesScript(argv1);
-    const res = spawnSync(execPath, [script, ...args], { stdio: 'inherit' });
+    const res = spawnSync(execPath, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
     if (res.error) {
         throw new Error(`failed to spawn stage runner at ${script}: ${res.error.message}`);
     }
+    forwardChildOutput(res.stdout, echo);
+    forwardChildOutput(res.stderr, echoError);
     return res.status ?? 1;
+}
+
+/** Forward one captured child stream to a writer, trimming only the final newline (echo re-adds it). */
+function forwardChildOutput(chunk: Buffer | string | null | undefined, write: (message: string) => void): void {
+    const text = typeof chunk === 'string' ? chunk : (chunk?.toString('utf-8') ?? '');
+    if (text.length === 0) return;
+    write(text.endsWith('\n') ? text.slice(0, -1) : text);
 }

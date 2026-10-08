@@ -148,7 +148,7 @@ function writeKkShim(binDir: string, fixtures: { pool: string; candidates: strin
         `out_arg() { local prev=""; for a in "$@"; do if [ "$prev" = "$1" ]; then echo "$a"; return; fi; prev="$a"; done; }`,
         'case "$1 $2" in',
         '  "daily prepare")',
-        '    works="${KK_STUB_WORKS}"',
+        `    works="\${KK_STUB_WORKS}"`,
         '    date_arg=""; prev=""',
         '    for a in "$@"; do if [ "$prev" = "--run-date" ]; then date_arg="$(echo "$a" | tr -d "-")"; fi; prev="$a"; done',
         '    [ -n "$date_arg" ] || date_arg="20261007"',
@@ -165,7 +165,7 @@ function writeKkShim(binDir: string, fixtures: { pool: string; candidates: strin
         '  "store pool-count")',
         '    exec $REAL "$@" ;;',
         '  "daily run-report")',
-        '    if [ "${KK_STUB_REAL_RUNREPORT}" = "1" ]; then exec $REAL "$@"; fi',
+        `    if [ "\${KK_STUB_REAL_RUNREPORT}" = "1" ]; then exec $REAL "$@"; fi`,
         '    printf "%s\\n" "$*" > "$(out_arg --work-dir)/stub-run-report.txt"',
         '    exit 0 ;;',
         '  "stage daily-generate"|"stage daily-wrap-docs")',
@@ -234,6 +234,10 @@ function runDag(
                 cwd,
                 env: {
                     ...process.env,
+                    // A parent spur run (e.g. the feature-verification gate) exports these; inherited,
+                    // either one makes this nested run refuse and the status read back is 'unknown'.
+                    SPUR_WORKFLOW_RUN_ACTIVE: undefined,
+                    SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
                     KK_STUB_LOG: logPath,
                     KK_STUB_WORKS: works,
                     ...(options.realRunReport === true ? { KK_STUB_REAL_RUNREPORT: '1' } : {}),
@@ -372,7 +376,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         const classify = dag.nodes.find((node) => node.id === 'publish-classify');
         expect(classify?.dependsOn?.sort()).toEqual([...leaves].sort());
         expect(classify?.dependencyPolicy).toBe('all');
-        expect(String(classify?.condition?.options?.command)).toBe('test "${vars.publish_enabled}" = "true"');
+        expect(String(classify?.condition?.options?.command)).toBe(`test "\${vars.publish_enabled}" = "true"`);
         for (const id of [
             'publish-prep',
             'publish-surfdash',

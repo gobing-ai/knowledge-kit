@@ -4,7 +4,7 @@ name: De-flake the kk-itc dry-run task-check assertions under concurrent load
 status: done
 template: feature-impl
 created_at: 2026-10-07T20:52:27.448Z
-updated_at: "2026-10-08T00:17:40.302Z"
+updated_at: "2026-10-08T02:32:56.405Z"
 feature_id: G2
 
 priority: P2
@@ -56,6 +56,7 @@ Impact: a feature's verification receipt records FAIL for an environmental flake
 - [x] R3. Each of the three cases keeps its `30_000` timeout and carries a one-line comment naming the measured cost (idle and 8-way loaded) so a slow run can be told from a hung one. The timeout is not raised.
 - [x] R4. Under the reproduced load (8 concurrent default-logging walks looping in the background), the three walk cases pass; and `bun run test` passes on the final tree.
 - [x] R5. A full test run no longer adds `kk-itc-dryrun-*` / `kk-itc-tail-*` files to `.spur/memory/runs`.
+- [x] R6. The work is homed by feature G2 (parent feature rule R1 "Work on kk-itc has a home node"): the task's `feature_id` is `G2`, and `apps/cli/tests/g-feature-tree.test.ts` asserts `kk-itc.yaml` resolves to exactly one direct child of G (G2, by name). Added 2026-10-07 by the feature-G re-verify, which found G2's only scenario uncovered.
 
 **Out of scope:** deleting the existing orphaned run records (operator-local, gitignored state — report the count, let the operator prune); spur-side contention with `--no-log` (upstream); other test files that spawn `spur workflow run` without `--dry-run`.
 
@@ -81,6 +82,11 @@ Scenario: AC4 — The walks pass under the load that exposed the flake (req: R4)
   Given 8 background loops of default-logging kk-itc dry-run walks
   When the two test files run concurrently with that load, and then bun run test runs on the final tree
   Then both exit 0
+
+Scenario: R1 — Work on kk-itc has a home node (req: R6)
+  Given this kk-itc change (dry-run walk test de-flake)
+  When it is planned as a feature task
+  Then its feature_id is G2, and apps/cli/tests/g-feature-tree.test.ts proves kk-itc.yaml has exactly one home child of G
 ```
 
 ### Q&A
@@ -149,18 +155,20 @@ Rationale: the flake was the run-record write contending under load, not the wal
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Measured (Testing section): idle-log 0.73/0.75/0.77s; idle-nolog 0.60/0.68/0.90s; 8-way-log max 2.22s; 8-way-nolog max 1.98s — implementer's own run, refine table cited as baseline |
-| R2 | MET | `--no-log` present at exactly 3 spawn sites: kk-itc-workflow.test.ts:286,382 + kk-itc-publish-tail.test.ts:151; assertion lines untouched (exitCode/status/finalState/transitionsTaken) |
-| R3 | MET | All three `30_000` timeouts unchanged; comments at :303/:409/:174 name idle (~0.7–1.1s) and 8-way (~2.2s) measured cost |
-| R4 | MET | AC4 reproduction: 8 looping default-logging walks + both files → 26 pass/0 fail (9.72s); `bun run test` on final tree inside `bun run spur-check` → 2177 pass / 2 skip / 0 fail (skips pre-existing environment-conditionals) |
-| R5 | MET | kk-itc-dryrun-*/kk-itc-tail-* count in .spur/memory/runs: 0 before → 0 after targeted runs and full gate |
+| R1 | MET | Implementer measurements carried forward: idle with log 0.73/0.75/0.77s; idle `--no-log` 0.60/0.68/0.90s; 8-way with log max 2.22s; 8-way `--no-log` max 1.98s. Cost comments in source at `apps/cli/tests/kk-itc-workflow.test.ts:303,409` and `apps/cli/tests/kk-itc-publish-tail.test.ts:174`. |
+| R2 | MET | `--no-log` at all three spawns: `apps/cli/tests/kk-itc-workflow.test.ts:286,382`, `apps/cli/tests/kk-itc-publish-tail.test.ts:151`; exitCode/status/finalState/transitionsTaken assertions unchanged; 28/28 pass this pass. |
+| R3 | MET | `}, 30_000);` at `apps/cli/tests/kk-itc-workflow.test.ts:304,410` and `apps/cli/tests/kk-itc-publish-tail.test.ts:175`; measured-cost comment directly above each. |
+| R4 | MET | Loaded reproduction 26/26 (9.72s, code unchanged since); full `bun run test` this session 2181 pass / 2 skip / 0 fail. |
+| R5 | MET | `kk-itc-dryrun-*`/`kk-itc-tail-*` in `.spur/memory/runs`: 982 before → 982 after this pass's targeted run. |
+| R6 | MET | `feature_id: G2` (`spur task show 0218`); `apps/cli/tests/g-feature-tree.test.ts:86-92` resolves `plugins/kk/workflows/kk-itc.yaml` to exactly one child (G2 by `name: "kk-itc"`, `docs/features/G2_kk-itc.md:4`); probe: G2 renamed → R1 case red, restored → 2/0. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — The walk cost is measured, not guessed (req: R1) | MET | command | R1 timing runs recorded in Testing section; four wall times + reduction stated |
-| AC2 — The three walk cases skip the run record and still prove the walk reaches done (req: R2, R5) | MET | test | bun test both files: 26 pass/0 fail with --no-log at all 3 sites; run-record count 0→0 |
-| AC3 — The timeout stays 30s and documents its headroom (req: R3) | MET | command | grep on final tree: "}, 30_000);" ×3 (workflow.test.ts, publish-tail.test.ts) + measured-cost comment in 2/2 files — output captured in verify answer |
-| AC4 — The walks pass under the load that exposed the flake (req: R4) | MET | test | Loaded reproduction 26/26 (9.72s); final-tree spur-check 2177 pass / 0 fail |
+| AC1 — The walk cost is measured, not guessed (req: R1) | MET | command | Four wall times plus the `--no-log` reduction recorded above (R1). |
+| AC2 — The three walk cases skip the run record and still prove the walk reaches done (req: R2, R5) | MET | test | Both files 28/28 with `--no-log` at all 3 sites; run-record count 982 → 982. |
+| AC3 — The timeout stays 30s and documents its headroom (req: R3) | MET | command | Grep this pass: `}, 30_000);` ×3 with measured-cost comment above each. |
+| AC4 — The walks pass under the load that exposed the flake (req: R4) | MET | test | Loaded reproduction 26/26; final-tree `bun run test` 2181 pass / 0 fail. |
+| R1 — Work on kk-itc has a home node (req: R6) | MET | test | `apps/cli/tests/g-feature-tree.test.ts:86-92` homes kk-itc in G2; mutation probe turns it red. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
