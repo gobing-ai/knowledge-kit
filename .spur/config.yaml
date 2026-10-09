@@ -90,6 +90,13 @@ bootstrap:
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
           --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"skip_review\":\"true\"}"
 
+      # 04:00, 10:00, 16:00, 22:00 daily: kk-collect standalone 6-hourly collection
+      # into the kk store (aihot + last30days + horizon -> store ingest -> label).
+      - name: kk-collect
+        cron: "0 4,10,16,22 * * *"
+        timeoutMs: 14400000
+        command: spur --no-logo workflow run plugins/kk/workflows/kk-collect.yaml --quiet
+
       # 04:00 Sunday weekly: deep database maintenance (VACUUM defragmentation +
       # page compaction, PRAGMA optimize, and WAL checkpoint truncation).
       - name: database-weekly-maintenance
