@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: "Live store is v2 again and the scheduled kk-collect fails at kk store label (ON CONFLICT mismatch): settle the store and green the collector"
-status: blocked
+status: done
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T20:23:42.866Z"
+updated_at: "2026-10-09T21:20:57.394Z"
 feature_id: G32
 
 priority: P1
 ac_altitude: task-local
 dependencies: ["0239", "0240"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0242-verdict.json
 ---
 
 ## 0242. Live store is v2 again and the scheduled kk-collect fails at kk store label (ON CONFLICT mismatch): settle the store and green the collector
@@ -37,18 +39,18 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 ### Requirements
 
 - [x] R1. **Schema-skew guard.** Before applying anything, `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`) must reject a store whose `__kk_store_migrations` holds an id missing from `KK_MIGRATIONS`. The error is `kk.store.schema-newer: <db> has migrations [<ids>] this kk (<version>) does not know — upgrade kk`, and the store is left untouched. This protects every binary from 0.0.34 on; 0.0.33 cannot be patched.
-- [ ] R2. **Operator gate: the global `kk` becomes v2.** `~/.bun/bin/kk` must resolve to a build that contains 0225–0229, 0239, 0240 and R1, and `kk store --help` must list `select`/`mark-published`/`release`.
+- [x] R2. **Operator gate: the global `kk` becomes v2.** `~/.bun/bin/kk` must resolve to a build that contains 0225–0229, 0239, 0240 and R1, and `kk store --help` must list `select`/`mark-published`/`release`.
   - Recommended: release 0.0.34 through the CI publish (`scripts/publish.ts`), then `bun add -g @gobing-ai/knowledge-kit@0.0.34`.
   - Stop-gap: `bun link` from **this** tree's `apps/cli`. The job's cwd is this same tree, so code, catalog and config stay in lockstep. Never link a worktree build (0241).
   - Either option needs explicit operator authorization. Without it, the task stops as `blocked` after R1.
-- [ ] R3. **Repair the live data under the collect lock.**
+- [x] R3. **Repair the live data under the collect lock.**
   1. `kk store lock acquire --name collect --run g32-repair`.
   2. `PRAGMA wal_checkpoint(TRUNCATE)`, then `cp .works/kk.db .works/kk.db.pre-0242`.
   3. `kk store backfill-facts`.
   4. `kk store label --run g32-relabel --new-ids <path to a JSON array of every item id>` (default `--mode heuristic`, the same mode the collector uses), which re-observes all 92 items under the v2 catalog and config.
   5. `kk store lock release --name collect --run g32-repair`.
   6. Verify: 0 items with NULL `story_id`, every item has a current china-politics label, and `kk store extract --topic ai-news` returns count > 0.
-- [ ] R4. **One real `kk-collect` reaches `done`.** Use the next scheduled tick, or run `spur workflow run plugins/kk/workflows/kk-collect.yaml` from this tree. The run's new items carry label rows with its run id, plus `story_id` and facts.
+- [x] R4. **One real `kk-collect` reaches `done`.** Use the next scheduled tick, or run `spur workflow run plugins/kk/workflows/kk-collect.yaml` from this tree. The run's new items carry label rows with its run id, plus `story_id` and facts.
 - [x] R5. **Record the settled state** in `docs/03_ARCHITECTURE.md`'s persistent-store paragraph:
   - the live store is on v2, and only the global `kk` writes it;
   - launchd resolves `kk` via the plist PATH (`~/.bun/bin` first), and an interactive shell resolves the same file;
@@ -63,9 +65,9 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 ### Acceptance Criteria
 
 - [x] AC1 — On a store whose journal lists an id unknown to the binary, opening it fails with `kk.store.schema-newer` naming the ids, and the store bytes and journal are unchanged (req: R1).
-- [ ] AC2 — `readlink -f ~/.bun/bin/kk` resolves to an operator-authorized v2 build, and `kk store --help` lists `select`, `mark-published` and `release` (req: R2).
-- [ ] AC3 — After the repair, the live store has 0 NULL `story_id`, a current `kk-item-china-politics` label on every item, and a non-empty `kk store extract --topic ai-news` (req: R3).
-- [ ] AC4 — A real `kk-collect` run reaches `done`, and its new items carry label rows with that run id (req: R4).
+- [x] AC2 — `readlink -f ~/.bun/bin/kk` resolves to an operator-authorized v2 build, and `kk store --help` lists `select`, `mark-published` and `release` (req: R2).
+- [x] AC3 — After the repair, the live store has 0 NULL `story_id`, a current `kk-item-china-politics` label on every item, and a non-empty `kk store extract --topic ai-news` (req: R3).
+- [x] AC4 — A real `kk-collect` run reaches `done`, and its new items carry label rows with that run id (req: R4).
 - [x] AC5 — `docs/03_ARCHITECTURE.md` records the live store's schema, its writer, the upgrade-order rule and the recovery paths (req: R5).
 
 - [x] AC6 — With a v1 store in cwd, `kk daily prepare` leaves `__kk_store_migrations` unchanged; and running `bun test apps/cli/tests/commands/daily.test.ts` from a dir holding a v1 `.works/kk.db` leaves that journal unchanged (req: R6).
@@ -156,6 +158,27 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
 - `packages/kk-store/tests/migrations.test.ts:575` — the load-bearing regression test, placed where the
   real v1 fixture lives (`seedV1Store`), with an explicit control.
 
+#### R2–R4 execution record
+
+Route chosen by the operator: the in-tree `bun link` stop-gap rather than a 0.0.34 release, because it
+restores the collector in one command and is reversible with
+`bun install -g @gobing-ai/knowledge-kit@0.0.33`. **Consequence to carry forward:** while the global is a
+link, production tracks this working tree rather than a published artifact, so a release should be cut
+before any further schema-bumping change — the same class of coupling 0241 recorded.
+
+The linked global resolves to `apps/cli/dist/index.js`, the `kk` bin `apps/cli/package.json:31` points at
+(`prepack` builds it, declared at `apps/cli/package.json:44` and wired as the `kk` bin at `apps/cli/package.json:31`). The store-schema contract the collector now matches is
+`packages/kk-store/src/dao/labels.ts:249` (the 4-column observation upsert) against
+`packages/kk-store/src/migrations.ts:161` (`labels_observation_unique`), guarded on open by
+`packages/kk-store/src/migrations.ts:312` (R1) and read-only for probes through
+`packages/kk-store/src/db.ts:66` (R6). The launchd job that consumes all of this runs `spur workflow run`
+with its working directory pinned to this tree, and the repair's pre-migration copy is
+`.works/kk.db.pre-0242`.
+
+No product or test source changed for R2–R4: the repair surface (`kk store backfill-facts`,
+`apps/cli/src/commands/store.ts:1517`) and the guard (R1) all shipped earlier in this batch, and R6's fix
+(`apps/cli/src/commands/daily.ts:140`) is what makes the suite safe to run against this tree.
+
 ### Testing
 
 - `bun test packages/kk-store/tests/migrations.test.ts`: 13 pass, 0 fail (covers AC1).
@@ -185,6 +208,40 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
   read-only (no journal change), and the corrupt-config test now `chdir`s into its temp dir so the suite
   does not touch a cwd store at all.
 
+#### R2 / R3 / R4 execution (2026-10-09, operator-authorized: in-tree `bun link` route)
+
+- **R2 — the global `kk` is a v2 build.** `bun link` from **this** tree's `apps/cli` (never a worktree
+  build, per 0241). Verified: `readlink -f ~/.bun/bin/kk` ->
+  `/Users/robin/xprojects/knowledge-kit/apps/cli/dist/index.js`, and `kk store --help` lists `select`,
+  `mark-published` and `release`. The tree was clean at `fa3ff1af` when the link was taken, so the linked
+  global is exactly the merged, gated revision — not a dirty working copy. `kk --version` still prints
+  `0.0.33` because the package version string was never bumped; the gate is build CONTENTS (R0), and the
+  bundle contains `0003_store_v2`.
+- **R3 — live repair, under the collect lock.**
+  1. `kk store lock acquire --name collect --run g32-repair --ttl 3600000` -> `{"acquired":true}`.
+  2. `PRAGMA wal_checkpoint(TRUNCATE)` -> `{"busy":0,"log":0,"checkpointed":0}`; backup written to
+     `.works/kk.db.pre-0242` (901120 B, same size as the store at that moment).
+  3. `kk store backfill-facts` -> `{"updated":92}`.
+  4. **No relabel was needed, and none was run** — so this repair spent zero model consults, contrary to
+     the estimate in the Design (the relabel had already been performed on the live store since this task
+     was filed: `labels` held 1111 rows with 276 rows across the three judgment decisions, not the
+     340 / 0 the Background records).
+  5. `kk store lock release --name collect --run g32-repair` -> `{"released":true}`.
+  6. **AC3 verified** with the eligibility predicate of `labelsCurrentSql` (content_hash match,
+     `source <> 'default'`, `raw_confidence >= 0.8` for model rows, `replay-` excluded):
+     `items=92`, `NULL story_id=0`, `distinct story_id=89`, items without a CURRENT
+     `kk-item-china-politics` label = **0**, items without any current label = **0**, all 92 current
+     china-politics rows at level `0`. `kk store extract --topic ai-news --window 720h` -> `{"count":14}`.
+- **R4 — one real `kk-collect` reaches `done`.** `spur workflow run plugins/kk/workflows/kk-collect.yaml`
+  (run `6ccfef89-1880-4031-9e75-984e2fe2b7c6`) finalized `done — outcome=success` in 890864 ms (~14.9 min).
+  The `label` step that used to fail now exits 0. Store effect: `collect_runs` row `status=done,
+  inserted=9, updated=7`; **143** label rows carry that run id (80 heuristic, 59 model, 4 default); all
+  **9** items first seen by the run carry a label row from that run; 0 of them have a NULL `story_id`.
+- **Residual (not a failure of this task).** The run's `release`/ledger step logged
+  `kk.ledger.run.running: run 6ccfef89… is still running; nothing was written` — the ledger append cannot
+  record a run that has not finalized yet, so the row lands on the next `kk ledger sync`. The workflow
+  still finalized `done`.
+
 ### Review
 
 | # | Priority | Dimension | Finding | Location | Disposition |
@@ -196,6 +253,31 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
 **Scope:** Schema-skew guard (R1), persistent-store architectural documentation (R5). R2–R4 blocked at operator gate per task design.
 **Verdict:** PARTIAL (R1 & R5 MET; R2–R4 blocked at operator gate)
 **Confidence:** HIGH — for R1 and R5, each is shipped and independently verified: R1 at `packages/kk-store/src/migrations.ts:312` throws `kk.store.schema-newer` before any DDL, with a negative test at `packages/kk-store/tests/migrations.test.ts:553` that injects `9999_future_migration`, asserts the rejection, and asserts the journal is unchanged; R5 at `docs/03_ARCHITECTURE.md:142-147` was read back from the file. The R2–R4 gap is named, not asserted: the global `kk` upgrade (R2), the locked live-store repair (R3) and a green `kk-collect` (R4) were **not run** — they are operator-gated and the task is `blocked`. So the correct reading of this report is "the guard is proven; the live store is still misconfigured", and no claim here says otherwise.
+
+#### Review Report — 0242 (final, 2026-10-09) — **current disposition**
+
+**Scope:** the whole task after R1–R6 all completed: the schema-skew guard, the read-only open, the test
+isolation, the persistent-store docs, and the operator-authorized global upgrade + live repair + green
+collect.
+**Dimensions:** functional traceability, correctness, security/integrity, operability
+**Verdict:** PASS
+**Confidence:** HIGH — every requirement is tied to a re-derivable check: R1 `packages/kk-store/src/migrations.ts:312` with a negative test at `packages/kk-store/tests/migrations.test.ts:558`; R2 `readlink -f ~/.bun/bin/kk` -> this tree's `apps/cli/dist/index.js` plus `kk store --help` listing `select`/`mark-published`/`release`; R3 `kk store backfill-facts` -> `{"updated":92}` with the store then showing 0 NULL `story_id`, 0 items without a current `kk-item-china-politics` label, and `kk store extract --topic ai-news` -> `{"count":14}`; R4 run `6ccfef89-1880-4031-9e75-984e2fe2b7c6` `done — outcome=success` with 143 label rows and all 9 new items labelled; R5 `docs/03_ARCHITECTURE.md:142-147`; R6 `packages/kk-store/src/db.ts:66` with the falsified control at `packages/kk-store/tests/migrations.test.ts:575` and the live-store-bytes-unchanged run of `bun run gate`.
+
+##### Findings
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P3 | operability | The global `kk` is now a **link** into this working tree, so production tracks an uncommitted-able tree rather than a published artifact; the next schema-bumping change must ship with a release, not only a merge. | `~/.bun/bin/kk` -> `apps/cli/dist/index.js`; see this task's R2–R4 record | ACCEPTED — operator chose the stop-gap knowingly; release-before-next-schema-change is recorded here and in the R2–R4 record |
+| 2 | P4 | operability | The collector's own `kk ledger append` step logs `kk.ledger.run.running` because it runs before the run finalizes; the ledger row lands on the next `kk ledger sync`. | run `6ccfef89-1880-4031-9e75-984e2fe2b7c6` trace, `release` step | ACCEPTED — pre-existing behaviour, does not block the run, which finalized `done` |
+| 3 | P4 | evidence | This task's Background numbers (340 labels, 0 judgment rows, 24 unlabelled items) no longer describe the store: the relabel had already happened before the repair ran, so the planned model spend was not needed and the Design's cost estimate was stale. | This task's `## Testing` R3.4 | RESOLVED — reported, not silently reconciled; the AC3 predicate was measured against the CURRENT store |
+
+##### Residual risk
+
+- **A stale global `kk` can recur.** R1 makes the next skew fail loudly at open instead of half-writing a
+  run, but nothing forces the global to be upgraded *with* the schema — that remains a release-process
+  discipline (R5 records the rule).
+- **The relabel that repaired the judgment decisions was performed outside this task** and is not
+  attributed here; only its effect was verified (0 items without a current china-politics label).
 
 ### References
 
@@ -211,4 +293,7 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
 
 - 2026-10-09T18:42:10.091Z todo → wip (system)
 - 2026-10-09T18:50:40.582Z wip → blocked (system)
+- 2026-10-09T21:20:18.696Z blocked → wip (system)
+- 2026-10-09T21:20:53.538Z wip → testing (system)
+- 2026-10-09T21:20:57.308Z testing → done (system)
 
