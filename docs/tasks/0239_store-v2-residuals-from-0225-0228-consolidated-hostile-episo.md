@@ -4,7 +4,7 @@ name: "Store-v2 residuals from 0225-0228 (consolidated): hostile episode_usage c
 status: done
 template: standard
 created_at: 2026-10-09T17:29:15.319Z
-updated_at: "2026-10-09T18:31:55.096Z"
+updated_at: "2026-10-09T19:35:38.345Z"
 feature_id: G32
 
 priority: P1
@@ -160,7 +160,7 @@ CONFIDENCE-CHECK item is recorded as already resolved rather than re-opened.
 
 **Scope:** Store-v2 residuals consolidated from 0225-0228: collision-safe 0003 episode_usage copy (R1), builder-DDL parity oracle (R2), dead excludedStories deletion (R3), legacy model row gate test and doc state (R4), mixed-script regex tokenizer (R5).
 **Verdict:** PASS
-**Confidence:** HIGH
+**Confidence:** HIGH — every requirement was re-verified against the merged tree at line level, and the two behavioural claims were proven to fail without the fix. R1: `packages/kk-store/src/migrations.ts:183` (the `WHERE true ORDER BY … ON CONFLICT … DO NOTHING` copy), with its colliding-fixture test at `packages/kk-store/tests/migrations.test.ts:488`. R2: the widened oracle at `packages/kk-store/tests/migrations.test.ts:515` (notnull/dflt_value/DDL order) and `:530` (the 4-column UNIQUE repeat); the oracle was proven sensitive by mutation — flipping `.notNull()` on `labels.labeled_at` in `packages/kk-store/src/schema/labels.ts` made the test fail, and the flip was reverted. R3: `rg excludedStories packages apps` returns zero source hits, and the exclusion is re-asserted through the single surviving predicate at `packages/kk-store/src/dao/items.ts:441` via `packages/kk-store/tests/kk-store.test.ts:249`. R4: `packages/kk-store/tests/dao/labels.test.ts:489`, with the rule stated at `docs/04_DESIGN.md:567-570` and `docs/design/kk-collect-and-daily-voice2.md:121-124`. R5: `packages/kk-store/src/story.ts:51`, with both directions fixtured at `packages/kk-store/tests/story.test.ts:48` and `:114`. No claim here rests on unverified recollection.
 
 ##### Per-requirement results
 

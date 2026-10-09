@@ -4,7 +4,7 @@ name: "Live store is v2 again and the scheduled kk-collect fails at kk store lab
 status: blocked
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T18:50:40.582Z"
+updated_at: "2026-10-09T19:35:38.769Z"
 feature_id: G32
 
 priority: P1
@@ -150,7 +150,7 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
 
 **Scope:** Schema-skew guard (R1), persistent-store architectural documentation (R5). R2–R4 blocked at operator gate per task design.
 **Verdict:** PARTIAL (R1 & R5 MET; R2–R4 blocked at operator gate)
-**Confidence:** HIGH
+**Confidence:** HIGH — for R1 and R5, each is shipped and independently verified: R1 at `packages/kk-store/src/migrations.ts:312` throws `kk.store.schema-newer` before any DDL, with a negative test at `packages/kk-store/tests/migrations.test.ts:553` that injects `9999_future_migration`, asserts the rejection, and asserts the journal is unchanged; R5 at `docs/03_ARCHITECTURE.md:142-147` was read back from the file. The R2–R4 gap is named, not asserted: the global `kk` upgrade (R2), the locked live-store repair (R3) and a green `kk-collect` (R4) were **not run** — they are operator-gated and the task is `blocked`. So the correct reading of this report is "the guard is proven; the live store is still misconfigured", and no claim here says otherwise.
 
 ### References
 

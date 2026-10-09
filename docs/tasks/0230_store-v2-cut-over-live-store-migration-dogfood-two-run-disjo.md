@@ -4,7 +4,7 @@ name: "Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2
 status: done
 template: feature-impl
 created_at: 2026-10-09T01:27:20.622Z
-updated_at: "2026-10-09T18:16:47.763Z"
+updated_at: "2026-10-09T19:34:51.886Z"
 feature_id: G32
 
 dependencies: ["0225", "0226", "0227", "0228", "0229"]
@@ -687,7 +687,34 @@ The config change is inert for the suite: `apps/cli/src/commands/store.ts` resol
 
 ### Review
 
-#### Review Report — 0230 (re-certification, 2026-10-09)
+#### Review Report — 0230 (close-out, 2026-10-09) — **current disposition**
+
+**Scope:** 0230's remaining scope only — the two doc fixes R7 and R8, plus re-verification of AC1/AC2. The R0–R6 dogfood evidence below is unchanged and is not re-derived here.
+**Dimensions:** functional traceability, correctness, evidence integrity
+**Verdict:** PASS
+**Confidence:** HIGH — cited at line level: `docs/design/kk-collect-and-daily-voice2.md:63-75` carries the R7 verb rows transcribed from the shipped help text (`apps/cli/src/commands/store.ts:1367`, `:1527`); `docs/design/kk-collect-and-daily-voice2.md:295-306` carries the R8 cut-over note, which now names 0241's out-of-task migration, assigns recovery to 0242, and leaves no `.works/kk.db.pre-g32` restore instruction; `spur task check 0230` returns 0 findings; `bun run gate` on the merged tree returns 2346 tests pass with 51 pre-check and 2 post-check rules clean.
+
+##### Per-requirement results (this close-out)
+
+| Req | Verdict | Evidence |
+|-----|---------|----------|
+| R7 | MET | `docs/design/kk-collect-and-daily-voice2.md:63-75` lists `backfill-facts` and `pool-count`, transcribed from the shipped help text rather than paraphrased. |
+| R8 | MET | `docs/design/kk-collect-and-daily-voice2.md:295-306` rewritten; the stale rollback is void and points at 0242, and this task's Design Rollback list is annotated superseded. |
+| AC1 | MET | Unchanged from the re-certification below — `.works/test-artifacts/g32-live-disjoint.json` carries disjoint story sets for two consecutive dry runs. |
+| AC2 | MET | Unchanged from the re-certification below — the ADR-030 amendment and the `docs/04_DESIGN.md` verb/label surface were read back this run. |
+| AC3, AC4 | MET | The two new criteria are the executable form of R7/R8; both were read back from the file after the edit. |
+
+##### Findings
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 | evidence | The re-certification review below still reads `Verdict: FAIL`, so the task read as failing while it is `done`. It is a historical record of the pre-fix state, not this task's disposition. | This section; the superseded report below | RESOLVED — superseded by the close-out report above; the FAIL is retained deliberately as the audit trail for the two findings it filed, both since owned by 0240 and 0241. |
+
+
+#### Review Report — 0230 (re-certification, 2026-10-09) — **superseded; retained as the historical record**
+
+*Superseded by the close-out report above. Its `Verdict: FAIL` describes the pre-fix state: finding 1 (the unrecorded live-store migration) and finding 2 (the fractional `score` answer) were filed as separate tasks — 0241 and 0240 — and both are now closed, so its blocking conditions no longer hold.*
+
 
 **Scope:** 0230's cut-over dogfood (R0–R6, AC1/AC2) in worktree `sp-runall-g32-5368`, the re-certification hop's two decided findings (the maker config, the AC1 re-measure), the final `decisions.makers` state, the R6 doc sync, and the R1 live-store safety claim. 0225–0229's own code/tests are the **subject under test**, not this review's target.
 **Dimensions:** functional traceability, correctness, security/integrity, usability, architecture

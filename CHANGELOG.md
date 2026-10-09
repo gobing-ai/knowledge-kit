@@ -1,3 +1,64 @@
+## [Unreleased]
+
+### Added
+
+- feat(store): kk store v2 — schema, labels, facts, selections, decisions (b5984ed3)
+- feat(store): dev-runall feature:G32 batch writes — 0230, 0239, 0240, 0242 (902f78ae)
+
+### Fixed
+
+- fix(kk): scaffold locales from the surfdash publish result (2061e964)
+- fix(image-gen): stop prompting MiniMax for poster-style text (18af1f53)
+- fix(kk): rework the daily voice2 disclosure and content path (011a4254)
+
+### Changed
+
+- docs: record the store v2 cut-over (b8bf4e24)
+- docs(store): plan the kk-collect store v2 cut-over (0f695d7d)
+- docs(kk): file G12 XHS notes and the G13 speech plan (5c6982a1)
+- chore(tasks): G32 corpus — 0225–0229 done, 0230 failed, residuals filed (60d87b95)
+- chore(wrap): capture the G32 batch learnings and the incident resolution (441df601)
+- docs(kk): correct the stale catalog-version prose and the 0230 config anchors (7c35e0dc)
+- chore(tasks): file 0238 for the daily DAG's agent.run artifact failures (b56fd503)
+- chore(tasks): consolidate the store-v2 residuals and clear the last WBS collisions (27777998)
+- chore(tasks): promote 0239 (consolidated store-v2 residuals) to todo (40eb3eb3)
+- docs(tasks): fill 0240/0241/0242 and close the incident record (c6b6a1cc)
+- docs(tasks): bind 0241's ACs with command evidence and close it clean (4a7db505)
+- docs(tasks): refine remaining G32 tasks to implementation-ready (f0f6cb25)
+- chore(project): add new scheduled job kk-collect (6dcc73fa)
+- docs(tasks): refine 0235-0238 to implementation-ready and pin 0242's migrator (3034adc4)
+- docs(adr): ADR-025 amendment, one XHS visit may compose several notes (fcae1614)
+- chore(wrap): capture the G32 store-v2 batch learnings — 0230, 0239, 0240 (e75232ff)
+
+<!--
+Verification (2026-10-09, sp-dev-changelog): HIGH
+- Coverage: 21 bullets = 21 commits in the exact range @gobing-ai/knowledge-kit-v0.0.33..e75232ff, each short
+  hash exactly once, no bullet without a commit and no commit without a bullet
+  (`git rev-list --count @gobing-ai/knowledge-kit-v0.0.33..e75232ff` -> 21). The tip is pinned to the commit
+  BEFORE this changelog entry: the entry's own commit is excluded by construction, so the count stays
+  checkable after it lands (HEAD is deliberately not the range end).
+- Mapping: feat->Added 2, fix->Fixed 3, docs+chore->Changed 16 (2+3+16 = 21). The header is `[Unreleased]`: no
+  version bump and no tag is claimed, because `apps/cli/package.json:3` still reads 0.0.33 and no release was cut.
+- Source citations for API and library behavior claims (verified against the merged tree at line level):
+  - store v2 labels observation identity: packages/kk-store/src/migrations.ts:161 (labels_observation_unique)
+  - store v2 typed item facts: packages/kk-store/src/schema/items.ts:30, apps/cli/src/commands/store.ts:661
+  - `0003_store_v2` episode_usage copy is collision-safe and deterministic (0239 R1):
+    packages/kk-store/src/migrations.ts:183
+  - schema-skew guard refuses a store newer than the binary (0242 R1): packages/kk-store/src/migrations.ts:312
+  - a score answer is a level position rounded to the nearest level, exact answer kept in raw_value (0240 R1):
+    apps/cli/src/commands/store.ts:667-668
+  - refused answers are counted per decision@maker in the label verdict (0240 R2):
+    apps/cli/src/commands/store.ts:1052
+  - mixed-script titles tokenize at the script boundary (0239 R5): packages/kk-store/src/story.ts:51
+  - topic-scoped story exclusion rides the profile query (0228): packages/kk-store/src/dao/items.ts:441
+  - decision catalog and per-decision maker routing: plugins/kk/decisions/kk-items.yaml:144, .spur/config.yaml:174
+- Confidence: HIGH — coverage and mapping reconcile against `git log` for the range, and every behaviour claim
+  above cites the shipped source at line level. Two claims are deliberately NOT made: no version, tag or release
+  is asserted for this section (`apps/cli/package.json:3` still reads 0.0.33), and task 0242 R2-R4 are left
+  unverified — the global `kk` upgrade, the locked live-store repair and a green `kk-collect` were not run
+  (operator-gated; task 0242 is `blocked`).
+-->
+
 ## [0.0.33] - 2026-10-08
 
 ### Added

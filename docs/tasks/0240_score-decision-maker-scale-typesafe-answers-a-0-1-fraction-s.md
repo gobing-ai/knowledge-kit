@@ -4,7 +4,7 @@ name: "Score-decision maker scale: typesafe answers a 0-1 fraction, so kk drops 
 status: done
 template: issue
 created_at: 2026-10-09T17:29:56.937Z
-updated_at: "2026-10-09T18:41:55.158Z"
+updated_at: "2026-10-09T19:35:38.549Z"
 feature_id: G32
 
 priority: P1
@@ -157,7 +157,7 @@ The earlier "0–1 fraction" reading came from probe values that happened to be 
 
 **Scope:** Score-decision maker scale: accept level positions on rubric axis, round to nearest level in value while preserving raw_value, report refused counts in label verdict line, route kk-item-sensitivity to typesafe in config.
 **Verdict:** PASS
-**Confidence:** HIGH
+**Confidence:** HIGH — verified at line level and by execution against the merged tree. R1: `apps/cli/src/commands/store.ts:667-668` rounds a level position to the nearest integer string while `raw_value` keeps the exact answer. R2: the `refused` map reaches the verdict line at `apps/cli/src/commands/store.ts:1052`. R3: `.spur/config.yaml:174` routes `kk-item-sensitivity` to `typesafe` — confirmed live by `spur decision run kk-item-sensitivity … --json` returning `makerSource: "config-decision"`, and by a scratch-store pass that wrote integer-valued `source='model'` sensitivity rows. R4: `docs/04_DESIGN.md:99` and `:508`. Unit coverage for AC1/AC2 at `apps/cli/tests/store-label.test.ts`; `bun run gate` green on the merged tree (2346 tests pass). One limit is named rather than asserted: the `.spur/config.yaml` routing was exercised against a *scratch copy* of the store, not the operator's live store, which is still v2-with-old-binary pending task 0242 R2.
 
 ##### Per-requirement results
 
