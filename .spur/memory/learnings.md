@@ -1595,3 +1595,43 @@ Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
 5. **wrapup-pipeline workflow is unreliable in this env** (shimmed shells fail at task-resolve; agent
    steps hung historically) — inline the wrap: doc drift edit, learnings/metrics appends, then
    `spur feature advance <id> --json`.
+
+## 2026-10-09 — G32 batch 0225–0229 (store v2 cut-over; 0230 failed, 0237 incident)
+
+1. **Gotcha — the incident (0237).** `bun link`ing the batch worktree build as the global `kk` while a
+   **scheduled job runs against the live tree** let the 04:00 collector migrate the operator's live store:
+   its first `kk store lock acquire` opened the store and `openStore` applied `0003_store_v2`. The link was
+   authorized for the dogfood; the scheduled consumer was not considered. Reverting a link is not enough on
+   its own — `bun unlink` **removes** the global package (restore with `bun install -g <pkg>@<version>`).
+2. **Gotcha — a `.db` sha256 is blind to a WAL-resident migration.** The live store's `kk.db` stayed
+   byte-identical (`3d21b641…`) while `0003_store_v2` + a whole collect's writes sat in `kk.db-wal`. Any
+   "the live store was never touched" claim must be read through SQLite (`select id from
+   __kk_store_migrations`), never from a file hash. The same blindness made a "sidecars untouched" claim false.
+3. **Error hit and resolved — a task spec can mandate the impossible.** 0226 R1 required the catalog
+   `version: 1 → 2`; the installed `@gobing-ai/spur@0.4.0` schema pins `version` to the literal `1`, so the
+   whole catalog refused to load and every `spur decision run` consult — the label pass's core path — was
+   dead. Check the installed schema before following a version-bump instruction; a spec is not a source of truth.
+4. **Convention discovered — the residual scanner reads the review's disposition column.** A bare `OPEN`
+   is classed **blocking**, closes the `record → done` guard and folds the verdict to PARTIAL. Give every
+   non-requirement finding an owner (`DEFER (<wbs>)` / `ACCEPTED (<wbs>)` / `RESOLVED`).
+5. **Convention discovered — verdict AC rows must lead with the task's own AC id.** `spur task record` flips
+   AC checkboxes by the row's leading id; a feature-scenario id (`R8 — …`) leaves every `AC*` box unchecked,
+   which then blocks as `unchecked-box` after a PASS verify.
+6. **Evidence: what moves the proof digest.** The verify stage's `## Testing` write and the review's
+   `## Review` write do **not** move it, but probe temp SQLite stores left in the worktree **root** do — and
+   that fails the record-stage `run.artifact` binding. Keep every probe artifact in `/tmp` or a gitignored dir.
+7. **Pattern that worked — one proof digest per task, with independent probes.** Gate → triage (the lane is
+   pinned to `safety` by diff size in an accumulated batch) → fresh-session review → observe-only verify, all
+   bound to one digest. The reviewers' own probes (throwaway DAGs for the engine's skip semantics, live-store
+   copies for label eligibility, a maker×decision matrix) found what the suites could not.
+8. **Gotcha — a fail-closed gate plus a fallback outside it equals an empty pool.** `kk-item-china-politics:
+   { lte: 1 }` with `fallback: 3` and a maker that cannot answer (`fm-local` → `reason: error`) excluded every
+   item: the daily pool went to 0 without a single test failing. Fail-closed gates need a live-maker
+   precondition and an observability signal naming the decision and the maker.
+9. **Gotcha — a `score` decision needs an integer level.** `typesafe` answers a 0–1 fraction, which `kk`'s
+   validator refuses, so those observations are dropped silently (0236). Match a maker's answer scale to the
+   rubric's discrete levels before wiring it into a profile gate.
+10. **Structural note — the batch's uncommitted-diff model invalidates earlier certificates.** Each task's
+    proof digest covers the whole tree, so every later task's writes make the earlier proofs stale. Commit
+    per task (or accept that only the last task's certificate is current) — the batch-once commit is a
+    provenance compromise, not a neutral choice.
