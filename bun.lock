@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.32",
+      "version": "0.0.33",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -48,6 +48,7 @@
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/ts-db": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
+        "drizzle-orm": "0.45.3",
         "drizzle-zod": "0.8.3",
         "zod": "4.4.3",
       },
