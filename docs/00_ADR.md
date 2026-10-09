@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.32.1
+version: 1.32.2
 created_at: 2026-05-28
-updated_at: 2026-10-07
+updated_at: 2026-10-09
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1213,6 +1213,18 @@ illustration across failures is deferred until observed.
 **Why.** The 2026-10-07 06:00 scheduler run classified three platform RISKs on a clean judge PASS whose findings were all evidence gaps and note-class items the reviewer itself dispositioned as non-blocking — the escalate branch routed the run to the HITL `review` state, and because an unattended run cannot answer, the job failed. Reviewer-marked escalation keeps the human decision where it belongs; recorded-but-answerable risk no longer converts an unattended run into a failed job.
 
 **Detail:** `plugins/kk/scripts/kk-workflow-stages.ts` `dailySafetyGate`; `plugins/kk/skills/content-safety/SKILL.md` finding contract; `plugins/kk/workflows/kk-daily-ai-voice.yaml` safety-judge edges; `docs/design/kk-daily-ai-voice.md` gate section and `docs/04_DESIGN.md` daily workflow row (same commit as the code).
+
+---
+
+## ADR-034: Voice2 episode speech is one synthesis request per section
+
+**Status:** Accepted (design) · **Date:** 2026-10-09
+
+**Decision.** Voice2 synthesizes an episode as one request per section: the opening, one section per selected item, and the closing. Existing voice-script chunks are grouped into those sections. Each section file is cached by spoken text, voice, and driver; a later run synthesizes only a section whose file is missing or whose text hash differs. Section files are joined in order, then the existing intro sting is applied. The duration check still reads that joined episode and stays at 15–20 minutes. Everyday concurrency is 1; a count above 1 is refused in this delivery. An account-window refusal stops the run and keeps finished section files. The voice1 workflow file and the shared script builder stay unchanged.
+
+**Why.** The paid unit then matches the unit that gets rewritten, so a failed or over-long episode pays again only for the sections that changed.
+
+**Detail:** `docs/design/segmented-episode-speech.md`; `03_ARCHITECTURE` § Voice2 episode speech.
 
 ---
 

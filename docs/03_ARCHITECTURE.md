@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.31.0
+version: 2.31.1
 created_at: 2026-07-22
-updated_at: 2026-10-05
+updated_at: 2026-10-09
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -118,6 +118,8 @@ kk designs around: one action per node, no back-edges (loops → nested state-ma
 `spur workflow run`), fail-fast on any node failure, wave-level waiting (a successor waits for
 its wave's slowest node), and last-writer-wins `setVars` — DAG nodes pass data by files under
 `work_dir`. First user: `kk-daily-ai-voice2` (`docs/design/kk-collect-and-daily-voice2.md`).
+
+**Voice2 episode speech (ADR-034, design).** `dailyGenerate` today sends the whole wrap-docs document to one voice-driver job and skips when `metadata.qc.passed` is true (`plugins/kk/scripts/daily-stages.ts`). Voice2 will instead group the already-written VoiceScript into an opening, one section per spoken item, and a closing, synthesize one request per section, and join those files before the existing intro step. The intro sting, the 15–20 minute duration check, and publish-prep's read of `mp3Path ?? audioPath` stay where they are. Concurrency above 1 is not a DAG wave: ADR-019 and ADR-031 keep fan-out inside `kk`, and this delivery runs one section at a time. The five-argument generate command stays the one-shot path, so voice1's workflow file and its one-request behavior stay put. Shapes: `docs/design/segmented-episode-speech.md`.
 
 **Persistent store (shipped — ADR-030; tasks 0206, 0208–0210).** `@gobing-ai/kk-store` owns the
 only SQLite file (`store.db_path`); `kk store migrate|lock|ingest|label|extract|mark-used` is its

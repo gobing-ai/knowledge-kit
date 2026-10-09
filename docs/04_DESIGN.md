@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.42.0
+version: 2.42.1
 created_at: 2026-07-22
-updated_at: 2026-10-05
+updated_at: 2026-10-09
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -48,6 +48,7 @@ sync: [T3]
 | [kk-itc-end-to-end.md](design/kk-itc-end-to-end.md) | kk-itc idea → research → judge-gated draft → per-platform drafts (HITL + auto) | shipped (F41) |
 | [gemini-tts.md](design/gemini-tts.md) | Gemini 3.8 TTS voice generator: hosted backend adapter over voice-gen, drop-in via `vdriver: gemini` | shipped (F612) |
 | [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | shipped (E8, ADR-024; 0167 xhs-pub script transport, 0168 xhs-images skill + presets) |
+| [segmented-episode-speech.md](design/segmented-episode-speech.md) | Voice2 section synthesis, per-section cache, join, then the existing intro sting (ADR-034) | proposed (G13) |
 
 ## 1. CLI commands
 
