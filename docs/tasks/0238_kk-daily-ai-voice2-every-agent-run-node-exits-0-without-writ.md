@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expe
 status: testing
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-09T22:56:09.989Z"
+updated_at: "2026-10-09T23:17:50.267Z"
 feature_id: G11
 
 priority: P1
@@ -273,6 +273,33 @@ quota exhausted by the verification runs), which is 0237's R6 path observed live
 here. A local-driver reroute (`ac5-live-7`, `vdriver=voicebox`) was abandoned after one section took
 ~30 min to render; the quota window reopens ~2 h after the refusal, and the resume re-runs the same
 works root so only the missing sections synthesize.
+
+**Two environment rules this verification had to establish (2026-10-09).**
+
+1. **Internal testing uses the local voicebox driver only** (operator guidance, 2026-10-09) so a
+   verification run never spends the Gemini TTS quota. Every run from `ac5-live-9` on passes
+   `vdriver=voicebox`; the driver is part of the section cache key (design §3), so a driver change
+   re-renders every section and no mixed-voice episode can result. The cost is local render time:
+   measured ~11–28× real time (a 6.2 s probe took 2 m 55 s; one 176 s section took ~32 min), so a
+   15–20 minute episode takes hours of wall clock and must run detached rather than inside a tool call.
+
+2. **A workflow's shell node resolves `kk` from `PATH`, so verification must pin it.** The first
+   detached attempt (`ac5-live-9`) silently ran the *main checkout's* installed `kk`
+   (`~/.bun/bin/kk` → `<main>/apps/cli/dist/index.js` → `<main>/plugins/kk/scripts/kk-workflow-stages.ts`)
+   and therefore the **pre-0237 one-shot `dailyGenerate`**: it ignored the sixth `section_concurrency`
+   argument and spawned a single
+   `kk executor run voice-gen --in …_10_wrap-docs_docs.json --out …_11_generate_content.json`
+   render of the whole script instead of per-section synthesis. Nothing in the run failed — it simply
+   validated the wrong code. Diagnosed by comparing the spawned process's script path
+   (`/Users/robin/xprojects/knowledge-kit/plugins/kk/scripts/kk-workflow-stages.ts`, the main tree)
+   against the worktree's, and confirmed with a probe workflow whose node stack frame reads
+   `at dailyGenerate (<worktree>/plugins/kk/scripts/daily-stages.ts:489:9)` when the shim wins.
+
+   Mitigation for the AC5 runs: `PATH` is shim-first **and excludes `~/.bun/bin`** (so no other `kk`
+   can win even if a child rebuilds `PATH`), `spur` is invoked by absolute path, and the shim appends
+   every invocation to `/tmp/kk-shim.log` — the audit trail proving which code the run executed.
+   Worth a durable fix (the `kk stage` wrapper or the engine could resolve the stages script from the
+   workflow file's own checkout), but it is out of scope here and is called out as a residual.
 
 ### Review
 
