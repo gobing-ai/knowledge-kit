@@ -310,7 +310,7 @@ describe('F613 R3 — plan substitution in buildNewsVoiceScript', () => {
 
         // intro: builder greeting + plan intro, template tail gone
         expect(texts[0]).toContain(
-            '欢迎收听咸话咸说的AI 乱炖栏目，我是Robin。今天我们聊两件事，一场牵动全局的安全会谈',
+            '这里是由Robin为你带来的咸话咸说之每日AI乱炖。今天我们聊两件事，一场牵动全局的安全会谈',
         );
         expect(spoken).not.toContain('话不多说');
         // lead: plan bridge keeps 【title】 spoken exactly once, and the title is not in the bridge
@@ -326,8 +326,7 @@ describe('F613 R3 — plan substitution in buildNewsVoiceScript', () => {
         const lastSegment = texts[texts.length - 1];
         expect(lastSegment).toContain('无论是安全规则还是电力瓶颈');
         expect(lastSegment).toContain('感谢您的收听，我是Robin');
-        // 0189 R1: the AI-voice disclosure is builder-owned, so a plan outro cannot drop it.
-        expect(lastSegment).toContain('AI 合成配音');
+        expect(lastSegment).not.toContain('AI 合成配音');
         expect(lastSegment).toContain('我们下期节目不见不散');
         expect(spoken).not.toContain('好了，以上就是');
     });

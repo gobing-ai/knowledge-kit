@@ -140,14 +140,14 @@ describe('dailynews-gen plugin (0073)', () => {
     it('R3 & R4 — generates structured Chinese broadcast VoiceScript with intro and news transitions', () => {
         const testDate = new Date(2026, 7, 22);
         const script = buildNewsVoiceScript([SAMPLE_DOC_1, SAMPLE_DOC_2], { date: testDate });
-        expect(script.title).toContain('AI 乱炖');
+        expect(script.title).toContain('每日AI乱炖');
         expect(script.language).toBe('zh');
         expect(script.default_profile).toBe('Robin');
         expect(script.segments.length).toBeGreaterThanOrEqual(4); // Intro + stories + Outro
 
         // Segment 0: Opening with date, self intro, overview (「」 stripped by normalizeBroadcastText)
         expect(script.segments[0]?.text).toContain('今天是2026年8月22日');
-        expect(script.segments[0]?.text).toContain('欢迎收听咸话咸说的AI 乱炖栏目');
+        expect(script.segments[0]?.text).toContain('这里是由Robin为你带来的咸话咸说之每日AI乱炖');
         expect(script.segments[0]?.text).toContain('整理了两条值得聊的内容');
         expect(script.segments[0]?.gap_ms).toBe(700);
 
@@ -163,7 +163,7 @@ describe('dailynews-gen plugin (0073)', () => {
 
         // Outro
         const lastSegment = script.segments[script.segments.length - 1];
-        expect(lastSegment?.text).toContain('本期AI乱炖就聊到这里');
+        expect(lastSegment?.text).toContain('本期每日AI乱炖就聊到这里');
         expect(lastSegment?.text).toContain('我是Robin');
         expect(lastSegment?.gap_ms).toBe(300);
     });
@@ -181,12 +181,11 @@ describe('dailynews-gen plugin (0073)', () => {
         expect(script.language).toBe('en');
         expect(script.default_profile).toBe('Alex');
         expect(script.segments.length).toBeGreaterThanOrEqual(3); // Intro + 1 story + Outro
-        expect(script.segments[0]?.text).toContain('This is Alex with AI 乱炖');
+        expect(script.segments[0]?.text).toContain('This is Alex, bringing you 咸话咸说之每日AI乱炖');
         expect(script.segments[1]?.text).toContain("First up today, let's look at");
         const lastSegment = script.segments[script.segments.length - 1];
-        expect(lastSegment?.text).toContain('That wraps up this episode of AI 乱炖');
-        // 0189 R1: the AI-voice disclosure is spoken in the episode itself.
-        expect(lastSegment?.text).toContain('AI-synthesized');
+        expect(lastSegment?.text).toContain('That wraps up this episode of 每日AI乱炖');
+        expect(lastSegment?.text).not.toContain('AI-synthesized');
     });
 
     it('R6 — handles empty Doc[] input gracefully with fallback script', () => {
@@ -208,7 +207,7 @@ describe('dailynews-gen plugin (0073)', () => {
         });
 
         expect(content.format).toBe('markdown');
-        expect(content.title).toContain('AI 乱炖');
+        expect(content.title).toContain('每日AI乱炖');
         expect(content.references?.length).toBe(2);
         expect(content.metadata?.generator).toBe('kk:dailynews-gen');
         expect(content.metadata?.storyCount).toBe(2);

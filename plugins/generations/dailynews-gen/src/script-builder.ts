@@ -313,32 +313,41 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     const defaultEffectPreset = options?.effectPreset;
     const broadcastDate = options?.date ?? new Date();
     const dateStr = formatBroadcastDate(broadcastDate, language);
+    // Column of 咸话咸说. The show is not the speaker; the host is.
+    const showName = '咸话咸说之每日AI乱炖';
+    let hostName =
+        (options?.speakers?.host?.name as string) ||
+        voiceProfile.replace(/[-_]?(news|voice|bot|profile)$/i, '') ||
+        voiceProfile;
+    if (hostName.length > 0) {
+        hostName = hostName.charAt(0).toUpperCase() + hostName.slice(1);
+    }
 
     if (docs.length === 0) {
-        const title = options?.title || (isZh ? 'AI 乱炖（暂无更新）' : 'AI 乱炖 (No Updates)');
+        const title = options?.title || (isZh ? '每日AI乱炖（暂无更新）' : '每日AI乱炖 (No Updates)');
         const segments: VoiceScriptSegment[] = isZh
             ? [
                   {
-                      // Task 0189 R1/R4: honest no-content episode — the copy names the show
-                      // (咸话咸说) and the column (AI 乱炖), and never claims a news digest happened.
-                      text: `大家好，今天是${dateStr}。欢迎收听「咸话咸说」的「AI 乱炖」栏目，我是${voiceProfile}。今天没有足够扎实的可聊内容。`,
+                      // Honest no-content episode: names the show and the host, and never claims
+                      // a news digest happened.
+                      text: `大家好，今天是${dateStr}。这里是由${hostName}为你带来的${showName}。今天没有足够扎实的可聊内容。`,
                       gap_ms: 400,
                       emotion: 'calm',
                   },
                   {
-                      text: `感谢您的收听，我是${voiceProfile}，我们下期节目再见。`,
+                      text: `感谢您的收听，我是${hostName}，我们下期节目再见。`,
                       gap_ms: 200,
                       emotion: 'warm',
                   },
               ]
             : [
                   {
-                      text: `Hello and welcome. Today is ${dateStr}. This is ${voiceProfile} with AI 乱炖, our chat about AI tools, papers, and hands-on practice. There is nothing solid enough to share today.`,
+                      text: `Hello. Today is ${dateStr}. This is ${hostName}, bringing you ${showName}, our chat about AI tools, papers, and hands-on practice. There is nothing solid enough to share today.`,
                       gap_ms: 400,
                       emotion: 'calm',
                   },
                   {
-                      text: `Thank you for listening. This is ${voiceProfile}, and have a great day.`,
+                      text: `Thank you for listening. This is ${hostName}, and have a great day.`,
                       gap_ms: 200,
                       emotion: 'warm',
                   },
@@ -356,16 +365,8 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         });
     }
 
-    const title = options?.title || (isZh ? `AI 乱炖（共${docs.length}条）` : `AI 乱炖 (${docs.length} stories)`);
+    const title = options?.title || (isZh ? `每日AI乱炖（共${docs.length}条）` : `每日AI乱炖 (${docs.length} stories)`);
     const segments: VoiceScriptSegment[] = [];
-
-    let hostName =
-        (options?.speakers?.host?.name as string) ||
-        voiceProfile.replace(/[-_]?(news|voice|bot|profile)$/i, '') ||
-        voiceProfile;
-    if (hostName.length > 0) {
-        hostName = hostName.charAt(0).toUpperCase() + hostName.slice(1);
-    }
 
     // F613: the plan owns the words on the zh path; en keeps templates (design: substitution is
     // zh-only). Items are matched to docs by id and doc order wins; plan item order is ignored.
@@ -384,10 +385,9 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         ? scriptPlan
             ? // F613: fixed greeting stays builder-owned; the plan only fills the slot between
               // greeting and first story (the template tail 从「今天科技圈有几条…正题。」 is replaced).
-              // Task 0189 R1: the greeting names the show (咸话咸说) and the column (AI 乱炖).
-              `大家好，今天是${dateStr}，欢迎收听「咸话咸说」的「AI 乱炖」栏目，我是${hostName}。${scriptPlan.intro}`
-            : `大家好，今天是${dateStr}，欢迎收听「咸话咸说」的「AI 乱炖」栏目，我是${hostName}。今天我从 AI 工具、论文和实践中整理了${countText}值得聊的内容${titlesSummary ? `，包括${titlesSummary}` : ''}，咱们一条条来聊。`
-        : `Hello and welcome. Today is ${dateStr}. This is ${hostName} with AI 乱炖, where we talk about AI tools, papers, and hands-on practice. In today's episode, we have ${countText} stories. Let's dive straight in.`;
+              `大家好，今天是${dateStr}。这里是由${hostName}为你带来的${showName}。${scriptPlan.intro}`
+            : `大家好，今天是${dateStr}。这里是由${hostName}为你带来的${showName}。今天我从 AI 工具、论文和实践中整理了${countText}值得聊的内容${titlesSummary ? `，包括${titlesSummary}` : ''}，咱们一条条来聊。`
+        : `Hello. Today is ${dateStr}. This is ${hostName}, bringing you ${showName}, where we talk about AI tools, papers, and hands-on practice. In today's episode, we have ${countText} stories. Let's dive straight in.`;
 
     segments.push({
         text: normalizeBroadcastText(introText, isZh),
@@ -451,14 +451,13 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     });
 
     // 3. Outro segment: Warm, conversational wrap-up. F613: the plan outro replaces the template
-    // wrap-up head; the fixed sign-off stays builder-owned.
-    // Task 0189 R1: the AI-voice disclosure is part of the builder-owned sign-off (not the plan),
-    // so it is spoken in every episode — Apple Podcasts guideline 1.11 requires it in the content.
+    // wrap-up head; the fixed sign-off stays builder-owned. The column settings already state
+    // how the episode is produced, so the sign-off does not repeat an AI-production closer.
     const outroText = isZh
         ? scriptPlan
-            ? `${scriptPlan.outro}本期音频为 AI 合成配音。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
-            : `好了，本期AI乱炖就聊到这里。希望今天这些工具、论文和实践的经验对您有启发。本期音频为 AI 合成配音。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
-        : `That wraps up this episode of AI 乱炖. I hope today's takeaways were useful. The audio in this episode is AI-synthesized. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
+            ? `${scriptPlan.outro}感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+            : `好了，本期每日AI乱炖就聊到这里。希望今天这些工具、论文和实践的经验对您有启发。感谢您的收听，我是${hostName}，祝您拥有充实高效的一天，我们下期节目不见不散！`
+        : `That wraps up this episode of 每日AI乱炖. I hope today's takeaways were useful. Thank you for listening. This is ${hostName}, wishing you a productive and wonderful day. Until next time!`;
 
     segments.push({
         text: normalizeBroadcastText(outroText, isZh),

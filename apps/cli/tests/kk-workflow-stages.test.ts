@@ -1677,9 +1677,8 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 PODCAST_PUB_RUN_DATE: stamp,
                 PODCAST_PUB_BRIEF_MODE: 'true',
                 PODCAST_PUB_TITLE: 'Daily AI',
-                // 0189 R1 / Apple §1.11: the AI-voice disclosure rides in the episode metadata too.
-                PODCAST_PUB_FOOTER_NOTE: '本期文字由 AI 辅助整理，音频为 AI 合成配音。',
             });
+            expect(showNotesEnv(dir).PODCAST_PUB_FOOTER_NOTE).toBeUndefined();
         });
     });
 

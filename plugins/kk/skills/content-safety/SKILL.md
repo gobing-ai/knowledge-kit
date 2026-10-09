@@ -38,7 +38,7 @@ prefer exclusion or abort over any rewording.
 | 2 | 语义 / 资质风险 | Political, diplomatic/trade-control, military, public-policy-dispute, or social-event mainline; content implying news-reporting qualifications the operator does not hold | BLOCK (exclude or abort). No rewrite that disguises the mainline |
 | 3 | 可识别个人信息 | Names/IDs/contacts/addresses/health or financial details of private individuals | Desensitize before publish; keep the original values out of the report |
 | 4 | 未经核实断言 / 来源保真 | Claims resting on RSS titles, aggregation-page URLs, unknown model names, self-contradictory dates; invented facts | Remove the claim or downgrade to attributed uncertainty; insufficient material → shorten or stop, never pad |
-| 5 | 必要披露 | AI-generation disclosure, identity/experience truthfulness (only real hands-on experience claimed) | Missing disclosure → revise to add; false identity claim → BLOCK |
+| 5 | 必要披露 | AI-generation disclosure, identity/experience truthfulness (only real hands-on experience claimed) | Missing disclosure → revise to add, unless that platform item is graded `note` (do not add it back); false identity claim → BLOCK |
 
 ## Modes
 

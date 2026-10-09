@@ -277,8 +277,8 @@ describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
                 metadata: { generator: string; doc_count: number; tags: string[]; date: string };
                 references: { url: string; title: string; cite: string }[];
             }>(join(dir, '22-article', `${STAMP}_06_article_content.json`));
-            // The publish payload: AI 乱炖 episode title (R1/R4), one kept item, mandatory ai-news tag.
-            expect(content.title).toBe('AI 乱炖 · 2026-09-16');
+            // The publish payload: 每日AI乱炖 episode title, one kept item, mandatory ai-news tag.
+            expect(content.title).toBe('每日AI乱炖 · 2026-09-16');
             expect(content.metadata.generator).toBe('kk:daily-article');
             expect(content.metadata.doc_count).toBe(1);
             expect(content.metadata.tags).toEqual(['ai-news']);

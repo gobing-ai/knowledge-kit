@@ -1347,9 +1347,9 @@ function dailyPatchSurfdash(args: string[]): void {
         const crossLink: Record<string, string> = {
             // Task 0189 R4: cross-links carry the column's episode-title pattern, not the retired
             // news-bulletin name (the VoiceScript episode title is episodeTitle(lead, date)).
-            zh: `🎧 本期已同步制作为播客节目，[点击收听《AI 乱炖 · ${dateIso}》](${showNotesUrl})。`,
-            en: `🎧 This episode is also available as a podcast: [listen to AI 乱炖 · ${dateIso}](${showNotesUrl}).`,
-            ja: `🎧 本エピソードはポッドキャストでも配信中：[AI 乱炖 · ${dateIso} を聴く](${showNotesUrl})。`,
+            zh: `🎧 本期已同步制作为播客节目，[点击收听《每日AI乱炖 · ${dateIso}》](${showNotesUrl})。`,
+            en: `🎧 This episode is also available as a podcast: [listen to 每日AI乱炖 · ${dateIso}](${showNotesUrl}).`,
+            ja: `🎧 本エピソードはポッドキャストでも配信中：[每日AI乱炖 · ${dateIso} を聴く](${showNotesUrl})。`,
         };
         let changed = 0;
         for (const [locale, dir] of [

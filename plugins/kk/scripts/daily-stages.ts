@@ -791,7 +791,7 @@ export function dailyPublishWechat(args: string[]): void {
             original: true,
             aiGenerated: true,
             author: '冰原奔狼',
-            collection: collectionArg || 'AI 乱炖',
+            collection: collectionArg || '每日AI乱炖',
             ...(isFile(cover) ? { coverPath: cover } : {}),
             // Audio block at the article top (operator request 2026-09-29): the daily MP3 goes to
             // the 素材库 under the article title; the plugin reuses an existing same-title material.
@@ -1290,9 +1290,8 @@ export function dailyShowNotes(args: string[]): void {
                 PODCAST_PUB_RUN_DATE: runDate,
                 PODCAST_PUB_BRIEF_MODE: 'true',
                 PODCAST_PUB_ARTICLE_POST_PATH: postPath,
-                // Task 0189 R1 / Apple §1.11: AI-voice disclosure in the episode metadata, not only
-                // in the audio sign-off and the article footer.
-                PODCAST_PUB_FOOTER_NOTE: '本期文字由 AI 辅助整理，音频为 AI 合成配音。',
+                // 2026-10-08: the column settings carry the AI-production note. Do not append the
+                // stock closer to show notes (or the article, or the spoken sign-off).
                 ...(isFile(audioContent) ? { PODCAST_PUB_AUDIO_CONTENT: audioContent } : {}),
             },
         });

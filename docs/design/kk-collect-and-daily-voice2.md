@@ -173,7 +173,7 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► plan-translate
                                                                                            │
                        ┌───────────────────────────┬──────────────────────────┬────────────┤
                        ▼                           ▼                          ▼            ▼
-             generate(TTS) ─► intro ─► duration  wrap-docs ─► publish-prep   xhs-write(agent)  
+             generate(TTS) ─► intro ─► duration ─► publish-prep            xhs-write(agent)  
                        └─────────► quality ◄──────┘        │                  └► xhs-render ─► xhs-publish
                                      │                     ├► publish-surfdash ─► translate-localize ─► translate(agent) ─► translate-sync
                                      ▼                     └► wechat-publish
@@ -185,6 +185,7 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► plan-translate
 ```
 
 - `extract` = `kk store extract --topic ai-news --window ${vars.window} --exclude-used kk-daily-ai-voice2 --out ${work_dir}/10-collect/pool.json`; `condition` on every downstream root: pool non-empty. Empty ⇒ all skipped. Engine skip rule (`dag.ts:126`): a node whose deps are **all** skipped is skipped; done+skipped mix proceeds. So `run-report` and `ledger` list `extract` in `dependsOn` next to their normal deps — they still run on an empty pool and record `no-content` (G11 R3).
+- `20-facts/` stays empty. `kk daily prepare` still creates the voice1 directory set, including `20-facts`, but this DAG never writes core facts. The pool file `10-collect/pool.json` replaced voice1's `20-facts/<stamp>_02_collect_core-facts.md`. An empty directory is the port, not a skipped stage.
 - `plan` consumes `pool.json` through the existing episode-plan-gen plugin; labels in `metadata` replace its keyword re-scoring when present.
 - `publish_enabled=false` ⇒ `condition` skips the publish subtree (same var as today).
 - `patch-surfdash` / `publish-partial` fold into `publish-classify` (it already classifies partial).

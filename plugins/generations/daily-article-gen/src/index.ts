@@ -103,14 +103,13 @@ function renderDoc(doc: Doc, index: number): string {
 }
 
 /**
- * Episode title for the 「AI 乱炖」 column: fixed `AI 乱炖 · YYYY-MM-DD` (2026-10-02 operator
- * simplification, superseding the 0189 R1/R4 `AI 乱炖｜<lead item> · date` pattern). The date
- * alone identifies the episode; the day's stories live in the show notes, cards and post body.
- * Pure function so the agent-written and template article paths, ID3, RSS and show notes all
- * derive one identical title.
+ * Episode title for the 「每日AI乱炖」 column of 「咸话咸说」: fixed `每日AI乱炖 · YYYY-MM-DD`
+ * (2026-10-08 operator rename, keeping the 2026-10-02 date-only pattern). The date identifies
+ * the episode; the day's stories live in the show notes, cards and post body. Pure function so
+ * the agent-written and template article paths, ID3, RSS and show notes all derive one title.
  */
 export function episodeTitle(date: string): string {
-    return `AI 乱炖 · ${date}`;
+    return `每日AI乱炖 · ${date}`;
 }
 
 /** Render the article markdown for a merged Doc[] (pure — exported for tests). */
@@ -118,8 +117,8 @@ export function renderDailyArticle(docs: Doc[], date: string): string {
     const items = docs.map(renderDoc).join('\n\n');
     const intro =
         docs.length > 0
-            ? `「AI 乱炖」是「咸话咸说」的 AI 技术分享栏目：工具、论文与实践随聊。本期共 ${docs.length} 条内容，均附可点击来源链接。`
-            : '「AI 乱炖」是「咸话咸说」的 AI 技术分享栏目：工具、论文与实践随聊。本期没有足够扎实的可聊内容。';
+            ? `这里是由Robin为你带来的咸话咸说之每日AI乱炖。本期共 ${docs.length} 条内容，均附可点击来源链接。`
+            : '这里是由Robin为你带来的咸话咸说之每日AI乱炖。本期没有足够扎实的可聊内容。';
     return `# ${episodeTitle(date)}\n\n${intro}\n\n${items}\n`;
 }
 
@@ -166,9 +165,6 @@ export function docsToContent(docs: Doc[], date: string, bodyOverride?: string):
         const stripped = stripScaffold(bodyOverride.trim()).trim().replace(new RegExp(LEADING_H1_RE), '');
         body = `# ${title}\n\n${stripped}\n`;
     }
-    // Task 0189 R1: the AI-production note rides on every article path (mechanical and agent
-    // prose). Podcast show notes are rendered separately by podcast-pub and do not inherit it.
-    body = `${body.trimEnd()}\n\n---\n\n*文字由 AI 辅助整理，音频为 AI 合成配音。*\n`;
     return ContentSchema.parse({
         title,
         body,
