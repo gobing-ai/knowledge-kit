@@ -15,7 +15,7 @@ import { join } from 'node:path';
  *    unbuilt. Deliberately scoped to THAT paragraph: two unrelated paragraphs legitimately still
  *    say "not yet built" (the DAG-workflow and generator-input-dispatch notes), so a whole-file
  *    assertion would be both wrong and brittle.
- * 3. `docs/04_DESIGN.md` stops listing any of the six `kk store` verbs, or `kk schedule render`.
+ * 3. `docs/04_DESIGN.md` stops listing any of the `kk store` verbs, or `kk schedule render`.
  * 4. `docs/05_FEATURES.md` records a G31 status that disagrees with the feature file — `done`
  *    while work is outstanding (the false status task 0210's R7 clause 4 forbids), or still
  *    `active` after the feature closed. Invariant: the status cell contains `done` iff the
@@ -63,7 +63,9 @@ describe('AC4 — the architecture docs record the store decision', () => {
             'store ingest',
             'store label',
             'store extract',
-            'store mark-used',
+            'store select',
+            'store mark-published',
+            'store release',
         ];
         for (const verb of verbs) {
             expect(design).toContain(verb);

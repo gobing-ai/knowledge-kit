@@ -9,7 +9,7 @@ import { main } from '../src/main';
 import { captureOutput } from './capture';
 
 /**
- * Failure-first list for `kk store extract` / `kk store mark-used` — before the code:
+ * Failure-first list for `kk store extract` — before the code:
  *
  * 1. `extract` returns an item outside the profile's `where` predicates.
  * 2. `extract` returns an item first seen before `now - window` (or the `--window` unit is
@@ -24,9 +24,10 @@ import { captureOutput } from './capture';
  *    emptying the pool) instead of exiting 1 with `kk.store.profile.invalid`.
  * 8. `--limit 0`, `--window 24` (no unit) or an unknown topic is accepted.
  * 9. `extract` mutates the store (it must be a pure read: no ingest, no labelling).
- * 10. `mark-used` does not write `episode_usage`, writes the wrong workflow, or duplicates rows
- *     on a retry, so a second extract with `--exclude-used` still returns the aired items.
- * 11. `mark-used` omits a duplicate id from the input twice, or fails on a non-Doc[] input.
+ * 10. `--include-selected` does not opt out of the exclusion, so a replay/re-extraction cannot
+ *     see an already-selected item.
+ * 11. The exclusion crosses topics (a selection for `ai-research` hides an `ai-news` item), or a
+ *     `dropped` row keeps excluding a story that was released.
  */
 
 const REPO_ROOT = realpathSync(join(import.meta.dir, '../../..'));
@@ -74,13 +75,6 @@ function writeProfile(root: string, topic: string, contents: string): string {
     return path;
 }
 
-/** A pool file with every Doc repeated — `mark-used` must collapse duplicate ids to one row. */
-function writeDuplicateInput(dir: string, docs: readonly Doc[]): string {
-    const path = join(dir, 'duplicated-pool.json');
-    writeFileSync(path, JSON.stringify([...docs, ...docs]));
-    return path;
-}
-
 /** The seeded corpus: every predicate and exclusion `extract` has to honour. */
 const NOW = Date.now();
 const DAY_MS = 86_400_000;
@@ -103,8 +97,20 @@ async function seedStore(name: string): Promise<{ dbPath: string; dir: string }>
     const dir = tempDir('kk-store-extract-');
     const dbPath = join(dir, name);
     const store = await openStore({ path: dbPath });
-    const label = (doc: Doc, decisionId: string, value: string) =>
-        store.labels.upsertLabel({ itemId: itemId(doc), decisionId, value, maker: 'heuristic', source: 'heuristic' });
+    // Every observation carries the item's CURRENT content hash: `labels_current` joins `items` on
+    // it, so a row without one is not eligible and the pool would silently empty (task 0226 R4).
+    const label = async (doc: Doc, decisionId: string, value: string) => {
+        const item = await store.items.findById(itemId(doc));
+        return store.labels.recordObservation({
+            itemId: itemId(doc),
+            decisionId,
+            value,
+            maker: 'heuristic',
+            source: 'heuristic',
+            runId: 'run-seed',
+            contentHash: item?.contentHash ?? null,
+        });
+    };
 
     await store.items.upsertDocs('run-seed', [CORPUS.stale], NOW - 30 * DAY_MS);
     await store.items.upsertDocs('run-seed', [CORPUS.unlabelled], NOW - DAY_MS / 2);
@@ -122,6 +128,9 @@ async function seedStore(name: string): Promise<{ dbPath: string; dir: string }>
         await label(doc, 'kk-item-quality', quality);
         await label(doc, 'kk-item-urgency', urgency);
         await label(doc, 'kk-item-impact', impact);
+        // The shipped ai-news profile gates on china-politics (0229 R5); a level-0 answer keeps the
+        // item eligible. Labelling it is what makes the pre-0229 pool expectations still true.
+        await label(doc, 'kk-item-china-politics', '0');
         if (doc !== CORPUS.unlabelled) await label(doc, 'kk-item-importance', importance);
     }
     await store.close();
@@ -137,7 +146,7 @@ function counts(dbPath: string): Record<string, number> {
         return {
             items: one('items'),
             labels: one('labels'),
-            episode_usage: one('episode_usage'),
+            selections: one('selections'),
             collect_runs: one('collect_runs'),
         };
     } finally {
@@ -176,6 +185,7 @@ describe('kk store extract', () => {
             metadata: {
                 labels: {
                     'kk-item-category': 'ai-news',
+                    'kk-item-china-politics': '0',
                     'kk-item-quality': '5',
                     'kk-item-urgency': '5',
                     'kk-item-impact': '4',
@@ -230,17 +240,20 @@ describe('kk store extract', () => {
         const store = await openStore({ path: dbPath });
         // One ai-news item, 30 days old: the profile matches it, the 24h window does not.
         await store.items.upsertDocs('run-seed', [CORPUS.stale], NOW - 30 * DAY_MS);
+        const staleHash = (await store.items.findById(itemId(CORPUS.stale)))?.contentHash ?? null;
         for (const [decisionId, value] of [
             ['kk-item-category', 'ai-news'],
             ['kk-item-quality', '5'],
             ['kk-item-importance', '5'],
         ] as const) {
-            await store.labels.upsertLabel({
+            await store.labels.recordObservation({
                 itemId: itemId(CORPUS.stale),
                 decisionId,
                 value,
                 maker: 'heuristic',
                 source: 'heuristic',
+                runId: 'run-seed',
+                contentHash: staleHash,
             });
         }
         await store.close();
@@ -272,6 +285,7 @@ describe('kk store extract', () => {
             source: 'rss',
             labels: {
                 'kk-item-category': 'ai-research',
+                'kk-item-china-politics': '0',
                 'kk-item-quality': '4',
                 'kk-item-importance': '5',
                 'kk-item-urgency': '3',
@@ -331,118 +345,137 @@ describe('kk store extract', () => {
     });
 });
 
-describe('kk store mark-used', () => {
-    it('records used items and keeps a later pool free of them (R4/AC3)', async () => {
-        const { dbPath, dir } = await seedStore('used.db');
-        const airedPath = join(dir, 'aired.json');
-        const extract = (excludeUsed: string | undefined, out: string) =>
-            run([
-                'store',
-                'extract',
-                '--topic',
-                'ai-news',
-                '--db',
-                dbPath,
-                '--out',
-                out,
-                ...(excludeUsed === undefined ? [] : ['--exclude-used', excludeUsed]),
-            ]);
-
-        const first = await extract(undefined, airedPath);
-        expect(JSON.parse(first.out)).toEqual({ count: 2 });
-        const aired = pool(airedPath);
-
-        const marked = await run([
-            'store',
-            'mark-used',
-            '--workflow',
-            'kk-daily-ai-voice2',
-            '--run',
-            'run-1',
-            '--in',
-            airedPath,
-            '--db',
-            dbPath,
-        ]);
-        expect(marked.code).toBe(0);
-        expect(JSON.parse(marked.out)).toEqual({ marked: 2 });
-        expect(counts(dbPath).episode_usage).toBe(2);
-
-        // A second extract excluding that workflow returns nothing: no re-airing (AC3).
-        const second = await extract('kk-daily-ai-voice2', join(dir, 'second.json'));
-        expect(JSON.parse(second.out)).toEqual({ count: 0 });
-
-        // A later run of the same workflow still excludes them — usage is per workflow, not per run.
-        const third = await extract('kk-daily-ai-voice2', join(dir, 'third.json'));
-        expect(JSON.parse(third.out)).toEqual({ count: 0 });
-
-        // Another workflow is unaffected.
-        const other = await extract('another-workflow', join(dir, 'other.json'));
-        expect(JSON.parse(other.out)).toEqual({ count: 2 });
-
-        // A retried mark-used re-uses the same rows (idempotent); duplicates in one input collapse.
-        const retried = await run([
-            'store',
-            'mark-used',
-            '--workflow',
-            'kk-daily-ai-voice2',
-            '--run',
-            'run-1',
-            '--in',
-            airedPath,
-            '--db',
-            dbPath,
-        ]);
-        expect(JSON.parse(retried.out)).toEqual({ marked: 2 });
-        expect(counts(dbPath).episode_usage).toBe(2);
-
-        const nextRun = await run([
-            'store',
-            'mark-used',
-            '--workflow',
-            'kk-daily-ai-voice2',
-            '--run',
-            'run-2',
-            '--in',
-            airedPath,
-            '--db',
-            dbPath,
-        ]);
-        expect(JSON.parse(nextRun.out)).toEqual({ marked: 2 });
-        expect(counts(dbPath).episode_usage).toBe(4);
-
-        // Idempotent within one input too: the same Doc twice is one row.
-        const duplicated = await run([
-            'store',
-            'mark-used',
-            '--workflow',
-            'dup-workflow',
-            '--run',
-            'run-3',
-            '--in',
-            writeDuplicateInput(dir, aired),
-            '--db',
-            dbPath,
-        ]);
-        expect(JSON.parse(duplicated.out)).toEqual({ marked: 2 });
-        expect(counts(dbPath).episode_usage).toBe(6);
-
-        artifact('mark-used.json', {
-            aired: aired.map((doc) => doc.id),
-            result: JSON.parse(marked.out),
-            excludedPoolCount: JSON.parse(second.out),
-            usageRows: counts(dbPath).episode_usage,
-        });
+it('R5 — the shipped profile gates on china-politics, and an unjudged item is excluded (fail-closed)', async () => {
+    const dir = tempDir('kk-store-china-');
+    const dbPath = join(dir, 'china.db');
+    const store = await openStore({ path: dbPath });
+    const at = (slug: string): Doc => ({
+        id: slug,
+        title: `${slug} launch`,
+        body: 'a substantive body',
+        sourceUri: `https://example.com/${slug}`,
     });
+    const clean = at('clean');
+    const policy = at('policy');
+    const commentary = at('commentary');
+    const unjudged = at('unjudged');
+    const label = async (target: Doc, decisionId: string, value: string) => {
+        const item = await store.items.findById(itemId(target));
+        await store.labels.recordObservation({
+            itemId: itemId(target),
+            decisionId,
+            value,
+            maker: 'heuristic',
+            source: 'heuristic',
+            runId: 'run-seed',
+            contentHash: item?.contentHash ?? null,
+        });
+    };
 
-    it('exits 1 for a non-Doc[] input', async () => {
-        const { dbPath, dir } = await seedStore('bad-input.db');
-        const bad = join(dir, 'bad.json');
-        writeFileSync(bad, JSON.stringify({ docs: [] }));
+    await store.items.upsertDocs('run-seed', [clean, policy, commentary, unjudged], NOW);
+    for (const target of [clean, policy, commentary, unjudged]) {
+        await label(target, 'kk-item-category', 'ai-news');
+        await label(target, 'kk-item-quality', '4');
+        await label(target, 'kk-item-importance', '4');
+    }
+    // 0 = no political-system reference, 1 = a factual policy mention; both clear the lte-1 gate.
+    await label(clean, 'kk-item-china-politics', '0');
+    await label(policy, 'kk-item-china-politics', '1');
+    await label(commentary, 'kk-item-china-politics', '2');
+    // `unjudged` deliberately has NO current china-politics answer: the inner join must exclude it.
+    await store.close();
 
-        const result = await run(['store', 'mark-used', '--workflow', 'w', '--run', 'r', '--in', bad, '--db', dbPath]);
-        expect(result.code).toBe(1);
-        expect(result.err).toContain('kk.store.mark-used.failed:');
+    const out = join(dir, 'china-pool.json');
+    const result = await run(['store', 'extract', '--topic', 'ai-news', '--db', dbPath, '--out', out]);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.out)).toEqual({ count: 2 });
+    const ids = pool(out).map((entry) => entry.id);
+    expect(ids.sort()).toEqual([itemId(clean), itemId(policy)].sort());
+    expect(ids).not.toContain(itemId(unjudged));
+    expect(ids).not.toContain(itemId(commentary));
+    artifact('china-politics-gate.json', { printed: JSON.parse(result.out), ids });
+});
+
+describe('kk store extract — the topic-scoped selection exclusion (R4/AC2)', () => {
+    it('excludes the topic’s selected and published stories; --include-selected opts out', async () => {
+        const { dbPath, dir } = await seedStore('exclusion.db');
+        // The selection ledger the run wrote before publishing (0228): `selected` rows exclude just
+        // like `published` ones, a `dropped` row does not, and another topic's selection is a
+        // different topic's business.
+        const store = await openStore({ path: dbPath });
+        await store.selections.insertMany([
+            {
+                topic: 'ai-news',
+                itemId: itemId(CORPUS.newsA),
+                runId: 'run-1',
+                storyId: itemId(CORPUS.newsA),
+                status: 'selected',
+            },
+            {
+                topic: 'ai-news',
+                itemId: itemId(CORPUS.newsB),
+                runId: 'run-1',
+                storyId: itemId(CORPUS.newsB),
+                status: 'published',
+            },
+            {
+                topic: 'ai-news',
+                itemId: itemId(CORPUS.stale),
+                runId: 'run-1',
+                storyId: itemId(CORPUS.stale),
+                status: 'dropped',
+            },
+            {
+                topic: 'ai-research',
+                itemId: itemId(CORPUS.research),
+                runId: 'run-1',
+                storyId: 'story-z',
+                status: 'published',
+            },
+        ]);
+        await store.close();
+
+        // Both ai-news stories are excluded — no `--exclude-used` flag, no workflow argument.
+        const excluded = await run([
+            'store',
+            'extract',
+            '--topic',
+            'ai-news',
+            '--db',
+            dbPath,
+            '--out',
+            join(dir, 'excluded.json'),
+        ]);
+        expect(excluded.code).toBe(0);
+        expect(JSON.parse(excluded.out)).toEqual({ count: 0 });
+
+        // The explicit opt-out sees the whole pool again, in the profile's order.
+        const included = await run([
+            'store',
+            'extract',
+            '--topic',
+            'ai-news',
+            '--include-selected',
+            '--db',
+            dbPath,
+            '--out',
+            join(dir, 'included.json'),
+        ]);
+        expect(included.code).toBe(0);
+        expect(JSON.parse(included.out)).toEqual({ count: 2 });
+        expect(pool(join(dir, 'included.json')).map((entry) => entry.id)).toEqual([
+            itemId(CORPUS.newsB),
+            itemId(CORPUS.newsA),
+        ]);
+
+        // The ai-research selection did NOT exclude anything from ai-news, and the ai-news
+        // selections do not exclude the ai-research pool (the `--exclude-used` removal).
+        expect(pool(join(dir, 'excluded.json'))).toEqual([]);
+        artifact('extract-exclusion.json', {
+            excluded: JSON.parse(excluded.out),
+            included: JSON.parse(included.out),
+        });
     });
 
     it('resolves the store path from the kk config when --db is absent', async () => {

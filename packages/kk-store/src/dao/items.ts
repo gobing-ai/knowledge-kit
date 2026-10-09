@@ -2,8 +2,11 @@ import type { Doc } from '@gobing-ai/kk-core';
 import type { DbAdapter, DbBatchOp } from '@gobing-ai/ts-db';
 import { EntityDao } from '@gobing-ai/ts-db';
 import { canonicalUrlForDoc, itemId } from '../canonical-url';
+import { type ItemFacts, itemFacts } from '../facts';
 import type { ProfileQuery } from '../profile';
 import { items } from '../schema/items';
+import { DEFAULT_STORY_POLICY, type StoryCandidate, type StoryPolicy, storyIdFor } from '../story';
+import { LABELS_CURRENT, type LabelPolicy, labelsCurrentSql } from './labels';
 
 /** One `items` row as stored. */
 export type ItemRecord = typeof items.$inferSelect;
@@ -55,7 +58,7 @@ function parseMetadataJson(raw: string): Record<string, unknown> {
 export interface UpsertDocsResult {
     /** Ids first stored by this call. */
     inserted: number;
-    /** Known ids whose content changed (their labels were dropped). */
+    /** Known ids whose content changed — the next label pass re-labels them. */
     updated: number;
     /** Known ids whose content hash is unchanged (only `last_seen_run` moved). */
     unchanged: number;
@@ -63,7 +66,7 @@ export interface UpsertDocsResult {
     newIds: string[];
 }
 
-/** A Doc reduced to its `items` row values (all identity/hash work done once). */
+/** A Doc reduced to its `items` row values (all identity/hash/fact work done once). */
 interface PreparedItem {
     id: string;
     canonicalUrl: string | null;
@@ -74,19 +77,53 @@ interface PreparedItem {
     mediaType: string | null;
     metadataJson: string;
     publishedAt: number | null;
+    /** The typed fact columns this Doc's row carries (0227 R1). */
+    facts: ItemFacts;
+}
+
+/** One already-stored item the upsert compares against: hash, story root and first-seen stamp. */
+interface ExistingItem {
+    contentHash: string;
+    /** `items.story_id`; `null` only on a row the 0225 backfill has not touched (treated as `id`). */
+    storyId: string | null;
+    firstSeenAt: number;
+}
+
+/** One `items` row as `backfillFacts` reads it: every fact column plus the clustering inputs. */
+interface BackfillRow {
+    id: string;
+    title: string;
+    body: string;
+    canonical_url: string | null;
+    metadata_json: string;
+    first_seen_at: number;
+    engagement: number | null;
+    body_chars: number | null;
+    source_tier: string | null;
+    lang: string | null;
+    domain: string | null;
+    story_id: string | null;
 }
 
 const INSERT_ITEM_SQL = `INSERT INTO items
     (id, canonical_url, content_hash, title, body, source, media_type, metadata_json,
-     first_seen_run, last_seen_run, first_seen_at, published_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+     first_seen_run, last_seen_run, first_seen_at, published_at, created_at, updated_at,
+     engagement, body_chars, source_tier, lang, domain, story_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
+/** The update path refreshes the facts but never `story_id`: a story root is chosen once (R3). */
 const UPDATE_ITEM_SQL = `UPDATE items
     SET canonical_url = ?, content_hash = ?, title = ?, body = ?, source = ?, media_type = ?,
-        metadata_json = ?, published_at = ?, last_seen_run = ?, updated_at = ?
+        metadata_json = ?, published_at = ?, last_seen_run = ?, updated_at = ?,
+        engagement = ?, body_chars = ?, source_tier = ?, lang = ?, domain = ?
     WHERE id = ?`;
 
 const TOUCH_ITEM_SQL = 'UPDATE items SET last_seen_run = ?, updated_at = ? WHERE id = ?';
+
+/** `backfillFacts` writes the facts and the causal story root; `updated_at` is left alone (idempotent run). */
+const BACKFILL_ITEM_SQL = `UPDATE items
+    SET engagement = ?, body_chars = ?, source_tier = ?, lang = ?, domain = ?, story_id = ?
+    WHERE id = ?`;
 
 /** `metadata.source` when it is a string — the ingest plugin that produced the Doc. */
 function sourceFromMetadata(metadata: Doc['metadata']): string {
@@ -127,7 +164,13 @@ function prepareItem(doc: Doc): PreparedItem {
         mediaType: doc.mediaType ?? null,
         metadataJson: JSON.stringify(doc.metadata ?? {}),
         publishedAt: publishedAtFromMetadata(doc.metadata),
+        facts: itemFacts(doc),
     };
+}
+
+/** A stored row as a clustering candidate; a `null` `story_id` reads as the item's own id. */
+function toCandidate(id: string, storyId: string | null, title: string, firstSeenAt: number): StoryCandidate {
+    return { id, storyId: storyId ?? id, title, firstSeenAt };
 }
 
 /**
@@ -149,11 +192,22 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
      * none does. A Doc whose id appears twice in one batch is written once (last
      * occurrence wins) so the counters stay per-item, not per-input-line.
      *
-     * A `content_hash` change deletes that item's `labels` rows in the same batch:
-     * decisions answer the text they were run on, so a new body invalidates them
-     * and the next label pass re-decides.
+     * A `content_hash` change no longer deletes the item's `labels` rows (R5/G32 D1): every
+     * observation keeps the `content_hash` it was made against, so an edited item's past answers
+     * stay attributable. The item still counts as `updated`, so the label pass re-labels it.
+     *
+     * Facts (0227 R1) are filled for every INSERTED or UPDATED row from the same `PreparedItem`, so
+     * the batch stays one atomic `adapter.batch`. `story_id` (R2/R3) is chosen once, for an inserted
+     * item only: the candidates are the rows inside `story.windowHours` of `now` plus the docs that
+     * precede this one IN THIS BATCH (a duplicate the DB has not seen yet), and an existing item
+     * keeps the story root it already has. A later item never re-roots a story.
      */
-    async upsertDocs(runId: string, docs: readonly Doc[], now = Date.now()): Promise<UpsertDocsResult> {
+    async upsertDocs(
+        runId: string,
+        docs: readonly Doc[],
+        now = Date.now(),
+        story: StoryPolicy = DEFAULT_STORY_POLICY,
+    ): Promise<UpsertDocsResult> {
         const byId = new Map<string, PreparedItem>();
         for (const doc of docs) {
             const prepared = prepareItem(doc);
@@ -161,7 +215,9 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
         }
         if (byId.size === 0) return { inserted: 0, updated: 0, unchanged: 0, newIds: [] };
 
-        const known = await this.existingContentHashes([...byId.keys()]);
+        const known = await this.existingItems([...byId.keys()]);
+        const recent = await this.storyCandidates(now - story.windowHours * 3_600_000);
+        const batchCandidates: StoryCandidate[] = [];
         const operations: DbBatchOp[] = [];
         const newIds: string[] = [];
         let inserted = 0;
@@ -169,10 +225,12 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
         let unchanged = 0;
 
         for (const item of byId.values()) {
-            const previousHash = known.get(item.id);
-            if (previousHash === undefined) {
+            const previous = known.get(item.id);
+            if (previous === undefined) {
                 inserted += 1;
                 newIds.push(item.id);
+                const storyId = storyIdFor(item.title, [...recent, ...batchCandidates], story.threshold) ?? item.id;
+                batchCandidates.push(toCandidate(item.id, storyId, item.title, now));
                 operations.push({
                     sql: INSERT_ITEM_SQL,
                     params: [
@@ -190,13 +248,19 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
                         item.publishedAt,
                         now,
                         now,
+                        item.facts.engagement,
+                        item.facts.bodyChars,
+                        item.facts.sourceTier,
+                        item.facts.lang,
+                        item.facts.domain,
+                        storyId,
                     ],
                 });
                 continue;
             }
-            if (previousHash !== item.contentHash) {
+            batchCandidates.push(toCandidate(item.id, previous.storyId, item.title, previous.firstSeenAt));
+            if (previous.contentHash !== item.contentHash) {
                 updated += 1;
-                operations.push({ sql: 'DELETE FROM labels WHERE item_id = ?', params: [item.id] });
                 operations.push({
                     sql: UPDATE_ITEM_SQL,
                     params: [
@@ -210,6 +274,11 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
                         item.publishedAt,
                         runId,
                         now,
+                        item.facts.engagement,
+                        item.facts.bodyChars,
+                        item.facts.sourceTier,
+                        item.facts.lang,
+                        item.facts.domain,
                         item.id,
                     ],
                 });
@@ -224,6 +293,87 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
     }
 
     /**
+     * Recompute the typed facts and the CAUSAL story clustering for every item (0227 R4).
+     *
+     * Rows are walked in `first_seen_at, id` order and each item clusters only against EARLIER
+     * items inside `policy.windowHours` of its own `first_seen_at` — the sliding candidate list,
+     * so the pass never re-roots a story on a later item. The facts are pure functions of the row,
+     * so a second run changes nothing and returns `0`. Returns the count of rows whose values
+     * actually changed.
+     */
+    async backfillFacts(policy: StoryPolicy = DEFAULT_STORY_POLICY): Promise<number> {
+        const rows = await this.adapter.queryAll<BackfillRow>(
+            `SELECT id, title, body, canonical_url, metadata_json, first_seen_at,
+                    engagement, body_chars, source_tier, lang, domain, story_id
+             FROM items ORDER BY first_seen_at, id`,
+        );
+        const windowMs = policy.windowHours * 3_600_000;
+        const candidates: StoryCandidate[] = [];
+        const operations: DbBatchOp[] = [];
+        let updated = 0;
+
+        for (const row of rows) {
+            const facts = itemFacts({
+                id: row.id,
+                body: row.body,
+                title: row.title,
+                ...(row.canonical_url === null ? {} : { sourceUri: row.canonical_url }),
+                metadata: parseMetadataJson(row.metadata_json),
+            });
+            // Rows arrive in ascending `first_seen_at`, so the candidates older than the window are
+            // always its prefix — drop them before matching, keeping the list causal.
+            while (
+                candidates.length > 0 &&
+                (candidates[0] as StoryCandidate).firstSeenAt < row.first_seen_at - windowMs
+            ) {
+                candidates.shift();
+            }
+            const storyId = storyIdFor(row.title, candidates, policy.threshold) ?? row.id;
+            candidates.push(toCandidate(row.id, storyId, row.title, row.first_seen_at));
+
+            if (
+                row.engagement !== facts.engagement ||
+                row.body_chars !== facts.bodyChars ||
+                row.source_tier !== facts.sourceTier ||
+                row.lang !== facts.lang ||
+                row.domain !== facts.domain ||
+                row.story_id !== storyId
+            ) {
+                updated += 1;
+                operations.push({
+                    sql: BACKFILL_ITEM_SQL,
+                    params: [
+                        facts.engagement,
+                        facts.bodyChars,
+                        facts.sourceTier,
+                        facts.lang,
+                        facts.domain,
+                        storyId,
+                        row.id,
+                    ],
+                });
+            }
+        }
+
+        if (operations.length > 0) await this.adapter.batch(operations);
+        return updated;
+    }
+
+    /** The stored items a batch may cluster against: those first seen at or after `sinceMs`. */
+    private async storyCandidates(sinceMs: number): Promise<StoryCandidate[]> {
+        const rows = await this.adapter.queryAll<{
+            id: string;
+            story_id: string | null;
+            title: string;
+            first_seen_at: number;
+        }>(
+            'SELECT id, story_id, title, first_seen_at FROM items WHERE first_seen_at >= ? ORDER BY first_seen_at, id',
+            sinceMs,
+        );
+        return rows.map((row) => toCandidate(row.id, row.story_id, row.title, row.first_seen_at));
+    }
+
+    /**
      * One profile query's pool: the matching `items` rows, each with every stored
      * decision answer inlined and ordered by decision id (R2).
      *
@@ -233,18 +383,20 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
      * only by `order` left-joins, so an unlabelled item is sorted, not dropped.
      * `i.id ASC` is the final tiebreak: one database and one `now` yield one order.
      */
-    async selectByProfile(query: ProfileQuery): Promise<StoredDoc[]> {
+    async selectByProfile(query: ProfileQuery, policy: LabelPolicy): Promise<StoredDoc[]> {
         const whereDecisions = new Set(query.where.map((predicate) => predicate.decisionId));
         const aliases = new Map<string, string>();
         const joins: string[] = [];
-        const params: unknown[] = [];
+        // The `labels_current` CTE leads the statement, so its binds precede every join/WHERE bind.
+        const { sql: labelsCurrent, params: labelsParams } = labelsCurrentSql(policy);
+        const params: unknown[] = [...labelsParams];
         const aliasFor = (decisionId: string): string => {
             const existing = aliases.get(decisionId);
             if (existing !== undefined) return existing;
             const alias = `l${aliases.size}`;
             aliases.set(decisionId, alias);
             joins.push(
-                `${whereDecisions.has(decisionId) ? 'JOIN' : 'LEFT JOIN'} labels ${alias} ` +
+                `${whereDecisions.has(decisionId) ? 'JOIN' : 'LEFT JOIN'} ${LABELS_CURRENT} ${alias} ` +
                     `ON ${alias}.item_id = i.id AND ${alias}.decision_id = ?`,
             );
             params.push(decisionId);
@@ -281,21 +433,31 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
 
         conditions.push('i.first_seen_at >= ?');
         params.push(query.now - query.windowMs);
-        if (query.excludeWorkflow !== undefined) {
-            conditions.push('NOT EXISTS (SELECT 1 FROM episode_usage u WHERE u.item_id = i.id AND u.workflow = ?)');
-            params.push(query.excludeWorkflow);
+        if (query.excludeTopic !== undefined) {
+            // Story-scoped, topic-scoped exclusion (task 0228): an item selected or published for
+            // `excludeTopic` is out of the pool, and one story shared by several items excludes them
+            // all. `dropped` selections are free to re-enter.
+            conditions.push(
+                `NOT EXISTS (SELECT 1 FROM selections s WHERE s.topic = ? AND s.story_id = i.story_id ` +
+                    `AND s.status IN ('selected', 'published'))`,
+            );
+            params.push(query.excludeTopic);
         }
         params.push(query.limit);
 
         const rows = await this.adapter.queryAll<ItemRow>(
-            `SELECT i.id, i.title, i.body, i.canonical_url, i.media_type, i.metadata_json FROM items i\n` +
+            `WITH ${labelsCurrent}\n` +
+                `SELECT i.id, i.title, i.body, i.canonical_url, i.media_type, i.metadata_json FROM items i\n` +
                 `${joins.join('\n')}\nWHERE ${conditions.join(' AND ')}\n` +
                 `ORDER BY ${order.join(', ')}\nLIMIT ?`,
             ...params,
         );
         if (rows.length === 0) return [];
 
-        const labelsByItem = await this.labelsFor(rows.map((row) => row.id));
+        const labelsByItem = await this.labelsFor(
+            rows.map((row) => row.id),
+            policy,
+        );
         return rows.map((row) => ({
             id: row.id,
             title: row.title,
@@ -307,11 +469,19 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
         }));
     }
 
-    /** Every stored decision answer for `ids`, keyed by item id, in decision-id order. */
-    private async labelsFor(ids: readonly string[]): Promise<Map<string, Record<string, string>>> {
+    /**
+     * Every CURRENT decision answer for `ids`, keyed by item id, in decision-id order — the same
+     * `labels_current` CTE the profile joins use, so the inlined labels and the `where` predicates
+     * can never disagree (R4).
+     */
+    private async labelsFor(ids: readonly string[], policy: LabelPolicy): Promise<Map<string, Record<string, string>>> {
+        if (ids.length === 0) return new Map();
+        const { sql: labelsCurrent, params: labelsParams } = labelsCurrentSql(policy);
         const placeholders = ids.map(() => '?').join(', ');
         const rows = await this.adapter.queryAll<{ item_id: string; decision_id: string; value: string }>(
-            `SELECT item_id, decision_id, value FROM labels WHERE item_id IN (${placeholders}) ORDER BY item_id, decision_id`,
+            `WITH ${labelsCurrent}\nSELECT item_id, decision_id, value FROM ${LABELS_CURRENT} ` +
+                `WHERE item_id IN (${placeholders}) ORDER BY item_id, decision_id`,
+            ...labelsParams,
             ...ids,
         );
         const byItem = new Map<string, Record<string, string>>();
@@ -323,13 +493,39 @@ export class ItemsDao extends EntityDao<typeof items, typeof items.id> {
         return byItem;
     }
 
-    /** Id → stored `content_hash` for the ids that already exist. */
-    private async existingContentHashes(ids: readonly string[]): Promise<Map<string, string>> {
-        const placeholders = ids.map(() => '?').join(', ');
-        const rows = await this.adapter.queryAll<{ id: string; content_hash: string }>(
-            `SELECT id, content_hash FROM items WHERE id IN (${placeholders})`,
-            ...ids,
+    /** Ids whose `first_seen_run` or `last_seen_run` is `runId` (R6's `run:` replay selector). */
+    async idsByRun(runId: string): Promise<string[]> {
+        const rows = await this.adapter.queryAll<{ id: string }>(
+            'SELECT id FROM items WHERE first_seen_run = ? OR last_seen_run = ? ORDER BY id',
+            runId,
+            runId,
         );
-        return new Map(rows.map((row) => [row.id, row.content_hash]));
+        return rows.map((row) => row.id);
+    }
+
+    /** Ids first seen at or after `sinceMs` (R6's `since:` replay selector). */
+    async idsSince(sinceMs: number): Promise<string[]> {
+        const rows = await this.adapter.queryAll<{ id: string }>(
+            'SELECT id FROM items WHERE first_seen_at >= ? ORDER BY id',
+            sinceMs,
+        );
+        return rows.map((row) => row.id);
+    }
+
+    /** Id → `{ contentHash, storyId, firstSeenAt }` for the ids that already exist. */
+    private async existingItems(ids: readonly string[]): Promise<Map<string, ExistingItem>> {
+        const placeholders = ids.map(() => '?').join(', ');
+        const rows = await this.adapter.queryAll<{
+            id: string;
+            content_hash: string;
+            story_id: string | null;
+            first_seen_at: number;
+        }>(`SELECT id, content_hash, story_id, first_seen_at FROM items WHERE id IN (${placeholders})`, ...ids);
+        return new Map(
+            rows.map((row) => [
+                row.id,
+                { contentHash: row.content_hash, storyId: row.story_id, firstSeenAt: row.first_seen_at },
+            ]),
+        );
     }
 }

@@ -40,8 +40,8 @@
  *     directory left uncreated.
  * 16. `LocksDao.acquire` hands one lock to two runs, is not re-entrant for the holder,
  *     never steals an expired claim, or `release` deletes another run's row.
- * 17. `EpisodeUsageDao.markUsed` duplicates a row on a retried run, or `usedItemIds`
- *     leaks another workflow's rows.
+ * 17. `SelectionsDao.insertMany` duplicates a row on a retried run, or `excludedStories`
+ *     leaks another topic's (or a dropped) story.
  * 18. `kk store migrate` prints a non-JSON line or the wrong shape, is not idempotent
  *     across two runs, or exits 0 when the database cannot be opened.
  */
@@ -66,7 +66,7 @@ describe('openStore', () => {
     it('applies the migrations once, journals them, and keeps the schema', async () => {
         const dir = makeTempDir();
         const { store, dbPath } = await openTempStore(dir);
-        expect(store.appliedMigrations).toBe(2);
+        expect(store.appliedMigrations).toBe(3);
         await store.close();
 
         const raw = readRaw(dbPath);
@@ -79,19 +79,25 @@ describe('openStore', () => {
             .all() as Array<{ name: string }>;
         raw.close();
 
-        expect(journal.map((row) => row.id)).toEqual(['0001_kk_store_init', '0002_labels_confidence_run_id']);
+        expect(journal.map((row) => row.id)).toEqual([
+            '0001_kk_store_init',
+            '0002_labels_confidence_run_id',
+            '0003_store_v2',
+        ]);
         expect(tables.map((row) => row.name)).toEqual([
             '__kk_store_migrations',
             'collect_runs',
-            'episode_usage',
             'items',
             'labels',
             'locks',
+            'selections',
         ]);
         expect(indexes.map((row) => row.name)).toEqual([
-            'episode_usage_identity_unique',
-            'episode_usage_workflow_item_idx',
-            'labels_item_decision_unique',
+            'items_story_idx',
+            'labels_item_decision_idx',
+            'labels_observation_unique',
+            'selections_identity_unique',
+            'selections_topic_story_status_idx',
         ]);
 
         const reopened = await openStore({ path: dbPath });
@@ -181,11 +187,11 @@ describe('openStore', () => {
         const dbPath = join(dir, 'race.db');
         const [a, b] = await Promise.all([openStore({ path: dbPath }), openStore({ path: dbPath })]);
 
-        expect(a.appliedMigrations + b.appliedMigrations).toBe(2);
+        expect(a.appliedMigrations + b.appliedMigrations).toBe(3);
         const raw = readRaw(dbPath);
         const journal = raw.query('SELECT COUNT(*) AS n FROM __kk_store_migrations').get() as { n: number };
         raw.close();
-        expect(journal.n).toBe(2);
+        expect(journal.n).toBe(3);
         await a.close();
         await b.close();
     });
@@ -202,7 +208,7 @@ describe('one collect run end to end', () => {
         dbPath = opened.dbPath;
     });
 
-    it('takes the run lock, ingests both Docs, labels them, and marks usage', async () => {
+    it('takes the run lock, ingests both Docs, labels them, and records the selection', async () => {
         expect(await store.locks.acquire('collect', runId, 7_200_000)).toBe(true);
         await store.collectRuns.start({ runId, sourceCounts: { 'web-search': 1 } });
 
@@ -216,21 +222,31 @@ describe('one collect run end to end', () => {
         });
 
         for (const id of ingested.newIds) {
-            await store.labels.upsertLabel({
+            await store.labels.recordObservation({
                 itemId: id,
                 decisionId: 'kk-item-category',
                 value: 'ai-news',
                 maker: 'heuristic',
                 source: 'heuristic',
+                runId,
             });
         }
-        await store.usage.markUsed({ itemId: ingested.newIds[0] as string, workflow: 'kk-daily-ai-voice2', runId });
+        await store.selections.insertMany([
+            {
+                topic: 'ai-news',
+                itemId: ingested.newIds[0] as string,
+                runId,
+                storyId: ingested.newIds[0] as string,
+                workflow: 'kk-daily-ai-voice2',
+                status: 'published',
+            },
+        ]);
 
         const run = await store.collectRuns.findById(runId);
         expect(run?.status).toBe('done');
         expect(run?.inserted).toBe(2);
         expect(await store.labels.listForItem(ingested.newIds[0] as string)).toHaveLength(1);
-        expect(await store.usage.usedItemIds('kk-daily-ai-voice2')).toEqual([ingested.newIds[0] as string]);
+        expect(await store.selections.excludedStories('ai-news')).toEqual([ingested.newIds[0] as string]);
         expect((await store.items.findAll()).map((row) => row.lastSeenRun)).toEqual([runId, runId]);
 
         // A second run re-ingesting the same Docs is unchanged, and re-labelling is skipped

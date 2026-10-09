@@ -163,3 +163,9 @@ decisions:
   makers:
     kk-item-category: fm-local
     kk-item-quality: laya-local
+    kk-item-china-politics: typesafe
+    kk-item-audience: typesafe
+    # kk-item-sensitivity deliberately has NO override: no configured maker yields a usable
+    # integer level for it (fm-local errors, laya-local has no backend, typesafe answers a 0-1
+    # fraction which kk's level validator refuses), so it inherits the global maker and its
+    # observations stay unusable until the maker/scale contract is settled - see task 0236.

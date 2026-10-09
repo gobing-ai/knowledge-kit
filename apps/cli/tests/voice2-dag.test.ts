@@ -320,7 +320,10 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(readers).toEqual(['read-work-dir', 'read-run-date'] as string[]);
         const extract = dag.nodes.find((node) => node.id === 'extract');
         expect(String(extract?.action?.options?.command)).toContain('kk store extract --topic ai-news');
-        expect(String(extract?.action?.options?.command)).toContain('--exclude-used kk-daily-ai-voice2');
+        // 0228 R6c: exclusion is topic-scoped and always on; the workflow-scoped flag is gone.
+        expect(String(extract?.action?.options?.command)).not.toContain('--exclude-used');
+        // …and the old workflow-keyed ledger verb is gone from the DAG entirely (R5).
+        expect(dag.nodes.map((node) => node.id)).not.toContain('mark-used');
     });
 
     it('gives every node exactly one action, and only kk / agent.run / file.read.into-var (R3)', () => {
@@ -346,7 +349,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(String(plan?.condition?.options?.command)).toContain('kk store pool-count');
         expect(String(plan?.condition?.options?.command)).toContain('--min 1');
         // The pool guard sits on every fan-out root of the content tree: `plan` (the only node whose
-        // whole dependency set is the extract chain) and `mark-used` (which also pins `extract`).
+        // whole dependency set is the extract chain) and `mark-published` (which also pins `extract`).
         const direct = dag.nodes.filter((node) => (node.dependsOn ?? []).join(',') === 'extract').map((n) => n.id);
         expect(direct).toEqual(['plan']);
         for (const id of ['run-report', 'ledger']) {
@@ -363,6 +366,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
             'cover-brief',
             'plan-translate',
             'script-style',
+            'select',
         ]);
         // …and the nodes that settle either way (article/script/wrap-docs/generate) keep the same
         // guard, so a pool that filtered to zero items builds nothing.
@@ -405,12 +409,31 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         }
     });
 
-    it('orders mark-used after publish-classify and leaves ledger as the final node (R8)', () => {
-        const markUsed = dag.nodes.find((node) => node.id === 'mark-used');
-        expect(markUsed?.dependsOn).toContain('publish-classify');
-        expect(String(markUsed?.action?.options?.command)).toContain(
-            'kk store mark-used --workflow kk-daily-ai-voice2',
+    it('records the planned set in `select` right after qc-content, and promotes it only when publishing (R6)', () => {
+        // 0228 R6a: the selection is recorded at QC — the invoke point no longer depends on the DAG
+        // reaching its tail, so a run that fails, pauses or skips publish still excludes its set.
+        const ids = dag.nodes.map((node) => node.id);
+        expect(ids[ids.indexOf('qc-content') + 1]).toBe('select');
+        const select = dag.nodes.find((node) => node.id === 'select');
+        expect(select?.dependsOn).toEqual(['qc-content']);
+        expect(String(select?.condition?.options?.command)).toContain('_04_quality-control-content_candidates.json');
+        const selectCommand = String(select?.action?.options?.command);
+        expect(selectCommand).toContain('kk store select --topic ai-news --workflow kk-daily-ai-voice2');
+        expect(selectCommand).toContain(`--run "\${vars.__runId}"`);
+        expect(selectCommand).toContain(
+            `--in "\${vars.work_dir}/21-plan/\${vars.run_date}_04_quality-control-content_candidates.json"`,
         );
+
+        // 0228 R6b: `mark-published` keeps mark-used's position, and its guard refuses a dry run.
+        const markPublished = dag.nodes.find((node) => node.id === 'mark-published');
+        expect(markPublished?.dependsOn).toEqual(['publish-classify', 'extract']);
+        const guard = String(markPublished?.condition?.options?.command);
+        expect(guard).toContain('_04_quality-control-content_candidates.json');
+        expect(guard).toContain(`test "\${vars.publish_enabled}" = "true"`);
+        expect(String(markPublished?.action?.options?.command)).toContain(
+            `kk store mark-published --topic ai-news --run "\${vars.__runId}"`,
+        );
+        expect(dag.nodes.find((node) => node.id === 'run-report')?.dependsOn).toContain('mark-published');
         expect(dependentsOf(dag, 'ledger')).toEqual([]);
         expect(String(dag.nodes.find((node) => node.id === 'ledger')?.action?.options?.command)).toContain(
             'kk ledger append --workflow kk-daily-ai-voice2',
@@ -587,7 +610,7 @@ describe('kk-daily-ai-voice2 — empty pool ends the run as no-content (AC3)', (
             expect(called(outcome, prefix), `${prefix} must be skipped on an empty pool`).toBe(false);
         }
         expect(called(outcome, 'stage daily-publish-classify')).toBe(false);
-        expect(called(outcome, 'store mark-used')).toBe(false);
+        expect(called(outcome, 'store mark-published')).toBe(false);
         // run-report and ledger list `extract` in dependsOn, so they still ran.
         expect(called(outcome, 'daily run-report')).toBe(true);
         expect(called(outcome, 'ledger append')).toBe(true);
@@ -631,7 +654,9 @@ describe('kk-daily-ai-voice2 — independent branches run concurrently and fan i
         expect(called(outcome, 'stage daily-publish-prep')).toBe(false);
         expect(called(outcome, 'stage daily-publish-classify')).toBe(false);
         expect(called(outcome, 'stage daily-quality-report')).toBe(true);
-        expect(called(outcome, 'store mark-used')).toBe(true);
+        // 0228 R6b: a dry run (publish_enabled=false) must NOT promote its rows — the guard refuses,
+        // so they stay `selected` and still exclude the next day.
+        expect(called(outcome, 'store mark-published')).toBe(false);
         expect(called(outcome, 'ledger append')).toBe(true);
         // Ordering: extract → plan → qc-content → … → run-report → ledger.
         const order = outcome.log.map((line) => line.split(' ').slice(0, 3).join(' '));

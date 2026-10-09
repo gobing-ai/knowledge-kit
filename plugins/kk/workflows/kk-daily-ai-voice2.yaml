@@ -4,8 +4,9 @@ description: >-
   Daily AI tech-sharing pipeline for 「咸话咸说之每日AI乱炖」 (column 「每日AI乱炖」), rebuilt as a static
   dependency DAG over the kk store (task 0211, ADR-031, design docs/design/kk-collect-and-daily-voice2.md §6).
   It starts from the store, not from ingestion: `kk store extract` selects today's pool from the
-  labels `kk-collect` (0208/0209) wrote, and the store's `episode_usage` ledger is the cross-day
-  dedup. The daily work is unchanged after that — plan → content QC → article/cover/script →
+  labels `kk-collect` (0208/0209) wrote, and the store's topic-scoped `selections` ledger records the
+  set at QC so it never re-enters a later pool — whether or not the run publishes. The daily work is
+  unchanged after that — plan → content QC → article/cover/script →
   content safety (nested state machine, kk-daily-safety.yaml) → operator review → audio → publish
   (surfdash + podcast) → independent soft channels (xhs, wechat, locales) → classify → ledger. It
   supersedes kk-daily-ai-voice.yaml, which stays untouched until cut-over §8.
@@ -66,7 +67,7 @@ vars:
   qc_min_episode_items: "8"
   episode_min_minutes: "15"
   episode_max_minutes: "20"
-  # Run id, injected by spur at launch (0674 R5/R8) — the episode_usage / ledger / mark-used
+  # Run id, injected by spur at launch (0674 R5/R8) — the selections / ledger / mark-published
   # identity. A shell command may only reference declared vars.
   __runId: ""
 
@@ -118,7 +119,8 @@ nodes:
   - id: extract
     description: >-
       Select today's episode pool from the kk store: the ai-news topic profile over the labels
-      kk-collect wrote, minus everything this workflow already used (episode_usage). Writes
+      kk-collect wrote, minus every story already selected or published for the ai-news topic (the
+      store's `selections` ledger, written by the `select` node below). Writes
       <work_dir>/10-collect/pool.json (the fan-in blended.json shape) and prints {count}. An empty
       pool writes [] and exits 0 — the run's no-content path, not a failure.
     dependsOn: [read-run-date]
@@ -126,7 +128,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk store extract --topic ai-news --window "${vars.window}" --exclude-used kk-daily-ai-voice2
+          kk store extract --topic ai-news --window "${vars.window}"
           --out "${vars.work_dir}/10-collect/pool.json"
 
   - id: plan
@@ -158,6 +160,26 @@ nodes:
       options:
         command: >-
           kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}" "${vars.qc_min_episode_items}"
+
+  - id: select
+    description: >-
+      Record today's planned set in the store's topic-scoped `selections` ledger (0228). It runs at
+      QC, the moment the run has committed to its episode set, so the cross-day exclusion no longer
+      depends on the DAG reaching its tail: a run that fails, pauses at review or skips publish still
+      excludes what it planned. Guarded on the QC candidates — a pool that filtered to zero items
+      selects nothing.
+    dependsOn: [qc-content]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+    action:
+      kind: shell
+      options:
+        command: >-
+          kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run "${vars.__runId}"
+          --in "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json"
 
   # ---- content branches: translate / prose article / cover / script author (concurrent) ----
   - id: plan-translate
@@ -607,23 +629,25 @@ nodes:
           kk daily publish-classify --work-dir "${vars.work_dir}" --run-date "${vars.run_date}"
           --surfdash-root "${vars.surfdash_root}" --plugins-path "${vars.plugins_path}" --fold-tail
 
-  - id: mark-used
+  - id: mark-published
     description: >-
-      Record the items this run used in the store's episode_usage (the cross-day dedup): runs after
-      publish-classify, so a run that failed to classify records nothing. Skipped on an empty pool
-      (there is no plan to mark).
+      Promote this run's `selected` rows to `published` in the store's `selections` ledger (0228
+      R2). It runs after publish-classify but only when publish actually ran (`publish_enabled=true`),
+      so a DRY RUN never promotes: its rows stay `selected`, still exclude the next day, and the
+      operator frees them with `kk store release --run <id>`. Skipped on an empty pool (there is no
+      selection to promote).
     dependsOn: [publish-classify, extract]
     condition:
       kind: shell
       options:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.publish_enabled}" = "true"
     action:
       kind: shell
       options:
         command: >-
-          kk store mark-used --workflow kk-daily-ai-voice2 --run "${vars.__runId}"
-          --in "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
+          kk store mark-published --topic ai-news --run "${vars.__runId}"
 
   - id: run-report
     description: >-
@@ -631,7 +655,7 @@ nodes:
       throws) and record the pool outcome next to it: `no-content` when the store pool was empty or
       filtered to zero items. It lists `extract` in dependsOn, so an empty pool still runs it (the
       engine's skip rule: all-deps-skipped skips a node, a done+skipped mix proceeds).
-    dependsOn: [mark-used, publish-classify, extract]
+    dependsOn: [mark-published, publish-classify, extract]
     action:
       kind: shell
       options:

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { compileProfile, DEFAULT_EXTRACT_LIMIT, ProfileInvalidError, parseProfile } from '../src/profile';
+import {
+    compileProfile,
+    DEFAULT_EXTRACT_LIMIT,
+    ITEM_DECISION_IDS,
+    ProfileInvalidError,
+    parseProfile,
+} from '../src/profile';
 import { REPO_ROOT } from './helpers';
 
 /**
@@ -20,7 +26,7 @@ import { REPO_ROOT } from './helpers';
  * 9. A missing/blank `topic`, a non-mapping document, or invalid YAML throws something other
  *    than `ProfileInvalidError` (the caller's `kk.store.profile.invalid` branch).
  * 10. `compileProfile` loses the profile's predicates/order, or ignores the `--limit` /
- *    `--exclude-used` overrides.
+ *    `excludeTopic` overrides.
  * 11. The default limit is not the episode cap.
  */
 
@@ -35,6 +41,9 @@ describe('parseProfile', () => {
             { decisionId: 'kk-item-category', op: 'in', values: ['ai-news', 'ai-industry'] },
             { decisionId: 'kk-item-quality', op: 'gte', value: 2 },
             { decisionId: 'kk-item-importance', op: 'gte', value: 3 },
+            // Task 0229 R5: the conservative moderation gate. An inner join on `labels_current`,
+            // so an item with no current china-politics answer is excluded (fail-closed).
+            { decisionId: 'kk-item-china-politics', op: 'lte', value: 1 },
         ]);
         expect(profile.order).toEqual([
             { decisionId: 'kk-item-urgency', direction: 'desc' },
@@ -63,6 +72,20 @@ describe('parseProfile', () => {
     it('defaults order to empty when the profile omits it', () => {
         const profile = parseProfile('topic: t\nwhere:\n  kk-item-category: { in: [ai-news] }\n');
         expect(profile.order).toEqual([]);
+    });
+
+    it('accepts the three judgment decisions 0229 added to the catalog (R6)', () => {
+        // The profile gate is why the ids must be in `ITEM_DECISION_IDS`: a profile naming one and
+        // rejected here would fail `kk.store.profile.invalid` instead of gating the pool.
+        for (const id of ['kk-item-china-politics', 'kk-item-sensitivity', 'kk-item-audience']) {
+            expect(ITEM_DECISION_IDS).toContain(id);
+        }
+        const profile = parseProfile('topic: t\nwhere:\n  kk-item-china-politics: { lte: 1 }\n');
+        expect(profile.where).toEqual([{ decisionId: 'kk-item-china-politics', op: 'lte', value: 1 }]);
+        const audience = parseProfile('topic: t\nwhere:\n  kk-item-audience: { in: [general, researcher] }\n');
+        expect(audience.where).toEqual([
+            { decisionId: 'kk-item-audience', op: 'in', values: ['general', 'researcher'] },
+        ]);
     });
 
     it('rejects an unknown top-level key', () => {
@@ -129,19 +152,19 @@ describe('compileProfile', () => {
         expect(query.windowMs).toBe(86_400_000);
         expect(query.now).toBe(1_000_000);
         expect(query.limit).toBe(DEFAULT_EXTRACT_LIMIT);
-        expect(query.excludeWorkflow).toBeUndefined();
+        expect(query.excludeTopic).toBeUndefined();
     });
 
-    it('applies the --limit and --exclude-used overrides', () => {
+    it('applies the --limit and excludeTopic overrides', () => {
         const profile = parseProfile(readFileSync(AI_NEWS_PROFILE, 'utf-8'));
         const query = compileProfile(profile, {
             windowMs: 3_600_000,
             now: 1,
             limit: 5,
-            excludeWorkflow: 'kk-daily-ai-voice2',
+            excludeTopic: 'ai-news',
         });
 
         expect(query.limit).toBe(5);
-        expect(query.excludeWorkflow).toBe('kk-daily-ai-voice2');
+        expect(query.excludeTopic).toBe('ai-news');
     });
 });

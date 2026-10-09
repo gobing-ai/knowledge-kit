@@ -12,10 +12,12 @@
  * Decision ids the kk item-label catalog declares
  * (`plugins/kk/decisions/kk-items.yaml`) — the only keys a profile may name.
  *
- * Kept in lockstep with the catalog on purpose: these five ids are already the
- * vocabulary `kk store label` writes (`CATEGORY_DECISION_ID` + the four
- * `kk-item-<dimension>` score decisions), so a profile referencing anything else
- * would silently select nothing.
+ * Kept in lockstep with the catalog on purpose: these are exactly the ids
+ * `kk store label` writes — the original five (`CATEGORY_DECISION_ID` + the four
+ * `kk-item-<dimension>` score decisions) plus the three judgment decisions
+ * (`kk-item-china-politics`/`kk-item-sensitivity` score 0–3 and `kk-item-audience`
+ * choice, task 0229 R6) — so a profile referencing anything else would silently
+ * select nothing.
  */
 export const ITEM_DECISION_IDS: readonly string[] = [
     'kk-item-category',
@@ -23,6 +25,9 @@ export const ITEM_DECISION_IDS: readonly string[] = [
     'kk-item-importance',
     'kk-item-urgency',
     'kk-item-impact',
+    'kk-item-china-politics',
+    'kk-item-sensitivity',
+    'kk-item-audience',
 ];
 
 /** The item's own first-seen stamp — the one non-decision key `order` may name. */
@@ -64,8 +69,8 @@ export interface CompileProfileOptions {
     windowMs: number;
     /** Injected clock (epoch ms) so extraction is deterministic for a fixed database. */
     now: number;
-    /** When set, items this workflow already used are excluded (`episode_usage`). */
-    excludeWorkflow?: string;
+    /** When set, items whose story is already selected/published for this topic are excluded. */
+    excludeTopic?: string;
     /** `--limit` override; falls back to the profile's own cap. */
     limit?: number;
 }
@@ -82,7 +87,7 @@ export interface ProfileQuery {
     windowMs: number;
     now: number;
     limit: number;
-    excludeWorkflow?: string;
+    excludeTopic?: string;
 }
 
 /**
@@ -223,6 +228,6 @@ export function compileProfile(profile: ExtractProfile, options: CompileProfileO
         windowMs: options.windowMs,
         now: options.now,
         limit: options.limit ?? profile.limit,
-        ...(options.excludeWorkflow === undefined ? {} : { excludeWorkflow: options.excludeWorkflow }),
+        ...(options.excludeTopic === undefined ? {} : { excludeTopic: options.excludeTopic }),
     };
 }

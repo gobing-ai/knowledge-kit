@@ -1,8 +1,8 @@
 import { CollectRunsDao } from './dao/collect-runs';
-import { EpisodeUsageDao } from './dao/episode-usage';
 import { ItemsDao } from './dao/items';
 import { LabelsDao } from './dao/labels';
 import { LocksDao } from './dao/locks';
+import { SelectionsDao } from './dao/selections';
 import { applyKkMigrations } from './migrations';
 
 /** Options for {@link openStore}. */
@@ -16,7 +16,7 @@ export interface Store {
     items: ItemsDao;
     collectRuns: CollectRunsDao;
     labels: LabelsDao;
-    usage: EpisodeUsageDao;
+    selections: SelectionsDao;
     locks: LocksDao;
     /** Migrations applied by this open (`0` when the journal was already complete). */
     appliedMigrations: number;
@@ -55,7 +55,7 @@ export async function openStore(options: OpenStoreOptions): Promise<Store> {
             items: new ItemsDao(adapter),
             collectRuns: new CollectRunsDao(adapter),
             labels: new LabelsDao(adapter),
-            usage: new EpisodeUsageDao(adapter),
+            selections: new SelectionsDao(adapter),
             locks: new LocksDao(adapter),
             appliedMigrations,
             close: async () => {

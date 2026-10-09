@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
 import { type Command, CommanderError } from 'commander';
 import { resolveKkConfigPath, runInvoke } from '../invoke';
 import { consoleOutput } from '../output';
@@ -120,6 +121,34 @@ function formatRunDate(now: Date = new Date()): string {
 }
 
 /**
+ * Name every OTHER run that still holds `selected` rows for `workflow` (R7) — one stderr line per
+ * run, each carrying the exact `kk store release --run <id>` that frees it.
+ *
+ * A run that promoted its rows with `kk store mark-published` did publish; any run still holding
+ * `selected` rows did not, so no spur-trace reading is needed. `prepare` runs before this run's own
+ * `select`, so it never names itself. Best-effort and read-only: a store that is missing or fails to
+ * open prints nothing and never fails `prepare`.
+ */
+async function warnUnreleasedRuns(workflow: string): Promise<void> {
+    try {
+        const dbPath = await resolveStorePath(resolveKkConfigPath());
+        if (!existsSync(dbPath)) return;
+        const store = await openStore({ path: dbPath });
+        try {
+            for (const runId of await store.selections.selectedRuns(workflow)) {
+                consoleOutput.error(
+                    `kk.daily.prepare.unreleased-run: run '${runId}' still holds selected items for '${workflow}' — free them with: kk store release --run ${runId}`,
+                );
+            }
+        } finally {
+            await store.close();
+        }
+    } catch {
+        // R7: an unopenable store is not a prepare failure — the workspace is already composed.
+    }
+}
+
+/**
  * `kk daily prepare --workflow <w> [--work-dir <dir>] [--run-date <stamp>] [--ledger-sync]` —
  * compose the run workspace and anchor it for the workflow's read chain.
  *
@@ -128,8 +157,10 @@ function formatRunDate(now: Date = new Date()): string {
  * re-derives the same directory. Writes `<work_dir>/run-date.txt`, the safety revise budget,
  * the `kk --version` stamp, `.spur/runs/<workflow>/work-dir.txt` (the cwd-relative anchor the
  * workflow's `file.read.into-var` node reads — shell actions cannot set vars) and voice1's
- * `10-ingest/*` source configs. `--ledger-sync` additionally appends every finished run of the
- * workflow that the ledger does not record yet; a failed sync is a warning, never an aborted run.
+ * `10-ingest/*` source configs. It also names, on stderr, every other run still holding `selected`
+ * rows for the workflow and the `kk store release --run <id>` that frees it (R7). `--ledger-sync`
+ * additionally appends every finished run of the workflow that the ledger does not record yet; a
+ * failed sync is a warning, never an aborted run.
  */
 async function prepareAction(options: DailyPrepareOptions): Promise<void> {
     try {
@@ -150,6 +181,9 @@ async function prepareAction(options: DailyPrepareOptions): Promise<void> {
         writeFileSync(join(workDir, '10-ingest/last30days.json'), `${JSON.stringify({})}\n`);
         writeFileSync(join(workDir, '10-ingest/horizon.json'), `${JSON.stringify({})}\n`);
         consoleOutput.write(JSON.stringify({ workDir, runDate: dirDate, workflow: options.workflow }));
+
+        // R7: name the earlier runs whose planned items are still held, before this run selects.
+        await warnUnreleasedRuns(options.workflow);
 
         if (options.ledgerSync === true) {
             try {

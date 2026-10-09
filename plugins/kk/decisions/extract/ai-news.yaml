@@ -18,4 +18,10 @@ where:
   # finding). Raise this back when a full-text ingest source lands.
   kk-item-quality: { gte: 2 }
   kk-item-importance: { gte: 3 }
+  # Conservative moderation gate (task 0229 R5): 0-1 is "no reference to the political system" or
+  # "a factual policy/government mention as news context". A `where` key is an INNER join on
+  # `labels_current`, so an item with NO current china-politics answer is excluded (fail-closed) —
+  # the pool shrinks rather than admitting an unjudged item. Chinese companies/models/industry do
+  # not trip the gate: they score 0.
+  kk-item-china-politics: { lte: 1 }
 order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
