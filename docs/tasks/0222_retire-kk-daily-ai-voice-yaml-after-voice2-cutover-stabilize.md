@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Retire kk-daily-ai-voice.yaml after voice2 cutover stabilizes
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-10-08T16:50:37.488Z
-updated_at: "2026-10-08T20:46:24.431Z"
+updated_at: "2026-10-09T17:42:46.415Z"
 
 feature_id: G1
 ---
@@ -56,3 +56,6 @@ Captured from the creation title: "Retire kk-daily-ai-voice.yaml after voice2 cu
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-10-09T17:42:46.415Z todo → cancelled (system)
+

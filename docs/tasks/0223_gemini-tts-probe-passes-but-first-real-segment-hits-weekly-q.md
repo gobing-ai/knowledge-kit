@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Gemini TTS probe passes but first real segment hits weekly-quota 429
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-10-08T16:50:39.872Z
-updated_at: "2026-10-08T16:50:40.245Z"
+updated_at: "2026-10-09T17:42:40.005Z"
 
 ---
 
@@ -55,3 +55,6 @@ Captured from the creation title: "Gemini TTS probe passes but first real segmen
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-10-09T17:42:40.005Z todo → cancelled (system)
+

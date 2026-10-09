@@ -1,14 +1,17 @@
 ---
 schema_version: 1
 name: "0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree"
-status: todo
+status: done
 template: issue
 created_at: 2026-10-09T17:29:59.582Z
-updated_at: "2026-10-09T17:41:47.139Z"
+updated_at: "2026-10-09T17:42:46.559Z"
 feature_id: G32
 
 priority: P1
 ac_altitude: task-local
+ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/run/0241-verdict.json
 ---
 
 ## 0241. 0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree
@@ -59,9 +62,22 @@ The durable guard against a repeat is harness-owned (see the Design section) and
 
 ### Acceptance Criteria
 
-- [x] AC1 — `0230`'s record no longer asserts the live store was untouched; it names the migration, the mechanism and the restore (req: R1).
-- [x] AC2 — The incident's mechanism, archive path and resolution are recorded in one place (req: R2).
-- [x] AC3 — The guard that would prevent a repeat is recorded with an explicit owner and disposition, with no unowned gap left open (req: R3).
+```gherkin
+Scenario: AC1 — 0230's record no longer asserts the live store was untouched (req: R1)
+  Given 0230's `## Testing` as written during the batch claims the store was never opened for writing
+  When the correction is applied through the CLI and read back
+  Then the section names the migration, the mechanism and the restore, and every remaining occurrence of the old wording is a quotation of it
+
+Scenario: AC2 — the incident's mechanism, archive and resolution are recorded in one place (req: R2)
+  Given the incident happened and was resolved
+  When an auditor reads only this task's Background and Design
+  Then the mechanism, the archive path, the restore and the recovery options are all named there
+
+Scenario: AC3 — the repeat-guard is recorded with an owner and no unowned gap (req: R3)
+  Given the hazard can recur while no automated check exists
+  When this task is closed
+  Then the guard's owner surface, its disposition and the project-side fallback are recorded, and no open item is left unattributed
+```
 
 ### Q&A
 
@@ -183,3 +199,6 @@ No P1/P2 finding stands against this task's own requirements: the record correct
 - `docs/tasks/0242_*.md` — the live-store / collector state this task hands over.
 
 ### History
+
+- 2026-10-09T17:42:46.385Z todo → done (system)
+

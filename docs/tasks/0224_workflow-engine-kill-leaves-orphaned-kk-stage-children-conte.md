@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Workflow engine kill leaves orphaned kk stage children contending on single-slot services
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-10-08T16:50:43.052Z
-updated_at: "2026-10-08T16:50:43.297Z"
+updated_at: "2026-10-09T17:42:33.830Z"
 
 ---
 
@@ -55,3 +55,6 @@ Captured from the creation title: "Workflow engine kill leaves orphaned kk stage
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-10-09T17:42:33.830Z todo → cancelled (system)
+
