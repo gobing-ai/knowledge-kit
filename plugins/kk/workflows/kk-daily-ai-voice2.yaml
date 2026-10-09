@@ -422,7 +422,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}"
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1"
 
   - id: intro
     description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"

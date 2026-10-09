@@ -1,6 +1,6 @@
 # Voice2 segmented episode speech
 
-**Status:** proposed (feature G13, ADR-034). Not implemented.
+**Status:** implemented (feature G13, ADR-034).
 
 Voice2 turns one VoiceScript into one episode file by synthesizing **sections**, not by sending the whole script in one request. Voice1 keeps today's one-request generate.
 

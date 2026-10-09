@@ -388,7 +388,8 @@ export function dailyEpisodeDuration(args: string[]): void {
 }
 
 export function dailyGenerate(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', vdriver = ''] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', vdriver = '', sectionConcurrency = ''] =
+        args;
     // 20260917 review: the workflow picks a voice driver by short name; both drivers' envs are
     // passed unconditionally so switching `vdriver` needs no shell changes. Unknown -> fail loud.
     const VOICE_DRIVERS: Record<string, string> = {
@@ -405,52 +406,392 @@ export function dailyGenerate(args: string[]): void {
     }
     const docs = join(workDir, '30-audio', `${runDate}_10_wrap-docs_docs.json`);
     const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+
+    if (!sectionConcurrency) {
+        timed(workDir, 'generate', () => {
+            if (isFile(content) && metadataOf(readJson(content)).qc !== undefined) {
+                const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
+                if (qc?.passed === true) {
+                    console.log(`audio cached: ${content} (QC passed)`);
+                    return;
+                }
+            }
+            // Gemini quota probe (20261006): the 06:00 cron hit gemini-3.8-flash-tts 429 with a
+            // multi-hour retry-after after the shared key's window drained overnight. One tiny
+            // render (~1 request) before the real episode; ANY probe failure (quota, key, network)
+            // flips this run to the local voicebox driver instead of dying mid-episode — voicebox
+            // needs no key. Operator decision 20261006: keep the gemini default + auto-fallback.
+            if (vdriver === 'gemini') {
+                const probeDir = join(workDir, '30-audio');
+                const probeIn = join(probeDir, '.gemini-probe-in.json');
+                const probeOut = join(probeDir, '.gemini-probe-out.json');
+                const docsList = readJson(docs) as Array<Record<string, unknown>>;
+                if (docsList.length > 0) {
+                    writeJsonText(probeIn, [{ ...docsList[0], body: 'Hello.' }]);
+                    const probe = spawnSync(
+                        'kk',
+                        [
+                            'executor',
+                            'run',
+                            'gemini-tts',
+                            '--in',
+                            probeIn,
+                            '--out',
+                            probeOut,
+                            ...pluginsArgs(pluginsPath),
+                        ],
+                        { encoding: 'utf8', timeout: 120_000, env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 } },
+                    );
+                    for (const stale of [
+                        probeIn,
+                        probeOut,
+                        probeOut.replace(/\.json$/, '.wav'),
+                        probeOut.replace(/\.json$/, '.mp3'),
+                    ])
+                        rmSync(stale, { force: true });
+                    if (probe.status !== 0) {
+                        const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
+                        console.log(
+                            `generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`,
+                        );
+                        voiceGenerator = VOICE_DRIVERS.voicebox;
+                    } else {
+                        console.log('generate: gemini quota probe ok');
+                    }
+                }
+            }
+            kk(['executor', 'run', voiceGenerator, '--in', docs, '--out', content, ...pluginsArgs(pluginsPath)], {
+                env: { VOICE_GEN_MP3: transcodeMp3 },
+            });
+        });
+        return;
+    }
+
+    if (sectionConcurrency !== '1') {
+        failWith(1, `generate: section_concurrency '${sectionConcurrency}' not supported (must be 1)`);
+    }
+
     timed(workDir, 'generate', () => {
-        if (isFile(content) && metadataOf(readJson(content)).qc !== undefined) {
-            const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
-            if (qc?.passed === true) {
-                console.log(`audio cached: ${content} (QC passed)`);
-                return;
+        const scriptPath = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
+        if (!existsSync(scriptPath)) {
+            failWith(1, `generate: voicescript not found: ${scriptPath}`);
+        }
+        const scriptRaw = readFileSync(scriptPath, 'utf8');
+        const script = Bun.YAML.parse(scriptRaw) as Record<string, unknown>;
+        const segments = (script.segments ?? []) as Array<Record<string, unknown>>;
+        if (!Array.isArray(segments) || segments.length < 2) {
+            failWith(1, 'generate: invalid voicescript (expected at least opening and closing segments)');
+        }
+
+        // Grouping: first is opening, last is closing, middle segments split after gap_ms: 1200
+        const middleSegments = segments.slice(1, -1);
+        const itemSections: Array<Array<Record<string, unknown>>> = [];
+        let currentItem: Array<Record<string, unknown>> = [];
+        for (const seg of middleSegments) {
+            currentItem.push(seg);
+            if (seg.gap_ms === 1200) {
+                itemSections.push(currentItem);
+                currentItem = [];
             }
         }
-        // Gemini quota probe (20261006): the 06:00 cron hit gemini-3.8-flash-tts 429 with a
-        // multi-hour retry-after after the shared key's window drained overnight. One tiny
-        // render (~1 request) before the real episode; ANY probe failure (quota, key, network)
-        // flips this run to the local voicebox driver instead of dying mid-episode — voicebox
-        // needs no key. Operator decision 20261006: keep the gemini default + auto-fallback.
-        if (vdriver === 'gemini') {
+        if (currentItem.length > 0) {
+            itemSections.push(currentItem);
+        }
+
+        const planPath = join(workDir, '24-script', `${runDate}_08_script-write_plan.json`);
+        if (existsSync(planPath)) {
+            try {
+                const plan = readJson(planPath) as { items?: unknown[] };
+                if (Array.isArray(plan.items) && plan.items.length !== itemSections.length) {
+                    failWith(
+                        1,
+                        `generate: plan item count (${plan.items.length}) does not match script item sections (${itemSections.length})`,
+                    );
+                }
+            } catch (e: unknown) {
+                if (e instanceof StageFailure) throw e;
+            }
+        }
+
+        interface SectionDef {
+            index: number;
+            role: string;
+            stem: string;
+            name: string;
+            segments: Array<Record<string, unknown>>;
+            characters: number;
+            gap_ms: number;
+            text: string;
+        }
+
+        const sectionDefs: SectionDef[] = [];
+        // 00-opening
+        const openSegs = [segments[0]];
+        const openText = openSegs.map((s) => String(s.text ?? '')).join('');
+        sectionDefs.push({
+            index: 0,
+            role: 'opening',
+            stem: '00-opening',
+            name: '00-opening',
+            segments: openSegs,
+            characters: [...openText].length,
+            gap_ms:
+                typeof openSegs[openSegs.length - 1].gap_ms === 'number'
+                    ? (openSegs[openSegs.length - 1].gap_ms as number)
+                    : 1200,
+            text: openText,
+        });
+
+        // 01-item ...
+        itemSections.forEach((segs, idx) => {
+            const itemIdx = idx + 1;
+            const pad = String(itemIdx).padStart(2, '0');
+            const stem = `${pad}-item`;
+            const itemText = segs.map((s) => String(s.text ?? '')).join('');
+            const lastSeg = segs[segs.length - 1];
+            sectionDefs.push({
+                index: itemIdx,
+                role: 'item',
+                stem,
+                name: stem,
+                segments: segs,
+                characters: [...itemText].length,
+                gap_ms: typeof lastSeg?.gap_ms === 'number' ? (lastSeg.gap_ms as number) : 1200,
+                text: itemText,
+            });
+        });
+
+        // closing
+        const closeIdx = sectionDefs.length;
+        const closePad = String(closeIdx).padStart(2, '0');
+        const closeSegs = [segments[segments.length - 1]];
+        const closeText = closeSegs.map((s) => String(s.text ?? '')).join('');
+        sectionDefs.push({
+            index: closeIdx,
+            role: 'closing',
+            stem: `${closePad}-closing`,
+            name: `${closePad}-closing`,
+            segments: closeSegs,
+            characters: [...closeText].length,
+            gap_ms:
+                typeof closeSegs[closeSegs.length - 1].gap_ms === 'number'
+                    ? (closeSegs[closeSegs.length - 1].gap_ms as number)
+                    : 300,
+            text: closeText,
+        });
+
+        // Character-rate estimate: driver rate + 8 s sting > 20 min (1200 s)
+        const charRate = vdriver === 'gemini' || voiceGenerator === 'gemini-tts' ? 3.3 : 6.3;
+        const totalChars = sectionDefs.reduce((acc, s) => acc + s.characters, 0);
+        const estimatedSeconds = 8 + totalChars / charRate;
+        if (estimatedSeconds > 20 * 60) {
+            const longest3 = [...sectionDefs].sort((a, b) => b.characters - a.characters).slice(0, 3);
+            failWith(
+                1,
+                `generate: character-rate estimate ${Math.round(estimatedSeconds / 60)} min exceeds 20 min limit (longest sections: ${longest3.map((s) => s.name).join(', ')})`,
+            );
+        }
+
+        const voiceProfile =
+            (typeof script.default_profile_id === 'string' && script.default_profile_id) ||
+            (typeof script.default_profile === 'string' && script.default_profile) ||
+            process.env.VOICEBOX_DEFAULT_PROFILE ||
+            'robin-news';
+
+        const secDir = join(workDir, '30-audio', 'sections', runDate);
+        mkdirSync(secDir, { recursive: true });
+
+        const joinedWavPath = join(workDir, '30-audio', `${runDate}_11_generate_content.wav`);
+        const joinedContentPath = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
+
+        interface SectionPlan {
+            def: SectionDef;
+            hash: string;
+            wavPath: string;
+            jsonPath: string;
+            needsSynthesis: boolean;
+        }
+
+        const computePlans = (driver: string): SectionPlan[] => {
+            return sectionDefs.map((def) => {
+                const hash = createHash('sha256').update(`${def.text}\0${voiceProfile}\0${driver}`).digest('hex');
+                const wavPath = join(secDir, `${def.stem}.wav`);
+                const jsonPath = join(secDir, `${def.stem}.json`);
+                let cached = false;
+                if (existsSync(wavPath) && existsSync(jsonPath)) {
+                    try {
+                        const sidecar = readJson(jsonPath) as Record<string, unknown>;
+                        const sidecarMeta = metadataOf(sidecar) as Record<string, unknown>;
+                        if (sidecar.hash === hash || sidecarMeta.hash === hash) {
+                            cached = true;
+                        }
+                    } catch {}
+                }
+                return {
+                    def,
+                    hash,
+                    wavPath,
+                    jsonPath,
+                    needsSynthesis: !cached,
+                };
+            });
+        };
+
+        let plans = computePlans(voiceGenerator);
+        const anySynthesisNeeded = plans.some((p) => p.needsSynthesis);
+
+        if (!anySynthesisNeeded && existsSync(joinedWavPath) && existsSync(joinedContentPath)) {
+            console.log('generate: all sections cached, joined speech reused');
+            return;
+        }
+
+        // Gemini quota probe before loop if any synthesis needed
+        if (anySynthesisNeeded && vdriver === 'gemini') {
             const probeDir = join(workDir, '30-audio');
             const probeIn = join(probeDir, '.gemini-probe-in.json');
             const probeOut = join(probeDir, '.gemini-probe-out.json');
-            const docsList = readJson(docs) as Array<Record<string, unknown>>;
-            if (docsList.length > 0) {
-                writeJsonText(probeIn, [{ ...docsList[0], body: 'Hello.' }]);
-                const probe = spawnSync(
-                    'kk',
-                    ['executor', 'run', 'gemini-tts', '--in', probeIn, '--out', probeOut, ...pluginsArgs(pluginsPath)],
-                    { encoding: 'utf8', timeout: 120_000, env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 } },
-                );
-                for (const stale of [
-                    probeIn,
-                    probeOut,
-                    probeOut.replace(/\.json$/, '.wav'),
-                    probeOut.replace(/\.json$/, '.mp3'),
-                ])
-                    rmSync(stale, { force: true });
-                if (probe.status !== 0) {
-                    const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
-                    console.log(
-                        `generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`,
-                    );
-                    voiceGenerator = VOICE_DRIVERS.voicebox;
-                } else {
-                    console.log('generate: gemini quota probe ok');
-                }
+            writeJsonText(probeIn, [
+                {
+                    id: 'probe',
+                    title: 'Probe',
+                    body: Bun.YAML.stringify({
+                        title: 'Probe',
+                        segments: [{ text: 'Hello.' }],
+                    }),
+                    sourceUri: 'file://probe',
+                    mediaType: 'application/yaml',
+                    metadata: { voiceProfile },
+                },
+            ]);
+            const probe = spawnSync(
+                'kk',
+                ['executor', 'run', 'gemini-tts', '--in', probeIn, '--out', probeOut, ...pluginsArgs(pluginsPath)],
+                { encoding: 'utf8', timeout: 120_000, env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 } },
+            );
+            for (const stale of [
+                probeIn,
+                probeOut,
+                probeOut.replace(/\.json$/, '.wav'),
+                probeOut.replace(/\.json$/, '.mp3'),
+            ]) {
+                rmSync(stale, { force: true });
+            }
+            if (probe.status !== 0) {
+                const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
+                console.log(`generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`);
+                voiceGenerator = VOICE_DRIVERS.voicebox;
+                plans = computePlans(voiceGenerator);
+            } else {
+                console.log('generate: gemini quota probe ok');
             }
         }
-        kk(['executor', 'run', voiceGenerator, '--in', docs, '--out', content, ...pluginsArgs(pluginsPath)], {
-            env: { VOICE_GEN_MP3: transcodeMp3 },
+
+        // Synthesize sections sequentially (concurrency 1)
+        for (const plan of plans) {
+            if (!plan.needsSynthesis) {
+                console.log(`generate: section cached: ${plan.def.stem}`);
+                continue;
+            }
+            console.log(`generate: synthesizing section: ${plan.def.stem}`);
+            const secScript = { ...script, segments: plan.def.segments };
+            const secDocIn = join(secDir, `.${plan.def.stem}_in.json`);
+            const doc = {
+                id: createHash('sha256').update(`section-${plan.def.stem}`).digest('hex').slice(0, 16),
+                title: `Daily AI News VoiceScript - ${plan.def.stem}`,
+                sourceUri: `file://${resolve(scriptPath)}#${plan.def.stem}`,
+                body: Bun.YAML.stringify(secScript),
+                mediaType: 'application/yaml',
+                metadata: { voiceProfile },
+            };
+            writeJsonText(secDocIn, [doc]);
+            const callRes = spawnSync(
+                'kk',
+                [
+                    'executor',
+                    'run',
+                    voiceGenerator,
+                    '--in',
+                    secDocIn,
+                    '--out',
+                    plan.jsonPath,
+                    ...pluginsArgs(pluginsPath),
+                ],
+                {
+                    stdio: 'inherit',
+                    env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 },
+                },
+            );
+            rmSync(secDocIn, { force: true });
+            if (callRes.status !== 0) {
+                failWith(callRes.status ?? 1, `generate: section synthesis failed for ${plan.def.stem}`);
+            }
+            try {
+                const sidecar = readJson(plan.jsonPath) as Record<string, unknown>;
+                sidecar.hash = plan.hash;
+                if (sidecar.metadata && typeof sidecar.metadata === 'object') {
+                    (sidecar.metadata as Record<string, unknown>).hash = plan.hash;
+                }
+                writeJsonText(plan.jsonPath, sidecar);
+            } catch {}
+        }
+
+        // Join sections with ffmpeg
+        const probeHelper = (file: string, entries: string): string =>
+            spawnSync('ffprobe', [
+                '-v',
+                'error',
+                '-select_streams',
+                'a:0',
+                '-show_entries',
+                entries,
+                '-of',
+                'csv=p=0',
+                file,
+            ])
+                .stdout?.toString()
+                .trim() ?? '';
+
+        const sampleRate = probeHelper(plans[0].wavPath, 'stream=sample_rate') || '24000';
+        const ffmpegArgs = ['-y', '-hide_banner', '-loglevel', 'error'];
+        const filterParts: string[] = [];
+        const concatInputs: string[] = [];
+
+        plans.forEach((plan, i) => {
+            ffmpegArgs.push('-i', plan.wavPath);
+            filterParts.push(`[${i}:a]aresample=${sampleRate},aformat=sample_fmts=s16:channel_layouts=mono[a${i}]`);
+            concatInputs.push(`[a${i}]`);
+            if (i < plans.length - 1) {
+                const gapMs = plan.def.gap_ms;
+                const gapS = gapMs > 0 ? (gapMs / 1000).toFixed(4) : '0';
+                filterParts.push(`anullsrc=r=${sampleRate}:cl=mono,atrim=duration=${gapS}[sil${i}]`);
+                concatInputs.push(`[sil${i}]`);
+            }
         });
+
+        const filterComplex = `${filterParts.join(';')};${concatInputs.join('')}concat=n=${concatInputs.length}:v=0:a=1[out]`;
+        ffmpegArgs.push('-filter_complex', filterComplex, '-map', '[out]', '-c:a', 'pcm_s16le', joinedWavPath);
+
+        const conv = spawnSync('ffmpeg', ffmpegArgs);
+        if (conv.status !== 0 || !existsSync(joinedWavPath)) {
+            failWith(1, `generate: ffmpeg join failed: ${conv.stderr?.toString().trim()}`);
+        }
+
+        const joinedDuration = Number.parseFloat(probeHelper(joinedWavPath, 'format=duration'));
+
+        let contentObj: Record<string, unknown> = {};
+        if (existsSync(joinedContentPath)) {
+            try {
+                contentObj = readJson(joinedContentPath) as Record<string, unknown>;
+            } catch {}
+        }
+        const meta = (contentObj.metadata ?? {}) as Record<string, unknown>;
+        delete meta.introMerged;
+        meta.audioPath = joinedWavPath;
+        meta.duration = joinedDuration;
+        contentObj.audioPath = joinedWavPath;
+        contentObj.mediaType = 'audio/wav';
+        contentObj.metadata = meta;
+        writeJsonText(joinedContentPath, contentObj);
     });
 }
 
