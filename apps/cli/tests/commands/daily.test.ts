@@ -19,7 +19,8 @@
  * 8. an unusable `--min`/missing store must not silently pass a guard.
  */
 
-import { afterAll, describe, expect, it } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,6 +41,27 @@ afterAll(() => {
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
     delete process.env.KK_WORKS_DIR;
     delete process.env.KK_PLUGIN_PATH;
+});
+
+/**
+ * Point every in-process `kk` call at a throwaway store (0242 R6). `kk daily prepare` resolves
+ * `store.db_path` through `KK_CONFIG`; with no `--db` flag and no config, the store falls back to
+ * the cwd-relative `.works/kk.db`, which is the operator's LIVE store when the suite runs from the
+ * repo root. That is exactly how the 10:16:07 migration happened: the probe opened the live store
+ * and `openStore` migrated it. Each test now gets its own config and its own store path.
+ */
+let prevKkConfig: string | undefined;
+beforeEach(() => {
+    const dir = tempDir('kk-store-isolation-');
+    const config = join(dir, 'kk.yaml');
+    writeFileSync(config, `store:\n  db_path: ${join(dir, 'kk.db')}\n`);
+    prevKkConfig = process.env.KK_CONFIG;
+    process.env.KK_CONFIG = config;
+});
+afterEach(() => {
+    if (prevKkConfig === undefined) delete process.env.KK_CONFIG;
+    else process.env.KK_CONFIG = prevKkConfig;
+    prevKkConfig = undefined;
 });
 
 /** Run `kk …` in-process, returning the exit code plus the captured echo/echoError output. */
@@ -310,7 +332,7 @@ describe('kk daily works-dir resolution and report edges', () => {
         const prevWorks = process.env.KK_WORKS_DIR;
         delete process.env.KK_WORKS_DIR;
         const config = join(dir, 'kk.yaml');
-        writeFileSync(config, 'works_dir: ~/works-from-config\n');
+        writeFileSync(config, `works_dir: ~/works-from-config\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
         process.env.KK_CONFIG = config;
         try {
             const tilde = await run([
@@ -325,7 +347,7 @@ describe('kk daily works-dir resolution and report edges', () => {
             expect(JSON.parse(tilde.out).workDir).toBe(
                 join(homedir(), 'works-from-config/kk-daily-ai-voice2/20261007'),
             );
-            writeFileSync(config, 'works_dir: $HOME/works-home-prefix\n');
+            writeFileSync(config, `works_dir: $HOME/works-home-prefix\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
             const dollar = await run([
                 'daily',
                 'prepare',
@@ -352,10 +374,17 @@ describe('kk daily works-dir resolution and report edges', () => {
         const dir = tempDir();
         const prevConfig = process.env.KK_CONFIG;
         const prevWorks = process.env.KK_WORKS_DIR;
+        const prevCwd = process.cwd();
         delete process.env.KK_WORKS_DIR;
         const config = join(dir, 'kk.yaml');
-        writeFileSync(config, 'works_dir: {unclosed\n');
+        writeFileSync(config, `works_dir: {unclosed\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
         process.env.KK_CONFIG = config;
+        // A CORRUPT config is the one case isolation cannot redirect: `store.db_path` is unreadable,
+        // so the store resolver falls back to the cwd-relative default. Move the cwd into the temp
+        // dir so that fallback lands on a throwaway store instead of the repo's live `.works/kk.db`
+        // (0242 R6). `migrate: false` already keeps that probe read-only; this keeps it off the
+        // operator's store entirely.
+        process.chdir(dir);
         try {
             const result = await run([
                 'daily',
@@ -370,6 +399,7 @@ describe('kk daily works-dir resolution and report edges', () => {
                 join(homedir(), '.config/kk/works/kk-daily-ai-voice2/20261007'),
             );
         } finally {
+            process.chdir(prevCwd);
             rmSync(join(homedir(), '.config/kk/works/kk-daily-ai-voice2/20261007'), { recursive: true, force: true });
             if (prevConfig === undefined) delete process.env.KK_CONFIG;
             else process.env.KK_CONFIG = prevConfig;
@@ -409,5 +439,51 @@ describe('kk daily works-dir resolution and report edges', () => {
         ]);
         expect(result.code).toBe(0);
         expect(JSON.parse(result.out).cached).toBe(true);
+    });
+});
+
+describe('kk daily prepare never migrates the store it only reads (0242 R6/AC6)', () => {
+    function behindStore(dbPath: string): void {
+        const db = new Database(dbPath);
+        try {
+            db.run('CREATE TABLE __kk_store_migrations (id TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)');
+            db.run("INSERT INTO __kk_store_migrations (id, applied_at) VALUES ('0001_kk_store_init', 1)");
+        } finally {
+            db.close();
+        }
+    }
+
+    function journal(dbPath: string): string[] {
+        const db = new Database(dbPath, { readonly: true });
+        try {
+            return (db.query('SELECT id FROM __kk_store_migrations ORDER BY id').all() as Array<{ id: string }>).map(
+                (row) => row.id,
+            );
+        } finally {
+            db.close();
+        }
+    }
+
+    it('leaves a behind store’s journal untouched end to end, and still exits 0', async () => {
+        const dir = tempDir('kk-behind-store-');
+        const dbPath = join(dir, 'kk.db');
+        // A journal that is BEHIND this binary, in SQLite's own terms: a real `0001_kk_store_init`
+        // and no `0003_store_v2`. The load-bearing control for `migrate: false` — the same journal
+        // advancing under a DEFAULT open — is in `packages/kk-store/tests/migrations.test.ts`
+        // ('openStore({ migrate: false }) reads a behind store without upgrading it'), which has the
+        // real v1 fixture; this test pins the USER-FACING path (`kk daily prepare`) to that rule.
+        behindStore(dbPath);
+        const before = journal(dbPath);
+        expect(before).toEqual(['0001_kk_store_init']);
+
+        const config = join(dir, 'kk.yaml');
+        writeFileSync(config, `works_dir: ${dir}\nstore:\n  db_path: ${dbPath}\n`);
+        process.env.KK_CONFIG = config;
+
+        const result = await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']);
+        // The probe is best-effort: the behind store's missing `selections` table is swallowed, so
+        // `prepare` still succeeds — but it must NOT have upgraded the store to make itself work.
+        expect(result.code).toBe(0);
+        expect(journal(dbPath)).toEqual(before);
     });
 });

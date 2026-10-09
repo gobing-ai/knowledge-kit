@@ -572,4 +572,24 @@ describe('0003_store_v2 cut-over', () => {
         rawAfter.close();
         expect(afterJournal).toEqual(beforeJournal);
     });
+
+    it('openStore({ migrate: false }) reads a behind store without upgrading it (0242 R6 / AC6)', async () => {
+        const dbPath = join(makeTempDir(), 'read-only-open.db');
+        await seedV1Store(dbPath);
+        const v1Journal = ['0001_kk_store_init', '0002_labels_confidence_run_id'];
+        expect(journalIds(dbPath)).toEqual(v1Journal);
+
+        // The read-only open: no DDL, no journal write, nothing reported as applied.
+        const reading = await openStore({ path: dbPath, migrate: false });
+        expect(reading.appliedMigrations).toBe(0);
+        await reading.close();
+        expect(journalIds(dbPath)).toEqual(v1Journal);
+
+        // Control — the assertion above is only load-bearing if the SAME store would otherwise be
+        // upgraded. The default open applies exactly `0003_store_v2` and journals it.
+        const migrating = await openStore({ path: dbPath });
+        expect(migrating.appliedMigrations).toBe(1);
+        await migrating.close();
+        expect(journalIds(dbPath)).toEqual([...v1Journal, '0003_store_v2']);
+    });
 });

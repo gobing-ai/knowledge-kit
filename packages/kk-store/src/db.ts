@@ -9,6 +9,17 @@ import { applyKkMigrations } from './migrations';
 export interface OpenStoreOptions {
     /** Absolute path to the SQLite store file (see `resolveStorePath`). */
     path: string;
+    /**
+     * Apply pending migrations on open. Default `true` (ADR-030: a reader may upgrade the store).
+     *
+     * A READ-ONLY surface passes `false`: merely reading a store must never upgrade it. The 0242
+     * incident is the reason — an in-process `kk daily prepare` probe (documented "best-effort and
+     * read-only") migrated the operator's live store just by opening it, and the mismatch that
+     * created only surfaced later as an `ON CONFLICT` failure in the scheduled collector. With
+     * `false`, a store whose journal is behind fails its first query instead, which a best-effort
+     * probe swallows by design.
+     */
+    migrate?: boolean;
 }
 
 /** An open, migrated store: the DAOs plus the connection lifecycle. */
@@ -50,7 +61,9 @@ export async function openStore(options: OpenStoreOptions): Promise<Store> {
     try {
         await adapter.exec('PRAGMA journal_mode = WAL');
         await adapter.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
-        const appliedMigrations = await applyKkMigrations(adapter);
+        // A read-only caller opts out entirely: no DDL, no journal write, no schema-newer guard
+        // (a read cannot corrupt a newer store, and the guard exists to stop a WRITE).
+        const appliedMigrations = options.migrate === false ? 0 : await applyKkMigrations(adapter);
         return {
             items: new ItemsDao(adapter),
             collectRuns: new CollectRunsDao(adapter),

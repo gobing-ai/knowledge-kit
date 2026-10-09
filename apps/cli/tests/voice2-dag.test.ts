@@ -27,7 +27,7 @@
  * are copied to `.works/test-artifacts/0211/`.
  */
 
-import { afterAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
     chmodSync,
     existsSync,
@@ -60,6 +60,25 @@ function tempDir(prefix: string): string {
 
 afterAll(() => {
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+/**
+ * Same store isolation as `commands/daily.test.ts` (0242 R6): this file drives `kk daily prepare`
+ * in-process, which resolves `store.db_path` from `KK_CONFIG` and otherwise falls back to the
+ * cwd-relative `.works/kk.db` — the operator's LIVE store when the suite runs from the repo root.
+ */
+let prevKkConfig: string | undefined;
+beforeEach(() => {
+    const dir = tempDir('kk-store-isolation-');
+    const config = join(dir, 'kk.yaml');
+    writeFileSync(config, `store:\n  db_path: ${join(dir, 'kk.db')}\n`);
+    prevKkConfig = process.env.KK_CONFIG;
+    process.env.KK_CONFIG = config;
+});
+afterEach(() => {
+    if (prevKkConfig === undefined) delete process.env.KK_CONFIG;
+    else process.env.KK_CONFIG = prevKkConfig;
+    prevKkConfig = undefined;
 });
 
 /** Copy one artifact of this test run into `.works/test-artifacts/0211/`. */

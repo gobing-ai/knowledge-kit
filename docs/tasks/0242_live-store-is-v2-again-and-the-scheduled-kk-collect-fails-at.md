@@ -4,7 +4,7 @@ name: "Live store is v2 again and the scheduled kk-collect fails at kk store lab
 status: blocked
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T19:35:38.769Z"
+updated_at: "2026-10-09T20:23:42.866Z"
 feature_id: G32
 
 priority: P1
@@ -55,7 +55,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
   - **upgrade order:** a schema-bumping change reaches the live tree only together with a global `kk` that carries it, and R1 enforces this from now on;
   - the recovery paths: `.works/kk.db.pre-0242`, or the incident archive's `kk.db` copied without its `-wal`/`-shm` (v1, 68 items / 340 labels).
 
-- [ ] R6. **Stop the test suite from migrating the live store** (the 10:16:07 migrator).
+- [x] R6. **Stop the test suite from migrating the live store** (the 10:16:07 migrator).
   1. `warnUnreleasedRuns` (`apps/cli/src/commands/daily.ts:122-150`) must not migrate: add `migrate?: boolean` (default `true`) to `openStore` (`packages/kk-store/src/db.ts:47-53`) and pass `migrate: false`; a store whose journal is behind then fails the query and the existing try/catch keeps the probe best-effort.
   2. `apps/cli/tests/commands/daily.test.ts` sets `KK_CONFIG` to a temp config whose `store.db_path` is under the test's temp dir (restore in `afterEach`). Audit every in-process test that reaches `resolveStorePath`/`openStore` without `--db` (`rg -n "resolveStorePath|openStore\(" apps/cli/src` → callers; match against tests that call `main(` without `KK_CONFIG`) and isolate each one found.
   3. Regression check: a v1 store at `<tmp>/.works/kk.db`, run `kk daily prepare` with cwd `<tmp>`; the journal is unchanged.
@@ -68,7 +68,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 - [ ] AC4 — A real `kk-collect` run reaches `done`, and its new items carry label rows with that run id (req: R4).
 - [x] AC5 — `docs/03_ARCHITECTURE.md` records the live store's schema, its writer, the upgrade-order rule and the recovery paths (req: R5).
 
-- [ ] AC6 — With a v1 store in cwd, `kk daily prepare` leaves `__kk_store_migrations` unchanged; and running `bun test apps/cli/tests/commands/daily.test.ts` from a dir holding a v1 `.works/kk.db` leaves that journal unchanged (req: R6).
+- [x] AC6 — With a v1 store in cwd, `kk daily prepare` leaves `__kk_store_migrations` unchanged; and running `bun test apps/cli/tests/commands/daily.test.ts` from a dir holding a v1 `.works/kk.db` leaves that journal unchanged (req: R6).
 
 ### Q&A
 
@@ -134,11 +134,56 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
 - `docs/03_ARCHITECTURE.md:142-147`: updated Persistent store paragraph recording live store v2 status, plist PATH resolution, schema-skew upgrade order rule, and recovery paths (R5, AC5).
 - R2, R3, R4: stopped as `blocked` at operator gate awaiting global binary upgrade (`bun link` from main or 0.0.34 release) per task specification and operator authorization.
 
+#### R6 change map — the test suite no longer migrates the live store
+
+- `packages/kk-store/src/db.ts:10-27` — `OpenStoreOptions` gains `migrate?: boolean` (default `true`),
+  documented with the incident that motivates it.
+- `packages/kk-store/src/db.ts:66` — `options.migrate === false ? 0 : await applyKkMigrations(adapter)`.
+  A read-only caller therefore performs no DDL and no journal write. The `migrate: false` path also skips
+  the R1 schema-newer guard deliberately: that guard exists to stop a **write** against a newer store, and
+  a read cannot damage one.
+- `apps/cli/src/commands/daily.ts:132-140` — `warnUnreleasedRuns` opens with `migrate: false`. This is the
+  actual defect: the probe is documented "best-effort and read-only", but `openStore` migrated on open,
+  so a read upgraded the store.
+- `apps/cli/tests/commands/daily.test.ts` — file-level `beforeEach`/`afterEach` pointing `KK_CONFIG` at a
+  per-test temp config whose `store.db_path` is inside that test's temp dir; the two tests that build
+  their own config now carry a store path too; the corrupt-config test `chdir`s into its temp dir, because
+  a corrupt config is the one case isolation cannot redirect (the path is unreadable, so the resolver
+  falls back to the cwd-relative default).
+- `apps/cli/tests/voice2-dag.test.ts` — the same isolation. Its `daily prepare` call was the second
+  in-process migrator; the audit (`rg resolveStorePath|openStore apps/cli/src` cross-matched against tests
+  driving `main()` without `--db`) found exactly these two files.
+- `packages/kk-store/tests/migrations.test.ts:575` — the load-bearing regression test, placed where the
+  real v1 fixture lives (`seedV1Store`), with an explicit control.
+
 ### Testing
 
 - `bun test packages/kk-store/tests/migrations.test.ts`: 13 pass, 0 fail (covers AC1).
 - `bun run gate`: clean (format, build, lint, typecheck, pre-check 51 rules, 2343 tests pass, post-check 2 rules).
 - `spur task check 0242`: PASS.
+
+#### R6 / AC6 (2026-10-09, batch driver)
+
+- **Load-bearing check (falsified).** `openStore({ migrate: false })` on a real v1 store reports
+  `appliedMigrations: 0` and leaves the journal at `0001+0002`; the control in the same test then opens it
+  with the default and observes `appliedMigrations: 1` and journal `0001+0002+0003`. Deleting the
+  `migrate === false` branch makes the test fail with `Expected: 0, Received: 1`, so the assertion is not
+  vacuously true.
+- **AC6(a) end to end.** `kk daily prepare` against a behind store (config `store.db_path` → that file)
+  exits 0 and leaves the journal unchanged.
+- **AC6(b) end to end.** Suite run with cwd `/tmp/kk-ac6`, whose `.works/kk.db` is the incident archive's
+  v1 store copied WITHOUT its `-wal`/`-shm` (journal `0001+0002`, 68 items, sha `3d21b6411ddaaebd`):
+  after `apps/cli/tests/commands/daily.test.ts`, journal still `0001+0002`, items still 68, sha still
+  `3d21b6411ddaaebd`, and **no** `-wal`/`-shm` sidecar was created. Before the fix the same run (per this
+  task's Background) migrated the store.
+- **Whole-suite check from the live tree.** `bun run gate` from the repo root: 2346 pass / 2 skip / 0 fail,
+  51 pre-check and 2 post-check rules clean — and the operator's live `.works/kk.db` is byte-identical
+  before and after (sha `834885246c731ff8`, journal `0001+0002+0003`, 92 items, no sidecars). This is the
+  run that migrated the live store on 2026-10-09 10:16; it no longer does.
+- **Residual, named not hidden.** A corrupt or missing `KK_CONFIG` still makes the probe resolve the
+  cwd-relative store, because the configured path is unreadable. `migrate: false` keeps that probe
+  read-only (no journal change), and the corrupt-config test now `chdir`s into its temp dir so the suite
+  does not touch a cwd store at all.
 
 ### Review
 

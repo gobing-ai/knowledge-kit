@@ -128,12 +128,16 @@ function formatRunDate(now: Date = new Date()): string {
  * `selected` rows did not, so no spur-trace reading is needed. `prepare` runs before this run's own
  * `select`, so it never names itself. Best-effort and read-only: a store that is missing or fails to
  * open prints nothing and never fails `prepare`.
+ *
+ * It opens with `migrate: false` so the probe cannot upgrade the store it is only reading (0242 R6).
+ * A store whose journal is behind therefore fails its query instead of being migrated, which the
+ * catch below already treats as "nothing to warn about".
  */
 async function warnUnreleasedRuns(workflow: string): Promise<void> {
     try {
         const dbPath = await resolveStorePath(resolveKkConfigPath());
         if (!existsSync(dbPath)) return;
-        const store = await openStore({ path: dbPath });
+        const store = await openStore({ path: dbPath, migrate: false });
         try {
             for (const runId of await store.selections.selectedRuns(workflow)) {
                 consoleOutput.error(
