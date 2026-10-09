@@ -4,5 +4,5 @@ description: >-
   background, clean information layout, soft accent colors, rounded card zones.
   Adapted from baoyu-xhs-images "knowledge card" style guidance (MIT © Jim Liu);
   see plugins/kk/skills/xhs-images/references/card-layouts.md.
-modifiers: simple clean light background, rounded rectangle card zones, soft pastel accent colors, generous whitespace, flat geometric decorations, subtle drop shadows, fresh and professional
-negative: text, letters, numbers, Chinese characters, captions, watermark, logo
+modifiers: simple clean light background, soft pastel accent colors, generous whitespace, flat geometric decorations, subtle drop shadows, fresh and professional, unlabeled surfaces
+negative: text, letters, words, numbers, Chinese characters, calligraphy, signage, captions, watermark, logo, screen glyphs, vertical script, stamps

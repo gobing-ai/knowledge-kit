@@ -1,20 +1,21 @@
 name: xhs-card
 description: >-
-  Xiaohongshu (XHS) knowledge card — 3:4 portrait image-text card with large
-  Chinese headline and short bullet points. Adapted from baoyu-xhs-images
-  (MIT © Jim Liu); see plugins/kk/skills/xhs-images/references/card-layouts.md.
-  Task 0180: card copy is typeset from Noto Sans SC via headless Chromium;
-  the provider prompt generates the illustration only.
+  Xiaohongshu (XHS) knowledge card — 3:4 portrait card. Chinese headline and
+  bullets are typeset from Noto Sans SC via headless Chromium; the provider
+  prompt is the illustration only and must not ask for writing. Adapted from
+  baoyu-xhs-images (MIT © Jim Liu); see
+  plugins/kk/skills/xhs-images/references/card-layouts.md.
 job: free
 aspectRatio: '3:4'
 width: 1080
 height: 1440
 defaultStyle: xhs-knowledge
 keywords:
-    - xiaohongshu-style
-    - image-text card layout
+    - text-free flat illustration
+    - blank unlabeled surfaces
+    - empty screens and empty signs
     - fresh clean design
-    - flat illustration accents with geometric decorations
+    - flat geometric accents
     - professional color grading
 outputFilename: 'card-{{index | 01}}.png'
 compose:
@@ -22,7 +23,7 @@ compose:
     safeArea: 72
     headlineMinPx: 64
     bodyMinPx: 36
-    illustrationHeight: 640
+    illustrationHeight: 880
     palette:
         background: '#FFFFFF'
         text: '#1F2328'
@@ -53,11 +54,12 @@ variables:
         description: Additional context (use --content)
         default: ''
 template: |-
-    Xiaohongshu-style knowledge card, portrait 3:4, for a card series.
+    Portrait illustration, 3:4, one scene for a card series.
     Card role: {{role | content}}. Layout: {{layout | definition}}.
     Visual scene: {{subject | clean flat illustration of the core concept}},
-    rendered as flat illustration accents with subtle geometric decorations.
-    Pure illustration, no text, no letters, no numerals, no captions — the text
-    band is typeset separately. Fresh clean design, comfortable margins, no
-    watermark, no extra UI chrome. 8K quality, crisp details, professional color
+    rendered as a flat illustration with subtle geometric decorations.
+    Illustration only. Every surface stays blank: empty screens, empty signs,
+    empty labels. No writing, no letters, no numerals, no captions, no logos,
+    no watermark, no UI chrome. Words are typeset later, outside this image.
+    Fresh clean design, comfortable margins, crisp details, professional color
     grading. {{content}}

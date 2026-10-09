@@ -220,6 +220,7 @@ html, body {
   justify-content: flex-start;
   overflow: hidden;
   background: ${palette.background};
+  border-top: 8px solid ${palette.accent};
 }
 .headline {
   font-family: 'NotoSansSC-Bold', sans-serif;
@@ -227,6 +228,8 @@ html, body {
   color: ${palette.text};
   line-height: 1.3;
   margin-bottom: ${Math.round(safeArea / 2)}px;
+  padding-bottom: 12px;
+  border-bottom: 4px solid ${palette.accent};
   word-break: break-all;
   white-space: normal;
   /* font-size is set inline with JS fit-step */
@@ -235,15 +238,27 @@ html, body {
 .points-container {
   display: flex;
   flex-direction: column;
-  gap: ${Math.round(bodyMinPx * 0.5)}px;
+  gap: ${Math.round(bodyMinPx * 0.55)}px;
 }
 .point {
   font-family: 'NotoSansSC-Regular', sans-serif;
   font-weight: normal;
   color: ${palette.text};
-  line-height: 1.5;
+  line-height: 1.45;
   word-break: break-all;
   white-space: normal;
+  padding-left: 28px;
+  position: relative;
+}
+.point::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: ${palette.accent};
 }
 .safe-area-sentinel {
   position: absolute;

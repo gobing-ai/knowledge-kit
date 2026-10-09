@@ -343,14 +343,16 @@ describe('xhs card presets (E8 0168)', () => {
             safeArea: 72,
             headlineMinPx: 64,
             bodyMinPx: 36,
-            illustrationHeight: 640,
+            illustrationHeight: 880,
             palette: { background: '#FFFFFF', text: '#1F2328', accent: '#FF2442' },
             fonts: { headline: 'NotoSansSC-Bold.otf', body: 'NotoSansSC-Regular.otf' },
         });
         // 0181: the style may not carry card copy or any Han text into the prompt,
         // and it must forbid text on the illustration via the negative prompt.
         expect(style.modifiers).not.toMatch(/\p{Script=Han}/u);
-        expect(style.negative).toBe('text, letters, numbers, Chinese characters, captions, watermark, logo');
+        expect(style.negative).toBe(
+            'text, letters, words, numbers, Chinese characters, calligraphy, signage, captions, watermark, logo, screen glyphs, vertical script, stamps',
+        );
     });
 
     test('xhs-card keeps the illustration prompt free of card copy (0180 R1)', () => {
@@ -369,7 +371,9 @@ describe('xhs card presets (E8 0168)', () => {
         });
         expect(prompt).toContain('Card role: cover');
         expect(prompt).toContain('flat illustration of service boundaries');
-        expect(prompt).toContain('xiaohongshu-style');
+        expect(prompt).toContain('text-free flat illustration');
+        expect(prompt).not.toContain('image-text');
+        expect(prompt).not.toContain('xiaohongshu');
         // The card copy never reaches the provider: the composer typesets it from a real font.
         expect(prompt).not.toContain('微服务拆分');
         expect(prompt).not.toContain('先按业务边界');

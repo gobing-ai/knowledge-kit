@@ -117,8 +117,12 @@ publish. Expect at most one publish per day.
   `image-gen` refuses pre-spend (dry runs included) naming the offending segment — the format
   template, the style preset, `spec.extra`, or a named var — and the shipped `xhs-card` ×
   `xhs-knowledge` presets enforce it (the template states `no text, no letters, no numerals`; the
-  style carries a text `negative`). A weak card is regenerated from an edited prompt; bitmap text
-  repair is outside scope. Saved prompts preserve the reproduction path.
+  style carries a text `negative`). MiniMax `image-01` has no negative-prompt field, so the
+  positive prompt (template + keywords + modifiers) is the only instruction it sees. Keywords
+  must not ask for an image-text or Xiaohongshu poster layout: that phrasing is what painted
+  pseudo-Chinese into the saved illustration JPG while the composed PNG stayed legible (Noto
+  Sans SC typesets the headline and points). A weak card is regenerated from an edited prompt;
+  bitmap text repair is outside scope. Saved prompts preserve the reproduction path.
 
 ## Deterministic text typesetting (2026-10-01, ADR-028)
 
