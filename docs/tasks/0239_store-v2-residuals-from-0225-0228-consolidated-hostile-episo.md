@@ -4,7 +4,7 @@ name: "Store-v2 residuals from 0225-0228 (consolidated): hostile episode_usage c
 status: done
 template: standard
 created_at: 2026-10-09T17:29:15.319Z
-updated_at: "2026-10-09T19:35:38.345Z"
+updated_at: "2026-10-09T21:44:14.018Z"
 feature_id: G32
 
 priority: P1
@@ -143,12 +143,27 @@ CONFIDENCE-CHECK item is recorded as already resolved rather than re-opened.
 
 ### Testing
 
-- `bun test packages/kk-store/tests/migrations.test.ts`: 12 pass, 0 fail (includes mutation check)
-- `bun test packages/kk-store/tests/dao/selections.test.ts packages/kk-store/tests/kk-store.test.ts`: 11 pass, 0 fail
-- `bun test packages/kk-store/tests/dao/labels.test.ts`: 15 pass, 0 fail
-- `bun test packages/kk-store/tests/story.test.ts`: 17 pass, 0 fail
-- `bun run gate`: clean (format, build, lint, typecheck, recommended-pre-check 51 rules, 2341 tests pass, recommended-post-check 2 rules)
-- `spur task check 0239`: PASS (0 findings)
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `0003`'s copy is collision-safe and deterministic: `packages/kk-store/src/migrations.ts:178-183` (`ORDER BY "used_at", "workflow"` + `ON CONFLICT("topic", "item_id", "run_id") DO NOTHING`, so the earliest `used_at`, then smallest `workflow`, wins). Test `packages/kk-store/tests/migrations.test.ts:495` "migrates a v1 store with colliding episode_usage rows deterministically (0239 R1)" re-run this pass. |
+| R2 | MET | `declaredColumns` at `packages/kk-store/tests/migrations.test.ts:106-124` now extracts `name`, `type`, `notnull`, `dflt_value` in DDL order (no sort); parity test `packages/kk-store/tests/migrations.test.ts:527-541` compares against the live table in order. Observation-identity test `packages/kk-store/tests/migrations.test.ts:543`. Both re-run this pass. |
+| R3 | MET | `rg -n excludedStories packages apps` → no matches this pass. Exclusion re-asserted through `ItemsDao.selectByProfile` with `excludeTopic` at `packages/kk-store/tests/kk-store.test.ts:249-260` (selected story absent from the extract). Sole predicate site `packages/kk-store/src/dao/items.ts:436-445`. |
+| R4 | MET | Gate unchanged at `packages/kk-store/src/dao/labels.ts:145`. Test `packages/kk-store/tests/dao/labels.test.ts:495` pins migrated v1 model row and new NULL-`raw_confidence` model row as non-current, heuristic row current. Rule stated at `docs/04_DESIGN.md:569-570` and `docs/design/kk-collect-and-daily-voice2.md:123-124`. |
+| R5 | MET | `TOKEN_RUN` at `packages/kk-store/src/story.ts:50-51` subtracts Han/Hiragana/Katakana from the word class (`v` flag). Tests `packages/kk-store/tests/story.test.ts:57` (script boundary) and `packages/kk-store/tests/story.test.ts:140` (whitespace near-duplicates cluster); probe this pass `storyTokens('OpenAI发布新模型')` → `openai, 发布, 布新, 新模, 模型`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `packages/kk-store/tests/migrations.test.ts:495`; re-run this pass (5-file run 57 pass / 0 fail / 234 expect()). |
+| AC2 | MET | test | `packages/kk-store/tests/migrations.test.ts:527` (notnull/default/order parity) and `packages/kk-store/tests/migrations.test.ts:543` (4-column identity rejection); re-run this pass. |
+| AC3 | MET | test | `rg -n excludedStories packages apps` empty this pass; `packages/kk-store/tests/kk-store.test.ts:249-260` re-run this pass. |
+| AC4 | MET | test | `packages/kk-store/tests/dao/labels.test.ts:495` re-run this pass; `docs/04_DESIGN.md:569-570` states the rule. |
+| AC5 | MET | test | `packages/kk-store/tests/story.test.ts:57` and `packages/kk-store/tests/story.test.ts:140`; re-run this pass. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

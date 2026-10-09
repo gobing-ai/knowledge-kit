@@ -4,7 +4,7 @@ name: "Score-decision maker scale: typesafe answers a 0-1 fraction, so kk drops 
 status: done
 template: issue
 created_at: 2026-10-09T17:29:56.937Z
-updated_at: "2026-10-09T19:35:38.549Z"
+updated_at: "2026-10-09T21:45:57.932Z"
 feature_id: G32
 
 priority: P1
@@ -141,11 +141,25 @@ The earlier "0–1 fraction" reading came from probe values that happened to be 
 
 ### Testing
 
-- `bun test apps/cli/tests/store-label.test.ts`: 24 pass, 0 fail (covers AC1 and AC2).
-- Live decision probe: `spur decision run kk-item-sensitivity --param title=... --param source=... --json` returns `makerSource: "config-decision"`, `maker: "typesafe"`, `value: 0.79` (covers R3).
-- Scratch DB dogfood: `bun apps/cli/dist/index.js store label --db scratch.db --run 0240-probe --new-ids ids.json --mode decision` writes model sensitivity rows with integer values `0`, `2`, `1` matching raw values `0.11`, `2.16`, `0.74` (covers AC3).
-- `bun run gate`: clean (format, build, lint, typecheck, pre-check 51 rules, 2343 tests pass, post-check 2 rules).
-- `spur task check 0240`: PASS (0 findings).
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: MEDIUM
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `decisionValue` at `apps/cli/src/commands/store.ts:661-669`: a score answer is accepted when finite and in `[0, levels-1]`, stored as `String(Math.round(level))`; choice branch unchanged. Test `apps/cli/tests/store-label.test.ts:1250` re-run this pass. |
+| R2 | MET | Per `decision@maker` refusal counters at `apps/cli/src/commands/store.ts:842-844` and `apps/cli/src/commands/store.ts:899-901`, summed at `apps/cli/src/commands/store.ts:1038`, printed as `refused` at `apps/cli/src/commands/store.ts:1052`. Tests `apps/cli/tests/store-label.test.ts:1250` and `apps/cli/tests/store-label.test.ts:1320` re-run this pass. |
+| R3 | MET | `.spur/config.yaml:174` routes `kk-item-sensitivity: typesafe`; `.spur/config.yaml:176` comment cites task 0240; no "0236" comment remains. |
+| R4 | MET | `docs/04_DESIGN.md:509-511` states the level-axis position, nearest-level `value`, exact `raw_value`, and `refused: {"<decision>@<maker>": n}`; label row `docs/04_DESIGN.md:99` lists `refused` in the verdict line. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `apps/cli/tests/store-label.test.ts:1250` (0.79→'1', 2.6→'3', 3.2 refused, integers unchanged); `bun test apps/cli/tests/store-label.test.ts` 24 pass / 0 fail / 481 expect() this pass. |
+| AC2 | MET | test | `apps/cli/tests/store-label.test.ts:1250` (refused count) and `apps/cli/tests/store-label.test.ts:1320` (`refused: {}`); re-run this pass. |
+| AC3 | MET | command | Routing at `.spur/config.yaml:174`; integer storage path `apps/cli/src/commands/store.ts:668`. Scratch-store live maker pass (model sensitivity rows with integer values 0/2/1 for raw 0.11/2.16/0.74) is prior-run evidence, not re-run: it needs a live typesafe maker (confidence MEDIUM). |
+| AC4 | MET | test | `docs/04_DESIGN.md:509-511` and `docs/04_DESIGN.md:99`; behavior they document is pinned by `apps/cli/tests/store-label.test.ts:1250`. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

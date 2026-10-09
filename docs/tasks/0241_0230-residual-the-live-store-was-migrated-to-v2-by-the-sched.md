@@ -4,7 +4,7 @@ name: "0230 residual: the live store was migrated to v2 by the scheduled collect
 status: done
 template: issue
 created_at: 2026-10-09T17:29:59.582Z
-updated_at: "2026-10-09T17:42:46.559Z"
+updated_at: "2026-10-09T21:48:34.661Z"
 feature_id: G32
 
 priority: P1
@@ -131,9 +131,9 @@ migration-on-open is the one that made an ordinary open destructive. The evidenc
 Resolution (batch driver, 2026-10-09): the operator authorized restoring the live store, and it was done.
 
 The mechanism, for the record: every store reader opens the database through `openStore`
-(`packages/kk-store/src/db.ts:53`, the `applyKkMigrations(adapter)` call inside `openStore`), which calls `applyKkMigrations` before any query; the scheduled
+(`packages/kk-store/src/db.ts:66`, the `applyKkMigrations(adapter)` call inside `openStore`), which calls `applyKkMigrations` before any query; the scheduled
 collector's `kk store lock acquire` (`apps/cli/src/commands/store.ts:210`) therefore applied
-`0003_store_v2` (`packages/kk-store/src/migrations.ts:187-205` — the `KK_MIGRATIONS` table, `0003_store_v2` at `:195` marked `atomic: true`) to the live store simply by
+`0003_store_v2` (`packages/kk-store/src/migrations.ts:197-207` — the `KK_MIGRATIONS` table, `0003_store_v2` at `:206` marked `atomic: true`) to the live store simply by
 opening it, because the store path resolves cwd-relative (`packages/kk-store/src/config.ts:6`) and the
 launchd job's working directory is the live tree.
 
@@ -157,24 +157,23 @@ landing decision (merge `sp/runall-g32-5368` or not) remains the operator's.
 
 ### Testing
 
-- **Falsified claim struck** — `0230`'s `## Testing` now carries the inline Correction; the only remaining
-  occurrences of the old wording are quotations of it (the correction itself and `0230`'s Review finding 1).
-- **Archive** — `.works/incident-2026-10-09T0952/` holds `kk.db` (299008 B), `kk.db-wal` (2710992 B),
-  `kk.db-shm` (32768 B) as captured at 09:52 before the restore.
-- **Restore verified read-only** — journal `0001_kk_store_init`, `0002_labels_confidence_run_id`; tables
-  `items, collect_runs, labels, episode_usage, locks`; no `selections`; 78 items / 390 labels / 12
-  `episode_usage` / 4 `collect_runs`; `pragma integrity_check` → `ok`.
-- **Link reverted** — `kk --version` → `0.0.33`; `kk store --help` contains none of `select`,
-  `mark-published`, `release`; `kk store extract --topic ai-news` → `{"count":14}`.
-- **Superseding facts** (measured 2026-10-09 10:40, read-only): journal now `0001`+`0002`+`0003`; `labels`
-  has 16 columns and `labels_observation_unique` on `(item_id, decision_id, maker, run_id)`; `items` has the
-  five v2 fact columns; 92 items / 340 labels; `collect_runs` = 5 (was 4); the newest run
-  `54b2c6d7-dfe5-43d7-a87d-62100542093f`. The scheduled collect of that tick failed at `kk store label`:
-  `kk.store.label.failed: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint` (log
-  `.works/kk-collect/launchd.log`). Filed as 0242.
-- **Not verified**: which process performed the second migration (inference, not evidence: the 92/340 counts
-  match the incident archive's file state plus one ingest, so the archive's `kk.db` alone is the likely
-  lineage; another session was active in this tree during the batch and may have restored it).
+**Pipeline verify results**
+
+- Verdict: PARTIAL (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `docs/tasks/0230_store-v2-cut-over-live-store-migration-dogfood-two-run-disjo.md:336` carries the 0241 Correction in 0230's `## Testing` (restored this verifyall run after the 0230 `--force` re-record had dropped it); 0230's historical Review finding 1 keeps the falsification record (`docs/tasks/0230_store-v2-cut-over-live-store-migration-dogfood-two-run-disjo.md:412`). |
+| R2 | MET | Mechanism + archive + restore in this task: Design `docs/tasks/0241_0230-residual-the-live-store-was-migrated-to-v2-by-the-sched.md:105` (recovery), Solution `docs/tasks/0241_0230-residual-the-live-store-was-migrated-to-v2-by-the-sched.md:133` (mechanism) and `:140` (archive). `ls .works/incident-2026-10-09T0952/` this pass: `kk.db` 299008 B, `kk.db-wal` 2710992 B, `kk.db-shm`. Learnings entry `.spur/memory/learnings.md:1601`. |
+| R3 | MET | Guard with owner (sp harness, `execution-batch.md` § WT-1) and project-side fallback at `docs/tasks/0241_0230-residual-the-live-store-was-migrated-to-v2-by-the-sched.md:97`; Review row 1 dispositioned ACCEPTED (harness-owned). |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — 0230's record no longer asserts the live store was untouched (req: R1) | MET | command | `grep -n -i "never opened for writ\|sidecars untouched"` over the 0230 task this pass: only the Correction cell `docs/tasks/0230_store-v2-cut-over-live-store-migration-dogfood-two-run-disjo.md:336` and the historical Review finding `:412` (both quote/describe the struck claim). |
+| AC2 — the incident's mechanism, archive and resolution are recorded in one place (req: R2) | MET | command | `docs/tasks/0241_0230-residual-the-live-store-was-migrated-to-v2-by-the-sched.md:33-37` (Background: archive, restore), `:105` (recovery options), `:133` (mechanism); archive directory listed this pass. |
+| AC3 — the repeat-guard is recorded with an owner and no unowned gap (req: R3) | MET | command | `grep -c "owner: the harness"` on the 0241 task → 1 and `spur task show 0242 --json` status `done` this pass; `docs/tasks/0241_0230-residual-the-live-store-was-migrated-to-v2-by-the-sched.md:97` (owner surface + fallback); live-store follow-up handed to 0242 (done). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 

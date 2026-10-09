@@ -4,7 +4,7 @@ name: "Live store is v2 again and the scheduled kk-collect fails at kk store lab
 status: done
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T21:20:57.394Z"
+updated_at: "2026-10-09T21:49:39.938Z"
 feature_id: G32
 
 priority: P1
@@ -181,66 +181,29 @@ No product or test source changed for R2–R4: the repair surface (`kk store bac
 
 ### Testing
 
-- `bun test packages/kk-store/tests/migrations.test.ts`: 13 pass, 0 fail (covers AC1).
-- `bun run gate`: clean (format, build, lint, typecheck, pre-check 51 rules, 2343 tests pass, post-check 2 rules).
-- `spur task check 0242`: PASS.
+**Pipeline verify results**
 
-#### R6 / AC6 (2026-10-09, batch driver)
+- Verdict: PARTIAL (from verdict artifact)
+- Confidence: HIGH
 
-- **Load-bearing check (falsified).** `openStore({ migrate: false })` on a real v1 store reports
-  `appliedMigrations: 0` and leaves the journal at `0001+0002`; the control in the same test then opens it
-  with the default and observes `appliedMigrations: 1` and journal `0001+0002+0003`. Deleting the
-  `migrate === false` branch makes the test fail with `Expected: 0, Received: 1`, so the assertion is not
-  vacuously true.
-- **AC6(a) end to end.** `kk daily prepare` against a behind store (config `store.db_path` → that file)
-  exits 0 and leaves the journal unchanged.
-- **AC6(b) end to end.** Suite run with cwd `/tmp/kk-ac6`, whose `.works/kk.db` is the incident archive's
-  v1 store copied WITHOUT its `-wal`/`-shm` (journal `0001+0002`, 68 items, sha `3d21b6411ddaaebd`):
-  after `apps/cli/tests/commands/daily.test.ts`, journal still `0001+0002`, items still 68, sha still
-  `3d21b6411ddaaebd`, and **no** `-wal`/`-shm` sidecar was created. Before the fix the same run (per this
-  task's Background) migrated the store.
-- **Whole-suite check from the live tree.** `bun run gate` from the repo root: 2346 pass / 2 skip / 0 fail,
-  51 pre-check and 2 post-check rules clean — and the operator's live `.works/kk.db` is byte-identical
-  before and after (sha `834885246c731ff8`, journal `0001+0002+0003`, 92 items, no sidecars). This is the
-  run that migrated the live store on 2026-10-09 10:16; it no longer does.
-- **Residual, named not hidden.** A corrupt or missing `KK_CONFIG` still makes the probe resolve the
-  cwd-relative store, because the configured path is unreadable. `migrate: false` keeps that probe
-  read-only (no journal change), and the corrupt-config test now `chdir`s into its temp dir so the suite
-  does not touch a cwd store at all.
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Guard in `applyKkMigrations` (`packages/kk-store/src/migrations.ts:297`): unknown journal ids collected at `packages/kk-store/src/migrations.ts:305-306`, rejected with `kk.store.schema-newer` at `packages/kk-store/src/migrations.ts:312`. Test `packages/kk-store/tests/migrations.test.ts:558` re-run this pass. |
+| R2 | MET | `readlink -f ~/.bun/bin/kk` → `/Users/robin/xprojects/knowledge-kit/apps/cli/dist/index.js` this pass (global package links this tree's `apps/cli`, the authorized stop-gap, never a worktree); `kk store --help` lists `select`, `mark-published`, `release`. Version `0.0.33` matches `apps/cli/package.json:3`. |
+| R3 | MET | Read-only on a scratch copy of the live store this pass: 0 items with NULL `story_id`, 0 of 101 items lacking a `kk-item-china-politics` label, `kk store extract --topic ai-news` → `{"count":12}`; `.works/kk.db.pre-0242` present. |
+| R4 | MET | Scratch copy this pass: all 6 `collect_runs` `status='done'`; newest `6ccfef89-1880-4031-9e75-984e2fe2b7c6` (inserted 9) owns 143 label rows across 16 items with that `run_id`. |
+| R5 | MET | `docs/03_ARCHITECTURE.md:142-147`: live store on v2, only the global `kk` writes it, launchd PATH resolution, upgrade-order rule tied to the R1 guard, recovery paths `.works/kk.db.pre-0242` and the incident archive. |
+| R6 | MET | `migrate?: boolean` on `OpenStoreOptions` (`packages/kk-store/src/db.ts:22`), honored at `packages/kk-store/src/db.ts:66`; `warnUnreleasedRuns` opens with `migrate: false` (`apps/cli/src/commands/daily.ts:140`); tests isolate the store via `KK_CONFIG` (`apps/cli/tests/commands/daily.test.ts:47-63`). Tests `packages/kk-store/tests/migrations.test.ts:576` and `apps/cli/tests/commands/daily.test.ts:467` re-run this pass. |
 
-#### R2 / R3 / R4 execution (2026-10-09, operator-authorized: in-tree `bun link` route)
-
-- **R2 — the global `kk` is a v2 build.** `bun link` from **this** tree's `apps/cli` (never a worktree
-  build, per 0241). Verified: `readlink -f ~/.bun/bin/kk` ->
-  `/Users/robin/xprojects/knowledge-kit/apps/cli/dist/index.js`, and `kk store --help` lists `select`,
-  `mark-published` and `release`. The tree was clean at `fa3ff1af` when the link was taken, so the linked
-  global is exactly the merged, gated revision — not a dirty working copy. `kk --version` still prints
-  `0.0.33` because the package version string was never bumped; the gate is build CONTENTS (R0), and the
-  bundle contains `0003_store_v2`.
-- **R3 — live repair, under the collect lock.**
-  1. `kk store lock acquire --name collect --run g32-repair --ttl 3600000` -> `{"acquired":true}`.
-  2. `PRAGMA wal_checkpoint(TRUNCATE)` -> `{"busy":0,"log":0,"checkpointed":0}`; backup written to
-     `.works/kk.db.pre-0242` (901120 B, same size as the store at that moment).
-  3. `kk store backfill-facts` -> `{"updated":92}`.
-  4. **No relabel was needed, and none was run** — so this repair spent zero model consults, contrary to
-     the estimate in the Design (the relabel had already been performed on the live store since this task
-     was filed: `labels` held 1111 rows with 276 rows across the three judgment decisions, not the
-     340 / 0 the Background records).
-  5. `kk store lock release --name collect --run g32-repair` -> `{"released":true}`.
-  6. **AC3 verified** with the eligibility predicate of `labelsCurrentSql` (content_hash match,
-     `source <> 'default'`, `raw_confidence >= 0.8` for model rows, `replay-` excluded):
-     `items=92`, `NULL story_id=0`, `distinct story_id=89`, items without a CURRENT
-     `kk-item-china-politics` label = **0**, items without any current label = **0**, all 92 current
-     china-politics rows at level `0`. `kk store extract --topic ai-news --window 720h` -> `{"count":14}`.
-- **R4 — one real `kk-collect` reaches `done`.** `spur workflow run plugins/kk/workflows/kk-collect.yaml`
-  (run `6ccfef89-1880-4031-9e75-984e2fe2b7c6`) finalized `done — outcome=success` in 890864 ms (~14.9 min).
-  The `label` step that used to fail now exits 0. Store effect: `collect_runs` row `status=done,
-  inserted=9, updated=7`; **143** label rows carry that run id (80 heuristic, 59 model, 4 default); all
-  **9** items first seen by the run carry a label row from that run; 0 of them have a NULL `story_id`.
-- **Residual (not a failure of this task).** The run's `release`/ledger step logged
-  `kk.ledger.run.running: run 6ccfef89… is still running; nothing was written` — the ledger append cannot
-  record a run that has not finalized yet, so the row lands on the next `kk ledger sync`. The workflow
-  still finalized `done`.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 | MET | test | `packages/kk-store/tests/migrations.test.ts:558`; 2-file run 31 pass / 0 fail / 110 expect() this pass. |
+| AC2 | MET | command | `readlink -f ~/.bun/bin/kk` and `kk store --help` this pass (see R2); link target `~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit` → this tree's `apps/cli`.; bin target declared at `apps/cli/package.json:3` version line (0.0.33). |
+| AC3 | MET | command | sqlite3 + `kk store extract --db <scratch copy> --topic ai-news --out <scratch>` this pass: 0 NULL `story_id`, every item labeled, count 12. |
+| AC4 | MET | command | sqlite3 on the scratch copy this pass: run `6ccfef89-1880-4031-9e75-984e2fe2b7c6` `done` with 143 label rows carrying its `run_id`. |
+| AC5 | MET | command | `docs/03_ARCHITECTURE.md:142-147`; `grep -n "pre-0242\|Upgrade order" docs/03_ARCHITECTURE.md` this pass. |
+| AC6 | MET | test | `apps/cli/tests/commands/daily.test.ts:467` (behind store journal untouched end to end) and `packages/kk-store/tests/migrations.test.ts:576`; re-run this pass. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
