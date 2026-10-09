@@ -121,15 +121,25 @@ its wave's slowest node), and last-writer-wins `setVars` — DAG nodes pass data
 
 **Voice2 episode speech (ADR-034, design).** `dailyGenerate` today sends the whole wrap-docs document to one voice-driver job and skips when `metadata.qc.passed` is true (`plugins/kk/scripts/daily-stages.ts`). Voice2 will instead group the already-written VoiceScript into an opening, one section per spoken item, and a closing, synthesize one request per section, and join those files before the existing intro step. The intro sting, the 15–20 minute duration check, and publish-prep's read of `mp3Path ?? audioPath` stay where they are. Concurrency above 1 is not a DAG wave: ADR-019 and ADR-031 keep fan-out inside `kk`, and this delivery runs one section at a time. The five-argument generate command stays the one-shot path, so voice1's workflow file and its one-request behavior stay put. Shapes: `docs/design/segmented-episode-speech.md`.
 
-**Persistent store (shipped — ADR-030; tasks 0206, 0208–0210).** `@gobing-ai/kk-store` owns the
-only SQLite file (`store.db_path`); `kk store migrate|lock|ingest|label|extract|mark-used` is its
-sole CLI surface and the package is the only ts-db importer (boundary rules). `kk-collect` writes it
-every 6 h (04/10/16/22 local); DAG workflows read it. `extract` compiles a topic profile
+**Persistent store (shipped — ADR-030; tasks 0206, 0208–0210, 0225–0229).** `@gobing-ai/kk-store`
+owns the only SQLite file (`store.db_path`);
+`kk store migrate|lock|ingest|backfill-facts|label|extract|select|mark-published|release` is its
+sole CLI surface and the package is the only ts-db importer (boundary rules). Store v2
+(`0003_store_v2`, one atomic migration) widens `labels` to one observation per
+(`item_id`, `decision_id`, `maker`, `run_id`) with raw-evidence columns (`raw_value`,
+`raw_confidence`, `reason`, `duration_ms`, `catalog_version`, `content_hash`), promotes the
+deterministic facts (`engagement`, `body_chars`, `source_tier`, `lang`, `domain`, `story_id`) to
+typed `items` columns, and replaces `episode_usage` with the topic-scoped `selections`;
+`items.story_id` is the title-clustering dedup key the pool exclusion rides on. `kk-collect` writes
+it every 6 h (04/10/16/22 local); DAG workflows read it. `extract` compiles a topic profile
 (`plugins/kk/decisions/extract/<topic>.yaml`) into one `ItemsDao.selectByProfile` query — a
-`labels` self-join per `where` decision, `first_seen_at >= now - window`, `NOT EXISTS episode_usage`
-when `--exclude-used` — and writes the pool as `Doc[]` with the stored labels inlined under
-`metadata.labels`, so a new topic is a profile file rather than a pipeline. `mark-used` writes the
-cross-day dedup ledger (`episode_usage`), owner of the "never re-aired" invariant.
+`labels` self-join per `where` decision, `first_seen_at >= now - window`, and a topic-scoped
+`NOT EXISTS selections` story exclusion (`--include-selected` opts out) — and writes the pool as
+`Doc[]` with the stored labels inlined under `metadata.labels`, so a new topic is a profile file
+rather than a pipeline. `select` / `mark-published` / `release` maintain that topic-scoped
+`selections` ledger — written the moment a run commits to its set, so the "never re-aired" invariant
+no longer depends on publishing — and `kk daily prepare` names any earlier run still holding
+`selected` rows.
 
 ### XHS image-card path (ADR-024)
 

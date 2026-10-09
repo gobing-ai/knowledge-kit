@@ -1168,6 +1168,24 @@ illustration across failures is deferred until observed.
 
 ---
 
+### Amendment — 2026-10-09 (G32 store v2: observation identity, item facts, topic-scoped selections, frozen DDL, atomic rebuilds)
+
+**Status:** Accepted (design) · **Date:** 2026-10-09 · **Amends:** ADR-030 · **Work:** feature G32, tasks 0225–0230
+
+**Decision.**
+
+1. **R1, labels are observations, not a verdict.** `labels` identity becomes UNIQUE `(item_id, decision_id, maker, run_id)` — one row per maker's answer, so a second maker never overwrites the first and cross-maker evidence survives for backtesting. `run_id` is NOT NULL; a pre-identity row backfills to the literal `'legacy'`. New columns: `raw_value TEXT`, `raw_confidence REAL` (the raw 0–1 payload), `reason TEXT`, `duration_ms INTEGER`, `catalog_version TEXT`, `content_hash TEXT` (the item hash the answer was made against). The enum `confidence` column stays, because the G31 R14 consumers read it. No SQL VIEW: `labels_current` needs the configured maker priority, so it is compiled as a DAO CTE (task 0226).
+2. **R2, facts live in `items`, judgments in `labels`.** Deterministic, maker-independent facts go to typed `items` columns (`engagement REAL`, `body_chars INTEGER`, `source_tier TEXT`, `lang TEXT`, `domain TEXT`, `story_id TEXT` with an index); anything a maker could disagree on stays a `labels` observation. The columns stay NULL until `backfill-facts` (task 0227) derives them; `story_id` is backfilled to the item's own id in between.
+3. **R3, `selections` replaces `episode_usage`.** The dedup ledger is topic-scoped, not workflow-scoped, and carries a story key: UNIQUE `(topic, item_id, run_id)`, plus `story_id`, `workflow`, `rank`, `reason`, `status` (CHECK `selected` | `published` | `dropped`), `selected_at`, `published_at`, and the standard columns. Every `episode_usage` row is copied in as `topic='ai-news'`, `status='published'`, `story_id = item_id`, then the old table is dropped. Extraction excludes by `(topic, story_id)` with status `selected` or `published`, so one item can still serve another topic (task 0228).
+4. **R4, `0001` is frozen literal SQL.** `KK_STORE_V1_SQL_FROZEN` in `src/migrations.ts` holds the exact v1 DDL (including the `0002` columns) that the builders produced when the store shipped; `0001` no longer derives from the live `defineTable` builders. The derivation trick only converged ADD COLUMN paths; a widened identity breaks it, so the v1 shape is pinned and v2 is described by the builders plus `0003_store_v2`.
+5. **R5, `0003` is atomic and race-safe.** A `KkMigration` may set `atomic: true`; the migrator then builds one `adapter.batch` (one transaction) of the journal `INSERT` — plain, no `ON CONFLICT`, placed first — followed by every `;`-split statement. A losing concurrent migrator fails on the journal PRIMARY KEY or SQLITE_BUSY and rolls back whole; the migrator re-reads the journal and treats "id now present" as applied by the other process. Any other failure is rethrown. Non-atomic migrations (`0001`, `0002`) keep the per-statement path and its duplicate-column tolerance.
+
+**Why.** A verdict table keyed by `(item, decision)` cannot answer "which maker was right?" — the second write erases the first — and it destroyed evidence on every content-hash change (`ItemsDao.upsertDocs` deleted an item's labels on edit). Facts mixed into untyped `metadata_json` could not be queried as signals. A workflow-keyed usage ledger recorded nothing when a run failed before its tail, so the next day re-aired the same items; a topic-scoped ledger written when the run commits to its set fixes that at the source. The DDL freeze and the atomic-apply contract are the two enabling mechanisms: without them a rebuild migration cannot converge a fresh and a migrated database, and a per-statement rebuild is not race-safe against a concurrent `kk store migrate`.
+
+**Detail:** task 0225 (schema, migration, DAOs, this amendment); 0226 (`labels_current`, raw capture, `--replay`); 0227 (typed facts, `story_id` clustering, `backfill-facts`); 0228 (`kk store select` / `mark-published` / `release`, `excludeTopic`); brainstorm `docs/plans/2026-10-08-kk-collect-store-v2-brainstorm.md` (D1, D2, D4). Adapter atomicity: `@gobing-ai/ts-db` `batch` runs one transaction.
+
+---
+
 ## ADR-031: Product workflows may be `kind: dag`; nodes pass data by files
 
 **Status:** Accepted; implemented (tasks 0211–0212, first green run `4a9b22f0` 2026-10-08) · **Date:** 2026-10-06

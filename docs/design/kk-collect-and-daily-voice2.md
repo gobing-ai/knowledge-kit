@@ -14,7 +14,7 @@ launchd/cron (every 6h)                         operator / cron (daily)
   lock → collect → store → label → ledger          extract → … fan-out … → fan-in → ledger
         │                │                                ▲
         └──── writes ────┴──► kk.db (WAL) ◄──── reads ────┘
-                               items · collect_runs · labels · episode_usage
+                               items · collect_runs · labels · selections
 ```
 
 `kk-daily-ai-voice.yaml` stays untouched until cut-over (§8).
@@ -25,21 +25,21 @@ launchd/cron (every 6h)                         operator / cron (daily)
 | --- | --- | --- |
 | Adapter + migrate | `src/db.ts` — `openStore({ path })`: `createDbAdapter({ driver: 'bun-sqlite', url })`, `PRAGMA journal_mode = WAL` + `PRAGMA busy_timeout = 30000` via `adapter.exec` (the typed pragmas option omits busy_timeout — spur `db.ts:38`), then `applyKkMigrations` | `packages/domain/src/db.ts` |
 | Schema | `src/schema/*.ts` — tables via `defineTable(name, cols)` + column builders from `@gobing-ai/ts-db/schema` (spur `schema/runs.ts`); zero direct `drizzle-orm` imports | `packages/domain/src/schema/` |
-| DAOs | `src/dao/{items,collect-runs,labels,episode-usage}.ts` extending ts-db `EntityDao` | `packages/domain/src/dao/` |
-| Migrations | embedded `KkMigration[]` (`{id, sql}`) journaled in `__kk_store_migrations`; v1 DDL derived from each `defineTable(...).createTableSql` — no hand-written SQL file | spur `packages/domain/src/migrations.ts:1625` `applyCliMigrations` |
+| DAOs | `src/dao/{items,collect-runs,labels,selections,locks}.ts` extending ts-db `EntityDao` | `packages/domain/src/dao/` |
+| Migrations | embedded `KkMigration[]` (`{id, sql}`) journaled in `__kk_store_migrations`; `0001_kk_store_init` is a frozen literal (a builder-derived DDL cannot converge a fresh database with `0003`'s `labels` rebuild), `0002_labels_confidence_run_id` adds `confidence`/`run_id`, and `0003_store_v2` is `atomic` — the journal row plus every statement in one transaction | spur `packages/domain/src/migrations.ts:1625` `applyCliMigrations` |
 | Public API | `src/index.ts` — DAOs + `openStore` + row types; no ts-db types leak | — |
 
 `@gobing-ai/ts-db` is already in the root catalog (`^0.5.15`); `kk-store` consumes it via
 `catalog:` — no new third-party dependency.
 
-### Tables (v1)
+### Tables (v2 — after `0003_store_v2`)
 
 | Table | Key columns | Notes |
 | --- | --- | --- |
-| `items` | `id` (sha256 of canonical URL, or of body when URL-less), `canonical_url` UNIQUE NULL, `content_hash`, `title`, `body`, `source`, `media_type`, `metadata_json`, `first_seen_run`, `last_seen_run`, `first_seen_at`, `published_at` | Upsert on `id`; `content_hash` change ⇒ `labels` for that item are invalidated (re-label next run) |
+| `items` | `id` (sha256 of canonical URL, or of body when URL-less), `canonical_url` UNIQUE NULL, `content_hash`, `title`, `body`, `source`, `media_type`, `metadata_json`, `first_seen_run`, `last_seen_run`, `first_seen_at`, `published_at`, typed facts `engagement`, `body_chars`, `source_tier`, `lang`, `domain`, `story_id` (`items_story_idx`) | Upsert on `id`; `content_hash` change ⇒ `labels` for that item are invalidated (re-label next run). The facts are deterministic, derived from the Doc (0227); `story_id` is the title-clustering dedup key `kk store backfill-facts` recomputes |
 | `collect_runs` | `run_id` PK, `started_at`, `finished_at`, `status`, `source_counts_json`, `inserted`, `updated` | provenance |
-| `labels` | (`item_id`, `decision_id`) PK, `value`, `score` NULL, `maker`, `source` (`model`\|`heuristic`\|`default`), `labeled_at` | one row per decision per item |
-| `episode_usage` | (`item_id`, `workflow`, `run_id`) PK, `used_at` | cross-day dedup (I18) |
+| `labels` | identity (`item_id`, `decision_id`, `maker`, `run_id`) UNIQUE (`labels_observation_unique`), `value`, `score` NULL, `confidence` (`HIGH`\|`MEDIUM`\|`LOW`\|NULL), `source` (`model`\|`heuristic`\|`default`), `labeled_at`, raw evidence `raw_value`, `raw_confidence`, `reason`, `duration_ms`, `catalog_version`, `content_hash` | one row per (decision, maker, run) observation (0225/0226). `content_hash` binds the row to the item revision it judged, so a re-ingest invalidates it |
+| `selections` | (`topic`, `item_id`, `run_id`) PK, `story_id`, `workflow`, `rank`, `reason`, `status` (`selected`\|`published`\|`dropped`), `selected_at`, `published_at` | topic-scoped cross-day dedup (I18; replaced `episode_usage` in 0225, written by 0228) |
 | `locks` | `name` PK, `owner_run`, `acquired_at`, `ttl_ms` | single-flight (I19) |
 
 Canonical URL = lowercase host, strip fragment and `utm_*`/`ref` params, drop trailing slash —
@@ -66,8 +66,10 @@ and `drizzle/`). Both run in `bun run gate` via `spur rule run`.
 | `kk store lock acquire\|release --name collect --run <id> [--ttl 7200000]` | single-flight; held lock ⇒ prints `{"skipped":"locked"}`, exit 0 + writes `.skip` marker | 0 |
 | `kk store ingest --run <id> --in <docs.json>` | upsert `Doc[]`, record `collect_runs`, print `{inserted, updated, unchanged}`, write `new-ids.json` | 0 / 1 |
 | `kk store label --run <id> --new-ids <path> [--maker <name>]` | label items in `new-ids.json` (+ invalidated); the maker defaults to `.spur/config.yaml` `decisions.maker`; catalog loads checked with `spur decision status --json` (`ok`, empty `loadErrors`) — there is no `decision validate` verb | 0 (degraded ⇒ heuristic, `source: default`) |
-| `kk store extract --topic <name> --window 24h --limit N --out <docs.json> [--exclude-used <workflow>]` | profile query → `Doc[]` (labels inlined into `metadata`) | 0 (empty pool ⇒ `[]` + `pool-empty` marker) |
-| `kk store mark-used --workflow <w> --run <id> --in <plan.json>` | write `episode_usage` | 0 / 1 |
+| `kk store extract --topic <name> --window 24h --limit N --include-selected --out <docs.json>` | profile query → `Doc[]` (labels inlined into `metadata`), minus the topic's already-selected/published stories | 0 (empty pool ⇒ `[]` + `pool-empty` marker) |
+| `kk store select --topic <t> --workflow <w> --run <id> --in <candidates.json>` | write `selections` rows, `status: selected` | 0 / 1 |
+| `kk store mark-published --topic <t> --run <id> [--in <ids.json>]` | promote the run's `selected` rows to `published` | 0 / 1 (0 rows ⇒ `{published: 0}`) |
+| `kk store release --run <id> [--topic <t>]` | move the run's `selected` rows to `dropped`, returning its items to the pool | 0 / 1 |
 
 ## 4. Labels via `spur decision` (I8–I10, I20)
 
@@ -80,13 +82,55 @@ Catalog at `plugins/kk/decisions/` (kk-owned, added to `decisions.paths` in `.sp
 | `kk-item-importance` | score | 0–5 | 2 |
 | `kk-item-urgency` | score | 0–5 | 2 |
 | `kk-item-impact` | score | 0–5 | 2 |
+| `kk-item-china-politics` | score | 0–3 — 0 no reference to the political system/institutions/top leader (Chinese companies, models and products are 0) · 1 a factual government-body/policy mention as news context · 2 commentary on the system/institutions · 3 the top leader's personal information or a direct critique | 3 |
+| `kk-item-sensitivity` | score | 0–3 — none / mild / notable / high publish risk (unverified claims, legal exposure, political sensitivity) | 1 |
+| `kk-item-audience` | choice | `general` `practitioner` `researcher` | `general` |
+
+The three task-0229 decisions are the **judgment** decisions: the plugin's keyword heuristic has no
+signal for them, so `kk store label` consults them for EVERY labelled item in both modes (the
+heuristic's five keep their heuristic-first routing), and their consults count in
+`consults`/`consultMs`. `kk-item-china-politics` exists to avoid unnecessary platform-moderation
+rejection (D3a) and must NOT exclude China-related content: Chinese companies, models, products,
+industry and ordinary regulation news score 0. Its `description` states that rule, and its prefilter
+terms are top-leader/central-institution only.
+
+The **china-politics keyword prefilter** scans the title plus the body head (first 200 characters),
+case-insensitively, against `store.labels.china_politics_terms` (default: `习近平`, `总书记`,
+`中共中央`, `政治局`, `中南海`, `党中央`, `Xi Jinping`, `Politburo`, `Zhongnanhai`). On a hit it writes
+a maker `keyword`, source `heuristic`, value `3` observation with reason `keyword:<term>` — never
+maker `heuristic` — and the model is STILL consulted, so a backtest keeps both rows. A hit is a hard
+floor because `store.labels.decisions.kk-item-china-politics.priority` defaults to
+`['keyword', '*', 'heuristic']`.
+
+**Raw observations and the current-label view.** Every consult writes an observation row, never an
+overwrite: the identity is (`item_id`, `decision_id`, `maker`, `run_id`), so two makers' answers to
+the same decision — or two runs of the same maker — sit side by side and the pool can later be
+re-labeled and compared (0226). A row carries the decision's normalized `value`/`score`/`confidence`
+**and** the raw evidence the maker returned — `raw_value`, `raw_confidence`, `reason`,
+`duration_ms` — plus `catalog_version` (the decision catalog's `version`) and the item's
+`content_hash` at judgment time, so evidence is never lost and a row is invalidated when the item's
+body changes. `kk store label --replay since:24h --maker <m>` re-runs the labeler against a
+historical pool and writes the new rows under a `replay-*` run id, so a backtest never displaces
+production selection.
+
+Consumers never read `labels` directly. `labelsCurrentSql(policy)`
+(`packages/kk-store/src/dao/labels.ts`) defines the `labels_current` CTE — for every
+(`item_id`, `decision_id`) the one eligible, highest-priority observation. A row is eligible when its
+`content_hash` matches the item's current hash, its `source` is not `'default'` (a degraded row is
+not a label), a `source 'model'` row clears `store.labels.min_confidence` (default `0.8`), its maker
+is listed in the effective priority, and a `replay-` run id may win only for a maker named **by name**
+(never `'*'`). `store.labels.priority` (default `['*', 'heuristic']`) sets that order per decision —
+a maker not listed is filtered out in `WHERE`, never ranked last. `kk store extract`'s profile joins
+and the inlined `metadata.labels` both go through this one CTE, so a `where` decision is an INNER
+join on the current label: an item with no current answer is excluded (fail-closed).
 
 **Cost control.** `kk store label` first runs the existing episode-plan-gen keyword heuristic
 (extracted to a pure function the plugin and `kk store label` both import). Only items the
 heuristic cannot classify confidently, or all new items when `label.mode: decision`, go to
-`spur decision run <id> --param title=… --evidence <tmp body file> --maker <maker> --json`.
-Labels are never re-run on unchanged items. A decision returning `source: default` (backend
-degraded) records the heuristic value with `source: default` — the run never fails on labels.
+`spur decision run <id> --param title=… --evidence <tmp body file> --maker <maker> --json`; each
+new item therefore costs three EXTRA consults for the judgment decisions. Labels are never re-run
+on unchanged items. A decision returning `source: default` (backend degraded) records the heuristic
+value with `source: default` — the run never fails on labels.
 
 **Extraction is data, not code.** Topic profiles live in
 `plugins/kk/decisions/extract/<topic>.yaml`:
@@ -99,12 +143,17 @@ where:
   # emptied every real pool
   kk-item-quality: { gte: 2 }
   kk-item-importance: { gte: 3 }
+  # 0229 R5 (conservative moderation gate): a `where` key is an INNER join on labels_current, so an
+  # item with no current china-politics answer is EXCLUDED (fail-closed). 0-1 clears the gate.
+  kk-item-china-politics: { lte: 1 }
 order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
 ```
 
 `kk store extract` compiles the profile into one SQL query over `labels` (DAO method, no raw SQL
 outside kk-store). A new topic = a new profile file (R11). A topic-specific *decision* can be
-added later as an extra catalog entry without schema change (labels are row-per-decision).
+added later as an extra catalog entry without schema change (labels are row-per-decision) — 0229's
+three judgment decisions are exactly that, and `packages/kk-store/src/profile.ts` `ITEM_DECISION_IDS`
+lists them so a profile may name them.
 
 ### Confidence surfaces (G31 R14, task 0213)
 
@@ -164,7 +213,8 @@ action documented in the satellite; kk never edits the operator's crontab.
 ### Node map (multi-action states become node chains)
 
 ```
-prepare ─► extract ─► plan ─► qc-content ─┬─► plan-translate(agent)
+prepare ─► extract ─► plan ─► qc-content ─┬─► select ────────────────────────────────────────┐
+                                          ├─► plan-translate(agent)
                                           ├─► article-write(agent) ─► article ─────────────┐
                                           ├─► cover-brief(agent) ─► cover ─────────────────┤
                                           └─► script-style ─► script-write(agent) ─► script┤
@@ -181,14 +231,17 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► plan-translate
                                      ▼
               publish-classify (deps: podcast, surfdash, xhs-publish, wechat, translate-sync; policy all)
                                      ▼
-                       mark-used ─► run-report ─► ledger
+                  mark-published ─► run-report ─► ledger
 ```
 
-- `extract` = `kk store extract --topic ai-news --window ${vars.window} --exclude-used kk-daily-ai-voice2 --out ${work_dir}/10-collect/pool.json`; `condition` on every downstream root: pool non-empty. Empty ⇒ all skipped. Engine skip rule (`dag.ts:126`): a node whose deps are **all** skipped is skipped; done+skipped mix proceeds. So `run-report` and `ledger` list `extract` in `dependsOn` next to their normal deps — they still run on an empty pool and record `no-content` (G11 R3).
+- `extract` = `kk store extract --topic ai-news --window ${vars.window} --out ${work_dir}/10-collect/pool.json` (the ai-news exclusion is always on — 0228 R4); `condition` on every downstream root: pool non-empty. Empty ⇒ all skipped. Engine skip rule (`dag.ts:126`): a node whose deps are **all** skipped is skipped; done+skipped mix proceeds. So `run-report` and `ledger` list `extract` in `dependsOn` next to their normal deps — they still run on an empty pool and record `no-content` (G11 R3).
 - `20-facts/` stays empty. `kk daily prepare` still creates the voice1 directory set, including `20-facts`, but this DAG never writes core facts. The pool file `10-collect/pool.json` replaced voice1's `20-facts/<stamp>_02_collect_core-facts.md`. An empty directory is the port, not a skipped stage.
 - `plan` consumes `pool.json` through the existing episode-plan-gen plugin; labels in `metadata` replace its keyword re-scoring when present.
 - `publish_enabled=false` ⇒ `condition` skips the publish subtree (same var as today).
 - `patch-surfdash` / `publish-partial` fold into `publish-classify` (it already classifies partial).
+- `select` = `kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run ${vars.__runId} --in ${work_dir}/21-plan/<date>_04_quality-control-content_candidates.json`, declared right after `qc-content`, guarded on the candidates file. It reads the QC output, not `03_plan_plan.json`: the plan file is pre-QC, so selecting it would burn items the run rejected. This is 0228's fix for the root cause F4: the exclusion is recorded the moment the run commits to its set, not at the DAG tail, so a run that fails, pauses at review or skips publish still excludes what it planned.
+- `mark-published` = `kk store mark-published --topic ai-news --run ${vars.__runId}` on `dependsOn: [publish-classify, extract]`, with the candidates guard **and** `test "${vars.publish_enabled}" = "true"` — a dry run never promotes, so its rows stay `selected` (still excluding, freed by `kk store release --run <id>`). `run-report` lists it in `dependsOn`.
+- `kk daily prepare --workflow <w>` writes one stderr line per other run still holding `selected` rows for the workflow, each naming the `kk store release --run <id>` that frees it (0228 R7).
 
 ### Boundary rule (I14)
 
@@ -235,9 +288,20 @@ summaries for the newest missing run only (no per-run work dir in the trace).
 | --- | --- | --- |
 | P1 | kk-store + migrations + boundary rules + config | `bun run gate`, rule run |
 | P2 | kk-collect + `kk store ingest/label` + decision catalog + schedule templates + ledger | 2 real 4h runs, ledger rows |
-| P3 | `kk store extract/mark-used` + profiles | extract over P2 data |
+| P3 | `kk store extract` + profiles, `select`/`mark-published`/`release` | extract over P2 data |
 | P4 | voice2 DAG + safety sub-workflow + stage moves | dry-run publish E2E (R22) |
 | P5 | parity | `kk ledger cutover-check --candidate kk-daily-ai-voice2 --baseline kk-daily-ai-voice --runs 5` |
+
+**G32 cut-over (0225–0230, 2026-10-09).** Store v2 ships as one schema cut-over:
+`0003_store_v2` rebuilds `labels` onto the four-column observation identity with the raw-evidence
+columns, adds the typed `items` facts, and replaces `episode_usage` with `selections`. The live
+store migrates in place with the store's own `collect` lock held — `kk store lock acquire --name
+collect` → `kk store migrate` → `kk store lock release` — with `.works/kk.db.pre-g32` as the
+pre-migration backup. `openStore` applies pending migrations, so the lock acquire is what applies
+`0003`; the lock is therefore always held while the schema changes. Rollback is
+`mv .works/kk.db.pre-g32 .works/kk.db` plus the pre-G32 `kk` binary. Every `episode_usage` row
+becomes a `selections` row with topic `ai-news` and `status 'published'`, so the "never re-aired"
+invariant survives the table swap.
 
 Retiring `kk-daily-ai-voice.yaml` is a separate follow-up change after P5 reports ready.
 

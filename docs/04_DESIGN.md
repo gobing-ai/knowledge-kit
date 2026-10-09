@@ -71,10 +71,14 @@ kk store migrate [--db <path>]
 kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
 kk store lock release --name <lock> --run <id> [--db <path>]
 kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
+kk store backfill-facts [--db <path>]
 kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]
-kk store extract --topic <t> [--window 24h] [--limit <n>] [--exclude-used <workflow>]
+kk store label --replay <topic:t|run:id|since:24h> --maker <name> [--decisions <ids>] [--window 24h] [--db <path>]
+kk store extract --topic <t> [--window 24h] [--limit <n>] [--include-selected]
                  --out <Doc[].json> [--db <path>]
-kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]
+kk store select --topic <t> --workflow <w> --run <id> --in <Doc[].json|metadata.docs> [--db <path>]
+kk store mark-published --topic <t> --run <id> [--in <Doc[].json|metadata.docs>] [--db <path>]
+kk store release --run <id> [--topic <t>] [--db <path>]
 kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
 kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
@@ -91,9 +95,12 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
 | `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
-| `store label` | Label the ids `ingest` filed — one `labels` row per decision through the kk decision catalog, heuristic-first; prints `{verdict, confidence, labeled, model, fallback, consults, consultMs}` (§1.9) | shipped (task 0209; verdict confidence 0213) |
-| `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined); prints `{count}` (§1.9) | shipped (task 0210) |
-| `store mark-used` | Record the items one run used in `episode_usage` (idempotent); prints `{marked}` (§1.9) | shipped (task 0210) |
+| `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
+| `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229) |
+| `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined), excluding the topic's already-selected stories and gating on the profile's `where` keys (the shipped ai-news profile's `kk-item-china-politics: { lte: 1 }` excludes an unjudged item, fail-closed); prints `{count}` (§1.9) | shipped (task 0210; topic-scoped exclusion 0228; china-politics gate 0229) |
+| `store select` | Record a run's planned set as `selected` stories for one topic (idempotent); prints `{selected}` (§1.9) | shipped (task 0228) |
+| `store mark-published` | Promote a run's `selected` rows to `published`; prints `{published}` (§1.9) | shipped (task 0228) |
+| `store release` | Drop a run's `selected` rows so its items re-enter the pool; prints `{released}` (§1.9) | shipped (task 0228) |
 | `schedule render` | Print the launchd plist / crontab line for a shipped workflow (§1.11); installing it is an operator action | shipped (task 0208) |
 | `ledger append` | Append one workflow run section to `<works-dir>/<name>/ledger.md` from `spur workflow trace`; prints `{workflow, ledger, appended}` (§1.10) | shipped (task 0207) |
 | `ledger sync` | Append every finished run of the workflow missing from its ledger, oldest first (same printed shape) (§1.10) | shipped (task 0207) |
@@ -436,42 +443,141 @@ inserted half, so the invalidated half is derived from the stored `title`/`body`
 upsert — the two fields `content_hash` covers. Failure exits 1 with `kk.store.ingest.failed: <cause>`
 and writes no `--new-ids` file.
 
-`kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]`
-is the labelling pass over the ids the last `ingest` filed: the inserted items plus the already-stored
-items whose content changed. Each listed id gets **one `labels` row per decision** (`item_id`,
-`decision_id`, `value`, `score` for the 0–5 dimensions, `maker`, `source`
-(`heuristic` | `model` | `default`), `confidence` — the verdict's `HIGH | MEDIUM | LOW` level, never
-`null` for a row this pass writes — `run_id` (the `--run` value every row carries), `labeled_at`) — a
-new decision is a new row, never a schema change — and an id the store does not hold is skipped rather
-than failing the pass.
+**The typed item facts and the story key (task 0227, G32 D2/D5).** Ingest moves the deterministic
+facts the four dimension scores are pure functions of out of `metadata_json` into typed `items`
+columns: `engagement` (the largest finite number in `metadata.engagement`, mirroring the plugin's
+`maxEngagement`), `body_chars` (`[...body].length`, counted in code points), `source_tier`
+(`curated` for `aihot`, `community` for `rss`/`hackernews`, else `other` — the source-tier bases of
+`IMPORTANCE_BASE`), `lang` (`metadata.lang`, else `zh` for a CJK-ideograph title, else `en` for a
+Latin one, else NULL) and `domain` (`new URL(canonical_url).hostname`, lowercased, `www.` stripped,
+NULL on a parse failure). `itemFacts(doc)` in `packages/kk-store/src/facts.ts` is the one derivation;
+ingest fills the columns for every inserted or updated item (an unchanged item is not rewritten —
+`content_hash` does not cover metadata), and `ItemsDao.backfillFacts` recomputes them for every row.
 
-Labelling is **heuristic-first**. The five decisions come from `plugins/kk/decisions/kk-items.yaml`,
+The same batch assigns each **inserted** item a `story_id`: the same event under two URLs shares one
+story, so tomorrow's selection dedup can drop it. `storyIdFor(title, candidates, threshold)` in
+`packages/kk-store/src/story.ts` tokenizes the title — NFKC + lowercase, a trailing outlet suffix
+after ` - ` / ` | ` / `｜` / ` — ` dropped when it is ≤ 30 characters, punctuation/symbols removed,
+CJK runs as character bigrams and Latin/digit runs as words — and takes the candidate with the best
+token Jaccard at `>= threshold` (ties → earliest `first_seen_at`, then smallest `id`). Candidates are
+the items inside `story.windowHours` of `now` plus the docs preceding it in the same batch; a story's
+id is its earliest member's id, a `null` match makes the item its own story, and an existing item
+keeps the `story_id` it has (a later item never re-roots a story). This is deliberately NOT the
+plugin's whole-string character-bigram `titleSimilarity`, which over-merges unrelated English titles.
+
+`kk store backfill-facts [--db <path>]` (task 0227 R4) recomputes the facts for every item and then
+the `story_id` in `first_seen_at, id` order, clustering each item only against EARLIER items inside
+the window, so clustering stays causal and the earliest member keeps the root. It prints `{updated}`,
+the count of rows whose values actually changed, and is **idempotent** — a second run prints
+`updated: 0`. Failure exits 1 with `kk.store.backfill-facts.failed: <cause>`.
+
+`kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision]
+[--db <path>]` is the labelling pass over the ids the last `ingest` filed: the inserted items plus
+the already-stored items whose content changed. Every listed id gets **one observation per (decision,
+maker)** (task 0226): the row key is `(item_id, decision_id, maker, run_id)`, so a second maker never
+overwrites the first and a rerun of the same run updates in place. Each row carries the mapped
+`value` (`score` for the 0–5 dimensions), `maker`, `source` (`heuristic` | `model` | `default`),
+`confidence` — the verdict's `HIGH | MEDIUM | LOW` level, never `null` for a row this pass writes —
+`run_id` (the `--run` value every row carries), `labeled_at`, and the **raw evidence** the verdict
+alone used to drop: `raw_value` (the answer verbatim, before vocabulary mapping), `raw_confidence`
+(the model's own 0–1 payload), `reason`, `duration_ms`, `catalog_version` (the catalog's `version`,
+`'unknown'` when it cannot be read) and `content_hash` (the item's hash when the answer was made, so
+an edit never orphans it). A heuristic annotation is always recorded as its own maker `heuristic`
+with `source: heuristic` and `raw_confidence NULL` — whether or not the item was routed — because it
+is the baseline every backtest compares a model against. An id the store does not hold is skipped
+rather than failing the pass.
+
+`kk store label --replay <selector> --maker <name> [--decisions <ids>] [--window <duration>]
+[--db <path>]` re-labels a HISTORICAL pool with another maker (task 0226 R6): the selector is exactly
+one of `topic:<profile>` (the profile's pool, compiled exactly as `extract` compiles it, with no
+exclusion), `run:<collect-run-id>` (`items.first_seen_run` or `last_seen_run`) or
+`since:<n><s|m|h|d>` (`first_seen_at` within the window). Every selected item is routed in decision
+mode for the selected decisions (default: the whole catalog) and **only** the maker's observations are
+written — no heuristic row, and no other maker's row is created, updated or deleted — under the run id
+`replay-<epoch-ms>`. stdout is `{replayed, consults, consultMs, run}`; a selector matching 0 items
+prints `replayed: 0` and exits 0. `--replay` is mutually exclusive with `--new-ids` and requires
+`--maker`; either violation exits 1.
+
+Labelling is **heuristic-first**. The **eight** decisions come from `plugins/kk/decisions/kk-items.yaml`,
 registered through `decisions.paths` in `.spur/config.yaml` and served by `spur decision run`:
-`kk-item-category` (MECE choice, fallback `non-ai`) plus `kk-item-quality|importance|urgency|impact`
-(0–5 score rubrics, fallback `2`). The keyword heuristic stays the plugin's: `kk store label` calls
+`kk-item-category` (MECE choice, fallback `non-ai`), `kk-item-quality|importance|urgency|impact`
+(0–5 score rubrics, fallback `2`), and the three judgment decisions added by task 0229 —
+`kk-item-china-politics` (0–3, fallback `3`), `kk-item-sensitivity` (0–3, fallback `1`) and
+`kk-item-audience` (choice `general | practitioner | researcher`, fallback `general`). `LABEL_DECISIONS`
+in `apps/cli/src/commands/store.ts` is the ONE table they live in: it carries each id's `kind` and its
+choice vocabulary or level count, and `decisionValue` validates every answer against its own entry (a
+choice label must be in vocabulary; a score must be an integer in `[0, levels-1]`, so a `4` is
+rejected for a 0–3 decision while it is accepted for a 0–5 one). The keyword heuristic stays the plugin's: `kk store label` calls
 `kk executor run episode-plan-gen` with `EPISODE_PLAN_MODE=label`, which annotates **every** input Doc
 (`metadata.category`, `metadata.scores`, `metadata.needs_model`) with no cap, dedup or filter, so
 `apps/cli` imports no plugin source. In `heuristic` mode (the default) only items the heuristic files
 `non-ai` while seeing an AI signal are routed to `spur decision run <id> --param title=… --param
-source=… --evidence <body file> [--maker <maker>] --json` (inheriting `.spur/config.yaml` `decisions.maker` unless `--maker` is explicitly passed); `--mode decision` routes every item. A result
+source=… --evidence <body file> [--maker <maker>] --json` (inheriting `.spur/config.yaml` `decisions.maker` unless `--maker` is explicitly passed); `--mode decision` routes every item. The heuristic's
+five keep that routing; the three judgment decisions have no heuristic signal, so they are consulted
+for **every** labelled item in both modes and their consults count in `consults`/`consultMs`. Before
+consulting, the **china-politics keyword prefilter** (0229 R4) scans the title plus the first 200
+characters of the body, case-insensitively, for `store.labels.china_politics_terms`: on a hit it
+writes a `kk-item-china-politics` observation with maker `keyword` (never `heuristic`), source
+`heuristic`, value `3` and reason `keyword:<term>`, and the model is STILL consulted so a backtest
+keeps both rows. A result
 with `source: default` (`no-backend`, `timeout`, `error`, `low-confidence`), an unparseable payload, an
 out-of-vocabulary value or a spawn failure stores the **heuristic value** with `source: default`: the
 pass exits 0 and a collect run never fails on labels. stdout is `{verdict, confidence, labeled,
-model, fallback, consults, consultMs}` — `consults` counts the `spur decision run` invocations the
-pass attempted and `consultMs` sums their reported `durationMs` (the decision backend does not report
-token usage), both observable without parsing `decision_logs`. The scratch under
-`<new-ids dir>/label/` is removed on the way out. Usage
-errors (a missing or malformed `--new-ids`, an unknown `--mode`) exit 1 with
+model, fallback, consults, consultMs}` — `model` counts the `source: model` rows and `fallback` the
+`source: default` ones, while `labeled` is every row written (the heuristic baseline included).
+`consults` counts the `spur decision run` invocations the pass attempted and `consultMs` sums their
+reported `durationMs` (the decision backend does not report token usage), both observable without
+parsing `decision_logs`. The scratch under `<new-ids dir>/label/` (beside the store database for a
+replay) is removed on the way out. Usage errors (a missing or malformed `--new-ids`, an unknown
+`--mode`, a malformed replay selector, a missing `--maker`) exit 1 with
 `kk.store.label.failed: <cause>`.
+
+**The label config and the current label (task 0226 R3/R4).** `packages/kk-store/src/config.ts` owns
+the ONE kk config reader, `readStoreConfig(configFile?)`, returning
+`StoreConfig { dbPath?, labels: { priority, decisionPriority, minConfidence }, story: { threshold, windowHours } }`;
+`readStoreDbPath`
+(and, in turn, 0227's story keys and 0229's profile gate) reads through it. The keys are
+`store.labels.priority` (maker names, best first; default `['*', 'heuristic']`, where `'*'` matches
+any maker at its own position), `store.labels.decisions.<id>.priority` (optional; replaces the global
+list for that decision id — `kk-item-china-politics` defaults to `['keyword', '*', 'heuristic']` when
+the operator sets none, so the keyword hit is a hard floor and a non-hit falls through to the model),
+`store.labels.china_politics_terms` (a non-empty string array, default the built-in top-leader and
+central-institution list — `习近平`, `总书记`, `中共中央`, `政治局`, `中南海`, `党中央`, `Xi Jinping`,
+`Politburo`, `Zhongnanhai`; never a generic term like `中国`/`China`/`Beijing`, because the prefilter
+only ADDS exclusions) and `store.labels.min_confidence` (a number in `[0, 1]`, default `0.8` —
+ADR-125's threshold, which is why the item-label catalog's own `minConfidence` is now `0`: every raw
+answer is accepted and stored, and the threshold gates only which stored observation is current). A
+missing, unreadable or unparseable file yields the defaults; a key that is PRESENT with the wrong type
+or outside its domain throws `StoreConfigInvalidError` naming it, because a silently defaulted
+priority or threshold changes which labels are current and therefore which items a topic pool holds.
+The **story keys** (task 0227 R3) are `store.story.threshold` (the Jaccard a candidate must reach, a
+number in `(0, 1]`, default `0.6`) and `store.story.window_hours` (the candidate window, a positive
+integer, default `72`); ingest and `backfill-facts` read them through the same
+`readStoreConfig`, under the same fail-loud rule.
+
+One CTE builder, `labelsCurrentSql(policy)` in `packages/kk-store/src/dao/labels.ts`, defines
+`labels_current` — one current row per `(item_id, decision_id)` — and every read uses it:
+`ItemsDao.selectByProfile`'s joins, `ItemsDao.labelsFor` and `LabelsDao.currentFor(itemIds, policy)`.
+A row is eligible when its `content_hash` is the item's CURRENT hash, its `source` is not `'default'`
+(a degraded row is not a label), a `source 'model'` row clears `min_confidence`, its maker is in the
+effective priority (or matched by `'*'`), and — for a `run_id` starting `replay-` — its maker is
+listed BY NAME: `'*'` never admits a replay row, and an unlisted maker is filtered out in `WHERE`
+rather than ranked last. Kept rows rank by priority position, then the latest `labeled_at`, then the
+greatest `run_id`; row 1 wins. So under the default policy a model answer outranks the heuristic
+baseline it was compared against, a below-threshold model answer is stored but never current (and
+where it is the only row, the pair simply has no current label — fail-closed), and no replay can
+displace production selection. There is no SQL VIEW (`bun:sqlite` ships window functions).
 
 **The confidence level (G31 R14, task 0213).** Every verdict this surface emits carries exactly one
 level from the closed `HIGH | MEDIUM | LOW` enum — the same vocabulary the judge-verdict gates and the
 `verification-confidence-level` rule use, in one contract rather than a fourth mechanism. The model's
-numeric 0–1 confidence is **mapped into the enum at this boundary and never stored**: `HIGH` at
-`>= 0.8`, `MEDIUM` at `>= 0.5`, `LOW` below it, and `LOW` for a keyword-heuristic row, a degraded
-`source: default` row or a model answer whose payload carried no number — only a model answer with
-evidence can earn more than `LOW`, and a missing level is never stored as `null` or silently
-defaulted. `labelConfidence(source, confidence)` is that mapping and `verdictConfidence(levels)` is
+numeric 0–1 confidence is **mapped into the enum at this boundary** (`labels.confidence`) while the
+payload itself is kept beside it in `raw_confidence` (task 0226, so a backtest can re-rank without a
+new model call): `HIGH` at `>= 0.8`, `MEDIUM` at `>= 0.5`, `LOW` below it, and `LOW` for a
+keyword-heuristic row, a degraded `source: default` row or a model answer whose payload carried no
+number — only a model answer with evidence can earn more than `LOW`, and a missing level is never
+stored as `null` or silently defaulted. `min_confidence` is NOT part of this mapping: it gates
+`labels_current` eligibility only. `labelConfidence(source, confidence)` is that mapping and `verdictConfidence(levels)` is
 the pass's own level (the weakest among its rows, `LOW` for an empty pass), both exported by
 `@gobing-ai/kk-store`. `labels.confidence` is declared `text` and holds exactly one of
 `HIGH | MEDIUM | LOW` — migration `0002` adds it as `TEXT` so a migrated database converges on a
@@ -484,7 +590,7 @@ and fails the run through `release-failed` instead of being read as a pass. Proo
 lines (artifact `.spur/run/verdict-confidence/summary.json`); `apps/cli/tests/store-label.test.ts`
 proves the producer half against a temp store.
 
-`kk store extract --topic <t> [--window 24h] [--limit <n>] [--exclude-used <workflow>]
+`kk store extract --topic <t> [--window 24h] [--limit <n>] [--include-selected]
 --out <Doc[].json> [--db <path>]` is the read path an episode workflow starts from — the answer to
 "which stored items belong in this topic's pool?". The topic names a **profile file**
 (`plugins/kk/decisions/extract/<topic>.yaml`), resolved from the working checkout first and the
@@ -498,8 +604,9 @@ The profile shape is `{ topic, where, order, limit }`:
 topic: ai-news
 where:
   kk-item-category: { in: [ai-news, ai-industry] }
-  kk-item-quality: { gte: 3 }
+  kk-item-quality: { gte: 2 }
   kk-item-importance: { gte: 3 }
+  kk-item-china-politics: { lte: 1 }
 order: [kk-item-urgency desc, kk-item-impact desc, first_seen_at desc]
 ```
 
@@ -511,11 +618,21 @@ entries are `"<decision-id> asc|desc"` or `"first_seen_at asc|desc"`, most signi
 (20) when the profile omits it; `--limit` overrides both.
 
 `packages/kk-store/src/profile.ts` owns `parseProfile` / `compileProfile`;
-`ItemsDao.selectByProfile` owns the SQL as one parameterized statement: a `labels` self-join per
-`where` key, `i.first_seen_at >= now - --window`, and a `NOT EXISTS (SELECT 1 FROM episode_usage …)`
-when `--exclude-used <workflow>` is given — so no SQL leaves `packages/kk-store`. A decision named
-only by `order` left-joins (an item without that label is sorted, not dropped), while a `where`
-decision with no `labels` row excludes the item: its join **is** the predicate.
+`ItemsDao.selectByProfile` owns the SQL as one parameterized statement: one `labels_current` join per
+`where` key (the CTE above, so only the CURRENT observation for each decision participates),
+`i.first_seen_at >= now - --window`, and a topic-scoped story exclusion,
+`NOT EXISTS (SELECT 1 FROM selections s WHERE s.topic = ? AND s.story_id = i.story_id AND
+s.status IN ('selected','published'))` — so no SQL leaves `packages/kk-store`. The exclusion is
+ALWAYS on, scoped to `--topic` (task 0228 R4): an item planned for a run, published or not, never
+re-enters that topic's pool, and a story re-reported under a new URL is excluded too. A second topic
+is unaffected — one item may serve several. `--include-selected` is the explicit opt-out. A decision
+named only by `order` left-joins (an item without that label is sorted, not dropped), while a `where`
+decision with no `labels` row excludes the item: its join **is** the predicate. That is the point of
+the shipping `kk-item-china-politics: { lte: 1 }` gate (0229 R5): an item with no current
+china-politics answer — the model backend was down, or its answer was below threshold — is EXCLUDED
+(fail-closed), so the pool shrinks toward safety instead of admitting an unjudged item. Level 0 and 1
+clear the gate; level 2, 3 and a keyword-floor hit do not, while the Chinese-AI-industry items the
+decision scores 0 stay eligible.
 
 The pool is written to `--out` as `Doc[]` in the fan-in `blended.json` shape — `id`, `title`, `body`,
 `sourceUri`, `mediaType` and the stored metadata plus `metadata.labels: { <decision-id>: value }`
@@ -526,14 +643,32 @@ exit code. `--window` must be `'<n>s|m|h|d'` and `--limit` a positive integer; e
 (an unknown topic, a bad window or limit, an unreadable database) exits 1 with
 `kk.store.extract.failed: <cause>`.
 
-`kk store mark-used --workflow <w> --run <id> --in <Doc[].json> [--db <path>]` writes the cross-day
-dedup ledger: one `episode_usage(item_id, workflow, run_id, used_at)` row per Doc in `--in`, keyed
-`(item_id, workflow, run_id)` so a retried run overwrites rather than duplicates and repeated ids in
-one input collapse to one row. The Doc's own `id` is the store id (`extract` emits it and
-`episode-plan-gen` spreads it). stdout is `{marked}`; a failure exits 1 with
-`kk.store.mark-used.failed: <cause>`. A later `extract --exclude-used <workflow>` then omits those
-items for **that workflow** — the invariant is per workflow, so a second run of the same workflow
-still never re-aired an item.
+**The topic-scoped selection ledger (task 0228).** The dedup ledger is the `selections` table —
+`(topic, item_id, run_id)` identity plus `story_id`, `workflow`, `rank`, `reason`, `status`
+(`selected` → `published` | `dropped`), `selected_at`, `published_at` — replacing `episode_usage`
+(ADR-030 amendment, 0225). Three verbs own it:
+
+- `kk store select --topic <t> --workflow <w> --run <id> --in <path> [--db <path>]` records the
+  run's planned set as `selected` rows. `--in` is a `Doc[]` or an object whose `metadata.docs` is one
+  (the QC candidates file); any other shape fails loud. One row per distinct doc id, `rank` the
+  1-based input order, `story_id` the item's stored story key, `reason` NULL in voice2. A doc id the
+  store does not hold fails loud naming it and writes **nothing** (no partial ledger); an empty list
+  writes nothing and prints `{selected: 0}`. Idempotent per `(topic, item_id, run_id)` — a repeat
+  writes nothing and never resets a promoted row. stdout is `{selected}`; failures exit 1 with
+  `kk.store.select.failed: <cause>`.
+- `kk store mark-published --topic <t> --run <id> [--in <path>] [--db <path>]` promotes that run's
+  `selected` rows to `published` and stamps `published_at`; `--in` narrows the promotion to the
+  listed ids. A run with nothing to promote prints `{published: 0}` and exits 0. Failures exit 1 with
+  `kk.store.mark-published.failed: <cause>`.
+- `kk store release --run <id> [--topic <t>] [--db <path>]` moves that run's `selected` rows to
+  `dropped`, returning its items to the pool — the operator's tool for a failed run. `published` rows
+  are never touched: an aired episode must not silently re-admit. stdout is `{released}`; failures
+  exit 1 with `kk.store.release.failed: <cause>`.
+
+`kk daily prepare --workflow <w>` additionally names, on stderr, every other run still holding
+`selected` rows for that workflow, each with the `kk store release --run <id>` that frees it (R7).
+The check is read-only, and a store that is missing or fails to open prints nothing and never fails
+`prepare`.
 
 ### 1.10 `ledger` — shipped (task 0207)
 
@@ -714,8 +849,10 @@ type crosses `src/index.ts`.
 | `openStore(opts)`, `Store`, `SQLITE_BUSY_TIMEOUT_MS` | function / interface / const | Lazily imports `createDbAdapter`, opens `{ driver: 'bun-sqlite', url: path }`, sets WAL + `busy_timeout`, applies `KK_MIGRATIONS`, returns the DAO bundle plus `appliedMigrations`; closes the adapter when a migration fails |
 | `resolveStorePath(configFile?, explicitPath?)`, `DEFAULT_STORE_DB_PATH` | function / const | `--db` → `store.db_path` → `.works/kk.db`; expands `~`, resolves a relative path against cwd, creates parent dirs. Async: file IO goes through ts-runtime's `FileSystem` seam (the repo's `no-direct-fs-io` rule), and config path is passed in because `apps/cli` depends on this package, never the reverse |
 | `canonicalUrl(url)`, `itemId(doc)` | functions | Pure identity helpers: lowercase scheme/host, drop the fragment and `utm_*`/`ref`/`ref_src`/`fbclid`/`gclid`, sort the remaining query params, strip the trailing slash (root excepted). `itemId` = `sha256(canonicalUrl)`, or `sha256(title + body)` for a URL-less Doc |
-| `ItemsDao`, `CollectRunsDao`, `LabelsDao`, `EpisodeUsageDao`, `LocksDao` | classes | ts-db `EntityDao` subclasses over `items`, `collect_runs`, `labels`, `episode_usage`, `locks`. `ItemsDao.upsertDocs(runId, docs)` upserts in one transaction and deletes that item's `labels` rows when `content_hash` changes; `LabelsDao.upsertLabel(input)` writes `value`/`score`/`confidence`/`run_id` per (item, decision), its `confidence` being the `HIGH \| MEDIUM \| LOW` verdict level (`labelConfidence(source, confidence)` maps the model's 0–1 payload into the enum, `verdictConfidence(levels)` is a pass's weakest level); `LocksDao.acquire(name, runId, ttlMs)` is the single-flight primitive (a stale holder is stolen past `acquired_at + ttl_ms`) |
-| `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `LabelConfidence`, `EpisodeUsageRecord`, `LockRecord`, … | types | Row and input types for the DAOs above; `LabelRecord.confidence` is the `HIGH \| MEDIUM \| LOW` level, `null` only on a row no `kk store label` pass wrote |
+| `ItemsDao`, `CollectRunsDao`, `LabelsDao`, `SelectionsDao`, `LocksDao` | classes | ts-db `EntityDao` subclasses over `items`, `collect_runs`, `labels`, `selections`, `locks`. `ItemsDao.upsertDocs(runId, docs)` upserts in one transaction and deletes that item's `labels` rows when `content_hash` changes; `LabelsDao.upsertLabel(input)` writes `value`/`score`/`confidence`/`run_id` per (item, decision), its `confidence` being the `HIGH \| MEDIUM \| LOW` verdict level (`labelConfidence(source, confidence)` maps the model's 0–1 payload into the enum, `verdictConfidence(levels)` is a pass's weakest level); `LocksDao.acquire(name, runId, ttlMs)` is the single-flight primitive (a stale holder is stolen past `acquired_at + ttl_ms`) |
+| `itemFacts(doc)`, `ItemFacts`, `SourceTier` | function / types | The deterministic fact columns (0227 R1): `engagement`, `bodyChars`, `sourceTier`, `lang`, `domain` |
+| `storyTokens(title)`, `storyIdFor(title, candidates, threshold)`, `StoryPolicy`, `StoryCandidate`, `DEFAULT_STORY_POLICY`, `DEFAULT_STORY_THRESHOLD`, `DEFAULT_STORY_WINDOW_HOURS` | functions / types / consts | Deterministic title-clustering key (0227 R2): CJK bigrams + Latin words, Jaccard at `>= threshold`, ties by earliest `first_seen_at` then smallest `id` |
+| `ItemRecord`, `UpsertDocsResult`, `CollectRunRecord`, `LabelRecord`, `LabelSource`, `LabelConfidence`, `LockRecord`, … | types | Row and input types for the DAOs above; `LabelRecord.confidence` is the `HIGH \| MEDIUM \| LOW` level, `null` only on a row no `kk store label` pass wrote |
 
 Migrations are embedded `KkMigration[]` (`{id, sql}`, append-only; `0001_kk_store_init` + `0002_labels_confidence_run_id` today) whose
 DDL is derived from each `defineTable(...).createTableSql` — there is no hand-written DDL file — and
@@ -1036,7 +1173,7 @@ File: `.spur/config.yaml`
 | Daily news generator | `docs/design/dailynews-gen.md` | Generator plugin compiling news Doc[] into broadcast VoiceScript Content (F6 **shipped** 2026-08-21) |
 | Daily AI voice workflow | `docs/design/kk-daily-ai-voice.md` | Product state-machine: one collect state (fan-in --source: aihot-ingest + last30days-ingest + horizon-ingest) -> core-facts-gen -> plan (episode-plan-gen + plan-translate) -> content QC (episode-plan-gen filter via EPISODE_PLAN_MODE; empty kept set -> done-no-content) -> article + cover + dailynews-gen script + the `${vars.vdriver}` voice driver (`gemini` -> gemini-tts default (2026-09-29), `voicebox` -> voice-gen, `ominivoice` -> omni-voice-gen; unknown alias fails loud) -> publish (podcast-pub show notes + surfdash-pub/podcast-pub fan-out; failed targets -> publish-partial); daily audio defaults to MP3 with ID3 tags (0171), and `intro-music` joins from the raw render to a distinct `.intro.wav` output (0176) (F61 destination; restructured 2026-09-06 by 0097); the `xhs-write`/`xhs-publish` pair appends a Xiaohongshu card draft (lead-item card plan agent.run -> pinned `xhs-card` x `xhs-knowledge` presets -> `kk stage daily-xhs-render` -> `kk stage daily-publish-xhs`, draft unless `xhs_live`) as an independent, non-blocking target that never enters `publish_status` (E8); the `wechat-publish` state appends a WeChat MP draft (article → `kk stage daily-publish-wechat` → `wechatmp-pub` console browser transport, draft unless `wechat_live`) on the same independent, non-blocking terms (2026-09-29); a publishing run (`publish_enabled`) passes the `safety-review` → `safety-judge` verdict gate between `script` and `review`/`wrap-docs` (0189 R10: `kk stage daily-safety-prep <work_dir> <run_date> <platforms>` + `kk:content-safety` agent.run + `kk:content-judge` compliance agent.run + `kk stage daily-safety-gate <work_dir> <run_date> <safety_max_revise>` → `safety_status` pass\|escalate\|exclude\|revise\|block; the safety verdict must carry a `HIGH\|MEDIUM\|LOW` confidence level — missing or out-of-enum values block (20261003); 20261005 the gate adjusts instead of halting: `revise` loops the drafts through `safety-revise` (`kk:content-safety` detect+revise agent.run + `kk stage daily-safety-revise`, budget `safety_max_revise`, default 2) back into `safety-review`, `exclude` drops the admission-blocked platforms from the run and publishes the rest (the stamp's `excludedPlatforms`, honoured by the per-target stages), escalate always pauses at `review` (20261007 operator decision: on the disposition contract only a finding marked `disposition:"escalate"` escalates — a report with no `disposition` field anywhere keeps the legacy any-RISK/escalate pause, fail-closed; gap/note/fix-class RISK on a clean pass lands in `exclude` at recorded risk with empty `excludedPlatforms`; a disposition-contract report must carry report-level `HIGH\|MEDIUM\|LOW` confidence — missing or out-of-enum blocks (20261007 amendment, ADR-033 R5)), and `daily-publish-prep` refuses drafts without a matching pass\|escalate\|exclude digest stamp — only draft-integrity findings (a PII finding on a blocked platform, or a must-pass `fail` outside the admission criteria), an out-of-contract verdict, or edited-after-review drafts reach `failed`); on a `block` the drafts are quarantined to `24-script/.quarantine-<run_date>-judge-block/` instead of being deleted, and the run continues to its normal terminal, so a rejected draft stays on disk for inspection rather than being re-judged in place (20261005); `kk stage daily-publish-completeness <work_dir> <run_date>` (called in `run-report`'s onEnter, terminal join point) records the independent channels' state (en/ja locales, XHS, WeChat, surfdash CMS re-sync) in `31-publish/<run_date>_17_publish_completeness.json` and warns on any gap — those channels never enter `publish_status`, so a hand-driven tail that skips them is otherwise invisible (20261003; 0220 moved out of classify into terminal stage)|
 | kk-collect workflow | `docs/design/kk-collect-and-daily-voice2.md` §3, §5 | Product state-machine for standalone 6-hourly collection (task 0208, G31): `lock` (`kk ledger sync` + `kk stage collect-prepare` workspace composition + `kk store lock acquire`, a held claim routes `skipped`) → `collect` (`kk executor fan-in --source` aihot/last30days/horizon with the 45 m horizon leash + `kk stage daily-collect-facts`) → `store` (`kk store ingest`) → `label` (`kk store label --run … --new-ids …`, task 0209 — heuristic-first decision labels) → `release` (`kk store lock release` + `kk ledger append`); `collect`/`store`/`label` failures route to `release-failed` (a state-machine aborts on a failed action without transitioning, so those actions continue-on-error behind a positive-artifact guard) so the lock is never left behind. The `label` guard reads the pass verdict through the confidence-aware `jq` filter (task 0213, G31 R14): only `verdict: PASS` with a `HIGH|MEDIUM|LOW` confidence reaches `release`, and a missing or out-of-enum level is refused by name and routed to `release-failed` — fail-closed without deadlocking. Collection only: it never generates, renders audio or publishes, and the store is the sole state it shares with the daily workflow. `plugins/kk/schedules/` + `kk schedule render` provide the operator-installed 6 h launchd/cron trigger **shipped (task 0208)** |
-| kk-collect + daily voice2 | `docs/design/kk-collect-and-daily-voice2.md` | `@gobing-ai/kk-store` (ts-db SQLite, `store.db_path`, boundary rules), `kk store migrate\|lock\|ingest\|label\|extract\|mark-used`, `kk ledger append\|sync\|cutover-check`, `kk schedule render`, kk decision catalog + extraction profiles, 6h `kk-collect` state-machine, `kk-daily-ai-voice2` DAG (ADR-030/031, features G31 / G11 / G71 — **shipped**; G11 by tasks 0211–0212, first green dogfood run `4a9b22f0` 2026-10-08) |
+| kk-collect + daily voice2 | `docs/design/kk-collect-and-daily-voice2.md` | `@gobing-ai/kk-store` (ts-db SQLite, `store.db_path`, boundary rules), `kk store migrate\|lock\|ingest\|backfill-facts\|label\|extract\|select\|mark-published\|release`, `kk ledger append\|sync\|cutover-check`, `kk schedule render`, kk decision catalog + extraction profiles, 6h `kk-collect` state-machine, `kk-daily-ai-voice2` DAG (ADR-030/031, features G31 / G11 / G71 — **shipped**; G11 by tasks 0211–0212, first green dogfood run `4a9b22f0` 2026-10-08) |
 | Daily voice script plan | `docs/design/daily-voice-script-plan.md` | `script-write` agent.run -> per-item script plan (intro/outro/lead/insight) under a checked-in style contract; dailynews-gen validates + builds from it, template fallback stamped `scriptSource` in the run report (F613 **shipped** 2026-09-25 by 0161+0162: `kk stage daily-script-style` snapshot, `script_write_enabled`+zh guarded `script-write` state with `onError: continue`, `NEWS_REPORT_SCRIPT_FILE` -> `脚本来源` line) |
 | Image-gen runtime fallback | `docs/features/D6_image-gen-runtime-fallback.md` | Opt-in `metadata.imageGen.fallback` on the image-gen envelope: absent = strict fail-fast (one provider, original error), `true` = retry down AUTO_ORDER (minus NEVER_AUTO), a list = retry in exactly that order; `metadata.attempts` records every failed provider try `{image, provider, model, errorClass, message}` (present only when non-empty), policy rejections never fall back, and each paid retry is WARN-logged on stderr first (D6 **shipped** 2026-09-25 by 0164–0166) |
 | Daily news cover stage | `docs/design/kk-daily-ai-voice.md` | `kk stage daily-cover <work_dir> <run_date> <plugins_path> <provider> <model> <fallback>`: reads the lead-item subject brief, writes the image-gen `--in` envelope pinned to the shipped `daily-news-cover` format x `daily-news` style (subject is the only per-run var, `maxImages: 1`), and runs `kk executor run image-gen`; a missing/invalid brief logs a fallback reason and renders the format's default subject (F614 **shipped** 2026-09-25 by 0163); an empty `<fallback>` (the `cover_fallback` var default) keeps strict fail-fast, `true`/a comma list opts into D6 runtime fallback (0166) |
