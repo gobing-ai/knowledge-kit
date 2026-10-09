@@ -309,7 +309,7 @@ function saveArtifact(name: string, content: string): void {
 }
 
 describe('kk store label — raw observations (0226 R1/R2)', () => {
-    it('R1 — the catalog declares version 2 and accepts every answer raw', () => {
+    it('R1 — the catalog declares the schema-pinned version 1 and accepts every answer raw', () => {
         const catalog = readFileSync(CATALOG_PATH, 'utf-8');
         expect(catalog).toContain('version: 1');
         expect(catalog).toMatch(/minConfidence:\s*0\b/);

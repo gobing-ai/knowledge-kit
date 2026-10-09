@@ -4,7 +4,7 @@ name: "Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2
 status: wip
 template: feature-impl
 created_at: 2026-10-09T01:27:20.622Z
-updated_at: "2026-10-09T15:42:17.835Z"
+updated_at: "2026-10-09T17:05:06.493Z"
 feature_id: G32
 
 dependencies: ["0225", "0226", "0227", "0228", "0229"]
@@ -217,11 +217,13 @@ untouched, and the one tracked edit is the maker configuration.
 `decisions.makers` map (`.spur/config.yaml:163`), leaving the two existing entries and the global
 `decisions.maker: fm-local` untouched:
 
-| Location | Entry |
-| --- | --- |
-| `.spur/config.yaml:166` | `kk-item-china-politics: typesafe` |
-| `.spur/config.yaml:167` | `kk-item-sensitivity: typesafe` |
-| `.spur/config.yaml:168` | `kk-item-audience: typesafe` |
+The hop's intermediate state, superseded by the finalisation below (which records what survived):
+
+| Location | Entry | Final state |
+| --- | --- | --- |
+| `.spur/config.yaml:166` | `kk-item-china-politics: typesafe` | kept |
+| `.spur/config.yaml:167` | `kk-item-audience: typesafe` | kept |
+| no sensitivity override | the removal is documented by the comment at `.spur/config.yaml:168-171` | added by the finalisation (no maker yields a usable integer level) |
 
 `decisions.makers` is spur's own per-decision-point maker override ("keyed by decision id; outrank
 `decisions.maker`" — `@gobing-ai/spur/schemas/spur-config.schema.json`, `properties.decisions.makers`), so this

@@ -78,8 +78,10 @@ describe('kk-items decision catalog (R1)', () => {
         expect(schemaLine).toBe('$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"');
 
         const catalog = readCatalog();
-        // Version 2 since task 0226: the version is stamped on every stored observation as
-        // `catalog_version`, and a re-tuned rubric is a new version rather than a silent edit.
+        // The version cannot move: the installed catalog schema pins it to the literal 1
+        // (`@gobing-ai/spur/schemas/decision-catalog.schema.json`, `properties.version.const`), so a
+        // re-tuned rubric is not distinguishable by this field. It is still stamped on every stored
+        // observation as `catalog_version`; the scale/revision question is filed as task 0236.
         expect(catalog.version).toBe(1);
         // `minConfidence: 0` (0226 R1): every model answer is accepted raw so a below-threshold answer
         // is RECORDED instead of resolved to its fallback. The confidence threshold the pool obeys
