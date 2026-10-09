@@ -1596,9 +1596,9 @@ Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
    steps hung historically) — inline the wrap: doc drift edit, learnings/metrics appends, then
    `spur feature advance <id> --json`.
 
-## 2026-10-09 — G32 batch 0225–0229 (store v2 cut-over; 0230 failed, 0237 incident)
+## 2026-10-09 — G32 batch 0225–0229 (store v2 cut-over; 0230 failed, 0241 incident)
 
-1. **Gotcha — the incident (0237).** `bun link`ing the batch worktree build as the global `kk` while a
+1. **Gotcha — the incident (0241).** `bun link`ing the batch worktree build as the global `kk` while a
    **scheduled job runs against the live tree** let the 04:00 collector migrate the operator's live store:
    its first `kk store lock acquire` opened the store and `openStore` applied `0003_store_v2`. The link was
    authorized for the dogfood; the scheduled consumer was not considered. Reverting a link is not enough on

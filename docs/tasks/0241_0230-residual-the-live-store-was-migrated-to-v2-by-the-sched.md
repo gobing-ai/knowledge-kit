@@ -3,13 +3,15 @@ schema_version: 1
 name: "0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree"
 status: todo
 template: issue
-created_at: 2026-10-09T15:41:10.874Z
-updated_at: "2026-10-09T16:53:54.267Z"
+created_at: 2026-10-09T17:29:59.582Z
+updated_at: "2026-10-09T17:30:03.788Z"
 feature_id: G32
 
+priority: P1
+ac_altitude: task-local
 ---
 
-## 0237. 0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree
+## 0241. 0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree
 
 ### Background
 
@@ -24,6 +26,10 @@ Captured from the creation title: "0230 residual: the live store was migrated to
 <!-- Number items AC1, AC2, … (never R<n> — that is the Requirements namespace). Preferred: `Scenario: AC1 — <concrete outcome> (req: R1)` blocks with Given/When/Then, declaring both `ac_altitude: task-local` and `ac_numbering: task-local` for task-local regression criteria (altitude skips only the feature-subset check; numbering makes `(req: R<n>)` count toward requirement coverage). Parsed checkbox rows `- [ ] AC1 — <title>` are supported but never bind requirements — only `Scenario:` titles read `(req: R<n>)`. Bare `- AC1` bullets are legacy unparsed records, not a traceability bypass. Requirements use `- [ ] R1. <text>`, checked at close. Use a regression scenario proving the bug is fixed. -->
 
 ### Q&A
+
+<!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Q&A entry — 2026-10-09T17:30:00.402Z
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
