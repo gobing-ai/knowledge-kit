@@ -4,12 +4,13 @@ name: "Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2
 status: wip
 template: feature-impl
 created_at: 2026-10-09T01:27:20.622Z
-updated_at: "2026-10-09T17:39:33.497Z"
+updated_at: "2026-10-09T17:58:21.357Z"
 feature_id: G32
 
 dependencies: ["0225", "0226", "0227", "0228", "0229"]
 priority: P2
 estimate_hours: 3
+ac_altitude: task-local
 ---
 
 ## 0230. Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2E, design doc sync
@@ -50,10 +51,20 @@ Depends on 0225, 0226, 0227, 0228 and 0229.
 
   Then run `spur feature check G32`.
 
+- [ ] R7. **Close review finding 5.** Add `backfill-facts` and `pool-count` to the §3 verb table in `docs/design/kk-collect-and-daily-voice2.md` (`:63-72`), using the shipped help text.
+  - `kk store backfill-facts [--db <path>]` recomputes the typed facts and `story_id` for every item (idempotent) and prints `{updated}`; exit 0/1.
+  - `kk store pool-count <file> --min <n>` is the guard predicate: exit 0 when the pool holds ≥ n items, and it prints `{count, min}`.
+- [ ] R8. **Replace the stale rollback.** `.works/kk.db.pre-g32` no longer exists (`ls .works/` on 2026-10-09 shows only `kk.db` and `incident-2026-10-09T0952/`), and "the pre-G32 `kk` binary" against a v2 store is the exact skew of 0241/0242.
+  - Rewrite the §8 cut-over note (`docs/design/kk-collect-and-daily-voice2.md:295-306`): the live store migrated outside this task (0241's record), the settled state and recovery paths are owned by 0242 R5, and v1 rollback is not supported once a v2 binary has written.
+  - Annotate this task's Design **Rollback** list as superseded, pointing to 0242.
+
 ### Acceptance Criteria
 
 - [x] AC1 — Two consecutive daily dry runs produce disjoint pools
 - [x] AC2 — Decision and surface docs record store v2
+
+- [ ] AC3 — The design doc §3 lists `backfill-facts` and `pool-count`, matching `kk store <verb> --help` (req: R7).
+- [ ] AC4 — No doc or task section tells an operator to restore `.works/kk.db.pre-g32` or to run a pre-G32 `kk` against the store, and §8 points to 0242 for recovery (req: R8).
 
 ### Q&A
 
@@ -66,6 +77,13 @@ Depends on 0225, 0226, 0227, 0228 and 0229.
 - **Q: Which `kk` does the scheduled collector run?** The bun-global 0.0.33, not the repo build (refine audit). Closed: R0 gates the cut-over on a G32 global binary, and the install/release is operator-authorized.
 - **Q: How is the live store protected during migration?** Closed: the store's own `collect` lock, a WAL checkpoint plus file backup, and the atomic `0003` batch. Rollback restores the file and the old binary.
 - **Q: Can dry runs mark items published?** No, after the 0228 correction. Closed: `mark-published` is guarded by `publish_enabled`.
+
+#### Q&A entry — 2026-10-09 refine (remaining work)
+
+- **Q: Is review finding 1 (an unrecorded live-store migration) still blocking?** No. 0241 corrected the record and archived the incident, and that task is done. The live store's current state and its repair belong to **0242**. 0230's R1–R6 stand as evidence measured on the worktree copy.
+- **Q: Finding 4 (the `.spur/config.yaml` anchor drift)?** Resolved by commit `7c35e0dc`. `spur task check 0230` reports no findings.
+- **Q: Findings 2, 3 and 6?** Owned by **0240**: round-to-nearest-level, `refused` counts in the label verdict line, and sensitivity routed to typesafe. Finding 6's "a catalog decision with no observation at all" was caused by the live tree's old catalog, which merged with G32. No separate work.
+- **Q: Does 0230 wait for 0242?** No. 0230's remaining scope is the two doc fixes (R7, R8) plus re-review and verify. 0242 owns the live cut-over.
 
 ### Design
 
@@ -112,6 +130,8 @@ Because `0003` is one atomic batch, a failure inside the migration itself leaves
 
 **Authorization boundary**: R0 (global install/link, or a release) and any `publish_enabled=true` run are operator actions. Everything else is local and reversible via the backup.
 
+> **Superseded on 2026-10-09 by 0241/0242.** The Rollback list above is void. `.works/kk.db.pre-g32` no longer exists, and running a pre-G32 `kk` against the v2 live store reproduces the 0242 failure. Recovery paths and the upgrade-order rule are owned by 0242 (R5).
+
 ### Plan
 
 1. R0: check `~/.bun/bin/kk --version`. If it is not a G32 build, ask the operator to authorize a global install/link (or release), or stop as `blocked`.
@@ -121,6 +141,12 @@ Because `0003` is one atomic batch, a failure inside the migration itself leaves
 5. Run the two voice2 dry runs, write the artifact, then release (R4).
 6. Run the replay byte-identity check (R5).
 7. Sync docs (R6), then run `bun run gate` and `spur feature check G32`.
+
+**Remaining (2026-10-09 refine):**
+
+8. R7: add the two §3 verb rows.
+9. R8: rewrite the §8 cut-over note. The Design section already carries the "Superseded — see 0242" note (added at refine).
+10. Run `bun run gate`, `spur task check 0230` and `spur feature check G32`. Re-run `/sp:dev-review 0230` and `/sp:dev-verify 0230`, then transition to `done`.
 
 ### Solution
 

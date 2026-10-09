@@ -4,7 +4,7 @@ name: "Store-v2 residuals from 0225-0228 (consolidated): hostile episode_usage c
 status: todo
 template: standard
 created_at: 2026-10-09T17:29:15.319Z
-updated_at: "2026-10-09T17:30:52.755Z"
+updated_at: "2026-10-09T17:57:33.449Z"
 feature_id: G32
 
 priority: P1
@@ -37,57 +37,38 @@ CONFIDENCE-CHECK item is recorded as already resolved rather than re-opened.
 
 ### Requirements
 
-- [ ] R1. **Hostile `episode_usage` data aborts `0003` with no repair path.** `packages/kk-store/src/migrations.ts:167`
-  (the `0003` `episode_usage` → `selections` copy) is a plain `INSERT … SELECT`: two v1 rows sharing
-  `(item_id, run_id)` across different workflows are legal under v1's `(item_id, workflow, run_id)` UNIQUE but
-  collide on `selections`' `(topic, item_id, run_id)`, so `0003` raises `UNIQUE constraint failed:
-  selections.topic, selections.item_id, selections.run_id`. The rollback is clean (journal stays `0001`+`0002`,
-  no data loss) but `openStore` then throws on every subsequent call and `kk store migrate` offers no repair
-  path. Unreachable on the live store (0 rows, measured twice). Either make the copy collision-safe
-  (deterministic tie-break on `workflow`/`rank`) or fail with an actionable message naming the offending rows.
-  `review-finding:957489fb`, `review-finding:712e6fa0`.
-- [ ] R2. **The builder↔migration parity test is too weak.** `packages/kk-store/tests/migrations.test.ts:99-109,400-417`
-  compares column **name + type** only (AC1 sorts columns), so `.notNull()`, `.default()` and column-order drift
-  pass CI, and nothing asserts that post-migration `run_id` is NOT NULL or that the 4-column UNIQUE rejects a
-  raw repeat — both were verified by probe, not by a test. Assert the full column attribute set and the two
-  migration-only constraints (the composite UNIQUE and the CHECK).
-  `review-finding:fa5ba5fb`, `review-finding:0c8c1ffc`.
-- [ ] R3. **One home for the selected/published exclusion rule.** The predicate is written three times
-  (`packages/kk-store/src/migrations.ts:170`; `packages/kk-store/src/dao/selections.ts:126-131`;
-  `packages/kk-store/src/dao/items.ts:291-293`) and `SELECTION_STATUSES` is not the single vocabulary for the SQL
-  sites. Related: `SelectionsDao.excludedStories` (`packages/kk-store/src/dao/selections.ts:143`, duplicate rule at
-  `dao/items.ts:441`) has **no production caller** — only `packages/kk-store/tests/dao/selections.test.ts:91` —
-  and is the only uncovered code in the 0228 run (`dao/selections.ts` 93.33% lines / 81.82% funcs). Either delete
-  the accessor or route the R4 `NOT EXISTS` through it, so the rule has one home.
-  `review-finding:be1640f8`, `review-finding:a89c083a`, `review-finding:2f4d5156`.
-- [ ] R4. **A migrated `source 'model'` row can never be current.** `packages/kk-store/src/dao/labels.ts:145`
-  gates model rows on `raw_confidence >= minConfidence`, but every pre-v2 row is copied with the raw columns as
-  literal `NULL`s while `content_hash` is backfilled (`packages/kk-store/src/migrations.ts:153-159`), and
-  `NULL >= 0.8` is not true. Measured on a copy of the live store (68 items / 340 labels): 340/340 keep a
-  `content_hash`, yet only **320 are current** — the 20 exceptions are exactly the 12 `source 'model'` rows plus
-  the 8 `source 'default'` rows the rule refuses by design. Those `(item, decision)` pairs then have no current
-  label, so a `where` predicate on that decision excludes the item (`dao/items.ts:252`) and only new/edited ids
-  are re-labelled. The same gate also refuses a **new** row when spur answers `source 'model'` with no numeric
-  confidence — coherent with `labelConfidence('model', null) === 'LOW'` but nowhere stated. Decide and encode the
-  semantics (backfill a legacy `raw_confidence`, or treat an absent confidence as eligible), then test it; state
-  the rule in `docs/04_DESIGN.md` either way. `review-finding:e7189224`.
-- [ ] R5. **Mixed-script titles never cluster.** `packages/kk-store/src/story.ts:44` (`TOKEN_RUN`) — the word
-  alternative `[\p{L}\p{N}]+` also matches Han/kana, so a CJK run immediately after a Latin/digit character is
-  absorbed into ONE fused token instead of being bigrammed. Measured with the shipped function:
-  `storyTokens("OpenAI发布新模型")` = `{"openai发布新模型"}`, `storyTokens("GPT5震撼发布")` = `{"gpt5震撼发布"}`,
-  `storyTokens("Meta裁员1000人")` = `{"meta裁员1000人"}` (one token each), so
-  `jaccard("OpenAI发布新模型","OpenAI 发布新模型") = 0.00` and a whitespace-only near-duplicate never shares a
-  story at any threshold. Live impact is nil today (0 of 78 live titles are mixed-script). Stop the word
-  alternative before Han/Hiragana/Katakana, or split the normalized title into script runs before tokenizing, and
-  add the mixed-script fixtures. `review-finding:ca5d010f`.
+> Re-verified on 2026-10-09 against `main` at `4a7db505`. All five issues still reproduce. Anchors below are current; R2's and R4's framing is corrected.
+
+- [ ] R1. **Hostile `episode_usage` data aborts `0003`.** The copy at `packages/kk-store/src/migrations.ts:178-182` is a plain `INSERT … SELECT … FROM episode_usage`.
+  - Two v1 rows can share `(item_id, run_id)` across workflows: that is legal under v1's `(item_id, workflow, run_id)` UNIQUE. They collide on `selections (topic, item_id, run_id)`, so `0003` fails and `openStore` throws on every call.
+  - Make the copy collision-safe and deterministic. **This must land before `0003` ships in a release** (0.0.33 does not carry it; `KK_MIGRATIONS` is append-only once released).
+  - The live store is already journaled at `0003` and is unaffected.
+  - `review-finding:957489fb`, `review-finding:712e6fa0`.
+- [ ] R2. **The builder↔DDL parity oracle is weak.** The fresh-vs-migrated comparison (`packages/kk-store/tests/migrations.test.ts:282`) already compares full `PRAGMA table_info`. The weak one is `keeps the v2 builders and the migrated DDL in lockstep` (`:468-482`): `declaredColumns` (`:106`) extracts only `(name, type)`, and the test sorts by name.
+  - Make it compare `notnull`, `dflt_value` and DDL order.
+  - Add one test asserting that a raw repeat of `(item_id, decision_id, maker, run_id)` is rejected by `labels_observation_unique`.
+  - CHECK rejection is already covered by `:426` (selections status) and `:442` (labels confidence), so no new CHECK test is needed.
+  - `review-finding:fa5ba5fb`, `review-finding:0c8c1ffc`.
+- [ ] R3. **Delete the dead accessor.** `SelectionsDao.excludedStories` (`packages/kk-store/src/dao/selections.ts:143-150`) has no production caller. The only production exclusion predicate is `ItemsDao` (`packages/kk-store/src/dao/items.ts:438-443`), and `0003`'s copy writes the `'published'` literal. Delete:
+  - the accessor and its doc reference (`dao/selections.ts:45`);
+  - its unit test (`tests/dao/selections.test.ts:91-93`, plus header item 4 at `:10`);
+  - its use in `tests/kk-store.test.ts:249` (header item 17 at `:43`). Re-assert that the exclusion holds through `ItemsDao`'s profile extract: the selected story no longer appears.
+
+  With a single predicate site left, no shared SQL fragment is needed. `review-finding:be1640f8`, `review-finding:a89c083a`, `review-finding:2f4d5156`.
+- [ ] R4. **State, test and keep the rule that a migrated `source 'model'` row is not current.** The gate is `packages/kk-store/src/dao/labels.ts:145`, `(l.source <> 'model' OR l.raw_confidence >= ?)`. `0003` copies v1 rows with `raw_*` and `catalog_version` NULL, so they fail it. Decision (see Q&A): **no gate change**.
+  - Add a test pinning that a migrated v1 model row is not current, while a migrated heuristic row at the same hash is.
+  - Add a test pinning that a **new** model row with NULL `raw_confidence` is not current.
+  - State both rules in `docs/04_DESIGN.md` (label surface) and in `docs/design/kk-collect-and-daily-voice2.md` §4.
+  - Recovery for legacy items is a relabel (0242 R3). `review-finding:e7189224`.
+- [ ] R5. **Mixed-script titles never cluster.** `TOKEN_RUN` (`packages/kk-store/src/story.ts:50`) word alternative `[\p{L}\p{N}]+` also matches Han and kana. As a result, `storyTokens("OpenAI发布新模型")` = `["openai发布新模型"]` (reproduced 2026-10-09). Exclude the CJK scripts from the word class, and add fixtures in both directions. Live impact is nil today. `review-finding:ca5d010f`.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — A v1 store whose `episode_usage` holds two rows sharing `(item_id, run_id)` across workflows either migrates cleanly or fails with an actionable message, and never leaves `openStore` throwing with no repair path.
-- [ ] AC2 — The builder↔migration parity test fails on a `.notNull()`/`default`/column-order change, on a dropped 4-column UNIQUE, and on a dropped CHECK.
-- [ ] AC3 — The selected/published exclusion rule has exactly one definition, and no DAO accessor is kept alive only by its own tests.
-- [ ] AC4 — A migrated `source 'model'` observation is current when the chosen semantics say it should be, asserted by a test on a data-carrying v1 store; the rule is stated in `docs/04_DESIGN.md`.
-- [ ] AC5 — A whitespace-only near-duplicate of a mixed-script title shares one `story_id`, asserted by fixtures for both scripts.
+- [ ] AC1 — A v1 store whose `episode_usage` holds two rows sharing `(item_id, run_id)` under different workflows migrates to `0003` cleanly, keeping exactly one `selections` row for that pair: the earliest `used_at`, ties broken by `workflow` (req: R1).
+- [ ] AC2 — The builder-parity test fails when a builder's `.notNull()`, `.default()` or column order drifts from the DDL, and a raw repeat of the 4-column label identity is rejected by a test (req: R2).
+- [ ] AC3 — `excludedStories` no longer exists (`rg excludedStories packages apps` → nothing), and the selected-story exclusion is still asserted through `ItemsDao` (req: R3).
+- [ ] AC4 — Tests pin that a migrated v1 `source 'model'` row and a new model row with NULL `raw_confidence` are both non-current, and `docs/04_DESIGN.md` states the rule (req: R4).
+- [ ] AC5 — `storyTokens` splits `OpenAI发布新模型`, `GPT5震撼发布` and `Meta裁员1000人` at the script boundary, and a whitespace-only near-duplicate of each shares one `story_id` (req: R5).
 
 ### Q&A
 
@@ -95,40 +76,54 @@ CONFIDENCE-CHECK item is recorded as already resolved rather than re-opened.
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-09 refine
+
+- **Q: R4, admit legacy model rows or keep them out?** Keep them out, with no gate change. The old `'legacy'` run-id discriminator is wrong (only NULL v1 run_ids became `'legacy'`). The rows lack evidence, and every legacy item needs a relabel for the judgment decisions anyway (0242 R3).
+- **Q: R1, a tie-break or a loud failure?** A tie-break with `ON CONFLICT DO NOTHING` over an ordered source. It is one statement, it is deterministic, and it needs no repair path.
+- **Q: Is R1 safe to edit given that `KK_MIGRATIONS` is append-only?** Only while `0003` is unreleased (0.0.33 does not contain it). So this task blocks the 0242 release.
+- **Q: R2, are CHECK rejection tests missing?** No. `migrations.test.ts:426,442` already cover them. Only the UNIQUE repeat and the builder-parity attributes are missing.
+- **Q: R3, consolidate into a shared fragment?** No. After the deletion, one predicate site remains.
+
 ### Design
 
-Each requirement is a self-contained fix on the store-v2 surface, in dependency order; one agent can land them
-together and verify with one `bun run gate`.
-
-- **R1 — make the copy deterministic.** Prefer the tie-break over the loud failure: order the `0003`
-  copy's source rows (`ORDER BY item_id, run_id, workflow`) so the first row per `(item_id, run_id)` wins
-  and every later collision is dropped, keeping `rank` from the surviving row. The `;`-free statement
-  constraint and the single-`adapter.batch` atomicity (`packages/kk-store/src/migrations.ts:195`) must hold.
-  If a tie-break cannot be expressed without a `;`, fail with the offending `(item_id, run_id)` ids in the
-  message instead of the bare SQLite error.
-- **R2 — tighten the oracle, not the builders.** Extend `tableColumns()` to compare `notnull`, `dflt_value`
-  and ordinal position, then add the two migration-only assertions (a raw repeat of the 4-column identity is
-  rejected; a non-vocabulary `confidence` is rejected). Keep the fresh-vs-migrated comparison as the
-  primary oracle — the new assertions must not replace it.
-- **R3 — one definition.** Keep the predicate in `ItemsDao.selectByProfile` (it is the query planner's home and
-  the only production path) and delete `SelectionsDao.excludedStories` with its test, rather than routing the
-  `NOT EXISTS` through the accessor: the accessor exists for a caller that never arrived, and deleting it
-  removes the uncovered code. Replace the duplicated SQL literals with one exported vocabulary
-  (`SELECTION_STATUSES` / a shared `selectedOrPublishedSql()` fragment) used by both remaining sites.
-- **R4 — encode the semantics explicitly.** Backfill `raw_confidence` during the `0003` copy is not possible
-  from `labels` alone (the value was dropped pre-0225), so treat an absent confidence on a **migrated** row as
-  eligible: gate on `(l.raw_confidence IS NULL OR l.raw_confidence >= ?)` for `source 'model'`, and keep the
-  existing `labelConfidence` mapping untouched. A **new** model answer with no numeric confidence stays
-  ineligible (it carries a real `NULL`, and its level is `LOW` by design) — the distinction between migrated
-  and new rows is the run's `legacy` marker on `run_id`.
-- **R5 — stop the word alternative at the script boundary.** Exclude Han/Hiragana/Katakana (and the CJK
-  extensions) from the Latin/digit word class in `TOKEN_RUN`, so `OpenAI发布新模型` tokenizes as the Latin
-  word plus CJK bigrams. Add fixtures for both directions (Latin-then-CJK and CJK-then-Latin/digit) and keep
-  the existing unicode-agnostic tests green.
+- **R1: `ON CONFLICT DO NOTHING` with an ordered source.**
+  ```sql
+  INSERT INTO selections (…same columns…)
+  SELECT 'ai-news', "item_id", "run_id", "item_id", "workflow", NULL, NULL, 'published', "used_at", "used_at", "created_at", "updated_at"
+  FROM episode_usage WHERE true ORDER BY "used_at", "workflow"
+  ON CONFLICT("topic", "item_id", "run_id") DO NOTHING
+  ```
+  - `WHERE true` is required: SQLite's upsert-after-SELECT parse ambiguity (sqlite.org/lang_upsert.html, "Parsing Ambiguity").
+  - The insert order makes the survivor deterministic: earliest `used_at`, then `workflow`.
+  - It is one `;`-free statement, so the single-`adapter.batch` atomicity (`migrations.ts:254-272`) holds.
+  - Editing `0003`'s SQL in place is legal only because `0003` is unreleased. Fresh and test stores run the new SQL; the live store already journaled `0003` and never re-runs it.
+  - Test: a v1 fixture with two colliding rows → `openStore` succeeds, and there is one `selections` row with the expected `workflow`.
+- **R2: tighten `declaredColumns`, keep the primary oracle.**
+  - Parse `NOT NULL` and `DEFAULT <expr>` from each column line of `createTableSql`.
+  - Map them to `{name, type, notnull, dflt_value}` to match `liveColumns`, and drop the `.sort(...)`, so order is asserted too.
+  - Prove the new oracle by mutation: locally flip one builder's `.notNull()`, watch the test fail, then revert. Note this in Testing.
+  - UNIQUE test: insert one label row through the DAO, then a raw `INSERT` with the same 4-tuple → expect `UNIQUE constraint failed`.
+- **R3: delete, don't consolidate.** Only one production predicate site remains (`items.ts:438-443`). The `0003` copy writes a status literal, not an exclusion predicate. A shared fragment would be an abstraction with one caller.
+- **R4: keep legacy model rows ineligible.**
+  - The earlier design (admit a NULL confidence on rows whose `run_id` is `'legacy'`) does not work. `0003` only maps a **NULL** v1 `run_id` to `'legacy'` (`COALESCE(l.run_id, 'legacy')`), and live v1 rows carry real run ids, so `'legacy'` does not identify migrated rows. The real discriminator would be `catalog_version IS NULL`.
+  - Admitting them buys nothing. On the live store they are 9 rows, and every legacy item lacks the three judgment decisions, so it must be relabelled anyway (0242 R3). A relabel supersedes these rows.
+  - Keeping evidence-less model answers out of the current set is the same principle as the `min_confidence` gate.
+- **R5: subtract the CJK scripts from the word class with the `v` flag.**
+  ```ts
+  const TOKEN_RUN =
+      /(?<cjk>[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+)|(?<word>[[\p{L}\p{N}]--[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]]+)/gv;
+  ```
+  - Verified under Bun 1.3.14: `"OpenAI发布新模型 Meta裁员1000人"` → `OpenAI`, `发布新模型`, `Meta`, `裁员`, `1000`, `人`.
+  - The `v` flag is ES2024. Bun supports it, and the shared tsconfig targets `ESNext` (`tooling/typescript`), so the literal typechecks.
 
 ### Plan
 
-<!-- Ordered implementation checklist. Fill before moving to todo/wip. -->
+1. R1: write the colliding-`episode_usage` v1 fixture test in `packages/kk-store/tests/migrations.test.ts` (fails today), then change the `0003` copy SQL.
+2. R2: extend `declaredColumns` with notnull and default, drop the sort, add the 4-tuple UNIQUE rejection test, and do the mutation check (flip `.notNull()`, see the failure, revert).
+3. R3: delete `excludedStories`, the doc line `selections.ts:45`, and the tests at `tests/dao/selections.test.ts:91-93` / `tests/kk-store.test.ts:249`. Re-assert the exclusion via the `ItemsDao` extract path, and update the header failure lists.
+4. R4: add the two non-current tests (migrated model row; new model row with NULL confidence). Write the rule into `docs/04_DESIGN.md` and design §4.
+5. R5: add the mixed-script fixtures to the story tests (fail today), then swap in the `v`-flag `TOKEN_RUN`.
+6. Run `bun run gate` and `spur task check 0239`. This task must merge before the 0242 release, because R1 edits `0003`.
 
 ### Solution
 

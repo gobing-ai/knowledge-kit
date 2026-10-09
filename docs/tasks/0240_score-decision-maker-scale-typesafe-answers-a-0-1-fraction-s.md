@@ -4,7 +4,7 @@ name: "Score-decision maker scale: typesafe answers a 0-1 fraction, so kk drops 
 status: todo
 template: issue
 created_at: 2026-10-09T17:29:56.937Z
-updated_at: "2026-10-09T17:39:58.771Z"
+updated_at: "2026-10-09T17:56:06.707Z"
 feature_id: G32
 
 priority: P1
@@ -15,61 +15,47 @@ ac_altitude: task-local
 
 ### Background
 
-A `score` decision's answer is a level index into its rubric, but the maker configured for the judgment
-decisions answers on a 0–1 fraction, and `kk` rejects those answers silently — the observation is never
-written, so the decision looks unlabelled rather than mis-answered.
+> **Premise corrected by the 2026-10-09 refine. The title is misleading.** typesafe does **not** answer on a 0–1 fraction. Its `score` answer is a continuous position on the rubric's level axis `[0, L-1]`. kk drops the answer because the position is not an integer, not because the scale is wrong. Read the title as: "kk refuses non-integer level positions from typesafe, so `kk-item-sensitivity` stores nothing."
 
-**Verified evidence** (probed 2026-10-09, during the G32 batch's dogfood; the batch worktree, never the
-operator's live store):
+**Verified in spur 0.4.0** (`/Users/robin/node_modules/@gobing-ai/spur/spur.js`):
 
-- `spur decision run kk-item-sensitivity --param title=… --param source=aihot --maker typesafe --json` →
-  `{"value":0.79,"source":"model","reason":"accepted"}` — the maker answers, `spur` accepts, and the value is
-  a fraction.
-- The same probe for `kk-item-china-politics` → `{"value":0,"source":"model","reason":"accepted"}` (an
-  integer, which is why the china-politics pool works), and for `kk-item-audience` → `{"value":"general"…}`.
-- `kk`'s validator (`apps/cli/src/commands/store.ts:661-668`) keeps a `score` answer only when
-  `Number.isInteger(level) && level >= 0 && level < levels`, so `0.79` is rejected; `makerRow` then falls
-  through to `null` when the decision has no heuristic annotation (`apps/cli/src/commands/store.ts:717-753`),
-  so the raw answer is dropped as well.
-- Measured consequence in the dogfood store: **0** `kk-item-sensitivity` rows from `typesafe` versus 13
-  `source='default'`/`reason='error'` rows from `fm-local` — i.e. the sensitivity surface is effectively
-  unlabelled, and nothing in the label pass's output or the run report names the decision or the maker.
-- The maker matrix for the three judgment decisions (one live consult each, same day): `fm-local` →
-  `source='default'`, `reason='error'`; `laya-local` → `no-backend`; `typesafe` → `source='model'`, integers
-  for china-politics/audience and fractions for sensitivity. `.spur/config.yaml:166-167` therefore points
-  china-politics and audience at `typesafe`.
+- The typesafe driver validates `bounded(answer.score, question.rubric.length - 1)` (`:551638`), so the score lives in `[0, rubric.length-1]`.
+- The decision runner returns `value: answer.score` unchanged (`:560191`).
+- The fm backend constrains its answer to an enum of integer level strings (`:559352`). That is why fm-style makers answer integers and typesafe answers positions such as `0.79`.
+- Typesafe answers also carry `probabilities`/`legend`, but `spur decision run --json` exposes only `value`, `source`, `reason` and `confidence`.
 
-**Why this is a contract defect and not a `kk` bug.** spur's catalog schema defines a `score` decision's
-`criteria` as an ordered rubric (`$defs.scoreCriteria`: an array of ≥2 Jev entries — the level descriptions),
-so the answer is an index into that rubric, exactly what `kk` requires. `kk`'s refuse-never-coerce behaviour
-is 0226's documented intent. What is missing is a stated contract, a check when a maker is wired to a `score`
-decision, and any visible signal when an answer is refused.
+**Observed evidence (probed 2026-10-09 on the G32 worktree, never the live store):**
 
-**Out of scope here:** changing `kk`'s integer rule, and any fraction→level mapping (see the Design section
-for why it is rejected). The sensitivity gap itself is recorded by R3, not closed.
+- `spur decision run kk-item-sensitivity --maker typesafe` → `value 0.79`, `source model`. Other answers seen: `0.96` and `0.89`. All are positions between level 0 and level 1 of a 4-level rubric, which happen to lie below 1.
+- `kk-item-china-politics` → `0`; an earlier answer was `0.01`, which means level 0 as well.
+- kk's validator (`apps/cli/src/commands/store.ts:661-669`) keeps only `Number.isInteger(level) && 0 ≤ level < levels`. Any non-integer position is therefore refused.
+- `makerRow` (`:717-754`) then falls back to the heuristic row (`'default'`) or to `null`. Nothing reports the refusal.
+- The dogfood store held 0 `kk-item-sensitivity` model rows.
+- `.spur/config.yaml:155-172` has no `kk-item-sensitivity` override, so the decision uses `decisions.maker: fm-local`, which errors (`source default`, `reason error`). Its comment cites "task 0236", the WBS that collided with this task.
+- china-politics and audience already route to typesafe, so a non-integer china-politics answer is silently dropped today. The fail-closed gate then excludes that item from the pool.
+
+**Scope:** accept level positions, make refusals visible, and route sensitivity to typesafe.
 
 ### Requirements
 
-- [ ] R1. State and enforce the `score` contract: a `score` decision's answer is an integer level index into
-  its rubric. Record it where the catalog and the maker configuration are read (`plugins/kk/decisions/kk-items.yaml`,
-  the `store.labels.decisions.*.priority` documentation in `docs/04_DESIGN.md`), and make a maker that cannot
-  answer integer levels for a `score` decision detectable before it is wired in — either by a check over a
-  recorded probe or by a runtime signal that names the maker and the decision on the first refusal.
-- [ ] R2. Make a refused answer loud. When `decisionValue` rejects a `score` answer
-  (`apps/cli/src/commands/store.ts:661-668`) the label pass's printed report and the run report must name the
-  decision id, the maker and the count of rejected answers, so an unlabelled decision is visible instead of
-  looking like a decision nobody asked about.
-- [ ] R3. Record the sensitivity gap explicitly: no configured maker answers integer levels for
-  `kk-item-sensitivity` (fm-local errors, laya-local has no backend, typesafe answers a 0–1 fraction), so its
-  observations stay absent. State that in the catalog's `kk-item-sensitivity` entry or in
-  `docs/04_DESIGN.md`'s label-decision section, and keep `.spur/config.yaml` free of an override that implies
-  otherwise (it currently has none — preserve that).
+- [ ] R1. **Accept level positions.** For a `score` decision, `decisionValue` (`apps/cli/src/commands/store.ts:661`) accepts any finite number in `[0, levels-1]` and stores `String(Math.round(score))` as `value`.
+  - `raw_value` keeps the exact answer (already the case for model rows).
+  - Out-of-range, non-finite and non-numeric answers are still refused.
+  - `choice` decisions are unchanged.
+  - Low-confidence answers stay non-current through the existing `min_confidence` gate (0.8, `packages/kk-store/src/dao/labels.ts`). No new threshold.
+- [ ] R2. **Make refusals visible.** Count refused model answers per `decision@maker` during a label pass, and add them to the printed verdict line as `refused: {"<decision>@<maker>": n}`. Print an empty object when there are none, so the shape is stable. The run report captures stdout, so it inherits the counts.
+- [ ] R3. **Route sensitivity to typesafe.** Add `kk-item-sensitivity: typesafe` under `decisions.makers` in `.spur/config.yaml`, and replace the comment that cites the collided "0236" with one sentence about this task.
+- [ ] R4. **State the contract** in `docs/04_DESIGN.md`: in the label row (`:99`) and the label surface (`:474`).
+  - A `score` answer is a position on the rubric's level axis.
+  - kk stores the nearest level in `value` and the exact answer in `raw_value`.
+  - Answers outside `[0, levels-1]` are refused and counted under `refused`.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — A maker that answers `score` decisions fractionally is detected before it is wired to one, or its first refusal is reported with the decision id and the maker named (req: R1).
-- [ ] AC2 — A refused `score` answer appears in the label pass's output and in the run report with its decision, maker and count (req: R2).
-- [ ] AC3 — The `kk-item-sensitivity` gap is recorded in the catalog or the design doc, so an empty sensitivity surface is documented rather than silent (req: R3).
+- [ ] AC1 — A stub maker answering `0.79` on a 4-level `score` decision yields a row with `value '1'` and `raw_value '0.79'`. `2.6` → `'3'`, `3.2` → refused, and the integers `0`–`3` are unchanged (req: R1).
+- [ ] AC2 — A refused answer increments `refused["<decision>@<maker>"]` in the label verdict line. A pass with no refusals prints `refused: {}` (req: R2).
+- [ ] AC3 — With `.spur/config.yaml` carrying `kk-item-sensitivity: typesafe`, a label pass on a scratch store copy writes `source='model'` sensitivity rows with integer `value`s (req: R3).
+- [ ] AC4 — `docs/04_DESIGN.md` states the score-position contract and the `refused` field (req: R4).
 
 ### Q&A
 
@@ -79,58 +65,67 @@ for why it is rejected). The sensitivity gap itself is recorded by R3, not close
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-09 refine
+
+- **Q: Is typesafe's score a 0–1 fraction?** No. spur 0.4.0 bounds it to `[0, rubric.length-1]` (`spur.js:551638`), so the old "fraction→level mapping rejected" design rested on a false premise. Redesigned to round-to-nearest-level, with `raw_value` keeping the exact answer.
+- **Q: Keep the sensitivity gap documented, or close it?** Close it. With R1 in place typesafe answers are storable, so route sensitivity to typesafe (R3). The old R3 ("record the gap") is dropped.
+- **Q: Does R2 depend on 0239?** No. 0239 does not edit `apps/cli/src/commands/store.ts`, so the old dependency note is removed.
+
 ### Design
 
-**Chosen approach — make the contract explicit and the failure visible; do not reinterpret the answer.**
+**Round to the nearest level.** spur defines the score as a position on the level axis, so the nearest level is the answer the maker gave, at the resolution kk stores. `raw_value` keeps the exact number for audit and for any later calibration.
 
-1. **Contract (R1).** The rubric is ordered, so the answer is a level index. Write that down next to the
-   catalog entries and in the design doc's label-decision section, then add the cheapest possible detector:
-   a named probe (the same one this task used) recorded per maker per `score` decision, so a
-   fraction-answering maker is found when it is configured rather than when a pool comes back empty. A
-   runtime-first-refusal signal is the fallback if a probe cannot be automated — either satisfies AC1.
-2. **Visibility (R2).** Extend the existing report rather than adding a channel: the label pass already
-   prints `{labeled, model, fallback, consults, consultMs}`; add the refused-answer count keyed by
-   `(decision, maker)` and emit the same line into `.spur/run/<wbs>-report.txt` so the run report carries it.
-   This closes the observability half of the finding the 0230 review also raised.
-3. **Record the gap (R3).** One sentence on the `kk-item-sensitivity` entry (or the design doc's table) that
-   names the three makers and their failure modes. Do not add a `.spur/config.yaml` override for it: no
-   override is the honest state, and the comment already explains why none exists.
+`items.ts:422,430` filter with `CAST(value AS INTEGER)`, so `value` must stay an integer string.
 
-**Rejected — map a 0–1 fraction onto the rubric's levels** (e.g. `round(fraction × (levels - 1))`). It would
-make `typesafe` usable everywhere by inventing semantics the rubric never defines: on a four-level
-china-politics rubric `0.79` would become level 2, i.e. "commentary or analysis of the political system" —
-a moderation-relevant claim the maker never made. It would also change stored levels for existing rows and
-put the mapping in the wrong layer (the maker's scale is a maker property, not a `kk` one). Rejected unless
-a product decision defines what the fraction means and a rubric-independent mapping is required.
+**Edit in `decisionValue`:**
 
-**Rejected — relax `Number.isInteger`.** Same objection plus it would let a genuine out-of-range answer
-through, which is the guard 0226 deliberately added.
+```ts
+const level = typeof raw === 'number' ? raw : Number(raw);
+return Number.isFinite(level) && level >= 0 && level <= decision.levels - 1 ? String(Math.round(level)) : null;
+```
 
-**Dependency note.** R2's report change touches the same file as 0239's R3 (the exclusion vocabulary) and
-0229's `LABEL_DECISIONS` table; land it after those or rebase onto them.
+**Ties.** `Math.round(0.5)` is 1, toward the more-severe level. That is acceptable: on china-politics, a higher level means "exclude", which fails closed.
+
+**Refusal counter.** `labelItem` already returns per-item stats that the summary aggregates (`:1018-1029`).
+
+- Return the refused `decision@maker` keys from `makerRow`'s caller, i.e. where `decisionValue` returns null for a `source='model'` answer.
+- Merge them into a `Record<string, number>`.
+- No new channel and no new log line.
+
+**Rejected alternatives:**
+
+- **Argmax over `probabilities`.** `spur decision run --json` does not expose them, and changing spur is out of scope.
+- **Store the fractional `value`.** It breaks the `CAST(... AS INTEGER)` gates and the level semantics.
+- **Treat the score as a 0–1 fraction (`round(f×(L-1))`).** The premise is false (spur `:551638`).
+- **Keep refusing and only report.** typesafe would stay unusable for score decisions, and china-politics would keep dropping silently.
+
+**Touches:**
+
+- `apps/cli/src/commands/store.ts` (`decisionValue`, `labelItem`, the summary print);
+- `apps/cli/tests/store-label.test.ts`;
+- `.spur/config.yaml`;
+- `docs/04_DESIGN.md`.
+
+There is no dependency on 0239: no shared lines, and 0239 does not edit `store.ts`.
 
 ### Plan
 
-1. Add the refused-answer counter to the label pass and print it with the existing counters; assert it in
-   `apps/cli/tests/store-label.test.ts` with a stub that answers a fraction (the AC1/AC2 fixtures already
-   exist for the raw-capture cases).
-2. Write the `score` contract into the catalog header and the design doc's label-decision section, and record
-   the `kk-item-sensitivity` gap (R3).
-3. Add the maker-scale detector — a recorded per-maker probe for the three judgment decisions, or the
-   first-refusal signal from step 1 if a probe is not automatable; whichever is chosen, name it in the task's
-   Testing section.
-4. Run `bun run gate`; confirm `.spur/config.yaml` still has no sensitivity override.
+1. Write the failing tests first in `apps/cli/tests/store-label.test.ts`, using a stub maker that answers `0.79` / `2.6` / `3.2` / `'x'` on a 4-level score decision. Assert the stored `value`/`raw_value`, and assert `refused` in the verdict line.
+2. Change `decisionValue` to the round-to-nearest-level form. Thread the refused keys from the model-answer path into the summary.
+3. Edit `.spur/config.yaml` (sensitivity → typesafe, fix the stale comment). Probe with `spur decision run kk-item-sensitivity --maker typesafe --json`.
+4. Checkpoint-copy `.works/kk.db` to a scratch path, then run the **repo build** against it: `bun apps/cli/dist/index.js store label --db <copy> --run 0240-probe --new-ids <3 ids>`. Never use the live store, and never use the global 0.0.33 `kk`. Confirm the sensitivity model rows by SQL and record them in Testing.
+5. Update `docs/04_DESIGN.md:99,474`. Run `bun run gate` and `spur task check 0240`.
 
 ### Root Cause
 
-Verified, not inferred: `kk` requires an integer level for a `score` decision
-(`apps/cli/src/commands/store.ts:661-668`), matching spur's ordered-rubric contract
-(`@gobing-ai/spur/schemas/decision-catalog.schema.json`, `$defs.scoreCriteria`); the maker configured for the
-judgment decisions answers `kk-item-sensitivity` on a 0–1 fraction
-(`spur decision run kk-item-sensitivity --maker typesafe` → `value 0.79`, `source model`, `reason accepted`);
-and the refused answer leaves no row at all because `makerRow` returns `null` for a decision with no
-heuristic annotation (`apps/cli/src/commands/store.ts:717-753`). The 0-versus-13 row counts in the dogfood
-store confirm the end state: the decision is unlabelled, not mislabelled.
+Verified. typesafe's `score` is a position in `[0, L-1]` (spur 0.4.0 `spur.js:551638` validates `bounded(answer.score, rubric.length - 1)`; `:560191` returns it as `value`). kk's `decisionValue` (`apps/cli/src/commands/store.ts:661-669`) accepts only integers in that range, so every non-integer position is refused. `makerRow` (`:717-754`) swallows the refusal into the heuristic or null row, and the label summary has no counter for it.
+
+`kk-item-sensitivity` gets no model rows for two reasons:
+
+- it has no typesafe override, so fm-local errors;
+- even if it had one, typesafe answers non-integers.
+
+The earlier "0–1 fraction" reading came from probe values that happened to be below 1.
 
 ### Solution
 
