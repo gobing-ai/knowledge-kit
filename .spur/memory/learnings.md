@@ -1692,3 +1692,63 @@ Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
 - **`spur task update <wbs> done` needs a recorded pipeline run.** Without one the lifecycle gate denies the
   transition; `spur task run-link <wbs>` records the link (per-tree provenance DB) and unblocks it. The `wip`
   → `done` edge is illegal — route through `testing`.
+
+## 2026-10-09 — G32 close-out: 0242 R2–R6 (global upgrade, live repair, green collector)
+
+**Decisions**
+
+- **A stale global binary is a production failure mode; the schema is not the only contract.** The collector
+  failed with `ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint` because `~/.bun/bin/kk`
+  was 0.0.33 while the store was already v2. `main` had no defect. The fix shipped as a guard, not a patch:
+  `applyKkMigrations` (`packages/kk-store/src/migrations.ts:312`) now throws `kk.store.schema-newer` before any
+  DDL. From 0.0.34 on, skew fails at open with a named cause instead of half-writing a run.
+- **"Read-only" must be enforced, not asserted.** `warnUnreleasedRuns` was documented "best-effort and
+  read-only" but called `openStore`, which migrates on open — so the probe upgraded the store it was reading.
+  `openStore` now takes `migrate?: boolean` (`packages/kk-store/src/db.ts:66`), and the probe passes `false`
+  (`apps/cli/src/commands/daily.ts:140`). A read may not write; if a doc comment claims a property, the
+  signature must carry it.
+- **Operator chose the `bun link` stop-gap over a 0.0.34 release** for the global upgrade. Recorded and
+  accepted: while the global is a link, production tracks the working tree, so a release must precede the next
+  schema-bumping change.
+
+**Patterns that worked**
+
+- **Write the falsification control INTO the regression test.** The R6 test opens a real v1 store with
+  `migrate: false` (journal stays `0001+0002`) and then opens the *same* store with the default (journal
+  advances to `0003`). Without that control the test passes vacuously — my first attempt used a synthetic
+  journal-only database where migration failed anyway, and it passed with the fix removed. Deleting the
+  `migrate === false` branch now fails with `Expected: 0, Received: 1`.
+- **Prove a whole-suite claim with bytes, not prose.** `sha256` of the operator's `.works/kk.db` before and
+  after `bun run gate` from the repo root (unchanged: `834885246c731ff8`), plus "no `-wal`/`-shm` created", turns
+  "the suite is isolated now" into one checkable line.
+- **Pin a coverage claim to a commit, not to HEAD.** The `[Unreleased]` block first read
+  `..HEAD -> 21 commits`, which became 22 the instant the changelog commit landed — a self-falsifying claim.
+  Pinning the tip to the commit *before* the entry (`..99623957 -> 24`) keeps the arithmetic checkable forever.
+- **Re-derive anchors instead of carrying them forward.** `spur task check`'s `L4.anchor-subject-mismatch` caught
+  two citations that had drifted (a `package.json:3` version line cited for a bin claim, and a config block
+  cited for per-decision keys). Re-reading the file is cheaper than a wrong anchor.
+
+**Gotchas**
+
+- **An interrupted workflow leaves a `RUNNING` receipt that blocks the feature lifecycle.** Aborting
+  `feature-verification.yaml` left `.spur/memory/evidence/G32-feature-verification.json` at
+  `status: "RUNNING"`, `completedAt: null`; `spur feature sync G32` then reported
+  `feature-verification receipt missing or invalid; stopped at verifying`. The receipt is written at start and
+  completed at the end, so a kill mid-pass is indistinguishable from "never ran" to the gate. Re-run the pass;
+  do not hand-edit the receipt.
+- **A `--worktree` batch's post-commit hops write an excluded plane that `git worktree remove` destroys.**
+  `.spur/memory/` is excluded (`.git/info/exclude`), so `git status` reads clean, the FF merge carries nothing,
+  and `git worktree remove` treats ignored files as clean — the wrap's metrics and learnings vanished without an
+  error. Run the wrap in the invoking tree, or re-commit after it.
+- **`spur workflow run --vars` takes JSON-encoded STRINGS**, so a task list is
+  `--vars '{"tasks":"[\"0230\",\"0242\"]"}'`; a bare array fails with `--vars values must be strings`.
+- **A readonly `bun:sqlite` open of a WAL database fails with `SQLITE_CANTOPEN` when no `-shm` exists.** Copy the
+  file aside and open the copy read-write (without any kk code) to inspect a journal; never open the original
+  read-write just to read it.
+- **The feature lifecycle needs a receipt, not just green tasks.** All 10 G32 tasks reached `done` and
+  `spur feature check G32 --strict` passed, yet the feature sat at `verifying` until the ADR-119
+  feature-scoped verification pass recorded `.spur/memory/evidence/G32-feature-verification.json`. Task-level
+  done does not advance a feature.
+- **Do not `env | grep` on this host to probe configuration.** It printed live API keys into the session
+  transcript; they are now compromised and need rotation. Read a specific variable (`echo "$PI_SESSION_ID"`)
+  instead.

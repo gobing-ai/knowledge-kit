@@ -7,12 +7,15 @@
 
 ### Fixed
 
+- fix(kk-store): stop the test suite and the daily probe migrating the live store (fa3ff1af)
 - fix(kk): scaffold locales from the surfdash publish result (2061e964)
 - fix(image-gen): stop prompting MiniMax for poster-style text (18af1f53)
 - fix(kk): rework the daily voice2 disclosure and content path (011a4254)
 
 ### Changed
 
+- docs(tasks): close 0242 — global kk upgraded, live store repaired, collector green (99623957)
+- docs(changelog): close the G32 batch with an earned HIGH confidence level (a55aef75)
 - docs: record the store v2 cut-over (b8bf4e24)
 - docs(store): plan the kk-collect store v2 cut-over (0f695d7d)
 - docs(kk): file G12 XHS notes and the G13 speech plan (5c6982a1)
@@ -32,12 +35,12 @@
 
 <!--
 Verification (2026-10-09, sp-dev-changelog): HIGH
-- Coverage: 21 bullets = 21 commits in the exact range @gobing-ai/knowledge-kit-v0.0.33..e75232ff, each short
+- Coverage: 24 bullets = 24 commits in the exact range @gobing-ai/knowledge-kit-v0.0.33..99623957, each short
   hash exactly once, no bullet without a commit and no commit without a bullet
-  (`git rev-list --count @gobing-ai/knowledge-kit-v0.0.33..e75232ff` -> 21). The tip is pinned to the commit
+  (`git rev-list --count @gobing-ai/knowledge-kit-v0.0.33..99623957` -> 24). The tip is pinned to the commit
   BEFORE this changelog entry: the entry's own commit is excluded by construction, so the count stays
   checkable after it lands (HEAD is deliberately not the range end).
-- Mapping: feat->Added 2, fix->Fixed 3, docs+chore->Changed 16 (2+3+16 = 21). The header is `[Unreleased]`: no
+- Mapping: feat->Added 2, fix->Fixed 4, docs+chore->Changed 18 (2+4+18 = 24). The header is `[Unreleased]`: no
   version bump and no tag is claimed, because `apps/cli/package.json:3` still reads 0.0.33 and no release was cut.
 - Source citations for API and library behavior claims (verified against the merged tree at line level):
   - store v2 labels observation identity: packages/kk-store/src/migrations.ts:161 (labels_observation_unique)
@@ -45,6 +48,8 @@ Verification (2026-10-09, sp-dev-changelog): HIGH
   - `0003_store_v2` episode_usage copy is collision-safe and deterministic (0239 R1):
     packages/kk-store/src/migrations.ts:183
   - schema-skew guard refuses a store newer than the binary (0242 R1): packages/kk-store/src/migrations.ts:312
+  - a read-only open never migrates the store it reads (0242 R6): packages/kk-store/src/db.ts:66,
+    apps/cli/src/commands/daily.ts:140
   - a score answer is a level position rounded to the nearest level, exact answer kept in raw_value (0240 R1):
     apps/cli/src/commands/store.ts:667-668
   - refused answers are counted per decision@maker in the label verdict (0240 R2):
@@ -53,10 +58,11 @@ Verification (2026-10-09, sp-dev-changelog): HIGH
   - topic-scoped story exclusion rides the profile query (0228): packages/kk-store/src/dao/items.ts:441
   - decision catalog and per-decision maker routing: plugins/kk/decisions/kk-items.yaml:144, .spur/config.yaml:174
 - Confidence: HIGH — coverage and mapping reconcile against `git log` for the range, and every behaviour claim
-  above cites the shipped source at line level. Two claims are deliberately NOT made: no version, tag or release
-  is asserted for this section (`apps/cli/package.json:3` still reads 0.0.33), and task 0242 R2-R4 are left
-  unverified — the global `kk` upgrade, the locked live-store repair and a green `kk-collect` were not run
-  (operator-gated; task 0242 is `blocked`).
+  above cites the shipped source at line level. Three claims are deliberately NOT made: no version, tag or
+  release is asserted for this section (`apps/cli/package.json:3` still reads 0.0.33); no release was cut
+  after the repair, so the global `kk` is still a `bun link` into this tree rather than a published artifact;
+  and the G32 feature-scoped verification receipt is not claimed — it is `RUNNING` from an interrupted pass
+  at `.spur/memory/evidence/G32-feature-verification.json`.
 -->
 
 ## [0.0.33] - 2026-10-08
