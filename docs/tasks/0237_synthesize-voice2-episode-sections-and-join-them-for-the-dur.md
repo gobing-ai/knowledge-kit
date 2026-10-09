@@ -4,7 +4,7 @@ name: Synthesize voice2 episode sections and join them for the duration check
 status: done
 template: feature-impl
 created_at: 2026-10-09T07:35:29.460Z
-updated_at: "2026-10-09T21:27:46.018Z"
+updated_at: "2026-10-09T22:56:09.564Z"
 feature_id: G13
 priority: P0
 tags:
@@ -185,6 +185,40 @@ bun run gate        # format + build + lint + typecheck + rules + tests    exit 
   Checked 401 files in 822ms. No fixes applied.        (biome)
   2359 pass, 2 skip, 0 fail                            (full suite)
 ```
+
+**Live verification of R3/R6 and the task's live check (2026-10-09, six real runs).**
+
+The task's live check asks for one real voice2 dry run producing a joined episode inside 15–20 min with
+the per-section files on disk and a recorded run id. Runs were made against a **snapshot** of the live
+store (`<worktree>/.works/kk.db`), with `KK_WORKS_DIR` inside the worktree, `publish_enabled=false`,
+`skip_review=true`, `xhs_enabled=false`, `wechat_enabled=false`, and a PATH `kk` resolving to this
+worktree's source — so nothing published and no external account was touched.
+
+| run | vars | outcome |
+| --- | --- | --- |
+| `ac5-live-4` | `agent=minimax`, `plan_max_items=5` | **R1/R2/R3 verified live.** `30-audio/sections/20261009/` holds `00-opening … 05-closing` as wav+json+mp3 (6 sections, 4 items); the join wrote `_11_generate_content.wav` at **795.38 s** with `audioPath` rewritten and `introMerged` cleared; `daily-intro` merged the sting to **804.19 s** (`introMerged: true`); `daily-episode-duration` refused **13.4 min** — under the 15-minute floor, so the live check's "inside 15–20 min" half is NOT met. |
+| `ac5-live-6` | `agent=minimax`, `plan_max_items=5` | Sized to the band (5 kept, 5942 spoken chars, estimate 18.5 min) and it reached the audio stage — where the provider refused the account. |
+| `ac5-live-7` | `vdriver=voicebox` | Tried the local driver to route around the quota: ~30 min to render one section (~90 s of audio), so a full episode is hours. Abandoned; the cached sections were re-rendered on the next gemini run because the driver is part of the cache key (design §3 — no mixed-voice episode). |
+
+**R6 / AC6 observed live on real infrastructure (`ac5-live-6`).** `daily-generate` stopped mid-episode
+with the provider's own refusal:
+
+```
+HTTP 429 quota/reset horizon too far out (retry-after 7368s ≈ 2.0h):
+Rate limit exceeded for model gemini-3.8-flash-tts (limit: 100 requests per day on Tier 1)
+generate: section synthesis failed for 04-item
+```
+
+Sections `00-opening`, `01-item`, `02-item`, `03-item` stayed on disk; no further section was requested;
+`vdriver` was never reassigned and no section was re-tried on a different driver — exactly the R6
+contract, and the failure is the *account-level* refusal the task's Q&A defines as "any nonzero exit of a
+section request stops the stage". The next run's cache is what resumes the episode (missing audio, not
+"the latest index").
+
+**Rate calibration cross-check.** The `ac5-live-4` script is 4645 spoken characters whose six section
+files total 789.88 s → 5.88 字/秒, and the join arithmetic is exact (789.88 s speech + 5.50 s of boundary
+`gap_ms` silences = 795.38 s + 8.81 s sting = 804.19 s). That is the fourth measured render behind the
+5.4/5.6 constants.
 
 ### Review
 

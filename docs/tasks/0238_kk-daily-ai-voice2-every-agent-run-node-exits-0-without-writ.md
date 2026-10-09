@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expe
 status: testing
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-09T21:27:46.475Z"
+updated_at: "2026-10-09T22:56:09.989Z"
 feature_id: G11
 
 priority: P1
@@ -251,6 +251,28 @@ bun run gate        # format + build + lint + typecheck + rules + tests    exit 
   Checked 401 files in 822ms. No fixes applied.        (biome)
   2359 pass, 2 skip, 0 fail                            (full suite)
 ```
+
+**Sizing the run to the episode contract (pre-flight, deterministic and free).** AC5 needs the run to
+reach `done`, which requires the rendered episode to land inside 15–20 min *and* the estimate gate to
+pass. A sweep of `plan_max_items` over the refreshed pool (12 items), measuring the template script and
+the QC kept count, then predicting the real script at the observed template→real ratio (11242 → 7476 =
+0.665), finds exactly one setting in the band:
+
+| `plan_max_items` | kept | template chars | predicted real | estimate @5.4 | predicted render |
+| --- | --- | --- | --- | --- | --- |
+| 4 | 4 | 7769 | 5166 | 16.1 min | 14.9 min (too short) |
+| **5** | **5** | **9199** | **6117** | **19.0 min** | **17.6 min (in band)** |
+| 6 | 6 | 9907 | 6588 | 20.5 min | 19.0 min (estimate refuses) |
+| 7 | 7 | 10862 | 7223 | 22.4 min | 20.8 min |
+| 8 | 8 | 13019 | 8657 | 26.9 min | 24.8 min |
+
+`plan_max_items=5` on the refreshed pool was then run live (`ac5-live-6`): 5 kept items and a real script
+of **5942 spoken characters** (estimate 18.5 min) — in the band, as predicted. The run reached
+`daily-generate` and was stopped there by the provider's account-level TTS refusal (429, Tier-1 daily
+quota exhausted by the verification runs), which is 0237's R6 path observed live rather than a defect
+here. A local-driver reroute (`ac5-live-7`, `vdriver=voicebox`) was abandoned after one section took
+~30 min to render; the quota window reopens ~2 h after the refusal, and the resume re-runs the same
+works root so only the missing sections synthesize.
 
 ### Review
 
