@@ -4,7 +4,7 @@ name: "Live store is v2 again and the scheduled kk-collect fails at kk store lab
 status: todo
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T17:56:19.042Z"
+updated_at: "2026-10-09T18:11:17.829Z"
 feature_id: G32
 
 priority: P1
@@ -21,7 +21,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 **Root cause, verified on 2026-10-09 at 10:47 against a byte copy.** Two binaries wrote one store. `main` has no code defect.
 
 - **Every step of the 10:00 tick ran 0.0.33.** The plist PATH puts `~/.bun/bin` first, and `~/.bun/bin/kk` links to `/Users/robin/node_modules/@gobing-ai/knowledge-kit/dist/index.js` (0.0.33; the symlink mtime is 08:42). That build contains no `0003_store_v2` (`grep -c` → 0). npm `latest` is also 0.0.33.
-- **Something else migrated the store mid-run.** The journal shows `0003_store_v2` `applied_at 1791566167006` (10:16:07). The job's ingest wrote its `collect_runs` row at 10:16:08, and its 14 new items have `story_id IS NULL` and NULL facts. `0003` runs `UPDATE items SET story_id = id`, and v2 ingest computes `story_id`, so these rows were inserted after the migration by v1 code. The migrating process was some v2 build opening the store in this tree, most likely the repo build (`apps/cli/dist/index.js`, mtime 10:17) run by the concurrent merge session. That process is not proven, and the fix does not depend on it.
+- **Something else migrated the store mid-run.** The journal shows `0003_store_v2` `applied_at 1791566167006` (10:16:07). The job's ingest wrote its `collect_runs` row at 10:16:08, and its 14 new items have `story_id IS NULL` and NULL facts. `0003` runs `UPDATE items SET story_id = id`, and v2 ingest computes `story_id`, so these rows were inserted after the migration by v1 code. The migrating process is **the unit test suite** (reproduced 2026-10-09, HIGH): `apps/cli/tests/commands/daily.test.ts` runs `kk daily prepare` in-process from the repo root without `KK_CONFIG` or a chdir; `warnUnreleasedRuns` (`apps/cli/src/commands/daily.ts:122-150`, documented "best-effort and read-only") resolves the cwd-relative default `.works/kk.db` and calls `openStore`, which always runs `applyKkMigrations` (`packages/kk-store/src/db.ts:47-53`). Repro: a v1 copy at `<tmp>/.works/kk.db` (journal 0001+0002), `cd <tmp> && bun test apps/cli/tests/commands/daily.test.ts` → 16 pass and the journal gains `0003_store_v2`. The concurrent merge session ran `bun run gate` from this tree at 10:16, so any test or gate run in the live tree migrates the operator store.
 - **The failure itself.** The 0.0.33 `LabelsDao` upserts on `[labels.itemId, labels.decisionId]` (0.0.33 `dist/index.js:44145,44162`). `0003` dropped that unique index. The v2 store holds only `labels_observation_unique (item_id, decision_id, maker, run_id)`, so the v1 upsert raises `ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint`. `main`'s path targets the 4-column identity (`packages/kk-store/src/dao/labels.ts:249-259`) and matches the store.
 - **The job and the shell already agree.** Both resolve `~/.bun/bin/kk`. The actual gap is that the global build is older than the store's schema, and nothing detects that. `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296-341`) never checks for journal ids it does not know, so an old binary silently writes a newer store.
 
@@ -55,6 +55,11 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
   - **upgrade order:** a schema-bumping change reaches the live tree only together with a global `kk` that carries it, and R1 enforces this from now on;
   - the recovery paths: `.works/kk.db.pre-0242`, or the incident archive's `kk.db` copied without its `-wal`/`-shm` (v1, 68 items / 340 labels).
 
+- [ ] R6. **Stop the test suite from migrating the live store** (the 10:16:07 migrator).
+  1. `warnUnreleasedRuns` (`apps/cli/src/commands/daily.ts:122-150`) must not migrate: add `migrate?: boolean` (default `true`) to `openStore` (`packages/kk-store/src/db.ts:47-53`) and pass `migrate: false`; a store whose journal is behind then fails the query and the existing try/catch keeps the probe best-effort.
+  2. `apps/cli/tests/commands/daily.test.ts` sets `KK_CONFIG` to a temp config whose `store.db_path` is under the test's temp dir (restore in `afterEach`). Audit every in-process test that reaches `resolveStorePath`/`openStore` without `--db` (`rg -n "resolveStorePath|openStore\(" apps/cli/src` → callers; match against tests that call `main(` without `KK_CONFIG`) and isolate each one found.
+  3. Regression check: a v1 store at `<tmp>/.works/kk.db`, run `kk daily prepare` with cwd `<tmp>`; the journal is unchanged.
+
 ### Acceptance Criteria
 
 - [ ] AC1 — On a store whose journal lists an id unknown to the binary, opening it fails with `kk.store.schema-newer` naming the ids, and the store bytes and journal are unchanged (req: R1).
@@ -62,6 +67,8 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 - [ ] AC3 — After the repair, the live store has 0 NULL `story_id`, a current `kk-item-china-politics` label on every item, and a non-empty `kk store extract --topic ai-news` (req: R3).
 - [ ] AC4 — A real `kk-collect` run reaches `done`, and its new items carry label rows with that run id (req: R4).
 - [ ] AC5 — `docs/03_ARCHITECTURE.md` records the live store's schema, its writer, the upgrade-order rule and the recovery paths (req: R5).
+
+- [ ] AC6 — With a v1 store in cwd, `kk daily prepare` leaves `__kk_store_migrations` unchanged; and running `bun test apps/cli/tests/commands/daily.test.ts` from a dir holding a v1 `.works/kk.db` leaves that journal unchanged (req: R6).
 
 ### Q&A
 
@@ -73,6 +80,8 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 - **Q: Do the job and an interactive shell resolve different `kk` builds?** No. Both resolve `~/.bun/bin/kk`, which is 0.0.33. The real mismatch is binary vs. store schema. The old R3 was reframed as R2 (upgrade the global binary) plus R1 (detect the skew).
 - **Q: Release or link?** The release is recommended, because the global then matches a published, reproducible artifact. A `bun link` from this tree is an acceptable stop-gap. Both are operator decisions, and the task blocks at R2 without one.
 - **Q: Restore v1 instead?** Rejected. The store matches `main`, and a restore loses 24 items.
+
+- **Q: Which process migrated the store at 10:16:07?** (Answered 2026-10-09, HIGH.) The unit suite: `daily.test.ts` → `kk daily prepare` → `warnUnreleasedRuns` → `openStore` on the cwd-relative `.works/kk.db`. Reproduced on a v1 copy. Added R6/AC6; R1's skew guard does not cover this case (the test binary is *newer* than the store, so it migrates legitimately).
 
 ### Design
 
@@ -103,6 +112,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 
 ### Plan
 
+0. **Before anything else (R6):** until R6 lands, do not run `bun test` / `bun run gate` from the live tree — use a worktree. Implement R6 first: write the AC6 regression test (fails today), add `openStore({ migrate })`, isolate `daily.test.ts` and any audited sibling, rerun AC6.
 1. R1: write the guard test (fake future journal id → rejected, store unchanged), then implement the guard in `applyKkMigrations`. Run `bun run gate`.
 2. Confirm that 0239 and 0240 are merged. Ask the operator for R2 (release 0.0.34 + `bun add -g`, or the in-tree `bun link`). Verify with `readlink -f ~/.bun/bin/kk` and `kk store --help`.
 3. R3: lock → checkpoint + backup → `backfill-facts` → full relabel → release. Record the before/after SQL counts and the extract count in Testing.
@@ -113,7 +123,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 
 Verified. The 10:00 tick ran 0.0.33 for every step (`~/.bun/bin/kk` → `/Users/robin/node_modules/@gobing-ai/knowledge-kit/dist/index.js`, which has no `0003_store_v2`). A v2 build opened the same cwd-relative store at 10:16:07 (journal `applied_at 1791566167006`) and applied `0003`, which dropped the `(item_id, decision_id)` unique index. The 0.0.33 label upsert still targets that index (0.0.33 `dist/index.js:44145,44162`), and that produces the exact error in `.works/kk-collect/launchd.log:294`.
 
-Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`) never detects a journal that is newer than the binary, so the skew surfaced as a SQL error deep in the label step rather than at open. Not established, and immaterial to the fix: which process opened the store at 10:16:07.
+Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`) never detects a journal that is newer than the binary, so the skew surfaced as a SQL error deep in the label step rather than at open. The 10:16:07 opener is the unit suite: `daily.test.ts` → `kk daily prepare` → `warnUnreleasedRuns` (`apps/cli/src/commands/daily.ts:134-136`) → `openStore` on the cwd-relative live store, which migrates (`packages/kk-store/src/db.ts:47-53`). Reproduced on a v1 copy (HIGH). Two defects: tests are not isolated from the live store, and a "read-only" probe migrates.
 
 ### Solution
 
