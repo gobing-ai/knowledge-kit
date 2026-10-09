@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Store-v2 residuals from 0225-0228 (consolidated): hostile episode_usage copy, weak parity test, duplicate exclusion rule, migrated model-row gate, mixed-script tokenizer"
-status: backlog
+status: todo
 template: standard
 created_at: 2026-10-09T17:29:15.319Z
-updated_at: "2026-10-09T17:29:27.263Z"
+updated_at: "2026-10-09T17:30:52.755Z"
 feature_id: G32
 
 priority: P1
@@ -151,3 +151,6 @@ together and verify with one `bun run gate`.
 - Feature: G32. Live-store measurements in R2/R4/R5 come from the batch's dogfood copies, not from the operator's store.
 
 ### History
+
+- 2026-10-09T17:30:52.755Z backlog → todo (system)
+
