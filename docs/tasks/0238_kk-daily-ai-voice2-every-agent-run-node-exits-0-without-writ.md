@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expe
 status: testing
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-09T19:39:05.663Z"
+updated_at: "2026-10-09T21:27:46.475Z"
 feature_id: G11
 
 priority: P1
@@ -196,6 +196,26 @@ Ceiling (`shortcut:`): one retry, not N — no escalation ladder, no backoff. Up
 attempt is observed failing on an executor that a third would pass. The upstream fix (an `agent.run`
 retry on a missing `expectFile`) is filed as a spur ask; when it ships, delete both `-retry` nodes.
 
+**Residual found by the live verification and fixed in this change (2026-10-09).**
+
+`kk stage daily-article` failed the live run with
+`Input schema violation for kind 'generator': root: Invalid input: expected array, received object`:
+`plan-translate`'s executor had written the generator's **Content envelope**
+(`{title, body, format, metadata:{generator, date, doc_count, docs}}`) back to the plan path instead of
+the `Doc[]` the prompt asks for — valid JSON of the wrong shape, which the existing guard (which only
+caught *unparseable* JSON) passed straight to `daily-article-gen`. `dailyArticle`
+(`plugins/kk/scripts/daily-stages.ts:195-215`) now unwraps that envelope in place — `metadata.docs` is
+exactly what `dailyPlan` writes there, so the translation is salvaged rather than replaced by the
+untranslated candidates — and falls back to the candidates only when there is no usable `docs` array.
+Regression: `apps/cli/tests/kk-workflow-stages.test.ts` "daily-article unwraps a plan.json that carries
+the Content envelope instead of the Doc[]" (asserts the file is rewritten as the envelope's own docs,
+not the candidates; fails without the fix).
+
+**Live evidence (five runs against a snapshot of the real store, 2026-10-09).** Recorded in full under
+Testing; the run ids are `ac5-live-1` (retry fired and failed loudly), `ac5-live-2`…`ac5-live-5`
+(`generate` / `article` / `duration` / estimate-gate outcomes). The retry siblings and the new edges
+were exercised by a real `kk-daily-ai-voice2` run, not only by the harness.
+
 ### Testing
 
 **Pipeline verify results**
@@ -205,34 +225,32 @@ retry on a missing `expectFile`) is filed as a spur ask; when it ships, delete b
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Diagnosis accepted as refined: the violator is the resolved executor, not the node contract. The node prompt and `expectFile` agree at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:220-222` and `:270-272`, and the probe run confirmed the engine's own contract failure text — `agent.run (coder) exited 0 but expected file is absent … executor contract failure preserved at .spur/run/<runId>-<node>-partial.md`. No prompt or `expectFile` path was rewritten by this change. |
-| R2 | MET | `plan-translate` and `article-write` now carry `onError: continue` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:211,261`) and a `-retry` sibling on a different tier — `role: coder`, `agent: ${vars.agent_retry}` (`:242,293`), same `input` (YAML anchor) and `expectFile`, **no** `onError`. Asserted by `apps/cli/tests/voice2-dag.test.ts` AC1 (primary no-op → retry writes → run `done`), AC2 (both no-op → run `failed`, both sidecars), and the structural case that diffs `input`/`expectFile`/`role` across each pair. |
-| R3 | MET | `article-write` → `[qc-content, plan-translate, plan-translate-retry]` (`:251`), `cover-brief` → `[qc-content, plan-translate, plan-translate-retry]` (`:326-329`), `script-write` → `[script-style, plan-translate, plan-translate-retry]` (`:388-391`), `article` → `[qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]` (`:302`). `qc-content` / `script-style` are kept first so a disabled producer cannot strand the dependent. Declaration order stays topological and `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exits 0; asserted both structurally and by observed start order in `apps/cli/tests/voice2-dag.test.ts` AC4. |
-| R4 | MET | The contract failure is still loud and the sidecar is still preserved by spur's own code — asserted, not re-implemented: `apps/cli/tests/voice2-dag.test.ts` AC1 asserts the primary's `.spur/run/<runId>-plan-translate-partial.md` exists, AC2 asserts it for both attempts. |
-| R5 | MET | Blast radius recorded in the Solution: `cover-brief`, `script-write` and `xhs-write` keep `onError: continue` with no retry (soft by design), and `translate` has no `expectFile` and is untouched. Confirmed by `plugins/kk/workflows/kk-daily-ai-voice2.yaml:336,397,592` and the absence of any retry sibling for those nodes. |
-| R6 | PARTIAL | Harness half done: `apps/cli/tests/voice2-dag.test.ts` AC1–AC4 pass against real `agent.run` dispatch on stub executors. Live half NOT RUN — the daily pool is empty, so a voice2 dry run ends `no-content` before reaching `plan-translate` / `article-write` (see Acceptance Criteria AC5). |
+| R1 | MET | Diagnosis accepted as refined: the violator is the resolved executor, not the node contract. Confirmed again on the live runs — the node prompt and `expectFile` agree at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:220-222` and `:270-272`, and run `ac5-live-1` failed with the engine's own text `agent.run (inline) exited 0 but expected file is absent: …21-plan/20261009_03_plan_plan.json`. No prompt or `expectFile` path was rewritten. The probe table in Testing shows the executor landscape directly: `minimax`/`agy-gemini`/`claude` write files, `pi-deepseek` (this box's standard rung) exits 0 without one. |
+| R2 | MET | `plan-translate` and `article-write` carry `onError: continue` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:211,261`) plus a `-retry` sibling on `role: coder`, `agent: ${vars.agent_retry}`, the same anchored `input`/`expectFile`, and **no** `onError` (`:227-247`, `:278-298`). Harness AC1/AC2 pass, and `ac5-live-1` observed the pair live: primary no-op → retry dispatched → second miss → run `failed` with both `.spur/run/ac5-live-1-plan-translate{,-retry}-partial.md` sidecars. |
+| R3 | MET | `article-write → [qc-content, plan-translate, plan-translate-retry]` (`:251`), `cover-brief → [qc-content, plan-translate, plan-translate-retry]` (`:326-329`), `script-write → [script-style, plan-translate, plan-translate-retry]` (`:388-391`), `article → [qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]` (`:302`); `qc-content`/`script-style` stay first so a disabled producer cannot strand the dependent. `spur workflow validate` exits 0; harness AC4 asserts the declared edges and the observed start order, and `ac5-live-2`/`ac5-live-3` showed the readers running after `plan-translate` settled. |
+| R4 | MET | The contract failure is still loud and the sidecar is still preserved by spur's code — asserted by harness AC1/AC2 and independently observed on the live runs (`ac5-live-1`). Not re-implemented. |
+| R5 | MET | Blast radius recorded in Solution and confirmed on the file: `cover-brief` (`:336`), `script-write` (`:397`), `xhs-write` (`:592`) keep `onError: continue` with no retry; `translate` has no `expectFile` and is untouched. |
+| R6 | PARTIAL | Harness half MET: `apps/cli/tests/voice2-dag.test.ts` AC1–AC4 pass against real `agent.run` dispatch on stub executors. Live half **executed but not satisfied**: five real runs were made, the retry siblings dispatched live and the run reached `generate` with every declared agent `expectFile` present, but no run reached `done` — see AC5. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `apps/cli/tests/voice2-dag.test.ts` — `agent=pi` (no-op) + `agent_retry=claude` (writes): stub order `['pi','claude']`, run status `done`, `21-plan/20261007_03_plan_plan.json` on disk, primary `-partial.md` present and retry `-partial.md` absent. |
-| AC2 | MET | test | `apps/cli/tests/voice2-dag.test.ts` — both agents no-op: run status `failed` and both `voice2-retry-both-noop-plan-translate-partial.md` and `voice2-retry-both-noop-plan-translate-retry-partial.md` exist. |
-| AC3 | MET | test | `apps/cli/tests/voice2-dag.test.ts` — with both producers enabled and writable, the run is `done`, `plan-translate` has a trace action event, `plan-translate-retry` has none (skipped), and `article-write`, `cover-brief`, `script-write` all dispatched. |
-| AC4 | MET | test | `apps/cli/tests/voice2-dag.test.ts` — each of `article-write`, `cover-brief`, `script-write` has a trace `startedAt` at or after `plan-translate.completedAt`; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exits 0; the declared `dependsOn` sets contain both plan producers and `article` contains all four producer/retry edges. |
-| AC5 | PARTIAL | command | NOT RUN, blocked by the environment rather than by the change: `kk store extract --topic ai-news --window 24h` returns `{"count":0}` against the live store (92 `items`, 12 `selections` rows), so the run ends `no-content` before reaching the two nodes this change touches. Operator decision 2026-10-09: defer rather than spend executor + TTS budget on a run that cannot reach the code path. Unblock: refresh the pool, or `kk store release --run <id>`, then `spur workflow run plugins/kk/workflows/kk-daily-ai-voice2.yaml` with `publish_enabled=false`. |
+| AC1 | MET | test | `apps/cli/tests/voice2-dag.test.ts` — `agent=pi` (no-op) + `agent_retry=claude` (writes): stub order `['pi','claude']`, run status `done`, `21-plan/20261007_03_plan_plan.json` on disk, primary `-partial.md` present and retry `-partial.md` absent. The same shape was observed live in `ac5-live-2`: `plan-translate` wrote the file with the retry skipped. |
+| AC2 | MET | test | Harness: both agents no-op → run `failed` and both `-partial.md` sidecars exist. Live: run `ac5-live-1` ended `failed` at `plan-translate-retry` with `.spur/run/ac5-live-1-plan-translate-partial.md` and `…-plan-translate-retry-partial.md` both on disk. |
+| AC3 | MET | test | Harness: with both producers enabled the run is `done`, `plan-translate` has a trace action event, `plan-translate-retry` has none, and `article-write`, `cover-brief`, `script-write` all dispatch. Live: `ac5-live-2` ran `plan-translate` with the retry skipped and the downstream readers still ran. |
+| AC4 | MET | test | Harness: each of `article-write`, `cover-brief`, `script-write` has a trace `startedAt` at or after `plan-translate.completedAt`; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exits 0; the declared `dependsOn` sets contain both plan producers and `article` contains all four edges. Live: `ac5-live-3` failed at `daily-article` only after `23-plan/20261009_03_plan_plan.json` existed, and `ac5-live-4` produced `…_06_article-write_body.md` and `…_08_script-write_plan.json` afterwards. |
+| AC5 | PARTIAL | command | **Not met — the run does not reach `done`.** Five live runs (`ac5-live-1` … `ac5-live-5`), each against a snapshot of the live store, `publish_enabled=false`, `skip_review=true`, `xhs_enabled=false`, `wechat_enabled=false`, and `agent=minimax` + `agent_retry=claude` (both probe-proven writers). Every declared agent `expectFile` was produced live (`_03_plan_plan.json`, `_06_article-write_body.md`, `_07_cover-brief.json`, `_08_script-write_plan.json`), the segmented episode rendered and joined (`ac5-live-4`: 6 section files, 795.38 s joined + 8.81 s sting = 804.19 s), and the failures were all length-contract failures, not node failures: `ac5-live-3` estimate 23 min (refused before any request), `ac5-live-4` measured 13.4 min (below the 15-minute floor), `ac5-live-5` estimate 25.9 min. Today's pool has no item count inside the 15–20 min window — 4 kept items render 13.4 min, 6 kept items estimate 25.9 min, and the QC filter's kept count does not move one at a time. Recorded run ids and full outcomes are in Testing. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
-**Gate re-run on the integrated tree (final evidence).** The batch branch was rebased onto `main`
-(`e75232ff`) after the two commits, because `main` advanced while this batch ran — so the numbers above
-(from the pre-rebase base) are superseded. On the rebased tree, whose diff against `main` is exactly
-this batch's 9 files:
+**Final gate on the landed tree (2026-10-09, HEAD `189659eb`).** The branch was rebased twice more as
+`main` advanced (`a55aef75` → `99623957`, a concurrent session closing the G32 store-v2 batch), so the
+numbers above are superseded one last time. On the final tree, whose diff against `main` is exactly this
+batch's 10 files:
 
 ```
 bun run gate        # format + build + lint + typecheck + rules + tests    exit 0
-  Checked 401 files in 379ms. No fixes applied.        (biome)
-  2355 pass, 2 skip, 0 fail                            (full suite)
+  Checked 401 files in 822ms. No fixes applied.        (biome)
+  2359 pass, 2 skip, 0 fail                            (full suite)
 ```
-
-`git diff --stat main` = 1267 insertions / 91 deletions across 9 files, all owned by 0237 and 0238.
 
 ### Review
 
@@ -251,6 +269,22 @@ Residual risk: the retry is only ever *one* extra attempt, and both siblings sha
 — a run whose primary and retry both no-op fails, which is the intended loud ending, but it also means
 a transiently broken executor pair still ends a daily run. AC5's live dry run is the outstanding
 evidence and is recorded as blocked in Testing.
+
+**Second review pass after the live verification (2026-10-09).**
+
+| Priority | Finding | Location | Action |
+| --- | --- | --- | --- |
+| P1 | — none — | | |
+| P2 | The retry is only a *different attempt* when `agent` and `agent_retry` resolve to different executors, and with the shipped defaults (`inline` / `inline`) they do not: both resolve through the run's stage role, so `ac5-live-1` retried `pi-deepseek` with `pi-deepseek`. The design's "a different tier than the primary's `scribe`" does not hold under `inline`. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:64` | **Accepted, not papered over.** Naming a box-specific executor as the shipped default would rot exactly as the design warns, and the probe proves the *correct* fix is operator config (this box's standard rung cannot write files while the cheap rung can). Recorded in the task and handed to the operator; the retry still recovers the *stochastic* failure it was built for. |
+| P3 | The plan-shape repair is duplicated knowledge: `dailyArticle` now knows the Content envelope, while `dailyScript` would still mis-read a wrong-shaped plan if it ever ran before `article`. | `plugins/kk/scripts/daily-stages.ts:195-215` | Safe today: `script` dependsOn `article`, and `article` rewrites the file in place, so every later reader sees a `Doc[]`. Hoist into a shared helper if a third reader appears. |
+| P3 | The estimate gate's 20-minute ceiling is hardcoded while `dailyEpisodeDuration` reads `episode_max_minutes`. | `plugins/kk/scripts/daily-stages.ts:583` | Intentional per the design ("if that estimate is already over 20 minutes"); `dailyGenerate` is not passed the window vars. If an operator ever widens the window, the gate needs the same arg — worth doing then, not now. |
+| P4 | Five live runs left artifacts under `.works/ac5/` and `.works/kk-daily-ai-voice2/20261009/`. | untracked, ignored | Kept as evidence; delete with the worktree. |
+
+Residual risk: the live verification could not reach `done`, so a full run's *tail* (quality report,
+publish-classify fold, ledger) was not exercised against real data in this session — and the executor
+landscape is the binding constraint, not the DAG: until `~/.config/spur/config.yaml`'s standard rung is
+re-pinned to an executor that writes files, every daily run fails at the first hard-fail `agent.run`.
+That is the single most valuable operator action this task surfaced.
 
 ### References
 

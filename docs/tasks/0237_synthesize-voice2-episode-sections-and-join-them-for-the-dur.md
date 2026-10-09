@@ -4,7 +4,7 @@ name: Synthesize voice2 episode sections and join them for the duration check
 status: done
 template: feature-impl
 created_at: 2026-10-09T07:35:29.460Z
-updated_at: "2026-10-09T19:39:05.525Z"
+updated_at: "2026-10-09T21:27:46.018Z"
 feature_id: G13
 priority: P0
 tags:
@@ -71,6 +71,20 @@ Live check (Testing, not an AC): One live voice2 dry run produces a joined episo
 - **Over-long section that exceeds one driver request?** Not seen at current caps (insight ≤380 chars). Deferred until a driver rejects a section; then split inside the section per design §1.
 - **Order vs 0238/0242:** independent code; run `bun run gate` only from a worktree until 0242 R6 lands.
 
+#### Q&A entry — 2026-10-09T19:56:26.260Z
+
+- **Reopened 2026-10-09 after live-data calibration (defect found while unblocking 0238's AC5).** The
+  implemented estimate gate was calibrated from the style sidecar's prose (gemini ≈ 3.3 字/秒,
+  voicebox ≈ 6.3) instead of measurement, and would have refused a *good* script: the shipped
+  20261004 episode is 5466 spoken characters rendered in 1026 s = **5.33 字/秒**, 20261007 is
+  5970 / 1096 = 5.45, and 20261006 (voicebox) 6376 / 1135 = 5.62 — i.e. both drivers run at 5.4–5.6,
+  a 20-minute ceiling of ~6400 characters. At 3.3 the gate refused the same 6300-character fixture as
+  "32 min". Fixed to 5.4 (gemini-tts) / 5.6 (other) with the measurement recorded in the code comment;
+  AC5b is the regression test and fails with the old constants. The sidecar's own numbers are mutually
+  inconsistent (its 4300–5800 字 budget is 13–29 min at its stated 3.3 字/秒) — recalibrating
+  `plugins/kk/scripts/daily-voice-style.zh.md` is left to F613's owner, since that file is the
+  `script-write` agent's sizing prompt and changing its budget changes authored script length.
+
 ### Design
 
 Approach: optional sixth argument `section_concurrency` on `dailyGenerate`. Voice2 passes `1`. An absent argument keeps today's one-request job, so the voice1 command and its behavior stay.
@@ -116,7 +130,7 @@ Signatures: `dailyGenerate(args: string[]): void` with an optional sixth argumen
 | Grouping: `segments[0]` = opening, `segments[last]` = closing, middle split **after** each `gap_ms: 1200` segment | `plugins/kk/scripts/daily-stages.ts:476-512` | R1: fact chunks (`gap_ms: 500`) stay inside their item; the inter-item breath (1200) is the item boundary. The builder is not edited, so voice1 script bytes are unchanged. |
 | Plan cross-check: item-section count vs `_08_script-write_plan.json` `items.length` | `plugins/kk/scripts/daily-stages.ts:498-511` | R1/AC1: a mismatch fails the stage before any request. |
 | `SectionDef` assembly (index, role, stem, segments, characters, trailing `gap_ms`, text) | `plugins/kk/scripts/daily-stages.ts:515-570` | R1/R3: the trailing `gap_ms` is the boundary silence the join uses; `characters` feeds the estimate. |
-| Character-rate estimate: `8 s + totalChars / rate > 1200 s` → `failWith` naming the three longest sections | `plugins/kk/scripts/daily-stages.ts:572-582` | R5/design §5: an over-long episode spends nothing and names what to shorten. Gemini ≈ 3.3 字/秒, voicebox ≈ 6.3 字/秒 (`plugins/kk/scripts/daily-voice-style.zh.md:32`). |
+| Character-rate estimate: `8 s + totalChars / rate > 1200 s` → `failWith` naming the three longest sections | `plugins/kk/scripts/daily-stages.ts:572-582` | R5/design §5: an over-long episode spends nothing and names what to shorten. The rates are MEASURED from the shipped episodes (20261004 gemini 5466 chars/1026 s = 5.33 字/秒, 20261007 gemini 5970/1096 = 5.45, 20261006 voice-gen 6376/1135 = 5.62) — 5.4 for gemini-tts, 5.6 otherwise, a ~6400-character ceiling. The style sidecar's 3.3/6.3 figures are stale and inconsistent with its own 4300–5800 字 budget; they refused a script that renders in 17 min (see Testing, AC5b). |
 | Voice profile resolution (script `default_profile_id` → `default_profile` → `VOICEBOX_DEFAULT_PROFILE` → `robin-news`) | `plugins/kk/scripts/daily-stages.ts:584-588` | R2: the profile id is part of the cache key, mirroring `dailyWrapDocs`'s profile choice. |
 | `computePlans(driver)`: sha256(`text` NUL `profile` NUL `driver`) vs the section sidecar; reuse iff the wav exists **and** the hash matches | `plugins/kk/scripts/daily-stages.ts:600-636` | R2/R5/design §3: resume is "missing audio or hash mismatch", never "the latest index". The driver is in the key, so a driver change re-synthesizes every section and no mixed-voice episode is possible. |
 | Early return when every section is cached **and** the joined wav + content exist | `plugins/kk/scripts/daily-stages.ts:639-643` | R2/AC2: a no-change re-run makes 0 driver calls and reuses the joined speech (the section path deliberately does not honour `qc.passed`, per design §3). |
@@ -148,7 +162,7 @@ single section that still exceeds one driver request is not split; both are defe
 | R2 | MET | Per-section cache: sha256(`text` NUL `profile` NUL `driver`) compared against the section sidecar at `plugins/kk/scripts/daily-stages.ts:600-636`. `apps/cli/tests/daily-generate-sections.test.ts` asserts 0 driver calls on an unchanged re-run and exactly 1 call addressed to `03-item.json` after deleting `03-item.wav`. |
 | R3 | MET | Join at `plugins/kk/scripts/daily-stages.ts:752-795` (aresample to the first section rate, s16 mono, one `atrim` silence per boundary from that section trailing `gap_ms`, single `concat`), then `metadata.audioPath` and `metadata.duration` written with `introMerged` cleared. `apps/cli/tests/daily-generate-sections.test.ts` asserts joined samples equal the sum of section samples plus boundary silences at 24000 Hz, and that `git diff --exit-code plugins/kk/workflows/kk-daily-ai-voice.yaml plugins/generations/dailynews-gen/src/script-builder.ts` is clean. `dailyEpisodeDuration` at `plugins/kk/scripts/daily-stages.ts:364-386` is untouched and still refuses outside 15–20 min. |
 | R4 | MET | Concurrency guard at `plugins/kk/scripts/daily-stages.ts:469-471` refuses any value other than `1` before any request; the synthesis loop at `plugins/kk/scripts/daily-stages.ts:688-750` is strictly sequential. `apps/cli/tests/daily-generate-sections.test.ts` asserts no interleaved start/end events at concurrency 1, and that `2` exits non-zero naming `section_concurrency` with 0 calls. |
-| R5 | MET | Character-rate estimate gate at `plugins/kk/scripts/daily-stages.ts:572-582` (`8 s + characters / rate > 1200 s` fails naming the three longest sections) runs before any request. `apps/cli/tests/daily-generate-sections.test.ts` asserts exactly 1 call after editing one item text and 0 calls plus a non-zero exit on an inflated fixture. |
+| R5 | MET | Character-rate estimate gate at `plugins/kk/scripts/daily-stages.ts:583-593` (`8 s + characters / rate > 1200 s` fails naming the three longest sections) runs before any request. Rates are measured, not copied from prose: 5.4 字/秒 for gemini-tts and 5.6 otherwise, from the three shipped episodes cited above — a ~6400-character ceiling. `apps/cli/tests/daily-generate-sections.test.ts` AC5b pins both sides of that boundary (6300 chars = 19.6 min passes, 7100 chars = 22.1 min is refused with 0 calls) and fails when the constants are reverted to 3.3 / 6.3; AC5 pins the re-synthesis-only-changed-sections half (1 call after editing one item text, 0 calls plus a non-zero exit on the inflated fixture). |
 | R6 | MET | Section failure handling at `plugins/kk/scripts/daily-stages.ts:688-750`: any non-zero exit calls `failWith`, so no further section is requested and the driver is never reassigned mid-loop. `apps/cli/tests/daily-generate-sections.test.ts` asserts the 4th call failing leaves sections 00–02 on disk, makes no 5th call, keeps `vdriver`, and that the next run makes exactly the remaining 5 calls. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
@@ -157,22 +171,20 @@ single section that still exceeds one driver request is not split; both are defe
 | R2 — Each section keeps its own audio file across a retry | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — 0 calls on an unchanged re-run; 1 call addressed to `03-item.json` after `rm 03-item.wav`. |
 | R3 — Joined speech plus the intro sting is the episode the duration check reads | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — joined sample count equals section samples plus boundary `gap_ms` at 24000 Hz; `audioPath` points at the joined file with `introMerged` absent; the five-arg command still makes exactly 1 call; `git diff --exit-code plugins/kk/workflows/kk-daily-ai-voice.yaml plugins/generations/dailynews-gen/src/script-builder.ts` is clean. |
 | R4 — Everyday synthesis converts one section at a time | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — no overlapping start/end at concurrency 1; `2` exits non-zero naming `section_concurrency` with 0 calls. |
-| R5 — An over-long episode re-synthesizes only changed sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — 1 call after editing one item text; the inflated fixture exits non-zero naming the longest sections with 0 calls. |
+| R5 — An over-long episode re-synthesizes only changed sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — 1 call after editing one item text; the inflated fixture exits non-zero naming the longest sections with 0 calls; AC5b proves the recalibrated rate admits a 6300-character production-length script and still refuses 7100. |
 | R6 — An account-level provider refusal stops and keeps finished sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — failing the 4th call leaves 00–02 on disk, makes no 5th call, keeps `vdriver`; the next run makes exactly the remaining 5 calls. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
-**Gate re-run on the integrated tree (final evidence).** The batch branch was rebased onto `main`
-(`e75232ff`) after the two commits, because `main` advanced while this batch ran — so the numbers above
-(from the pre-rebase base) are superseded. On the rebased tree, whose diff against `main` is exactly
-this batch's 9 files:
+**Final gate on the landed tree (2026-10-09, HEAD `189659eb`).** The branch was rebased twice more as
+`main` advanced (`a55aef75` → `99623957`, a concurrent session closing the G32 store-v2 batch), so the
+numbers above are superseded one last time. On the final tree, whose diff against `main` is exactly this
+batch's 10 files:
 
 ```
 bun run gate        # format + build + lint + typecheck + rules + tests    exit 0
-  Checked 401 files in 379ms. No fixes applied.        (biome)
-  2355 pass, 2 skip, 0 fail                            (full suite)
+  Checked 401 files in 822ms. No fixes applied.        (biome)
+  2359 pass, 2 skip, 0 fail                            (full suite)
 ```
-
-`git diff --stat main` = 1267 insertions / 91 deletions across 9 files, all owned by 0237 and 0238.
 
 ### Review
 
@@ -201,4 +213,7 @@ quota), so the join is unverified against real driver output.
 - 2026-10-09T19:17:35.953Z todo → wip (system)
 - 2026-10-09T19:22:56.228Z wip → testing (system)
 - 2026-10-09T19:23:16.350Z testing → done (system)
+- 2026-10-09T19:56:02.850Z done → wip (system)
+- 2026-10-09T19:59:19.891Z wip → testing (system)
+- 2026-10-09T19:59:39.664Z testing → done (system)
 

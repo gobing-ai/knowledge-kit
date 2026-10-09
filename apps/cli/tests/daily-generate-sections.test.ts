@@ -346,6 +346,41 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
         });
     });
 
+    it('AC5b — the estimate is calibrated to the measured driver rate (production-length scripts pass)', () => {
+        // Regression: the shipped style-sidecar figures (gemini 3.3, voicebox 6.3 字/秒) made the gate
+        // refuse a script that renders inside the window. Three shipped episodes measure the real
+        // rate as 5.33-5.62 字/秒 (20261004 gemini 5466 chars/1026 s, 20261007 gemini 5970/1096,
+        // 20261006 voice-gen 6376/1135), i.e. a 20-minute ceiling of ~6400 characters.
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const yamlPath = join(dir, '24-script', `${date}_08_script_voicescript.yaml`);
+            const writeTotal = (target: number) => {
+                const vs = Bun.YAML.parse(readFileSync(yamlPath, 'utf-8')) as {
+                    segments: Array<{ text: string }>;
+                };
+                const others = vs.segments.slice(1).reduce((acc, s) => acc + [...s.text].length, 0);
+                const head = vs.segments[0];
+                if (head) head.text = '补'.repeat(Math.max(1, target - others));
+                writeFileSync(yamlPath, Bun.YAML.stringify(vs));
+            };
+
+            // 6300 chars at gemini's measured 5.4 字/秒 = 8 + 1167 s = 19.6 min — inside the window.
+            writeTotal(6300);
+            const inside = runStage(['daily-generate', dir, date, '', '', 'gemini', '1'], binDir, logFile);
+            expect(inside.status, inside.stderr).toBe(0);
+            const calls = readFileSync(logFile, 'utf-8').trim().split('\n').length;
+            expect(calls).toBeGreaterThan(0);
+
+            // 7100 chars = 8 + 1315 s = 22.1 min — refused before any request, naming the sections.
+            writeTotal(7100);
+            rmSync(logFile, { force: true });
+            const over = runStage(['daily-generate', dir, date, '', '', 'gemini', '1'], binDir, logFile);
+            expect(over.status).not.toBe(0);
+            expect(over.stderr + over.stdout).toMatch(/exceeds 20 min/);
+            expect(existsSync(logFile)).toBe(false);
+        });
+    });
+
     it('AC5 — shortened section re-synthesizes only changed section; over-20-min estimate fails naming 3 longest sections', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupSixItemFixture(dir, date, 6);

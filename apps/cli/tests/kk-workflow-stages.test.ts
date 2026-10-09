@@ -757,6 +757,42 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-article unwraps a plan.json that carries the Content envelope instead of the Doc[]', () => {
+        // `plan-translate`'s executor has been observed writing the generator's Content envelope
+        // back to the plan path — valid JSON of the wrong shape. The article generator refuses it
+        // with `expected array, received object`, so the stage must unwrap `metadata.docs` in place
+        // (every later reader — script, show notes — reads this same file as a Doc[]).
+        withTempDir((dir) => {
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    'const out = args[args.indexOf("--out") + 1];',
+                    'fs.writeFileSync(out, JSON.stringify({ body: "# article" }));',
+                ].join('\n'),
+            );
+            for (const sub of ['21-plan', '22-article']) mkdirSync(join(dir, sub), { recursive: true });
+            const stamp = '20260101';
+            const planPath = join(dir, `21-plan/${stamp}_03_plan_plan.json`);
+            const docs = [
+                { id: 'a', title: 'A', body: 'translated a' },
+                { id: 'b', title: 'B', body: 'translated b' },
+            ];
+            writeFileSync(
+                planPath,
+                JSON.stringify({ title: 'plan', body: '# plan', format: 'markdown', metadata: { docs } }),
+            );
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`),
+                JSON.stringify({ metadata: { docs: [{ id: 'a', title: 'A', body: 'untranslated a' }] } }),
+            );
+            expect(run(['daily-article', dir, stamp, ''], env).status).toBe(0);
+            // The envelope is replaced by its own docs — not by the untranslated candidates.
+            expect(JSON.parse(readFileSync(planPath, 'utf-8'))).toEqual(docs);
+        });
+    });
+
     it('daily-publish-prep stamps the ID3 tags on the MP3 enclosure and drops an absent cover path', () => {
         withTempDir((dir) => {
             for (const sub of ['22-article', '30-audio', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });

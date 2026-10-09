@@ -198,12 +198,31 @@ export function dailyArticle(args: string[]): void {
     timed(workDir, 'article', () => {
         let planUsable = true;
         const raw = isFile(planIn) ? readFileSync(planIn, 'utf-8') : '';
+        // The plan file is canonically the plan `Doc[]` — `dailyPlan` writes the generator's
+        // `metadata.docs` — and every downstream stage reads it as one. `plan-translate`'s executor
+        // has been observed writing the generator's Content ENVELOPE back instead: valid JSON of the
+        // wrong shape, which the article generator then refuses with `expected array, received
+        // object`. Unwrap that envelope rather than discard the translation; anything else unusable
+        // still falls back to the untranslated candidates.
+        let planShape: unknown;
         try {
-            JSON.parse(raw);
+            planShape = JSON.parse(raw);
         } catch (error) {
             console.error(
                 `article: plan.json invalid JSON — replacing with untranslated plan (downstream states read this file): ${(error as Error).message}`,
             );
+        }
+        if (planShape !== undefined && !Array.isArray(planShape)) {
+            const enveloped = metadataOf(planShape as Record<string, unknown>).docs;
+            if (Array.isArray(enveloped) && enveloped.length > 0) {
+                console.error(
+                    `article: plan.json carries the Content envelope, not the Doc[] — unwrapping metadata.docs (${enveloped.length} doc(s))`,
+                );
+                sted('write', planIn, () => writeJsonText(planIn, enveloped));
+                planShape = enveloped;
+            }
+        }
+        if (!Array.isArray(planShape)) {
             const docs = metadataOf(readJson(candidates)).docs;
             if (!Array.isArray(docs) || docs.length === 0) {
                 console.error('article: candidates.json metadata.docs missing');
@@ -580,8 +599,17 @@ export function dailyGenerate(args: string[]): void {
             text: closeText,
         });
 
-        // Character-rate estimate: driver rate + 8 s sting > 20 min (1200 s)
-        const charRate = vdriver === 'gemini' || voiceGenerator === 'gemini-tts' ? 3.3 : 6.3;
+        // Character-rate estimate: section characters / driver rate + 8 s sting > 20 min (1200 s).
+        // The rates are MEASURED from shipped renders, not the style contract's prose. gemini-tts:
+        // 20261004 5466 chars / 1026 s = 5.33, 20261007 5970 / 1096 = 5.45, and the 0237 live dry run
+        // 4645 / 789.9 s of section speech = 5.88 — a 5.3–5.9 range, so 5.4 deliberately errs low (a
+        // slightly early refusal is cheaper than a rendered episode the duration gate then rejects).
+        // voice-gen: 20261006 6376 / 1135 = 5.62. A 20-minute ceiling is therefore ~6400 characters.
+        // The style sidecar's 3.3 / 6.3 figures are stale and mutually inconsistent with its own
+        // 4300–5800 字 budget (which is 13–29 min at 3.3); using them refused a script that really
+        // renders in 17 min. Recalibrate from a fresh pair of `metadata.duration` readings when a
+        // driver changes model or speed.
+        const charRate = voiceGenerator === 'gemini-tts' ? 5.4 : 5.6;
         const totalChars = sectionDefs.reduce((acc, s) => acc + s.characters, 0);
         const estimatedSeconds = 8 + totalChars / charRate;
         if (estimatedSeconds > 20 * 60) {
