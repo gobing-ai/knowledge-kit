@@ -184,7 +184,7 @@ closed `HIGH|MEDIUM|LOW` level. `apps/cli/tests/store-docs.test.ts` resolves eac
 | `collect` | `kk executor fan-in --source aihot-ingest --source last30days-ingest --source horizon-ingest --out <run>/docs.json` + core-facts markdown render (existing `daily-collect-facts` logic moved into the `core-facts-gen` plugin) | `release` → `failed` |
 | `store` | `kk store ingest --run $__runId --in <run>/docs.json` | `release` → `failed` |
 | `label` | `kk store label --run $__runId --catalog plugins/kk/decisions` | (never fails, see §4) |
-| `release` | `kk store lock release …` + `kk ledger append --workflow kk-collect --run $__runId` | `done` |
+| `release` | `kk store lock release …` (the run's ledger section is written by the next tick's `lock` → `kk ledger sync`, §7) | `done` |
 
 Run dir: `.works/kk-collect/<YYYYMMDD-HHmm>/` (docs.json, core-facts.md, label-report.json).
 
@@ -260,9 +260,12 @@ receive only file paths from fixed layout + vars.
 
 The first node of every run (`prepare` / `lock`) runs `kk ledger sync --workflow <name>`, which
 appends every finished run id missing from the ledger (failed ones included) from `spur workflow
-trace --workflow <name> --json` (`.entries[].runId`). That is how a run gets its section: the
-final-node `kk ledger append --run <run-id>` sees its own run still `running` and exits 1 (swallowed
-by `onError: continue`), and a fail-fast DAG never reaches it. Idempotent by run id.
+trace --workflow <name> --json` (`.entries[].runId`). That is how a run gets its section: an
+in-run final-node `kk ledger append --run <run-id>` sees its own run still `running` and exits 1
+with "nothing was written", so `kk-collect` does not carry that action at all — carrying it cost a
+failed step on every green run (`release | failed` in all 7 runs through 2026-10-09) and told the
+operator the healthy ledger was broken. A fail-fast DAG never reaches its append node either. Sync is
+the only writer, and an operator can still append a finished run by hand. Idempotent by run id.
 
 Source: `spur workflow trace <run-id> --json` → `{ run: { runId, workflowName, status, startedAt,
 completedAt, durationMs, outcome }, events: [...] }`. Rows come from `events[]` with

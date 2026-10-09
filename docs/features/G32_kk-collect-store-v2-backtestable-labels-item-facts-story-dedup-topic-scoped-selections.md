@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G32"
 name: "kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-09T01:26:20.180Z"
-updated_at: "2026-10-09T21:25:50.121Z"
+updated_at: "2026-10-09T22:09:43.166Z"
 ---
 
 # G32: kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections
@@ -178,4 +178,5 @@ Design source: `docs/plans/2026-10-08-kk-collect-store-v2-brainstorm.md`.
 
 - 2026-10-09T03:50:08.505Z backlog → active (system)
 - 2026-10-09T21:25:50.121Z active → verifying (system)
+- 2026-10-09T22:09:43.166Z verifying → done (system)
 

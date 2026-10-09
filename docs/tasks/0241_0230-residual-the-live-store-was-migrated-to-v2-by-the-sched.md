@@ -4,7 +4,7 @@ name: "0230 residual: the live store was migrated to v2 by the scheduled collect
 status: done
 template: issue
 created_at: 2026-10-09T17:29:59.582Z
-updated_at: "2026-10-09T21:48:34.661Z"
+updated_at: "2026-10-09T21:53:32.797Z"
 feature_id: G32
 
 priority: P1
@@ -159,7 +159,7 @@ landing decision (merge `sp/runall-g32-5368` or not) remains the operator's.
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 - Confidence: HIGH
 
 | Requirement | Status | Evidence |
@@ -177,9 +177,12 @@ landing decision (merge `sp/runall-g32-5368` or not) remains the operator's.
 
 ### Review
 
+> **Coordinator re-disposition (2026-10-09, `/sp:dev-review` after `/sp:dev-verifyall --feature G32`).** Finding 1 moves from ACCEPTED to DEFER with its owner named: no code in this repo can close a harness lifecycle guard. R1–R3 re-verified this run (Correction present at the 0230 Testing R1 row; archive `.works/incident-2026-10-09T0952/` listed; Solution anchors re-pointed to `packages/kk-store/src/db.ts:66` and `packages/kk-store/src/migrations.ts:197-207`). No P1/P2 finding stands.
+
+
 | # | Priority | Dimension | Finding | Location | Disposition |
 | --- | --- | --- | --- | --- | --- |
-| 1 | P3 | process | The guard against a repeat is a recorded proposal, not a check: a linked batch build plus a scheduled consumer of the live store is still one `bun link` away from migrating it again on open. | Harness seam for the proposed guard: `.agents/skills/sp-spur-dev/references/execution-batch.md` § WT-1 (owner: the `sp` plugin, outside this repo) — see this task's Design section. | ACCEPTED (harness-owned; recorded with its owner and the project-side fallback pointer) |
+| 1 | P3 | process | The guard against a repeat is a recorded proposal, not a check: a linked batch build plus a scheduled consumer of the live store is still one `bun link` away from migrating it again on open. | Harness seam for the proposed guard: `.agents/skills/sp-spur-dev/references/execution-batch.md` § WT-1 (owner: the `sp` plugin, outside this repo) — see this task's Design section. | DEFER (harness-owned: the `sp` plugin batch worktree lifecycle § WT-1, outside this repo; project-side fallback recorded in this task's Design; the schema-skew guard from 0242 R1 now fails a reverse skew loudly) |
 | 2 | P3 | evidence | The falsified claim was "verified" by a `.db` file hash, which is blind to a WAL-resident migration — the same technique appears in other runbooks. | `docs/tasks/0230_…md` `## Testing` Correction (this task); `.spur/memory/learnings.md` lessons 1–2. | RESOLVED (this task: the claim is struck and the technique recorded as the thing not to do) |
 | 3 | P4 | recovery | The checkpointed pre-cut-over backup (78 items / 390 labels) lived only in the batch worktree and was destroyed with it; the only v1 file left is the incident archive's `kk.db` alone (68 items / 340 labels). | `.works/incident-2026-10-09T0952/kk.db` (this task's Design records the recovery procedure). | ACCEPTED (recorded; the loss is disclosed rather than silently absorbed) |
 | 4 | P4 | evidence | The cause of the *second* migration is inferred, not evidenced: the 92-item / 340-label counts match the incident archive's file state plus one ingest, which is consistent with another session restoring that file, but no log proves it. | This task's `## Testing` ("Not verified"); `docs/tasks/0242_…md` R1. | DEFER (0242 — reproduce the state before asserting a lineage) |

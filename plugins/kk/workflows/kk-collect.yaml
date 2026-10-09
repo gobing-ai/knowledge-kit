@@ -142,20 +142,18 @@ states:
 
   - id: release
     description: >-
-      Release the lock and record the run in the ledger (R7). The append runs with onError: continue
-      because a run's own trace is still `running` while a state executes, so `kk ledger append` refuses
-      it (`kk.ledger.run.running`, exit 1); the section is written by the next tick's `lock` →
-      `kk ledger sync`, which is the backfill contract of docs/design/kk-collect-and-daily-voice2.md §7.
+      Release the lock (R7). The run's ledger section is deliberately NOT appended here: a run's own
+      trace is still `running` while a state executes, so `kk ledger append` unconditionally refuses it
+      (`kk.ledger.run.running`, exit 1, "nothing was written"). Carrying the dead action only cost a
+      failed step — every green run reported `release | failed` in ledger.md (dogfood 2026-10-09,
+      7/7 runs), which trained the operator to read the ledger as broken. The section is written by
+      the next tick's `lock` → `kk ledger sync`, which is the backfill contract of
+      docs/design/kk-collect-and-daily-voice2.md §7; an operator may also append a finished run by hand.
     onEnter:
       - kind: shell
         options:
           command: >-
             kk store lock release --name collect --run "${vars.__runId}"
-      - kind: shell
-        onError: continue
-        options:
-          command: >-
-            kk ledger append --workflow kk-collect --run "${vars.__runId}"
 
   - id: release-failed
     description: >-

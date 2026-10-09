@@ -4,7 +4,7 @@ name: "Live store is v2 again and the scheduled kk-collect fails at kk store lab
 status: done
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T21:49:39.938Z"
+updated_at: "2026-10-09T21:53:35.564Z"
 feature_id: G32
 
 priority: P1
@@ -183,7 +183,7 @@ No product or test source changed for R2–R4: the repair surface (`kk store bac
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 - Confidence: HIGH
 
 | Requirement | Status | Evidence |
@@ -207,9 +207,12 @@ No product or test source changed for R2–R4: the repair surface (`kk store bac
 
 ### Review
 
+> **Coordinator re-disposition (2026-10-09, `/sp:dev-review` after `/sp:dev-verifyall --feature G32`).** The first table's P1 `BLOCKED (R2)` row is from the superseded interim report and is RESOLVED: R2–R6 completed and were re-verified this run (global `kk` resolves to this tree's build; scratch copy of the live store: 6/6 `collect_runs` done, run `6ccfef89…` owns 143 label rows; tests 31 pass). Final-report finding 1 moves from ACCEPTED to DEFER with its owner (the next release). No P1/P2 finding stands.
+
+
 | # | Priority | Dimension | Finding | Location | Disposition |
 | --- | --- | --- | --- | --- | --- |
-| 1 | P1 | operations | Task stopped as blocked after R1 awaiting operator authorization for global binary upgrade / release | docs/tasks/0242 | BLOCKED (R2) |
+| 1 | P1 | operations | Task stopped as blocked after R1 awaiting operator authorization for global binary upgrade / release | docs/tasks/0242 | RESOLVED — R2 completed with operator authorization (`readlink -f ~/.bun/bin/kk` → this tree's `apps/cli/dist/index.js`, `kk store --help` lists select/mark-published/release; re-checked 2026-10-09) |
 
 #### Review Report — 0242 (2026-10-09)
 
@@ -230,7 +233,7 @@ collect.
 
 | # | Priority | Dimension | Finding | Location | Disposition |
 |---|----------|-----------|---------|----------|-------------|
-| 1 | P3 | operability | The global `kk` is now a **link** into this working tree, so production tracks an uncommitted-able tree rather than a published artifact; the next schema-bumping change must ship with a release, not only a merge. | `~/.bun/bin/kk` -> `apps/cli/dist/index.js`; see this task's R2–R4 record | ACCEPTED — operator chose the stop-gap knowingly; release-before-next-schema-change is recorded here and in the R2–R4 record |
+| 1 | P3 | operability | The global `kk` is now a **link** into this working tree, so production tracks an uncommitted-able tree rather than a published artifact; the next schema-bumping change must ship with a release, not only a merge. | `~/.bun/bin/kk` -> `apps/cli/dist/index.js`; see this task's R2–R4 record | DEFER — owner: the next release (CI publish of 0.0.34 via `scripts/publish.ts`), required before any schema-bumping change per the upgrade-order rule at `docs/03_ARCHITECTURE.md:143-145`; operator chose the stop-gap knowingly; release-before-next-schema-change is recorded here and in the R2–R4 record |
 | 2 | P4 | operability | The collector's own `kk ledger append` step logs `kk.ledger.run.running` because it runs before the run finalizes; the ledger row lands on the next `kk ledger sync`. | run `6ccfef89-1880-4031-9e75-984e2fe2b7c6` trace, `release` step | ACCEPTED — pre-existing behaviour, does not block the run, which finalized `done` |
 | 3 | P4 | evidence | This task's Background numbers (340 labels, 0 judgment rows, 24 unlabelled items) no longer describe the store: the relabel had already happened before the repair ran, so the planned model spend was not needed and the Design's cost estimate was stale. | This task's `## Testing` R3.4 | RESOLVED — reported, not silently reconciled; the AC3 predicate was measured against the CURRENT store |
 
