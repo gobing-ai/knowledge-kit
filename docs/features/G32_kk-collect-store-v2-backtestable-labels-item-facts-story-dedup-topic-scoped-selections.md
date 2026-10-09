@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G32"
 name: "kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections"
-status: active
+status: verifying
 priority: P2
 tags: []
 created_at: "2026-10-09T01:26:20.180Z"
-updated_at: "2026-10-09T03:50:08.505Z"
+updated_at: "2026-10-09T21:25:50.121Z"
 ---
 
 # G32: kk-collect store v2: backtestable labels, item facts, story dedup, topic-scoped selections
@@ -153,7 +153,7 @@ Scenario: R13 — Decision and surface docs record store v2
 | 0239 | Store-v2 residuals from 0225-0228 (consolidated): hostile episode_usage copy, weak parity test, duplicate exclusion rule, migrated model-row gate, mixed-script tokenizer | done |
 | 0240 | Score-decision maker scale: typesafe answers a 0-1 fraction, so kk drops every non-integer level (kk-item-sensitivity stores nothing) | done |
 | 0241 | 0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree | done |
-| 0242 | Live store is v2 again and the scheduled kk-collect fails at kk store label (ON CONFLICT mismatch): settle the store and green the collector | blocked |
+| 0242 | Live store is v2 again and the scheduled kk-collect fails at kk store label (ON CONFLICT mismatch): settle the store and green the collector | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -177,4 +177,5 @@ Design source: `docs/plans/2026-10-08-kk-collect-store-v2-brainstorm.md`.
 ## History
 
 - 2026-10-09T03:50:08.505Z backlog → active (system)
+- 2026-10-09T21:25:50.121Z active → verifying (system)
 
