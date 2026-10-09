@@ -54,6 +54,12 @@ describe('storyTokens', () => {
         expect(tokens('华为发布 GPT-5 模型')).toEqual(['5', 'gpt', '为发', '华为', '发布', '模型']);
     });
 
+    it('splits mixed-script titles at the script boundary (0239 R5 / AC5)', () => {
+        expect(tokens('OpenAI发布新模型')).toEqual(['openai', '发布', '布新', '新模', '模型']);
+        expect(tokens('GPT5震撼发布')).toEqual(['gpt5', '发布', '撼发', '震撼']);
+        expect(tokens('Meta裁员1000人')).toEqual(['1000', 'meta', '人', '裁员']);
+    });
+
     it('normalizes NFKC and lowercases before tokenizing', () => {
         expect(tokens('ＯＰＥＮＡＩ')).toEqual(['openai']);
         expect(tokens('NAÏVE')).toEqual(['naïve']);
@@ -129,5 +135,16 @@ describe('storyIdFor', () => {
     it('does not merge unrelated Latin titles that share character bigrams', () => {
         const candidates = [candidate({ id: 'a', title: 'Attention Is All You Need' })];
         expect(storyIdFor('An Analysis of Integer Encoding', candidates, 0.6)).toBeNull();
+    });
+
+    it('clusters whitespace-only near-duplicates of mixed-script titles (0239 R5 / AC5)', () => {
+        const c1 = candidate({ id: 'c1', storyId: 'story-c1', title: 'OpenAI发布新模型' });
+        expect(storyIdFor('OpenAI  发布 新模型', [c1], 0.6)).toBe('story-c1');
+
+        const c2 = candidate({ id: 'c2', storyId: 'story-c2', title: 'GPT5震撼发布' });
+        expect(storyIdFor('GPT5  震撼 发布', [c2], 0.6)).toBe('story-c2');
+
+        const c3 = candidate({ id: 'c3', storyId: 'story-c3', title: 'Meta裁员1000人' });
+        expect(storyIdFor('Meta 裁员 1000 人', [c3], 0.6)).toBe('story-c3');
     });
 });

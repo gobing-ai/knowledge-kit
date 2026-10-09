@@ -179,7 +179,8 @@ const STORE_V2_SQL = [
         "selected_at", "published_at", "created_at", "updated_at")
      SELECT 'ai-news', "item_id", "run_id", "item_id", "workflow", NULL, NULL, 'published', "used_at", "used_at",
         "created_at", "updated_at"
-     FROM episode_usage`,
+     FROM episode_usage WHERE true ORDER BY "used_at", "workflow"
+     ON CONFLICT("topic", "item_id", "run_id") DO NOTHING`,
     'DROP TABLE episode_usage',
 ].join(';\n');
 
@@ -298,6 +299,21 @@ export async function applyKkMigrations(
     migrations: readonly KkMigration[] = KK_MIGRATIONS,
     onSkippedStatement?: (statement: string) => void,
 ): Promise<number> {
+    if (await schemaObjectExists(adapter, KK_MIGRATION_JOURNAL)) {
+        const rows = await adapter.queryAll<{ id: string }>(`SELECT id FROM "${KK_MIGRATION_JOURNAL}"`);
+        const knownIds = new Set(migrations.map((m) => m.id));
+        const unknownIds = rows.map((r) => r.id).filter((id) => !knownIds.has(id));
+        if (unknownIds.length > 0) {
+            const dbRow = await adapter.queryFirst<{ file: string }>(
+                "SELECT file FROM pragma_database_list WHERE name = 'main'",
+            );
+            const db = dbRow?.file && dbRow.file !== '' ? dbRow.file : 'store';
+            throw new Error(
+                `kk.store.schema-newer: ${db} has migrations [${unknownIds.join(', ')}] this kk does not know — upgrade kk`,
+            );
+        }
+    }
+
     if (await allMigrationsJournaled(adapter, migrations)) return 0;
 
     await adapter.exec(

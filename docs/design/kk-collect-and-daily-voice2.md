@@ -70,6 +70,8 @@ and `drizzle/`). Both run in `bun run gate` via `spur rule run`.
 | `kk store select --topic <t> --workflow <w> --run <id> --in <candidates.json>` | write `selections` rows, `status: selected` | 0 / 1 |
 | `kk store mark-published --topic <t> --run <id> [--in <ids.json>]` | promote the run's `selected` rows to `published` | 0 / 1 (0 rows ⇒ `{published: 0}`) |
 | `kk store release --run <id> [--topic <t>]` | move the run's `selected` rows to `dropped`, returning its items to the pool | 0 / 1 |
+| `kk store backfill-facts [--db <path>]` | recompute typed item facts and causal `story_id` clustering for every item (idempotent), print `{updated}` | 0 / 1 |
+| `kk store pool-count <file> --min <n>` | guard predicate: exit 0 when pool holds ≥ n items, print `{count, min}` | 0 / 1 |
 
 ## 4. Labels via `spur decision` (I8–I10, I20)
 
@@ -117,7 +119,9 @@ Consumers never read `labels` directly. `labelsCurrentSql(policy)`
 (`packages/kk-store/src/dao/labels.ts`) defines the `labels_current` CTE — for every
 (`item_id`, `decision_id`) the one eligible, highest-priority observation. A row is eligible when its
 `content_hash` matches the item's current hash, its `source` is not `'default'` (a degraded row is
-not a label), a `source 'model'` row clears `store.labels.min_confidence` (default `0.8`), its maker
+not a label), a `source 'model'` row clears `store.labels.min_confidence` (default `0.8` — a
+migrated v1 model row with NULL `raw_confidence` and a new model row with NULL `raw_confidence` are
+both non-current, while a migrated heuristic row remains current), its maker
 is listed in the effective priority, and a `replay-` run id may win only for a maker named **by name**
 (never `'*'`). `store.labels.priority` (default `['*', 'heuristic']`) sets that order per decision —
 a maker not listed is filtered out in `WHERE`, never ranked last. `kk store extract`'s profile joins
@@ -294,14 +298,11 @@ summaries for the newest missing run only (no per-run work dir in the trace).
 
 **G32 cut-over (0225–0230, 2026-10-09).** Store v2 ships as one schema cut-over:
 `0003_store_v2` rebuilds `labels` onto the four-column observation identity with the raw-evidence
-columns, adds the typed `items` facts, and replaces `episode_usage` with `selections`. The live
-store migrates in place with the store's own `collect` lock held — `kk store lock acquire --name
-collect` → `kk store migrate` → `kk store lock release` — with `.works/kk.db.pre-g32` as the
-pre-migration backup. `openStore` applies pending migrations, so the lock acquire is what applies
-`0003`; the lock is therefore always held while the schema changes. Rollback is
-`mv .works/kk.db.pre-g32 .works/kk.db` plus the pre-G32 `kk` binary. Every `episode_usage` row
-becomes a `selections` row with topic `ai-news` and `status 'published'`, so the "never re-aired"
-invariant survives the table swap.
+columns, adds the typed `items` facts, and replaces `episode_usage` with `selections`. The live store
+migrated outside this task (recorded in 0241), the settled state and recovery paths are owned by
+task 0242 (R5), and v1 rollback is not supported once a v2 binary has written to the store. Every
+`episode_usage` row becomes a `selections` row with topic `ai-news` and `status 'published'`, so the
+"never re-aired" invariant survives the table swap.
 
 Retiring `kk-daily-ai-voice.yaml` is a separate follow-up change after P5 reports ready.
 

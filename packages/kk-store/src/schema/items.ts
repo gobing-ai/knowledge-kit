@@ -27,6 +27,7 @@ export const itemsTable = defineTable('items', {
     lastSeenRun: text('last_seen_run').notNull(),
     firstSeenAt: integer('first_seen_at').notNull(),
     publishedAt: integer('published_at'),
+    ...standardColumns,
     /** Largest finite number in `metadata.engagement`, else NULL (task 0227). */
     engagement: real('engagement'),
     /** `[...body].length`, counted in code points (task 0227). */
@@ -39,7 +40,6 @@ export const itemsTable = defineTable('items', {
     domain: text('domain'),
     /** The story this item belongs to; equals `id` until clustering lands (task 0227). */
     storyId: text('story_id'),
-    ...standardColumns,
 });
 
 /** The Drizzle table for DAOs/queries. DDL + zod schemas derive from `itemsTable`. */

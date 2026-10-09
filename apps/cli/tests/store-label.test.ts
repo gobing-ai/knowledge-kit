@@ -291,8 +291,9 @@ function labelLine(counts: {
     consults: number;
     consultMs: number;
     confidence: string;
+    refused?: Record<string, number>;
 }): Record<string, unknown> {
-    return { verdict: 'PASS', ...counts };
+    return { verdict: 'PASS', refused: counts.refused ?? {}, ...counts };
 }
 
 /** The id at `index` of a seeded run — a short seed is a broken test, never a silent skip. */
@@ -396,7 +397,15 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         expect(result.code, result.err).toBe(0);
         // 5 heuristic rows + 8 maker rows; 4 existing + 3 judgment accepted model answers.
         expect(JSON.parse(result.out)).toEqual(
-            labelLine({ labeled: 13, model: 7, fallback: 1, consults: 8, consultMs: 800, confidence: 'LOW' }),
+            labelLine({
+                labeled: 13,
+                model: 7,
+                fallback: 1,
+                consults: 8,
+                consultMs: 800,
+                confidence: 'LOW',
+                refused: { 'kk-item-quality@fm-local': 1 },
+            }),
         );
 
         const maker = rowsFor(seeded.db, id, 'fm-local');
@@ -1234,5 +1243,101 @@ describe('kk store label — china-politics prefilter and gate (0229 R3/R4/R5)',
             `${JSON.stringify({ fixtures: FIXTURES.map((entry) => ({ key: entry.key, title: entry.doc.title, china: entry.china, keywordTerm: entry.keywordTerm ?? null })), rows: labelRows(seeded.db) }, null, 2)}\n`,
         );
         expect(existsSync(join(ARTIFACT_DIR_0229, 'china-politics-labels.json'))).toBe(true);
+    });
+});
+
+describe('kk store label — score positions and refusals (0240 R1/R2/AC1/AC2)', () => {
+    it('AC1/AC2 — accepts score positions in [0, levels-1], rounds to nearest level, and counts refusals', async () => {
+        const dir = tempDir();
+        const seeded = await seed(dir, [CONFIDENT()]);
+        const id = idAt(seeded.ids, 0);
+
+        const stub = stubSpur(dir, {
+            'kk-item-category': {
+                value: 'ai-news',
+                confidence: 0.9,
+                source: 'model',
+                maker: 'typesafe',
+                durationMs: 10,
+            },
+            'kk-item-quality': { value: 2.6, confidence: 0.9, source: 'model', maker: 'typesafe', durationMs: 10 },
+            'kk-item-importance': { value: 2, confidence: 0.9, source: 'model', maker: 'typesafe', durationMs: 10 },
+            'kk-item-urgency': { value: 0, confidence: 0.9, source: 'model', maker: 'typesafe', durationMs: 10 },
+            'kk-item-impact': { value: 5, confidence: 0.9, source: 'model', maker: 'typesafe', durationMs: 10 },
+            'kk-item-china-politics': {
+                value: 3.2,
+                confidence: 0.9,
+                source: 'model',
+                maker: 'typesafe',
+                durationMs: 10,
+            },
+            'kk-item-sensitivity': { value: 0.79, confidence: 0.9, source: 'model', maker: 'typesafe', durationMs: 10 },
+            'kk-item-audience': {
+                value: 'general',
+                confidence: 0.9,
+                source: 'model',
+                maker: 'typesafe',
+                durationMs: 10,
+            },
+        });
+
+        const result = await run(
+            [
+                'store',
+                'label',
+                '--run',
+                'run-0240',
+                '--new-ids',
+                seeded.newIds,
+                '--mode',
+                'decision',
+                '--db',
+                seeded.db,
+            ],
+            { KK_SPUR_BIN: stub },
+        );
+        expect(result.code, result.err).toBe(0);
+        const parsed = JSON.parse(result.out);
+        expect(parsed.verdict).toBe('PASS');
+        expect(parsed.refused).toEqual({ 'kk-item-china-politics@typesafe': 1 });
+
+        const rows = rowsFor(seeded.db, id, 'typesafe');
+        const sens = rows.get('kk-item-sensitivity');
+        expect(sens?.value).toBe('1');
+        expect(sens?.score).toBe(1);
+        expect(sens?.raw_value).toBe('0.79');
+        expect(sens?.source).toBe('model');
+
+        const qual = rows.get('kk-item-quality');
+        expect(qual?.value).toBe('3');
+        expect(qual?.score).toBe(3);
+        expect(qual?.raw_value).toBe('2.6');
+        expect(qual?.source).toBe('model');
+
+        expect(rows.get('kk-item-china-politics')).toBeUndefined();
+    });
+
+    it('AC2 — prints refused: {} when there are no refusals', async () => {
+        const dir = tempDir();
+        const seeded = await seed(dir, [CONFIDENT()]);
+        const stub = stubSpur(dir, acceptedAnswers('ai-news', [5, 4, 3, 2]));
+        const result = await run(
+            [
+                'store',
+                'label',
+                '--run',
+                'run-clean',
+                '--new-ids',
+                seeded.newIds,
+                '--mode',
+                'decision',
+                '--db',
+                seeded.db,
+            ],
+            { KK_SPUR_BIN: stub },
+        );
+        expect(result.code, result.err).toBe(0);
+        const parsed = JSON.parse(result.out);
+        expect(parsed.refused).toEqual({});
     });
 });

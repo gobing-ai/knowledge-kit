@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: "Score-decision maker scale: typesafe answers a 0-1 fraction, so kk drops every non-integer level (kk-item-sensitivity stores nothing)"
-status: todo
+status: done
 template: issue
 created_at: 2026-10-09T17:29:56.937Z
-updated_at: "2026-10-09T17:56:06.707Z"
+updated_at: "2026-10-09T18:41:55.158Z"
 feature_id: G32
 
 priority: P1
 ac_altitude: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0240-verdict.json
 ---
 
 ## 0240. Score-decision maker scale: typesafe answers a 0-1 fraction, so kk drops every non-integer level (kk-item-sensitivity stores nothing)
@@ -38,24 +40,24 @@ ac_altitude: task-local
 
 ### Requirements
 
-- [ ] R1. **Accept level positions.** For a `score` decision, `decisionValue` (`apps/cli/src/commands/store.ts:661`) accepts any finite number in `[0, levels-1]` and stores `String(Math.round(score))` as `value`.
+- [x] R1. **Accept level positions.** For a `score` decision, `decisionValue` (`apps/cli/src/commands/store.ts:661`) accepts any finite number in `[0, levels-1]` and stores `String(Math.round(score))` as `value`.
   - `raw_value` keeps the exact answer (already the case for model rows).
   - Out-of-range, non-finite and non-numeric answers are still refused.
   - `choice` decisions are unchanged.
   - Low-confidence answers stay non-current through the existing `min_confidence` gate (0.8, `packages/kk-store/src/dao/labels.ts`). No new threshold.
-- [ ] R2. **Make refusals visible.** Count refused model answers per `decision@maker` during a label pass, and add them to the printed verdict line as `refused: {"<decision>@<maker>": n}`. Print an empty object when there are none, so the shape is stable. The run report captures stdout, so it inherits the counts.
-- [ ] R3. **Route sensitivity to typesafe.** Add `kk-item-sensitivity: typesafe` under `decisions.makers` in `.spur/config.yaml`, and replace the comment that cites the collided "0236" with one sentence about this task.
-- [ ] R4. **State the contract** in `docs/04_DESIGN.md`: in the label row (`:99`) and the label surface (`:474`).
+- [x] R2. **Make refusals visible.** Count refused model answers per `decision@maker` during a label pass, and add them to the printed verdict line as `refused: {"<decision>@<maker>": n}`. Print an empty object when there are none, so the shape is stable. The run report captures stdout, so it inherits the counts.
+- [x] R3. **Route sensitivity to typesafe.** Add `kk-item-sensitivity: typesafe` under `decisions.makers` in `.spur/config.yaml`, and replace the comment that cites the collided "0236" with one sentence about this task.
+- [x] R4. **State the contract** in `docs/04_DESIGN.md`: in the label row (`:99`) and the label surface (`:474`).
   - A `score` answer is a position on the rubric's level axis.
   - kk stores the nearest level in `value` and the exact answer in `raw_value`.
   - Answers outside `[0, levels-1]` are refused and counted under `refused`.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — A stub maker answering `0.79` on a 4-level `score` decision yields a row with `value '1'` and `raw_value '0.79'`. `2.6` → `'3'`, `3.2` → refused, and the integers `0`–`3` are unchanged (req: R1).
-- [ ] AC2 — A refused answer increments `refused["<decision>@<maker>"]` in the label verdict line. A pass with no refusals prints `refused: {}` (req: R2).
-- [ ] AC3 — With `.spur/config.yaml` carrying `kk-item-sensitivity: typesafe`, a label pass on a scratch store copy writes `source='model'` sensitivity rows with integer `value`s (req: R3).
-- [ ] AC4 — `docs/04_DESIGN.md` states the score-position contract and the `refused` field (req: R4).
+- [x] AC1 — A stub maker answering `0.79` on a 4-level `score` decision yields a row with `value '1'` and `raw_value '0.79'`. `2.6` → `'3'`, `3.2` → refused, and the integers `0`–`3` are unchanged (req: R1).
+- [x] AC2 — A refused answer increments `refused["<decision>@<maker>"]` in the label verdict line. A pass with no refusals prints `refused: {}` (req: R2).
+- [x] AC3 — With `.spur/config.yaml` carrying `kk-item-sensitivity: typesafe`, a label pass on a scratch store copy writes `source='model'` sensitivity rows with integer `value`s (req: R3).
+- [x] AC4 — `docs/04_DESIGN.md` states the score-position contract and the `refused` field (req: R4).
 
 ### Q&A
 
@@ -129,15 +131,51 @@ The earlier "0–1 fraction" reading came from probe values that happened to be 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+#### Change map
+
+- `apps/cli/src/commands/store.ts:661-669`: `decisionValue` accepts finite numbers in `[0, levels-1]` and rounds to nearest integer string via `Math.round(level)` (R1, AC1).
+- `apps/cli/src/commands/store.ts:748,846,1028`: `makerRow` invokes `onRefusal` callback when a model answer is refused; `labelItem` and `labelNewIds` aggregate counts per `decision@maker` into `refused` Record and serialize in verdict line (R2, AC2).
+- `.spur/config.yaml:174`: added `kk-item-sensitivity: typesafe` and updated comment (R3, AC3).
+- `docs/04_DESIGN.md:99,508`: updated CLI table row and detailed label surface text to document score position contract, rounding, and `refused` map (R4, AC4).
+- `apps/cli/tests/store-label.test.ts`: added test suite covering AC1 and AC2.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+- `bun test apps/cli/tests/store-label.test.ts`: 24 pass, 0 fail (covers AC1 and AC2).
+- Live decision probe: `spur decision run kk-item-sensitivity --param title=... --param source=... --json` returns `makerSource: "config-decision"`, `maker: "typesafe"`, `value: 0.79` (covers R3).
+- Scratch DB dogfood: `bun apps/cli/dist/index.js store label --db scratch.db --run 0240-probe --new-ids ids.json --mode decision` writes model sensitivity rows with integer values `0`, `2`, `1` matching raw values `0.11`, `2.16`, `0.74` (covers AC3).
+- `bun run gate`: clean (format, build, lint, typecheck, pre-check 51 rules, 2343 tests pass, post-check 2 rules).
+- `spur task check 0240`: PASS (0 findings).
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| # | Priority | Dimension | Finding | Location | Disposition |
+| --- | --- | --- | --- | --- | --- |
+| 1 | P4 | correctness | typesafe score positions rounded to nearest level and refusals tracked | apps/cli/src/commands/store.ts | RESOLVED |
+
+#### Review Report — 0240 (2026-10-09)
+
+**Scope:** Score-decision maker scale: accept level positions on rubric axis, round to nearest level in value while preserving raw_value, report refused counts in label verdict line, route kk-item-sensitivity to typesafe in config.
+**Verdict:** PASS
+**Confidence:** HIGH
+
+##### Per-requirement results
+
+| Req | Verdict | Evidence |
+|-----|---------|----------|
+| R1 | MET | `apps/cli/src/commands/store.ts:667` rounds level positions to nearest integer string; tested in `apps/cli/tests/store-label.test.ts`. |
+| R2 | MET | `apps/cli/src/commands/store.ts` tracks `refused: Record<string, number>` and serializes in label verdict line; tested in `apps/cli/tests/store-label.test.ts`. |
+| R3 | MET | `.spur/config.yaml:174` sets `kk-item-sensitivity: typesafe`; tested live with probe and scratch DB pass. |
+| R4 | MET | `docs/04_DESIGN.md:99,508` records score position contract and `refused` shape. |
+
+##### Per-AC results
+
+| AC | Verdict | Evidence |
+|----|---------|----------|
+| AC1 | MET | `apps/cli/tests/store-label.test.ts` asserts `0.79` -> `1` (raw `0.79`), `2.6` -> `3`, `3.2` -> refused. |
+| AC2 | MET | `apps/cli/tests/store-label.test.ts` asserts `refused: {"kk-item-china-politics@typesafe": 1}` on refusal, `{}` when clean. |
+| AC3 | MET | Scratch store dogfood run writes `source='model'` sensitivity rows with integer values `0`, `2`, `1`. |
+| AC4 | MET | `docs/04_DESIGN.md:99,508` updated and verified. |
 
 ### References
 
@@ -149,3 +187,8 @@ The earlier "0–1 fraction" reading came from probe values that happened to be 
   0241 (the incident record), `docs/tasks/0226_*.md` R5 (the enum/threshold split this must not disturb).
 
 ### History
+
+- 2026-10-09T18:32:09.826Z todo → wip (system)
+- 2026-10-09T18:41:54.691Z wip → testing (system)
+- 2026-10-09T18:41:55.151Z testing → done (system)
+

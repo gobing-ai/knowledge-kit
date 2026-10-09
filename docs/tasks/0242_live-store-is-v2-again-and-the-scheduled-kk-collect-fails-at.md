@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Live store is v2 again and the scheduled kk-collect fails at kk store label (ON CONFLICT mismatch): settle the store and green the collector"
-status: todo
+status: blocked
 template: issue
 created_at: 2026-10-09T17:41:35.203Z
-updated_at: "2026-10-09T18:11:17.829Z"
+updated_at: "2026-10-09T18:50:40.582Z"
 feature_id: G32
 
 priority: P1
@@ -36,7 +36,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 
 ### Requirements
 
-- [ ] R1. **Schema-skew guard.** Before applying anything, `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`) must reject a store whose `__kk_store_migrations` holds an id missing from `KK_MIGRATIONS`. The error is `kk.store.schema-newer: <db> has migrations [<ids>] this kk (<version>) does not know — upgrade kk`, and the store is left untouched. This protects every binary from 0.0.34 on; 0.0.33 cannot be patched.
+- [x] R1. **Schema-skew guard.** Before applying anything, `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`) must reject a store whose `__kk_store_migrations` holds an id missing from `KK_MIGRATIONS`. The error is `kk.store.schema-newer: <db> has migrations [<ids>] this kk (<version>) does not know — upgrade kk`, and the store is left untouched. This protects every binary from 0.0.34 on; 0.0.33 cannot be patched.
 - [ ] R2. **Operator gate: the global `kk` becomes v2.** `~/.bun/bin/kk` must resolve to a build that contains 0225–0229, 0239, 0240 and R1, and `kk store --help` must list `select`/`mark-published`/`release`.
   - Recommended: release 0.0.34 through the CI publish (`scripts/publish.ts`), then `bun add -g @gobing-ai/knowledge-kit@0.0.34`.
   - Stop-gap: `bun link` from **this** tree's `apps/cli`. The job's cwd is this same tree, so code, catalog and config stay in lockstep. Never link a worktree build (0241).
@@ -49,7 +49,7 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
   5. `kk store lock release --name collect --run g32-repair`.
   6. Verify: 0 items with NULL `story_id`, every item has a current china-politics label, and `kk store extract --topic ai-news` returns count > 0.
 - [ ] R4. **One real `kk-collect` reaches `done`.** Use the next scheduled tick, or run `spur workflow run plugins/kk/workflows/kk-collect.yaml` from this tree. The run's new items carry label rows with its run id, plus `story_id` and facts.
-- [ ] R5. **Record the settled state** in `docs/03_ARCHITECTURE.md`'s persistent-store paragraph:
+- [x] R5. **Record the settled state** in `docs/03_ARCHITECTURE.md`'s persistent-store paragraph:
   - the live store is on v2, and only the global `kk` writes it;
   - launchd resolves `kk` via the plist PATH (`~/.bun/bin` first), and an interactive shell resolves the same file;
   - **upgrade order:** a schema-bumping change reaches the live tree only together with a global `kk` that carries it, and R1 enforces this from now on;
@@ -62,11 +62,11 @@ Found while recording the 0241 incident. The operator's live store `.works/kk.db
 
 ### Acceptance Criteria
 
-- [ ] AC1 — On a store whose journal lists an id unknown to the binary, opening it fails with `kk.store.schema-newer` naming the ids, and the store bytes and journal are unchanged (req: R1).
+- [x] AC1 — On a store whose journal lists an id unknown to the binary, opening it fails with `kk.store.schema-newer` naming the ids, and the store bytes and journal are unchanged (req: R1).
 - [ ] AC2 — `readlink -f ~/.bun/bin/kk` resolves to an operator-authorized v2 build, and `kk store --help` lists `select`, `mark-published` and `release` (req: R2).
 - [ ] AC3 — After the repair, the live store has 0 NULL `story_id`, a current `kk-item-china-politics` label on every item, and a non-empty `kk store extract --topic ai-news` (req: R3).
 - [ ] AC4 — A real `kk-collect` run reaches `done`, and its new items carry label rows with that run id (req: R4).
-- [ ] AC5 — `docs/03_ARCHITECTURE.md` records the live store's schema, its writer, the upgrade-order rule and the recovery paths (req: R5).
+- [x] AC5 — `docs/03_ARCHITECTURE.md` records the live store's schema, its writer, the upgrade-order rule and the recovery paths (req: R5).
 
 - [ ] AC6 — With a v1 store in cwd, `kk daily prepare` leaves `__kk_store_migrations` unchanged; and running `bun test apps/cli/tests/commands/daily.test.ts` from a dir holding a v1 `.works/kk.db` leaves that journal unchanged (req: R6).
 
@@ -127,15 +127,30 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+#### Change map
+
+- `packages/kk-store/src/migrations.ts:296-310`: `applyKkMigrations` checks `__kk_store_migrations` on open, throwing `kk.store.schema-newer: <db> has migrations [<ids>] this kk does not know — upgrade kk` before any DDL or journal check if unknown migrations exist (R1, AC1).
+- `packages/kk-store/tests/migrations.test.ts:553-571`: unit test verifying rejection on unknown future migration id and confirming store bytes and journal remain untouched (R1, AC1).
+- `docs/03_ARCHITECTURE.md:142-147`: updated Persistent store paragraph recording live store v2 status, plist PATH resolution, schema-skew upgrade order rule, and recovery paths (R5, AC5).
+- R2, R3, R4: stopped as `blocked` at operator gate awaiting global binary upgrade (`bun link` from main or 0.0.34 release) per task specification and operator authorization.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+- `bun test packages/kk-store/tests/migrations.test.ts`: 13 pass, 0 fail (covers AC1).
+- `bun run gate`: clean (format, build, lint, typecheck, pre-check 51 rules, 2343 tests pass, post-check 2 rules).
+- `spur task check 0242`: PASS.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+| # | Priority | Dimension | Finding | Location | Disposition |
+| --- | --- | --- | --- | --- | --- |
+| 1 | P1 | operations | Task stopped as blocked after R1 awaiting operator authorization for global binary upgrade / release | docs/tasks/0242 | BLOCKED (R2) |
+
+#### Review Report — 0242 (2026-10-09)
+
+**Scope:** Schema-skew guard (R1), persistent-store architectural documentation (R5). R2–R4 blocked at operator gate per task design.
+**Verdict:** PARTIAL (R1 & R5 MET; R2–R4 blocked at operator gate)
+**Confidence:** HIGH
 
 ### References
 
@@ -148,3 +163,7 @@ Contributing gap: `applyKkMigrations` (`packages/kk-store/src/migrations.ts:296`
   (the label pass), `docs/tasks/0208_*.md` / G31 (the collector).
 
 ### History
+
+- 2026-10-09T18:42:10.091Z todo → wip (system)
+- 2026-10-09T18:50:40.582Z wip → blocked (system)
+

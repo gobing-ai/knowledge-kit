@@ -42,8 +42,8 @@ const INSERT_SELECTIONS_SQL = `INSERT INTO selections
  * (G32 D4).
  *
  * A selection is written when a run commits to its set and promoted at publish. Exclusion
- * reads `excludedStories`, which is topic- and story-scoped: one item may still serve
- * another topic, and a re-reported story under a new URL is still excluded (task 0228).
+ * is topic- and story-scoped: one item may still serve another topic, and a re-reported
+ * story under a new URL is still excluded (task 0228).
  */
 export class SelectionsDao extends EntityDao<typeof selections, typeof selections.itemId> {
     constructor(adapter: DbAdapter) {
@@ -134,19 +134,5 @@ export class SelectionsDao extends EntityDao<typeof selections, typeof selection
             workflow,
         );
         return rows.map((row) => row.run_id);
-    }
-
-    /**
-     * The story ids already selected or published for `topic` — the extraction
-     * exclusion set (task 0228). `dropped` rows are free to re-enter.
-     */
-    async excludedStories(topic: string): Promise<string[]> {
-        const rows = await this.adapter.queryAll<{ story_id: string }>(
-            `SELECT DISTINCT story_id FROM selections
-             WHERE topic = ? AND status IN ('selected', 'published')
-             ORDER BY story_id`,
-            topic,
-        );
-        return rows.map((row) => row.story_id);
     }
 }

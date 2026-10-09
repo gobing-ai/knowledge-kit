@@ -665,7 +665,7 @@ function decisionValue(decisionId: string, raw: string | number): string | null 
         return typeof raw === 'string' && decision.labels.includes(raw) ? raw : null;
     }
     const level = typeof raw === 'number' ? raw : Number(raw);
-    return Number.isInteger(level) && level >= 0 && level < decision.levels ? String(level) : null;
+    return Number.isFinite(level) && level >= 0 && level <= decision.levels - 1 ? String(Math.round(level)) : null;
 }
 
 /** `labels.score`: the level for a score decision, `null` for a choice decision. */
@@ -722,6 +722,7 @@ function makerRow(
     maker: string | undefined,
     runId: string,
     catalogVersion: string,
+    onRefusal?: (key: string) => void,
 ): LabelRow | null {
     if (result === undefined) return null;
     const effectiveMaker = result.maker ?? maker ?? 'default';
@@ -745,6 +746,7 @@ function makerRow(
     if (result.source === 'model') {
         const value = decisionValue(decisionId, result.value);
         if (value !== null) return rowOf(value, 'model');
+        onRefusal?.(`${decisionId}@${effectiveMaker}`);
     }
     if (heuristic !== null) return rowOf(heuristic, 'default');
     // No heuristic annotation at all (the plugin could not run): the catalog's own fallback is the
@@ -810,6 +812,7 @@ interface LabelItemOutcome {
     consults: number;
     /** Summed backend `durationMs` across those consults; absent usage counts as 0. */
     consultMs: number;
+    refused: Record<string, number>;
 }
 
 /**
@@ -836,6 +839,10 @@ async function labelItem(
     await fs.writeFile(evidencePath, item.body);
     let consults = 0;
     let consultMs = 0;
+    const refused: Record<string, number> = {};
+    const onRefusal = (key: string): void => {
+        refused[key] = (refused[key] ?? 0) + 1;
+    };
     const decide = (decisionId: string): DecisionResult | undefined => {
         consults += 1;
         const result = runDecision(decisionId, item, evidencePath, maker);
@@ -853,10 +860,19 @@ async function labelItem(
             const term = matchedChinaPoliticsTerm(item, chinaPoliticsTerms);
             if (term !== null) rows.push(keywordRow(item, term, runId, catalogVersion));
         }
-        const row = makerRow(decision.id, item, heuristic, decide(decision.id), maker, runId, catalogVersion);
+        const row = makerRow(
+            decision.id,
+            item,
+            heuristic,
+            decide(decision.id),
+            maker,
+            runId,
+            catalogVersion,
+            onRefusal,
+        );
         if (row !== null) rows.push(row);
     }
-    return { rows, consults, consultMs };
+    return { rows, consults, consultMs, refused };
 }
 
 /**
@@ -880,14 +896,18 @@ async function replayItem(
     const rows: LabelRow[] = [];
     let consults = 0;
     let consultMs = 0;
+    const refused: Record<string, number> = {};
+    const onRefusal = (key: string): void => {
+        refused[key] = (refused[key] ?? 0) + 1;
+    };
     for (const decisionId of decisionIds) {
         consults += 1;
         const result = runDecision(decisionId, item, evidencePath, maker);
         consultMs += result?.durationMs ?? 0;
-        const row = makerRow(decisionId, item, null, result, maker, runId, catalogVersion);
+        const row = makerRow(decisionId, item, null, result, maker, runId, catalogVersion, onRefusal);
         if (row !== null) rows.push(row);
     }
-    return { rows, consults, consultMs };
+    return { rows, consults, consultMs, refused };
 }
 
 /** Every catalog decision id, in the order the label pass writes them — the table is the source (R3). */
@@ -999,6 +1019,7 @@ async function labelNewIds(
     const rows: LabelRow[] = [];
     let consults = 0;
     let consultMs = 0;
+    const totalRefused: Record<string, number> = {};
     for (const item of items) {
         const outcome = await labelItem(
             fs,
@@ -1014,6 +1035,9 @@ async function labelNewIds(
         rows.push(...outcome.rows);
         consults += outcome.consults;
         consultMs += outcome.consultMs;
+        for (const [key, count] of Object.entries(outcome.refused)) {
+            totalRefused[key] = (totalRefused[key] ?? 0) + count;
+        }
     }
     await writeRows(store, rows);
     consoleOutput.write(
@@ -1025,6 +1049,7 @@ async function labelNewIds(
             fallback: rows.filter((row) => row.source === 'default').length,
             consults,
             consultMs,
+            refused: totalRefused,
         }),
     );
 }

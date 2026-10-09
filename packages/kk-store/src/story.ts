@@ -46,8 +46,9 @@ const OUTLET_SUFFIX_MAX = 30;
 const OUTLET_SEPARATOR = /\s(?:-|—)\s|\s?[|｜]\s?/g;
 /** Punctuation and symbols, replaced by a space so a token never straddles them. */
 const PUNCTUATION = /[\p{P}\p{S}]/gu;
-/** One script run: a CJK run (bigrammed) or a Latin/digit run (one word). */
-const TOKEN_RUN = /(?<cjk>[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+)|(?<word>[\p{L}\p{N}]+)/gu;
+/** One script run: a CJK run (bigrammed) or a Latin/digit run (one word), subtracting CJK from word via the v flag. */
+const TOKEN_RUN =
+    /(?<cjk>[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+)|(?<word>[[\p{L}\p{N}]--[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]]+)/gv;
 
 /**
  * Drop a trailing outlet suffix (`… | The Verge`, `… - Reuters`) when the text after the LAST

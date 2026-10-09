@@ -7,8 +7,7 @@
  * 2. `updateStatus` moves a `published` or `dropped` row, ignores the run/topic filter, or ignores
  *    the optional `itemIds`.
  * 3. `listByRun` leaks another run's or another topic's rows, or loses the plan order.
- * 4. `excludedStories` includes `dropped` stories, crosses topics, or returns duplicates.
- * 5. An empty input writes a row or throws.
+ * 4. An empty input writes a row or throws.
  */
 
 import { afterAll, describe, expect, it } from 'bun:test';
@@ -75,21 +74,5 @@ describe('SelectionsDao', () => {
         // Another run is untouched; an empty item filter changes nothing.
         expect((await store.selections.listByRun('run-2'))[0]?.status).toBe('selected');
         expect(await store.selections.updateStatus('run-1', 'ai-news', 'dropped', [])).toBe(0);
-    });
-
-    it('excludes selected and published stories per topic, never dropped ones', async () => {
-        const { store } = await openTempStore(makeTempDir(), 'selections-exclude.db');
-        await store.selections.insertMany([
-            { topic: 'ai-news', itemId: 'i1', runId: 'run-1', storyId: 'story-a', status: 'selected' },
-            { topic: 'ai-news', itemId: 'i2', runId: 'run-1', storyId: 'story-b', status: 'published' },
-            { topic: 'ai-news', itemId: 'i3', runId: 'run-1', storyId: 'story-c', status: 'dropped' },
-            // A second item of the same story must not duplicate the excluded id.
-            { topic: 'ai-news', itemId: 'i4', runId: 'run-2', storyId: 'story-a', status: 'published' },
-            { topic: 'ai-research', itemId: 'r1', runId: 'run-1', storyId: 'story-z', status: 'published' },
-        ]);
-
-        expect(await store.selections.excludedStories('ai-news')).toEqual(['story-a', 'story-b']);
-        expect(await store.selections.excludedStories('ai-research')).toEqual(['story-z']);
-        expect(await store.selections.excludedStories('no-such-topic')).toEqual([]);
     });
 });

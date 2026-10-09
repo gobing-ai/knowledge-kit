@@ -491,4 +491,46 @@ describe('LabelsDao.currentFor — the labels_current read (0226 R4)', () => {
         expect(params).toContain('kk-item-category');
         expect(params).toContain('replay-%');
     });
+
+    it('treats migrated v1 model rows and model rows with NULL raw_confidence as non-current (0239 R4)', async () => {
+        const { store } = await openTempStore(makeTempDir(), 'legacy-model-rows.db');
+        const item = await seedItem(store, DOC_A);
+        // 1. Migrated heuristic row (source='heuristic', rawConfidence=null) -> current
+        await observe(store, item, {
+            decisionId: 'kk-item-category',
+            maker: 'heuristic',
+            source: 'heuristic',
+            value: 'ai-news',
+            runId: 'legacy',
+            rawConfidence: null,
+            labeledAt: 1_000,
+        });
+        // 2. Migrated model row (source='model', rawConfidence=null) -> NOT current
+        await observe(store, item, {
+            decisionId: 'kk-item-quality',
+            maker: 'fm-local',
+            source: 'model',
+            value: 'HIGH',
+            runId: 'legacy',
+            rawConfidence: null,
+            labeledAt: 1_000,
+        });
+        // 3. New model row with NULL raw_confidence -> NOT current
+        await observe(store, item, {
+            decisionId: 'kk-item-importance',
+            maker: 'fm-local',
+            source: 'model',
+            value: 'HIGH',
+            runId: 'run-new',
+            rawConfidence: null,
+            labeledAt: 2_000,
+        });
+
+        const policy: LabelPolicy = { priority: ['*'], decisionPriority: {}, minConfidence: 0.8 };
+        const current = await store.labels.currentFor([item.id], policy);
+        const decisions = current.map((r) => r.decisionId);
+        expect(decisions).toContain('kk-item-category');
+        expect(decisions).not.toContain('kk-item-quality');
+        expect(decisions).not.toContain('kk-item-importance');
+    });
 });

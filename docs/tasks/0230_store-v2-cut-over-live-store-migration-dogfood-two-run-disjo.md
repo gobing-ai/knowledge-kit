@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: "Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2E, design doc sync"
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-10-09T01:27:20.622Z
-updated_at: "2026-10-09T17:58:21.357Z"
+updated_at: "2026-10-09T18:16:47.763Z"
 feature_id: G32
 
 dependencies: ["0225", "0226", "0227", "0228", "0229"]
 priority: P2
 estimate_hours: 3
 ac_altitude: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0230-verdict.json
 ---
 
 ## 0230. Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2E, design doc sync
@@ -51,10 +53,10 @@ Depends on 0225, 0226, 0227, 0228 and 0229.
 
   Then run `spur feature check G32`.
 
-- [ ] R7. **Close review finding 5.** Add `backfill-facts` and `pool-count` to the §3 verb table in `docs/design/kk-collect-and-daily-voice2.md` (`:63-72`), using the shipped help text.
+- [x] R7. **Close review finding 5.** Add `backfill-facts` and `pool-count` to the §3 verb table in `docs/design/kk-collect-and-daily-voice2.md` (`:63-72`), using the shipped help text.
   - `kk store backfill-facts [--db <path>]` recomputes the typed facts and `story_id` for every item (idempotent) and prints `{updated}`; exit 0/1.
   - `kk store pool-count <file> --min <n>` is the guard predicate: exit 0 when the pool holds ≥ n items, and it prints `{count, min}`.
-- [ ] R8. **Replace the stale rollback.** `.works/kk.db.pre-g32` no longer exists (`ls .works/` on 2026-10-09 shows only `kk.db` and `incident-2026-10-09T0952/`), and "the pre-G32 `kk` binary" against a v2 store is the exact skew of 0241/0242.
+- [x] R8. **Replace the stale rollback.** `.works/kk.db.pre-g32` no longer exists (`ls .works/` on 2026-10-09 shows only `kk.db` and `incident-2026-10-09T0952/`), and "the pre-G32 `kk` binary" against a v2 store is the exact skew of 0241/0242.
   - Rewrite the §8 cut-over note (`docs/design/kk-collect-and-daily-voice2.md:295-306`): the live store migrated outside this task (0241's record), the settled state and recovery paths are owned by 0242 R5, and v1 rollback is not supported once a v2 binary has written.
   - Annotate this task's Design **Rollback** list as superseded, pointing to 0242.
 
@@ -63,8 +65,8 @@ Depends on 0225, 0226, 0227, 0228 and 0229.
 - [x] AC1 — Two consecutive daily dry runs produce disjoint pools
 - [x] AC2 — Decision and surface docs record store v2
 
-- [ ] AC3 — The design doc §3 lists `backfill-facts` and `pool-count`, matching `kk store <verb> --help` (req: R7).
-- [ ] AC4 — No doc or task section tells an operator to restore `.works/kk.db.pre-g32` or to run a pre-G32 `kk` against the store, and §8 points to 0242 for recovery (req: R8).
+- [x] AC3 — The design doc §3 lists `backfill-facts` and `pool-count`, matching `kk store <verb> --help` (req: R7).
+- [x] AC4 — No doc or task section tells an operator to restore `.works/kk.db.pre-g32` or to run a pre-G32 `kk` against the store, and §8 points to 0242 for recovery (req: R8).
 
 ### Q&A
 
@@ -168,9 +170,10 @@ The only edits are the three docs R6 names.
   binding, `--replay` under a `replay-*` run id, and the `labelsCurrentSql`/`labels_current` CTE with
   its eligibility rules (`content_hash` match, `source <> 'default'`, `min_confidence` for a `model`
   row, maker priority, and the replay maker-name guard), i.e. priority + threshold.
+- `docs/design/kk-collect-and-daily-voice2.md:63-75` - §3 table lists `backfill-facts` and `pool-count` (R7).
 - `docs/design/kk-collect-and-daily-voice2.md:295-306` - §8 gains the G32 cut-over note: the
-  `0003_store_v2` batch, the lock/acquire/migrate/release order on the live store, the
-  `.works/kk.db.pre-g32` backup and rollback, and the `episode_usage` -> `selections` row mapping.
+  `0003_store_v2` batch, live migration recorded in 0241, settled state and recovery paths owned by 0242 (R5),
+  and v1 rollback superseded once a v2 binary has written (R8).
 - `docs/03_ARCHITECTURE.md:122-133` - the "Persistent store" paragraph: task list extended to
   `0225-0229`, and store v2 recorded (the widened `labels` observation identity + raw evidence, the
   typed `items` facts, `episode_usage` -> `selections`, and `items.story_id` as the dedup key).
@@ -208,6 +211,8 @@ The only edits are the three docs R6 names.
   (`{"replayed":85,"consults":680,"consultMs":198572,"run":"replay-1791532259183"}`) -> byte-identical,
   `sha256 88063670d435bb7032d14b404ca36b3b309afc1842e15359391c531faa255019`; 259 `replay-*` rows
   stored, none current.
+- **R7** `docs/design/kk-collect-and-daily-voice2.md:63-75` §3 table updated to list `backfill-facts` and `pool-count` matching shipped CLI help text.
+- **R8** `docs/design/kk-collect-and-daily-voice2.md:295-306` §8 note updated to record live migration outside task (0241) and settled state owned by 0242 (R5), voiding stale v1 rollback. Design Rollback marked superseded.
 
 #### Deviations
 
@@ -240,16 +245,16 @@ two decisions and re-measures. **No product or test source changed.** The batch'
 untouched, and the one tracked edit is the maker configuration.
 
 **Decision 1 — point the three judgment decisions at a working maker.** Three entries added to the existing
-`decisions.makers` map (`.spur/config.yaml:163`), leaving the two existing entries and the global
+`decisions.makers` map (`.spur/config.yaml:170`), leaving the two existing entries and the global
 `decisions.maker: fm-local` untouched:
 
 The hop's intermediate state, superseded by the finalisation below (which records what survived):
 
 | Location | Entry | Final state |
 | --- | --- | --- |
-| `.spur/config.yaml:166` | `kk-item-china-politics: typesafe` | kept |
-| `.spur/config.yaml:167` | `kk-item-audience: typesafe` | kept |
-| no sensitivity override | the removal is documented by the comment at `.spur/config.yaml:168-171` | added by the finalisation (no maker yields a usable integer level) |
+| `.spur/config.yaml:173` | `kk-item-china-politics: typesafe` | kept |
+| `.spur/config.yaml:174` | `kk-item-audience: typesafe` | kept |
+| no sensitivity override | the removal is documented by the comment at `.spur/config.yaml:175-178` | added by the finalisation (no maker yields a usable integer level) |
 
 `decisions.makers` is spur's own per-decision-point maker override ("keyed by decision id; outrank
 `decisions.maker`" — `@gobing-ai/spur/schemas/spur-config.schema.json`, `properties.decisions.makers`), so this
@@ -304,7 +309,7 @@ The re-certification hop set all three judgment decisions to `typesafe`. Probing
 hop measured **0** stored `kk-item-sensitivity` rows despite `{"source":"model","reason":"accepted"}`.
 No configured maker therefore yields a usable integer sensitivity level on this machine.
 
-Final `decisions.makers` block, `.spur/config.yaml:163-172` (the maker overrides):
+Final `decisions.makers` block, `.spur/config.yaml:170-178` (the maker overrides):
 
 - `kk-item-china-politics: typesafe` — the only maker that answers, and its answers are integers.
 - `kk-item-audience: typesafe` — answers cleanly (a `choice` decision, so no scale problem).
@@ -529,8 +534,8 @@ unchanged and are not repeated. **The R4 block above is superseded by this secti
 
 #### D1 — the extract pool before and after the maker config
 
-`.spur/config.yaml:166-168` adds `kk-item-china-politics`, `kk-item-sensitivity` and `kk-item-audience` →
-`typesafe` to the `decisions.makers:` block; `decisions.maker: fm-local` and the other two entries are
+`.spur/config.yaml:173-174` adds `kk-item-china-politics: typesafe` and `kk-item-audience: typesafe` →
+`typesafe` to the `decisions.makers` block (`.spur/config.yaml:170`); `decisions.maker: fm-local` and the other two entries are
 unchanged. The fix is the *config*, so the controls below hold everything else constant.
 
 **Is the config the routed surface?** Same item (`816ab26a…`), same evidence file, same decision:
@@ -746,4 +751,6 @@ FAIL. Both decided findings are properly closed and independently re-verified: t
 
 - 2026-10-09T02:45:16.762Z backlog → todo (system)
 - 2026-10-09T08:02:03.702Z todo → wip (system)
+- 2026-10-09T18:16:47.402Z wip → testing (system)
+- 2026-10-09T18:16:47.757Z testing → done (system)
 

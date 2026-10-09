@@ -139,7 +139,12 @@ it every 6 h (04/10/16/22 local); DAG workflows read it. `extract` compiles a to
 rather than a pipeline. `select` / `mark-published` / `release` maintain that topic-scoped
 `selections` ledger — written the moment a run commits to its set, so the "never re-aired" invariant
 no longer depends on publishing — and `kk daily prepare` names any earlier run still holding
-`selected` rows.
+`selected` rows. The live store is on v2, and only the global `kk` writes it; launchd resolves `kk` via
+the plist PATH (`~/.bun/bin` first), and an interactive shell resolves the same file. **Upgrade order:**
+a schema-bumping change reaches the live tree only together with a global `kk` that carries it, and the
+schema-skew guard in `applyKkMigrations` (task 0242 R1) enforces this. Recovery paths:
+`.works/kk.db.pre-0242`, or the incident archive at `.works/incident-2026-10-09T0952/kk.db` copied without
+its `-wal`/`-shm` (v1, 68 items / 340 labels).
 
 ### XHS image-card path (ADR-024)
 

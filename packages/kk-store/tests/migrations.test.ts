@@ -102,19 +102,46 @@ function journalIds(dbPath: string): string[] {
     return rows.map((row) => row.id);
 }
 
-/** The `(name, type)` pairs a `createTableSql` declares, in DDL order. */
-function declaredColumns(createTableSql: string): Array<{ name: string; type: string }> {
-    return [...createTableSql.matchAll(/^ {2}"([^"]+)" (\w+)/gm)].map((match) => ({
-        name: match[1] as string,
-        type: (match[2] as string).toUpperCase(),
-    }));
+/** The `{name, type, notnull, dflt_value}` an entity builder's `createTableSql` declares, in DDL order. */
+function declaredColumns(createTableSql: string): Array<{
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: string | null;
+}> {
+    return [...createTableSql.matchAll(/^ {2}"([^"]+)" (\w+)(.*?)$/gm)].map((match) => {
+        const rest = match[3] ?? '';
+        const notnull = rest.includes('NOT NULL') ? 1 : 0;
+        const defaultMatch = rest.match(/DEFAULT\s+([^,]+)/);
+        const dflt_value = defaultMatch ? (defaultMatch[1] as string).trim() : null;
+        return {
+            name: match[1] as string,
+            type: (match[2] as string).toUpperCase(),
+            notnull,
+            dflt_value,
+        };
+    });
 }
 
-/** `(name, type)` from a live table, for the builder-parity assertions. */
-function liveColumns(dbPath: string, table: string): Array<{ name: string; type: string }> {
-    return tableColumns(dbPath, table)
-        .map((column) => ({ name: column.name, type: column.type }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+/** `(name, type, notnull, dflt_value)` from a live table, in DDL order. */
+function liveColumns(
+    dbPath: string,
+    table: string,
+): Array<{ name: string; type: string; notnull: number; dflt_value: string | null }> {
+    const raw = readRaw(dbPath);
+    const rows = raw.query(`PRAGMA table_info(${table})`).all() as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+    }>;
+    raw.close();
+    return rows.map((row) => ({
+        name: row.name,
+        type: row.type.toUpperCase(),
+        notnull: row.notnull,
+        dflt_value: row.dflt_value ?? null,
+    }));
 }
 
 /**
@@ -465,7 +492,39 @@ describe('0003_store_v2 cut-over', () => {
         raw.close();
     });
 
-    it('keeps the v2 builders and the migrated DDL in lockstep', async () => {
+    it('migrates a v1 store with colliding episode_usage rows deterministically (0239 R1)', async () => {
+        const dbPath = join(makeTempDir(), 'colliding-usage.db');
+        await seedV1Store(dbPath);
+        const raw = new Database(dbPath);
+        // Insert a second row for item-1 and run-9 under a different workflow and later used_at.
+        raw.run(`INSERT INTO episode_usage (item_id, workflow, run_id, used_at, created_at, updated_at)
+            VALUES ('item-1', 'other-wf', 'run-9', 3000, 3000, 3000)`);
+        raw.close();
+
+        const store = await openStore({ path: dbPath });
+        const selections = await store.selections.findAll();
+        await store.close();
+
+        // Exactly one selections row survived: earliest used_at (2000, workflow 'kk-daily-ai-voice2')
+        expect(selections).toEqual([
+            {
+                topic: 'ai-news',
+                itemId: 'item-1',
+                runId: 'run-9',
+                storyId: 'item-1',
+                workflow: 'kk-daily-ai-voice2',
+                rank: null,
+                reason: null,
+                status: 'published',
+                selectedAt: 2_000,
+                publishedAt: 2_000,
+                createdAt: 0,
+                updatedAt: 0,
+            },
+        ]);
+    });
+
+    it('keeps the v2 builders and the migrated DDL in lockstep (0239 R2)', async () => {
         const dbPath = join(makeTempDir(), 'parity.db');
         const store = await openStore({ path: dbPath });
         await store.close();
@@ -476,8 +535,41 @@ describe('0003_store_v2 cut-over', () => {
             ['selections', selectionsTable],
         ] as const;
         for (const [table, builder] of builders) {
-            const declared = declaredColumns(builder.createTableSql).sort((a, b) => a.name.localeCompare(b.name));
+            const declared = declaredColumns(builder.createTableSql);
             expect(liveColumns(dbPath, table)).toEqual(declared);
         }
+    });
+
+    it('rejects duplicate (item_id, decision_id, maker, run_id) via labels_observation_unique (0239 R2)', async () => {
+        const dbPath = join(makeTempDir(), 'label-unique.db');
+        const store = await openStore({ path: dbPath });
+        await store.close();
+
+        const raw = new Database(dbPath);
+        raw.run(`INSERT INTO labels (item_id, decision_id, value, maker, source, run_id, labeled_at)
+            VALUES ('item-1', 'kk-item-quality', 'HIGH', 'fm-local', 'heuristic', 'run-1', 1000)`);
+        expect(() => {
+            raw.run(`INSERT INTO labels (item_id, decision_id, value, maker, source, run_id, labeled_at)
+                VALUES ('item-1', 'kk-item-quality', 'LOW', 'fm-local', 'heuristic', 'run-1', 2000)`);
+        }).toThrow(/UNIQUE constraint failed/);
+        raw.close();
+    });
+
+    it('rejects a store whose journal holds an unknown migration id (0242 R1 / AC1)', async () => {
+        const dbPath = join(makeTempDir(), 'future-schema.db');
+        const store = await openStore({ path: dbPath });
+        await store.close();
+
+        const raw = new Database(dbPath);
+        raw.run("INSERT INTO __kk_store_migrations (id, applied_at) VALUES ('9999_future_migration', 999999)");
+        const beforeJournal = raw.query('SELECT id FROM __kk_store_migrations ORDER BY id').all();
+        raw.close();
+
+        await expect(openStore({ path: dbPath })).rejects.toThrow(/kk\.store\.schema-newer.*9999_future_migration/);
+
+        const rawAfter = readRaw(dbPath);
+        const afterJournal = rawAfter.query('SELECT id FROM __kk_store_migrations ORDER BY id').all();
+        rawAfter.close();
+        expect(afterJournal).toEqual(beforeJournal);
     });
 });

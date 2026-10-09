@@ -96,7 +96,7 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 | `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
-| `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229) |
+| `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240) |
 | `store extract` | Compile a topic profile into one store query and write the pool as `Doc[]` (labels inlined), excluding the topic's already-selected stories and gating on the profile's `where` keys (the shipped ai-news profile's `kk-item-china-politics: { lte: 1 }` excludes an unjudged item, fail-closed); prints `{count}` (§1.9) | shipped (task 0210; topic-scoped exclusion 0228; china-politics gate 0229) |
 | `store select` | Record a run's planned set as `selected` stories for one topic (idempotent); prints `{selected}` (§1.9) | shipped (task 0228) |
 | `store mark-published` | Promote a run's `selected` rows to `published`; prints `{published}` (§1.9) | shipped (task 0228) |
@@ -506,8 +506,9 @@ registered through `decisions.paths` in `.spur/config.yaml` and served by `spur 
 `kk-item-audience` (choice `general | practitioner | researcher`, fallback `general`). `LABEL_DECISIONS`
 in `apps/cli/src/commands/store.ts` is the ONE table they live in: it carries each id's `kind` and its
 choice vocabulary or level count, and `decisionValue` validates every answer against its own entry (a
-choice label must be in vocabulary; a score must be an integer in `[0, levels-1]`, so a `4` is
-rejected for a 0–3 decision while it is accepted for a 0–5 one). The keyword heuristic stays the plugin's: `kk store label` calls
+choice label must be in vocabulary; a score decision answers a position on the rubric's level axis
+in `[0, levels-1]`, and kk stores `String(Math.round(score))` as `value` while `raw_value` keeps the
+exact answer; out-of-range positions and non-numbers are refused and counted under `refused: {"<decision>@<maker>": n}`, task 0240). The keyword heuristic stays the plugin's: `kk store label` calls
 `kk executor run episode-plan-gen` with `EPISODE_PLAN_MODE=label`, which annotates **every** input Doc
 (`metadata.category`, `metadata.scores`, `metadata.needs_model`) with no cap, dedup or filter, so
 `apps/cli` imports no plugin source. In `heuristic` mode (the default) only items the heuristic files
@@ -565,7 +566,9 @@ listed BY NAME: `'*'` never admits a replay row, and an unlisted maker is filter
 rather than ranked last. Kept rows rank by priority position, then the latest `labeled_at`, then the
 greatest `run_id`; row 1 wins. So under the default policy a model answer outranks the heuristic
 baseline it was compared against, a below-threshold model answer is stored but never current (and
-where it is the only row, the pair simply has no current label — fail-closed), and no replay can
+where it is the only row, the pair simply has no current label — fail-closed), a migrated v1 model
+row and a new model row with NULL `raw_confidence` are both non-current (while a migrated heuristic
+row at the same content hash remains current), and no replay can
 displace production selection. There is no SQL VIEW (`bun:sqlite` ships window functions).
 
 **The confidence level (G31 R14, task 0213).** Every verdict this surface emits carries exactly one

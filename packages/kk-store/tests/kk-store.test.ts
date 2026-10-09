@@ -40,8 +40,8 @@
  *     directory left uncreated.
  * 16. `LocksDao.acquire` hands one lock to two runs, is not re-entrant for the holder,
  *     never steals an expired claim, or `release` deletes another run's row.
- * 17. `SelectionsDao.insertMany` duplicates a row on a retried run, or `excludedStories`
- *     leaks another topic's (or a dropped) story.
+ * 17. `SelectionsDao.insertMany` duplicates a row on a retried run, or extraction
+ *     includes an already-selected story.
  * 18. `kk store migrate` prints a non-JSON line or the wrong shape, is not idempotent
  *     across two runs, or exits 0 when the database cannot be opened.
  */
@@ -246,7 +246,18 @@ describe('one collect run end to end', () => {
         expect(run?.status).toBe('done');
         expect(run?.inserted).toBe(2);
         expect(await store.labels.listForItem(ingested.newIds[0] as string)).toHaveLength(1);
-        expect(await store.selections.excludedStories('ai-news')).toEqual([ingested.newIds[0] as string]);
+        const extracted = await store.items.selectByProfile(
+            {
+                where: [],
+                order: [],
+                windowMs: 86400000,
+                now: Date.now(),
+                limit: 10,
+                excludeTopic: 'ai-news',
+            },
+            { priority: ['*'], decisionPriority: {}, minConfidence: 0.8 },
+        );
+        expect(extracted.some((item) => item.id === (ingested.newIds[0] as string))).toBe(false);
         expect((await store.items.findAll()).map((row) => row.lastSeenRun)).toEqual([runId, runId]);
 
         // A second run re-ingesting the same Docs is unchanged, and re-labelling is skipped
