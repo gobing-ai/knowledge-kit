@@ -4,7 +4,7 @@ name: "Store v2 cut-over: live-store migration dogfood, two-run disjoint-pool E2
 status: wip
 template: feature-impl
 created_at: 2026-10-09T01:27:20.622Z
-updated_at: "2026-10-09T17:30:27.782Z"
+updated_at: "2026-10-09T17:39:33.497Z"
 feature_id: G32
 
 dependencies: ["0225", "0226", "0227", "0228", "0229"]
@@ -295,10 +295,21 @@ china-politics gate is admitting items under the final config, not just under th
 ### Testing
 
 All runs below execute in the worktree `/Users/robin/xprojects/knowledge-kit-runall-g32-5368`; the
-invoking tree `/Users/robin/xprojects/knowledge-kit` is read-only and its `.works/kk.db` is
-byte-unchanged (`sha256 3d21b6411ddaaebd7df6111439d52f576f4819f5f4ce11f2747c5adcc8966e97`, sidecars
-untouched). Store path resolves to `.works/kk.db` cwd-relative (the operator config has no
-`store.db_path`).
+invoking tree `/Users/robin/xprojects/knowledge-kit` is read-only **for the batch's own runs**. Store
+path resolves to `.works/kk.db` cwd-relative (the operator config has no `store.db_path`).
+
+**Correction (2026-10-09, task 0241) — the original claim in this section was falsified.** It first read
+"its `.works/kk.db` is byte-unchanged (`sha256 3d21b641…`, sidecars untouched)" and "The live store is
+never opened for writing". Both are wrong in substance: the live `kk.db` **file** did stay
+byte-identical (`sha256 3d21b6411ddaaebd7df6111439d52f576f4819f5f4ce11f2747c5adcc8966e97`), but a
+WAL-resident migration does not change that hash. The scheduled collector job (cwd = the invoking tree)
+opened the live store at 04:00:06 and `openStore` applied `0003_store_v2` there
+(`packages/kk-store/src/db.ts:47,53`), so the live store ran v2 until it was restored: its
+`-wal`/`-shm` were removed and `.works/kk.db` was replaced with the checkpointed pre-cut-over backup,
+verified read-only as v1 (journal `0001`+`0002`, five v1 tables, `episode_usage` present, no
+`selections`, 78 items / 390 labels, `integrity_check` → ok). The claim is struck here rather than left
+standing; the mechanism, the archive and the resolution are in `## Review` finding 1 and in task 0241's
+Solution.
 
 **R0 — cut-over gate (evidence)**
 
@@ -313,7 +324,7 @@ untouched). Store path resolves to `.works/kk.db` cwd-relative (the operator con
 
 **R1 — migrate the copy, not the live store**
 
-The live store is never opened for writing, so the WAL checkpoint ran on the copy:
+**Corrected:** every measured count below ran on the **copy** in the worktree, and the batch's own runs never opened the live store — but the live store was migrated independently by the scheduled collector and later restored (see the Correction above). The commands, as executed against the copy:
 
 ```
 cp  <live>/.works/kk.db  plus its sidecars  ->  .works/    # 3 files, copy sha256 == live sha256
