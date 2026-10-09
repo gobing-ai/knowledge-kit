@@ -1046,6 +1046,17 @@ the console up to 12×/day instead of 1×; the daily workflow itself still drive
 episode. The 24 h figures in the Decision paragraph and the earlier amendments above describe the
 window in force at their dates — this amendment supersedes them.
 
+**Amendment (2026-10-09, one visit may compose several notes).** Operator decision (task 0236,
+option A): one headed publish cycle may compose more than one note in the same browser session —
+voice2's 上传图文 note and its 发播客 episode. The cap still counts **visits**, not notes: one
+`allow('publish')` check before the browser opens and one `record('publish')` per visit, whatever
+the number of operations. Each operation keeps its own draft rail (ADR-022: draft by default, a draft
+claimed only from a console signal, 去发布/发布 clicked only on `publishStatus: public`) and its own
+Result; a failed follow-up never fails the run. Rejected: a second `xhs-pub` call per run (refused
+by the cap by design) and a second `KK_XHS_AUTOMATION_STATE` file to dodge it (that override is
+for a deliberate second profile). Residual risk accepted: one visit now spends longer in the
+console and saves two drafts instead of one.
+
 **Detail:** `docs/design/xhs-image-cards.md` → Automation risk policy.
 
 ---

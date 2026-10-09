@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: The 发播客 note uploads the episode mp3 and cover as one episode
-status: backlog
+status: todo
 template: feature-impl
 created_at: 2026-10-09T06:24:08.594Z
-updated_at: "2026-10-09T18:15:51.863Z"
+updated_at: "2026-10-09T18:30:40.268Z"
 feature_id: G12
 
 priority: P2
@@ -30,7 +30,7 @@ The 发播客 control is 上传音频. It opens a modal with an audio picker and
 
 ### Requirements
 
-- [ ] R0. **Operator decision on the cap (gate before todo).** Choose how 发播客 fits inside ADR-025's one-publish-per-2h guard. Do not bypass the guard. Do not use a second `XHS_AUTOMATION_STATE` file to dodge it; that variable is reserved for a deliberate second profile. Recommended: **(A)** one xhs-pub visit composes both notes. Record the decision as an ADR-025 amendment.
+- [ ] R0. **Cap decision — resolved 2026-10-09: option (A).** One xhs-pub visit composes the 上传图文 note and the 发播客 note in the same session under one `allow`/`record('publish')` (ADR-025 amendment 2026-10-09). Do not bypass the guard; do not use a second `KK_XHS_AUTOMATION_STATE` file.
 - [ ] R1. voice2 builds a 发播客 Content from the publish-prep Content: the same `audioFile` (final mp3 with the intro) and `coverImage`, plus `metadata.operation: '发播客'` and `publishStatus` from `xhs_live`. No new artifacts.
 - [ ] R2. The flow clicks 上传音频, attaches that mp3 and that cover, and fills any required modal field the attended measurement finds. It does not import an RSS feed.
 - [ ] R3. **Attended measurement first.** Before any flow change, one operator-attended walk records what the modal offers after both files attach, saved as `.spur/run/discovery/xhs-podcast-postfile.json` plus a screenshot.
@@ -62,11 +62,15 @@ The 发播客 control is 上传音频. It opens a modal with an audio picker and
 - **Status?** Stays **backlog** until R0 (operator decision) is answered. R3 is an attended step and cannot run headless or unattended (ADR-025).
 - **Which cover?** The same `23-cover` PNG that publish-prep already sets as `coverImage`. The modal's accepted aspect ratio is part of the R3 measurement.
 
+#### Q&A entry — 2026-10-09 (operator decision)
+
+- **R0 answered: option (A).** One xhs-pub visit composes both notes; the cap counts visits, not notes. Recorded as the ADR-025 amendment of 2026-10-09. Task moves to todo; R3 stays an operator-attended step inside implementation.
+
 ### Design
 
 **Superseded:** "add the 发播客 step beside the 图文 step." The 2 h cap refuses a second `xhs-pub` call in the same run (Background).
 
-**Recommended (A): one visit, two notes.** `dailyPublishXhs` (`plugins/kk/scripts/daily-stages.ts:846`) sends one Content to `xhs-pub` whose `metadata.followUps` holds the 发播客 Content.
+**Chosen (A), operator decision 2026-10-09 — one visit, two notes.** `dailyPublishXhs` (`plugins/kk/scripts/daily-stages.ts:846`) sends one Content to `xhs-pub` whose `metadata.followUps` holds the 发播客 Content.
 - xhs-pub runs the primary 上传图文 compose → draft, returns to the creator landing, then runs `composePodcast` in the **same** browser session.
 - Each operation gets its own Result entry; the aggregate is non-blocking.
 - One `allow('publish')` check and one `record('publish')` cover the visit.
@@ -75,10 +79,10 @@ Changes:
 - `xhs-pub/src/index.ts` (loop over `[primary, ...followUps]` after the one cap check);
 - `dailyPublishXhs` (attach the follow-up only when a new trailing arg `podcast=true` is passed by voice2; voice1 passes nothing);
 - the voice2 `xhs-publish` node (pass the arg);
-- ADR-025 amendment;
+- ADR-025 amendment (written 2026-10-09, `docs/00_ADR.md` ADR-025);
 - `04_DESIGN.md` (T3).
 
-Alternatives:
+Rejected alternatives:
 - **(B)** A separate 发播客 run ≥2 h later, from a launchd job. No guard change, but it is a second scheduled job and a second console visit per day.
 - **(C)** 发播客 only on days 图文 is off. No change, but the episode loses one channel per day.
 
@@ -86,7 +90,7 @@ Draft action after the files attach comes from R3's attended measurement. Do not
 
 ### Plan
 
-1. **R0:** get the operator's choice (A/B/C) and write the ADR-025 amendment. Until then, stay in backlog.
+1. **R0:** done — option (A), ADR-025 amendment 2026-10-09.
 2. **R3:** run the attended walk with the operator present. Save `xhs-podcast-postfile.json` and a screenshot, and update `docs/design/xhs-ui-discovery.md`.
 3. Write tests first (AC1 evidence 1–3): an xhs-pub offline test for the follow-up loop and the no-去发布 rail; a stage test for building the 发播客 Content; a guard-state assertion.
 4. Implement option (A), or the chosen option. If R3 found a draft save path, wire it into `leavePodcastModal`; otherwise keep the refusal and give the result an explicit `error`.
@@ -110,3 +114,6 @@ Draft action after the files attach comes from R3's attended measurement. Do not
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-09T18:30:40.268Z backlog → todo (system)
+
