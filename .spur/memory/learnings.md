@@ -1635,3 +1635,60 @@ Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
     proof digest covers the whole tree, so every later task's writes make the earlier proofs stale. Commit
     per task (or accept that only the last task's certificate is current) — the batch-once commit is a
     provenance compromise, not a neutral choice.
+
+## 2026-10-09 — batch `dev-runall --feature G32` (tasks 0230, 0239, 0240; 0242 blocked)
+
+**Decisions**
+
+- **Binary/schema skew is an operational failure mode, not a code defect (0242).** The scheduled collector failed
+  with `ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint` because a 0.0.33 binary (which
+  upserts `labels` on the pre-v2 `(item_id, decision_id)` index) wrote a store already migrated to v2 by another
+  process. `main` had no defect. The fix is a **guard**, not a collector patch: `applyKkMigrations` now reads the
+  journal and throws `kk.store.schema-newer: <db> has migrations [<ids>] this kk does not know — upgrade kk`
+  before any DDL. Every `kk` binary from 0.0.34 on is protected; 0.0.33 cannot be patched.
+- **A `score` decision answers a position on the level axis, not a fraction (0240).** spur bounds the score to
+  `[0, rubric.length-1]`. `kk` now stores `String(Math.round(score))` in `value` and keeps the exact answer in
+  `raw_value`; out-of-range and non-numeric answers are refused and reported as
+  `refused: {"<decision>@<maker>": n}` in the label verdict line. The earlier "0–1 fraction" reading was an
+  artifact of probe values that happened to lie below 1.
+- **`0242` stops as `blocked` at its operator gate.** R1 (guard) and R5 (persistent-store docs) shipped; R2
+  (global binary upgrade via `bun link` or a 0.0.34 release), R3 (locked live-data repair) and R4 (green
+  collector) need explicit operator authorization and were not performed.
+
+**Patterns that worked**
+
+- **Test-first with a mutation check for a parity oracle (0239 R2).** Widening `declaredColumns`/`liveColumns`
+  to compare `notnull`, `dflt_value` **and** DDL order made the builder↔DDL test sensitive; flipping a single
+  `.notNull()` on `labels.labeled_at` was verified to fail the test, then reverted. An oracle you have not seen
+  fail is not an oracle.
+- **Deleting a dead accessor before consolidating (0239 R3).** `SelectionsDao.excludedStories` had no production
+  caller; the only live exclusion predicate is `ItemsDao`. Deleting it left one predicate site, so no shared SQL
+  fragment was needed. Extracting a helper first would have been an abstraction with one caller.
+- **Re-deriving every anchor against the file (0230 R7/R8).** The refine had shifted `.spur/config.yaml` line
+  numbers by four; `spur task check` surfaced `L4.anchor-subject-mismatch` until each citation was re-read from
+  the file rather than carried forward.
+
+**Gotchas**
+
+- **A wrap hop that writes an excluded plane is silently destroyed by `git worktree remove`.** The batch-once
+  wrap was invoked inside the `--worktree` tree; its `metrics`/`learnings` output landed in `.spur/memory/`
+  (excluded via `.git/info/exclude`, so `git status` reports clean and the FF merge carries nothing). Because
+  `git worktree remove` treats ignored files as clean, the tree was removed and the artifacts were lost without
+  an error. **The wrap (and any post-commit hop) must run in the invoking tree, or WT-3b must be re-committed
+  after it.** Recovery is a re-run on the main tree — deterministic for metrics, manual for learnings.
+- **`vars.tasks` is a JSON-encoded *string*, not a JSON array.** `spur workflow run --vars` rejects non-string
+  values, so the correct form is `--vars '{"tasks":"[\"0230\",\"0239\"]"}'`; passing a bare array fails with
+  `--vars values must be strings; "tasks" is object`.
+- **A `\p{L}` word class silently swallows CJK (0239 R5).** `storyTokens("OpenAI发布新模型")` produced one token,
+  `"openai发布新模型"`, so mixed-script titles could never cluster. The fix is a `v`-flag set subtraction,
+  `[[\p{L}\p{N}]--[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]]+` — CJK bigrams on one side, Latin
+  words on the other.
+- **SQLite needs `WHERE true` before `ORDER BY … ON CONFLICT` in `INSERT … SELECT`.** The clause is mandatory to
+  resolve the upsert parse ambiguity (sqlite.org/lang_upsert.html § "Parsing Ambiguity"); without it the
+  statement is a syntax error, with it the migration is deterministic (earliest `used_at`, ties by `workflow`).
+- **`PRAGMA table_info` ordering is the DDL order, and `bun:sqlite` returns snake_case keys.** A test helper that
+  maps `dflt_value` → `dfltValue` and sorts by name cannot detect a column-order regression; read the pragma
+  directly and keep its order.
+- **`spur task update <wbs> done` needs a recorded pipeline run.** Without one the lifecycle gate denies the
+  transition; `spur task run-link <wbs>` records the link (per-tree provenance DB) and unblocks it. The `wip`
+  → `done` edge is illegal — route through `testing`.
