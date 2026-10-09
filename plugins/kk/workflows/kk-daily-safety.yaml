@@ -126,11 +126,10 @@ transitions:
   - from: judge
     to: clean
     description: >-
-      An admitted outcome with a contract-conforming verdict: the judge verdict is an explicit PASS
-      whose `confidence` is HIGH|MEDIUM|LOW, AND the gate admitted the pair (it writes
-      safety-judge_stamp.json for exactly pass|escalate|exclude — the three outcomes that publish
-      something, whether the whole run, an escalated review, or everything but the excluded
-      platforms). The verdict read is the same confidence-aware jq filter the itc/example judges
+      An admitted outcome: an explicit PASS (confidence HIGH|MEDIUM|LOW) with a stamp, or a
+      NEEDS_REVISION the gate has already classified `exclude` after the revise budget (admission-only
+      residue publishes at recorded risk — 2026-10-08). The gate writes safety-judge_stamp.json for
+      exactly pass|escalate|exclude. The verdict read is the same confidence-aware jq filter the itc/example judges
       use (byte-identical, so the one contract cannot drift): a `verdict: PASS` whose `confidence`
       is missing or outside HIGH|MEDIUM|LOW reads as `PASS!`, which this accept guard never matches,
       and the refusal names the offending value on stderr first. The gate already blocks such a
@@ -140,9 +139,7 @@ transitions:
       kind: shell
       options:
         command: >-
-          v="$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json" 2>/dev/null)";
-          { test "$v" = PASS; } || echo "kk-daily-safety.judge.confidence-refused: verdict '$v' — a judge PASS is only usable with confidence HIGH|MEDIUM|LOW, so these drafts must not publish" >&2;
-          test "$v" = PASS && test -s "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_stamp.json"
+          jq -n -e --arg v "$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_verdict.json" 2>/dev/null)" --arg s "$(jq -r '.status // ""' "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_stamp.json" 2>/dev/null)" --arg bytes "$(wc -c < "${vars.work_dir}/24-script/${vars.run_date}_09_safety-judge_stamp.json" 2>/dev/null)" 'if (($v == "PASS" or ($v == "NEEDS_REVISION" and $s == "exclude")) and (($bytes | gsub("[^0-9]"; "") | tonumber? // 0) > 0)) then true else ("kk-daily-safety.judge.confidence-refused: verdict " + $v + " — a judge PASS is only usable with confidence HIGH|MEDIUM|LOW, so these drafts must not publish" | halt_error(1)) end' >/dev/null
 
   - from: judge
     to: revise

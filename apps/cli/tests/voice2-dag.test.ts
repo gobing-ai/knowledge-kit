@@ -496,6 +496,13 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
         ['PASS + HIGH on admitted drafts', { verdict: 'PASS', confidence: 'HIGH' }, 'pass', true, true],
         ['PASS + MEDIUM on an escalated run', { verdict: 'PASS', confidence: 'MEDIUM' }, 'escalate', true, true],
         ['PASS + LOW after an admission-only exclusion', { verdict: 'PASS', confidence: 'LOW' }, 'exclude', true, true],
+        [
+            'NEEDS_REVISION after the budget, admitted at recorded risk',
+            { verdict: 'NEEDS_REVISION', confidence: 'MEDIUM' },
+            'exclude',
+            true,
+            true,
+        ],
         ['PASS without a confidence field', { verdict: 'PASS' }, 'pass', true, false],
         ['PASS + out-of-enum confidence', { verdict: 'PASS', confidence: 'SURE' }, 'pass', true, false],
         ['PASS + lowercase confidence', { verdict: 'PASS', confidence: 'high' }, 'pass', true, false],

@@ -1309,7 +1309,10 @@ export function dailyShowNotes(args: string[]): void {
  */
 export function dailyTranslateLocalize(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
-    const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);
+    // Same seam as show-notes (task 0137): `_17_publish_result.json` is written later by
+    // publish-classify, which depends on translate-sync. Reading it here always saw no zh
+    // path, so en/ja were never scaffolded (2026-10-08 dogfood).
+    const result = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
     const zhFile = join(workDir, '31-publish', `${runDate}_20_translate-localize_zh-post-path.txt`);
     timed(workDir, 'translate-localize', () => {
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');

@@ -1548,7 +1548,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             // With a published zh path and no draft on disk, each locale scaffolds via surfdash-pub.
             const zhPath = join(dir, 'posts/zh/index.md');
             writeFileSync(
-                join(publish, `${stamp}_17_publish_result.json`),
+                join(publish, `${stamp}_14_publish-surfdash_result.json`),
                 JSON.stringify({
                     targets: [
                         { target: 'surfdash-pub', ok: true, status: 'published', metadata: { postPath: zhPath } },
