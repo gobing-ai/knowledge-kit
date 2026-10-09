@@ -209,6 +209,44 @@ function withKkShim<T>(binDir: string, fn: () => T): T {
     }
 }
 
+/**
+ * 0238 AC1–AC4 — the fake executor the agent.run nodes dispatch.
+ *
+ * The engine resolves a canonical agent name straight to a binary on PATH (`resolveExecutor` →
+ * `{ agent: name }`), so a same-named script is a real stand-in for `pi` / `claude`. Probed shape
+ * (2026-10-09): `pi --version` first (capability attestation), then
+ * `pi -p "<input>" --session-dir … --model … --mode text`. A name listed in `noopAgents` answers 0
+ * and writes NOTHING — the stochastic executor no-op 0238 exists for; every other name writes the
+ * expectFile its own prompt names (the last `.json`/`.md` path in the input text).
+ */
+function writeAgentStub(binDir: string, names: string[], noopAgents: string[]): void {
+    const noopPattern = noopAgents.length === 0 ? 'ZZZ_NEVER' : noopAgents.join('|');
+    const script = [
+        '#!/bin/bash',
+        'ME="$(basename "$0")"',
+        'PROBE=0',
+        'for a in "$@"; do',
+        '  case "$a" in',
+        '    --version) echo "0.99.0"; PROBE=1 ;;',
+        '    --list-models) echo "stub/model-1"; PROBE=1 ;;',
+        '    --help) PROBE=1 ;;',
+        '  esac',
+        'done',
+        '[ "$PROBE" = "1" ] && exit 0',
+        // One line per PROMPT invocation (the probes are excluded), so the log is the retry order.
+        '[ -n "$KK_STUB_AGENT_LOG" ] && printf "%s\n" "$ME" >> "$KK_STUB_AGENT_LOG"',
+        `case "$ME" in ${noopPattern}) exit 0 ;; esac`,
+        'OUT="$(printf "%s\n" "$*" | grep -oE "[^ ]+\\.(json|md)" | tail -1)"',
+        '[ -n "$OUT" ] && mkdir -p "$(dirname "$OUT")" && printf \'%s\' \'{"stub":true}\' > "$OUT"',
+        'exit 0',
+    ].join('\n');
+    for (const name of names) {
+        const path = join(binDir, name);
+        writeFileSync(path, `${script}\n`);
+        chmodSync(path, 0o755);
+    }
+}
+
 interface RunOutcome {
     code: number;
     status: string;
@@ -216,6 +254,8 @@ interface RunOutcome {
     log: string[];
     /** The same calls as `<epoch-ns> <command>`, for the concurrency probe. */
     rawLog: string[];
+    /** Every recorded agent-stub invocation (`<agent> <args>`), 0238 only. */
+    agentLog: string[];
     stderr: string;
     workDir: string;
     runId: string;
@@ -235,12 +275,20 @@ function runDag(
         sleepMs?: number;
         realRunReport?: boolean;
         vars?: Record<string, string>;
+        /** 0238: canonical agent names to install as PATH stubs (`pi`, `claude`). */
+        agentStubs?: string[];
+        /** 0238: the subset of `agentStubs` that answers 0 without writing its expectFile. */
+        agentNoop?: string[];
     },
 ): RunOutcome {
     const binDir = tempDir(`voice2-bin-${options.runId}-`);
     const works = tempDir(`voice2-works-${options.runId}-`);
     const logPath = join(cwd, 'kk-calls.log');
+    const agentLogPath = join(cwd, 'agent-calls.log');
     writeKkShim(binDir, { pool: options.pool, candidates: options.candidates, sleepMs: options.sleepMs ?? 0 });
+    if (options.agentStubs !== undefined) {
+        writeAgentStub(binDir, options.agentStubs, options.agentNoop ?? []);
+    }
     const vars = {
         publish_enabled: 'false',
         skip_review: 'true',
@@ -266,6 +314,7 @@ function runDag(
                     SPUR_WORKFLOW_RUN_ACTIVE: undefined,
                     SPUR_EXPECTED_DEFINITION_DIGEST: undefined,
                     KK_STUB_LOG: logPath,
+                    KK_STUB_AGENT_LOG: agentLogPath,
                     KK_STUB_WORKS: works,
                     ...(options.realRunReport === true ? { KK_STUB_REAL_RUNREPORT: '1' } : {}),
                 },
@@ -280,11 +329,15 @@ function runDag(
     }
     const rawLog = existsSync(logPath) ? readFileSync(logPath, 'utf-8').trim().split('\n') : [];
     const log = rawLog.map((line) => line.replace(/^\d+ /, ''));
+    const agentLog = existsSync(agentLogPath)
+        ? readFileSync(agentLogPath, 'utf-8').trim().split('\n').filter(Boolean)
+        : [];
     const outcome: RunOutcome = {
         code: result.exitCode ?? 1,
         status: summary.status ?? 'unknown',
         log,
         rawLog,
+        agentLog,
         stderr: result.stderr.toString(),
         workDir: join(works, 'kk-daily-ai-voice2', '20261007'),
         runId: options.runId,
@@ -300,6 +353,24 @@ function runDag(
 /** Whether any recorded `kk` call is exactly this command prefix. */
 function called(outcome: RunOutcome, prefix: string): boolean {
     return outcome.log.some((line) => line.startsWith(prefix));
+}
+
+/** 0238: the agent names the stub recorded running, first invocation first. */
+function agentsCalled(outcome: RunOutcome): string[] {
+    return outcome.agentLog.map((line) => line.split(' ')[0] ?? '');
+}
+
+/** 0238: one node's action event in the run trace — proves the node actually dispatched. */
+function traceAction(
+    runId: string,
+    nodeId: string,
+    cwd: string,
+): { status?: string; startedAt?: string; completedAt?: string } | undefined {
+    const trace = Bun.spawnSync(['spur', 'workflow', 'trace', runId, '--json'], { cwd });
+    const parsed = JSON.parse(trace.stdout.toString()) as {
+        events: { kind: string; node?: string; status?: string; startedAt?: string; completedAt?: string }[];
+    };
+    return parsed.events.find((event) => event.kind === 'action' && event.node === nodeId);
 }
 
 /** Timestamps (ms) of every recorded call whose command starts with `prefix`. */
@@ -643,6 +714,136 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
         );
         // Every `${…}` the guard carries is a declared var (a builtin reference fails the run).
         for (const name of varsRefs(String(guard?.command))) expect(safety.vars[name]).toBeDefined();
+    });
+});
+
+describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', () => {
+    /** Only the two hard-fail producers are active: every other agent.run branch stays disabled. */
+    const baseVars = {
+        plan_translate_enabled: 'true',
+        article_write_enabled: 'false',
+        script_write_enabled: 'false',
+        cover_enabled: 'false',
+        agent: 'pi',
+        agent_retry: 'claude',
+    };
+
+    it('AC1 — a primary that exits 0 without its expectFile is recovered by the retry sibling', () => {
+        const cwd = tempDir('voice2-retry-');
+        const outcome = runDag(cwd, {
+            runId: 'voice2-retry-recover',
+            pool: POOL_FULL,
+            candidates: CANDIDATES_FULL,
+            vars: baseVars,
+            agentStubs: ['pi', 'claude'],
+            agentNoop: ['pi'],
+        });
+        // The stub answers 0 with no tool call, exactly the observed executor no-op, so the retry
+        // sibling is the only writer of the plan file.
+        expect(agentsCalled(outcome)).toEqual(['pi', 'claude']);
+        expect(outcome.status).toBe('done');
+        expect(existsSync(join(outcome.workDir, '21-plan', '20261007_03_plan_plan.json'))).toBe(true);
+        // The failing primary still preserved its contract-violation sidecar.
+        expect(existsSync(join(cwd, '.spur/run/voice2-retry-recover-plan-translate-partial.md'))).toBe(true);
+        expect(existsSync(join(cwd, '.spur/run/voice2-retry-recover-plan-translate-retry-partial.md'))).toBe(false);
+    }, 180_000);
+
+    it('AC2 — both attempts missing the file ends the run failed at the retry, keeping both sidecars', () => {
+        const cwd = tempDir('voice2-retry-fail-');
+        const outcome = runDag(cwd, {
+            runId: 'voice2-retry-both-noop',
+            pool: POOL_FULL,
+            candidates: CANDIDATES_FULL,
+            vars: baseVars,
+            agentStubs: ['pi', 'claude'],
+            agentNoop: ['pi', 'claude'],
+        });
+        expect(outcome.status).toBe('failed');
+        for (const nodeId of ['plan-translate', 'plan-translate-retry']) {
+            const sidecar = join(cwd, `.spur/run/voice2-retry-both-noop-${nodeId}-partial.md`);
+            expect(existsSync(sidecar), `${nodeId} must keep its contract-violation sidecar`).toBe(true);
+        }
+    }, 180_000);
+
+    it('AC3 — a successful primary skips the retry while the downstream readers still run', () => {
+        const cwd = tempDir('voice2-retry-skip-');
+        const outcome = runDag(cwd, {
+            runId: 'voice2-retry-primary-ok',
+            pool: POOL_FULL,
+            candidates: CANDIDATES_FULL,
+            vars: { ...baseVars, article_write_enabled: 'true', cover_enabled: 'true', script_write_enabled: 'true' },
+            agentStubs: ['pi', 'claude'],
+            agentNoop: [],
+        });
+        expect(outcome.status).toBe('done');
+        // The primary wrote its file (pi is not a no-op here), so the retry's condition is false and
+        // the engine records no action event for it — the done+skipped mix the design relies on.
+        expect(traceAction(outcome.runId, 'plan-translate', cwd)).toBeDefined();
+        expect(traceAction(outcome.runId, 'plan-translate-retry', cwd)).toBeUndefined();
+        for (const nodeId of ['article-write', 'cover-brief', 'script-write']) {
+            expect(traceAction(outcome.runId, nodeId, cwd), `${nodeId} must still run`).toBeDefined();
+        }
+    }, 180_000);
+
+    it('AC4 — every plan.json reader starts after the plan producers settle', () => {
+        const cwd = tempDir('voice2-retry-order-');
+        const outcome = runDag(cwd, {
+            runId: 'voice2-retry-order',
+            pool: POOL_FULL,
+            candidates: CANDIDATES_FULL,
+            vars: { ...baseVars, article_write_enabled: 'true', cover_enabled: 'true', script_write_enabled: 'true' },
+            agentStubs: ['pi', 'claude'],
+            agentNoop: [],
+        });
+        expect(outcome.status).toBe('done');
+        const primary = traceAction(outcome.runId, 'plan-translate', cwd);
+        expect(primary?.completedAt).toBeDefined();
+        const settled = Date.parse(String(primary?.completedAt));
+        for (const nodeId of ['article-write', 'cover-brief', 'script-write']) {
+            const reader = traceAction(outcome.runId, nodeId, cwd);
+            expect(reader?.startedAt, `${nodeId} must have started`).toBeDefined();
+            expect(
+                Date.parse(String(reader?.startedAt)),
+                `${nodeId} started before plan-translate settled`,
+            ).toBeGreaterThanOrEqual(settled);
+        }
+        // The declared graph is the contract the engine enforces — validate it as well as observe it.
+        const validation = Bun.spawnSync(['spur', 'workflow', 'validate', WORKFLOW, '--json'], { cwd: REPO });
+        expect(validation.exitCode).toBe(0);
+        const dag = loadDag();
+        for (const nodeId of ['article-write', 'cover-brief', 'script-write']) {
+            const node = dag.nodes.find((candidate) => candidate.id === nodeId);
+            expect(node?.dependsOn, `${nodeId} must depend on both plan producers`).toContain('plan-translate-retry');
+        }
+        const article = dag.nodes.find((candidate) => candidate.id === 'article');
+        for (const dep of ['plan-translate', 'plan-translate-retry', 'article-write', 'article-write-retry']) {
+            expect(article?.dependsOn, `article must depend on ${dep}`).toContain(dep);
+        }
+    }, 180_000);
+
+    it('declares the retry siblings on a different tier, with the same input and expectFile, no onError', () => {
+        const dag = loadDag();
+        for (const [primaryId, retryId] of [
+            ['plan-translate', 'plan-translate-retry'],
+            ['article-write', 'article-write-retry'],
+        ] as const) {
+            const primary = dag.nodes.find((node) => node.id === primaryId);
+            const retry = dag.nodes.find((node) => node.id === retryId);
+            expect(primary?.action?.onError, `${primaryId} must continue so the retry can decide`).toBe('continue');
+            expect(retry, `${retryId} must be declared`).toBeDefined();
+            // No onError on the retry: a second miss must fail the run loudly.
+            expect(retry?.action?.onError).toBeUndefined();
+            const primaryOptions = primary?.action?.options as Record<string, unknown> | undefined;
+            const retryOptions = retry?.action?.options as Record<string, unknown> | undefined;
+            expect(retryOptions?.input, `${retryId} must reuse the primary's prompt byte-for-byte`).toBe(
+                primaryOptions?.input,
+            );
+            expect(retryOptions?.expectFile).toBe(primaryOptions?.expectFile);
+            expect(retryOptions?.role).toBe('coder');
+            expect(String(retryOptions?.agent)).toContain('agent_retry');
+            expect(String(primaryOptions?.agent)).toContain('vars.agent');
+        }
+        expect(dag.vars?.agent_retry).toBeDefined();
     });
 });
 

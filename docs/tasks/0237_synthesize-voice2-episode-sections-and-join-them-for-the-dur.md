@@ -4,7 +4,7 @@ name: Synthesize voice2 episode sections and join them for the duration check
 status: done
 template: feature-impl
 created_at: 2026-10-09T07:35:29.460Z
-updated_at: "2026-10-09T19:23:16.355Z"
+updated_at: "2026-10-09T19:39:05.525Z"
 feature_id: G13
 priority: P0
 tags:
@@ -160,6 +160,19 @@ single section that still exceeds one driver request is not split; both are defe
 | R5 — An over-long episode re-synthesizes only changed sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — 1 call after editing one item text; the inflated fixture exits non-zero naming the longest sections with 0 calls. |
 | R6 — An account-level provider refusal stops and keeps finished sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — failing the 4th call leaves 00–02 on disk, makes no 5th call, keeps `vdriver`; the next run makes exactly the remaining 5 calls. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+**Gate re-run on the integrated tree (final evidence).** The batch branch was rebased onto `main`
+(`e75232ff`) after the two commits, because `main` advanced while this batch ran — so the numbers above
+(from the pre-rebase base) are superseded. On the rebased tree, whose diff against `main` is exactly
+this batch's 9 files:
+
+```
+bun run gate        # format + build + lint + typecheck + rules + tests    exit 0
+  Checked 401 files in 379ms. No fixes applied.        (biome)
+  2355 pass, 2 skip, 0 fail                            (full suite)
+```
+
+`git diff --stat main` = 1267 insertions / 91 deletions across 9 files, all owned by 0237 and 0238.
 
 ### Review
 

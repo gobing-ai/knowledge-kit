@@ -218,11 +218,11 @@ action documented in the satellite; kk never edits the operator's crontab.
 
 ```
 prepare ─► extract ─► plan ─► qc-content ─┬─► select ────────────────────────────────────────┐
-                                          ├─► plan-translate(agent)
-                                          ├─► article-write(agent) ─► article ─────────────┐
-                                          ├─► cover-brief(agent) ─► cover ─────────────────┤
-                                          └─► script-style ─► script-write(agent) ─► script┤
-                                                                                           ▼
+                                          ├─► plan-translate(agent) ─► plan-translate-retry(agent)
+                                          ├─► article-write(agent) ─► article-write-retry(agent) ─► article ─┐
+                                          ├─► cover-brief(agent) ─► cover ───────────────────────────────────┤
+                                          └─► script-style ─► script-write(agent) ─► script ──────────────────┤
+                                                                                                             ▼
                                                               safety (sub-workflow) ─► review (pause)
                                                                                            │
                        ┌───────────────────────────┬──────────────────────────┬────────────┤
@@ -244,6 +244,7 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► select ──�
 - `publish_enabled=false` ⇒ `condition` skips the publish subtree (same var as today).
 - `xhs-render` / `xhs-publish` are voice2-only steps: `xhs-render` passes the 9th arg `note_scope: episode` (0235 — the packaged note carries the episode cover last plus one numbered body line per attached image) and `xhs-publish` the 5th `podcast: true` (0236 — the episode's 发播客 note rides the same console visit as `metadata.followUps`, one ADR-025 cap entry). Both nodes carry their own `xhs_enabled` gate (a skipped `xhs-write` still admits its dependents, so without it a run with `xhs_enabled=false` would re-package and re-publish a stale same-day `25-xhs/` series). For the 发播客 note, `xhs-publish` also depends on `publish-prep`, a **data** dependency (it reads `_13_publish-prep_content.json`): without that edge the two nodes race and the 发播客 note is dropped silently while the stage still exits 0 — the DAG review finding fixed in 0236. voice1 (`kk-daily-ai-voice.yaml`) calls both stages with neither argument and is byte-identical; its spec stays in `kk-daily-ai-voice.md` §7, the surfaces in `docs/04_DESIGN.md`.
 - `patch-surfdash` / `publish-partial` fold into `publish-classify` (it already classifies partial).
+- `plan-translate` / `article-write` are the two **hard-fail** `agent.run` producers (a missing `expectFile` fails the run). 0238: the resolved executor is stochastic — a run has been observed answering a greeting with zero tool calls and exiting 0 — and the engine has no node retry, so each carries a `-retry` sibling with the **same `input`/`expectFile`** on a different tier (`agent_retry`, `role: coder`). The primary becomes `onError: continue`; the sibling's guard is `! test -s <expectFile>` and it carries **no** `onError`, so a second miss still fails the run loudly. Every reader of `21-plan/<date>_03_plan_plan.json` (`article-write`, `cover-brief`, `script-write`) and the `article` node depends on **both** the primary and its sibling — the engine's done+skipped mix then keeps a successful primary's retry skipped without stranding the dependents. Delete the siblings when spur grows an `agent.run` retry.
 - `select` = `kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run ${vars.__runId} --in ${work_dir}/21-plan/<date>_04_quality-control-content_candidates.json`, declared right after `qc-content`, guarded on the candidates file. It reads the QC output, not `03_plan_plan.json`: the plan file is pre-QC, so selecting it would burn items the run rejected. This is 0228's fix for the root cause F4: the exclusion is recorded the moment the run commits to its set, not at the DAG tail, so a run that fails, pauses at review or skips publish still excludes what it planned.
 - `mark-published` = `kk store mark-published --topic ai-news --run ${vars.__runId}` on `dependsOn: [publish-classify, extract]`, with the candidates guard **and** `test "${vars.publish_enabled}" = "true"` — a dry run never promotes, so its rows stay `selected` (still excluding, freed by `kk store release --run <id>`). `run-report` lists it in `dependsOn`.
 - `kk daily prepare --workflow <w>` writes one stderr line per other run still holding `selected` rows for the workflow, each naming the `kk store release --run <id>` that frees it (0228 R7).
