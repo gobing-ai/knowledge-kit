@@ -1,3 +1,67 @@
+## [0.0.34] - 2026-10-09
+
+### Added
+
+- feat(rules): keep the confidence level's proof in the durable verdict (1156) (525b2abd)
+- feat(rules): verify the confidence level in task and feature records (cd22731d)
+- feat(kk): let the workflow's episode window drive the pre-spend estimate (aae1f994)
+- feat(kk): synthesize voice2 episode sections and join them (0237) (0772e7e0)
+- feat(rules): fail dead run-scoped evidence citations (0247) (31f62375)
+- feat(kk): pair each XHS note image with its text and upload the episode podcast note (0235, 0236) (90e45811)
+- feat(store): dev-runall feature:G32 batch writes (0230, 0239, 0240, 0242) (902f78ae)
+- feat(store): kk store v2 — schema, labels, facts, selections, decisions (b5984ed3)
+
+### Fixed
+
+- fix(rules): pin the scratch-citation fixture to the pre-repair revision (90d348e0)
+- fix(kk): retry voice2 agent producers two tiers above the primary (a3b93c43)
+- fix(kk): refuse a non-numeric episode window before synthesis (2705087e)
+- fix(kk): guard the voice2 authoring agents on their own output (07897fa8)
+- fix(kk): repair the plan envelope and the voice-rate calibration (0237, 0238) (d3fb9941)
+- fix(kk): bound voice2 agent.run recovery and add the missing plan edges (0238) (ca4bc94f)
+- fix(kk): name and gate every daily XHS note entry (0235, 0236) (4102168d)
+- fix(kk-store): declare drizzle-orm as a direct dependency (e95f4244)
+- fix(kk-store): stop the test suite and the daily probe migrating the live store (fa3ff1af)
+- fix(kk): scaffold locales from the surfdash publish result (2061e964)
+- fix(image-gen): stop prompting MiniMax for poster-style text (18af1f53)
+- fix(kk): rework the daily voice2 disclosure and content path (011a4254)
+
+### Changed
+
+- test(kk): keep workflow runs' spur rows in the temp workspace (b029ebb6)
+- chore(project): upgrade .gitignore (ad8faf80)
+- docs(feature): update features after implementation (02da474b)
+- docs(design): correct the superseded xhs_enabled clause (0247 wrap) (8ad16f8f)
+- docs(tasks): close 0238 with the ac5-live-16 evidence (0237, 0238) (dcc5f15d)
+- docs(tasks): correct the auto-appended live-run summaries (0238) (d61caff7)
+- docs(tasks): record the voicebox-only rule and the kk-resolution hazard (0238) (92d17d8a)
+- docs(tasks): record the live voice2 verification evidence (0237, 0238) (97768efa)
+- build(plugins): keep a plugin's local .venv out of the bundle (a320162c)
+- chore(project): upgrade project dependencies (f1ed5752)
+- docs(tasks): add new tasks (4491347d)
+- docs(project): close out G32 and propose the E94 publish channels (a54c1f6d)
+- docs(tasks): re-verify G32 batch 0225-0242 and re-point stale anchors (4524f2d0)
+- docs(changelog): re-earn the Unreleased block and capture the close-out learnings (09ab41d6)
+- docs(tasks): updat tasks after verification (8f861bfa)
+- docs(tasks): close 0242 — global kk upgraded, live store repaired, collector green (99623957)
+- docs(changelog): close the G32 batch with an earned HIGH confidence level (a55aef75)
+- chore(wrap): capture the G32 store-v2 batch learnings (0230, 0239, 0240) (e75232ff)
+- docs(adr): ADR-025 amendment, one XHS visit may compose several notes (fcae1614)
+- docs(tasks): refine 0235-0238 to implementation-ready and pin 0242's migrator (3034adc4)
+- chore(project): add new scheduled job kk-collect (6dcc73fa)
+- docs(tasks): refine remaining G32 tasks to implementation-ready (f0f6cb25)
+- docs(tasks): bind 0241's ACs with command evidence and close it clean (4a7db505)
+- docs(tasks): fill 0240/0241/0242 and close the incident record (c6b6a1cc)
+- chore(tasks): promote 0239 (consolidated store-v2 residuals) to todo (40eb3eb3)
+- chore(tasks): consolidate the store-v2 residuals and clear the last WBS collisions (27777998)
+- chore(tasks): file 0238 for the daily DAG's agent.run artifact failures (b56fd503)
+- docs(kk): correct the stale catalog-version prose and the 0230 config anchors (7c35e0dc)
+- chore(wrap): capture the G32 batch learnings and the incident resolution (441df601)
+- chore(tasks): G32 corpus — 0225–0229 done, 0230 failed, residuals filed (60d87b95)
+- docs: record the store v2 cut-over (b8bf4e24)
+- docs(kk): file G12 XHS notes and the G13 speech plan (5c6982a1)
+- docs(store): plan the kk-collect store v2 cut-over (0f695d7d)
+
 ## [Unreleased]
 
 ### Added
