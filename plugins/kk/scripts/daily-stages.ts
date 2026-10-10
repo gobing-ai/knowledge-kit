@@ -433,6 +433,11 @@ export function dailyGenerate(args: string[]): void {
             `generate: unknown vdriver '${vdriver}' (expected one of: ${Object.keys(VOICE_DRIVERS).join(', ')})`,
         );
     }
+    // Strict `Number`, not `parseFloat`: a typo'd var ('2O') must refuse, not cap the episode at 2 min.
+    const maxMinutes = episodeMaxMinutes === '' ? DEFAULT_EPISODE_MAX_MINUTES : Number(episodeMaxMinutes);
+    if (!Number.isFinite(maxMinutes) || maxMinutes <= 0) {
+        failWith(1, `generate: invalid episode_max_minutes: ${episodeMaxMinutes}`);
+    }
     const docs = join(workDir, '30-audio', `${runDate}_10_wrap-docs_docs.json`);
     const content = join(workDir, '30-audio', `${runDate}_11_generate_content.json`);
 
@@ -621,7 +626,6 @@ export function dailyGenerate(args: string[]): void {
         // renders in 17 min. Recalibrate from a fresh pair of `metadata.duration` readings when a
         // driver changes model or speed.
         const charRate = voiceGenerator === 'gemini-tts' ? 5.4 : 5.6;
-        const maxMinutes = Number.parseFloat(episodeMaxMinutes) || DEFAULT_EPISODE_MAX_MINUTES;
         const totalChars = sectionDefs.reduce((acc, s) => acc + s.characters, 0);
         const estimatedSeconds = 8 + totalChars / charRate;
         if (estimatedSeconds > maxMinutes * 60) {

@@ -406,6 +406,18 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
         });
     });
 
+    it('refuses a non-numeric `episode_max_minutes` before any synthesis instead of defaulting to 20', () => {
+        // A typo'd workflow var must not silently fall back to the 20-minute default while the
+        // measured `daily-episode-duration` gate fails on the same value.
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const bad = runStage(['daily-generate', dir, date, '', '', 'gemini', '1', '2O'], binDir, logFile);
+            expect(bad.status).not.toBe(0);
+            expect(bad.stderr + bad.stdout).toMatch(/invalid episode_max_minutes: 2O/);
+            expect(existsSync(logFile)).toBe(false);
+        });
+    });
+
     it('AC5 — shortened section re-synthesizes only changed section; over-20-min estimate fails naming 3 longest sections', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupSixItemFixture(dir, date, 6);

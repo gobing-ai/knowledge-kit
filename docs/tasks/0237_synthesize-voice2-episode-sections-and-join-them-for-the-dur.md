@@ -4,7 +4,7 @@ name: Synthesize voice2 episode sections and join them for the duration check
 status: done
 template: feature-impl
 created_at: 2026-10-09T07:35:29.460Z
-updated_at: "2026-10-09T22:56:09.564Z"
+updated_at: "2026-10-10T06:02:28.697Z"
 feature_id: G13
 priority: P0
 tags:
@@ -125,21 +125,21 @@ Signatures: `dailyGenerate(args: string[]): void` with an optional sixth argumen
 
 | Change | Location | Rationale |
 | --- | --- | --- |
-| Sixth arg read; absent/empty → the untouched one-shot path (`timed(...)` early `return`) | `plugins/kk/scripts/daily-stages.ts:390,409-467` | R3: the voice1 command passes five args, so its behaviour and the byte-identical workflow file both hold. |
-| `section_concurrency !== '1'` → `failWith` before any request | `plugins/kk/scripts/daily-stages.ts:469-471` | R4: concurrency above 1 is refused in this delivery; the guard runs before the plan/cache work, so nothing is spent. |
-| Grouping: `segments[0]` = opening, `segments[last]` = closing, middle split **after** each `gap_ms: 1200` segment | `plugins/kk/scripts/daily-stages.ts:476-512` | R1: fact chunks (`gap_ms: 500`) stay inside their item; the inter-item breath (1200) is the item boundary. The builder is not edited, so voice1 script bytes are unchanged. |
-| Plan cross-check: item-section count vs `_08_script-write_plan.json` `items.length` | `plugins/kk/scripts/daily-stages.ts:498-511` | R1/AC1: a mismatch fails the stage before any request. |
-| `SectionDef` assembly (index, role, stem, segments, characters, trailing `gap_ms`, text) | `plugins/kk/scripts/daily-stages.ts:515-570` | R1/R3: the trailing `gap_ms` is the boundary silence the join uses; `characters` feeds the estimate. |
-| Character-rate estimate: `8 s + totalChars / rate > 1200 s` → `failWith` naming the three longest sections | `plugins/kk/scripts/daily-stages.ts:572-582` | R5/design §5: an over-long episode spends nothing and names what to shorten. The rates are MEASURED from the shipped episodes (20261004 gemini 5466 chars/1026 s = 5.33 字/秒, 20261007 gemini 5970/1096 = 5.45, 20261006 voice-gen 6376/1135 = 5.62) — 5.4 for gemini-tts, 5.6 otherwise, a ~6400-character ceiling. The style sidecar's 3.3/6.3 figures are stale and inconsistent with its own 4300–5800 字 budget; they refused a script that renders in 17 min (see Testing, AC5b). |
-| Voice profile resolution (script `default_profile_id` → `default_profile` → `VOICEBOX_DEFAULT_PROFILE` → `robin-news`) | `plugins/kk/scripts/daily-stages.ts:584-588` | R2: the profile id is part of the cache key, mirroring `dailyWrapDocs`'s profile choice. |
-| `computePlans(driver)`: sha256(`text` NUL `profile` NUL `driver`) vs the section sidecar; reuse iff the wav exists **and** the hash matches | `plugins/kk/scripts/daily-stages.ts:600-636` | R2/R5/design §3: resume is "missing audio or hash mismatch", never "the latest index". The driver is in the key, so a driver change re-synthesizes every section and no mixed-voice episode is possible. |
-| Early return when every section is cached **and** the joined wav + content exist | `plugins/kk/scripts/daily-stages.ts:639-643` | R2/AC2: a no-change re-run makes 0 driver calls and reuses the joined speech (the section path deliberately does not honour `qc.passed`, per design §3). |
-| Gemini quota probe moved before the section loop, recomputing plans against the fallback driver | `plugins/kk/scripts/daily-stages.ts:645-686` | Design §7: the probe applies only before any section request; the driver is in the cache key, so a voicebox fallback re-synthesizes all sections locally rather than mixing voices. |
-| Per-section synthesis: one-section VoiceScript Doc → `kk executor run <driver>`; any non-zero exit → `failWith` (no next section, no driver switch) | `plugins/kk/scripts/daily-stages.ts:688-750` | R6/design §7: an account-window refusal stops the run; finished section files stay on disk and the next run resumes the missing ones. The Doc shape matches `dailyWrapDocs`, so drivers need no change. |
-| Join: `aresample` → s16 mono at the first section's rate, one `anullsrc`/`atrim` silence per boundary at that section's trailing `gap_ms`, single `concat` | `plugins/kk/scripts/daily-stages.ts:752-775` | R3/AC3: the same normalisation `dailyIntro` applies, so the joined sample count is exactly the section samples plus the boundary silences. |
-| Content rewrite: `metadata.audioPath`/`metadata.duration` set, `introMerged` cleared | `plugins/kk/scripts/daily-stages.ts:777-795` | R3: `dailyEpisodeDuration` reads this `metadata.duration`; clearing `introMerged` makes the existing `dailyIntro` sting run again over the new speech. |
-| `generate` node passes `"1"` as the sixth argument | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:425` | R4: the everyday voice2 run takes the segmented path with concurrency 1. `kk-daily-ai-voice.yaml` is untouched. |
-| Design status flipped to implemented; §7.3 doc index row updated | `docs/design/segmented-episode-speech.md:3`, `docs/04_DESIGN.md:51` | T3: the surface (workflow node command, stage signature) changed in this commit. |
+| Sixth arg read; absent/empty → the untouched one-shot path (`timed(...)` early `return`) | `plugins/kk/scripts/daily-stages.ts:412-421,444-502` | R3: the voice1 command passes five args, so its behaviour and the byte-identical workflow file both hold. |
+| `section_concurrency !== '1'` → `failWith` before any request | `plugins/kk/scripts/daily-stages.ts:504-506` | R4: concurrency above 1 is refused in this delivery; the guard runs before the plan/cache work, so nothing is spent. |
+| Grouping: `segments[0]` = opening, `segments[last]` = closing, middle split **after** each `gap_ms: 1200` segment | `plugins/kk/scripts/daily-stages.ts:520-533` | R1: fact chunks (`gap_ms: 500`) stay inside their item; the inter-item breath (1200) is the item boundary. The builder is not edited, so voice1 script bytes are unchanged. |
+| Plan cross-check: item-section count vs `_08_script-write_plan.json` `items.length` | `plugins/kk/scripts/daily-stages.ts:535-548` | R1/AC1: a mismatch fails the stage before any request. |
+| `SectionDef` assembly (index, role, stem, segments, characters, trailing `gap_ms`, text) | `plugins/kk/scripts/daily-stages.ts:550-615` | R1/R3: the trailing `gap_ms` is the boundary silence the join uses; `characters` feeds the estimate. |
+| Character-rate estimate: `8 s + totalChars / rate > episode_max_minutes × 60 s` → `failWith` naming the three longest sections | `plugins/kk/scripts/daily-stages.ts:617-637` | R5/design §5: an over-long episode spends nothing and names what to shorten. The rates are MEASURED from the shipped episodes (20261004 gemini 5466 chars/1026 s = 5.33 字/秒, 20261007 gemini 5970/1096 = 5.45, 20261006 voice-gen 6376/1135 = 5.62) — 5.4 for gemini-tts, 5.6 otherwise, a ~6400-character ceiling. The style sidecar's 3.3/6.3 figures are stale and inconsistent with its own 4300–5800 字 budget; they refused a script that renders in 17 min (see Testing, AC5b). |
+| Voice profile resolution (script `default_profile_id` → `default_profile` → `VOICEBOX_DEFAULT_PROFILE` → `robin-news`) | `plugins/kk/scripts/daily-stages.ts:639-643` | R2: the profile id is part of the cache key, mirroring `dailyWrapDocs`'s profile choice. |
+| `computePlans(driver)`: sha256(`text` NUL `profile` NUL `driver`) vs the section sidecar; reuse iff the wav exists **and** the hash matches | `plugins/kk/scripts/daily-stages.ts:651-682` | R2/R5/design §3: resume is "missing audio or hash mismatch", never "the latest index". The driver is in the key, so a driver change re-synthesizes every section and no mixed-voice episode is possible. |
+| Early return when every section is cached **and** the joined wav + content exist | `plugins/kk/scripts/daily-stages.ts:687-690` | R2/AC2: a no-change re-run makes 0 driver calls and reuses the joined speech (the section path deliberately does not honour `qc.passed`, per design §3). |
+| Gemini quota probe moved before the section loop, recomputing plans against the fallback driver | `plugins/kk/scripts/daily-stages.ts:692-731` | Design §7: the probe applies only before any section request; the driver is in the cache key, so a voicebox fallback re-synthesizes all sections locally rather than mixing voices. |
+| Per-section synthesis: one-section VoiceScript Doc → `kk executor run <driver>`; any non-zero exit → `failWith` (no next section, no driver switch) | `plugins/kk/scripts/daily-stages.ts:734-780` | R6/design §7: an account-window refusal stops the run; finished section files stay on disk and the next run resumes the missing ones. The Doc shape matches `dailyWrapDocs`, so drivers need no change. |
+| Join: `aresample` → s16 mono at the first section's rate, one `anullsrc`/`atrim` silence per boundary at that section's trailing `gap_ms`, single `concat` | `plugins/kk/scripts/daily-stages.ts:782-821` | R3/AC3: the same normalisation `dailyIntro` applies, so the joined sample count is exactly the section samples plus the boundary silences. |
+| Content rewrite: `metadata.audioPath`/`metadata.duration` set, `introMerged` cleared | `plugins/kk/scripts/daily-stages.ts:823-838` | R3: `dailyEpisodeDuration` reads this `metadata.duration`; clearing `introMerged` makes the existing `dailyIntro` sting run again over the new speech. |
+| `generate` node passes `"1"` as the sixth argument | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:502` | R4: the everyday voice2 run takes the segmented path with concurrency 1. `kk-daily-ai-voice.yaml` is untouched. |
+| Design status flipped to implemented; §7.3 doc index row updated | `docs/design/segmented-episode-speech.md:3`, `docs/04_DESIGN.md:52` | T3: the surface (workflow node command, stage signature) changed in this commit. |
 
 Rejected: editing `script-builder.ts` to emit sections (would change voice1 script bytes); a spur
 parallel node (the engine does not fan out); one request per 300-character fact chunk (finer than
@@ -148,6 +148,18 @@ the operator's rewrite unit).
 Ceiling (`shortcut:`): `section_concurrency` above 1 is refused rather than implemented, and a
 single section that still exceeds one driver request is not split; both are deferred by design
 (inventory I9, design §1). Upgrade when a driver rejects a section.
+
+
+Amendment (2026-10-09, `aae1f994`, operator decision): the estimate ceiling is no longer a fixed
+1200 s. `dailyGenerate` takes an eighth argument, `episode_max_minutes`
+(`plugins/kk/scripts/daily-stages.ts:412-421,617-628`; default `DEFAULT_EPISODE_MAX_MINUTES = 20` at
+`:410` for a bare five/six-argument call), and the voice2 `generate` node passes
+`"${vars.episode_max_minutes}"` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:502`), so the pre-spend
+refusal and the downstream `daily-episode-duration` gate read the same window. R5's behaviour is
+unchanged (refuse before any request, naming the three longest sections); only the ceiling source
+moved — a documented CHANGED, not a deviation.
+
+**Amendment (2026-10-09 re-verify) — strict `episode_max_minutes` parse.** `dailyGenerate` validates arg 8 with strict `Number` before any synthesis (`plugins/kk/scripts/daily-stages.ts:436-440`). The former `Number.parseFloat(...) || 20` read a typo such as `2O` as a 2-minute cap. Empty keeps the 20-minute default for bare five/six-argument calls.
 
 ### Testing
 
@@ -158,85 +170,43 @@ single section that still exceeds one driver request is not split; both are defe
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Opening, one section per item, closing, with fact chunks kept inside their item: grouping at `plugins/kk/scripts/daily-stages.ts:476-570` (first segment opening, last closing, middle split after each `gap_ms: 1200`). `apps/cli/tests/daily-generate-sections.test.ts` asserts exactly 8 driver calls, `30-audio/sections/<date>/00-opening … 07-closing` wav+json pairs, and that a 5-item plan exits non-zero with 0 calls. |
-| R2 | MET | Per-section cache: sha256(`text` NUL `profile` NUL `driver`) compared against the section sidecar at `plugins/kk/scripts/daily-stages.ts:600-636`. `apps/cli/tests/daily-generate-sections.test.ts` asserts 0 driver calls on an unchanged re-run and exactly 1 call addressed to `03-item.json` after deleting `03-item.wav`. |
-| R3 | MET | Join at `plugins/kk/scripts/daily-stages.ts:752-795` (aresample to the first section rate, s16 mono, one `atrim` silence per boundary from that section trailing `gap_ms`, single `concat`), then `metadata.audioPath` and `metadata.duration` written with `introMerged` cleared. `apps/cli/tests/daily-generate-sections.test.ts` asserts joined samples equal the sum of section samples plus boundary silences at 24000 Hz, and that `git diff --exit-code plugins/kk/workflows/kk-daily-ai-voice.yaml plugins/generations/dailynews-gen/src/script-builder.ts` is clean. `dailyEpisodeDuration` at `plugins/kk/scripts/daily-stages.ts:364-386` is untouched and still refuses outside 15–20 min. |
-| R4 | MET | Concurrency guard at `plugins/kk/scripts/daily-stages.ts:469-471` refuses any value other than `1` before any request; the synthesis loop at `plugins/kk/scripts/daily-stages.ts:688-750` is strictly sequential. `apps/cli/tests/daily-generate-sections.test.ts` asserts no interleaved start/end events at concurrency 1, and that `2` exits non-zero naming `section_concurrency` with 0 calls. |
-| R5 | MET | Character-rate estimate gate at `plugins/kk/scripts/daily-stages.ts:583-593` (`8 s + characters / rate > 1200 s` fails naming the three longest sections) runs before any request. Rates are measured, not copied from prose: 5.4 字/秒 for gemini-tts and 5.6 otherwise, from the three shipped episodes cited above — a ~6400-character ceiling. `apps/cli/tests/daily-generate-sections.test.ts` AC5b pins both sides of that boundary (6300 chars = 19.6 min passes, 7100 chars = 22.1 min is refused with 0 calls) and fails when the constants are reverted to 3.3 / 6.3; AC5 pins the re-synthesis-only-changed-sections half (1 call after editing one item text, 0 calls plus a non-zero exit on the inflated fixture). |
-| R6 | MET | Section failure handling at `plugins/kk/scripts/daily-stages.ts:688-750`: any non-zero exit calls `failWith`, so no further section is requested and the driver is never reassigned mid-loop. `apps/cli/tests/daily-generate-sections.test.ts` asserts the 4th call failing leaves sections 00–02 on disk, makes no 5th call, keeps `vdriver`, and that the next run makes exactly the remaining 5 calls. |
+| R1 | MET | Grouping splits the middle segments after each `gap_ms: 1200` breath at `plugins/kk/scripts/daily-stages.ts:520-533`; section defs opening/items/closing at `plugins/kk/scripts/daily-stages.ts:560-615`; plan cross-check against `_08_script-write_plan.json` at `plugins/kk/scripts/daily-stages.ts:535-548`. Test `apps/cli/tests/daily-generate-sections.test.ts:197` (8 driver calls; 5-item plan fails before any call). |
+| R2 | MET | Cache key sha256(text NUL profile NUL driver) vs sidecar at `plugins/kk/scripts/daily-stages.ts:659-682`; all-cached early return at `plugins/kk/scripts/daily-stages.ts:687-690`. Test `apps/cli/tests/daily-generate-sections.test.ts:231` (0 calls on re-run; 1 call after deleting one wav). |
+| R3 | MET | ffmpeg join at `plugins/kk/scripts/daily-stages.ts:782-821`; content rewrite clears `introMerged` and sets `audioPath`/`duration` at `plugins/kk/scripts/daily-stages.ts:830-838`; five-arg voice1 path untouched at `plugins/kk/scripts/daily-stages.ts:444-502`; `dailyEpisodeDuration` refuses outside the window at `plugins/kk/scripts/daily-stages.ts:394-405`. `git diff --stat 0772e7e0~1 HEAD -- plugins/kk/workflows/kk-daily-ai-voice.yaml plugins/generations/dailynews-gen/src/script-builder.ts` is empty (voice1 byte-identical). Test `apps/cli/tests/daily-generate-sections.test.ts:261`. Live: run `ac5-live-16` reached done with a joined 1008.215 s (16.8 min) episode and seven section sidecars; all seven hashes re-derived this run and matched driver voice-gen, profile robin-news (local gitignored evidence `.works/kk-0237-0238-evidence`). |
+| R4 | MET | Concurrency guard `section_concurrency !== '1'` fails before any request at `plugins/kk/scripts/daily-stages.ts:504-506`; sequential loop at `plugins/kk/scripts/daily-stages.ts:734-780`; workflow passes `"1"` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:502`. Test `apps/cli/tests/daily-generate-sections.test.ts:328`. |
+| R5 | MET | Pre-spend estimate (charRate 5.4 gemini-tts / 5.6 otherwise; ceiling = `episode_max_minutes`, default 20) names the three longest sections at `plugins/kk/scripts/daily-stages.ts:617-637`. CHANGED (documented in Solution amendment): ceiling source moved from a fixed 1200 s to arg 8 by `aae1f994`. Tests `apps/cli/tests/daily-generate-sections.test.ts:421`, `:358`, `:385`. |
+| R6 | MET | Section failure → `failWith` naming the section, no next call, no driver switch at `plugins/kk/scripts/daily-stages.ts:769-771`. Test `apps/cli/tests/daily-generate-sections.test.ts:465`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — Selected items become an opening, one section each, and a closing | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — exactly 8 `start` events; `sections/<date>/00-opening … 07-closing` wav+json; 5-item plan fails pre-call. |
-| R2 — Each section keeps its own audio file across a retry | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — 0 calls on an unchanged re-run; 1 call addressed to `03-item.json` after `rm 03-item.wav`. |
-| R3 — Joined speech plus the intro sting is the episode the duration check reads | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — joined sample count equals section samples plus boundary `gap_ms` at 24000 Hz; `audioPath` points at the joined file with `introMerged` absent; the five-arg command still makes exactly 1 call; `git diff --exit-code plugins/kk/workflows/kk-daily-ai-voice.yaml plugins/generations/dailynews-gen/src/script-builder.ts` is clean. |
-| R4 — Everyday synthesis converts one section at a time | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — no overlapping start/end at concurrency 1; `2` exits non-zero naming `section_concurrency` with 0 calls. |
-| R5 — An over-long episode re-synthesizes only changed sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — 1 call after editing one item text; the inflated fixture exits non-zero naming the longest sections with 0 calls; AC5b proves the recalibrated rate admits a 6300-character production-length script and still refuses 7100. |
-| R6 — An account-level provider refusal stops and keeps finished sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts` — failing the 4th call leaves 00–02 on disk, makes no 5th call, keeps `vdriver`; the next run makes exactly the remaining 5 calls. |
+| R1 — Selected items become an opening, one section each, and a closing | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:197` — 8 driver calls, sections 00-opening…07-closing; 5-item plan fails before any call (8 pass / 0 fail this run). |
+| R2 — Each section keeps its own audio file across a retry | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:231` — 0 calls on unchanged re-run; exactly 1 after deleting `03-item.wav`. |
+| R3 — Joined speech plus the intro sting is the episode the duration check reads | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:261` — sample count = sections + gap silences; daily-intro then daily-episode-duration read it; voice1 diff empty; five-arg call makes 1 driver call. |
+| R4 — Everyday synthesis converts one section at a time | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:328` — no overlapping calls at 1; `2` exits nonzero naming `section_concurrency` before any call. |
+| R5 — An over-long episode re-synthesizes only changed sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:421` — one edited item → 1 call; over-ceiling fixture exits nonzero naming the 3 longest sections with 0 calls; `:385` widened `episode_max_minutes` raises the ceiling. |
+| R6 — An account-level provider refusal stops and keeps finished sections | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:465` — 4th call fails, no 5th call, no driver switch, 00–02 retained, next run makes only the remaining calls. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
-**Final gate on the landed tree (2026-10-09, HEAD `189659eb`).** The branch was rebased twice more as
-`main` advanced (`a55aef75` → `99623957`, a concurrent session closing the G32 store-v2 batch), so the
-numbers above are superseded one last time. On the final tree, whose diff against `main` is exactly this
-batch's 10 files:
-
-```
-bun run gate        # format + build + lint + typecheck + rules + tests    exit 0
-  Checked 401 files in 822ms. No fixes applied.        (biome)
-  2359 pass, 2 skip, 0 fail                            (full suite)
-```
-
-**Live verification of R3/R6 and the task's live check (2026-10-09, six real runs).**
-
-The task's live check asks for one real voice2 dry run producing a joined episode inside 15–20 min with
-the per-section files on disk and a recorded run id. Runs were made against a **snapshot** of the live
-store (`<worktree>/.works/kk.db`), with `KK_WORKS_DIR` inside the worktree, `publish_enabled=false`,
-`skip_review=true`, `xhs_enabled=false`, `wechat_enabled=false`, and a PATH `kk` resolving to this
-worktree's source — so nothing published and no external account was touched.
-
-| run | vars | outcome |
-| --- | --- | --- |
-| `ac5-live-4` | `agent=minimax`, `plan_max_items=5` | **R1/R2/R3 verified live.** `30-audio/sections/20261009/` holds `00-opening … 05-closing` as wav+json+mp3 (6 sections, 4 items); the join wrote `_11_generate_content.wav` at **795.38 s** with `audioPath` rewritten and `introMerged` cleared; `daily-intro` merged the sting to **804.19 s** (`introMerged: true`); `daily-episode-duration` refused **13.4 min** — under the 15-minute floor, so the live check's "inside 15–20 min" half is NOT met. |
-| `ac5-live-6` | `agent=minimax`, `plan_max_items=5` | Sized to the band (5 kept, 5942 spoken chars, estimate 18.5 min) and it reached the audio stage — where the provider refused the account. |
-| `ac5-live-7` | `vdriver=voicebox` | Tried the local driver to route around the quota: ~30 min to render one section (~90 s of audio), so a full episode is hours. Abandoned; the cached sections were re-rendered on the next gemini run because the driver is part of the cache key (design §3 — no mixed-voice episode). |
-
-**R6 / AC6 observed live on real infrastructure (`ac5-live-6`).** `daily-generate` stopped mid-episode
-with the provider's own refusal:
-
-```
-HTTP 429 quota/reset horizon too far out (retry-after 7368s ≈ 2.0h):
-Rate limit exceeded for model gemini-3.8-flash-tts (limit: 100 requests per day on Tier 1)
-generate: section synthesis failed for 04-item
-```
-
-Sections `00-opening`, `01-item`, `02-item`, `03-item` stayed on disk; no further section was requested;
-`vdriver` was never reassigned and no section was re-tried on a different driver — exactly the R6
-contract, and the failure is the *account-level* refusal the task's Q&A defines as "any nonzero exit of a
-section request stops the stage". The next run's cache is what resumes the episode (missing audio, not
-"the latest index").
-
-**Rate calibration cross-check.** The `ac5-live-4` script is 4645 spoken characters whose six section
-files total 789.88 s → 5.88 字/秒, and the join arithmetic is exact (789.88 s speech + 5.50 s of boundary
-`gap_ms` silences = 795.38 s + 8.81 s sting = 804.19 s). That is the fourth measured render behind the
-5.4/5.6 constants.
 
 ### Review
 
-**Disposition: PASS — no P1/P2 findings.**
+**Disposition: PASS — no P1/P2 findings.** (2026-10-09 re-verify: two P3 rows whose action is "accepted, no change" are reclassified P4 advisory; the deferred duplication stays P3.)
 
 | Priority | Finding | Location | Action |
 | --- | --- | --- | --- |
-| P1 | — none — | | |
-| P2 | — none — | | |
-| P3 | The Gemini probe plus `kk executor run` one-shot body now exists twice (the untouched voice1 path and the section path keep separate copies). | `plugins/kk/scripts/daily-stages.ts:409-467` | Deferred: extracting it would re-open the voice1 code path R3 requires to stay byte-identical, for ~30 lines. Merge when voice1 retires. |
-| P3 | Sidecar read and prior-content re-read are wrapped in `catch {}`. | `plugins/kk/scripts/daily-stages.ts:625-630`, `783` | Accepted by design: a missing or corrupt sidecar must read as "not cached" and re-synthesize, and a missing prior content file must produce a fresh object. Neither can mask a request failure — those are the explicit `spawnSync` status checks. |
-| P3 | Character counts use `[...text].length` (code points), not bytes. | `plugins/kk/scripts/daily-stages.ts:533,552,565` | Correct unit: the driver rates are 字/秒, so code points are what the estimate needs. Not exercised against a surrogate-pair fixture; the under-count risk is bounded by the 20-minute headroom and the authoritative downstream `dailyEpisodeDuration` gate. |
-| P4 | `SectionDef` / `SectionPlan` interfaces are module-local inside the `timed` callback. | `plugins/kk/scripts/daily-stages.ts:515,606` | Fine for a single stage body. Hoist only if a second stage needs them. |
+| P1 | None. | — | — |
+| P2 | None. | — | — |
+| P3 | The Gemini probe plus `kk executor run` one-shot body now exists twice (the untouched voice1 path and the section path keep separate copies). | `plugins/kk/scripts/daily-stages.ts:444-502` | Deferred: extracting it would re-open the voice1 code path R3 requires to stay byte-identical, for ~30 lines. Merge when voice1 retires. |
+| P4 | Sidecar read and prior-content re-read are wrapped in `catch {}`. | `plugins/kk/scripts/daily-stages.ts:666-672`, `:774-779`, `:826-829` | Accepted by design: a missing or corrupt sidecar must read as "not cached" and re-synthesize, and a missing prior content file must produce a fresh object. The post-synthesis hash stamp (`:774-779`) failing only costs a re-synthesis next run. None can mask a request failure — those are the explicit `spawnSync` status checks. |
+| P4 | Character counts use `[...text].length` (code points), not bytes. | `plugins/kk/scripts/daily-stages.ts:571,592,609` | Correct unit: the driver rates are 字/秒, so code points are what the estimate needs. Not exercised against a surrogate-pair fixture; the under-count risk is bounded by the 20-minute headroom and the authoritative downstream `dailyEpisodeDuration` gate. |
+| P4 | `SectionDef` / `SectionPlan` interfaces are module-local inside the `timed` callback. | `plugins/kk/scripts/daily-stages.ts:550,651` | Fine for a single stage body. Hoist only if a second stage needs them. |
+| P4 | `episode_max_minutes` fell back to 20 on a non-numeric eighth argument. | `plugins/kk/scripts/daily-stages.ts:436-440` | FIXED (2026-10-09 re-verify): `dailyGenerate` now parses arg 8 with strict `Number` up front and refuses a non-finite or non-positive value before any synthesis (`plugins/kk/scripts/daily-stages.ts:436-440`); `parseFloat('2O')` had read as a 2-minute cap. Regression: `apps/cli/tests/daily-generate-sections.test.ts` "refuses a non-numeric `episode_max_minutes` before any synthesis" (failed before the fix). |
 
 Residual risk: the character-rate estimate is an estimate — a wrong rate changes *when* the stage
 refuses, never whether the final duration is checked; `dailyEpisodeDuration` stays authoritative. The
-live voice2 dry run named in Testing was not executed in this session (it spends external provider
-quota), so the join is unverified against real driver output.
+live voice2 check is now met: run `ac5-live-16` reached `done` (18 transitions) with a joined episode of
+1008.215 s (16.8 min, `introMerged: true`) and seven section sidecars `00-opening … 06-closing`; the
+2026-10-09 re-verify re-derived all seven sidecar hashes (driver `voice-gen`, profile `robin-news`) and
+every one matched, so the join is verified against real driver output.
 
 ### References
 
