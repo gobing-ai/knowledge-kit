@@ -212,7 +212,13 @@ export async function processGeneratorIO(
             let loudnessDip = false;
             let lastError: unknown;
             let attemptBody = generateBody;
-            for (let verifyAttempt = 0; verifyAttempt <= 2 && wavBytes === undefined; verifyAttempt++) {
+            // Verify-retry budget. Hosted TTS is billed per request against a daily quota
+            // (Gemini Tier 1: 100/day), and each retry is a full re-synthesis — a 41-segment
+            // episode with the default 2 retries asks for up to 123 requests and dies partway
+            // through the render with no audio (daily-generate failures of 2026-10-06/07/09/10).
+            // Lower it for a quota-bound driver; 0 keeps the dip/fidelity result for QC instead.
+            const maxVerifyAttempts = Number.parseInt(process.env.VOICEBOX_MAX_VERIFY_ATTEMPTS ?? '2', 10) || 0;
+            for (let verifyAttempt = 0; verifyAttempt <= maxVerifyAttempts && wavBytes === undefined; verifyAttempt++) {
                 if (verifyAttempt > 0) {
                     verifyRetries = verifyAttempt;
                     const chunkChars = Math.max(VOICEBOX_CHUNK_CHARS_MIN, Math.floor(attemptBody.max_chunk_chars / 2));
@@ -262,7 +268,7 @@ export async function processGeneratorIO(
                     try {
                         const trans = await client.transcribe(attemptBytes, language);
                         const fidelity = transcriptionFidelity(segment.text, trans.text);
-                        if (fidelity < TRANSCRIPTION_FIDELITY_FLOOR && verifyAttempt < 2) {
+                        if (fidelity < TRANSCRIPTION_FIDELITY_FLOOR && verifyAttempt < maxVerifyAttempts) {
                             echoError(
                                 `voice-gen: transcription fidelity ${fidelity.toFixed(2)} below ${TRANSCRIPTION_FIDELITY_FLOOR} (looped/garbage audio): "${trans.text.slice(0, 80)}..."`,
                             );
@@ -278,7 +284,7 @@ export async function processGeneratorIO(
                 // (dogfood 2026-09-08 A/B: same text regenerated clean, so retry usually clears).
                 const dip = detectLoudnessDip(attemptBytes);
                 loudnessDip = dip.dip;
-                if (dip.dip && verifyAttempt < 2) {
+                if (dip.dip && verifyAttempt < maxVerifyAttempts) {
                     echoError(`voice-gen: loudness dip detected at ${dip.dipAtSec ?? '?'}s — regenerating segment`);
                     continue;
                 }
