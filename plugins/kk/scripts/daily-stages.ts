@@ -163,25 +163,41 @@ export function dailyQcContent(args: string[]): void {
     const boundaryDocs = metadataOf(readJson(candidates)).docs;
     if (!Array.isArray(boundaryDocs)) return;
     const { kept, excluded } = applyTopicBoundary(boundaryDocs, runDate, readTopicBoundary());
-    if (excluded.length === 0) return;
-    sted('write', exclusions, () =>
-        writeJsonText(exclusions, {
-            version: 1,
-            runDate,
-            excluded,
-            kept: kept.map((doc) => (doc as { id: string }).id),
-        }),
-    );
-    const content = requireJson(candidates, 'topic-boundary');
-    const meta = content.metadata;
-    if (meta === null || typeof meta !== 'object') {
-        failWith(1, 'topic-boundary: candidates content carries no metadata object');
+    // A no-op boundary must not rewrite the file: the idempotent-rerun test compares bytes.
+    if (excluded.length > 0) {
+        sted('write', exclusions, () =>
+            writeJsonText(exclusions, {
+                version: 1,
+                runDate,
+                excluded,
+                kept: kept.map((doc) => (doc as { id: string }).id),
+            }),
+        );
+        const content = requireJson(candidates, 'topic-boundary');
+        const meta = content.metadata;
+        if (meta === null || typeof meta !== 'object') {
+            failWith(1, 'topic-boundary: candidates content carries no metadata object');
+        }
+        (meta as Record<string, unknown>).docs = kept;
+        sted('write', candidates, () => writeJsonText(candidates, content));
+        console.log(
+            `topic-boundary: excluded ${excluded.length} item(s): ${excluded.map((entry) => `${entry.id}(${entry.rule})`).join(', ')}`,
+        );
     }
-    (meta as Record<string, unknown>).docs = kept;
-    sted('write', candidates, () => writeJsonText(candidates, content));
-    console.log(
-        `topic-boundary: excluded ${excluded.length} item(s): ${excluded.map((entry) => `${entry.id}(${entry.rule})`).join(', ')}`,
-    );
+    // Title dedup before plan-translate / script-write. dailyArticle repeats this on plan.json, but
+    // that runs in parallel with script-write: an id dropped after the script plan is authored is
+    // `unknown-id`, the whole plan is rejected, and generate then sees a template with fewer sections.
+    const currentDocs = excluded.length > 0 ? kept : boundaryDocs;
+    const { kept: deduped, dropped } = dedupPlanByTitle(currentDocs as Array<{ id?: unknown; title?: unknown }>);
+    if (dropped.length === 0) return;
+    const dedupedContent = requireJson(candidates, 'qc-dedup');
+    const dedupedMeta = dedupedContent.metadata;
+    if (dedupedMeta === null || typeof dedupedMeta !== 'object') {
+        failWith(1, 'qc-dedup: candidates content carries no metadata object');
+    }
+    (dedupedMeta as Record<string, unknown>).docs = deduped;
+    sted('write', candidates, () => writeJsonText(candidates, dedupedContent));
+    console.error(`qc: dropped ${dropped.length} near-duplicate candidate(s): ${dropped.join(', ')}`);
 }
 
 /**
@@ -933,16 +949,21 @@ export function dailyIntro(args: string[]): void {
 }
 
 export function dailyPlan(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', planMaxItems = ''] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', planMaxItems = '', deferPlanDocs = ''] = args;
     const planContent = join(workDir, '21-plan', `${runDate}_03_plan_content.json`);
     const planDocs = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
     // voice2's extract node writes 10-collect/pool.json; voice1's fan-in still writes the blended
     // file. Prefer the pool when it exists so both DAGs share this stage (0212 dogfood finding).
     const pool = join(workDir, '10-collect', 'pool.json');
     const blended = isFile(pool) ? pool : join(workDir, '10-ingest', `${runDate}_02_collect_blended.json`);
+    // voice2 passes plan_translate_enabled. When it is true, plan-translate owns plan.json: its
+    // `! test -s` guard is also the first-run gate, so writing the English docs here skips the
+    // translation. Voice1 omits the arg and still materializes the file (its translate node has no
+    // skip guard and overwrites it).
+    const deferDocs = deferPlanDocs === 'true';
     timed(workDir, 'plan', () => {
-        if (isFile(planDocs)) {
-            console.log(`plan cached: ${planDocs}`);
+        if (deferDocs ? isFile(planContent) : isFile(planDocs)) {
+            console.log(`plan cached: ${deferDocs ? planContent : planDocs}`);
             return;
         }
         kk(
@@ -953,6 +974,7 @@ export function dailyPlan(args: string[]): void {
         );
         const docs = metadataOf(readJson(planContent)).docs;
         if (!Array.isArray(docs) || docs.length === 0) failWith(1, 'plan: content.metadata.docs missing or empty');
+        if (deferDocs) return;
         sted('write', planDocs, () => writeJsonText(planDocs, docs));
         if (!isFile(planDocs)) failWith(1, `plan: ${planDocs} not written after episode-plan-gen`);
     });
@@ -1579,8 +1601,141 @@ export function dailySafetyRevise(args: string[]): void {
     });
 }
 
+/** Block YAML for the fields a fitted VoiceScript actually carries. Strings use JSON quoting. */
+function voicescriptToBlockYaml(script: Record<string, unknown>): string {
+    const lines: string[] = [];
+    for (const key of [
+        'title',
+        'language',
+        'default_profile',
+        'default_profile_id',
+        'default_engine',
+        'default_emotion',
+        'default_effect_preset',
+    ]) {
+        const value = script[key];
+        if (typeof value === 'string' && value !== '') lines.push(`${key}: ${JSON.stringify(value)}`);
+    }
+    const segments = script.segments;
+    if (!Array.isArray(segments)) return lines.join('\n');
+    lines.push('segments:');
+    for (const entry of segments) {
+        const segment = entry as Record<string, unknown>;
+        lines.push(`  - text: ${JSON.stringify(segment.text ?? '')}`);
+        for (const key of ['speaker', 'profile', 'profile_id', 'emotion', 'instruct', 'effect_preset']) {
+            if (typeof segment[key] === 'string') lines.push(`    ${key}: ${JSON.stringify(segment[key])}`);
+        }
+        for (const key of ['gap_ms', 'speed', 'seed', 'personality']) {
+            if (typeof segment[key] === 'number') lines.push(`    ${key}: ${segment[key]}`);
+        }
+    }
+    return lines.join('\n');
+}
+
+/** Measured driver rates from dailyGenerate. Unknown drivers use the voicebox rate. */
+function spokenCharRate(vdriver: string): number {
+    return vdriver === 'gemini' ? 5.4 : 5.6;
+}
+
+/**
+ * Shorten one fact/insight at 。！？ so the cut removes at least `removeAtLeast` characters when a
+ * boundary allows it, otherwise drop the last sentence. Returns null when the text is one sentence.
+ */
+function shrinkFactText(text: string, removeAtLeast: number): string | null {
+    const ends: number[] = [];
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '。' || ch === '！' || ch === '？') ends.push(i + 1);
+    }
+    if (ends.length === 0) return null;
+    const limit = text.length - Math.max(removeAtLeast, 1);
+    let chosen: number | null = null;
+    for (const end of ends) {
+        if (end <= limit && end < text.length && end > 0) chosen = end;
+    }
+    if (chosen !== null) return text.slice(0, chosen);
+    const shorter = ends.filter((end) => end < text.length && end > 0);
+    const tail = shorter[shorter.length - 1];
+    if (tail === undefined) return null;
+    return text.slice(0, tail);
+}
+
+/**
+ * The pre-spend gate in dailyGenerate refuses before any TTS when the spoken character estimate
+ * exceeds `episode_max_minutes`. Optional args (voice2 only) fit the fresh VoiceScript down to that
+ * budget by shortening the longest fact segments, then insights. Absent args leave the file untouched.
+ */
+function fitVoicescriptToBudget(yamlOut: string, contentOut: string, episodeMaxMinutes: string, vdriver: string): void {
+    if (episodeMaxMinutes === '') return;
+    const maxMinutes = Number(episodeMaxMinutes);
+    if (!Number.isFinite(maxMinutes) || maxMinutes <= 0) return;
+    // Two minutes under the hard duration gate. The character rate is a past measurement; fitting
+    // flush to the ceiling renders an episode the gate then rejects.
+    const maxChars = Math.floor((maxMinutes * 60 - 8 - 120) * spokenCharRate(vdriver));
+    const original = readFileSync(yamlOut, 'utf8');
+    const script = Bun.YAML.parse(original) as { segments?: Array<Record<string, unknown>> };
+    const segments = script.segments;
+    if (!Array.isArray(segments) || segments.length < 3) return;
+    const totalOf = (): number => segments.reduce((sum, seg) => sum + [...String(seg.text ?? '')].length, 0);
+    const before = totalOf();
+    if (before <= maxChars) return;
+    const unsplittable = new Set<number>();
+    for (const factsOnly of [true, false]) {
+        while (totalOf() > maxChars) {
+            let best = -1;
+            let bestLen = 0;
+            for (let i = 1; i < segments.length - 1; i++) {
+                if (unsplittable.has(i)) continue;
+                if (factsOnly && segments[i]?.speed === 1.12) continue;
+                const len = [...String(segments[i]?.text ?? '')].length;
+                if (len > bestLen) {
+                    best = i;
+                    bestLen = len;
+                }
+            }
+            if (best < 0) break;
+            const text = String(segments[best]?.text ?? '');
+            const next = shrinkFactText(text, totalOf() - maxChars);
+            if (next === null || next.length >= text.length) {
+                unsplittable.add(best);
+                continue;
+            }
+            const segment = segments[best];
+            if (segment) segment.text = next;
+        }
+    }
+    const after = totalOf();
+    if (after === before) return;
+    // Block YAML, same shape as dailynews-gen's formatter. Bun.YAML.stringify emits a `{...}` flow
+    // document, and the VoiceScript checker JSON-parses anything that starts with `{`.
+    const fitted = `${voicescriptToBlockYaml(script)}\n`;
+    sted('write', yamlOut, () => writeRaw(yamlOut, fitted));
+    if (isFile(contentOut)) {
+        const content = readJson(contentOut);
+        if (content && typeof content.body === 'string') {
+            content.body = fitted;
+            sted('write', contentOut, () => writeJsonText(contentOut, content));
+        }
+    }
+    console.log(`script: fitted voicescript ${before} -> ${after} chars (budget ${maxChars})`);
+    if (after > maxChars) {
+        console.error(
+            `script: voicescript still ${after - maxChars} chars over the ${maxChars} budget after sentence cuts`,
+        );
+    }
+}
+
 export function dailyScript(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', language = '', title = '', voiceProfile = ''] = args;
+    const [
+        workDir = '',
+        runDate = '',
+        pluginsPath = '',
+        language = '',
+        title = '',
+        voiceProfile = '',
+        episodeMaxMinutes = '',
+        vdriver = '',
+    ] = args;
     const yamlOut = join(workDir, '24-script', `${runDate}_08_script_voicescript.yaml`);
     const contentOut = join(workDir, '24-script', `${runDate}_08_script_content.json`);
     const planIn = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
@@ -1607,6 +1762,7 @@ export function dailyScript(args: string[]): void {
         const body = readJson(contentOut)?.body;
         if (typeof body !== 'string') failWith(1, `script: ${contentOut} has no string body`);
         sted('write', yamlOut, () => writeRaw(yamlOut, body));
+        fitVoicescriptToBudget(yamlOut, contentOut, episodeMaxMinutes, vdriver);
         // R3 (task 0139): fresh writes are validated here; the script cache path is covered by
         // wrap-docs, which runs on every path that reaches audio.
         try {
@@ -1663,6 +1819,17 @@ export function dailyShowNotes(args: string[]): void {
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
         const articleBody = readJson(article)?.body;
         const excluded = new Set<string>();
+        // Script-plan exclusions are the prompt-layer topic boundary (foreign public affairs the
+        // keyword floor deliberately leaves in the plan). Show notes must match what was spoken.
+        const scriptPlan = readJson(join(workDir, '24-script', `${runDate}_08_script-write_plan.json`));
+        const scriptExcluded = scriptPlan?.excluded;
+        if (Array.isArray(scriptExcluded)) {
+            for (const entry of scriptExcluded) {
+                if (entry !== null && typeof entry === 'object' && typeof (entry as { id?: unknown }).id === 'string') {
+                    excluded.add((entry as { id: string }).id);
+                }
+            }
+        }
         if (typeof articleBody === 'string') {
             for (const note of articleBody.matchAll(/未写入[：:](.*)/g)) {
                 for (const id of note[1].matchAll(/(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16,64}/g)) {

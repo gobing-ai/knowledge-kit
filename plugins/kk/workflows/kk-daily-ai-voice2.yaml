@@ -157,7 +157,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}"
+          kk stage daily-plan "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.plan_max_items}" "${vars.plan_translate_enabled}"
 
   - id: qc-content
     description: >-
@@ -430,7 +430,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}"
+          kk stage daily-script "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.language}" "${vars.title}" "${vars.voice_profile}" "${vars.episode_max_minutes}" "${vars.vdriver}"
 
   # ---- content safety: a nested state machine (no sub-workflow action exists; ADR-031) ----
   - id: safety
@@ -512,7 +512,7 @@ nodes:
           kk stage daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
 
   - id: duration
-    description: "Fail loud unless final episode duration sits in the 15–20 min window (duration authoritative)"
+    description: "Fail loud unless final episode duration sits in the 15–25 min window (duration authoritative)"
     dependsOn: [intro]
     action:
       kind: shell
