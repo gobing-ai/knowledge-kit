@@ -245,6 +245,23 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► select ──�
 - `xhs-render` / `xhs-publish` are voice2-only steps: `xhs-render` passes the 9th arg `note_scope: episode` (0235 — the packaged note carries the episode cover last plus one numbered body line per attached image) and `xhs-publish` the 5th `podcast: true` (0236 — the episode's 发播客 note rides the same console visit as `metadata.followUps`, one ADR-025 cap entry). Both nodes carry their own `xhs_enabled` gate (a skipped `xhs-write` still admits its dependents, so without it a run with `xhs_enabled=false` would re-package and re-publish a stale same-day `25-xhs/` series). For the 发播客 note, `xhs-publish` also depends on `publish-prep`, a **data** dependency (it reads `_13_publish-prep_content.json`): without that edge the two nodes race and the 发播客 note is dropped silently while the stage still exits 0 — the DAG review finding fixed in 0236. voice1 (`kk-daily-ai-voice.yaml`) calls both stages with neither argument and is byte-identical; its spec stays in `kk-daily-ai-voice.md` §7, the surfaces in `docs/04_DESIGN.md`.
 - `patch-surfdash` / `publish-partial` fold into `publish-classify` (it already classifies partial).
 - `plan-translate` / `article-write` are the two **hard-fail** `agent.run` producers (a missing `expectFile` fails the run). 0238: the resolved executor is stochastic — a run has been observed answering a greeting with zero tool calls and exiting 0 — and the engine has no node retry, so each carries a `-retry` sibling with the **same `input`/`expectFile`** on a different tier (`agent_retry`, `role: coder`). The primary becomes `onError: continue`; the sibling's guard is `! test -s <expectFile>` and it carries **no** `onError`, so a second miss still fails the run loudly. Every reader of `21-plan/<date>_03_plan_plan.json` (`article-write`, `cover-brief`, `script-write`) and the `article` node depends on **both** the primary and its sibling — the engine's done+skipped mix then keeps a successful primary's retry skipped without stranding the dependents. Delete the siblings when spur grows an `agent.run` retry.
+
+- **Verifying this DAG (internal runs).** Two rules, both learned live on 2026-10-09:
+  - **Pin `kk` on `PATH`.** A workflow shell node resolves `kk` from `PATH`, so when the global
+    (bun-linked) `kk` wins, `kk stage …` silently executes **another checkout's**
+    `plugins/kk/scripts/*.ts`. An AC5 attempt spent 40 minutes running the pre-0237 one-shot
+    `dailyGenerate` — the run never failed, it simply validated the wrong code. Put this checkout's
+    own `kk` shim **first** *and* drop `~/.bun/bin` from `PATH` (so no other `kk` can win even if a
+    child rebuilds `PATH`), invoke `spur` by absolute path, and keep the shim's invocation log as the
+    audit trail that proves which code ran.
+  - **Use `vdriver=voicebox` for internal testing** (operator rule, 2026-10-09) so a verification run
+    never spends the Gemini TTS daily quota (Tier 1, 100 requests/day). The local driver renders at
+    roughly 10× real time — a 15–20 minute episode is hours — so run it detached and let the section
+    cache absorb the cost. Switching drivers is safe: the driver id is part of the section cache key,
+    so no mixed-voice episode is possible.
+  - Resuming is cheap **only** while the VoiceScript text is stable: every authoring agent is guarded
+    by its own output (`plan-translate`, `article-write`, `script-write`, `cover-brief`), because
+    re-authoring rewrites the script and invalidates every cached section.
 - `select` = `kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run ${vars.__runId} --in ${work_dir}/21-plan/<date>_04_quality-control-content_candidates.json`, declared right after `qc-content`, guarded on the candidates file. It reads the QC output, not `03_plan_plan.json`: the plan file is pre-QC, so selecting it would burn items the run rejected. This is 0228's fix for the root cause F4: the exclusion is recorded the moment the run commits to its set, not at the DAG tail, so a run that fails, pauses at review or skips publish still excludes what it planned.
 - `mark-published` = `kk store mark-published --topic ai-news --run ${vars.__runId}` on `dependsOn: [publish-classify, extract]`, with the candidates guard **and** `test "${vars.publish_enabled}" = "true"` — a dry run never promotes, so its rows stay `selected` (still excluding, freed by `kk store release --run <id>`). `run-report` lists it in `dependsOn`.
 - `kk daily prepare --workflow <w>` writes one stderr line per other run still holding `selected` rows for the workflow, each naming the `kk store release --run <id>` that frees it (0228 R7).

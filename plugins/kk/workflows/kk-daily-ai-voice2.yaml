@@ -205,6 +205,7 @@ nodes:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.plan_translate_enabled}" = "true"
+          && ! test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
     action:
       kind: agent.run
       # 0238 R2: a stochastic executor no-op must not end the run here — the retry sibling decides.
@@ -255,6 +256,7 @@ nodes:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.article_write_enabled}" = "true"
+          && ! test -s "${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md"
     action:
       kind: agent.run
       # 0238 R2: a stochastic executor no-op must not end the run here — the retry sibling decides.
@@ -392,6 +394,7 @@ nodes:
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.script_write_enabled}" = "true"
           && test "${vars.language}" = "zh"
+          && ! test -s "${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json"
     action:
       kind: agent.run
       onError: continue

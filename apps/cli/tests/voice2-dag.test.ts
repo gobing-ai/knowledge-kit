@@ -845,6 +845,25 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         }
         expect(dag.vars?.agent_retry).toBeDefined();
     });
+
+    it('guards every authoring agent with its own output, so a resume cannot re-author the script', () => {
+        // A resume that re-runs an authoring agent rewrites the plan / script-plan and therefore the
+        // VoiceScript text, which invalidates every cached audio section and (before this guard) could
+        // leave `_08_script-write_plan.json` disagreeing with the script the stage then refuses.
+        // `cover-brief` has always carried the pattern; the three authors must carry it too.
+        const dag = loadDag();
+        const guards: Record<string, string> = {
+            'cover-brief': `test ! -f "\${vars.work_dir}/23-cover/\${vars.run_date}_07_cover_cover.png"`,
+            'plan-translate': `! test -s "\${vars.work_dir}/21-plan/\${vars.run_date}_03_plan_plan.json"`,
+            'article-write': `! test -s "\${vars.work_dir}/22-article/\${vars.run_date}_06_article-write_body.md"`,
+            'script-write': `! test -s "\${vars.work_dir}/24-script/\${vars.run_date}_08_script-write_plan.json"`,
+        };
+        for (const [id, guard] of Object.entries(guards)) {
+            const node = dag.nodes.find((candidate) => candidate.id === id);
+            expect(node, `${id} is missing`).toBeDefined();
+            expect(node?.condition?.options?.command, `${id} must skip when its own output exists`).toContain(guard);
+        }
+    });
 });
 
 describe('kk-daily-ai-voice2 — empty pool ends the run as no-content (AC3)', () => {
