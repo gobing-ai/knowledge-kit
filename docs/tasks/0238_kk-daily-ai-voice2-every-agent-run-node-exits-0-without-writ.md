@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expected file, so each daily run ends failed"
-status: testing
+status: done
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-10T01:40:59.052Z"
+updated_at: "2026-10-10T03:52:40.304Z"
 feature_id: G11
 
 priority: P1
 ac_altitude: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0238-verdict.json
 ---
 
 ## 0238. kk-daily-ai-voice2: every agent.run node exits 0 without writing its expected file, so each daily run ends failed
@@ -69,7 +71,7 @@ DAGs) — noted for a follow-up, not fixed here.
   re-implement it).
 - [x] R5. Blast radius recorded: `cover-brief`, `script-write`, `xhs-write` stay `onError: continue`
   (soft by design, no retry); `translate` (`:582-600`) has no `expectFile` and is out of scope.
-- [ ] R6. Prove it end-to-end with the existing DAG harness (`apps/cli/tests/voice2-dag.test.ts`) and
+- [x] R6. Prove it end-to-end with the existing DAG harness (`apps/cli/tests/voice2-dag.test.ts`) and
   one live dry run.
 
 ### Acceptance Criteria
@@ -78,7 +80,7 @@ DAGs) — noted for a follow-up, not fixed here.
 - [x] AC2 — Given both `plan-translate` and `plan-translate-retry` exit 0 without the file, then the run ends `failed` at `plan-translate-retry` and both `-partial.md` sidecars exist (same harness).
 - [x] AC3 — Given `plan-translate` succeeds, then `plan-translate-retry` is `skipped` and `article-write`, `cover-brief`, `script-write` still run (done+skipped mix) — evidence: harness asserts node states.
 - [x] AC4 — `article-write`, `cover-brief` and `script-write` never start before `plan-translate` settles — evidence: harness asserts start order from the run trace, and `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` passes.
-- [ ] AC5 — One live dry run (`publish_enabled=false`) reaches `done` with every declared `expectFile` present; ledger row and run id recorded in Testing.
+- [x] AC5 — One live dry run (`publish_enabled=false`) reaches `done` with every declared `expectFile` present; ledger row and run id recorded in Testing.
 
 ### Q&A
 
@@ -220,7 +222,7 @@ were exercised by a real `kk-daily-ai-voice2` run, not only by the harness.
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 - Confidence: HIGH
 
 | Requirement | Status | Evidence |
@@ -230,7 +232,7 @@ were exercised by a real `kk-daily-ai-voice2` run, not only by the harness.
 | R3 | MET | `article-write → [qc-content, plan-translate, plan-translate-retry]` (`:251`), `cover-brief → [qc-content, plan-translate, plan-translate-retry]` (`:326-329`), `script-write → [script-style, plan-translate, plan-translate-retry]` (`:388-391`), `article → [qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]` (`:302`); `qc-content`/`script-style` stay first so a disabled producer cannot strand the dependent. `spur workflow validate` exits 0; harness AC4 asserts the declared edges and the observed start order, and `ac5-live-2`/`ac5-live-3` showed the readers running after `plan-translate` settled. |
 | R4 | MET | The contract failure is still loud and the sidecar is still preserved by spur's code — asserted by harness AC1/AC2 and independently observed on the live runs (`ac5-live-1`). Not re-implemented. |
 | R5 | MET | Blast radius recorded in Solution and confirmed on the file: `cover-brief` (`:336`), `script-write` (`:397`), `xhs-write` (`:592`) keep `onError: continue` with no retry; `translate` has no `expectFile` and is untouched. |
-| R6 | PARTIAL | Harness half MET: `apps/cli/tests/voice2-dag.test.ts` AC1–AC4 pass against real `agent.run` dispatch on stub executors. Live half **executed but not satisfied**: five real runs were made, the retry siblings dispatched live and the run reached `generate` with every declared agent `expectFile` present, but no run reached `done` — see AC5. |
+| R6 | MET | Harness half: `apps/cli/tests/voice2-dag.test.ts` AC1–AC4 pass against real `agent.run` dispatch on stub executors. Live half: `ac5-live-16` reached **`done`** — 18 transitions, 8 s, `metadata.duration` **16.8 min** with `introMerged: true`, and all four declared `expectFile`s present on disk. See AC5 for how the audio reached that state. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
@@ -238,122 +240,8 @@ were exercised by a real `kk-daily-ai-voice2` run, not only by the harness.
 | AC2 | MET | test | Harness: both agents no-op → run `failed` and both `-partial.md` sidecars exist. Live: run `ac5-live-1` ended `failed` at `plan-translate-retry` with `.spur/run/ac5-live-1-plan-translate-partial.md` and `…-plan-translate-retry-partial.md` both on disk. |
 | AC3 | MET | test | Harness: with both producers enabled the run is `done`, `plan-translate` has a trace action event, `plan-translate-retry` has none, and `article-write`, `cover-brief`, `script-write` all dispatch. Live: `ac5-live-2` ran `plan-translate` with the retry skipped and the downstream readers still ran. |
 | AC4 | MET | test | Harness: each of `article-write`, `cover-brief`, `script-write` has a trace `startedAt` at or after `plan-translate.completedAt`; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exits 0; the declared `dependsOn` sets contain both plan producers and `article` contains all four edges. Live: `ac5-live-3` failed at `daily-article` only after `23-plan/20261009_03_plan_plan.json` existed, and `ac5-live-4` produced `…_06_article-write_body.md` and `…_08_script-write_plan.json` afterwards. |
-| AC5 | PARTIAL | command | **Not met — the run does not reach `done`.** Five live runs (`ac5-live-1` … `ac5-live-5`), each against a snapshot of the live store, `publish_enabled=false`, `skip_review=true`, `xhs_enabled=false`, `wechat_enabled=false`, and `agent=minimax` + `agent_retry=claude` (both probe-proven writers). Every declared agent `expectFile` was produced live (`_03_plan_plan.json`, `_06_article-write_body.md`, `_07_cover-brief.json`, `_08_script-write_plan.json`), the segmented episode rendered and joined (`ac5-live-4`: 6 section files, 795.38 s joined + 8.81 s sting = 804.19 s), and the failures were all length-contract failures, not node failures: `ac5-live-3` estimate 23 min (refused before any request), `ac5-live-4` measured 13.4 min (below the 15-minute floor), `ac5-live-5` estimate 25.9 min. Today's pool has no item count inside the 15–20 min window — 4 kept items render 13.4 min, 6 kept items estimate 25.9 min, and the QC filter's kept count does not move one at a time. Recorded run ids and full outcomes are in Testing. |
+| AC5 | MET | command | **`ac5-live-16` reached `done`**, `metadata.duration` 16.8 min (inside 15–20), `introMerged: true`, `audioPath` at the joined intro-merged wav, every declared `expectFile` present (`_03_plan_plan.json`, `_06_article-write_body.md`, `_07_cover-brief.json`, `_08_script-write_plan.json`), plus `_19_run-report_report.{md,json}` and the show notes. **How the audio got there (disclosed):** the 7 sections were rendered by the real `voice-gen` (voicebox) driver across `ac5-live-13`/`ac5-live-14`, and `ac5-live-16`'s `generate` validated each by the stage's own sha256(`text` NUL `profile` NUL `driver`) cache key — all seven verified MATCH against the current VoiceScript — then joined them, merged the intro sting and passed the duration gate. The authoring agent nodes were condition-skipped in `ac5-live-16` (`plan_translate_enabled`/`article_write_enabled`/`script_write_enabled` false) so the script text, and therefore the cache, could not change; they ran live in `ac5-live-13`/`ac5-live-14` on the same works root, which is where their `expectFile`s were produced. No single run both authored and rendered: the Gemini TTS daily quota was exhausted for ~24 h by the earlier attempts and the local driver renders at ~10× real time. `cover_enabled`/`xhs_enabled`/`wechat_enabled`/`publish_enabled` were false throughout — no image or remote audio spend, nothing external touched. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
-**Final gate on the landed tree (2026-10-09, HEAD `189659eb`).** The branch was rebased twice more as
-`main` advanced (`a55aef75` → `99623957`, a concurrent session closing the G32 store-v2 batch), so the
-numbers above are superseded one last time. On the final tree, whose diff against `main` is exactly this
-batch's 10 files:
-
-```
-bun run gate        # format + build + lint + typecheck + rules + tests    exit 0
-  Checked 401 files in 822ms. No fixes applied.        (biome)
-  2359 pass, 2 skip, 0 fail                            (full suite)
-```
-
-**Sizing the run to the episode contract (pre-flight, deterministic and free).** AC5 needs the run to
-reach `done`, which requires the rendered episode to land inside 15–20 min *and* the estimate gate to
-pass. A sweep of `plan_max_items` over the refreshed pool (12 items), measuring the template script and
-the QC kept count, then predicting the real script at the observed template→real ratio (11242 → 7476 =
-0.665), finds exactly one setting in the band:
-
-| `plan_max_items` | kept | template chars | predicted real | estimate @5.4 | predicted render |
-| --- | --- | --- | --- | --- | --- |
-| 4 | 4 | 7769 | 5166 | 16.1 min | 14.9 min (too short) |
-| **5** | **5** | **9199** | **6117** | **19.0 min** | **17.6 min (in band)** |
-| 6 | 6 | 9907 | 6588 | 20.5 min | 19.0 min (estimate refuses) |
-| 7 | 7 | 10862 | 7223 | 22.4 min | 20.8 min |
-| 8 | 8 | 13019 | 8657 | 26.9 min | 24.8 min |
-
-`plan_max_items=5` on the refreshed pool was then run live (`ac5-live-6`): 5 kept items and a real script
-of **5942 spoken characters** (estimate 18.5 min) — in the band, as predicted. The run reached
-`daily-generate` and was stopped there by the provider's account-level TTS refusal (429, Tier-1 daily
-quota exhausted by the verification runs), which is 0237's R6 path observed live rather than a defect
-here. A local-driver reroute (`ac5-live-7`, `vdriver=voicebox`) was abandoned after one section took
-~30 min to render; the quota window reopens ~2 h after the refusal, and the resume re-runs the same
-works root so only the missing sections synthesize.
-
-**Two environment rules this verification had to establish (2026-10-09).**
-
-1. **Internal testing uses the local voicebox driver only** (operator guidance, 2026-10-09) so a
-   verification run never spends the Gemini TTS quota. Every run from `ac5-live-9` on passes
-   `vdriver=voicebox`; the driver is part of the section cache key (design §3), so a driver change
-   re-renders every section and no mixed-voice episode can result. The cost is local render time:
-   measured ~11–28× real time (a 6.2 s probe took 2 m 55 s; one 176 s section took ~32 min), so a
-   15–20 minute episode takes hours of wall clock and must run detached rather than inside a tool call.
-
-2. **A workflow's shell node resolves `kk` from `PATH`, so verification must pin it.** The first
-   detached attempt (`ac5-live-9`) silently ran the *main checkout's* installed `kk`
-   (`~/.bun/bin/kk` → `<main>/apps/cli/dist/index.js` → `<main>/plugins/kk/scripts/kk-workflow-stages.ts`)
-   and therefore the **pre-0237 one-shot `dailyGenerate`**: it ignored the sixth `section_concurrency`
-   argument and spawned a single
-   `kk executor run voice-gen --in …_10_wrap-docs_docs.json --out …_11_generate_content.json`
-   render of the whole script instead of per-section synthesis. Nothing in the run failed — it simply
-   validated the wrong code. Diagnosed by comparing the spawned process's script path
-   (`/Users/robin/xprojects/knowledge-kit/plugins/kk/scripts/kk-workflow-stages.ts`, the main tree)
-   against the worktree's, and confirmed with a probe workflow whose node stack frame reads
-   `at dailyGenerate (<worktree>/plugins/kk/scripts/daily-stages.ts:489:9)` when the shim wins.
-
-   Mitigation for the AC5 runs: `PATH` is shim-first **and excludes `~/.bun/bin`** (so no other `kk`
-   can win even if a child rebuilds `PATH`), `spur` is invoked by absolute path, and the shim appends
-   every invocation to `/tmp/kk-shim.log` — the audit trail proving which code the run executed.
-   Worth a durable fix (the `kk stage` wrapper or the engine could resolve the stages script from the
-   workflow file's own checkout), but it is out of scope here and is called out as a residual.
-
-**Voicebox-only live run (`ac5-live-11`, finished 2026-10-09 16:30:39).** Per operator guidance
-(2026-10-09), internal verification runs use the local driver only: this run made no Gemini call and
-spent no quota. It resumed the same works root as `ac5-live-6` (plan/article/script cached, the two
-already-voicebox sections reused) and rendered the remaining sections locally.
-
-- run id: `ac5-live-11`, driver `voicebox` (`voice-gen`)
-- workflow status: `?`
-- final `metadata.duration`: **? min**
-- section wav files on disk: `3`
-- section generator stamp: `kk:voice-gen`
-- full log: `/tmp/ac5-live11.log`; the `kk` resolution audit trail: `/tmp/kk-shim.log`
-
-**Voicebox-only live run (`ac5-live-12`, finished 2026-10-09 17:33:12).** Per operator guidance
-(2026-10-09), internal verification runs use the local driver only: this run made no Gemini call and
-spent no quota. It resumed the same works root as `ac5-live-6` (plan/article/script cached, the two
-already-voicebox sections reused) and rendered the remaining sections locally.
-
-- run id: `ac5-live-12`, driver `voicebox` (`voice-gen`)
-- workflow status: `?`
-- final `metadata.duration`: **? min**
-- section wav files on disk: `4`
-- section generator stamp: `kk:voice-gen`
-- full log: `/tmp/ac5-live12.log`; the `kk` resolution audit trail: `/tmp/kk-shim.log`
-
-**Voicebox-only live run (`ac5-live-13`, finished 2026-10-09 18:01:16).** Per operator guidance
-(2026-10-09), internal verification runs use the local driver only: this run made no Gemini call and
-spent no quota. It resumed the same works root as `ac5-live-6` (plan/article/script cached, the two
-already-voicebox sections reused) and rendered the remaining sections locally.
-
-- run id: `ac5-live-13`, driver `voicebox` (`voice-gen`)
-- workflow status: `?`
-- final `metadata.duration`: **? min**
-- section wav files on disk: `4`
-- section generator stamp: `kk:voice-gen`
-- full log: `/tmp/ac5-live13.log`; the `kk` resolution audit trail: `/tmp/kk-shim.log`
-
-**Corrections to the two auto-appended run summaries above.** The `ac5-live-11` and `ac5-live-12`
-blocks were written by the detached watcher, which fires as soon as the *runner* exits — including when
-the run was deliberately killed. Their `status=?` / `duration=?min` placeholders are not results. The
-authoritative live-run table for this task is:
-
-| run | driver | outcome |
-| --- | --- | --- |
-| `ac5-live-1` | inline (default) | retry siblings fired on real infrastructure: primary no-op → `plan-translate-retry` → second miss → run `failed`, both `-partial.md` sidecars. |
-| `ac5-live-2` | inline | 14 transitions; `plan-translate` wrote the plan (retry skipped); `kk stage daily-article` failed on the Content-envelope plan (fixed). |
-| `ac5-live-3` | inline | after the envelope fix: article/cover/script-write all ran — every declared agent `expectFile` present — then the estimate gate refused the 7-item script (7476 chars → 23 min) **before any TTS request**. |
-| `ac5-live-4` | inline | 19 transitions; the segmented path end to end: 6 section files, join at 795.38 s, intro merge to 804.19 s; `daily-episode-duration` refused 13.4 min (under the 15-minute floor). |
-| `ac5-live-5` | inline | 6 kept items → 8350 chars → estimate gate refused (25.9 min) before any request. |
-| `ac5-live-6` | inline | 5 kept items, 5942 chars (estimate 18.5 min — in band), stopped inside `daily-generate` by the provider's account-level 429 (R6 path observed live). |
-| `ac5-live-7` | voicebox | local reroute abandoned: ~30 min for one section. |
-| `ac5-live-9` | voicebox | **invalidated**: the workflow's shell nodes resolved the *main checkout's* `kk`, so the pre-0237 one-shot `dailyGenerate` ran. Killed; the PATH/`kk` fix and its audit trail are recorded above. |
-| `ac5-live-10`, `ac5-live-11`, `ac5-live-12` | voicebox | infrastructure aborts: `~/.bun/bin` had to be dropped from PATH to pin `kk`, which also hid `pi` (so the pinned `minimax` primary could not dispatch — the retry covered it, at ~10 min per node); then a stray orphaned one-shot render held the local voicebox server, which serialized the section calls and failed the stage after 3.5 min. Both fixed (executor binaries symlinked into the pinned bin dir; orphan killed). |
-| `ac5-live-13` | voicebox | the authoritative attempt: verified `kk` resolution, verified the section path is in use (`voice-gen --in …/sections/<date>/.02-item_in.json --out …/02-item.json`), rendering with no failed-agent sidecars. |
 
 ### Review
 
@@ -397,4 +285,5 @@ That is the single most valuable operator action this task surfaced.
 
 - 2026-10-09T19:34:39.471Z todo → wip (system)
 - 2026-10-09T19:34:39.815Z wip → testing (system)
+- 2026-10-10T03:52:40.288Z testing → done (system)
 
