@@ -409,6 +409,38 @@ export function dailyEpisodeDuration(args: string[]): void {
 /** Ceiling for the pre-spend estimate when the caller passes no `episode_max_minutes`. */
 const DEFAULT_EPISODE_MAX_MINUTES = 20;
 
+/** `kk executor run` argv shared by the quota probe, the voice1 one-shot, and each section. */
+function voiceExecutorArgs(generator: string, input: string, output: string, pluginsPath: string): string[] {
+    return ['executor', 'run', generator, '--in', input, '--out', output, ...pluginsArgs(pluginsPath)];
+}
+
+/**
+ * One tiny gemini-tts render before any episode speech. A non-zero exit (quota, key, network)
+ * means this run should use voicebox. Probe files are removed either way.
+ * Returns false when the caller should fall back.
+ */
+function geminiQuotaProbeOk(workDir: string, pluginsPath: string, transcodeMp3: string, probeDocs: unknown): boolean {
+    const probeDir = join(workDir, '30-audio');
+    const probeIn = join(probeDir, '.gemini-probe-in.json');
+    const probeOut = join(probeDir, '.gemini-probe-out.json');
+    writeJsonText(probeIn, probeDocs);
+    const probe = spawnSync('kk', voiceExecutorArgs('gemini-tts', probeIn, probeOut, pluginsPath), {
+        encoding: 'utf8',
+        timeout: 120_000,
+        env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 },
+    });
+    for (const stale of [probeIn, probeOut, probeOut.replace(/\.json$/, '.wav'), probeOut.replace(/\.json$/, '.mp3')]) {
+        rmSync(stale, { force: true });
+    }
+    if (probe.status !== 0) {
+        const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
+        console.log(`generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`);
+        return false;
+    }
+    console.log('generate: gemini quota probe ok');
+    return true;
+}
+
 export function dailyGenerate(args: string[]): void {
     const [
         workDir = '',
@@ -456,45 +488,15 @@ export function dailyGenerate(args: string[]): void {
             // flips this run to the local voicebox driver instead of dying mid-episode — voicebox
             // needs no key. Operator decision 20261006: keep the gemini default + auto-fallback.
             if (vdriver === 'gemini') {
-                const probeDir = join(workDir, '30-audio');
-                const probeIn = join(probeDir, '.gemini-probe-in.json');
-                const probeOut = join(probeDir, '.gemini-probe-out.json');
                 const docsList = readJson(docs) as Array<Record<string, unknown>>;
-                if (docsList.length > 0) {
-                    writeJsonText(probeIn, [{ ...docsList[0], body: 'Hello.' }]);
-                    const probe = spawnSync(
-                        'kk',
-                        [
-                            'executor',
-                            'run',
-                            'gemini-tts',
-                            '--in',
-                            probeIn,
-                            '--out',
-                            probeOut,
-                            ...pluginsArgs(pluginsPath),
-                        ],
-                        { encoding: 'utf8', timeout: 120_000, env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 } },
-                    );
-                    for (const stale of [
-                        probeIn,
-                        probeOut,
-                        probeOut.replace(/\.json$/, '.wav'),
-                        probeOut.replace(/\.json$/, '.mp3'),
-                    ])
-                        rmSync(stale, { force: true });
-                    if (probe.status !== 0) {
-                        const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
-                        console.log(
-                            `generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`,
-                        );
-                        voiceGenerator = VOICE_DRIVERS.voicebox;
-                    } else {
-                        console.log('generate: gemini quota probe ok');
-                    }
+                if (
+                    docsList.length > 0 &&
+                    !geminiQuotaProbeOk(workDir, pluginsPath, transcodeMp3, [{ ...docsList[0], body: 'Hello.' }])
+                ) {
+                    voiceGenerator = VOICE_DRIVERS.voicebox;
                 }
             }
-            kk(['executor', 'run', voiceGenerator, '--in', docs, '--out', content, ...pluginsArgs(pluginsPath)], {
+            kk(voiceExecutorArgs(voiceGenerator, docs, content, pluginsPath), {
                 env: { VOICE_GEN_MP3: transcodeMp3 },
             });
         });
@@ -689,12 +691,12 @@ export function dailyGenerate(args: string[]): void {
             return;
         }
 
-        // Gemini quota probe before loop if any synthesis needed
-        if (anySynthesisNeeded && vdriver === 'gemini') {
-            const probeDir = join(workDir, '30-audio');
-            const probeIn = join(probeDir, '.gemini-probe-in.json');
-            const probeOut = join(probeDir, '.gemini-probe-out.json');
-            writeJsonText(probeIn, [
+        // Same quota probe as the one-shot path, before any section request. A fallback changes
+        // the cache key, so plans are recomputed and no Gemini file is played as voicebox speech.
+        if (
+            anySynthesisNeeded &&
+            vdriver === 'gemini' &&
+            !geminiQuotaProbeOk(workDir, pluginsPath, transcodeMp3, [
                 {
                     id: 'probe',
                     title: 'Probe',
@@ -706,28 +708,10 @@ export function dailyGenerate(args: string[]): void {
                     mediaType: 'application/yaml',
                     metadata: { voiceProfile },
                 },
-            ]);
-            const probe = spawnSync(
-                'kk',
-                ['executor', 'run', 'gemini-tts', '--in', probeIn, '--out', probeOut, ...pluginsArgs(pluginsPath)],
-                { encoding: 'utf8', timeout: 120_000, env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 } },
-            );
-            for (const stale of [
-                probeIn,
-                probeOut,
-                probeOut.replace(/\.json$/, '.wav'),
-                probeOut.replace(/\.json$/, '.mp3'),
-            ]) {
-                rmSync(stale, { force: true });
-            }
-            if (probe.status !== 0) {
-                const reason = (probe.stderr ?? '').trim().split('\n').slice(-1)[0] || `exit ${probe.status}`;
-                console.log(`generate: gemini quota probe failed (${reason}) — falling back to voicebox for this run`);
-                voiceGenerator = VOICE_DRIVERS.voicebox;
-                plans = computePlans(voiceGenerator);
-            } else {
-                console.log('generate: gemini quota probe ok');
-            }
+            ])
+        ) {
+            voiceGenerator = VOICE_DRIVERS.voicebox;
+            plans = computePlans(voiceGenerator);
         }
 
         // Synthesize sections sequentially (concurrency 1)
@@ -748,26 +732,16 @@ export function dailyGenerate(args: string[]): void {
                 metadata: { voiceProfile },
             };
             writeJsonText(secDocIn, [doc]);
-            const callRes = spawnSync(
-                'kk',
-                [
-                    'executor',
-                    'run',
-                    voiceGenerator,
-                    '--in',
-                    secDocIn,
-                    '--out',
-                    plan.jsonPath,
-                    ...pluginsArgs(pluginsPath),
-                ],
-                {
-                    stdio: 'inherit',
-                    env: { ...process.env, VOICE_GEN_MP3: transcodeMp3 },
-                },
-            );
-            rmSync(secDocIn, { force: true });
-            if (callRes.status !== 0) {
-                failWith(callRes.status ?? 1, `generate: section synthesis failed for ${plan.def.stem}`);
+            try {
+                const status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                    env: { VOICE_GEN_MP3: transcodeMp3 },
+                    soft: true,
+                });
+                if (status !== 0) {
+                    failWith(status, `generate: section synthesis failed for ${plan.def.stem}`);
+                }
+            } finally {
+                rmSync(secDocIn, { force: true });
             }
             try {
                 const sidecar = readJson(plan.jsonPath) as Record<string, unknown>;

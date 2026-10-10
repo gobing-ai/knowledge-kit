@@ -173,6 +173,14 @@ function writeScriptTotal(yamlPath: string, target: number): void {
     writeFileSync(yamlPath, Bun.YAML.stringify(vs));
 }
 
+function startEvents(logFile: string): Array<{ args: string[]; outPath: string }> {
+    return readFileSync(logFile, 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { event: string; args: string[]; outPath: string })
+        .filter((entry) => entry.event === 'start');
+}
+
 function runStage(
     args: string[],
     binDir: string,
@@ -493,6 +501,59 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             // Remaining calls: 8 total - 3 done = 5 calls
             expect(starts.length).toBe(5);
             expect(existsSync(join(secDir, '07-closing.wav'))).toBe(true);
+        });
+    });
+
+    it('gemini quota probe runs once per generate path and a failure falls the whole run back to voicebox', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const ok = runStage(['daily-generate', dir, date, '', '', 'gemini', '1'], binDir, logFile);
+            expect(ok.status, ok.stderr).toBe(0);
+            const starts = startEvents(logFile);
+            expect(starts[0]?.outPath).toContain('.gemini-probe-out.json');
+            expect(starts[0]?.args).toContain('gemini-tts');
+            expect(starts.slice(1)).toHaveLength(8);
+            expect(starts.slice(1).every((call) => call.args.includes('gemini-tts'))).toBe(true);
+            expect(existsSync(join(dir, '30-audio', '.gemini-probe-in.json'))).toBe(false);
+            expect(existsSync(join(dir, '30-audio', '.gemini-probe-out.json'))).toBe(false);
+        });
+
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const failed = runStage(['daily-generate', dir, date, '', '', 'gemini', '1'], binDir, logFile, {
+                KK_SHIM_FAIL_AT: '0',
+            });
+            expect(failed.status, failed.stderr).toBe(0);
+            expect(failed.stdout).toContain('falling back to voicebox');
+            const starts = startEvents(logFile);
+            expect(starts[0]?.args).toContain('gemini-tts');
+            expect(starts.slice(1)).toHaveLength(8);
+            expect(starts.slice(1).every((call) => call.args.includes('voice-gen'))).toBe(true);
+        });
+
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const voice1 = runStage(['daily-generate', dir, date, '', '', 'gemini'], binDir, logFile);
+            expect(voice1.status, voice1.stderr).toBe(0);
+            const starts = startEvents(logFile);
+            expect(starts).toHaveLength(2);
+            expect(starts[0]?.outPath).toContain('.gemini-probe-out.json');
+            expect(starts[1]?.args).toContain('gemini-tts');
+            expect(starts[1]?.outPath).toContain(`${date}_11_generate_content.json`);
+            expect(existsSync(join(dir, '30-audio', '.gemini-probe-in.json'))).toBe(false);
+        });
+
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const voice1 = runStage(['daily-generate', dir, date, '', '', 'gemini'], binDir, logFile, {
+                KK_SHIM_FAIL_AT: '0',
+            });
+            expect(voice1.status, voice1.stderr).toBe(0);
+            expect(voice1.stdout).toContain('falling back to voicebox');
+            const starts = startEvents(logFile);
+            expect(starts).toHaveLength(2);
+            expect(starts[0]?.args).toContain('gemini-tts');
+            expect(starts[1]?.args).toContain('voice-gen');
         });
     });
 });

@@ -4,7 +4,7 @@ name: Synthesize voice2 episode sections and join them for the duration check
 status: done
 template: feature-impl
 created_at: 2026-10-09T07:35:29.460Z
-updated_at: "2026-10-10T06:02:28.697Z"
+updated_at: "2026-10-10T06:25:32.022Z"
 feature_id: G13
 priority: P0
 tags:
@@ -189,17 +189,17 @@ moved — a documented CHANGED, not a deviation.
 
 ### Review
 
-**Disposition: PASS — no P1/P2 findings.** (2026-10-09 re-verify: two P3 rows whose action is "accepted, no change" are reclassified P4 advisory; the deferred duplication stays P3.)
+**Disposition: PASS — no P1/P2 findings.** (2026-10-09 re-verify: two P3 rows whose action is "accepted, no change" are reclassified P4 advisory. 2026-10-10: the duplicated Gemini probe is FIXED; tracking task 0248 is removed.)
 
 | Priority | Finding | Location | Action |
 | --- | --- | --- | --- |
 | P1 | None. | — | — |
 | P2 | None. | — | — |
-| P3 | The Gemini probe plus `kk executor run` one-shot body now exists twice (the untouched voice1 path and the section path keep separate copies). | `plugins/kk/scripts/daily-stages.ts:444-502` | Deferred: extracting it would re-open the voice1 code path R3 requires to stay byte-identical, for ~30 lines. Merge when voice1 retires. |
-| P4 | Sidecar read and prior-content re-read are wrapped in `catch {}`. | `plugins/kk/scripts/daily-stages.ts:666-672`, `:774-779`, `:826-829` | Accepted by design: a missing or corrupt sidecar must read as "not cached" and re-synthesize, and a missing prior content file must produce a fresh object. The post-synthesis hash stamp (`:774-779`) failing only costs a re-synthesis next run. None can mask a request failure — those are the explicit `spawnSync` status checks. |
-| P4 | Character counts use `[...text].length` (code points), not bytes. | `plugins/kk/scripts/daily-stages.ts:571,592,609` | Correct unit: the driver rates are 字/秒, so code points are what the estimate needs. Not exercised against a surrogate-pair fixture; the under-count risk is bounded by the 20-minute headroom and the authoritative downstream `dailyEpisodeDuration` gate. |
-| P4 | `SectionDef` / `SectionPlan` interfaces are module-local inside the `timed` callback. | `plugins/kk/scripts/daily-stages.ts:550,651` | Fine for a single stage body. Hoist only if a second stage needs them. |
-| P4 | `episode_max_minutes` fell back to 20 on a non-numeric eighth argument. | `plugins/kk/scripts/daily-stages.ts:436-440` | FIXED (2026-10-09 re-verify): `dailyGenerate` now parses arg 8 with strict `Number` up front and refuses a non-finite or non-positive value before any synthesis (`plugins/kk/scripts/daily-stages.ts:436-440`); `parseFloat('2O')` had read as a 2-minute cap. Regression: `apps/cli/tests/daily-generate-sections.test.ts` "refuses a non-numeric `episode_max_minutes` before any synthesis" (failed before the fix). |
+| P3 | The Gemini probe plus `kk executor run` one-shot body now exists twice (the untouched voice1 path and the section path keep separate copies). | `plugins/kk/scripts/daily-stages.ts` `geminiQuotaProbeOk`, `voiceExecutorArgs` | FIXED (2026-10-10): one `geminiQuotaProbeOk` serves the five-arg path and the section path, and both real renders build their argv with `voiceExecutorArgs`. An empty wrap-docs list still skips the probe. A probe failure still falls the whole run back to voicebox, and the section path still recomputes plans so the cache key matches the fallback driver. The voice1 workflow file is untouched. Regression: `apps/cli/tests/daily-generate-sections.test.ts` "gemini quota probe runs once per generate path and a failure falls the whole run back to voicebox". |
+| P4 | Sidecar read and prior-content re-read are wrapped in `catch {}`. | `plugins/kk/scripts/daily-stages.ts` sidecar read, hash stamp, prior-content re-read | Accepted by design: a missing or corrupt sidecar must read as "not cached" and re-synthesize, and a missing prior content file must produce a fresh object. The post-synthesis hash stamp failing only costs a re-synthesis next run. None can mask a request failure — a non-zero soft `kk` status still `failWith`s that section, and the quota probe still checks `spawnSync` status. |
+| P4 | Character counts use `[...text].length` (code points), not bytes. | `plugins/kk/scripts/daily-stages.ts` section character counts | Correct unit: the driver rates are 字/秒, so code points are what the estimate needs. Not exercised against a surrogate-pair fixture; the under-count risk is bounded by the 20-minute headroom and the authoritative downstream `dailyEpisodeDuration` gate. |
+| P4 | `SectionDef` / `SectionPlan` interfaces are module-local inside the `timed` callback. | `plugins/kk/scripts/daily-stages.ts` inside `dailyGenerate` | Fine for a single stage body. Hoist only if a second stage needs them. |
+| P4 | `episode_max_minutes` fell back to 20 on a non-numeric eighth argument. | `plugins/kk/scripts/daily-stages.ts` strict `Number` parse of arg 8 | FIXED (2026-10-09 re-verify): `dailyGenerate` parses arg 8 with strict `Number` up front and refuses a non-finite or non-positive value before any synthesis; `parseFloat('2O')` had read as a 2-minute cap. Regression: `apps/cli/tests/daily-generate-sections.test.ts` "refuses a non-numeric `episode_max_minutes` before any synthesis" (failed before the fix). |
 
 Residual risk: the character-rate estimate is an estimate — a wrong rate changes *when* the stage
 refuses, never whether the final duration is checked; `dailyEpisodeDuration` stays authoritative. The
