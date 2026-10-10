@@ -839,7 +839,14 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
                 primaryOptions?.input,
             );
             expect(retryOptions?.expectFile).toBe(primaryOptions?.expectFile);
-            expect(retryOptions?.role).toBe('coder');
+            // 0238 P2: a cheap primary climbs to standard when its rung is unusable (ac5-live-1 landed
+            // scribe on pi-deepseek), so a `coder` retry resolved to the SAME executor. The retry must
+            // start two rungs above the primary — above any rung the primary reaches by one climb.
+            const ladder = ['scribe', 'coder', 'reviewer', 'planner'];
+            expect(retryOptions?.role).toBe('reviewer');
+            expect(ladder.indexOf(String(retryOptions?.role))).toBeGreaterThanOrEqual(
+                ladder.indexOf(String(primaryOptions?.role)) + 2,
+            );
             expect(String(retryOptions?.agent)).toContain('agent_retry');
             expect(String(primaryOptions?.agent)).toContain('vars.agent');
         }

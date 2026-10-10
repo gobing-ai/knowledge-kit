@@ -58,9 +58,10 @@ vars:
   safety_platforms: "xiaoyuzhou,apple-podcasts,wechatmp"
   publish_enabled: "false"
   agent: "inline"
-  # 0238 R2: executor for the `-retry` siblings of the two hard-fail agent.run producers. It must
-  # resolve to a DIFFERENT tier from `agent` so a broken cheap executor cannot fail twice; default
-  # `inline` keeps the same resolution ladder, and the operator may pin a known-good executor here.
+  # 0238 R2: executor for the `-retry` siblings of the two hard-fail agent.run producers. The
+  # siblings declare `role: reviewer` (capable-1), two rungs above the primary's `scribe`, so the
+  # default `inline` resolves the retry above any rung the primary reaches by climbing past an
+  # unusable cheap executor (ac5-live-1). The operator may still pin a known-good executor here.
   agent_retry: "inline"
   # QC pins — lockstep with episode-plan-gen's DEFAULT_FILTER_CONFIG (env wins), same as voice1.
   qc_categories: "ai-news,ai-technical,ai-research,ai-industry"
@@ -197,7 +198,7 @@ nodes:
   # missing expectFile fails the run (R4 property, kept). The resolved executor is stochastic: a run
   # answered a greeting with zero tool calls and exited 0 (0238 evidence). The engine has no node
   # retry, so each producer carries a `-retry` sibling on a DIFFERENT tier (`agent_retry`, role
-  # coder) with the SAME input/expectFile; the primary becomes `onError: continue` and the sibling
+  # reviewer) with the SAME input/expectFile; the primary becomes `onError: continue` and the sibling
   # (no onError) is the loud gate. Downstream readers depend on BOTH, so the done+skipped mix of a
   # successful primary still proceeds. Delete the siblings when spur grows an agent.run retry.
   - id: plan-translate
@@ -245,7 +246,7 @@ nodes:
     action:
       kind: agent.run
       options:
-        role: coder
+        role: reviewer
         agent: ${vars.agent_retry}
         input: *plan-translate-input
         expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
@@ -297,7 +298,7 @@ nodes:
     action:
       kind: agent.run
       options:
-        role: coder
+        role: reviewer
         agent: ${vars.agent_retry}
         input: *article-write-input
         expectFile: ${vars.work_dir}/22-article/${vars.run_date}_06_article-write_body.md

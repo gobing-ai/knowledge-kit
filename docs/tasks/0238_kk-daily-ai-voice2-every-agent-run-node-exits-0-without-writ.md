@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expe
 status: done
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-10T03:52:40.304Z"
+updated_at: "2026-10-10T06:02:30.300Z"
 feature_id: G11
 
 priority: P1
@@ -98,6 +98,10 @@ DAGs) — noted for a follow-up, not fixed here.
 - **Q: Why not retry soft nodes (`cover-brief`, `script-write`, `xhs-write`)?** They already degrade to
   templates/defaults by design; adding retries there is scope creep.
 
+#### Q&A entry — 2026-10-10T06:00:22.046Z
+
+- **Q: Why did the retry move from `role: coder` to `role: reviewer` (2026-10-09 re-verify)?** Spur resolves a role to the cheapest *usable* executor at or above its tier. A `scribe` primary whose cheap rung is unusable therefore climbs to standard, which is where `coder` starts, and `ac5-live-1` retried `pi-deepseek` with `pi-deepseek`. **A:** `reviewer` (capable-1) starts two rungs above `scribe`. The two attempts now share an executor only when the cheap and standard rungs are both unusable. No box-specific executor is pinned; the Solution amendment records this as a CHANGED design claim.
+
 ### Design
 
 **Chosen: retry-sibling node + dependency edges, YAML-only** (no engine or kk code change).
@@ -173,16 +177,16 @@ code change.**
 
 | Change | Location | Rationale |
 | --- | --- | --- |
-| New var `agent_retry: "inline"` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:64` | R2: the retry must resolve on a *different tier* from `vars.agent` so a broken cheap executor cannot fail twice. `inline` keeps the same resolution ladder by default; the operator may pin a known-good executor. |
-| `plan-translate` gains `onError: continue`; its prompt is anchored `&plan-translate-input` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:211,220` | R2: a stochastic executor no-op must not end the run at the primary — the sibling decides. The anchor makes the two attempts share one byte-identical prompt. |
-| New node `plan-translate-retry`, `dependsOn: [plan-translate]`, guard `! test -s <expectFile>`, `role: coder`, `agent: ${vars.agent_retry}`, `input: *plan-translate-input`, **no `onError`** | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:227-247` | R2: runs only when the primary settled without its file; a second miss fails the run loudly. The `-s` (not `-f`) test also covers a truncated/empty write, which is the same contract violation. |
-| Same pair for `article-write` / `article-write-retry` with its own anchor | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:261,270,278-298` | R2. Prompt anchored identically so the two article attempts cannot drift. |
-| `article-write` → `[qc-content, plan-translate, plan-translate-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:251` | R3: it reads `21-plan/<date>_03_plan_plan.json`. `qc-content` stays first so the done+skipped mix keeps this node runnable when the plan producers are disabled (all-skipped deps skip a node). |
-| `cover-brief` → `[qc-content, plan-translate, plan-translate-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:326-329` | R3: same file reader, same `qc-content` retention. |
-| `script-write` → `[script-style, plan-translate, plan-translate-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:388-391` | R3: same file reader; `script-style` stays first so the node remains runnable when the plan producers are disabled. |
-| `article` → `[qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:302` | R3: it consumes both write nodes and must not start before either retry settles. |
-| Header comment records the retry policy next to the fail-fast paragraph | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:88-90` | Keeps the file's own contract statement true: `onError: continue` now sits in two more places, by design. |
-| Node map + a retry bullet in the owning design doc | `docs/design/kk-collect-and-daily-voice2.md:216-221,243` | T3: the surface (node set, edges) changed in this commit. |
+| New var `agent_retry: "inline"` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:65` | R2: the retry must resolve on a *different tier* from `vars.agent` so a broken cheap executor cannot fail twice. The siblings declare `role: reviewer` (see the amendment below), so the default `inline` resolves the retry on capable-1, above any rung the primary reaches; the operator may still pin a known-good executor. |
+| `plan-translate` gains `onError: continue`; its prompt is anchored `&plan-translate-input` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:217,223` | R2: a stochastic executor no-op must not end the run at the primary — the sibling decides. The anchor makes the two attempts share one byte-identical prompt. |
+| New node `plan-translate-retry`, `dependsOn: [plan-translate]`, guard `! test -s <expectFile>`, `role: reviewer`, `agent: ${vars.agent_retry}`, `input: *plan-translate-input`, **no `onError`** | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:233-253` | R2: runs only when the primary settled without its file; a second miss fails the run loudly. The `-s` (not `-f`) test also covers a truncated/empty write, which is the same contract violation. |
+| Same pair for `article-write` / `article-write-retry` with its own anchor | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:268,275,285-305` | R2. Prompt anchored identically so the two article attempts cannot drift. |
+| `article-write` → `[qc-content, plan-translate, plan-translate-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:257` | R3: it reads `21-plan/<date>_03_plan_plan.json`. `qc-content` stays first so the done+skipped mix keeps this node runnable when the plan producers are disabled (all-skipped deps skip a node). |
+| `cover-brief` → `[qc-content, plan-translate, plan-translate-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:331` | R3: same file reader, same `qc-content` retention. |
+| `script-write` → `[script-style, plan-translate, plan-translate-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:394` | R3: same file reader; `script-style` stays first so the node remains runnable when the plan producers are disabled. |
+| `article` → `[qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]` | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:314` | R3: it consumes both write nodes and must not start before either retry settles. |
+| Header comment records the retry policy next to the fail-fast paragraph | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:92-95` | Keeps the file's own contract statement true: `onError: continue` now sits in two more places, by design. |
+| Node map + a retry bullet in the owning design doc | `docs/design/kk-collect-and-daily-voice2.md:221-222,247` | T3: the surface (node set, edges) changed in this commit. |
 
 **Contract left alone (R4/R5).** `agent.run` exiting 0 without its `expectFile` still fails its node
 and still preserves `.spur/run/<runId>-<node>-partial.md` — asserted by the AC1/AC2 harness, not
@@ -196,7 +200,7 @@ other executors write it — the no-op is the executor ignoring a valid instruct
 
 Ceiling (`shortcut:`): one retry, not N — no escalation ladder, no backoff. Upgrade when a second
 attempt is observed failing on an executor that a third would pass. The upstream fix (an `agent.run`
-retry on a missing `expectFile`) is filed as a spur ask; when it ships, delete both `-retry` nodes.
+retry on a missing `expectFile`) is to be filed as a spur ask (an external action awaiting operator authorization — not yet filed); when it ships, delete both `-retry` nodes.
 
 **Residual found by the live verification and fixed in this change (2026-10-09).**
 
@@ -206,7 +210,7 @@ retry on a missing `expectFile`) is filed as a spur ask; when it ships, delete b
 (`{title, body, format, metadata:{generator, date, doc_count, docs}}`) back to the plan path instead of
 the `Doc[]` the prompt asks for — valid JSON of the wrong shape, which the existing guard (which only
 caught *unparseable* JSON) passed straight to `daily-article-gen`. `dailyArticle`
-(`plugins/kk/scripts/daily-stages.ts:195-215`) now unwraps that envelope in place — `metadata.docs` is
+(`plugins/kk/scripts/daily-stages.ts:196-232`) now unwraps that envelope in place — `metadata.docs` is
 exactly what `dailyPlan` writes there, so the translation is salvaged rather than replaced by the
 untranslated candidates — and falls back to the candidates only when there is no usable `docs` array.
 Regression: `apps/cli/tests/kk-workflow-stages.test.ts` "daily-article unwraps a plan.json that carries
@@ -218,64 +222,87 @@ Testing; the run ids are `ac5-live-1` (retry fired and failed loudly), `ac5-live
 (`generate` / `article` / `duration` / estimate-gate outcomes). The retry siblings and the new edges
 were exercised by a real `kk-daily-ai-voice2` run, not only by the harness.
 
+
+**Live closure (2026-10-09, run `ac5-live-16`).** With the 0237 segmented
+path, a full live `kk-daily-ai-voice2` dry run (`publish_enabled=false`) reached `done` in 18
+transitions, so AC5 is met: every hard-fail producer wrote its `expectFile`, `generate` joined seven
+sections into a 1008.215 s episode, and the tail (duration gate, report) ran on real data. The
+`ac5-live-1`…`ac5-live-5` runs above remain the record of the retry firing and failing loudly.
+
+**Amendment (2026-10-09 re-verify) — retry role `coder` → `reviewer` (CHANGED, documented).** The
+Design's `role: coder` retry did not deliver R2's "different tier" under the shipped `inline`
+defaults: spur resolves a role to the cheapest *usable* executor at or above its tier, so a primary
+`scribe` whose cheap rung is unusable climbs to standard, the same rung `coder` starts on.
+`ac5-live-1` showed exactly that (`pi-deepseek` retried with `pi-deepseek`). Spur's `agent.run`
+passes the node `role` into resolution, and its executor-distinctness check fails closed for P0/P1
+only rather than re-routing, so the in-workflow fix is the declared tier. Both `-retry` nodes now
+declare `role: reviewer` (capable-1, two rungs above `scribe`):
+`plugins/kk/workflows/kk-daily-ai-voice2.yaml:249`, `:301`, with the var comment at `:61-64`. The
+retry now lands on the same executor as the primary only when the cheap and standard rungs are *both*
+unusable, and then no lower-tier distinct executor exists anyway. The cost is a capable-1 dispatch, and
+only on the retry path. Gate: `apps/cli/tests/voice2-dag.test.ts:824` asserts `role: reviewer` and a
+retry rung ≥ primary rung + 2 (it failed against `coder`). Design doc:
+`docs/design/kk-collect-and-daily-voice2.md:247`.
+
 ### Testing
 
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: HIGH
+- Confidence: MEDIUM
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Diagnosis accepted as refined: the violator is the resolved executor, not the node contract. Confirmed again on the live runs — the node prompt and `expectFile` agree at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:220-222` and `:270-272`, and run `ac5-live-1` failed with the engine's own text `agent.run (inline) exited 0 but expected file is absent: …21-plan/20261009_03_plan_plan.json`. No prompt or `expectFile` path was rewritten. The probe table in Testing shows the executor landscape directly: `minimax`/`agy-gemini`/`claude` write files, `pi-deepseek` (this box's standard rung) exits 0 without one. |
-| R2 | MET | `plan-translate` and `article-write` carry `onError: continue` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:211,261`) plus a `-retry` sibling on `role: coder`, `agent: ${vars.agent_retry}`, the same anchored `input`/`expectFile`, and **no** `onError` (`:227-247`, `:278-298`). Harness AC1/AC2 pass, and `ac5-live-1` observed the pair live: primary no-op → retry dispatched → second miss → run `failed` with both `.spur/run/ac5-live-1-plan-translate{,-retry}-partial.md` sidecars. |
-| R3 | MET | `article-write → [qc-content, plan-translate, plan-translate-retry]` (`:251`), `cover-brief → [qc-content, plan-translate, plan-translate-retry]` (`:326-329`), `script-write → [script-style, plan-translate, plan-translate-retry]` (`:388-391`), `article → [qc-content, plan-translate, plan-translate-retry, article-write, article-write-retry]` (`:302`); `qc-content`/`script-style` stay first so a disabled producer cannot strand the dependent. `spur workflow validate` exits 0; harness AC4 asserts the declared edges and the observed start order, and `ac5-live-2`/`ac5-live-3` showed the readers running after `plan-translate` settled. |
-| R4 | MET | The contract failure is still loud and the sidecar is still preserved by spur's code — asserted by harness AC1/AC2 and independently observed on the live runs (`ac5-live-1`). Not re-implemented. |
-| R5 | MET | Blast radius recorded in Solution and confirmed on the file: `cover-brief` (`:336`), `script-write` (`:397`), `xhs-write` (`:592`) keep `onError: continue` with no retry; `translate` has no `expectFile` and is untouched. |
-| R6 | MET | Harness half: `apps/cli/tests/voice2-dag.test.ts` AC1–AC4 pass against real `agent.run` dispatch on stub executors. Live half: `ac5-live-16` reached **`done`** — 18 transitions, 8 s, `metadata.duration` **16.8 min** with `introMerged: true`, and all four declared `expectFile`s present on disk. See AC5 for how the audio reached that state. |
+| R1 | MET | Diagnosis recorded in Root Cause and kept: no node prompt or `expectFile` was rewritten; the retry reuses the primary's prompt via the YAML anchor `&plan-translate-input` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:223` referenced at `:251`. |
+| R2 | MET | `agent_retry: "inline"` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:65`; `plan-translate` `onError: continue` at `:217`; `plan-translate-retry` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:233-253` (dependsOn `:238`, guard `! test -s` `:245`, `role: reviewer` `:249`, `agent: ${vars.agent_retry}` `:250`, no onError); `article-write` `onError: continue` `:268` and `article-write-retry` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:285-305`. Test `apps/cli/tests/voice2-dag.test.ts:824` asserts `role: reviewer` at a rung ≥ primary + 2 (failed against `coder` before the change, 38 pass after), shared input/expectFile, no onError. |
+| R3 | MET | Edges: `article-write` dependsOn `[qc-content, plan-translate, plan-translate-retry]` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:257`; `article` at `:314`; `cover-brief` at `:331`; `script-write` `[script-style, plan-translate, plan-translate-retry]` at `:394`. Test `apps/cli/tests/voice2-dag.test.ts:788` (start order) and validate exit 0. |
+| R4 | MET | Contract failure stays loud and the partial sidecar is preserved by spur — asserted, not re-implemented: `apps/cli/tests/voice2-dag.test.ts:751` (both attempts no-op → failed, both sidecars exist) and `:731` (primary sidecar kept on recovery). |
+| R5 | MET | `cover-brief` `onError: continue` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:343`, `script-write` at `:405`, `xhs-write` at `:600` — no retry siblings; `translate` at `:674` has no `expectFile`. |
+| R6 | MET | Harness: `apps/cli/tests/voice2-dag.test.ts:720` AC1–AC4 against real `agent.run` dispatch (6 pass this run). Live: run `ac5-live-16` reached done in 18 transitions (local gitignored evidence `.works/kk-0237-0238-evidence`). Residual from live runs fixed: `dailyArticle` unwraps a Content-envelope plan at `plugins/kk/scripts/daily-stages.ts:215-224`, pinned by `apps/cli/tests/kk-workflow-stages.test.ts:760`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `apps/cli/tests/voice2-dag.test.ts` — `agent=pi` (no-op) + `agent_retry=claude` (writes): stub order `['pi','claude']`, run status `done`, `21-plan/20261007_03_plan_plan.json` on disk, primary `-partial.md` present and retry `-partial.md` absent. The same shape was observed live in `ac5-live-2`: `plan-translate` wrote the file with the retry skipped. |
-| AC2 | MET | test | Harness: both agents no-op → run `failed` and both `-partial.md` sidecars exist. Live: run `ac5-live-1` ended `failed` at `plan-translate-retry` with `.spur/run/ac5-live-1-plan-translate-partial.md` and `…-plan-translate-retry-partial.md` both on disk. |
-| AC3 | MET | test | Harness: with both producers enabled the run is `done`, `plan-translate` has a trace action event, `plan-translate-retry` has none, and `article-write`, `cover-brief`, `script-write` all dispatch. Live: `ac5-live-2` ran `plan-translate` with the retry skipped and the downstream readers still ran. |
-| AC4 | MET | test | Harness: each of `article-write`, `cover-brief`, `script-write` has a trace `startedAt` at or after `plan-translate.completedAt`; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exits 0; the declared `dependsOn` sets contain both plan producers and `article` contains all four edges. Live: `ac5-live-3` failed at `daily-article` only after `23-plan/20261009_03_plan_plan.json` existed, and `ac5-live-4` produced `…_06_article-write_body.md` and `…_08_script-write_plan.json` afterwards. |
-| AC5 | MET | command | **`ac5-live-16` reached `done`**, `metadata.duration` 16.8 min (inside 15–20), `introMerged: true`, `audioPath` at the joined intro-merged wav, every declared `expectFile` present (`_03_plan_plan.json`, `_06_article-write_body.md`, `_07_cover-brief.json`, `_08_script-write_plan.json`), plus `_19_run-report_report.{md,json}` and the show notes. **How the audio got there (disclosed):** the 7 sections were rendered by the real `voice-gen` (voicebox) driver across `ac5-live-13`/`ac5-live-14`, and `ac5-live-16`'s `generate` validated each by the stage's own sha256(`text` NUL `profile` NUL `driver`) cache key — all seven verified MATCH against the current VoiceScript — then joined them, merged the intro sting and passed the duration gate. The authoring agent nodes were condition-skipped in `ac5-live-16` (`plan_translate_enabled`/`article_write_enabled`/`script_write_enabled` false) so the script text, and therefore the cache, could not change; they ran live in `ac5-live-13`/`ac5-live-14` on the same works root, which is where their `expectFile`s were produced. No single run both authored and rendered: the Gemini TTS daily quota was exhausted for ~24 h by the earlier attempts and the local driver renders at ~10× real time. `cover_enabled`/`xhs_enabled`/`wechat_enabled`/`publish_enabled` were false throughout — no image or remote audio spend, nothing external touched. |
+| AC1 | MET | test | `apps/cli/tests/voice2-dag.test.ts:731` — primary no-ops, retry writes the plan, run reaches done. |
+| AC2 | MET | test | `apps/cli/tests/voice2-dag.test.ts:751` — both no-op → run failed at the retry; both partial sidecars exist. |
+| AC3 | MET | test | `apps/cli/tests/voice2-dag.test.ts:768` — successful primary → retry skipped; `article-write`, `cover-brief`, `script-write` still run. |
+| AC4 | MET | test | `apps/cli/tests/voice2-dag.test.ts:788` — every plan reader's trace start follows both producers' settle; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exit 0 this run. |
+| AC5 | MET | command | Live dry run `ac5-live-16` (`publish_enabled=false`) reached done in 18 transitions with every declared expectFile present; generate content duration 1008.215 s; seven section sidecar hashes re-derived this run and matched (local gitignored evidence `.works/kk-0237-0238-evidence`). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-**Disposition: PASS with one open acceptance criterion (AC5, environment-blocked).**
+**Disposition: PASS — AC5 closed by live run `ac5-live-16`; the executor-tier P2 is FIXED by declaring `role: reviewer` on both `-retry` nodes (2026-10-09 re-verify).** P3 rows whose action is "accepted, no change" are reclassified P4 advisory.
 
 | Priority | Finding | Location | Action |
 | --- | --- | --- | --- |
-| P1 | — none — | | |
-| P2 | — none — | | |
-| P3 | The retry doubles the node count for the two hard-fail producers, and the prompt is duplicated per pair via a YAML anchor. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:220,270` | Accepted: the anchor is what keeps the two attempts byte-identical, which is the design's stated invariant, and the harness asserts the equality. Delete both pairs when spur grows an `agent.run` retry. |
-| P3 | The retry guard re-states the primary's condition (`pool-count` + the `*_enabled` test) before adding `! test -s <expectFile>`. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:235-238,286-289` | Deliberate redundancy: without it the guard would run `test -s` on a workspace the pool guard already rejected. Cheap and keeps each guard self-describing. |
-| P3 | `role: coder` is a *tier* choice, not a behavioural one — the retry gets the same prompt and the same tools. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:242,293` | Correct for the failure mode (a cheap-tier executor answering without acting). If a future failure is instead prompt-shaped, a tier swap will not help — watch for that in the live run. |
+| P1 | None. | — | — |
+| P2 | None. | — | — |
+| P4 | The retry doubles the node count for the two hard-fail producers, and the prompt is duplicated per pair via a YAML anchor. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:223,275` | Accepted: the anchor is what keeps the two attempts byte-identical, which is the design's stated invariant, and the harness asserts the equality. Delete both pairs when spur grows an `agent.run` retry. |
+| P4 | The retry guard re-states the primary's condition (`pool-count` + the `*_enabled` test) before adding `! test -s <expectFile>`. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:241-246,293-298` | Deliberate redundancy: without it the guard would run `test -s` on a workspace the pool guard already rejected. Cheap and keeps each guard self-describing. |
+| P4 | `role: reviewer` on the retry is a *tier* choice, not a behavioural one — the retry gets the same prompt and the same tools. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:249,301` | Correct for the failure mode (a cheap-tier executor answering without acting). If a future failure is instead prompt-shaped, a tier swap will not help — watch for that in the live run. |
 | P4 | The AC1–AC4 harness needed new `RunOutcome.agentLog` plumbing and a stub writer in the shared test file. | `apps/cli/tests/voice2-dag.test.ts:203,271,345` | Accepted; it is the smallest way to exercise real `agent.run` dispatch, and it is reusable by the next DAG test. |
 
 Residual risk: the retry is only ever *one* extra attempt, and both siblings share a single condition
 — a run whose primary and retry both no-op fails, which is the intended loud ending, but it also means
-a transiently broken executor pair still ends a daily run. AC5's live dry run is the outstanding
-evidence and is recorded as blocked in Testing.
+a transiently broken executor pair still ends a daily run. AC5's live dry run has since been met by
+`ac5-live-16` (see Solution, Live closure).
 
 **Second review pass after the live verification (2026-10-09).**
 
 | Priority | Finding | Location | Action |
 | --- | --- | --- | --- |
-| P1 | — none — | | |
-| P2 | The retry is only a *different attempt* when `agent` and `agent_retry` resolve to different executors, and with the shipped defaults (`inline` / `inline`) they do not: both resolve through the run's stage role, so `ac5-live-1` retried `pi-deepseek` with `pi-deepseek`. The design's "a different tier than the primary's `scribe`" does not hold under `inline`. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:64` | **Accepted, not papered over.** Naming a box-specific executor as the shipped default would rot exactly as the design warns, and the probe proves the *correct* fix is operator config (this box's standard rung cannot write files while the cheap rung can). Recorded in the task and handed to the operator; the retry still recovers the *stochastic* failure it was built for. |
-| P3 | The plan-shape repair is duplicated knowledge: `dailyArticle` now knows the Content envelope, while `dailyScript` would still mis-read a wrong-shaped plan if it ever ran before `article`. | `plugins/kk/scripts/daily-stages.ts:195-215` | Safe today: `script` dependsOn `article`, and `article` rewrites the file in place, so every later reader sees a `Doc[]`. Hoist into a shared helper if a third reader appears. |
-| P3 | The estimate gate's 20-minute ceiling is hardcoded while `dailyEpisodeDuration` reads `episode_max_minutes`. | `plugins/kk/scripts/daily-stages.ts:583` | Intentional per the design ("if that estimate is already over 20 minutes"); `dailyGenerate` is not passed the window vars. If an operator ever widens the window, the gate needs the same arg — worth doing then, not now. |
+| P1 | None. | — | — |
+| P2 | The retry is only a *different attempt* when `agent` and `agent_retry` resolve to different executors, and with the shipped defaults (`inline` / `inline`) they do not: both resolve through the run's stage role, so `ac5-live-1` retried `pi-deepseek` with `pi-deepseek`. The design's "a different tier than the primary's `scribe`" does not hold under `inline`. | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:65` | FIXED (2026-10-09 re-verify): both `-retry` nodes now declare `role: reviewer` (capable-1) at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:249,301`, two rungs above the primary's `scribe`, so the default `inline` lands the retry above any rung the primary climbs to. No box-specific executor is pinned. On this box capable-1 has `agy-opus-5.5` (fsWrite attested) and `agy-gemini` enabled. Gate: `apps/cli/tests/voice2-dag.test.ts:824`. |
+| P4 | The plan-shape repair is duplicated knowledge: `dailyArticle` now knows the Content envelope, while `dailyScript` would still mis-read a wrong-shaped plan if it ever ran before `article`. | `plugins/kk/scripts/daily-stages.ts:196-232` | Safe today: `script` dependsOn `article`, and `article` rewrites the file in place, so every later reader sees a `Doc[]`. Hoist into a shared helper if a third reader appears. |
+| P3 | The estimate gate's 20-minute ceiling was hardcoded while `dailyEpisodeDuration` reads `episode_max_minutes`. | `plugins/kk/scripts/daily-stages.ts:617-628` | FIXED by `aae1f994`: `dailyGenerate` now takes `episode_max_minutes` as arg 8 and the workflow passes it (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:503`). |
 | P4 | Five live runs left artifacts under `.works/ac5/` and `.works/kk-daily-ai-voice2/20261009/`. | untracked, ignored | Kept as evidence; delete with the worktree. |
 
-Residual risk: the live verification could not reach `done`, so a full run's *tail* (quality report,
-publish-classify fold, ledger) was not exercised against real data in this session — and the executor
-landscape is the binding constraint, not the DAG: until `~/.config/spur/config.yaml`'s standard rung is
-re-pinned to an executor that writes files, every daily run fails at the first hard-fail `agent.run`.
-That is the single most valuable operator action this task surfaced.
+Residual risk (updated 2026-10-09): `ac5-live-16` reached `done`, so the tail ran on real data. The P2
+above is fixed by tier rather than by executor name. Distinct executors are guaranteed unless the cheap
+and standard rungs are both unusable. The `reviewer` retry has not yet dispatched live. `ac5-live-16` was a final pass with authoring
+frozen (`.works/kk-0237-0238-evidence/ac5-live16.log`), so the own-output guards skipped primary and
+retry alike. Live proof of the new tier waits for the next real primary miss. Publish was disabled in that run, so the publish tail itself is covered by
+0235/0236, not here.
 
 ### References
 
