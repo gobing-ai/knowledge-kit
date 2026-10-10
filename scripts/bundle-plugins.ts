@@ -42,51 +42,102 @@ export const EXCLUDE = /(^|\/)(\.DS_Store|\.spur|\.venv|tests|evals|node_modules
 const KIND_COLLECTIONS = ['ingestions', 'generations', 'publishings'] as const;
 
 /**
- * Bundle one staged plugin entry into `<plugin>/dist/index.js` and point the
- * staged manifest at it (0110 I1). Raw shipped entries import `@gobing-ai/*`
- * workspace packages that the published tarball strips (publish-manifest), so
- * an installed plugin entry cannot resolve them outside the repository. The
- * bundle inlines that closure at build time; assets and the directory layout
- * are untouched, and source manifests keep pointing at `./src/index.ts`.
+ * Declared paths Bun can bundle; anything else (shell, python) ships as a copied asset.
+ * Every TypeScript/JavaScript module extension the runtime can load is listed -- `.mts`/`.cts`
+ * included -- and the match is case-insensitive, so a `./src/check.mts` or `./src/check.MJS`
+ * declaration is bundled instead of silently shipping a raw source that dies on
+ * `Cannot find module` for `@gobing-ai/*` outside the checkout (0249 R1, review P3-2).
  */
-async function bundleStagedEntry(pluginDir: string, sourceDir: string): Promise<void> {
-    const manifestPath = join(pluginDir, 'plugin.json');
-    if (!existsSync(manifestPath)) {
-        return;
+export const BUNDLEABLE = /\.(mts|cts|tsx|ts|mjs|cjs|jsx|js)$/i;
+
+/**
+ * Bundle one declared manifest path — entry or check — from the source plugin into
+ * `<plugin>/dist`, and return the path the staged manifest must declare. Raw
+ * shipped sources import `@gobing-ai/*` workspace packages that the published
+ * tarball strips (publish-manifest), so an installed plugin cannot resolve them
+ * outside the repository; the bundle inlines that closure at build time (0110 I1
+ * entry, 0249 R1 check). Non-JS declared paths are copied assets and are never fed
+ * to Bun.build. A missing source or a failed build fails staging with plugin and
+ * path context — shipping a probe that cannot run is the defect 0249 closes.
+ */
+async function bundleDeclared(
+    pluginDir: string,
+    sourceDir: string,
+    pluginName: string,
+    kind: 'entry' | 'check',
+    declared: string,
+): Promise<string> {
+    // A declared probe gets its own artifact, distinct from the entry's index.js.
+    const output =
+        kind === 'check'
+            ? { naming: 'profile-check.js', staged: './dist/profile-check.js' }
+            : { staged: './dist/index.js' };
+    // Resolve from the source plugin so Bun.build can follow workspace packages.
+    // The staged copy has no node_modules (0111) — bundling the staged src would
+    // fail with "Bundle failed" / missing @gobing-ai/*.
+    const source = join(sourceDir, declared.replace(/^\.\//, ''));
+    if (!existsSync(source)) {
+        throw new Error(`bundling ${pluginName} failed: source ${kind} missing: ${source}`);
     }
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as { entry?: string; name?: string };
-    if (manifest.entry === undefined) {
-        throw new Error(`staged manifest has no entry: ${manifestPath}`);
+    if (!BUNDLEABLE.test(declared)) {
+        // Source existence is not enough: the staged copy is what ships, and a declared path
+        // under an EXCLUDE-pruned directory (tests/, evals/, .venv/, ...) is never copied --
+        // the manifest would point at a dangling probe that only fails at install time
+        // (`probe entry missing`), the exact defect class 0249 closes (review P3-1).
+        const staged = join(pluginDir, declared.replace(/^\.\//, ''));
+        if (!existsSync(staged)) {
+            throw new Error(
+                `bundling ${pluginName} failed: ${kind} ${declared} was not staged at ${staged} -- the declared path did not survive the copied tree`,
+            );
+        }
+        return declared;
     }
-    // Resolve the entry from the source plugin so Bun.build can follow workspace
-    // packages. The staged copy has no node_modules (0111) — bundling the staged
-    // src would fail with "Bundle failed" / missing @gobing-ai/*.
-    const entrySrc = join(sourceDir, manifest.entry.replace(/^\.\//, ''));
-    if (!existsSync(entrySrc)) {
-        throw new Error(`source entry missing: ${entrySrc}`);
-    }
-    // Bun ≥1.3 throws AggregateError on build failure instead of resolving with
+    // Bun >=1.3 throws AggregateError on build failure instead of resolving with
     // success:false (verified empirically in 0111) — catch and format uniformly.
     try {
         await Bun.build({
-            entrypoints: [entrySrc],
+            entrypoints: [source],
             outdir: join(pluginDir, 'dist'),
             target: 'bun',
             // Optional peer of `@gobing-ai/ts-browser-automation` (0177 XHS launcher) and the
             // publish-harness barrel. Bun would otherwise try to inline playwright-core
             // (chromium-bidi / electron) and fail.
             external: ['playwright'],
+            ...(output.naming === undefined ? {} : { naming: output.naming }),
         });
     } catch (error) {
         throw new Error(
-            `bundling ${manifest.name ?? pluginDir} failed: ${error instanceof Error ? error.message : String(error)}`,
+            `bundling ${pluginName} failed: ${kind} ${declared}: ${error instanceof Error ? error.message : String(error)}`,
         );
     }
-    manifest.entry = './dist/index.js';
+    return output.staged;
+}
+
+/** Bundle a staged plugin's declared entry and check; rewrite only the staged manifest. */
+async function bundleStagedEntry(pluginDir: string, sourceDir: string): Promise<void> {
+    const manifestPath = join(pluginDir, 'plugin.json');
+    if (!existsSync(manifestPath)) {
+        return;
+    }
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+        entry?: string;
+        check?: string;
+        name?: string;
+    };
+    if (manifest.entry === undefined) {
+        throw new Error(`staged manifest has no entry: ${manifestPath}`);
+    }
+    const pluginName = manifest.name ?? pluginDir;
+    manifest.entry = await bundleDeclared(pluginDir, sourceDir, pluginName, 'entry', manifest.entry);
+    // A plugin that declares no check keeps its manifest contract untouched.
+    if (manifest.check !== undefined) {
+        manifest.check = await bundleDeclared(pluginDir, sourceDir, pluginName, 'check', manifest.check);
+    }
+    // Only the staged copy is rewritten; source manifests keep their source paths.
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 4)}\n`);
 }
 
-/** Bundle every staged product plugin entry (0110 I1). */
+/** Bundle every staged product plugin entry and declared check (0110 I1, 0249 R1). */
 export async function bundleStagedEntries(pluginTarget: string, pluginSource: string = PLUGIN_SOURCE): Promise<number> {
     let count = 0;
     for (const collection of KIND_COLLECTIONS) {
