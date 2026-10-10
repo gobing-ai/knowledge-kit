@@ -70,7 +70,11 @@ vars:
   qc_min_impact: "1"
   qc_min_episode_items: "8"
   episode_min_minutes: "15"
-  episode_max_minutes: "20"
+  # 2026-10-09 operator decision: ingest bodies are spoken in full and today's pools render 22-46
+  # minutes at the current item counts, so the 20-minute ceiling refused real episodes before any
+  # TTS request. The pair drives BOTH the pre-spend estimate in `daily-generate` and the measured
+  # gate in `daily-episode-duration`.
+  episode_max_minutes: "25"
   # Run id, injected by spur at launch (0674 R5/R8) — the selections / ledger / mark-published
   # identity. A shell command may only reference declared vars.
   __runId: ""
@@ -495,7 +499,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1"
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1" "${vars.episode_max_minutes}"
 
   - id: intro
     description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"

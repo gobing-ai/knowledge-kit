@@ -256,7 +256,7 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► select ──�
     audit trail that proves which code ran.
   - **Use `vdriver=voicebox` for internal testing** (operator rule, 2026-10-09) so a verification run
     never spends the Gemini TTS daily quota (Tier 1, 100 requests/day). The local driver renders at
-    roughly 10× real time — a 15–20 minute episode is hours — so run it detached and let the section
+    roughly 10× real time — a full episode is hours — so run it detached and let the section
     cache absorb the cost. Switching drivers is safe: the driver id is part of the section cache key,
     so no mixed-voice episode is possible.
   - Resuming is cheap **only** while the VoiceScript text is stable: every authoring agent is guarded

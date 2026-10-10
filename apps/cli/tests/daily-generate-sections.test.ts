@@ -164,6 +164,15 @@ function setupSixItemFixture(workDir: string, runDate: string, planItemCount = 6
     );
 }
 
+/** Rewrite the fixture VoiceScript so its spoken text totals ~`target` characters. */
+function writeScriptTotal(yamlPath: string, target: number): void {
+    const vs = Bun.YAML.parse(readFileSync(yamlPath, 'utf-8')) as { segments: Array<{ text: string }> };
+    const others = vs.segments.slice(1).reduce((acc, s) => acc + [...s.text].length, 0);
+    const head = vs.segments[0];
+    if (head) head.text = '补'.repeat(Math.max(1, target - others));
+    writeFileSync(yamlPath, Bun.YAML.stringify(vs));
+}
+
 function runStage(
     args: string[],
     binDir: string,
@@ -354,15 +363,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupSixItemFixture(dir, date, 6);
             const yamlPath = join(dir, '24-script', `${date}_08_script_voicescript.yaml`);
-            const writeTotal = (target: number) => {
-                const vs = Bun.YAML.parse(readFileSync(yamlPath, 'utf-8')) as {
-                    segments: Array<{ text: string }>;
-                };
-                const others = vs.segments.slice(1).reduce((acc, s) => acc + [...s.text].length, 0);
-                const head = vs.segments[0];
-                if (head) head.text = '补'.repeat(Math.max(1, target - others));
-                writeFileSync(yamlPath, Bun.YAML.stringify(vs));
-            };
+            const writeTotal = (target: number) => writeScriptTotal(yamlPath, target);
 
             // 6300 chars at gemini's measured 5.4 字/秒 = 8 + 1167 s = 19.6 min — inside the window.
             writeTotal(6300);
@@ -377,6 +378,30 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             const over = runStage(['daily-generate', dir, date, '', '', 'gemini', '1'], binDir, logFile);
             expect(over.status).not.toBe(0);
             expect(over.stderr + over.stdout).toMatch(/exceeds 20 min/);
+            expect(existsSync(logFile)).toBe(false);
+        });
+    });
+
+    it('AC5c — a widened `episode_max_minutes` raises the pre-spend ceiling', () => {
+        // The workflow passes its `episode_max_minutes` to the stage, so the estimate and the measured
+        // `daily-episode-duration` gate share one ceiling (operator decision 2026-10-09: 25 min, because
+        // the ingested bodies are spoken in full and real pools rendered 22-46 minutes).
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const yamlPath = join(dir, '24-script', `${date}_08_script_voicescript.yaml`);
+
+            // 7100 chars = 22.1 min: refused at the 20-minute default (AC5b), admitted at 25.
+            writeScriptTotal(yamlPath, 7100);
+            const widened = runStage(['daily-generate', dir, date, '', '', 'gemini', '1', '25'], binDir, logFile);
+            expect(widened.status, widened.stderr).toBe(0);
+            expect(existsSync(logFile)).toBe(true);
+
+            // 8300 chars = 25.7 min is still refused, and the message names the ceiling it exceeded.
+            writeScriptTotal(yamlPath, 8300);
+            rmSync(logFile, { force: true });
+            const over = runStage(['daily-generate', dir, date, '', '', 'gemini', '1', '25'], binDir, logFile);
+            expect(over.status).not.toBe(0);
+            expect(over.stderr + over.stdout).toMatch(/exceeds 25 min/);
             expect(existsSync(logFile)).toBe(false);
         });
     });

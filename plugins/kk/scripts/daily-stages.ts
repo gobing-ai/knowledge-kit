@@ -406,9 +406,19 @@ export function dailyEpisodeDuration(args: string[]): void {
     console.log(`episode-duration ok: ${shown} min within ${minMinutes}–${maxMinutes} min`);
 }
 
+/** Ceiling for the pre-spend estimate when the caller passes no `episode_max_minutes`. */
+const DEFAULT_EPISODE_MAX_MINUTES = 20;
+
 export function dailyGenerate(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', transcodeMp3 = '', vdriver = '', sectionConcurrency = ''] =
-        args;
+    const [
+        workDir = '',
+        runDate = '',
+        pluginsPath = '',
+        transcodeMp3 = '',
+        vdriver = '',
+        sectionConcurrency = '',
+        episodeMaxMinutes = '',
+    ] = args;
     // 20260917 review: the workflow picks a voice driver by short name; both drivers' envs are
     // passed unconditionally so switching `vdriver` needs no shell changes. Unknown -> fail loud.
     const VOICE_DRIVERS: Record<string, string> = {
@@ -599,7 +609,8 @@ export function dailyGenerate(args: string[]): void {
             text: closeText,
         });
 
-        // Character-rate estimate: section characters / driver rate + 8 s sting > 20 min (1200 s).
+        // Character-rate estimate: section characters / driver rate + 8 s sting > the workflow's
+        // ceiling (`episode_max_minutes`, arg 8; default 20 for a bare five/six-argument call).
         // The rates are MEASURED from shipped renders, not the style contract's prose. gemini-tts:
         // 20261004 5466 chars / 1026 s = 5.33, 20261007 5970 / 1096 = 5.45, and the 0237 live dry run
         // 4645 / 789.9 s of section speech = 5.88 — a 5.3–5.9 range, so 5.4 deliberately errs low (a
@@ -610,13 +621,14 @@ export function dailyGenerate(args: string[]): void {
         // renders in 17 min. Recalibrate from a fresh pair of `metadata.duration` readings when a
         // driver changes model or speed.
         const charRate = voiceGenerator === 'gemini-tts' ? 5.4 : 5.6;
+        const maxMinutes = Number.parseFloat(episodeMaxMinutes) || DEFAULT_EPISODE_MAX_MINUTES;
         const totalChars = sectionDefs.reduce((acc, s) => acc + s.characters, 0);
         const estimatedSeconds = 8 + totalChars / charRate;
-        if (estimatedSeconds > 20 * 60) {
+        if (estimatedSeconds > maxMinutes * 60) {
             const longest3 = [...sectionDefs].sort((a, b) => b.characters - a.characters).slice(0, 3);
             failWith(
                 1,
-                `generate: character-rate estimate ${Math.round(estimatedSeconds / 60)} min exceeds 20 min limit (longest sections: ${longest3.map((s) => s.name).join(', ')})`,
+                `generate: character-rate estimate ${Math.round(estimatedSeconds / 60)} min exceeds ${maxMinutes} min limit (longest sections: ${longest3.map((s) => s.name).join(', ')})`,
             );
         }
 

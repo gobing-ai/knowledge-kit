@@ -21,7 +21,7 @@ A section whose text still exceeds one driver request may be split into internal
 
 `dailyGenerate` (`plugins/kk/scripts/daily-stages.ts`) owns grouping, per-section requests, the section cache, and the speech join. No new workflow node. `kk-daily-ai-voice2.yaml` passes a sixth argument, `section_concurrency`. Absent or empty, the five-argument command stays today's one-shot job, which is what `kk-daily-ai-voice.yaml` calls. That file is not edited.
 
-`dailyIntro` still prepends `.works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3` (the `intro_music` var) after speech exists. The sting is not a section and is not sent to a voice driver. `dailyEpisodeDuration` still reads `30-audio/<date>_11_generate_content.json` `metadata.duration` and refuses an episode outside 15–20 minutes. Publish-prep still reads `metadata.mp3Path ?? audioPath`.
+`dailyIntro` still prepends `.works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3` (the `intro_music` var) after speech exists. The sting is not a section and is not sent to a voice driver. `dailyEpisodeDuration` still reads `30-audio/<date>_11_generate_content.json` `metadata.duration` and refuses an episode outside the workflow's window (`episode_min_minutes`–`episode_max_minutes`). Publish-prep still reads `metadata.mp3Path ?? audioPath`.
 
 ## 3. Cache and resume
 
@@ -39,9 +39,15 @@ Section wavs join in index order. The boundary uses the section's own trailing `
 
 ## 5. Over-long episodes
 
-Before any new request, estimate seconds as section characters divided by the driver's rate in `plugins/kk/scripts/daily-voice-style.zh.md` (gemini ≈ 3.3 字/秒, Voicebox robin-news ≈ 6.3 字/秒), plus the 8-second sting. If that estimate is already over 20 minutes, the stage exits nonzero and names the longest sections. It does not rewrite the script.
+Before any new request, estimate seconds as section characters divided by the driver's rate, plus the
+8-second sting. The rates are **measured** from shipped renders, not the style sidecar's prose: 5.4 字/秒
+for `gemini-tts` and 5.6 for the local driver (20261004 gemini 5466 chars / 1026 s = 5.33, 20261007
+5970 / 1096 = 5.45, 20261006 voice-gen 6376 / 1135 = 5.62, plus a section render at 4645 / 789.9 = 5.88 —
+the sidecar's 3.3 figure refused a script that really renders in 17 minutes). If the estimate exceeds
+`episode_max_minutes` the stage exits nonzero and names the longest sections. It does not rewrite the
+script.
 
-When an operator shortens a section's spoken text, the next run synthesizes only the sections whose hash changed. Unchanged section files stay. A measured duration still outside 15–20 minutes fails at `dailyEpisodeDuration`, as today. Caps stay: insight 380, intro/outro 150, lead 80, and the 15–20 minute window.
+When an operator shortens a section's spoken text, the next run synthesizes only the sections whose hash changed. Unchanged section files stay. A measured duration still outside the window fails at `dailyEpisodeDuration`, as today. Caps stay: insight 380, intro/outro 150, lead 80, and the `episode_min_minutes`–`episode_max_minutes` window.
 
 ## 6. Concurrency
 
