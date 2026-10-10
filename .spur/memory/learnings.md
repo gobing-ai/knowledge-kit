@@ -2059,3 +2059,11 @@ repaired (`docs/design/xhs-image-cards.md:61`), the rest zero-delta.
 ---
 
 Skipped: no `bun run lint`/test run — the only edit is markdown prose in a design spec (Biome ignores `.md`), and the project's rule gate passed. Risk: the 12 `docs/design/*` specs not indexed in `docs/04_DESIGN.md` §6 remain unindexed (pre-existing, out of this batch's scope).
+## 2026-10-10 — batch runall-g11-6038dc (0250, 0251)
+
+- 0250: voice2 stage contracts are now locked by spawned-stage regression tests (daily-plan deferPlanDocs, qc-content title dedup, script budget fitting to block YAML, show-notes script-plan exclusions); the suites to extend are plugins/kk/tests/kk-workflow-stages.test.ts (real-plugin fakeKk) and apps/cli/tests/kk-workflow-stages.test.ts (scriptable stubs) — never import daily-stages.ts into the test process.
+- 0251: `kk()` inherits stdio and returns only an exit status; a stage that must branch on child stderr needs the `kkCaptured` sibling (stdio pipe + reprint), added in kk-workflow-stages.ts — do not change `kk()`'s inherit default.
+- 0251: the verify answer linter rejects `static-ref`-only evidence on behavioral ACs (0251 AC3 was downgraded to PARTIAL); when the verifier ran git/grep commands, the row's evidence type must be `command` with the pasted output.
+- 0250: `no-dead-run-scoped-citation` fires in a fresh worktree for done tasks citing `.spur/memory/runs/<id>.md` — verdict-only evidence staging does not carry run logs; stage the cited run file before the gate or the pre-check fails on isolation, not code.
+- 0250/0251: the inline driver scratch path is flat `.spur/run/<run-id>-*`; a `<run-id>/` subdirectory does not exist and silently fails heredoc writes.
+

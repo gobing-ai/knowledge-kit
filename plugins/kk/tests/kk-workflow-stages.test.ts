@@ -254,6 +254,57 @@ describe('daily-qc-content stage — exclusions audit + idempotent rerun (task 0
     });
 });
 
+describe('daily-qc-content stage — cached-candidates title dedup (task 0250 R2/AC2)', () => {
+    const candidatesPath = (dir: string) => join(dir, '21-plan', `${STAMP}_04_quality-control-content_candidates.json`);
+
+    // The same near-duplicate pair apps/cli's dedup probe measures at 0.417 (threshold 0.4).
+    // Both titles are technical, so the topic boundary stays a no-op and only the cache-path
+    // dedup rewrite (daily-stages.ts:191-200) is under test.
+    const geminiFirst = 'Google 发布 Gemini 3.8 Live 实时语音模型，Simon Willison 推出浏览器零依赖实现';
+    const geminiSecond = 'Google 发布 Gemini 3.8 Live 与 3.8 Live Extended Thinking 实时语音模型';
+
+    /** Pre-write the candidates file so the stage takes its cached path and only the dedup runs. */
+    function setupCached(docs: Record<string, unknown>[]): string {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-0250-qc-'));
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(candidatesPath(dir), JSON.stringify({ metadata: { docs } }));
+        return dir;
+    }
+
+    const stage = (dir: string, env: Record<string, string>) =>
+        runStage(['daily-qc-content', dir, STAMP, ...qcStageArgs], env);
+
+    it('drops a near-duplicate title from the cached candidates, rewrites the file, and names the id on stderr', () => {
+        const dir = setupCached([qcDoc('keep-1', geminiFirst), qcDoc('dup-1', geminiSecond)]);
+        try {
+            const result = stage(dir, fakeKk(dir));
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('candidates cached');
+            const candidates = readJson<{ metadata: { docs: { id: string }[] } }>(candidatesPath(dir));
+            expect(candidates.metadata.docs.map((doc) => doc.id)).toEqual(['keep-1']);
+            expect(result.stderr).toContain('qc: dropped');
+            expect(result.stderr).toContain('dup-1');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves the candidates bytes unchanged across two runs when no title is a near-duplicate', () => {
+        const dir = setupCached([qcDoc('a', '浏览器端零依赖语音实现'), qcDoc('b', '本地向量数据库基准测试方法')]);
+        try {
+            expect(stage(dir, fakeKk(dir)).status).toBe(0);
+            const afterFirst = readFileSync(candidatesPath(dir), 'utf-8');
+            const second = stage(dir, fakeKk(dir));
+            expect(second.status).toBe(0);
+            // daily-stages.ts:192 — dropped.length === 0 returns without a write.
+            expect(second.stderr).not.toContain('qc: dropped');
+            expect(readFileSync(candidatesPath(dir), 'utf-8')).toBe(afterFirst);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
 describe('offline generation → publish-payload E2E (task 0189 F4b)', () => {
     it('daily-qc-content → daily-article renders the publish payload from kept docs only', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-0189-e2e-'));

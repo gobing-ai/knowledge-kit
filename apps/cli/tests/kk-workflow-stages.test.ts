@@ -1526,8 +1526,108 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(result.status).toBe(7);
             expect(result.stderr).toContain('xhs render: card 01 failed');
             expect(result.stderr).toContain('re-run daily-xhs-render to resume');
+            // 0251 AC2: no overflow sentence in the fake's stderr, so there is no retry — one call.
+            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(1);
             expect(() => readFileSync(join(dir, '25-xhs', 'cards.json'))).toThrow();
             expect(() => readFileSync(join(dir, '25-xhs', 'content.json'))).toThrow();
+        });
+    });
+
+    /**
+     * 0251: a fake image-gen `kk` that fails each `--in` path's FIRST call with `failStderr`
+     * (which fakeXhsKk cannot do — it exits before it can print) and answers every later call
+     * with fakeXhsKk's success path, so the overflow retry is observable end to end. Every call's
+     * `--in` envelope is snapshotted to `<record>.<n>.json` — the retry rewrites the one in.json
+     * in place, so the first envelope is gone by the time the stage returns.
+     */
+    function fakeXhsKkFailFirst(
+        dir: string,
+        record: string,
+        failStderr: string,
+        exitCode: number,
+    ): Record<string, string> {
+        return fakeKk(
+            dir,
+            [
+                "const fs = require('node:fs');",
+                'const argv = process.argv.slice(2);',
+                `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify(argv) + '\\n');`,
+                'const at = (name) => argv[argv.indexOf(name) + 1];',
+                `const prior = fs.readFileSync(${JSON.stringify(record)}, 'utf8').trim().split('\\n').filter((line) => line.includes(at('--in')));`,
+                `fs.copyFileSync(at('--in'), ${JSON.stringify(record)} + '.' + prior.length + '.json');`,
+                `if (prior.length === 1) { process.stderr.write(${JSON.stringify(failStderr)} + '\\n'); process.exit(${exitCode}); }`,
+                'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
+                'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
+                'fs.writeFileSync(artifact, "png");',
+                'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "flat illustration " + spec.vars.subject }] } }));',
+            ].join('\n'),
+        );
+    }
+
+    it('daily-xhs-render shortens overflowing points and retries the card once (0251 AC1)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKkFailFirst(
+                dir,
+                record,
+                'image-gen failed: compose: text overflows the safe area for field(s): points[1], points[2] (safe area: 72px inset)',
+                1,
+            );
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            const card = {
+                ...xhsCard('cover', '今日头条', 'lead fact'),
+                points: [
+                    '保持原样',
+                    '第一句很长很长的内容用来填充安全区。第二句更长更长更长的内容会被整体丢掉。',
+                    '短。这一句会被丢掉因为太长太长太长太长太长太长太长太长。',
+                ],
+            };
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({ title: '今日 AI 速览', body: '正文 #AI', cards: [card] }),
+            );
+
+            const result = run(['daily-xhs-render', dir, '20260101', '', '1', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+
+            // Two calls: the overflow and the single retry with the shortened points.
+            const calls = readFileSync(record, 'utf-8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as string[]);
+            expect(calls).toHaveLength(2);
+            const readPoints = (snapshot: string): string[] => {
+                const docs = JSON.parse(readFileSync(snapshot, 'utf-8')) as {
+                    metadata: { imageGen: { vars: { points: string } } };
+                }[];
+                return docs[0]?.metadata.imageGen.vars.points.split('\n') ?? [];
+            };
+            const firstPoints = readPoints(`${record}.1.json`);
+            const secondPoints = readPoints(`${record}.2.json`);
+            // The unnamed point is verbatim; each named point lost its last sentence.
+            expect(secondPoints[0]).toBe(firstPoints[0]);
+            expect(secondPoints[1]).toBe('第一句很长很长的内容用来填充安全区。');
+            expect(secondPoints[2]).toBe('短。');
+            expect(secondPoints[1]?.length).toBeLessThan(firstPoints[1]?.length ?? 0);
+            expect(secondPoints[2]?.length).toBeLessThan(firstPoints[2]?.length ?? 0);
+            // The retry packaged the series.
+            expect(existsSync(join(xhs, 'content.json'))).toBe(true);
+        });
+    });
+
+    it('daily-xhs-render does not retry a card whose failure is not a points overflow (0251 AC2)', () => {
+        withTempDir((dir) => {
+            writeXhsPlan(dir);
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKkFailFirst(dir, record, 'image-gen failed: provider timeout', 3);
+            const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(3);
+            expect(result.stderr).toContain('xhs render: card 01 failed');
+            expect(result.stderr).toContain('re-run daily-xhs-render');
+            // One provider call: a non-overflow failure stops the series, earlier cards kept.
+            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(1);
+            expect(() => readFileSync(join(dir, '25-xhs', 'cards.json'))).toThrow();
         });
     });
 
@@ -2120,6 +2220,131 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
     });
 });
 
+describe('task 0250 — daily-plan deferPlanDocs contract (voice2 dogfood R1/AC1)', () => {
+    const stamp = '20261010';
+
+    /** A `kk` stub: `executor run episode-plan-gen` writes a Content envelope with one doc. */
+    function fakePlanKk(dir: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                'const args = process.argv.slice(2);',
+                "const out = args[args.indexOf('--out') + 1];",
+                "fs.writeFileSync(out, JSON.stringify({ metadata: { docs: [{ id: 'p1', title: '浏览器端零依赖语音实现' }] } }));",
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    it('a 5th arg of true writes only the content file; a rerun logs plan cached; four args write plan.json', () => {
+        withTempDir((dir) => {
+            // voice2's extract node artifact — dailyPlan prefers 10-collect/pool.json (0212).
+            mkdirSync(join(dir, '10-collect'), { recursive: true });
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            writeFileSync(join(dir, '10-collect', 'pool.json'), '[]');
+            const planContent = join(dir, `21-plan/${stamp}_03_plan_content.json`);
+            const planJson = join(dir, `21-plan/${stamp}_03_plan_plan.json`);
+            const env = fakePlanKk(dir);
+
+            // voice2 passes plan_translate_enabled as the 5th arg: plan-translate owns plan.json.
+            const deferred = run(['daily-plan', dir, stamp, '', '8', 'true'], env);
+            expect(deferred.status).toBe(0);
+            expect(existsSync(planContent)).toBe(true);
+            expect(existsSync(planJson)).toBe(false);
+
+            const rerun = run(['daily-plan', dir, stamp, '', '8', 'true'], env);
+            expect(rerun.status).toBe(0);
+            expect(rerun.stdout).toContain('plan cached:');
+            expect(existsSync(planJson)).toBe(false);
+
+            // voice1's four-argument call still materializes plan.json from the content docs.
+            const fourArg = run(['daily-plan', dir, stamp, '', '8'], env);
+            expect(fourArg.status).toBe(0);
+            const plan = JSON.parse(readFileSync(planJson, 'utf-8')) as unknown;
+            expect(Array.isArray(plan)).toBe(true);
+            expect((plan as unknown[]).length).toBeGreaterThan(0);
+        });
+    });
+});
+
+describe('task 0250 — daily-show-notes script-plan exclusions (voice2 dogfood R4/AC4)', () => {
+    const stamp = '20261010';
+
+    /** A `kk` stub that records its argv and writes the `--out` artifact. */
+    function fakeArgvKk(dir: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                'const args = process.argv.slice(2);',
+                'fs.writeFileSync(process.env.SHOW_NOTES_ARGV, JSON.stringify(args));',
+                "fs.writeFileSync(args[args.indexOf('--out') + 1], '# show notes');",
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}`, SHOW_NOTES_ARGV: join(dir, 'argv.json') };
+    }
+
+    function argvIn(dir: string): string {
+        const args = JSON.parse(readFileSync(join(dir, 'argv.json'), 'utf-8')) as string[];
+        return args[args.indexOf('--in') + 1] ?? '';
+    }
+
+    /** A plan of two docs and an article body with no 未写入 note; the caller adds the script plan. */
+    function setup(dir: string): { plan: string; shownotes: string } {
+        for (const sub of ['21-plan', '22-article', '31-publish']) mkdirSync(join(dir, sub), { recursive: true });
+        const plan = join(dir, `21-plan/${stamp}_03_plan_plan.json`);
+        writeFileSync(
+            plan,
+            JSON.stringify([
+                { id: 'keep-1', title: '浏览器端零依赖语音实现' },
+                { id: 'drop-1', title: '本地向量数据库基准测试方法' },
+            ]),
+        );
+        writeFileSync(
+            join(dir, `22-article/${stamp}_06_article_content.json`),
+            JSON.stringify({ title: 'T', body: '两条技术新闻。' }),
+        );
+        return { plan, shownotes: plan.replace(/\.json$/, '-shownotes.json') };
+    }
+
+    it('an id in the script plan excluded list leaves the plan podcast-pub sees, via the -shownotes sibling', () => {
+        withTempDir((dir) => {
+            const { shownotes } = setup(dir);
+            mkdirSync(join(dir, '24-script'), { recursive: true });
+            writeFileSync(
+                join(dir, `24-script/${stamp}_08_script-write_plan.json`),
+                JSON.stringify({ items: [{ id: 'keep-1' }], excluded: [{ id: 'drop-1', reason: 'topic boundary' }] }),
+            );
+            expect(run(['daily-show-notes', dir, stamp, '', 'T'], fakeArgvKk(dir)).status).toBe(0);
+            const filtered = JSON.parse(readFileSync(shownotes, 'utf-8')) as { id: string }[];
+            expect(filtered.map((doc) => doc.id)).toEqual(['keep-1']);
+            expect(argvIn(dir)).toBe(shownotes);
+        });
+    });
+
+    it('a missing script-plan file keeps both docs on the original plan path', () => {
+        withTempDir((dir) => {
+            const { plan, shownotes } = setup(dir);
+            expect(run(['daily-show-notes', dir, stamp, '', 'T'], fakeArgvKk(dir)).status).toBe(0);
+            expect(argvIn(dir)).toBe(plan);
+            expect(existsSync(shownotes)).toBe(false);
+            const docs = JSON.parse(readFileSync(plan, 'utf-8')) as { id: string }[];
+            expect(docs.map((doc) => doc.id)).toEqual(['keep-1', 'drop-1']);
+        });
+    });
+});
+
 describe('F614 (0163) — daily-cover stage', () => {
     function fakeImageGen(dir: string): Record<string, string> {
         const bin = join(dir, 'bin');
@@ -2510,6 +2735,101 @@ describe('0139 R3 — voicescript content gate wiring', () => {
             }[];
             expect(docs[0]?.body).toContain('Hello and welcome to the episode.');
             expect(docs[0]?.body).toContain('Second segment.');
+        });
+    });
+});
+
+describe('task 0250 — daily-script episode-budget fitting (voice2 dogfood R3/AC3)', () => {
+    const stamp = '20261010';
+    // The fitter's contract (daily-stages.ts fitVoicescriptToBudget): budget =
+    // floor((maxMinutes*60 - 8 - 120) * 5.6) spoken chars for the voicebox driver.
+    const maxMinutes = '25';
+    const budget = Math.floor((25 * 60 - 8 - 120) * 5.6); // 7683
+    const validateSidecar = join(import.meta.dir, '../../../plugins/kk/scripts/validate-voicescript.ts');
+
+    /** Writes a `kk` stub that copies a prepared voicescript body into the stage's `--out`. */
+    function fakeKkEchoingBody(dir: string, bodyPath: string): Record<string, string> {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const path = join(bin, 'kk');
+        writeFileSync(
+            path,
+            [
+                '#!/usr/bin/env bun',
+                "const fs = require('node:fs');",
+                'const args = process.argv.slice(2);',
+                "const out = args[args.indexOf('--out') + 1];",
+                `fs.writeFileSync(out, JSON.stringify({ title: 'T', body: fs.readFileSync(${JSON.stringify(bodyPath)}, 'utf8') }));`,
+                '',
+            ].join('\n'),
+        );
+        chmodSync(path, 0o755);
+        return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+    }
+
+    const spokenChars = (yaml: string): number =>
+        (Bun.YAML.parse(yaml) as { segments: { text?: unknown }[] }).segments.reduce(
+            (sum, seg) => sum + [...String(seg.text ?? '')].length,
+            0,
+        );
+
+    function setup(dir: string, body: string): { yamlOut: string; env: Record<string, string> } {
+        for (const sub of ['21-plan', '24-script']) mkdirSync(join(dir, sub), { recursive: true });
+        writeFileSync(join(dir, `21-plan/${stamp}_03_plan_plan.json`), JSON.stringify([{ id: 'a', body: 'b' }]));
+        const bodyPath = join(dir, 'body.yaml');
+        writeFileSync(bodyPath, body);
+        return {
+            yamlOut: join(dir, `24-script/${stamp}_08_script_voicescript.yaml`),
+            env: fakeKkEchoingBody(dir, bodyPath),
+        };
+    }
+
+    const runScript = (dir: string, env: Record<string, string>) =>
+        run(['daily-script', dir, stamp, '', 'zh', 'T', 'Robin', maxMinutes, 'voicebox'], env);
+
+    it('an over-budget script is rewritten as block YAML at or under the budget and passes the checker', () => {
+        withTempDir((dir) => {
+            // 420 sentences x 20 chars = 8400 spoken chars > the 7683 budget; every sentence ends
+            // at 。 so the fitter can cut the single fact segment to size in one pass.
+            const sentence = '这是一句关于本地模型推理优化的技术播报。';
+            const body = [
+                'title: "T"',
+                'language: zh',
+                'segments:',
+                '  - text: "开场白。"',
+                `  - text: ${JSON.stringify(sentence.repeat(420))}`,
+                '  - text: "结束语。"',
+                '',
+            ].join('\n');
+            const { yamlOut, env } = setup(dir, body);
+            const result = runScript(dir, env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('script: fitted voicescript');
+            const yaml = readFileSync(yamlOut, 'utf-8');
+            // Run 08a98453 failed here: Bun.YAML.stringify emitted a `{...}` flow document and the
+            // checker JSON-parses any trimmed file that starts with `{`. Block YAML must not.
+            expect(yaml.trimStart().startsWith('{')).toBe(false);
+            const check = spawnSync('bun', [validateSidecar, '--in', yamlOut], { encoding: 'utf-8' });
+            expect(check.status).toBe(0);
+            expect(spokenChars(yaml)).toBeLessThanOrEqual(budget);
+        });
+    });
+
+    it('an under-budget script keeps its exact yaml bytes', () => {
+        withTempDir((dir) => {
+            const body = [
+                'language: zh',
+                'segments:',
+                '  - text: "开场白。"',
+                '  - text: "一条简短的欠预算技术播报。"',
+                '  - text: "结束语。"',
+                '',
+            ].join('\n');
+            const { yamlOut, env } = setup(dir, body);
+            const result = runScript(dir, env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).not.toContain('script: fitted voicescript');
+            expect(readFileSync(yamlOut, 'utf-8')).toBe(body);
         });
     });
 });
