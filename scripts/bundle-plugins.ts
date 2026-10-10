@@ -33,9 +33,10 @@ const MARKETPLACE_TARGET = join(REPO_ROOT, 'apps/cli/.claude-plugin');
  *  - `evals/` (monorepo-only);
  *  - `node_modules/` (workspace symlinks into the checkout — 0110 I1 / 0111);
  *  - `.git/` (must not leak VCS metadata into the tarball);
+ *  - `.venv/` (a plugin's local Python env — machine-specific, never distribution content);
  *  - OS junk (`.DS_Store`).
  */
-export const EXCLUDE = /(^|\/)(\.DS_Store|\.spur|tests|evals|node_modules|\.git)($|\/)|\.test\.ts$/;
+export const EXCLUDE = /(^|\/)(\.DS_Store|\.spur|\.venv|tests|evals|node_modules|\.git)($|\/)|\.test\.ts$/;
 
 /** Kind collections that hold product plugin directories (ADR-009). */
 const KIND_COLLECTIONS = ['ingestions', 'generations', 'publishings'] as const;

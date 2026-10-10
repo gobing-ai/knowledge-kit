@@ -31,6 +31,8 @@ describe('bundle-plugins EXCLUDE (0111)', () => {
         expect(EXCLUDE.test('/ingestions/karakeep-local/node_modules/@gobing-ai/kk-core')).toBe(true);
         expect(EXCLUDE.test('/generations/core-facts-gen/node_modules')).toBe(true);
         expect(EXCLUDE.test('/publishings/emdash-pub/node_modules/')).toBe(true);
+        // A plugin's local Python env (omni-voice-gen) is machine-specific, never distribution content.
+        expect(EXCLUDE.test('/generations/omni-voice-gen/.venv/bin/python')).toBe(true);
     });
 
     it('still stages plugin source, manifests, and dist entries', () => {
