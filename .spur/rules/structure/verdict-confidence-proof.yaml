@@ -1,0 +1,41 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# 1156: a durable verdict must carry the proof of the confidence level it asserts.
+#
+# The verify stage's level (HIGH/MEDIUM/LOW) is re-checkable only while the run is live — the
+# verify-answer lint refuses an unearned HIGH and the completion guards apply the operator's LOW
+# acknowledgement. The durable plane (`.spur/memory/evidence/<wbs>-verdict.json`, a byte copy of the
+# run artifact taken at record time) kept the LEVEL without the row that certified it: measured
+# 2026-10-10, 0 of 50 durable artifacts carried a `confidence` check row, so a later reader or gate
+# could re-check nothing. The harness now owns the row where it is derived (task-verdict) and injects
+# an earned `pass` row into the copy it retains, and this rule keeps that property.
+#
+# Scope — artifacts that exist, levels that can be earned. 176 of 226 done/testing tasks here predate
+# the evidence plane and are out of scope (evidence recoverability is the feature check's invariant);
+# a LOW or absent level is out of scope on purpose, because retention may not restate what the
+# completion guards refuse (an injected `warn` row aggregates to PARTIAL and could contradict a stored
+# PASS). The pre-rule backlog in the checker (`--no-backlog` disables it for the negative control) is
+# debt that may only shrink, and it retires by re-recording the task, never by editing evidence.
+#
+# Evidence and repair. The checker prints `MISS <wbs> <reason> (<artifact>)` and exits 1; its
+# falsification cases live in `verdict-confidence-proof.test.sh`. Repair by recording the task again
+# (the harness then writes the row), or by adding the task to the backlog only when it predates the
+# fix.
+rules:
+  - id: durable-verdict-carries-confidence-proof
+    description: >
+      A task at `done`/`testing` whose durable verdict declares confidence HIGH or MEDIUM must carry
+      a `confidence` check row (status pass|warn, evidence naming the level), and a `proof` block,
+      when present, must carry a `sha256:` digest and a runId — a level without its proof cannot be
+      re-checked after the run ends (1156). Repair detail:
+      `sh .spur/rules/structure/verdict-confidence-proof.sh`; falsification cases:
+      `sh .spur/rules/structure/verdict-confidence-proof.test.sh`.
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/verdict-confidence-proof.sh"
+        message: "exit {code}: a done/testing task's durable verdict asserts a confidence level without the row that certified it, or carries a half-bound proof block — re-record the task so the harness writes the row, or add it to the pre-rule backlog if it predates the fix; run `sh .spur/rules/structure/verdict-confidence-proof.sh --no-backlog` for the full pre-rule set"
+    include:
+      - "docs/tasks*/**/*.md"
