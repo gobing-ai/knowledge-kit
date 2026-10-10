@@ -164,11 +164,14 @@ else
 fi
 
 # --- task-0247 negative control: pre-repair corpus fires, repaired corpus passes ---------------
+# Pinned to the parent of the repair commit (31f62375): reading HEAD stopped being "pre-repair" the
+# moment the repair landed. A shallow clone without that commit SKIPs below.
+pre_rev=31f62375^
 pre=""
 for f in $(git ls-files 'docs/tasks/0235_*.md' 'docs/tasks/0236_*.md' 2>/dev/null); do
     # keep the 4-digit WBS prefix the checker derives from the basename
     out="$tmp/$(basename "$f")"
-    git show "HEAD:$f" >"$out" 2>/dev/null || continue
+    git show "$pre_rev:$f" >"$out" 2>/dev/null || continue
     pre="$pre $out"
 done
 if [ -n "$pre" ]; then
