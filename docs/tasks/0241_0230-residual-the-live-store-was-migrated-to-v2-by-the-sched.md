@@ -4,14 +4,14 @@ name: "0230 residual: the live store was migrated to v2 by the scheduled collect
 status: done
 template: issue
 created_at: 2026-10-09T17:29:59.582Z
-updated_at: "2026-10-09T21:53:32.797Z"
+updated_at: "2026-10-10T00:29:34.197Z"
 feature_id: G32
 
 priority: P1
 ac_altitude: task-local
 ac_numbering: task-local
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/run/0241-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0241-verdict.json
 ---
 
 ## 0241. 0230 residual: the live store was migrated to v2 by the scheduled collector (0003 at 04:00:06) while R1's evidence claims it untouched - restate the evidence and settle the live tree

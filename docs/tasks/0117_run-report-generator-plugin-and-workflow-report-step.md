@@ -4,7 +4,7 @@ name: Run report generator plugin and workflow report step
 status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.605Z
-updated_at: "2026-09-16T19:16:42.127Z"
+updated_at: "2026-10-10T00:29:31.573Z"
 feature_id: O
 tags:
   - workflow
@@ -12,7 +12,7 @@ tags:
   - report
 
 done_forced: "true"
-done_reason: verifyall PASS verdict .spur/run/0117-verdict.json
+done_reason: verifyall PASS verdict tracked Testing section (scratch verdict not retained)
 ---
 
 ## 0117. Run report generator plugin and workflow report step

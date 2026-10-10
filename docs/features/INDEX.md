@@ -65,7 +65,7 @@
 [backlog] **G**: kk workflows ([G_kk-workflows.md](./G_kk-workflows.md))
     ├── [backlog] **G1**: kk-daily-ai-voice ([G1_kk-daily-ai-voice.md](./G1_kk-daily-ai-voice.md))
         ├── [backlog] **G11**: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over ([G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md](./G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md))
-        ├── [backlog] **G12**: XHS notes for 每日AI乱炖: 上传图文 and single-episode 发播客 ([G12_xhs-notes-for-ai-and-single-episode.md](./G12_xhs-notes-for-ai-and-single-episode.md))
+        ├── [done] **G12**: XHS notes for 每日AI乱炖: 上传图文 and single-episode 发播客 ([G12_xhs-notes-for-ai-and-single-episode.md](./G12_xhs-notes-for-ai-and-single-episode.md))
         └── [backlog] **G13**: Segmented episode speech for daily voice2 ([G13_segmented-episode-speech-for-daily-voice2.md](./G13_segmented-episode-speech-for-daily-voice2.md))
     ├── [done] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
     ├── [backlog] **G3**: kk-collect ([G3_kk-collect.md](./G3_kk-collect.md))

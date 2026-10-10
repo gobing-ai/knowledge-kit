@@ -509,7 +509,7 @@ nodes:
 
   # ---- independent soft channels: xhs, wechat, locales (exit 0 on soft failure; fail-fast DAG) ----
   - id: xhs-write
-    description: "Plan the XHS card series from the lead plan item via agent.run; onError: continue — a failed plan skips the XHS target, never the run"
+    description: "Plan the XHS card series across the episode's plan items via agent.run; onError: continue — a failed plan skips the XHS target, never the run"
     dependsOn: [script, review]
     condition:
       kind: shell
@@ -526,32 +526,36 @@ nodes:
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of news docs; don't edit it.
-          Take item 1 only (its "title" and "metadata.brief") — the lead story.
-          Write an XHS note: "title" (≤20 chars) and "body" (Chinese note ≤1000 chars, ending with 3-5 hashtags). 选题边界：公共事务主线不写入，只写技术内容。
-          Write exactly ${vars.xhs_cards} cards: card 1 role "cover", the rest "content", except a final "closing". Each card carries "role", "copy" (Chinese on-card headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (the lead-story fact that card uses).
-          Ground every "copy", "points" and "sourcePoint" in that story — no invented facts. No writing, letters, numbers, logos or people; screens stay blank.
+          Plan the whole episode, not the lead item alone. Card 1 is the episode hook.
+          Write an XHS note: "title" (≤20 chars) and "body" (Chinese lead paragraph + 3-5 hashtags) — the stage appends one numbered line per image below it. 选题边界：公共事务主线不写入，只写技术内容。
+          Write exactly ${vars.xhs_cards} cards in plan order: card 1 "cover"; one "content" card per plan item, up to ${vars.xhs_cards} - 2 of them; the last "closing". Each card carries "role", "copy" (Chinese headline ≤12 chars), "points" (2-4 short Chinese bullets), "layout", "subject" (one concrete English visual scene), "sourcePoint" (that item's fact) and "itemId" (its "id").
+          Ground every field in that item — no invented facts. No writing, letters, numbers, logos or people; screens stay blank.
           Output strictly valid JSON {"title": "...", "body": "...", "cards": [...]} to ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json.
         expectFile: ${vars.work_dir}/25-xhs/${vars.run_date}_18_xhs_plan.json
         allowAppend: false
 
   - id: xhs-render
-    description: "Render the card series through the pinned xhs-card/xhs-knowledge presets; onError: continue — the publish node names the missing series and stays soft"
+    description: "Render the card series through the pinned xhs-card/xhs-knowledge presets, attach the episode cover last and pair every image with its numbered line (0235 note_scope=episode); onError: continue — the publish node names the missing series and stays soft"
     dependsOn: [xhs-write]
     action:
       kind: shell
       onError: continue
       options:
         command: >-
-          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}"
+          kk stage daily-xhs-render "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_cards}" "${vars.xhs_style}" "${vars.xhs_provider}" "${vars.xhs_model}" "${vars.xhs_fallback}" "episode"
 
   - id: xhs-publish
-    description: "Publish the packaged card series to XHS — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status, and xhs-pub's own headless preflight + publish cap make a sessionless run fail soft (exit 0)"
-    dependsOn: [xhs-render]
+    description: "Publish the packaged card series to XHS, plus the episode's 发播客 note as a follow-up in the same console visit (0236, one cap entry) — draft, or live only when xhs_live=true (ADR-022); independent and non-blocking: its outcome never enters publish_status, and xhs-pub's own headless preflight + publish cap make a sessionless run fail soft (exit 0)"
+    # publish-prep is a data dependency, not a sibling: daily-publish-xhs reads its
+    # _13_publish-prep_content.json as the 发播客 note, so without this edge the two nodes race and the
+    # note is dropped silently (the stage logs and still exits 0). A skipped publish-prep — a
+    # non-publishing run — still admits this node, so the edge cannot deadlock the DAG.
+    dependsOn: [xhs-render, publish-prep]
     action:
       kind: shell
       options:
         command: >-
-          kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}"
+          kk stage daily-publish-xhs "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.xhs_live}" "true"
 
   - id: wechat-publish
     description: "Publish the daily article to the WeChat MP draft box via wechatmp-pub — draft, or live only when wechat_live=true; independent and non-blocking (a sessionless profile refuses fast, exit 0)"

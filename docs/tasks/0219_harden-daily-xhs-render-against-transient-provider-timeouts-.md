@@ -4,11 +4,11 @@ name: Harden daily XHS render against transient provider timeouts (vendor fallba
 status: done
 template: feature-impl
 created_at: 2026-10-07T22:09:47.119Z
-updated_at: "2026-10-08T21:41:18.077Z"
+updated_at: "2026-10-10T00:29:33.617Z"
 feature_id: F61
 
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/run/0219-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0219-verdict.json
 ---
 
 ## 0219. Harden daily XHS render against transient provider timeouts (vendor fallback opt-in)

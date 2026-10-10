@@ -4,11 +4,11 @@ name: Re-order or re-classify daily publish-completeness so its snapshot reflect
 status: done
 template: feature-impl
 created_at: 2026-10-07T22:09:50.052Z
-updated_at: "2026-10-08T21:50:37.054Z"
+updated_at: "2026-10-10T00:29:33.887Z"
 feature_id: F61
 
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/run/0220-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0220-verdict.json
 ---
 
 ## 0220. Re-order or re-classify daily publish-completeness so its snapshot reflects finished channels

@@ -1752,3 +1752,204 @@ Verification (2026-10-05, sp-doc-evolve wrapup): HIGH
 - **Do not `env | grep` on this host to probe configuration.** It printed live API keys into the session
   transcript; they are now compromised and need rotation. Read a specific variable (`echo "$PI_SESSION_ID"`)
   instead.
+**Confidence verification added.** Rubric from `sp-code-verification/SKILL.md:346` (HIGH = fresh executable evidence + anchors re-read this run; MEDIUM = partial reliance on prior evidence / delegated outcomes / unstable tree; LOW = key evidence not re-executed). Both tasks recorded `Confidence: HIGH`.
+
+| Task | Re-check verdict | Fresh evidence | Anchors |
+|---|---|---|---|
+| 0236 | **HIGH confirmed** | `xhs-pub.test.ts` 112/0, stage `-t '0236'` 2/0, `voice2-dag` 30/0, voice1 YAML exit 0 | every cited `path:line` resolves exactly (`index.ts:321,:332`, `flow.ts:428-430`, `daily-stages.ts:905`, all cited test lines); no code/`.yaml` newer than the PASS receipt `sha256:2a9eb968…` |
+| 0235 | **MEDIUM** (was HIGH) | `-t '0235'` 4/0 incl. the byte-identity golden; `voice2-dag` 30/0; voice1 exit 0 | every cited line in `daily-stages.ts` is off by **~+41** (1415→1456, 1421→1465, 1431→1472, 1444→1485, 1579→1621, 1585→1629) — 0236 inserted lines above after 0235 verified; the run-2 YAML hash `9113cc74…` no longer matches `6c8973ec…` |
+
+The feature is green in both cases; what drops 0235 is the *record's* evidence chain — 0236 edited the same two files after 0235's verify, and two load-bearing claims (golden authenticity against pre-0235 source, and the negative control) were not re-executed, which is the literal MEDIUM trigger. Restoring HIGH is two commands, not a rebuild: re-run the golden against pre-0235 source in a throwaway worktree, re-run the negative control (`"episode"` removed → exactly 1 fail), restore the YAML hash-verified; the stale citations are a record fix.
+
+Artifact: `.spur/run/7890e622-20b2-4f48-a606-8f8584348b3c-wrapup-learnings.md` (188 lines, confidence section appended)
+
+Skipped: I did not re-run 0235's golden-authenticity worktree or the negative control (the latter mutates the YAML mid-tree), and the ADR-025 attended clauses for both tasks remain unexecuted by design. Risk: 0235's record stays MEDIUM until those two commands run.
+
+# Working learnings — batch 0235, 0236 (G12: XHS 图文 + 发播客 notes for 每日AI乱炖)
+
+Dates: 2026-10-09 (refine/decision), 2026-10-10 (implementation, review, remediation).
+
+## 2026-10-10 — 0235 (上传图文 note: each image paired with its text)
+
+### Conventions and patterns that worked
+
+- **Opt-in behind one trailing argument; the legacy caller stays byte-identical.** `note_scope` is
+  the 9th arg of `kk stage daily-xhs-render`, a single accepted value (`episode`); anything else
+  runs today's code path. `kk-daily-ai-voice.yaml` (voice1, 8 args) and
+  `daily-publish-xhs` (voice2, 4 args) were never edited. Diff shape was additive-only for the
+  legacy path: 79 insertions / 2 deletions in `daily-stages.ts`, the two deletions being exactly
+  the guarded `body` and log replacements.
+- **Ordering is structural, never prompt-declared.** Each card pushes its image and its numbered
+  body line in the same loop body, so attach order and text order cannot drift; the episode cover
+  is appended in one step after that loop. A prompt that "should" order them would drift silently
+  on the next rewrite.
+- **Build a deterministic body when the property must be verifiable.** The pairing contract
+  (line *i* ↔ image *i*) is only checkable if the body is composed from the fields the plan already
+  carries — `copy` + first `points` entry, cover = `每日AI乱炖 <date> 本期封面`. An LLM paragraph is
+  not a checkable mapping. The agent's own `body` is kept only as the lead paragraph.
+- **Split the trailing hashtag run out, then reassemble** (`lead → numbered lines → hashtags`),
+  because the platform wants hashtags last and the agent writes them inline.
+- **Cap enforcement trims the cheapest thing first, never a required element.** Only the lead
+  paragraph is sliced to fit `XHS_NOTE_BODY_MAX` 1000; a body that overflows even without a lead
+  fails loud instead of shipping a note the editor would truncate.
+- **A missing optional artifact is a success that names the path** (`xhs render: no episode cover
+  at <path> — the note carries the <N> cards only`, exit 0). Optional inputs must not fail the run.
+- **Bound the set at plan time and re-assert at publish time.** `xhs_cards` is refused above
+  `XHS_MAX_CARDS` 10 before any spend, so the episode set is ≤ 11 ≤ `XHS_IMAGE_MAX` 18.
+
+### Errors and gotchas fixed or found
+
+- **A substring assertion silently tolerated a new argument.** `voice2-dag.test.ts` asserted the
+  render call with `toContain('… "${vars.xhs_fallback}"')`; adding the 9th arg `"episode"` left it
+  green. Fix: assert the exact argument tail `…"${vars.xhs_fallback}" "episode"` and rename the test
+  off "8-arg". A DAG/YAML test that matches a prefix is not a wiring lock.
+- **A golden test is worthless unless proven authentic.** The byte-identity golden was re-run
+  against pre-change source in a throwaway worktree at detached HEAD (where grep for `note_scope`,
+  `XHS_NOTE_SCOPE_EPISODE`, `episodeNoteBody` returns 0 hits) → 1 pass. Capture the golden from the
+  real pre-change output, never from the post-change run.
+- **`git diff --exit-code` is not byte-identity while the change is uncommitted.** HEAD still
+  carried the 8-arg call, so exit 1 was the *fixed* state and exit 0 would have meant the fix was
+  reverted. Prove restoration with `sha256` + `cmp` + diff-of-diffs.
+- **`bun test <single file>` exits 1 even when green** — bunfig's aggregate `coverageThreshold`
+  (lines/functions 0.9) is unreachable from one file (37.5% / 46.6%). Use pass/fail counts as the
+  signal; confirm by temporarily zeroing the threshold and restoring it byte-identically.
+- **Negative controls are mandatory for a wiring fix.** Removing `"episode"` from the YAML → 27 pass
+  / 1 fail at exactly the assertion; restoring → 28 pass / 0 fail, hash-identical.
+- **Prompt budgets must be measured, not eyeballed.** The ADR-115 ≤1000-char tier applies to the
+  YAML-parsed prompt input (989/990 chars, one char off between two measurements — both inside the
+  tier). Voice2's prompt headroom is currently unasserted; the cap test covers voice1 only.
+
+### Residual (recorded, not fixed)
+
+- The `tail > cap` fail-loud branch is unexercised (static read only).
+- Per-item card coverage is prompt-enforced, not stage-asserted.
+- The agent-emitted `itemId` is discarded, so `cards.json` records no card→plan-item mapping.
+- The AC1 live-console clause (草稿箱 → 图文笔记 in `~/.config/kk/browser-profiles/xhs`) is
+  operator-deferred: it needs a headed, attended run under ADR-025 and cannot be produced headlessly.
+  A deferral is not a PASS and must be recorded as such wherever the claim would otherwise appear.
+
+## 2026-10-10 — 0236 (发播客 note: episode mp3 + cover in one visit)
+
+### Conventions and patterns that worked
+
+- **A cap on visits is an architectural constraint, not an obstacle to route around.** ADR-025
+  allows one headed publish per 2 h, so "run 发播客 beside 图文" was impossible by construction.
+  The operator chose option (A): one visit composes several notes under one
+  `allow('publish')` + one `record('publish')`, and the ADR-025 amendment (dated, §6.1 rule 3)
+  records that the cap counts visits, not notes. Rejected alternatives are recorded in the entry.
+- **Per-operation `Result` entries make a partial visit reportable.** The visit's `Result` *is*
+  the primary operation's; follow-ups land in `metadata.followUps[]` with their own `ok/error`, so a
+  failed or refused follow-up never fails the visit and never hides the note the visit was opened for.
+- **Each operation needs its own baseline.** A follow-up re-enters the creator landing (`goto` +
+  login gate + a fresh pre-entry draft baseline) so its draft signal is measured against its own
+  counter, not the primary's.
+- **Plan before the browser opens.** `planVisit` resolves and validates the primary *and* every
+  follow-up (`ContentSchema` → `resolveXhsOperation` → `validateModeInput`) before the cap is
+  touched; a malformed `metadata.followUps` is a caller error that fails loud, never a silent skip.
+- **Derive the second note from an artifact that already exists.** The 发播客 Content is the run's
+  own `31-publish/<date>_13_publish-prep_content.json` spread unchanged plus `operation`/`audio`/
+  `publishStatus` — no new artifact, and the voice2-only `podcast` arg keeps voice1 byte-identical.
+
+### Errors and gotchas
+
+- **The P1: a DAG edge was missing and the failure was silent.** `xhs-publish` read
+  `publish-prep`'s output without depending on it; the nodes raced, the stage logged
+  `no publish-prep Content … skipped` and **exited 0**, so half the feature vanished with a green
+  run. Fix: `dependsOn: [xhs-render, publish-prep]` plus a WHY comment.
+- **Generalized rule from that bug: a node's input that is another node's output is a *data*
+  dependency and must be an edge.** And any guard that logs-and-continues on missing input must not
+  exit as if it had done its work — a skipped half needs a distinct signal.
+- **Skipped-vs-done reasoning matters for the edge's safety:** a skipped `publish-prep` (a
+  non-publishing run) still admits `xhs-publish` under the engine's done+skipped rule, so the added
+  edge cannot deadlock the DAG. Verified against `dag.ts`, not assumed.
+- **Unmeasured UI paths are refused, not invented.** No save selector was guessed for the 发播客
+  modal after both files attach: `leavePodcastModal` keeps the 去发布 refusal and names the gap
+  (`… its post-attach save path has never been measured (task 0236 R3 …)`), the entry is
+  `ok: false`, and it is non-blocking. Owed evidence: one attended walk saving
+  `.spur/run/discovery/xhs-podcast-postfile.json` plus a screenshot.
+- **Contract spellings can legitimately differ across a boundary.** The repo says
+  `metadata.audioFile`; the 发播客 mode key is `audio`. The stage aliases deliberately
+  (`metadata.audio = metadata.audioFile`) instead of renaming a shared contract — worth a P4 to
+  accept both keys.
+
+### Residual (recorded, not fixed)
+
+- Failed/refused follow-up Results carry no `metadata.operation` (identity is positional only).
+- The stage's presence-based guard has no run-ownership stamp: a stale same-day
+  `25-xhs/content.json` from an earlier aborted run could be re-published as a draft by a run with
+  `xhs_enabled=false` (narrow — needs a prior aborted run; draft-only).
+- The stage cache keys on the primary's status, so a half-done visit can look complete.
+
+## Cross-cutting
+
+- **XHS live evidence lives only in the browser profile** (`~/.config/kk/browser-profiles/xhs`),
+  never in the phone app — and draft-only by default; `xhs_live` stays a launch-time switch.
+- **Operator-attended steps cannot be produced headlessly.** Record the deferral in the task, the
+  verdict artifact and the run log, implement the fallback branch, and never let a deferred clause
+  read as a PASS.
+- **Single-file test runs lie in this repo** (bunfig aggregate coverage threshold). Trust counts,
+  not exit codes; a negative control is what proves an assertion bites.
+- **Opt-in trailing args are the cheapest compatibility device** for extending a shipped stage:
+  one argument, one accepted value, legacy path untouched, golden byte-identity as the proof.
+- **Docs are T3 surface for research/wayfinder and design satellites too.** The wrapup doc-sync for
+  this batch repaired four docs: `04_DESIGN` (already synced by the tasks — stage row + the new
+  xhs-pub visit paragraph, version bump), `03_ARCHITECTURE` (visit-counts-not-notes invariant),
+  `docs/design/kk-collect-and-daily-voice2.md` (the DAG diagram was missing the
+  `publish-prep ─► xhs-publish` edge and both new stage args — the design doc was one hop behind the
+  exact P1 the review caught), and `docs/design/xhs-ui-discovery.md` (the 发播客 post-attach save
+  path is still unmeasured; the row said only "mode entry only"). `00_ADR.md` needed no edit: the
+  ADR-025 amendment already carried the 2026-10-09 decision, and 0235 introduced no decision.
+
+## 2026-10-10 — Confidence-level verification (wrapup, re-executed)
+
+Rubric (`sp-code-verification` SKILL.md:346): **HIGH** = fresh executable evidence + anchors
+re-read this run · **MEDIUM** = partial reliance on prior evidence, external/delegated outcomes,
+or an unstable tree · **LOW** = key evidence not re-executed. Both tasks record `Confidence: HIGH`.
+
+### 0236 — HIGH confirmed (fresh, all anchors resolve)
+
+- Fresh this run: `bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts` → **112 pass / 0 fail**
+  (449 expect()); `bun test apps/cli/tests/kk-workflow-stages.test.ts -t '0236'` → **2 pass / 0 fail**;
+  `bun test apps/cli/tests/voice2-dag.test.ts` → **30 pass / 0 fail** (351 expect());
+  `git diff --exit-code plugins/kk/workflows/kk-daily-ai-voice.yaml` → exit 0.
+- Anchors re-read and resolve exactly as cited: one `allow('publish')` / one `record('publish')`
+  (`xhs-pub/src/index.ts:321,:332`), the "never been measured" refusal (`flow.ts:428-430`),
+  `xhsPodcastNote` (`daily-stages.ts:905`), and every cited test assertion
+  (`xhs-pub.test.ts:2211/2237/2239/2259/2261/2263/2264`, `voice2-dag.test.ts:496` + `:499-509`,
+  `kk-workflow-stages.test.ts:1671`).
+- Tree stable: no `.ts`/`.yaml` under `apps|packages|plugins` is newer than the 0236 receipt
+  (`.spur/run/0236-check-receipt.json`, PASS, `sha256:2a9eb968…`, 18:49 PDT), so the receipt still
+  describes this tree.
+- The attended clause is excluded from the verdict, not smuggled into it — HIGH covers what was
+  executed, and the deferral is recorded as a deferral.
+
+### 0235 — MEDIUM for this re-check (feature still true; the record's evidence chain is stale)
+
+- Fresh executable evidence reproduces the behavior: `bun test apps/cli/tests/kk-workflow-stages.test.ts -t '0235'`
+  → **4 pass / 0 fail** (episode scope + 1:1 image/text pairing, missing cover, lead-trim at 1000,
+  pre-0235 byte-identity golden), `voice2-dag` **30 pass / 0 fail**, voice1 YAML exit 0.
+- **Every cited `path:line` in `plugins/kk/scripts/daily-stages.ts` is offset by ~+41 lines**:
+  `XHS_NOTE_SCOPE_EPISODE` 1415→1456, `markerFor` 1421→1465, `splitNoteBody` 1431→1472,
+  `episodeNoteBody` 1444→1485, image+line push 1579→1621, cover append 1585→1629. Cause: 0236
+  inserted ~41 lines above in the same file *after* 0235's verify. Content matches; the citations do
+  not resolve, so "re-read the anchors" could only be satisfied by content search, not by the line.
+- The run-2 restore hash `9113cc74…` for `kk-daily-ai-voice2.yaml` no longer matches the file
+  (`6c8973ec…`) — 0236's P1 fix (`dependsOn: [xhs-render, publish-prep]`) legitimately superseded
+  it, but the byte-restore evidence now describes a file state that no longer exists.
+- Two load-bearing items were **not re-executed this run** and were taken on prior-run evidence:
+  the golden's authenticity (proven only by re-running the test against pre-0235 source in a /tmp
+  worktree) and the negative control (removing `"episode"` → 1 fail). Prior evidence is precisely
+  the MEDIUM trigger; LOW does not apply because the behavior itself did re-execute green.
+
+### Gotchas added by this verification
+
+- **A later task that edits the same file silently invalidates every earlier `path:line` citation
+  in that file.** Batch reviews certify code that ships in several tasks; the citation half-life is
+  one task. Verify anchors by identifier, not by line, when re-checking an earlier task's record.
+- **`HIGH` is a statement about the evidence, not about the feature.** 0235's feature is green and
+  its HIGH was honest when written; after 0236's edit above it, a re-check can only reach MEDIUM.
+  Say so explicitly instead of inheriting the recorded value.
+- **Restoring 0235 to HIGH** takes two commands, not a rebuild: re-run the golden test against
+  pre-0235 source in a throwaway worktree, and re-run the negative control (`"episode"` removed →
+  expect exactly 1 fail in `voice2-dag.test.ts`), then restore the YAML hash-verified. The stale
+  citations are a record fix (re-point them or cite identifiers), not a re-verification.

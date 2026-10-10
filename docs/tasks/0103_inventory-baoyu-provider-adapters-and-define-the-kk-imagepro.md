@@ -4,12 +4,12 @@ name: Inventory baoyu provider adapters and define the kk ImageProvider interfac
 status: done
 template: feature-impl
 created_at: 2026-09-09T18:28:03.499Z
-updated_at: "2026-09-09T22:57:12.728Z"
+updated_at: "2026-10-10T00:29:31.007Z"
 feature_id: K
 
 ac_altitude: task-local
 done_forced: "true"
-done_reason: "Verify verifier verdict PASS (all 6 R + 10 AC MET, .spur/run/0103-verdict.json + 0103-verify-answer.txt). Derivation downgraded to PARTIAL solely on the executable-evidence default: AC1/AC8/AC10 are reviewer-adjudication ACs by their own Given/When/Then and AC2 is a lint+grep gate - manual is their honest evidence type. Batch run: runall-k-f5193541 (inline driver)."
+done_reason: "Verify verifier verdict PASS (all 6 R + 10 AC MET, tracked Testing section (scratch verdict not retained) + 0103-verify-answer.txt). Derivation downgraded to PARTIAL solely on the executable-evidence default: AC1/AC8/AC10 are reviewer-adjudication ACs by their own Given/When/Then and AC2 is a lint+grep gate - manual is their honest evidence type. Batch run: runall-k-f5193541 (inline driver)."
 ---
 
 ## 0103. Inventory baoyu provider adapters and define the kk ImageProvider interface

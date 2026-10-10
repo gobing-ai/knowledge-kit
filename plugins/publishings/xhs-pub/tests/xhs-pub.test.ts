@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { type Content, ResultSchema } from '@gobing-ai/kk-core';
+import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
 import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
 import { type BrowserLauncher, BrowserProfileMissingError, LoginTimeoutError } from '@gobing-ai/ts-browser-automation';
@@ -2132,6 +2132,184 @@ describe('xhs-pub operations (ADR-029 mode dispatch)', () => {
         });
         expect(result.ok).toBe(true);
         expect(result.metadata?.publishStatus).toBe('public');
+    });
+});
+
+/**
+ * 0236 (ADR-025 amendment 2026-10-09, option A): one headed visit composes the 上传图文 note and the
+ * episode's 发播客 note under ONE `allow`/`record('publish')`. The 发播客 Content rides the primary
+ * Content's `metadata.followUps`, and each operation gets its own Result entry.
+ */
+describe('xhs-pub visit follow-ups (0236 R0/R1/R2 — one visit, two notes)', () => {
+    /** 0236: the episode's artifacts as the publish-prep Content carries them (final mp3 + cover). */
+    const episodeMp3 = join(tmpRoot, '30-audio/20260101_11_episode.mp3');
+    const episodeCover = join(tmpRoot, '23-cover/20260101_07_cover_cover.png');
+
+    async function seedEpisode(): Promise<void> {
+        await mkdir(join(tmpRoot, '30-audio'), { recursive: true });
+        await mkdir(join(tmpRoot, '23-cover'), { recursive: true });
+        await Promise.all([writeFile(episodeMp3, 'mp3'), writeFile(episodeCover, 'png')]);
+    }
+
+    /**
+     * The 发播客 Content `dailyPublishXhs` builds: the publish-prep Content plus `metadata.operation`,
+     * the channel's `metadata.audio` (the same final mp3 the prep spells `audioFile`) and
+     * `publishStatus`.
+     */
+    function podcastNote(over: Record<string, unknown> = {}): Content {
+        return {
+            title: '每日AI乱炖',
+            body: '本期三件事',
+            format: 'text',
+            metadata: {
+                audioFile: episodeMp3,
+                coverImage: episodeCover,
+                audio: episodeMp3,
+                operation: '发播客',
+                publishStatus: 'draft',
+                ...over,
+            },
+        };
+    }
+
+    const visitedPage = (calls: Array<Array<{ op: string; args: unknown[] }>>) => calls[0] ?? [];
+    const clicked = (log: Array<{ op: string; args: unknown[] }>): string[] =>
+        log.filter((entry) => entry.op === 'click').map((entry) => String(entry.args[0]));
+    const uploads = (log: Array<{ op: string; args: unknown[] }>): unknown[] =>
+        log.filter((entry) => entry.op === 'setInputFiles').map((entry) => entry.args[1]);
+
+    function visitTransport(open: OpenPage, over: ConstructorParameters<typeof XhsBrowserTransport>[1] = {}) {
+        return makeTransport('script', {
+            openPage: open,
+            stepTimeoutMs: 500,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+            ...over,
+        });
+    }
+
+    test('0236 R0/R1/R2: one visit composes the 图文 note and its 发播客 follow-up in the same session', async () => {
+        await seedImages();
+        await seedEpisode();
+        const { open, closed, calls } = makeOpenPage({ ...happy });
+        const t = visitTransport(open);
+
+        const result = await t.publish({ content: cardContent({ followUps: [podcastNote()] }) });
+
+        // The primary 上传图文 draft is the visit's own Result, exactly as before 0236.
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.operation).toBe('上传图文');
+        // R0: ONE visit — one browser, opened once, with one Result entry per operation.
+        expect(closed).toHaveLength(1);
+        expect(calls).toHaveLength(1);
+        const followUps = result.metadata?.followUps as Result[];
+        expect(followUps).toHaveLength(1);
+        expect(followUps[0]?.ok).toBe(true);
+        expect(followUps[0]?.metadata?.operation).toBe('发播客');
+        expect(followUps[0]?.metadata?.publishStatus).toBe('draft');
+        // R1/R2: that episode's mp3 and that episode's cover, after the 图文 batch, as one episode.
+        expect(uploads(visitedPage(calls))).toEqual([[img(0), img(1)], [episodeMp3], [episodeCover]]);
+        expect(followUps[0]?.metadata?.artifactPaths).toEqual([episodeMp3, episodeCover]);
+        // R4: a draft run never clicks the publish-adjacent 去发布, and the RSS path stays excluded.
+        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('去发布'))).toBe(false);
+        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('添加RSS订阅'))).toBe(false);
+    });
+
+    test('0236 R0: the visit spends ONE publish record, whatever the number of notes', async () => {
+        await seedImages();
+        await seedEpisode();
+        const guard = createAutomationGuard({ statePath: AUTOMATION_STATE });
+        const recorded: string[] = [];
+        const counting: AutomationGuard = {
+            allow: (event) => guard.allow(event),
+            record: (event) => {
+                recorded.push(event);
+                guard.record(event);
+            },
+        };
+        const { open } = makeOpenPage({ ...happy });
+        const result = await visitTransport(open, { automation: counting }).publish({
+            content: cardContent({ followUps: [podcastNote()] }),
+        });
+        expect(result.ok).toBe(true);
+        expect((result.metadata?.followUps as Result[])?.[0]?.ok).toBe(true);
+        // Two notes, one cap entry: the guard is consumed once and the state file holds one stamp.
+        expect(recorded).toEqual(['publish']);
+        const state = JSON.parse(readFileSync(AUTOMATION_STATE, 'utf-8')) as Record<string, string>;
+        expect(Object.keys(state)).toEqual(['publish']);
+        // The window is spent as one visit: a second call is refused before any browser opens.
+        const never = async () => {
+            throw new Error('openPage must not be reached');
+        };
+        const second = await visitTransport(never, {
+            automation: createAutomationGuard({ statePath: AUTOMATION_STATE }),
+        }).publish({ content: cardContent() });
+        expect(second.ok).toBe(false);
+        expect(second.error).toContain('automation cap');
+    });
+
+    test('0236 R3 (deferred): the unmeasured modal save path fails the 发播客 entry only', async () => {
+        await seedImages();
+        await seedEpisode();
+        const { open, calls } = makeOpenPage({ ...happy, podcastNeedsAdvance: true });
+        const result = await visitTransport(open).publish({ content: cardContent({ followUps: [podcastNote()] }) });
+
+        // Non-blocking: the 图文 draft the visit was opened for still stands.
+        expect(result.ok).toBe(true);
+        expect(result.metadata?.draftSignal).toBe('draft-row');
+        const followUps = result.metadata?.followUps as Result[];
+        expect(followUps[0]?.ok).toBe(false);
+        // The refusal names the rail AND the gap: the modal's post-attach save path is not measured.
+        expect(followUps[0]?.error).toContain('去发布');
+        expect(followUps[0]?.error).toContain('never been measured');
+        // The rail held: the publish-adjacent advance was never clicked on a draft run.
+        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('去发布'))).toBe(false);
+    });
+
+    test('0236: a follow-up that fails pre-browser validation is its own failed entry, never a visit', async () => {
+        await seedImages();
+        const { open, calls } = makeOpenPage({ ...happy });
+        const t = visitTransport(open);
+        // The prep Content carried no episode audio: nothing for the 发播客 mode to upload.
+        const result = await t.publish({
+            content: cardContent({ followUps: [podcastNote({ audioFile: undefined, audio: undefined })] }),
+        });
+        expect(result.ok).toBe(true);
+        const followUps = result.metadata?.followUps as Result[];
+        expect(followUps[0]?.ok).toBe(false);
+        expect(followUps[0]?.error).toContain('metadata.audio');
+        // The refused note never touched the console: no 上传音频, and no second upload call.
+        expect(clicked(visitedPage(calls)).some((selector) => selector.includes('上传音频'))).toBe(false);
+        expect(uploads(visitedPage(calls))).toEqual([[img(0), img(1)]]);
+    });
+
+    test('0236: an unplannable follow-up is refused by name, and a malformed followUps list opens no browser', async () => {
+        await seedImages();
+        // A malformed list is a caller error: it fails loud before any browser is launched.
+        const never = async () => {
+            throw new Error('openPage must not be reached');
+        };
+        const malformed = await visitTransport(never).publish({
+            content: cardContent({ followUps: '发播客' }),
+        });
+        expect(malformed.ok).toBe(false);
+        expect(malformed.error).toContain('followUps validation');
+        expect(malformed.error).toContain('must be an array');
+
+        const { open, calls } = makeOpenPage({ ...happy });
+        // A non-Content entry and an undeclared operation: each is its own refused entry.
+        const result = await visitTransport(open).publish({
+            content: cardContent({ followUps: ['发播客', podcastNote({ operation: '发视频' })] }),
+        });
+        expect(result.ok).toBe(true);
+        const followUps = result.metadata?.followUps as Result[];
+        expect(followUps).toHaveLength(2);
+        expect(followUps[0]?.ok).toBe(false);
+        expect(followUps[0]?.error).toContain('followUps[0] is not a Content object');
+        expect(followUps[1]?.ok).toBe(false);
+        expect(followUps[1]?.error).toContain("unsupported operation '发视频'");
+        // Neither refused entry reached the console: only the primary's own upload happened.
+        expect(uploads(visitedPage(calls))).toEqual([[img(0), img(1)]]);
     });
 });
 

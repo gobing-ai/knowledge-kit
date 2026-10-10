@@ -4,13 +4,13 @@ name: "publish-harness default launcher: full-Chromium channel + stealth launch 
 status: done
 template: issue
 created_at: 2026-10-07T17:59:24.600Z
-updated_at: "2026-10-08T00:26:08.452Z"
+updated_at: "2026-10-10T00:29:32.891Z"
 feature_id: E91
 
 ac_numbering: task-local
 ac_altitude: task-local
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/run/0214-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0214-verdict.json
 ---
 
 ## 0214. publish-harness default launcher: full-Chromium channel + stealth launch so headed login and headless check share one cookie store

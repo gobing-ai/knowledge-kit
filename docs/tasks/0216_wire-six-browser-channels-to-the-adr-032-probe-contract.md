@@ -4,7 +4,7 @@ name: Wire six browser channels to the ADR-032 probe contract
 status: done
 template: feature-impl
 created_at: 2026-10-07T18:29:44.449Z
-updated_at: "2026-10-07T23:04:51.928Z"
+updated_at: "2026-10-10T00:29:33.370Z"
 feature_id: E93
 priority: P1
 tags:
@@ -16,7 +16,7 @@ estimate_hours: 4
 
 dependencies: ["0215", "0214"]
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/run/0216-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0216-verdict.json
 ---
 
 ## 0216. Wire six browser channels to the ADR-032 probe contract

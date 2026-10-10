@@ -25,7 +25,7 @@ only mode-tab clicks + one local 1×1 png into the 图文 file input — never s
 | 上传图文 | tab click (bare URL) | `input[type=file][accept=".jpg,.jpeg,.png,.webp"]` ✅, 上传图片, 文字配图 buttons | post-file form mounts: title `input[placeholder="填写标题会有更多赞哦"]`, body `div.tiptap.ProseMirror` ✅, topic/@/表情, activity cards |
 | 上传视频 | `?target=video` | `input[type=file]` (accept matches `.mp4…` list ✅), dropzone | mode entry + input mount (no file set — attended item) |
 | 写长文 | `?target=article` | 新的创作 entry; editor in an **iframe** (1 frame per mode observed; contents not pierced this cycle) | mode entry only (editor iframe contents = attended item) |
-| 发播客 | `?target=audio` | 上传音频, 添加RSS订阅 buttons; modal flow expected (`creator-modal-sty` ✅ unprobed this cycle) | mode entry only (attended item) |
+| 发播客 | `?target=audio` | 上传音频, 添加RSS订阅 buttons; modal flow expected (`creator-modal-sty` ✅ unprobed this cycle) | mode entry only (attended item); post-attach save path still unmeasured — see 2026-10-10 |
 
 Bonus observation: a second file input with `accept=".pdf,.doc,.docx,.ppt,.pptx"` renders on the
 filled 图文 form (document-embed affordance) — not in plugin constants; no impact on draft path.
@@ -68,3 +68,12 @@ fix walk must capture them before changing those flows. `PUBLISH_URL` published-
   (the video note composer was observed behind its upload overlay, `xhs-video-editor.json`; 发播客 opens the
   `creator-modal-sty` upload modal, `xhs-podcast-dialog.json`). The plugin refuses a missing artifact
   before any browser opens (`validateModeInput`, `plugins/publishings/xhs-pub/src/index.ts:238`).
+
+**发播客 post-attach save path — still unmeasured as of 2026-10-10 (task 0236 R3, operator-deferred).**
+The plugin attaches the episode's mp3 and cover through the modal, but nothing on file says what the
+modal offers *after* both files are set. `leavePodcastModal` (`plugins/publishings/xhs-pub/src/flow.ts:403-431`)
+therefore keeps refusing the publish-adjacent `去发布` on a draft and **names the gap** instead of
+guessing a selector — that operation's Result is `ok: false` with `… its post-attach save path has
+never been measured (task 0236 R3 …)`, non-blocking for the visit, so the 图文 note still stands. The
+owed evidence is one attended walk saving `.spur/run/discovery/xhs-podcast-postfile.json` plus a
+screenshot; if a draft save path exists, wire it here and claim the draft only from the console signal.

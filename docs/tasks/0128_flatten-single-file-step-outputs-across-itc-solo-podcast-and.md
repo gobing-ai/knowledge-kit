@@ -4,7 +4,7 @@ name: Flatten single-file step outputs across itc, solo-podcast, and daily-ai-vo
 status: done
 template: feature-impl
 created_at: 2026-09-14T17:55:18.374Z
-updated_at: "2026-09-15T22:44:41.362Z"
+updated_at: "2026-10-10T00:29:32.641Z"
 feature_id: F8
 priority: P2
 tags:
@@ -13,7 +13,7 @@ tags:
   - layout
 
 done_forced: "true"
-done_reason: "Implementation complete: R1-R6 all MET on executable evidence (25/25 workflow tests, kk-itc validates clean, gate PASS 47/47 rules, review completed). Verdict PARTIAL is environmental, not implementation: the AC live-run clause requires agent-runtime stages unavailable in-pipeline, and kk-solo-podcast.yaml additionally carries a PRE-EXISTING schema defect (command:/options: indent, 8 actions, confirmed in untouched main checkout; follow-up bug task to be filed). Overriding the PARTIAL->done gate with this documented reason; PARTIAL verdict retained in .spur/run/0128-verdict.json."
+done_reason: "Implementation complete: R1-R6 all MET on executable evidence (25/25 workflow tests, kk-itc validates clean, gate PASS 47/47 rules, review completed). Verdict PARTIAL is environmental, not implementation: the AC live-run clause requires agent-runtime stages unavailable in-pipeline, and kk-solo-podcast.yaml additionally carries a PRE-EXISTING schema defect (command:/options: indent, 8 actions, confirmed in untouched main checkout; follow-up bug task to be filed). Overriding the PARTIAL->done gate with this documented reason; PARTIAL verdict retained in tracked Testing section (scratch verdict not retained)."
 ---
 
 ## 0128. Flatten single-file step outputs across itc, solo-podcast, and daily-ai-voice workflows

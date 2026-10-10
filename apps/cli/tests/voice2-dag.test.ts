@@ -472,12 +472,28 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(dag.nodes.find((node) => node.id === 'review')?.dependsOn).toEqual(['safety']);
     });
 
-    it('threads the 0219 xhs_fallback opt-in into the 8-arg daily-xhs-render call', () => {
+    it('threads the 0219 xhs_fallback opt-in and the 0235 note scope into the daily-xhs-render call', () => {
         const yaml = readFileSync(WORKFLOW, 'utf-8');
         expect(yaml).toContain('xhs_fallback: "true"');
         expect(yaml).toContain(
-            `kk stage daily-xhs-render "${'$'}{vars.work_dir}" "${'$'}{vars.run_date}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_cards}" "${'$'}{vars.xhs_style}" "${'$'}{vars.xhs_provider}" "${'$'}{vars.xhs_model}" "${'$'}{vars.xhs_fallback}"`,
+            `kk stage daily-xhs-render "${'$'}{vars.work_dir}" "${'$'}{vars.run_date}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_cards}" "${'$'}{vars.xhs_style}" "${'$'}{vars.xhs_provider}" "${'$'}{vars.xhs_model}" "${'$'}{vars.xhs_fallback}" "episode"`,
         );
+    });
+
+    it('threads the 0236 发播客 follow-up arg into the voice2 daily-publish-xhs call only', () => {
+        const yaml = readFileSync(WORKFLOW, 'utf-8');
+        // voice2 asks for the episode's 发播客 note in the same visit; voice1 (byte-identical,
+        // asserted below) passes no fifth arg, so its packaged note is untouched.
+        expect(yaml).toContain(
+            `kk stage daily-publish-xhs "${'$'}{vars.work_dir}" "${'$'}{vars.run_date}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_live}" "true"`,
+        );
+    });
+
+    it('orders publish-prep before xhs-publish — the 发播客 note reads its Content (0236 P1)', () => {
+        // publish-prep is a data dependency, not a sibling: daily-publish-xhs reads
+        // `31-publish/<date>_13_publish-prep_content.json` for the 发播客 note. Without the edge the
+        // two nodes race and the note is dropped silently (the stage logs and still exits 0).
+        expect(dag.nodes.find((node) => node.id === 'xhs-publish')?.dependsOn).toEqual(['xhs-render', 'publish-prep']);
     });
 
     it('leaves kk-daily-ai-voice.yaml byte-identical (R1)', () => {

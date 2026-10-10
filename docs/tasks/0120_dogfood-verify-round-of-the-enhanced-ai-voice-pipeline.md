@@ -4,7 +4,7 @@ name: Dogfood verify round of the enhanced AI-voice pipeline
 status: done
 template: issue
 created_at: 2026-09-11T23:55:04.611Z
-updated_at: "2026-09-16T19:16:42.673Z"
+updated_at: "2026-10-10T00:29:32.427Z"
 feature_id: O
 priority: P1
 tags:
@@ -13,7 +13,7 @@ tags:
 
 dependencies: ["0117", "0118", "0119"]
 done_forced: "true"
-done_reason: "PARTIAL verifyall: seam 4/4 PASS (.spur/run/0120-verdict.json, /tmp/kk-0120-seam/); live surfdash post + episode page blocked by external provider quota outage (429, resets 2026-09-18); folded into next routine daily run per orchestrator decision"
+done_reason: "PARTIAL verifyall: seam 4/4 PASS (tracked Testing section (scratch verdict not retained), /tmp/kk-0120-seam/); live surfdash post + episode page blocked by external provider quota outage (429, resets 2026-09-18); folded into next routine daily run per orchestrator decision"
 ---
 
 ## 0120. Dogfood verify round of the enhanced AI-voice pipeline

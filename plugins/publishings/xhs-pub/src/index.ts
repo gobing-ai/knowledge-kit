@@ -73,6 +73,71 @@ function fail(error: string): Result {
     return ResultSchema.parse({ ok: false, target: TARGET, error });
 }
 
+/** One operation of a visit: its own Content and the mode input validated before any browser work. */
+interface VisitOperation {
+    content: Content;
+    input: ModeInput;
+}
+
+/**
+ * A follow-up operation of a visit: planned, or refused with the reason it never reached the console.
+ * A refused follow-up is reported as its own failed Result entry — it can never fail the note the
+ * visit was opened for (ADR-025 amendment 2026-10-09).
+ */
+type VisitFollowUp = { content: Content; operation: string; input: ModeInput } | { operation: string; error: string };
+
+interface VisitPlan {
+    /** The requested operation, resolved and validated exactly as before task 0236. */
+    primary: VisitOperation;
+    /** The primary Content's `metadata.followUps`, in declared order. */
+    followUps: VisitFollowUp[];
+}
+
+/**
+ * Plan a visit (ADR-025 amendment 2026-10-09, task 0236 option A): the requested operation plus the
+ * follow-ups the caller attached to the primary Content's `metadata.followUps`. One headed visit may
+ * compose several notes under ONE cap entry — the cap still counts visits, not notes.
+ *
+ * The primary is planned as it always was: an unplannable primary is a `fail` and no browser opens.
+ * A follow-up that cannot be planned (not a Content, an undeclared operation, a missing or unreadable
+ * artifact) is refused here, before any console work, and reported as its own entry instead. A
+ * `metadata.followUps` that is not an array is a caller error, so it fails loud before any browser.
+ */
+async function planVisit(
+    primary: VisitOperation,
+    content: Content,
+): Promise<{ plan: VisitPlan; error?: undefined } | { plan?: undefined; error: string }> {
+    const raw = content.metadata?.followUps;
+    if (raw === undefined) return { plan: { primary, followUps: [] } };
+    if (!Array.isArray(raw)) {
+        return {
+            error: `followUps validation: Content.metadata.followUps must be an array of Content objects, got ${typeof raw}`,
+        };
+    }
+    const followUps: VisitFollowUp[] = [];
+    for (const [index, entry] of raw.entries()) {
+        const label = `followUps[${index}]`;
+        const parsed = ContentSchema.safeParse(entry);
+        if (!parsed.success) {
+            followUps.push({ operation: label, error: `${label} is not a Content object` });
+            continue;
+        }
+        const operation = typeof parsed.data.metadata?.operation === 'string' ? parsed.data.metadata.operation : label;
+        const requested = resolveXhsOperation(undefined, parsed.data);
+        if (requested.error !== undefined) {
+            followUps.push({ operation, error: requested.error });
+            continue;
+        }
+        const validation = await validateModeInput(requested.operation, parsed.data);
+        if (validation.error !== undefined) {
+            followUps.push({ operation, error: validation.error });
+            continue;
+        }
+        followUps.push({ content: parsed.data, operation: requested.operation, input: validation.input });
+    }
+    return { plan: { primary, followUps } };
+}
+
 /** CDP is Chromium-only; when unavailable the submit step fails loud instead of guessing. */
 export async function createShadowProbe(
     context: { newCDPSession?(page: unknown): Promise<ShadowCdpSession> },
@@ -239,13 +304,20 @@ export class XhsBrowserTransport implements PublishTransport {
         if (validation.error !== undefined) return fail(validation.error);
         const input: ModeInput = validation.input;
 
+        // ADR-025 amendment (2026-10-09, task 0236 option A): one visit may compose more than one
+        // note. The follow-ups ride the primary Content's `metadata.followUps` and are planned here,
+        // with the primary, before any browser work.
+        const visited = await planVisit({ content: payload.content, input }, payload.content);
+        if (visited.error !== undefined) return fail(visited.error);
+        const visit = visited.plan;
+
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
         const profileDir = resolveChannelProfileDir(CHANNEL, override);
-        const publishStatus = payload.content.metadata?.publishStatus === 'public' ? 'public' : 'draft';
 
         // ADR-025 automation guard — both gates run before any browser opens.
         // 1. Frequency cap: the operator's platform warning makes a repeated console visit an
-        //    account-level risk, not merely a failed run.
+        //    account-level risk, not merely a failed run. The cap counts VISITS: one allow/record
+        //    per visit covers every note the visit composes.
         const cap = this.automation.allow('publish');
         if (!cap.allowed) return fail(`automation cap: ${cap.reason}`);
         // 2. Headless session preflight: an unauthenticated profile must never produce a headed
@@ -266,6 +338,37 @@ export class XhsBrowserTransport implements PublishTransport {
             return fail(error instanceof Error ? error.message : String(error));
         }
         const { page, close } = opened;
+        try {
+            // The visit's own Result is the primary operation's: a failed primary ends the visit, as
+            // it always did, and only a primary that stood reports its follow-ups.
+            const primary = await this.runStep(visit.primary.input, visit.primary.content, page, profileDir);
+            if (!primary.ok || visit.followUps.length === 0) return primary;
+            // One Result entry per operation, in declared order; a refused and a failed follow-up
+            // are the same kind of entry, and neither can fail the note the visit was opened for.
+            const followUps: Result[] = [];
+            for (const followUp of visit.followUps) {
+                followUps.push(
+                    'error' in followUp
+                        ? fail(`follow-up (${followUp.operation}): ${followUp.error}`)
+                        : await this.runStep(followUp.input, followUp.content, page, profileDir),
+                );
+            }
+            return ResultSchema.parse({ ...primary, metadata: { ...primary.metadata, followUps } });
+        } finally {
+            await close();
+        }
+    }
+
+    /**
+     * Run one operation of the visit in the page the visit already opened. Every step enters the
+     * console from its landing view: the primary needs the login gate and the pre-entry draft
+     * baseline, and a follow-up needs both again — the previous note's editor replaces the header,
+     * and the baseline must be read before THIS note's mode is entered.
+     *
+     * A step never throws: its failure is that operation's own `ok:false` Result, which is what keeps
+     * a failed follow-up from failing the visit (ADR-025 amendment 2026-10-09).
+     */
+    private async runStep(input: ModeInput, content: Content, page: XhsPage, profileDir: string): Promise<Result> {
         const act = async <T>(what: string, fn: () => Promise<T>): Promise<T> => {
             try {
                 return await fn();
@@ -283,6 +386,7 @@ export class XhsBrowserTransport implements PublishTransport {
                 );
             }
 
+            const publishStatus = content.metadata?.publishStatus === 'public' ? 'public' : 'draft';
             // The draft counter and any save timestamps exist only on the landing view, so the
             // baseline is captured before the mode is entered (the editor replaces the header).
             const draftBaseline =
@@ -290,7 +394,7 @@ export class XhsBrowserTransport implements PublishTransport {
 
             return await runMode(input, {
                 page,
-                content: payload.content,
+                content,
                 publishStatus,
                 profileDir,
                 driver: this.driver,
@@ -301,8 +405,6 @@ export class XhsBrowserTransport implements PublishTransport {
             });
         } catch (error) {
             return fail(error instanceof Error ? error.message : String(error));
-        } finally {
-            await close();
         }
     }
 }

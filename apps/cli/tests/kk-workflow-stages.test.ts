@@ -1227,6 +1227,174 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         );
     };
 
+    /** 0235: the episode's cover artifact (`daily-cover`'s own output) that the note attaches last. */
+    const writeEpisodeCover = (dir: string): string => {
+        mkdirSync(join(dir, '23-cover'), { recursive: true });
+        const cover = join(dir, '23-cover/20260101_07_cover_cover.png');
+        writeFileSync(cover, 'png');
+        return cover;
+    };
+
+    /** 0235 R1: a 6-card episode plan — cover, four episode items, closing. */
+    const writeEpisodePlan = (dir: string, body: string) => {
+        const xhs = join(dir, '25-xhs');
+        mkdirSync(xhs, { recursive: true });
+        const cards = [
+            xhsCard('cover', '今日头条', 'lead fact'),
+            xhsCard('content', '模型发布', 'fact 2'),
+            xhsCard('content', '芯片禁令', 'fact 3'),
+            xhsCard('content', '开源权重', 'fact 4'),
+            xhsCard('content', '评测榜单', 'fact 5'),
+            xhsCard('closing', '明天见', 'closing fact'),
+        ];
+        writeFileSync(join(xhs, '20260101_18_xhs_plan.json'), JSON.stringify({ title: '今日 AI 速览', body, cards }));
+        return cards;
+    };
+
+    /** The card artifacts the fake `image-gen` writes, in attach order. */
+    const cardImagePaths = (dir: string, count: number): string[] =>
+        Array.from({ length: count }, (_, i) =>
+            join(dir, `25-xhs/cards/card-${`${i + 1}`.padStart(2, '0')}-xhs-card-01.png`),
+        );
+
+    /** 0235 R4: the 9-arg voice2 call — `note_scope` trails the 0219 `fallback` slot. */
+    const episodeArgs = (dir: string, count: number, fallback = ''): string[] => [
+        'daily-xhs-render',
+        dir,
+        '20260101',
+        '',
+        `${count}`,
+        'xhs-knowledge',
+        'minimax',
+        'image-01',
+        fallback,
+        'episode',
+    ];
+
+    it('daily-xhs-render with note_scope=episode appends the episode cover and pairs every image with its own text (0235 R1/R2)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            const cards = writeEpisodePlan(dir, '本期三件事 #AI #模型');
+            const cover = writeEpisodeCover(dir);
+
+            const result = run(episodeArgs(dir, 6, 'true'), env);
+            expect(result.stderr).toBe('');
+            expect(result.status).toBe(0);
+
+            const content = JSON.parse(readFileSync(join(dir, '25-xhs/content.json'), 'utf-8')) as {
+                format: string;
+                body: string;
+                metadata: { images: { path: string }[]; publishStatus: string };
+            };
+            // R1: the cards in card order, then the ultrawide episode cover last.
+            expect(content.metadata.images.map((image) => image.path)).toEqual([...cardImagePaths(dir, 6), cover]);
+            expect(content.metadata.publishStatus).toBe('draft');
+            expect(content.format).toBe('text');
+
+            // R2: one numbered line per attached image, in attach order.
+            const lines = content.body.split('\n');
+            const numbered = lines.filter((line) => /^[①-⑱]/.test(line));
+            expect(numbered.length).toBe(7);
+            cards.forEach((card, index) => {
+                expect(numbered[index]).toContain(card.copy);
+                expect(numbered[index]).toContain(card.points[0] ?? '');
+            });
+            expect(numbered[6]).toContain('本期封面');
+            expect(numbered[6]).toContain('20260101');
+            // The LLM paragraph stays the lead above the list; hashtags stay last.
+            expect(lines[0]).toBe('本期三件事');
+            expect(lines.at(-1)).toBe('#AI #模型');
+            expect(content.body.length).toBeLessThanOrEqual(1000);
+        });
+    });
+
+    it('daily-xhs-render with note_scope=episode but no episode cover keeps the cards and names the missing cover (0235 R1)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            writeEpisodePlan(dir, '本期三件事 #AI');
+
+            const result = run(episodeArgs(dir, 6), env);
+            expect(result.status).toBe(0);
+            expect(result.stderr).toBe('');
+            expect(result.stdout).toContain(`no episode cover at ${join(dir, '23-cover/20260101_07_cover_cover.png')}`);
+
+            const content = JSON.parse(readFileSync(join(dir, '25-xhs/content.json'), 'utf-8')) as {
+                body: string;
+                metadata: { images: { path: string }[] };
+            };
+            expect(content.metadata.images.map((image) => image.path)).toEqual(cardImagePaths(dir, 6));
+            expect(content.body.split('\n').filter((line) => /^[①-⑱]/.test(line)).length).toBe(6);
+        });
+    });
+
+    it('daily-xhs-render trims only the lead paragraph when the episode body would overflow 1000 chars (0235 R2)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            // The plan's own body is inside its 1000-char cap; the added lines push the note over.
+            const lead = '播'.repeat(980);
+            writeEpisodePlan(dir, `${lead} #AI`);
+            writeEpisodeCover(dir);
+
+            const result = run(episodeArgs(dir, 6), env);
+            expect(result.status).toBe(0);
+            const content = JSON.parse(readFileSync(join(dir, '25-xhs/content.json'), 'utf-8')) as { body: string };
+            expect(content.body.length).toBeLessThanOrEqual(1000);
+            expect(content.body.startsWith(lead)).toBe(false);
+            // Every image keeps its line, and the hashtags keep their place.
+            expect(content.body.split('\n').filter((line) => /^[①-⑱]/.test(line)).length).toBe(7);
+            expect(content.body.split('\n').at(-1)).toBe('#AI');
+            expect(content.body).toContain('本期封面');
+        });
+    });
+
+    it('daily-xhs-render without note_scope packages the pre-0235 content.json byte-for-byte (0235 R4)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            writeXhsPlan(dir);
+            // The episode cover exists and is deliberately ignored: opt-in is the whole contract.
+            writeEpisodeCover(dir);
+
+            const result = run(
+                ['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', 'minimax', 'image-01'],
+                env,
+            );
+            expect(result.status).toBe(0);
+            // Captured before the 0235 change by running this stage over this same fixture (the
+            // only substitution is the temp dir): lead-item series, verbatim LLM body, no cover.
+            const golden = `{
+  "title": "今日 AI 速览",
+  "body": "正文 #AI",
+  "format": "text",
+  "metadata": {
+    "images": [
+      {
+        "path": "${dir}/25-xhs/cards/card-01-xhs-card-01.png",
+        "prompt": "flat illustration a desk",
+        "illustration": {
+          "path": "${dir}/25-xhs/cards/card-01-illustration-01.png",
+          "bytes": 3
+        }
+      },
+      {
+        "path": "${dir}/25-xhs/cards/card-02-xhs-card-01.png",
+        "prompt": "flat illustration a desk",
+        "illustration": {
+          "path": "${dir}/25-xhs/cards/card-02-illustration-01.png",
+          "bytes": 3
+        }
+      }
+    ],
+    "publishStatus": "draft"
+  }
+}`;
+            expect(readFileSync(join(dir, '25-xhs/content.json'), 'utf-8')).toBe(golden);
+        });
+    });
+
     it('daily-xhs-render threads the opt-in fallback into every envelope, strictly when absent (0219 AC1)', () => {
         const envelope = (fallbackArg?: string) => {
             let imageGen: Record<string, unknown> = {};
@@ -1428,6 +1596,106 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             const result = run(['daily-publish-xhs', dir, '20260101', '', 'false'], env);
             expect(result.status).toBe(0);
             expect(result.stdout).toContain('WARNING: publish-xhs — xhs-pub exited 1');
+        });
+    });
+
+    /** The card series the xhs-render stage packages (what this stage sends to `xhs-pub`). */
+    function writeXhsSeries(dir: string): void {
+        mkdirSync(join(dir, '25-xhs'), { recursive: true });
+        mkdirSync(join(dir, '31-publish'), { recursive: true });
+        writeFileSync(
+            join(dir, '25-xhs/content.json'),
+            JSON.stringify({ title: 't', body: 'b', format: 'text', metadata: { images: [{ path: '/tmp/x.png' }] } }),
+        );
+    }
+
+    /**
+     * 0236 R1: the episode's own publish-prep output — the final mp3 (intro sting included) and the
+     * `23-cover` PNG — that the 发播客 note reuses verbatim. No artifact is produced here.
+     */
+    function writePublishPrep(dir: string): { audio: string; cover: string } {
+        const audio = join(dir, '30-audio/20260101_11_episode.mp3');
+        const cover = join(dir, '23-cover/20260101_07_cover_cover.png');
+        mkdirSync(join(dir, '30-audio'), { recursive: true });
+        mkdirSync(join(dir, '23-cover'), { recursive: true });
+        writeFileSync(audio, 'mp3');
+        writeFileSync(cover, 'png');
+        writeFileSync(
+            join(dir, '31-publish/20260101_13_publish-prep_content.json'),
+            JSON.stringify({
+                title: '每日AI乱炖',
+                body: '本期三件事',
+                format: 'text',
+                metadata: {
+                    audioFile: audio,
+                    coverImage: cover,
+                    runDate: '20260101',
+                    itunes: { season: 2026, episode: 1 },
+                },
+                options: { audioFile: audio, durationSec: 1002.11 },
+            }),
+        );
+        return { audio, cover };
+    }
+
+    const packagedNote = (
+        dir: string,
+    ): { metadata: { publishStatus: string; followUps?: { metadata: Record<string, unknown> }[] } } =>
+        JSON.parse(readFileSync(join(dir, '31-publish/20260101_19_publish-xhs_content.json'), 'utf-8'));
+
+    it('daily-publish-xhs carries the episode 发播客 Content as a follow-up only when the trailing arg is passed (0236 R1)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'xhs-pub');
+            writeXhsSeries(dir);
+            const { audio, cover } = writePublishPrep(dir);
+
+            // voice1 passes no trailing arg: the packaged 图文 Content keeps its pre-0236 shape.
+            expect(run(['daily-publish-xhs', dir, '20260101', '', 'false'], env).status).toBe(0);
+            expect(
+                JSON.parse(readFileSync(join(dir, '31-publish/20260101_19_publish-xhs_content.json'), 'utf-8')),
+            ).toEqual({
+                title: 't',
+                body: 'b',
+                format: 'text',
+                metadata: { images: [{ path: '/tmp/x.png' }], publishStatus: 'draft' },
+            });
+            // That run's draft result is cached; drop it so the voice2 call below is not skipped.
+            rmSync(join(dir, '31-publish/20260101_19_publish-xhs_result.json'), { force: true });
+
+            // voice2 passes `podcast=true`: the episode's 发播客 Content rides the same visit.
+            expect(run(['daily-publish-xhs', dir, '20260101', '', 'false', 'true'], env).status).toBe(0);
+            const packaged = packagedNote(dir);
+            expect(packaged.metadata.followUps).toHaveLength(1);
+            // R1: the prep Content's own mp3 and cover, plus the operation and the run's status.
+            expect(packaged.metadata.followUps?.[0]?.metadata).toEqual({
+                audioFile: audio,
+                coverImage: cover,
+                runDate: '20260101',
+                itunes: { season: 2026, episode: 1 },
+                operation: '发播客',
+                audio,
+                publishStatus: 'draft',
+            });
+            // R4: xhs_live is false, so neither note claims a live status.
+            expect(packaged.metadata.publishStatus).toBe('draft');
+        });
+    });
+
+    it('daily-publish-xhs skips the 发播客 note when the run has no publish-prep Content (0236 non-blocking)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'xhs-pub');
+            writeXhsSeries(dir);
+
+            const result = run(['daily-publish-xhs', dir, '20260101', '', 'false', 'true'], env);
+            expect(result.status).toBe(0);
+            // The 图文 note still goes out, and the missing episode drafts are named, not invented.
+            expect(result.stdout).toContain(
+                `no publish-prep Content at ${join(dir, '31-publish/20260101_13_publish-prep_content.json')}`,
+            );
+            expect('followUps' in packagedNote(dir).metadata).toBe(false);
+            expect(readFileSync(record, 'utf-8')).toContain('xhs-pub');
         });
     });
 

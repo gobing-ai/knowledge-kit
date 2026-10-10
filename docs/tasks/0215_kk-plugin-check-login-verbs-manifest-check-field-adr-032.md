@@ -4,7 +4,7 @@ name: kk plugin check / login verbs + manifest check field (ADR-032)
 status: done
 template: feature-impl
 created_at: 2026-10-07T18:29:44.442Z
-updated_at: "2026-10-07T23:04:49.912Z"
+updated_at: "2026-10-10T00:29:33.130Z"
 feature_id: E93
 priority: P1
 tags:
@@ -15,7 +15,7 @@ tags:
 estimate_hours: 5
 
 done_forced: "false"
-done_reason: unforced close; PASS artifact at .spur/run/0215-verdict.json
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0215-verdict.json
 ---
 
 ## 0215. kk plugin check / login verbs + manifest check field (ADR-032)

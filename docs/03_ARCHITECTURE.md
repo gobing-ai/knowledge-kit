@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.31.1
+version: 2.32.0
 created_at: 2026-07-22
 updated_at: 2026-10-09
 derived_from: [00_ADR, 01_PRD]
@@ -154,7 +154,7 @@ Since ADR-028 (task 0180), card copy is not provider prompt text: for compose fo
 
 Declared canvas forwarding and delivery measurement (task 0182): Format presets declare canvas dimensions (`width`/`height`), but providers vary in exact canvas support. An opt-in capability seam `ImageProvider.exactSize?(model, width, height)` allows providers (e.g. MiniMax `image-01`) to receive exact pixel requests (with `aspectRatio` omitted), while providers without the capability receive byte-identical aspect-only requests (`aspectRatio` only). Delivery dimensions are measured from raw image bytes via a zero-dependency, header-only reader (`imageDimensions` in `src/bytes.ts`: PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X; unparseable bytes return `null`, not a throw) and recorded in `ImageArtifact.width/height` with `sizeRequest: 'exact' | 'aspect'`. Mismatched or unparseable dimensions emit a warning rather than failing after spend, preserving paid artifacts (money boundary invariant). On compose formats (0180), the raw provider delivery is recorded in `illustration.width/height` beside the card canvas.
 
-The XHS path keeps draft as the default. An explicit public switch is required before the browser submits a live post (ADR-022). Task 0167 replaced the placeholder `sessionReady` stub with a Playwright script driver, verifying ordered uploads via `setInputFiles`, thumbnail counts, and browser-confirmed draft or public outcomes. Surface and artifact shapes live in `docs/design/xhs-image-cards.md`.
+The XHS path keeps draft as the default. An explicit public switch is required before the browser submits a live post (ADR-022). One console visit may compose several notes (ADR-025 amendment 2026-10-09): the automation cap counts visits, not notes, and each operation keeps its own draft rail and its own `Result`, so a failed operation never fails the visit (surface: `docs/04_DESIGN.md` → `xhs-pub`). Task 0167 replaced the placeholder `sessionReady` stub with a Playwright script driver, verifying ordered uploads via `setInputFiles`, thumbnail counts, and browser-confirmed draft or public outcomes. Surface and artifact shapes live in `docs/design/xhs-image-cards.md`.
 
 ### Plugin kinds
 

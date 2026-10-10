@@ -4,7 +4,7 @@ name: Stamp ai-news tag on daily AI voice articles
 status: done
 template: feature-impl
 created_at: 2026-09-11T23:55:04.610Z
-updated_at: "2026-09-16T19:16:42.514Z"
+updated_at: "2026-10-10T00:29:32.182Z"
 feature_id: O
 priority: P1
 tags:
@@ -12,7 +12,7 @@ tags:
   - tagging
 
 done_forced: "true"
-done_reason: verifyall PASS verdict .spur/run/0119-verdict.json
+done_reason: verifyall PASS verdict tracked Testing section (scratch verdict not retained)
 ---
 
 ## 0119. Stamp ai-news tag on daily AI voice articles

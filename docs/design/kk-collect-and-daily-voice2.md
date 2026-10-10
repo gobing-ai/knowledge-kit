@@ -228,7 +228,7 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► select ──�
                        ┌───────────────────────────┬──────────────────────────┬────────────┤
                        ▼                           ▼                          ▼            ▼
              generate(TTS) ─► intro ─► duration ─► publish-prep            xhs-write(agent)  
-                       └─────────► quality ◄──────┘        │                  └► xhs-render ─► xhs-publish
+                       └─────────► quality ◄──────┘        │                  └► xhs-render ─► xhs-publish ◄─ publish-prep (0236)
                                      │                     ├► publish-surfdash ─► translate-localize ─► translate(agent) ─► translate-sync
                                      ▼                     └► wechat-publish
                          show-notes ─► publish-podcast
@@ -242,6 +242,7 @@ prepare ─► extract ─► plan ─► qc-content ─┬─► select ──�
 - `20-facts/` stays empty. `kk daily prepare` still creates the voice1 directory set, including `20-facts`, but this DAG never writes core facts. The pool file `10-collect/pool.json` replaced voice1's `20-facts/<stamp>_02_collect_core-facts.md`. An empty directory is the port, not a skipped stage.
 - `plan` consumes `pool.json` through the existing episode-plan-gen plugin; labels in `metadata` replace its keyword re-scoring when present.
 - `publish_enabled=false` ⇒ `condition` skips the publish subtree (same var as today).
+- `xhs-render` / `xhs-publish` are voice2-only steps: `xhs-render` passes the 9th arg `note_scope: episode` (0235 — the packaged note carries the episode cover last plus one numbered body line per attached image) and `xhs-publish` the 5th `podcast: true` (0236 — the episode's 发播客 note rides the same console visit as `metadata.followUps`, one ADR-025 cap entry). `xhs-publish` therefore depends on `publish-prep`, a **data** dependency (it reads `_13_publish-prep_content.json`): without that edge the two nodes race and the 发播客 note is dropped silently while the stage still exits 0 — the DAG review finding fixed in 0236. voice1 (`kk-daily-ai-voice.yaml`) calls both stages with neither argument and is byte-identical; its spec stays in `kk-daily-ai-voice.md` §7, the surfaces in `docs/04_DESIGN.md`.
 - `patch-surfdash` / `publish-partial` fold into `publish-classify` (it already classifies partial).
 - `select` = `kk store select --topic ai-news --workflow kk-daily-ai-voice2 --run ${vars.__runId} --in ${work_dir}/21-plan/<date>_04_quality-control-content_candidates.json`, declared right after `qc-content`, guarded on the candidates file. It reads the QC output, not `03_plan_plan.json`: the plan file is pre-QC, so selecting it would burn items the run rejected. This is 0228's fix for the root cause F4: the exclusion is recorded the moment the run commits to its set, not at the DAG tail, so a run that fails, pauses at review or skips publish still excludes what it planned.
 - `mark-published` = `kk store mark-published --topic ai-news --run ${vars.__runId}` on `dependsOn: [publish-classify, extract]`, with the candidates guard **and** `test "${vars.publish_enabled}" = "true"` — a dry run never promotes, so its rows stay `selected` (still excluding, freed by `kk store release --run <id>`). `run-report` lists it in `dependsOn`.

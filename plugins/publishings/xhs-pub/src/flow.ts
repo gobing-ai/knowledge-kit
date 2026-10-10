@@ -403,8 +403,14 @@ async function isPodcastModalOpen(page: XhsPage): Promise<boolean> {
 
 /**
  * Leave the 发播客 modal. The recorded advance control is `去发布`, which is publish-adjacent, so a
- * draft run never clicks it: it waits for the platform to move on by itself and fails loud naming
- * the control it refused to click. Only an explicit `publishStatus: 'public'` may click it.
+draft run never clicks it: it waits for the platform to move on by itself and fails loud naming the
+control it refused to click. Only an explicit `publishStatus: 'public'` may click it.
+ *
+ * 0236 R3 (deferred, operator decision 2026-10-09): whether the modal offers a save path OTHER than
+ * `去发布` once both files are attached was never measured (`.spur/run/discovery/` holds only the
+ * modal open), and an attended walk under ADR-025 is what would measure it. So no draft-save selector
+ * is invented here: the run stops before the publish-adjacent control and says so, which is the
+ * failure the 0236 result carries (a `ok:false` entry that never fails the visit).
  */
 async function leavePodcastModal(deps: ModeRunDeps): Promise<void> {
     const closed = () => isPodcastModalOpen(deps.page).then((open) => !open);
@@ -420,7 +426,7 @@ async function leavePodcastModal(deps: ModeRunDeps): Promise<void> {
         if (await waitUntil(closed, deps.stepTimeoutMs)) return;
     }
     throw new Error(
-        `podcast modal: the 发播客 modal was still open ${deps.stepTimeoutMs}ms after the audio and cover were attached; the only recorded advance control is '${PODCAST_MODAL_ADVANCE[0]}' and a draft run does not click it (it is publish-adjacent)`,
+        `podcast modal: the 发播客 modal was still open ${deps.stepTimeoutMs}ms after the audio and cover were attached; its post-attach save path has never been measured (task 0236 R3 — the attended walk is still pending) and the only recorded advance control is '${PODCAST_MODAL_ADVANCE[0]}', which a draft run does not click (it is publish-adjacent)`,
     );
 }
 

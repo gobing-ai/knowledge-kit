@@ -104,6 +104,7 @@ import {
     writeJqText,
     writeJsonText,
     writeRaw,
+    XHS_BODY_CAP,
     XHS_FORMAT,
     XHS_MAX_CARDS,
     xhsPlan,
@@ -842,10 +843,15 @@ export function dailyPublishWechat(args: string[]): void {
  * its own). Non-blocking by operator decision: a missing/expired XHS session or a changed console
  * logs a loud failure and leaves the run alive, and the outcome never enters `publish_status`
  * (surfdash + podcast remain the episode's publication contract).
+ *
+ * 0236: the optional trailing `<podcast>` arg (`'true'` from voice2 only) attaches the episode's
+ * 发播客 note to the same visit as `metadata.followUps` — one console visit, two notes, one cap entry
+ * (ADR-025 amendment 2026-10-09).
  */
 export function dailyPublishXhs(args: string[]): void {
-    const [workDir = '', runDate = '', pluginsPath = '', live = 'false'] = args;
+    const [workDir = '', runDate = '', pluginsPath = '', live = 'false', podcast = ''] = args;
     const content = join(workDir, '25-xhs', 'content.json');
+    const prep = join(workDir, '31-publish', `${runDate}_13_publish-prep_content.json`);
     const input = join(workDir, '31-publish', `${runDate}_19_publish-xhs_content.json`);
     const result = join(workDir, '31-publish', `${runDate}_19_publish-xhs_result.json`);
     const want = live === 'true' ? 'public' : 'draft';
@@ -861,8 +867,16 @@ export function dailyPublishXhs(args: string[]): void {
             return;
         }
         const packaged = requireJson(content, 'publish-xhs');
+        const followUp = podcast === 'true' ? xhsPodcastNote(prep, want) : undefined;
         sted('write', input, () =>
-            writeJsonText(input, { ...packaged, metadata: { ...metadataOf(packaged), publishStatus: want } }),
+            writeJsonText(input, {
+                ...packaged,
+                metadata: {
+                    ...metadataOf(packaged),
+                    publishStatus: want,
+                    ...(followUp === undefined ? {} : { followUps: [followUp] }),
+                },
+            }),
         );
         // `soft` keeps the XHS target non-blocking: the plugin still writes its own failed Result
         // and prints the failing step (login gate, upload, body, submit control), which is what the
@@ -876,6 +890,34 @@ export function dailyPublishXhs(args: string[]): void {
                 : `WARNING: publish-xhs — xhs-pub exited ${status}; XHS target skipped (run continues, see ${result})`,
         );
     });
+}
+
+/**
+ * 0236 R1: the 发播客 Content for the same episode — the run's publish-prep Content (the final mp3
+ * with the intro, `23-cover`'s PNG, title and body) plus `metadata.operation` and the run's own
+ * `publishStatus`. No artifact is produced here: both files already exist.
+ *
+ * `metadata.audio` repeats the prep's `metadata.audioFile` under the key the xhs channel's 发播客 mode
+ * reads (`xhs-pub/src/modes.ts`); `metadata.coverImage` is already the shared spelling. A run with no
+ * publish-prep output names the missing episode drafts and carries the 图文 note alone — the 发播客
+ * note is never invented.
+ */
+function xhsPodcastNote(prepPath: string, publishStatus: 'draft' | 'public'): Record<string, unknown> | undefined {
+    const prep = readJson(prepPath);
+    if (prep === null) {
+        console.log(`publish-xhs: no publish-prep Content at ${prepPath} — the 发播客 note is skipped`);
+        return undefined;
+    }
+    const metadata = metadataOf(prep);
+    return {
+        ...prep,
+        metadata: {
+            ...metadata,
+            operation: '发播客',
+            audio: metadata.audioFile,
+            publishStatus,
+        },
+    };
 }
 
 /**
@@ -1410,12 +1452,63 @@ export function dailyWrapDocs(args: string[]): void {
     });
 }
 
+/** 0235 R4: `note_scope`'s one opt-in value. Anything else — absent included — is today's path. */
+const XHS_NOTE_SCOPE_EPISODE = 'episode';
+
+/**
+ * 0235 R2: `①` — the circled digits ①…⑳ are contiguous from here, and the episode note attaches
+ * `XHS_MAX_CARDS` cards plus at most one cover, so no bare number can ever be needed.
+ */
+const CIRCLED_DIGIT_ONE = 0x2460;
+
+/** The attach-order marker of line `position` (0-based). */
+const markerFor = (position: number): string => String.fromCodePoint(CIRCLED_DIGIT_ONE + position);
+
+/**
+ * 0235 R2: split the agent's note body into its lead paragraph and its trailing hashtag run. The
+ * prompt asks for 3-5 hashtags at the end, so the run is read off the end of the body; a body
+ * without hashtags is entirely lead.
+ */
+function splitNoteBody(body: string): { lead: string; hashtags: string } {
+    const trimmed = body.trim();
+    const match = /(?:^|\s)(#\S+(?:\s+#\S+)*)\s*$/.exec(trimmed);
+    if (match === null) return { lead: trimmed, hashtags: '' };
+    return { lead: trimmed.slice(0, match.index).trimEnd(), hashtags: match[1] ?? '' };
+}
+
+/**
+ * 0235 R2: the episode note body — the agent's lead paragraph, then one numbered line per attached
+ * image in attach order, then the plan's hashtags. `cap` is the console's own note limit
+ * (`XHS_NOTE_BODY_MAX`): only the lead is trimmed to fit, so an image never loses its line. A body
+ * that overflows even without a lead fails loud rather than shipping a note the editor would cut.
+ */
+function episodeNoteBody(body: string, lines: string[], cap: number): string {
+    const { lead, hashtags } = splitNoteBody(body);
+    const tail = [lines.join('\n'), hashtags].filter((part) => part !== '').join('\n\n');
+    // `\n\n` joins the lead to the tail; a lead trimmed away drops the separator with it.
+    const budget = cap - tail.length - (lead === '' ? 0 : 2);
+    const head = budget >= lead.length ? lead : lead.slice(0, Math.max(budget, 0)).trimEnd();
+    const note = head === '' ? tail : `${head}\n\n${tail}`;
+    if (note.length > cap) {
+        failWith(
+            1,
+            `xhs render: episode note body is ${note.length} chars for ${lines.length} image lines — the cap is ${cap} and a line is never dropped`,
+        );
+    }
+    return note;
+}
+
 /**
  * E8: build one `image-gen` envelope per planned card, render them sequentially, and package the
  * ordered card manifest + `Content` that `xhs-pub` consumes. Format, style, provider and model
  * are pinned here (never model-authored), so the series cannot drift from its preset. Card copy
  * is typeset by image-gen's composer; the provider prompt stays text-free (0181). Resume-safe:
  * a card whose recorded artifact is still on disk is not re-rendered — and not re-billed.
+ *
+ * `note_scope` (`episode`, 0235) opts into the episode note for voice2: the packaged set then also
+ * attaches the episode cover last, and the body is rebuilt as the lead paragraph plus one numbered
+ * line per attached image. Absent or any other value: the lead-item series and the agent's body are
+ * packaged verbatim (voice1's contract).
  */
 export function dailyXhsRender(args: string[]): void {
     const [
@@ -1427,9 +1520,12 @@ export function dailyXhsRender(args: string[]): void {
         provider = '',
         model = '',
         fallback = '',
+        noteScope = '',
     ] = args;
     const count = Number.parseInt(countArg, 10);
+    const episode = noteScope === XHS_NOTE_SCOPE_EPISODE;
     const planPath = join(workDir, '25-xhs', `${runDate}_18_xhs_plan.json`);
+    const coverPath = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
     const cardsDir = join(workDir, '25-xhs', 'cards');
     const manifestPath = join(workDir, '25-xhs', 'cards.json');
     const contentPath = join(workDir, '25-xhs', 'content.json');
@@ -1441,6 +1537,9 @@ export function dailyXhsRender(args: string[]): void {
         sted('mkdir', cardsDir, () => mkdirSync(cardsDir, { recursive: true }));
         const images: Record<string, unknown>[] = [];
         const cards: Record<string, unknown>[] = [];
+        // 0235 R2: the numbered lines are pushed in the same step as their image, so attach order
+        // and body order cannot drift apart.
+        const lines: string[] = [];
         for (const card of plan.cards) {
             const out = join(cardsDir, `card-${card.index}.json`);
             const promptPath = join(cardsDir, `card-${card.index}.prompt.txt`);
@@ -1518,17 +1617,36 @@ export function dailyXhsRender(args: string[]): void {
                 illustrationPath,
                 status: 'rendered',
             });
+            const [firstPoint = ''] = card.points;
+            lines.push(`${markerFor(lines.length)} ${card.copy}：${firstPoint}`);
+        }
+        // 0235 R1: the episode cover closes the set — it is ultrawide, and image 1 (card 01) is what
+        // sets the note's grid ratio. It is `daily-cover`'s own artifact (no new image kind), and
+        // the set is ≤ XHS_MAX_CARDS + 1 = 11, inside `xhs-pub`'s XHS_IMAGE_MAX (18).
+        if (episode) {
+            if (isFile(coverPath)) {
+                images.push({ path: resolve(coverPath) });
+                lines.push(`${markerFor(lines.length)} 每日AI乱炖 ${runDate} 本期封面`);
+            } else {
+                console.log(
+                    `xhs render: no episode cover at ${coverPath} — the note carries the ${cards.length} cards only`,
+                );
+            }
         }
         sted('write', manifestPath, () => writeJsonText(manifestPath, { source: planPath, cards }));
         sted('write', contentPath, () =>
             writeJsonText(contentPath, {
                 title: plan.title,
-                body: plan.body,
+                body: episode ? episodeNoteBody(plan.body, lines, XHS_BODY_CAP) : plan.body,
                 format: 'text',
                 metadata: { images, publishStatus: 'draft' },
             }),
         );
-        console.log(`xhs render: ${cards.length} cards packaged in card order (${contentPath})`);
+        console.log(
+            episode
+                ? `xhs render: ${images.length} images packaged in image order (${contentPath})`
+                : `xhs render: ${cards.length} cards packaged in card order (${contentPath})`,
+        );
     });
 }
 
