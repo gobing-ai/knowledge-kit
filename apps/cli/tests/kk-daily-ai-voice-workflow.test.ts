@@ -351,9 +351,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         ]);
         expect(edges).toContain('safety-review->safety-judge');
         // 20261005: the gate adjusts instead of halting — pass+skip_review -> wrap-docs;
+        // escalate + the unattended exclude policy -> wrap-docs (2026-10-10, so a cron run can
+        // publish an escalation instead of pausing at a HITL it can never answer);
         // pass|escalate -> review; revise -> the remediation loop; exclude -> wrap-docs;
         // anything else (block, empty) -> failed.
         expect(edges.filter((e) => e.startsWith('safety-judge->'))).toEqual([
+            'safety-judge->wrap-docs',
             'safety-judge->wrap-docs',
             'safety-judge->review',
             'safety-judge->safety-revise',
@@ -371,6 +374,16 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         );
         expect(judge).toContain('test "$' + '{vars.safety_status}" = "revise"');
         expect(judge).toContain('test "$' + '{vars.safety_status}" = "exclude"');
+        // The unattended escalation bypass requires all three, and sits above the escalate->review
+        // edge (first-match-wins) so the pause is actually skipped. skip_review keeps a watched
+        // run's HITL intact.
+        expect(judge).toContain(
+            'test "$' +
+                '{vars.safety_status}" = "escalate" && test "$' +
+                '{vars.safety_escalate_policy}" = "exclude" && test "$' +
+                '{vars.skip_review}" = "true"',
+        );
+        expect(yaml).toContain('safety_escalate_policy: "pause"');
         // The remediation edge sits above the catch-all, so a revise never falls through to failed.
         expect(judge.indexOf('to: safety-revise')).toBeLessThan(judge.indexOf('to: failed'));
         expect(judge.indexOf('to: wrap-docs')).toBeLessThan(judge.indexOf('to: safety-revise'));
