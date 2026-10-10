@@ -2168,8 +2168,8 @@ export function dailyXhsRender(args: string[]): void {
                     `xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}`;
                 let result = kkCaptured(imageGenArgs, { soft: true });
                 if (result.status !== 0) {
-                    // 0251 R1: retry ONCE, only on a points[n] safe-area overflow whose named
-                    // fields all shorten. The envelope is rewritten in the same shape and
+                    // 0251 R1: retry ONCE, only on a points[n] safe-area overflow where at least one
+                    // named point got shorter. The envelope is rewritten in the same shape and
                     // image-gen is called once more; a second failure takes the resume line.
                     let shortened = false;
                     for (const n of xhsOverflowPoints(result.stderr, card) ?? []) {
