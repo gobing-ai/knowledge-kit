@@ -569,6 +569,30 @@ export function kk(
     return status;
 }
 
+/**
+ * `kk()` sibling with `stdio: 'pipe'`: captures the child's stdout/stderr, reprints both to the
+ * parent so the operator log is unchanged, and returns the exit status plus the captured stderr.
+ * Only stages that branch on the child's stderr use it (0251: the xhs-render overflow retry);
+ * every other call keeps `kk()`'s inherit default.
+ */
+export function kkCaptured(
+    args: string[],
+    options: { env?: Record<string, string>; unset?: readonly string[]; soft?: boolean } = {},
+): { status: number; stderr: string } {
+    const env = { ...process.env, ...(options.env ?? {}) };
+    for (const name of options.unset ?? []) delete env[name];
+    const runner = spawnSync('kk', args, { stdio: 'pipe', encoding: 'utf-8', env });
+    if (runner.error !== undefined) {
+        console.error(`kk: ${runner.error.message}`);
+        failWith(127);
+    }
+    process.stdout.write(runner.stdout ?? '');
+    process.stderr.write(runner.stderr ?? '');
+    const status = runner.status ?? 1;
+    if (status !== 0 && options.soft !== true) failWith(status);
+    return { status, stderr: runner.stderr ?? '' };
+}
+
 export function writeJsonText(path: string, value: unknown): void {
     // `Bun.write(path, JSON.stringify(value, null, 2))` — no trailing newline.
     writeFileSync(path, JSON.stringify(value, null, 2));

@@ -79,6 +79,7 @@ import {
     firstPostPath,
     isFile,
     kk,
+    kkCaptured,
     metadataOf,
     NESTED_SPUR_UNSET,
     PII_FINDING_CATEGORY,
@@ -107,6 +108,7 @@ import {
     XHS_BODY_CAP,
     XHS_FORMAT,
     XHS_MAX_CARDS,
+    type XhsCard,
     xhsPlan,
 } from './kk-workflow-stages.ts';
 
@@ -2036,6 +2038,42 @@ function episodeNoteBody(body: string, lines: string[], cap: number): string {
 }
 
 /**
+ * 0251 R1: parse the composer's safe-area overflow sentence
+ * (`text overflows the safe area for field(s): <fields> (safe area: …)`, chromium.ts) into the
+ * named `points[n]` indexes — or null when the failure is anything else: no marker, a non-points
+ * field (e.g. `headline`), or an index outside `card.points`. Null means no retry.
+ */
+export function xhsOverflowPoints(stderr: string, card: XhsCard): number[] | null {
+    const marker = 'text overflows the safe area for field(s):';
+    const at = stderr.indexOf(marker);
+    if (at < 0) return null;
+    const list = stderr.slice(at + marker.length).split('(')[0] ?? '';
+    const fields = list.split(',').map((name) => /^points\[(\d+)\]$/.exec(name.trim())?.[1]);
+    if (fields.length === 0 || fields.some((field) => field === undefined)) return null;
+    const indexes = fields.map((field) => Number(field));
+    if (indexes.some((n) => n >= card.points.length)) return null;
+    return indexes;
+}
+
+/** The sentence-ending marks the shorten rule cuts at. */
+const POINT_SENTENCE_MARKS = new Set(['。', '！', '？']);
+
+/**
+ * 0251 R1: shorten one overflowing card point — drop its last sentence (cut at the last
+ * 。/！/？ that is not the final character, inclusive); a one-sentence point longer than 36
+ * code points keeps its first 36 plus `…`. Returns the input unchanged when neither rule
+ * shortens it, which the caller reads as "nothing got shorter — do not retry".
+ */
+export function shortenOverflowedPoint(point: string): string {
+    const chars = [...point];
+    for (let i = chars.length - 2; i >= 0; i--) {
+        if (POINT_SENTENCE_MARKS.has(chars[i] ?? '')) return chars.slice(0, i + 1).join('');
+    }
+    if (chars.length > 36) return `${chars.slice(0, 36).join('')}…`;
+    return point;
+}
+
+/**
  * E8: build one `image-gen` envelope per planned card, render them sequentially, and package the
  * ordered card manifest + `Content` that `xhs-pub` consumes. Format, style, provider and model
  * are pinned here (never model-authored), so the series cannot drift from its preset. Card copy
@@ -2113,17 +2151,45 @@ export function dailyXhsRender(args: string[]): void {
                 // Sequential on purpose: one provider call per card (illustration only —
                 // card copy is typeset by image-gen's composer, never prompted), and the
                 // first failure stops the spend — later cards stay unrendered for a resume
-                // run to pick up.
-                const status = kk(
-                    ['executor', 'run', 'image-gen', '--in', envPath, '--out', out, ...pluginsArgs(pluginsPath)],
-                    { soft: true },
-                );
+                // run to pick up. 0251: the one captured call — the overflow retry branches
+                // on the composer's stderr, which kk()'s inherit stdio cannot return.
+                const imageGenArgs = [
+                    'executor',
+                    'run',
+                    'image-gen',
+                    '--in',
+                    envPath,
+                    '--out',
+                    out,
+                    ...pluginsArgs(pluginsPath),
+                ];
                 // 0219 R2: name the failed card so a hand re-run resumes without re-billing.
-                if (status !== 0) {
-                    failWith(
-                        status,
-                        `xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}`,
-                    );
+                const resumeLine = (status: number): string =>
+                    `xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}`;
+                let result = kkCaptured(imageGenArgs, { soft: true });
+                if (result.status !== 0) {
+                    // 0251 R1: retry ONCE, only on a points[n] safe-area overflow whose named
+                    // fields all shorten. The envelope is rewritten in the same shape and
+                    // image-gen is called once more; a second failure takes the resume line.
+                    let shortened = false;
+                    for (const n of xhsOverflowPoints(result.stderr, card) ?? []) {
+                        const point = card.points[n] ?? '';
+                        const next = shortenOverflowedPoint(point);
+                        if (next.length < point.length) {
+                            card.points[n] = next;
+                            shortened = true;
+                        }
+                    }
+                    if (shortened) {
+                        (imageGen.vars as Record<string, unknown>).points = card.points.join('\n');
+                        sted('write', envPath, () =>
+                            writeJsonText(envPath, [
+                                { id: `xhs-card-${card.index}`, title: runDate, body: '', metadata: { imageGen } },
+                            ]),
+                        );
+                        result = kkCaptured(imageGenArgs, { soft: true });
+                    }
+                    if (result.status !== 0) failWith(result.status, resumeLine(result.status));
                 }
                 artifact = firstArtifact(requireJson(out, 'xhs render'));
             }
