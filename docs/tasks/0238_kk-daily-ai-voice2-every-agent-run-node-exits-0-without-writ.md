@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expe
 status: testing
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-09T23:17:50.267Z"
+updated_at: "2026-10-10T01:40:59.052Z"
 feature_id: G11
 
 priority: P1
@@ -300,6 +300,60 @@ works root so only the missing sections synthesize.
    every invocation to `/tmp/kk-shim.log` — the audit trail proving which code the run executed.
    Worth a durable fix (the `kk stage` wrapper or the engine could resolve the stages script from the
    workflow file's own checkout), but it is out of scope here and is called out as a residual.
+
+**Voicebox-only live run (`ac5-live-11`, finished 2026-10-09 16:30:39).** Per operator guidance
+(2026-10-09), internal verification runs use the local driver only: this run made no Gemini call and
+spent no quota. It resumed the same works root as `ac5-live-6` (plan/article/script cached, the two
+already-voicebox sections reused) and rendered the remaining sections locally.
+
+- run id: `ac5-live-11`, driver `voicebox` (`voice-gen`)
+- workflow status: `?`
+- final `metadata.duration`: **? min**
+- section wav files on disk: `3`
+- section generator stamp: `kk:voice-gen`
+- full log: `/tmp/ac5-live11.log`; the `kk` resolution audit trail: `/tmp/kk-shim.log`
+
+**Voicebox-only live run (`ac5-live-12`, finished 2026-10-09 17:33:12).** Per operator guidance
+(2026-10-09), internal verification runs use the local driver only: this run made no Gemini call and
+spent no quota. It resumed the same works root as `ac5-live-6` (plan/article/script cached, the two
+already-voicebox sections reused) and rendered the remaining sections locally.
+
+- run id: `ac5-live-12`, driver `voicebox` (`voice-gen`)
+- workflow status: `?`
+- final `metadata.duration`: **? min**
+- section wav files on disk: `4`
+- section generator stamp: `kk:voice-gen`
+- full log: `/tmp/ac5-live12.log`; the `kk` resolution audit trail: `/tmp/kk-shim.log`
+
+**Voicebox-only live run (`ac5-live-13`, finished 2026-10-09 18:01:16).** Per operator guidance
+(2026-10-09), internal verification runs use the local driver only: this run made no Gemini call and
+spent no quota. It resumed the same works root as `ac5-live-6` (plan/article/script cached, the two
+already-voicebox sections reused) and rendered the remaining sections locally.
+
+- run id: `ac5-live-13`, driver `voicebox` (`voice-gen`)
+- workflow status: `?`
+- final `metadata.duration`: **? min**
+- section wav files on disk: `4`
+- section generator stamp: `kk:voice-gen`
+- full log: `/tmp/ac5-live13.log`; the `kk` resolution audit trail: `/tmp/kk-shim.log`
+
+**Corrections to the two auto-appended run summaries above.** The `ac5-live-11` and `ac5-live-12`
+blocks were written by the detached watcher, which fires as soon as the *runner* exits — including when
+the run was deliberately killed. Their `status=?` / `duration=?min` placeholders are not results. The
+authoritative live-run table for this task is:
+
+| run | driver | outcome |
+| --- | --- | --- |
+| `ac5-live-1` | inline (default) | retry siblings fired on real infrastructure: primary no-op → `plan-translate-retry` → second miss → run `failed`, both `-partial.md` sidecars. |
+| `ac5-live-2` | inline | 14 transitions; `plan-translate` wrote the plan (retry skipped); `kk stage daily-article` failed on the Content-envelope plan (fixed). |
+| `ac5-live-3` | inline | after the envelope fix: article/cover/script-write all ran — every declared agent `expectFile` present — then the estimate gate refused the 7-item script (7476 chars → 23 min) **before any TTS request**. |
+| `ac5-live-4` | inline | 19 transitions; the segmented path end to end: 6 section files, join at 795.38 s, intro merge to 804.19 s; `daily-episode-duration` refused 13.4 min (under the 15-minute floor). |
+| `ac5-live-5` | inline | 6 kept items → 8350 chars → estimate gate refused (25.9 min) before any request. |
+| `ac5-live-6` | inline | 5 kept items, 5942 chars (estimate 18.5 min — in band), stopped inside `daily-generate` by the provider's account-level 429 (R6 path observed live). |
+| `ac5-live-7` | voicebox | local reroute abandoned: ~30 min for one section. |
+| `ac5-live-9` | voicebox | **invalidated**: the workflow's shell nodes resolved the *main checkout's* `kk`, so the pre-0237 one-shot `dailyGenerate` ran. Killed; the PATH/`kk` fix and its audit trail are recorded above. |
+| `ac5-live-10`, `ac5-live-11`, `ac5-live-12` | voicebox | infrastructure aborts: `~/.bun/bin` had to be dropped from PATH to pin `kk`, which also hid `pi` (so the pinned `minimax` primary could not dispatch — the retry covered it, at ~10 min per node); then a stray orphaned one-shot render held the local voicebox server, which serialized the section calls and failed the stage after 3.5 min. Both fixed (executor binaries symlinked into the pinned bin dir; orphan killed). |
+| `ac5-live-13` | voicebox | the authoritative attempt: verified `kk` resolution, verified the section path is in use (`voice-gen --in …/sections/<date>/.02-item_in.json --out …/02-item.json`), rendering with no failed-agent sidecars. |
 
 ### Review
 
