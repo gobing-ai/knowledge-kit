@@ -652,7 +652,8 @@ if (plugin === 'aihot-ingest') {
                 const result = Bun.spawnSync(
                     ['spur', 'workflow', 'run', workflowPath, '--vars', vars, '--run-id', runId, '--json'],
                     {
-                        cwd: join(import.meta.dir, '../../..'),
+                        // 0247 R3: testRoot cwd keeps the run row (and the work-dir.txt anchor) out of the repo's .spur/.
+                        cwd: testRoot,
                         env: {
                             ...process.env,
                             // The test itself may run inside a pipeline step — never leak the guard
@@ -668,6 +669,7 @@ if (plugin === 'aihot-ingest') {
                 );
 
                 expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0);
+                expect(existsSync(join(testRoot, '.spur/spur.db'))).toBe(true); // 0247 R3: the row lives in the temp workspace
                 expect(existsSync(join(workDir, '10-ingest/source.json'))).toBe(true);
                 const runDate = readFileSync(join(workDir, 'run-date.txt'), 'utf8').trim();
                 // 0097: per-source docs live in fan-in's internal temp files — only blended.json lands.

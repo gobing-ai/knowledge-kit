@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -289,7 +289,8 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
                 JSON.stringify({ work_dir: workDir, auto: 'true', judge: 'true', unslop: 'true' }),
             ],
             {
-                cwd: join(import.meta.dir, '../../..'),
+                // 0247 R3: a temp cwd keeps the run row in the walk's own .spur/spur.db, not the repo's.
+                cwd: workDir,
                 // The test may run inside a pipeline step — never leak the guard into the child.
                 env: {
                     ...process.env,
@@ -304,6 +305,7 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
         expect(summary.finalState).toBe('done');
+        expect(existsSync(join(workDir, '.spur/spur.db'))).toBe(true); // 0247 R3: the row lives in the temp workspace
         // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.
     }, 30_000);
 });
@@ -397,7 +399,8 @@ describe('kk-itc illustrate + adapt (0152)', () => {
                 }),
             ],
             {
-                cwd: join(import.meta.dir, '../../..'),
+                // 0247 R3: a temp cwd keeps the run row in the walk's own .spur/spur.db, not the repo's.
+                cwd: workDir,
                 // The test may run inside a pipeline step — never leak the guard into the child.
                 env: {
                     ...process.env,
@@ -412,6 +415,7 @@ describe('kk-itc illustrate + adapt (0152)', () => {
         const summary = JSON.parse(result.stdout.toString());
         expect(summary.status).toBe('done');
         expect(summary.finalState).toBe('done');
+        expect(existsSync(join(workDir, '.spur/spur.db'))).toBe(true); // 0247 R3: the row lives in the temp workspace
         // AC1 behavioral proof: the spend vars route the walk through illustrate (+1 transition vs base)
         expect(summary.transitionsTaken).toBe(14);
         // --no-log: the run-record write contends under concurrent spur use (refine measured 5-8x); nothing here reads the record. Measured: ~0.7-1.1s idle, ~2.2s with 8 concurrent walks — 30s is headroom, not a budget.

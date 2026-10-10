@@ -169,6 +169,7 @@ dist
 /.spur/memory/runs/
 /.spur/server-owner.lock/
 /.tmp-test-xhs/
+/.tmp-test-wechat/
 
 /data/voicebox.db
 /data/backends/cuda
