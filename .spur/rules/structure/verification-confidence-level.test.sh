@@ -111,5 +111,62 @@ Verification (2026-01-01, some-procedure): SURE
 -->
 EOF
 
+# --- verification records (docs/tasks/**) — the level the pipeline writes into `## Testing` ---
+
+case_check record-level-misspelled 1 <<'EOF'
+# 0099 — a task file
+
+## Testing
+
+- Verdict: PASS
+- Confidence: High — wrong case is not in the enum.
+- Evidence: `plugins/kk/scripts/daily-stages.ts:583`.
+EOF
+
+case_check record-high-without-citation 1 <<'EOF'
+# 0099 — a task file
+
+## Testing
+
+- Verdict: PASS
+- Confidence: HIGH
+- Everything passed and nothing else to say.
+EOF
+
+case_check record-medium-names-gap 0 <<'EOF'
+# 0099 — a task file
+
+## Testing
+
+- Verdict: PARTIAL
+- Confidence: MEDIUM — the live run was not run; see the gap above.
+EOF
+
+case_check record-bold-form-cited 0 <<'EOF'
+# 0099 — a task file
+
+## Testing
+
+- Verdict: PASS
+- **Confidence:** HIGH — verified at `apps/cli/tests/voice2-dag.test.ts:1`.
+EOF
+
+case_check record-minconfidence-is-not-a-level 0 <<'EOF'
+# 0099 — a task file
+
+## Testing
+
+- Verdict: PASS
+- The catalog `minConfidence: 0` stays, and `raw_confidence` is unaffected.
+EOF
+
+case_check record-level-outside-testing-is-not-judged 0 <<'EOF'
+# 0099 — a task file
+
+## Q&A
+
+- A reviewer asked about Confidence: HIGH in prose, outside the verification record.
+EOF
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
