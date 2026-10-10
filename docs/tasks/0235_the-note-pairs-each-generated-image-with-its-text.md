@@ -79,7 +79,7 @@ F616 (done) typesets card copy with real type. Do not add a second text renderer
 #### Q&A entry — 2026-10-09 (operator decision: live evidence deferred)
 
 - **AC1's live-console bullet (one voice2 dry run reading `publishStatus: draft` with `operation: 上传图文`, confirmed in 草稿箱 → 图文笔记 under `~/.config/kk/browser-profiles/xhs`) is operator-deferred.** It requires an operator-attended headed run under ADR-025 and cannot be produced headlessly. AC1 is certified on its three code-level bullets (episode image order + one numbered line per image ≤1000 chars; byte-identity without `note_scope` plus a clean `git diff --exit-code` on `kk-daily-ai-voice.yaml`; the missing-cover case), each with executable evidence.
-- **The deferral is not a PASS.** It is recorded here, in `## Testing`, in the run log (`.spur/memory/runs/574d1750-…md`) and in the verdict artifact; the live run id is still owed before anyone may claim the console behaviour observed.
+- **The deferral is not a PASS.** It is recorded here, in `## Testing`, and in the run's durable verdict record (`.spur/memory/evidence/0235-verdict.json`); the live run id is still owed before anyone may claim the console behaviour observed. The worktree run log `574d1750-….md` was LOST with the worktree's gitignored `.spur` plane on 2026-10-09 (task 0247 R1) — recorded as lost, never reconstructed; the durable verdict record above carries the same run's outcome and proof digest.
 - **Follow-up:** schedule the attended dry run, record the run id and the 草稿箱 check in `## Testing`.
 
 ### Design
@@ -183,7 +183,7 @@ The pairing has to be checkable, so the body is built from the card fields the p
 
 ### Review
 
-Independent re-review (native subagent, fresh context, read-only) after run 2's remediation: **Verdict PASS** — run 1's P3 resolved, no P1/P2/P3 outstanding, R1–R4 and AC1 MET on executable evidence. Full report: `.spur/run/574d1750-9e6b-46ac-bff3-d5385cb11d8c-review-answer.txt`.
+Independent re-review (native subagent, fresh context, read-only) after run 2's remediation: **Verdict PASS** — run 1's P3 resolved, no P1/P2/P3 outstanding, R1–R4 and AC1 MET on executable evidence. The reviewer's full answer lived in the run-scoped file `574d1750-9e6b-46ac-bff3-d5385cb11d8c-review-answer.txt`; it was LOST with the worktree's gitignored `.spur` plane on 2026-10-09 (task 0247 R1) and is not reconstructed — the durable record carrying the same PASS verdict and proof block is `.spur/memory/evidence/0235-verdict.json`.
 
 | Priority | Finding | Evidence | Disposition |
 | --- | --- | --- | --- |
@@ -197,7 +197,7 @@ Independent re-review (native subagent, fresh context, read-only) after run 2's 
 
 **Residual risk.** The AC1 live-console clause (one voice2 dry run reading `publishStatus: draft` with `operation: 上传图文`, confirmed in 草稿箱 → 图文笔记 under `~/.config/kk/browser-profiles/xhs`) is an operator-attended step under ADR-025 and is **operator-deferred, recorded 2026-10-09**; it is not claimed as observed.
 
-**Review limitation.** The reviewer context exposes no shell and no write tool: no command was executed by the reviewer (static comparison against a clean base checkout plus the recorded gate log), and this answer artifact was persisted by the host verbatim from the reviewer's report. The host re-ran the targeted tests and the negative control, and confirmed the aggregate gate receipt (`0235-check-receipt.json`, `proofDigest = sha256:98ff06aa…`) belongs to this run.
+**Review limitation.** The reviewer context exposes no shell and no write tool: no command was executed by the reviewer (static comparison against a clean base checkout plus the recorded gate log), and this answer artifact was persisted by the host verbatim from the reviewer's report. The host re-ran the targeted tests and the negative control, and confirmed the aggregate gate receipt (`0235-check-receipt.json`, `proofDigest = sha256:98ff06aa…`) belongs to this run — the receipt file itself was LOST with the worktree on 2026-10-09 (task 0247 R1); the digest it named is preserved in the durable verdict record's proof block.
 
 ### References
 

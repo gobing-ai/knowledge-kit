@@ -1,0 +1,46 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# ADR-131 consumer invariant, one step wider than `no-scratch-verdict-pointer`: `.spur/run/` and
+# `.spur/memory/` are disposable per-tree planes, so a task's record must not cite a RUN-SCOPED
+# pipeline pointer whose file is gone. `no-scratch-verdict-pointer` anchors on the single
+# machine-consumed `done_reason` field; this rule covers the pointers the pipeline writes per run
+# and that a reader is meant to resolve — `.spur/run/<run-uuid>…` (review/test-fix answers),
+# `.spur/memory/runs/<run-record>`, `.spur/run/<wbs>-check-receipt.json`, and
+# `.spur/run/<wbs>-verify-answer.txt`.
+#
+# Why it exists. On 2026-10-09 the batch `dev-runall --tasks 0235,0236 --worktree --wrap` implemented,
+# verified and FF-merged both tasks correctly, but its evidence plane did not survive the worktree
+# removal: the review answers and the 0236 gate receipt were cited in the committed corpus while the
+# files died with the gitignored `.spur` plane. Nothing checked that class, so it landed silently
+# (task 0247).
+#
+# Scope — pointers, not directory strings. 300+ tracked documents legitimately mention `.spur/run/`
+# while documenting what the pipeline writes there; only a citation of a run-scoped pointer that does
+# not resolve is a broken reference. Non-pointer narrative citations (dogfood logs, discovery
+# fixtures, ad-hoc scratch) stay out of scope, as do tasks that are not yet done/testing. The
+# pre-rule backlog lives in the checker and may only shrink.
+#
+# Evidence and repair. The checker prints `<MISS> <wbs> <path> (<file>:<line>)` and exits 1; its
+# falsification cases (including the task-0247 negative control: it must fire on the pre-repair
+# 0235/0236 corpus) live in `scratch-citation-existence.test.sh`. Repair by retargeting the citation
+# at `.spur/memory/evidence/<wbs>-verdict.json`, or by marking the line OWED/LOST when the artifact is
+# genuinely owed or gone.
+rules:
+  - id: no-dead-run-scoped-citation
+    description: >
+      A task at `done`/`testing` must not cite a run-scoped `.spur/run/...` or `.spur/memory/...`
+      pipeline pointer (a run-uuid artifact, a `memory/runs/` record, a `<wbs>-check-receipt.json`,
+      or a `<wbs>-verify-answer.txt`) whose file does not exist in this tree — ADR-131 makes those
+      planes disposable, so such a pointer is a reference a later reader cannot resolve. Cite the
+      durable `.spur/memory/evidence/<wbs>-verdict.json` instead, or mark the citation OWED/LOST.
+      Repair detail: `sh .spur/rules/structure/scratch-citation-existence.sh`; falsification cases:
+      `sh .spur/rules/structure/scratch-citation-existence.test.sh`.
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/scratch-citation-existence.sh"
+        message: "exit {code}: a done/testing task cites a run-scoped `.spur/run`/`.spur/memory` pointer whose file does not exist in this tree (ADR-131 makes those planes disposable). Retarget it at `.spur/memory/evidence/<wbs>-verdict.json`, mark the line OWED/LOST when the artifact is genuinely owed or gone, or retire the pre-rule backlog entry after repairing it — run `sh .spur/rules/structure/scratch-citation-existence.sh` for the file:line list"
+    include:
+      - "docs/tasks*/**/*.md"

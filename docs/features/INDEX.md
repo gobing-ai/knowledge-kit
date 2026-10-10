@@ -74,7 +74,7 @@
     ├── [backlog] **G4**: kk-solo-podcast ([G4_kk-solo-podcast.md](./G4_kk-solo-podcast.md))
     ├── [backlog] **G5**: kk-storm-research ([G5_kk-storm-research.md](./G5_kk-storm-research.md))
     ├── [backlog] **G6**: kk-ingest-generate-publish ([G6_kk-ingest-generate-publish.md](./G6_kk-ingest-generate-publish.md))
-    └── [backlog] **G7**: kk workflow run ledger ([G7_kk-workflow-run-ledger.md](./G7_kk-workflow-run-ledger.md))
+    └── [active] **G7**: kk workflow run ledger ([G7_kk-workflow-run-ledger.md](./G7_kk-workflow-run-ledger.md))
         └── [done] **G71**: Per-workflow run ledger from spur action_runs ([G71_per-workflow-run-ledger-from-spur-action-runs.md](./G71_per-workflow-run-ledger-from-spur-action-runs.md))
 [cancelled] **H**: Real STORM generator and wt generator harvest ([H_real-storm-generator-and-wt-generator-harvest.md](./H_real-storm-generator-and-wt-generator-harvest.md))
 [backlog] **I**: LLM wiki ([I_llm-wiki.md](./I_llm-wiki.md))
