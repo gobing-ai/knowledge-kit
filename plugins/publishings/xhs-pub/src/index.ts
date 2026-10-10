@@ -347,10 +347,14 @@ export class XhsBrowserTransport implements PublishTransport {
             // are the same kind of entry, and neither can fail the note the visit was opened for.
             const followUps: Result[] = [];
             for (const followUp of visit.followUps) {
-                followUps.push(
+                const step =
                     'error' in followUp
                         ? fail(`follow-up (${followUp.operation}): ${followUp.error}`)
-                        : await this.runStep(followUp.input, followUp.content, page, profileDir),
+                        : await this.runStep(followUp.input, followUp.content, page, profileDir);
+                // Every entry names the operation it was planned under — a failed or refused one too,
+                // so the caller can tell which note fell; the step's own metadata wins.
+                followUps.push(
+                    ResultSchema.parse({ ...step, metadata: { operation: followUp.operation, ...step.metadata } }),
                 );
             }
             return ResultSchema.parse({ ...primary, metadata: { ...primary.metadata, followUps } });

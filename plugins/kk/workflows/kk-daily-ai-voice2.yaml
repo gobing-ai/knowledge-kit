@@ -537,6 +537,12 @@ nodes:
   - id: xhs-render
     description: "Render the card series through the pinned xhs-card/xhs-knowledge presets, attach the episode cover last and pair every image with its numbered line (0235 note_scope=episode); onError: continue — the publish node names the missing series and stays soft"
     dependsOn: [xhs-write]
+    # A skipped xhs-write still admits its dependents, so each XHS node carries its own gate:
+    # without it a run with xhs_enabled=false would re-package a stale same-day 25-xhs/ series.
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.xhs_enabled}" = "true"'
     action:
       kind: shell
       onError: continue
@@ -551,6 +557,10 @@ nodes:
     # note is dropped silently (the stage logs and still exits 0). A skipped publish-prep — a
     # non-publishing run — still admits this node, so the edge cannot deadlock the DAG.
     dependsOn: [xhs-render, publish-prep]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.xhs_enabled}" = "true"'
     action:
       kind: shell
       options:

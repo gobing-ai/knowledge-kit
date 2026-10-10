@@ -104,6 +104,8 @@ export interface XhsCard {
     layout: string;
     subject: string;
     sourcePoint: string;
+    /** 0235: the plan item a voice2 content card covers (absent on the hook/closing cards and in voice1). */
+    itemId?: string;
 }
 
 export function fail(message: string): never {
@@ -1058,6 +1060,7 @@ export function xhsPlan(planPath: string, count: number): { title: string; body:
             layout: text('layout'),
             subject: text('subject'),
             sourcePoint: text('sourcePoint'),
+            ...(typeof card.itemId === 'string' && card.itemId.trim() !== '' ? { itemId: card.itemId.trim() } : {}),
         };
     });
     return { title, body, cards };

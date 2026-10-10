@@ -1350,6 +1350,68 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-xhs-render fails before rendering any card when the numbered lines alone overflow the note cap (0235 R2)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            // Six 200-char first points: the lines alone exceed 1000 with no lead left to trim.
+            const card = (role: string, copy: string) => ({
+                ...xhsCard(role, copy, 'fact'),
+                points: ['长'.repeat(200)],
+            });
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({
+                    title: '今日 AI 速览',
+                    body: '本期 #AI',
+                    cards: [
+                        card('cover', 'a'),
+                        ...['b', 'c', 'd', 'e'].map((c) => card('content', c)),
+                        card('closing', 'f'),
+                    ],
+                }),
+            );
+
+            const result = run(episodeArgs(dir, 6), env);
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('a line is never dropped');
+            // Nothing was paid for: no provider call, no manifest, no note.
+            expect(existsSync(record)).toBe(false);
+            expect(existsSync(join(xhs, 'cards.json'))).toBe(false);
+            expect(existsSync(join(xhs, 'content.json'))).toBe(false);
+        });
+    });
+
+    it('daily-xhs-render records each card plan item id in cards.json when the plan carries one (0235)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'image-gen');
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({
+                    title: '今日 AI 速览',
+                    body: '正文 #AI',
+                    cards: [
+                        xhsCard('cover', '今日头条', 'lead fact'),
+                        { ...xhsCard('content', '模型发布', 'f'), itemId: 'i2' },
+                    ],
+                }),
+            );
+
+            expect(run(episodeArgs(dir, 2), env).status).toBe(0);
+            const manifest = JSON.parse(readFileSync(join(xhs, 'cards.json'), 'utf-8')) as {
+                cards: Record<string, unknown>[];
+            };
+            // The hook card maps to no single item, so it carries no key at all.
+            expect('itemId' in (manifest.cards[0] ?? {})).toBe(false);
+            expect(manifest.cards[1]?.itemId).toBe('i2');
+        });
+    });
+
     it('daily-xhs-render without note_scope packages the pre-0235 content.json byte-for-byte (0235 R4)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');
@@ -1696,6 +1758,36 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             );
             expect('followUps' in packagedNote(dir).metadata).toBe(false);
             expect(readFileSync(record, 'utf-8')).toContain('xhs-pub');
+        });
+    });
+
+    it('daily-publish-xhs names a failed 发播客 follow-up on a cache hit instead of hiding it (0236)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKk(dir, record, 'xhs-pub');
+            writeXhsSeries(dir);
+            mkdirSync(join(dir, '31-publish'), { recursive: true });
+            // A visit whose 图文 draft stood and whose 发播客 note failed.
+            writeFileSync(
+                join(dir, '31-publish/20260101_19_publish-xhs_result.json'),
+                JSON.stringify({
+                    ok: true,
+                    target: 'xhs',
+                    metadata: {
+                        publishStatus: 'draft',
+                        followUps: [
+                            { ok: false, target: 'xhs', error: 'modal save', metadata: { operation: '发播客' } },
+                        ],
+                    },
+                }),
+            );
+
+            const result = run(['daily-publish-xhs', dir, '20260101', '', 'false', 'true'], env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('publish-xhs cached: draft already recorded');
+            expect(result.stdout).toContain('follow-up 发播客 did not complete: modal save');
+            // Still cached: a rerun would post a second 图文 draft, so the visit is not repeated.
+            expect(existsSync(record)).toBe(false);
         });
     });
 

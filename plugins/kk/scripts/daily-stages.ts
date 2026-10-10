@@ -860,6 +860,17 @@ export function dailyPublishXhs(args: string[]): void {
         // xhs_live=true re-run (that would report a live post that never happened).
         if (resultPublishStatus(result) === want) {
             console.log(`publish-xhs cached: ${want} already recorded in ${result}`);
+            // 0236: the cache keys on the visit's primary note, so a 发播客 follow-up that failed in
+            // that visit is named here instead of hidden. It is not retried: a re-visit would post
+            // a second 图文 draft (the console has no idempotency key).
+            const followUps = metadataOf(readJson(result)).followUps;
+            for (const entry of Array.isArray(followUps) ? followUps : []) {
+                const step = (entry ?? {}) as Record<string, unknown>;
+                if (step.ok === true) continue;
+                console.log(
+                    `publish-xhs cached: follow-up ${String(metadataOf(step).operation ?? '?')} did not complete: ${String(step.error ?? 'no error recorded')}`,
+                );
+            }
             return;
         }
         if (!isFile(content)) {
@@ -1537,9 +1548,13 @@ export function dailyXhsRender(args: string[]): void {
         sted('mkdir', cardsDir, () => mkdirSync(cardsDir, { recursive: true }));
         const images: Record<string, unknown>[] = [];
         const cards: Record<string, unknown>[] = [];
-        // 0235 R2: the numbered lines are pushed in the same step as their image, so attach order
-        // and body order cannot drift apart.
-        const lines: string[] = [];
+        // 0235 R2: the numbered lines are a pure function of the plan and the cover, in attach order
+        // (cards in plan order, the cover last), so the note — and its cap — is settled before the
+        // first card is billed: an over-cap tail fails here with nothing rendered.
+        const withCover = episode && isFile(coverPath);
+        const lines = plan.cards.map((card, i) => `${markerFor(i)} ${card.copy}：${card.points[0] ?? ''}`);
+        if (withCover) lines.push(`${markerFor(lines.length)} 每日AI乱炖 ${runDate} 本期封面`);
+        const body = episode ? episodeNoteBody(plan.body, lines, XHS_BODY_CAP) : plan.body;
         for (const card of plan.cards) {
             const out = join(cardsDir, `card-${card.index}.json`);
             const promptPath = join(cardsDir, `card-${card.index}.prompt.txt`);
@@ -1615,29 +1630,25 @@ export function dailyXhsRender(args: string[]): void {
                 promptPath,
                 imagePath,
                 illustrationPath,
+                ...(card.itemId === undefined ? {} : { itemId: card.itemId }),
                 status: 'rendered',
             });
-            const [firstPoint = ''] = card.points;
-            lines.push(`${markerFor(lines.length)} ${card.copy}：${firstPoint}`);
         }
         // 0235 R1: the episode cover closes the set — it is ultrawide, and image 1 (card 01) is what
         // sets the note's grid ratio. It is `daily-cover`'s own artifact (no new image kind), and
         // the set is ≤ XHS_MAX_CARDS + 1 = 11, inside `xhs-pub`'s XHS_IMAGE_MAX (18).
-        if (episode) {
-            if (isFile(coverPath)) {
-                images.push({ path: resolve(coverPath) });
-                lines.push(`${markerFor(lines.length)} 每日AI乱炖 ${runDate} 本期封面`);
-            } else {
-                console.log(
-                    `xhs render: no episode cover at ${coverPath} — the note carries the ${cards.length} cards only`,
-                );
-            }
+        if (withCover) {
+            images.push({ path: resolve(coverPath) });
+        } else if (episode) {
+            console.log(
+                `xhs render: no episode cover at ${coverPath} — the note carries the ${cards.length} cards only`,
+            );
         }
         sted('write', manifestPath, () => writeJsonText(manifestPath, { source: planPath, cards }));
         sted('write', contentPath, () =>
             writeJsonText(contentPath, {
                 title: plan.title,
-                body: episode ? episodeNoteBody(plan.body, lines, XHS_BODY_CAP) : plan.body,
+                body,
                 format: 'text',
                 metadata: { images, publishStatus: 'draft' },
             }),

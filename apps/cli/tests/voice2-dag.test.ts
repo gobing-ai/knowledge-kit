@@ -496,6 +496,24 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(dag.nodes.find((node) => node.id === 'xhs-publish')?.dependsOn).toEqual(['xhs-render', 'publish-prep']);
     });
 
+    it('gates xhs-render and xhs-publish on xhs_enabled — a skipped xhs-write still admits its dependents (0236)', () => {
+        // Without their own gate, a publishing run with xhs_enabled=false would re-package and
+        // re-publish a stale same-day `25-xhs/content.json` as a draft.
+        for (const id of ['xhs-render', 'xhs-publish']) {
+            const node = dag.nodes.find((candidate) => candidate.id === id);
+            expect(String(node?.condition?.options?.command), `${id} must be xhs-gated`).toBe(
+                `test "\${vars.xhs_enabled}" = "true"`,
+            );
+        }
+    });
+
+    it('keeps the voice2 xhs-write prompt inside the ADR-115 1000-char cap (0235)', () => {
+        // Measured on the parsed scalar — the prompt the agent receives, YAML indentation stripped.
+        const input = String(dag.nodes.find((node) => node.id === 'xhs-write')?.action?.options?.input);
+        expect(input).toContain('itemId');
+        expect(input.length).toBeLessThanOrEqual(1000);
+    });
+
     it('leaves kk-daily-ai-voice.yaml byte-identical (R1)', () => {
         expect(existsSync(VOICE1)).toBe(true);
         const diff = Bun.spawnSync(

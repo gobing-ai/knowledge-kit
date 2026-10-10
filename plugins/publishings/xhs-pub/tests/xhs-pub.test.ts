@@ -2262,6 +2262,8 @@ describe('xhs-pub visit follow-ups (0236 R0/R1/R2 — one visit, two notes)', ()
         // The refusal names the rail AND the gap: the modal's post-attach save path is not measured.
         expect(followUps[0]?.error).toContain('去发布');
         expect(followUps[0]?.error).toContain('never been measured');
+        // A failed entry still names its operation, so the caller can tell which note fell.
+        expect(followUps[0]?.metadata?.operation).toBe('发播客');
         // The rail held: the publish-adjacent advance was never clicked on a draft run.
         expect(clicked(visitedPage(calls)).some((selector) => selector.includes('去发布'))).toBe(false);
     });
@@ -2278,6 +2280,7 @@ describe('xhs-pub visit follow-ups (0236 R0/R1/R2 — one visit, two notes)', ()
         const followUps = result.metadata?.followUps as Result[];
         expect(followUps[0]?.ok).toBe(false);
         expect(followUps[0]?.error).toContain('metadata.audio');
+        expect(followUps[0]?.metadata?.operation).toBe('发播客');
         // The refused note never touched the console: no 上传音频, and no second upload call.
         expect(clicked(visitedPage(calls)).some((selector) => selector.includes('上传音频'))).toBe(false);
         expect(uploads(visitedPage(calls))).toEqual([[img(0), img(1)]]);
@@ -2308,6 +2311,8 @@ describe('xhs-pub visit follow-ups (0236 R0/R1/R2 — one visit, two notes)', ()
         expect(followUps[0]?.error).toContain('followUps[0] is not a Content object');
         expect(followUps[1]?.ok).toBe(false);
         expect(followUps[1]?.error).toContain("unsupported operation '发视频'");
+        // A refused entry carries the name it was planned under: its declared operation, else its slot.
+        expect(followUps.map((entry) => entry.metadata?.operation)).toEqual(['followUps[0]', '发视频']);
         // Neither refused entry reached the console: only the primary's own upload happened.
         expect(uploads(visitedPage(calls))).toEqual([[img(0), img(1)]]);
     });
