@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E93"
 name: "kk plugin check / login — live channel readiness probe (ADR-032)"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-07T18:24:07.082Z"
-updated_at: "2026-10-07T22:52:39.245Z"
+updated_at: "2026-10-10T07:14:31.933Z"
 ---
 
 # E93: kk plugin check / login — live channel readiness probe (ADR-032)
@@ -103,6 +103,7 @@ Feature: kk plugin check / login — live channel readiness probe (ADR-032)
 | --- | ---- | ------ |
 | 0215 | kk plugin check / login verbs + manifest check field (ADR-032) | done |
 | 0216 | Wire six browser channels to the ADR-032 probe contract | done |
+| 0249 | Bundle manifest-declared readiness probes for installed plugins | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -113,4 +114,5 @@ Feature: kk plugin check / login — live channel readiness probe (ADR-032)
 - 2026-10-07T22:48:42.870Z backlog → active (system)
 - 2026-10-07T22:52:38.428Z active → verifying (system)
 - 2026-10-07T22:52:39.245Z verifying → done (system)
+- 2026-10-10T07:14:31.933Z done → active (system)
 

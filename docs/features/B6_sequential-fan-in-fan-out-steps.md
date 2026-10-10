@@ -2,11 +2,11 @@
 schema_version: 1
 id: "B6"
 name: "Sequential fan-in/fan-out steps"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-08-03T01:02:09.641Z"
-updated_at: "2026-08-12T06:07:56.550Z"
+updated_at: "2026-10-10T07:14:31.768Z"
 ---
 
 # B6: Sequential fan-in/fan-out steps
@@ -44,11 +44,15 @@ Feature: Sequential fan-in/fan-out steps
 | --- | ---- | ------ |
 | 0042 | Implement kk fan-in merge command | done |
 | 0043 | Implement kk fan-out dispatch with retry-from | done |
+| 0248 | Repair production fan-out concurrency and enforce publisher process deadlines | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 
 ## History
+
 - 2026-08-12T05:46:06.870Z backlog → active (system)
 - 2026-08-12T06:07:56.396Z active → verifying (system)
 - 2026-08-12T06:07:56.550Z verifying → done (system)
+- 2026-10-10T07:14:31.768Z done → active (system)
+

@@ -238,7 +238,7 @@ export function probeVerdict(exitCode: number, stdout: string): ProbeVerdict {
             ? (parsed as { status?: unknown; profileDir?: unknown; detail?: unknown })
             : undefined;
     const status = typeof fields?.status === 'string' ? fields.status : undefined;
-    if ((status === 'verified' || status === 'refused') && (exitCode === 0 || exitCode === 1)) {
+    if ((status === 'verified' && exitCode === 0) || (status === 'refused' && exitCode === 1)) {
         return {
             status,
             ...(typeof fields?.profileDir === 'string' ? { profileDir: fields.profileDir } : {}),

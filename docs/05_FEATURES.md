@@ -5,7 +5,7 @@ owns: STATUS — feature decomposition + state
 authority: derived
 version: 2.25.0
 created_at: 2026-07-22
-updated_at: 2026-09-26
+updated_at: 2026-10-10
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -53,7 +53,7 @@ sync: [T4]
 | B3 | Spur workflow integration | ✅ done | 1 | task `0005`: `knowledge-kit invoke` + pipeline workflow template; E2E proof → **B5** |
 | B4 | CLI surface | ✅ done | 1 | tasks `0020`/`0021` done: `plugins list` + `plugins doctor` (noun group, `--json`); verifyall re-audit PASS + shippable; commit `fed9412` |
 | B5 | End-to-end pipeline acceptance | ✅ done | 1 | tasks `0026`/`0027` done; vertical over B3 invoke + C2/D2/E3 proven (fixture → content → `ok:true`); verifyall re-audit PASS + shippable; commits `662ba0b`/`41bf221` |
-| B6 | Sequential fan-in/fan-out steps | ✅ done | 2 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`); tasks `0042`/`0043` done (fanin merge + fanout retry-from); docs synced 2026-08-12 |
+| B6 | Sequential fan-in/fan-out steps | 🔶 partial | 3 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`); tasks `0042`/`0043` done; reopened 2026-10-10 for `0248`: production fan-out concurrency and process deadlines |
 | B7 | Multi-root plugin auto-discovery | ✅ done | 2 | task `0053` done; ADR-012 shipped — `discoverAllPlugins` / `resolvePluginRoots` + `origin`-stamped records + `shadowed` diagnostic in `@gobing-ai/kk-core`; repeatable `--plugins-path` on `executor run` / `fan-out` / `plugin status`; `KK_PLUGIN_PATH`; `--plugins-root` exclusive (combined with `--plugins-path` → exit 2); workflow template injects `--plugins-path`. **Not** the historical judge B7 (that work is **F1**). |
 | **C** | Ingestion | ⏳ active | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007); closed via carrier `0039`, then **reopened for plugin intake** |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
@@ -78,7 +78,7 @@ sync: [T4]
 | E7 | Remaining wt-publish harvest | ✅ done | 3 | tasks `0141`–`0147` done; harness browser drivers + `medium-pub`/`wechatmp-pub`/`x-pub`/`juejin-pub`/`infoq-pub`/`substack-pub`/`xhs-pub` + thin `kk:publish` skill; satellite `docs/design/remaining-wt-publish-harvest.md`; TCC remainder deferred to F41 |
 | E8 | Xiaohongshu image-card authoring and publishing | ✅ done | 3 | tasks `0167`, `0168`, `0174` done; content-grounded card series via `image-gen`; ordered XHS draft and explicit live path through `xhs-pub`; ADR-024 and `docs/design/xhs-image-cards.md`; verifyall PASS + Shippable PASS |
 | E9 | Reusable browser sessions for publish channels | ⏳ backlog | 3 | task `0177` todo after ts-libs task `0088`; XHS is the first consumer of the planned shared browser-profile package; feature satellite `docs/features/E9_reusable-browser-sessions-for-publish-channels.md` |
-| E93 | kk plugin check / login — live channel readiness probe | ✅ done | 3 | ADR-032 (amends ADR-011 R3); task `0215` done: manifest `check` field + `PluginRecord.check`, `kk plugin check`/`login` verbs, probe spawn seam `spawnPluginProbe` (only sanctioned spawn point), fixture E2E → `.spur/run/e2e/E93-plugin-check.json`; task `0216` done: all six browser channels (infoq/juejin/substack/x/xhs/wechatmp) on the ADR-032 probe contract with manifest `check` entries, xhs+wechatmp on bespoke contract-conformant CLIs, `checkHeadedOnly` for x, live run → `.spur/run/e2e/E93-plugin-check-live.json`; satellite `docs/design/kk-plugin-check.md` |
+| E93 | kk plugin check / login — live channel readiness probe | 🔶 partial | 4 | ADR-032 (amends ADR-011 R3); task `0215` done: manifest `check` field + `PluginRecord.check`, `kk plugin check`/`login` verbs, probe spawn seam `spawnPluginProbe` (only sanctioned spawn point), fixture E2E → `.spur/run/e2e/E93-plugin-check.json`; task `0216` done: all six browser channels (infoq/juejin/substack/x/xhs/wechatmp) on the ADR-032 probe contract with manifest `check` entries, xhs+wechatmp on bespoke contract-conformant CLIs, `checkHeadedOnly` for x, live run → `.spur/run/e2e/E93-plugin-check-live.json`; satellite `docs/design/kk-plugin-check.md`; reopened 2026-10-10 for `0249`: bundle installed readiness probes |
 | **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for agent capabilities and product workflows; F1–F9 children done; parent stays open for intake |
 | F1 | LLM-as-judge agent skills | ✅ done | 2 | home for 0034/0037: fat skill `content-judge` (was `judge`); persona subagents retired 2026-08-19 — rubric is an `agent.run` field; `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 / 2026-08-19 |
 | F2 | Topic-core authoring skill | ✅ done | 3 | task `0048` done; one fat `topic` skill with `create`, `init`, `outline`, and `draft`; no wrappers or runtime-plugin seam |

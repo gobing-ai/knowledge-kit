@@ -912,6 +912,8 @@ describe('probeVerdict (ADR-032 probe contract)', () => {
 
     it('never upgrades a verdict whose exit code disagrees with its status', () => {
         expect(probeVerdict(0, '{"status":"error","detail":"boom"}').status).toBe('error');
+        expect(probeVerdict(1, '{"status":"verified"}')).toEqual({ status: 'error', detail: 'probe exit 1' });
+        expect(probeVerdict(0, '{"status":"refused"}')).toEqual({ status: 'error', detail: 'probe exit 0' });
         expect(probeVerdict(2, '{"status":"verified"}')).toEqual({ status: 'error', detail: 'probe exit 2' });
     });
 
