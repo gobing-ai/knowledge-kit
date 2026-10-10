@@ -100,6 +100,12 @@ vars:
   # the residue. The revise loop adjusts content instead of killing the run (2026-10-05 operator
   # decision), so this must be > 0 for a publishing run to be self-healing.
   safety_max_revise: "2"
+  # 2026-10-10: what an `escalate` classification costs an unattended run. `pause` (default) sends
+  # it to the `review` HITL — correct for a human at the keyboard, fatal for a 06:00 cron job, which
+  # can never answer and therefore always exits 1 having published nothing (the 10-09 and 10-10 runs
+  # both died this way). `exclude` publishes every target at recorded risk instead; the escalate
+  # stamp keeps the escalation in the audit trail and daily-publish-prep already accepts it.
+  safety_escalate_policy: "pause"
   # Target platforms the kk:content-safety skill loads a reference file for (comma-separated).
   safety_platforms: "xiaoyuzhou,apple-podcasts,wechatmp"
   last30days_topic: "AI news"
@@ -727,9 +733,20 @@ transitions:
       options:
         command: 'test "${vars.safety_status}" = "pass" && test "${vars.skip_review}" = "true"'
 
+  # 2026-10-10: first-match-wins — this sits above the escalate->review edge, so an unattended run
+  # that opted into safety_escalate_policy="exclude" publishes an escalation instead of halting.
+  # It requires skip_review so the HITL gate still stands for every run a human is watching.
+  - from: safety-judge
+    to: wrap-docs
+    description: "escalate, and this run is unattended with an exclude escalation policy -> publish at recorded risk rather than pause a run that can never be answered"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.safety_status}" = "escalate" && test "${vars.safety_escalate_policy}" = "exclude" && test "${vars.skip_review}" = "true"'
+
   - from: safety-judge
     to: review
-    description: "pass without skip_review, or escalate (a finding marked disposition:\"escalate\"; legacy reports: any RISK/escalate) -> operator review; skip_review never bypasses an escalation"
+    description: "pass without skip_review, or escalate (a finding marked disposition:\"escalate\"; legacy reports: any RISK/escalate) -> operator review; skip_review never bypasses an escalation unless safety_escalate_policy=\"exclude\""
     guard:
       kind: shell
       options:

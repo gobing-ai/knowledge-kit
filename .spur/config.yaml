@@ -56,12 +56,12 @@ bootstrap:
       # 06:00 daily: kk-daily-ai-voice end-to-end (ingest → article → plan →
       # publish surfdash + podcast → run report). Morning results (episode
       # audio, show notes, run report) land in the run's workspace. Voice-gen
-      # runs against local voicebox (no TTS quota); the ARK 429 quota reset
-      # (2026-09-18) affects only LLM agent stages — the E2E run of 2026-09-12
-      # completed with ARK still exhausted. The run fails loud like any other
-      # stage. Voicebox is NOT probed here: the workflow default vdriver=voicebox
-      # makes the voice-gen plugin auto-start the server (VOICEBOX_SERVER_BIN /
-      # VOICEBOX_DATA_DIR).
+      # runs against hosted Gemini TTS (vdriver=gemini, the workflow default —
+      # GEMINI_API_KEY + GEMINI_TTS_MODEL live in ~/.config/kk/config.yaml's
+      # gemini-tts env block; a 1-segment smoke render took 23s on 2026-10-10).
+      # No local Voicebox server is involved. The run fails loud like any other
+      # stage. Voicebox is NOT probed here: the gemini client is a clientOverride
+      # path, so voice-gen's local-server auto-start never fires.
       - name: kk-daily-ai-voice
         cron: "0 6 * * *"
         # 4h child budget (default is 600s — the 06:00 runs of 2026-09-19/20 died
@@ -81,14 +81,20 @@ bootstrap:
         # failure of 2026-09-13..18 (double quotes let the job worker's /bin/sh
         # expand it before spur sees it). publish_enabled defaults to false,
         # and skip_review=true avoids the HITL pause at `review` — a 06:00 cron
-        # run must be headless. cover_enabled stays at its workflow default
+        # run must be headless. safety_escalate_policy=exclude closes the same
+        # hole at `safety-judge`: an `escalate` classification used to pause at
+        # `review` no matter what, which no cron run can answer — the 2026-10-09
+        # and 2026-10-10 jobs both ended exit 1 having published nothing (the XY-01
+        # / WX-02 资质口径 escalation now reads `note` per the 2026-10-10 operator
+        # ruling in the platform reference files; this var is the backstop for the
+        # next legitimate escalation). cover_enabled stays at its workflow default
         # (true, minimax/image-01): the 09-12 async-image disable is stale — the
         # pinned-preset cover path (0163/F614) rendered synchronously on
         # 09-24/25 and was re-verified end-to-end on the 20260928 workspace
         # (brief → render 18s → normalize → PNG) before re-enabling.
         command: >-
           spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
-          --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"skip_review\":\"true\"}"
+          --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"skip_review\":\"true\",\"safety_escalate_policy\":\"exclude\"}"
 
       # 04:00, 10:00, 16:00, 22:00 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).
