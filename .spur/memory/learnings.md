@@ -1953,3 +1953,109 @@ or an unstable tree · **LOW** = key evidence not re-executed. Both tasks record
   pre-0235 source in a throwaway worktree, and re-run the negative control (`"episode"` removed →
   expect exactly 1 fail in `voice2-dag.test.ts`), then restore the YAML hash-verified. The stale
   citations are a record fix (re-point them or cite identifiers), not a re-verification.
+**Doc-evolve wrapup — 0247**
+
+Drift audit (constitution §7, detection commands run):
+
+| Check | Result |
+|---|---|
+| `00_ADR.md` | No delta. New rule joined the pre-existing `structure` category already extended by `recommended-pre-check` → an instance of ADR-017, not a new decision. No dated entry (T1 not triggered). |
+| `03_ARCHITECTURE.md` | No delta. 0247 changed no source, module boundary or data flow. |
+| `04_DESIGN.md` | No delta. No `kk` command/flag/config/DTO changed; `bootstrap.database.url` matches `.spur/config.yaml:24`; all 26 referenced `docs/design/*` paths exist. |
+| `docs/design/*` | **1 real drift, repaired** — `docs/design/xhs-image-cards.md:61` still claimed `xhs_enabled` ships **off** and "must not be enabled on a scheduled run", contradicting ADR-025's 2026-09-29 amendment (`docs/00_ADR.md:1022-1028`, which explicitly supersedes that clause), both workflow YAMLs (`kk-daily-ai-voice.yaml:65`, `kk-daily-ai-voice2.yaml:41`) and its own sibling bullet. Authority correct → only the stale projection edited. |
+| Not drift, left alone | ADR-025's Decision paragraph "per 24 h" vs the 2026-10-03 amendment's 2 h — code confirms2 h (`CAP_WINDOW_MS`); §6.1 preserves decision history. |
+| Gate | `spur rule run --preset recommended-pre-check --fail-on warning` → `All 53 rules passed`. |
+
+Not mine, left untouched: `docs/features/G13_*.md` flipped `backlog → active` during the run (harness-side, not my edit).
+
+Artifact written to `/Users/robin/xprojects/knowledge-kit/.spur/run/38e9a92a-5166-4dc3-88cf-64299e8bb562-wrapup-learnings.md`.
+
+# Wrapup learnings — batch `38e9a92a-5166-4dc3-88cf-64299e8bb562`
+
+Tasks: 0247 (status `done`, feature G7, unforced close; PASS artifact `.spur/memory/evidence/0247-verdict.json`).
+Doc-evolve audit of `docs/00_ADR.md`, `docs/03_ARCHITECTURE.md`, `docs/04_DESIGN.md`, `docs/design/*`: one real drift
+repaired (`docs/design/xhs-image-cards.md:61`), the rest zero-delta.
+
+## 2026-10-09 — 0247 (evidence survives worktree removal; no task cites a dead path)
+
+### Conventions
+
+- **Corpus edits go through the CLI section surface.** `spur task update <wbs> --section <s> --from-file`;
+  one anchor per row (L4 anchor rule). A repair that edits sections owned by other pipeline stages (the
+  review coordinator, the deterministic `record` step) is past the "one-to-two-line inline fix" bar — make it a task.
+- **Declare task-scoped AC instead of widening a home feature.** `spur task update <wbs> --ac-altitude task-local`
+  is the non-destructive escape from the DD-09 subset WARN when the parent feature (G7) is a home node whose AC
+  covers ownership, not the capability. Extending a feature's AC is a feature-scope decision reserved for the operator.
+- **A corpus-hygiene class belongs in a constraint rule, not a bespoke script.** A rule joins the shipped preset
+  (`extends: structure`), runs at the existing gate, and gets the negative-control discipline for free.
+- **Evidence pointers name durable artifacts.** `.spur/memory/evidence/<wbs>-verdict.json` and the batch report
+  survive a worktree removal; a `.spur/run/` answer file or receipt does not.
+
+### Errors and gotchas fixed
+
+- **Three dead citations in tasks 0235/0236** (two run-scoped review-answer files, one gate receipt) — every one was
+  rewritten to the promoted per-task verdict record; the files that are genuinely gone are marked **LOST in place**
+  and name the durable record carrying the same verdict. Nothing was reconstructed from a transcript.
+- **Checker swallowed the scanner's status** (run-2 review P2): a failed `rg` scan reported a clean corpus.
+  Fixed — a non-zero scan now exits 1 with `INVALID: citation scan failed`, pinned by the `failed-scan-fails-closed`
+  case (rule suite 11 passed / 0 failed).
+- **`xargs -0`, not `xargs`** in the citation sweep: a path containing a space must not be shredded.
+
+### Patterns that worked
+
+- **Negative control against git HEAD, not a hand-copied fixture.** `PASS pre-repair-negative-control (exit 1)`
+  re-reads the pre-repair 0235/0236 text from HEAD and shows the checker firing on the exact three citations;
+  `PASS repaired-corpus-passes (exit 0)` on the working tree. 11 falsification cases total.
+- **Shrink-only backlog.** Enumerate the 18 pre-rule task/path pairs inline so the gate is green in any checkout and
+  the debt can only shrink as tasks are touched. Documented in the checker header and the rule description.
+- **Investigate the anomaly before writing it up.** Fresh worktree → no `.spur/spur.db`; after tooling creates it,
+  `select count(*) from runs` → 0; the tree's own row and its record file are written together; deleting the record
+  leaves the row (the incident's shape, reachable with no inheritance); 4100 rows appear **only** when the DB *file*
+  is copied in. `git worktree add` cannot materialize rows — `.gitignore:144-151` covers the DB and both evidence
+  planes. Conclusion: the worktree DB starts empty and inherits nothing.
+- **Re-measure a claimed root cause instead of shipping it.** The Background's "refusal … with exit 0" no longer
+  reproduces (`persist-out` now exits 1 against a synthetic dead citation). Recorded as a post-certification
+  correction; the residual risk moved to the driver's pre-removal guard consuming that status (plugin owner's check).
+
+### Gotchas worth remembering
+
+- **This repo's own gate creates the anomaly it later trips.** `apps/cli/tests/kk-itc-workflow.test.ts:276-284`
+  (ids `kk-itc-dryrun-<Date.now()>`) and `kk-itc-publish-tail.test.ts:57` (`kk-itc-tail-*`) execute real workflows
+  against the tree DB and insert run rows **without** writing `.spur/memory/runs/<id>.md` — ~10 record-less rows per
+  gate run, one cluster per run. That trips `persist-out`'s fail-closed guarantee (0984 R5 / 1043 R1):
+  *missing its run record … failing closing before any row transfer*. Removing only those rows lets the same command
+  succeed (`{"ok":true,"persisted":14}`), which also proves the batch's own provenance persists.
+- **A worktree FF-merge survives; its evidence plane does not.** The corpus write merges, the gitignored plane dies
+  with the tree, and the removal runs anyway. Check persistence *and* the delegate's exit status before deleting a worktree.
+- **The evidence plane can never resolve in a fresh clone.** Resolution is tree-relative and the durable target is
+  itself gitignored — the rule keeps the class visible, it cannot make the plane durable (recorded as P4 residual).
+- **OWED ≠ missing.** A deferred attended measurement must read as owed (`OWED (not missing, not lost)`), stay
+  absent, and never be silently deleted along with its dead neighbors.
+- **A repo-wide existence check cannot be green.** ~500 `.spur/run|memory` citations (~340 unique pairs), mostly
+  narrative references to disposable scratch. Scope the rule to the class the pipeline writes per run.
+- **Run-id shape is lowercase-hex uuid.** An uppercase or shortened id (e.g. `B7046686-…` in task 0137) is out of scope.
+- **The review-entry proof tripwire is not a nuisance.** Patching a file after capture halts certification; re-certify
+  on a fresh digest (`sha256:eb28484b…`) from the same tree and never reconcile the stale one.
+
+## 2026-10-10 — wrapup doc-evolve pass (0247)
+
+### Findings
+
+- **No ADR owed.** The new rule joined the pre-existing `structure` category, which `recommended-pre-check` already
+  extends (`.spur/rules/recommended-pre-check.yaml`) — an instance of ADR-017's decision, not a new cross-cutting
+  decision. `00_ADR.md` left untouched (append-only, §6.1).
+- **No `03` owed.** 0247 changed no source, no module boundary, no data flow.
+- **No `04` owed.** No `kk` command, flag, config key, env var or DTO changed; `bootstrap.database.url` still matches
+  `.spur/config.yaml`; all 26 referenced `docs/design/*` paths resolve.
+- **One real drift, repaired.** `docs/design/xhs-image-cards.md:61` still said "`xhs_enabled` ships **off** and must not
+  be enabled on a scheduled run" — contradicting ADR-025's 2026-09-29 amendment (`00_ADR.md:1022`, which explicitly
+  supersedes that clause), both shipped workflow YAMLs (`kk-daily-ai-voice.yaml:65`, `kk-daily-ai-voice2.yaml:41`), and
+  its own sibling bullet 4 lines above. Authority was correct, so only the stale projection was edited.
+- **Not drift, left alone.** ADR-025's Decision paragraph still reads "per 24 h" while the amendment (2026-10-03)
+  moved the window to 2 h — code confirms `CAP_WINDOW_MS = 2 * 60 * 60 * 1000`. §6.1 preserves decision history; the
+  amendment already names the superseded figures.
+- **Gate after the repair:** `spur rule run --preset recommended-pre-check --fail-on warning` → `All 53 rules passed`.
+
+---
+
+Skipped: no `bun run lint`/test run — the only edit is markdown prose in a design spec (Biome ignores `.md`), and the project's rule gate passed. Risk: the 12 `docs/design/*` specs not indexed in `docs/04_DESIGN.md` §6 remain unindexed (pre-existing, out of this batch's scope).

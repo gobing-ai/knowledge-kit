@@ -62,7 +62,9 @@ run as the `xhs-write` → `xhs-publish` pair, sitting between `publish-podcast`
   activity, and this channel is the one target in the repo that drives an interactive creator
   console from a headed browser — so the exposure is account-level, not just a failed run. The
   resulting guard (ADR-025) is described under **Automation risk policy** below, and it applies to
-  the workflow target too: `xhs_enabled` ships **off** and must not be enabled on a scheduled run.
+  the workflow target too. ADR-025's original "must not be enabled on a scheduled run" clause is
+  **superseded** by its 2026-09-29 amendment: the target ships **on**, draft-only, with those
+  plugin-level guards as the accepted mitigation.
 - The daily note is short-form (≤20-char title, ≤1000-char body, 2–4 bullets per card), so the
   series stays inside the legibility budget above.
 
