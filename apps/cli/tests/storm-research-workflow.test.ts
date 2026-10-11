@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -21,9 +21,14 @@ describe('kk-storm-research workflow (0059/0069)', () => {
 
     const stateIds = [...ssot.matchAll(/^\s+- id: (\w+)/gm)].map((m) => m[1]);
 
-    it('R1 — repo SSOT lives under plugins/kk/workflows/ and .spur copy is absent', () => {
+    it('R1 — project workflow directory aliases the plugin SSOT without a duplicate copy', () => {
         expect(existsSync(ssotPath)).toBe(true);
-        expect(existsSync(spurCopyPath)).toBe(false);
+        expect(lstatSync(join(import.meta.dir, '../../../.spur/workflows')).isSymbolicLink()).toBe(true);
+        expect(realpathSync(spurCopyPath)).toBe(realpathSync(ssotPath));
+        const verification = 'feature-verification.yaml';
+        expect(realpathSync(join(import.meta.dir, '../../../.spur/workflows', verification))).toBe(
+            realpathSync(join(import.meta.dir, '../../../plugins/kk/workflows', verification)),
+        );
     });
 
     it('generate — local-doc merge is array-safe jq (C4 dogfood P1-1 regression)', () => {

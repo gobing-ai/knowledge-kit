@@ -174,10 +174,10 @@ features:
 # TODO: switch to `- bundled:workflows` once the installed spur carries
 # BUNDLED_PATH_PREFIX expansion (monorepo config/config.global.yaml + workflow.ts);
 # 0.3.61 predates it and would list nothing.
+# Repository workflows are discovered through .spur/workflows -> ../plugins/kk/workflows.
 workflows:
   paths:
     - /Users/robin/node_modules/@gobing-ai/spur/config/workflows/
-    - plugins/kk/workflows
 
 # ── Decisions (ADR-134) ──
 # The kk item-label catalog, served to `kk store label` through `spur decision run`

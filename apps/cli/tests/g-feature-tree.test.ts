@@ -57,7 +57,10 @@ const children: Child[] = readdirSync(FEATURES)
 
 const workflows = new Map(
     readdirSync(WORKFLOWS)
-        .filter((file) => file.endsWith('.yaml') && !file.endsWith('-example.yaml'))
+        // Lifecycle verification shares the directory but is outside G's product workflow scope.
+        .filter(
+            (file) => file.endsWith('.yaml') && !file.endsWith('-example.yaml') && file !== 'feature-verification.yaml',
+        )
         .map((file) => [file.replace(/\.yaml$/, ''), readFileSync(join(WORKFLOWS, file), 'utf8')]),
 );
 
