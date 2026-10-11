@@ -1,3 +1,89 @@
+## [0.0.35] - 2026-10-10
+
+### Added
+
+- feat(kk): schedule the daily voice job on the voice2 store workflow at 04:30 (641b40ad)
+- feat(wechatmp): fully automate the daily MP draft, and keep bookkeeping out of reader-visible bodies (7030e8d0)
+- feat(kk): runall feature:G11 batch writes — 0250 voice2 stage-contract tests, 0251 xhs overflow retry (ac35573b)
+
+### Fixed
+
+- fix(kk): name the judge verdict path in the voice2 safety gate (3a07088d)
+- fix(kk): match the voice2 MP 合集 tag to the real 每日AI资讯 collection (12a9ca6d)
+- fix(dailynews-gen): derive the canonical date-only episode title (545536ae)
+- fix(kk): retry xhs points whose truncation keeps length (5c894c74)
+- fix(kk): pass the duration budget to daily-script and pin the safety-judge output path (5b25b0d4)
+- fix(voice-gen): make the verify-retry budget configurable (9f80d6c6)
+- fix(kk): bundle manifest-declared readiness probes at staging (5c18dd27)
+- fix(kk): run the daily voice cron on hosted Gemini TTS and keep unattended safety escalations from halting it (532006c8)
+- fix(kk): bundle manifest-declared readiness probes at staging (f1ad1986)
+- fix(kk): keep the voice2 script inside the pre-spend budget (3330fd2e)
+- fix(review): reject mismatched probe verdicts and triage runtime defects (a6c4f721)
+
+### Changed
+
+- docs(tasks): record 0212 dogfood PASS and 0251 fix evidence (79c698d6)
+- docs(tasks): re-anchor evidence tables and clarify voice2 xhs retry comment (38273ba2)
+- chore(git): land runall feature:G11 batch — 0250 voice2 stage-contract tests, 0251 xhs overflow retry (f7fb7554)
+- docs(tasks): updat tasks after refinment (c6202f12)
+- docs(tasks): add 0250 and 0251 voice2 backlog tasks (c0d19166)
+
+<!--
+Verification (2026-10-10, sp-dev-changelog): HIGH
+- Coverage: 19 bullets = 19 commits in the exact range @gobing-ai/knowledge-kit-v0.0.34..3a07088d, each short
+  hash exactly once, no bullet without a commit and no commit without a bullet
+  (`git rev-list --count @gobing-ai/knowledge-kit-v0.0.34..3a07088d` -> 19). The tip is pinned to the commit
+  BEFORE this changelog entry, so the count stays checkable after the entry lands (HEAD is deliberately not
+  the range end). Two commits in the range share one subject — `f1ad1986` and `5c18dd27`, both
+  "bundle manifest-declared readiness probes at staging" — and each carries its own bullet, one per commit.
+- Mapping: feat->Added 3, fix->Fixed 11, docs+chore->Changed 5 (3+11+5 = 19). The header carries the
+  operator-supplied `--version 0.0.35`. No release was cut and no tag exists for it, and
+  `apps/cli/package.json:3` still reads 0.0.34, so this section names a planned version, not a published
+  artifact.
+- Source citations for API and library behavior claims (verified against the merged tree at line level):
+  - hosted-TTS verify retries are budgeted by `VOICEBOX_MAX_VERIFY_ATTEMPTS`, default 2:
+    plugins/generations/voice-gen/src/index.ts:220
+  - the article's canonical episode title is `每日AI乱炖 · YYYY-MM-DD`:
+    plugins/generations/daily-article-gen/src/index.ts:111
+  - the voicescript default title derives that same date-only string:
+    plugins/generations/dailynews-gen/src/script-builder.ts:373
+  - the 选题边界 note is stripped from the published body and its ids move to `metadata.excludedIds`
+    (regex at plugins/generations/daily-article-gen/src/index.ts:151, stripper at
+    plugins/generations/daily-article-gen/src/index.ts:154, id hand-off at
+    plugins/generations/daily-article-gen/src/index.ts:190)
+  - the show-notes stage filters on `metadata.excludedIds` instead of re-parsing the note:
+    plugins/kk/scripts/daily-stages.ts:1842
+  - WeChat 文章 settings ride `metadata.wechatmp` — reward at plugins/kk/scripts/daily-stages.ts:1182,
+    claimSource at plugins/kk/scripts/daily-stages.ts:1187, coverSource at
+    plugins/kk/scripts/daily-stages.ts:1190, originalUrl at plugins/kk/scripts/daily-stages.ts:1191
+  - the editor's 作者 field is filled from `metadata.wechatmp.author`:
+    plugins/publishings/wechatmp-pub/src/flow.ts:733
+  - the cover defaults to 从图片库选择: plugins/publishings/wechatmp-pub/src/flow.ts:557
+  - the audio material is uploaded when the 素材库 holds no same-title entry:
+    plugins/publishings/wechatmp-pub/src/flow.ts:1002
+  - each settings row opens from its own row control (plugins/publishings/wechatmp-pub/src/enrich.ts:26)
+    and 创作来源 takes the operator's stance text (plugins/publishings/wechatmp-pub/src/enrich.ts:174)
+  - the MP 合集 is 每日AI资讯 in both workflows: plugins/kk/workflows/kk-daily-ai-voice.yaml:85,
+    plugins/kk/workflows/kk-daily-ai-voice2.yaml:53
+  - the voice2 safety judge names its verdict path prefix:
+    plugins/kk/workflows/kk-daily-safety.yaml:76
+  - voice1's `daily-script` receives the duration budget:
+    plugins/kk/workflows/kk-daily-ai-voice.yaml:313
+  - the daily voice job runs voice2 at 04:30: .spur/config.yaml:86, .spur/config.yaml:110
+- Regression evidence (checks that fail without the cited behaviour):
+  plugins/generations/daily-article-gen/tests/daily-article-gen.test.ts:191,
+  plugins/generations/dailynews-gen/tests/dailynews-gen.test.ts:145,
+  plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1100,
+  plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1135,
+  apps/cli/tests/voice2-dag.test.ts:641
+- Confidence: HIGH — coverage and mapping reconcile against `git log` for the range, and every behaviour
+  claim above cites the shipped source at line level. Deliberately NOT claimed: no release, tag or version
+  bump (`apps/cli/package.json:3` still reads 0.0.34); the WeChat MP selector set for the audio-upload form,
+  the 图片库 cover picker and the settings dialogs is fixture-tested but NOT yet verified against the live
+  console, so the first live draft run is the outstanding evidence; and bun's per-file `coverageThreshold`
+  behaviour (`bunfig.toml:10`) is an observation from one local experiment, not upstream documentation.
+-->
+
 ## [0.0.34] - 2026-10-09
 
 ### Added
