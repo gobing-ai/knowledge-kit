@@ -4,7 +4,7 @@ name: Keep a voice2 XHS series when card point text overflows the safe area
 status: done
 template: feature-impl
 created_at: 2026-10-10T15:28:47.498Z
-updated_at: "2026-10-10T23:39:08.226Z"
+updated_at: "2026-10-11T00:23:30.476Z"
 feature_id: G11
 
 priority: P2
@@ -116,13 +116,13 @@ Rationale: the retry branches on stderr the inherit-stdio `kk()` cannot return, 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `plugins/kk/scripts/daily-stages.ts:2046` parses `points[n]` overflow fields; `plugins/kk/scripts/daily-stages.ts:2067` shortens a point; `plugins/kk/scripts/daily-stages.ts:2169` captures image-gen via `plugins/kk/scripts/kk-workflow-stages.ts:578` and retries once after rewriting the envelope. Test `apps/cli/tests/kk-workflow-stages.test.ts:1567` (2 calls, shorter points[1]/points[2], `25-xhs/content.json` packaged) passes: `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
-| R2 | MET | Non-overflow failure falls through to the resume line without a second call (`plugins/kk/scripts/daily-stages.ts:2169` block). Tests `apps/cli/tests/kk-workflow-stages.test.ts:1619` (provider timeout: 1 call, non-zero, `re-run daily-xhs-render`) and `apps/cli/tests/kk-workflow-stages.test.ts:1520` (exit-7 fake: 1 call, exit 7, asserted at `apps/cli/tests/kk-workflow-stages.test.ts:1529`) pass: `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
+| R2 | MET | Non-overflow failure falls through to the resume line without a second call (`plugins/kk/scripts/daily-stages.ts:2169` block). Tests `apps/cli/tests/kk-workflow-stages.test.ts:1647` (provider timeout: 1 call, non-zero, `re-run daily-xhs-render`) and `apps/cli/tests/kk-workflow-stages.test.ts:1520` (exit-7 fake: 1 call, exit 7, asserted at `apps/cli/tests/kk-workflow-stages.test.ts:1529`) pass: `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
 | R3 | MET | `git show --stat ac35573b` (the 0251 change commit) does not list `plugins/kk/workflows/kk-daily-ai-voice2.yaml`; `plugins/kk/workflows/kk-daily-ai-voice2.yaml:47` still reads `xhs_live: "false"`. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — an overflowing card is shortened and retried once (req: R1) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1567`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
-| AC2 — a non-overflow card failure does not retry (req: R2) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1619` and `apps/cli/tests/kk-workflow-stages.test.ts:1520`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
+| AC2 — a non-overflow card failure does not retry (req: R2) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1647` and `apps/cli/tests/kk-workflow-stages.test.ts:1520`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
 | AC3 — the voice2 XHS command and live default stay put (req: R3) | MET | command | `git diff --quiet c0d19166 f7fb7554 -- plugins/kk/workflows/kk-daily-ai-voice2.yaml` exit 0 (workflow byte-identical across the 0251 landing, so the `xhs-render` command is unchanged); `grep -c 'xhs_live: "false"' plugins/kk/workflows/kk-daily-ai-voice2.yaml` → 1, at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:47`. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
