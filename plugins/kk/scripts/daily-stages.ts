@@ -2175,7 +2175,7 @@ export function dailyXhsRender(args: string[]): void {
                     for (const n of xhsOverflowPoints(result.stderr, card) ?? []) {
                         const point = card.points[n] ?? '';
                         const next = shortenOverflowedPoint(point);
-                        if (next.length < point.length) {
+                        if (next !== point) {
                             card.points[n] = next;
                             shortened = true;
                         }

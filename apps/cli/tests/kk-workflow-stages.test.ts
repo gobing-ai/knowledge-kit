@@ -1616,6 +1616,34 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-xhs-render retries a 37-code-point one-sentence point truncated to the same length (0251)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeXhsKkFailFirst(
+                dir,
+                record,
+                'image-gen failed: compose: text overflows the safe area for field(s): points[0] (safe area: 72px inset)',
+                1,
+            );
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            // 36 code points + `…` is still 37 UTF-16 units: a length comparison misses this shortening.
+            const long = '长'.repeat(37);
+            const card = { ...xhsCard('cover', '今日头条', 'lead fact'), points: [long] };
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({ title: '今日 AI 速览', body: '正文 #AI', cards: [card] }),
+            );
+
+            const result = run(['daily-xhs-render', dir, '20260101', '', '1', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            const snapshot = JSON.parse(readFileSync(`${record}.2.json`, 'utf-8')) as {
+                metadata: { imageGen: { vars: { points: string } } };
+            }[];
+            expect(snapshot[0]?.metadata.imageGen.vars.points).toBe(`${'长'.repeat(36)}…`);
+        });
+    });
+
     it('daily-xhs-render does not retry a card whose failure is not a points overflow (0251 AC2)', () => {
         withTempDir((dir) => {
             writeXhsPlan(dir);
