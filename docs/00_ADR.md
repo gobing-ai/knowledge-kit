@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.32.2
+version: 1.35.0
 created_at: 2026-05-28
-updated_at: 2026-10-09
+updated_at: 2026-10-11
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -484,6 +484,16 @@ Product workflow YAML files live only under `plugins/kk/workflows/` (`kk-storm-r
 `.spur/workflows/` holds only Spur project lifecycle and developer pipeline workflows.
 The workflow install copy rule resolves from two roots in order: `$KK_WORKFLOWS_SOURCE`
 then `plugins/kk/workflows/`.
+
+### Amendment — 2026-10-11 (one workflow directory and Settings reuse)
+
+All repository-owned workflow definitions, including `feature-verification.yaml`, now live in
+`plugins/kk/workflows/`. `.spur/workflows` is a relative directory symlink to
+`../plugins/kk/workflows`, preserving lifecycle callers and exposing those definitions through
+Spur's project workflow discovery. Remove the redundant registered plugin-directory path to
+avoid duplicate CLI catalog entries. There is one physical copy of each definition. Shared Spur
+workflows retain their installed location and normal discovery precedence.
+
 
 ---
 
@@ -1261,3 +1271,37 @@ illustration across failures is deferred until observed.
 
 - **Config / persistent state** — resolved by ADR-030 (`@gobing-ai/kk-store`).
 - **Interactive prompts, colored output** — out of scope until a command requires them.
+
+
+## ADR-035: Workflow visibility uses native Spur Board modules and a KK-owned local reader
+
+**Status:** Accepted (design) · **Date:** 2026-10-11 · **Work:** G8
+
+**Decision.** Deliver the Collect, Daily AI Voice and IT Content views as native project-owned
+Spur Board contributions. Spur retains execution/run authority; a loopback, read-only KK reader
+owns sanitized, run-bound artifact and configuration access.
+
+**Why.** The shipped Board extension contract loads browser contributions without downstream
+server routes, so this boundary provides complete local visibility without an upstream fork.
+
+**Detail:** [Workflow Board modules](design/workflow-board-modules.md).
+
+### Amendment — 2026-10-11 (reuse Settings → Workflows)
+
+Settings → Workflows remains the sole definition browser: workflow dropdown, current metadata,
+YAML/copy and static Mermaid graph. G8 must reuse that existing tab via
+`/board/settings/workflows`, with no duplicate definition viewer, editor, static graph or KK
+current-definition endpoint. Workflow Config Summary contains only sanitized recorded run settings,
+capture provenance and explicit unknowns, plus that Settings link. Execution progress may show
+run-specific status/dependency evidence. The existing Settings tab does not support selecting a
+workflow by URL, so operators select it in its existing dropdown; do not invent a query contract.
+
+### Amendment — 2026-10-11 (ready audit: revoke ownership before overwrites)
+
+G8 preparation must revoke an earlier workspace owner before changing result artifacts. If
+revocation cannot be persisted, stop preparation before overwriting those artifacts. After
+successful revocation, failure to write the new optional Board capture warns and leaves artifact
+access disabled without aborting production. A running reader is never a workflow prerequisite.
+New-run ownership alone does not prove an old file was produced by the new run: result access also
+requires recorded success of that artifact's producer in the selected run. Definition topology is
+captured only when the current catalog digest matches the engine-injected execution digest.

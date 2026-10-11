@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.13.0
+version: 3.15.0
 created_at: 2026-07-22
-updated_at: 2026-09-26
+updated_at: 2026-10-11
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -72,6 +72,8 @@ Technical content creation and published output are fragmented: turning ideas or
 | Reusable browser sessions for publishing | **E9** | Phase 3 | Shared ts-libs browser profile package with XHS as first consumer; headed login, persistent profile reuse, and a read-only headless session check |
 | Agent capabilities and product workflows | **F** | Phase 2/3 | F1 LLM-as-judge · **F2 topic-core authoring** (`topic`: topic/brief → approved outline + draft) · **F3 ITC generating** (`itc-generating`: distilled IT-writing method + orchestration; skill only) · **F4 IT-content workflow** (`kk-itc`) · **F5 Solo-podcast workflow** (`kk-solo-podcast`) · **F6 Daily AI news voice workflow** (`aihot-ingest` → `dailynews-gen` → `voice-gen`) · **F9 Explain-things** (`explain-things` smallest-view skill + thin `/tell-me`) |
 | Platform Repositioning | **J** | Phase 2 | **J** Reposition knowledge-kit to ingest-create-publish (ADR-007, PRD v3, contract designs) |
+
+| Workflow visibility in Spur Board (planned) | **G8** | Phase 3 | Collect, Daily AI Voice and IT Content: run-bound summaries, outputs, progress and recorded run settings; reuse Settings → Workflows for definitions; local read-only operation; [design](design/workflow-board-modules.md) |
 
 Topic → article without prior ingestion is in scope through the planned `Brief` generator input.
 This is a product requirement, not a shipped CLI claim: `docs/04_DESIGN.md` §1.7/§4 identifies

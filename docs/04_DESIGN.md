@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.43.0
+version: 2.45.0
 created_at: 2026-07-22
-updated_at: 2026-10-09
+updated_at: 2026-10-11
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -50,6 +50,7 @@ sync: [T3]
 | [gemini-tts.md](design/gemini-tts.md) | Gemini 3.8 TTS voice generator: hosted backend adapter over voice-gen, drop-in via `vdriver: gemini` | shipped (F612) |
 | [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | shipped (E8, ADR-024; 0167 xhs-pub script transport, 0168 xhs-images skill + presets) |
 | [segmented-episode-speech.md](design/segmented-episode-speech.md) | Voice2 section synthesis, per-section cache, join, then the existing intro sting (ADR-034) | implemented (G13) |
+| [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; proposed local reader and run capture surface | accepted design (G8), not shipped |
 
 ## 1. CLI commands
 
@@ -1338,3 +1339,9 @@ bytes omit the dimensions and emit one WARN instead. Both warn only — the byte
 for, and failing would delete them through the cleanup path. On the compose path the card keeps
 0180's canvas assertion (an unparseable composed card still fails loud); the raw provider delivery
 lands on `illustration.width/height` beside the card.
+
+## Repository workflow discovery
+
+Workflow files: `plugins/kk/workflows/` is canonical, including `feature-verification.yaml`.
+`.spur/workflows` is a relative symlink to `../plugins/kk/workflows`; existing workflow paths remain
+valid and Settings → Workflows discovers the plugin definitions via the project layer.

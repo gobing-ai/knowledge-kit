@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.25.0
+version: 2.26.0
 created_at: 2026-07-22
-updated_at: 2026-10-10
+updated_at: 2026-10-11
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -102,6 +102,7 @@ sync: [T4]
 | G6 | kk-ingest-generate-publish | ⏳ planned | — | home node; historical: B5 |
 | G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
 | G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
+| G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | ⏳ backlog | 3 | accepted design; tasks `0252`–`0255` (30h), four tabs per module; [satellite](design/workflow-board-modules.md); implementation not started |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
 | **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |

@@ -3,9 +3,9 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.18.0
+version: 3.19.0
 created_at: 2026-07-22
-updated_at: 2026-09-26
+updated_at: 2026-10-11
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.3
 sync: [T5]
@@ -65,3 +65,10 @@ B (platform: B1→B2→B3→B4 done; B5 E2E acceptance done)
 ```
 
 **Status legend:** ✅ done · 🔶 partial · ⏳ planned/current · 💤 deferred · 🌫️ fog (undecided)
+
+
+## Planned workflow visibility (G8, Phase 3)
+
+Collect with the native module/reader foundation → Daily AI Voice and IT Content views → installed
+package/browser acceptance. Design and task planning only; implementation has not started.
+See [workflow-board-modules.md](design/workflow-board-modules.md).
