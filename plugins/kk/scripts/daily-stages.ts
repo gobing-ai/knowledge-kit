@@ -77,6 +77,7 @@ import {
     failWith,
     firstArtifact,
     firstPostPath,
+    firstTargetUrl,
     isFile,
     kk,
     kkCaptured,
@@ -1167,18 +1168,30 @@ export function dailyPublishWechat(args: string[]): void {
             return;
         }
         const packaged = requireJson(article, 'publish-wechat');
-        // MP draft enrichment (operator preference 2026-09-29): 原创+作者, 赞赏, 合集, 原文链接
-        // (the surfdash post), AI 生成声明, cover. The brand strings are this daily show's constants.
+        // MP draft enrichment (operator preferences 2026-09-29, completed 2026-10-10): 原创, 赞赏,
+        // 作者, 合集, 原文链接 (the surfdash post), 创作来源, cover, audio material. The brand strings
+        // are this daily show's constants; every field here is consumed by `wechatmp-pub`'s flow.
         const cover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
         const audio = join(workDir, '30-audio', `${runDate}_11_generate_content.mp3`);
+        const surfdashResult = join(workDir, '31-publish', `${runDate}_14_publish-surfdash_result.json`);
+        const originalUrl = isFile(surfdashResult) ? firstTargetUrl(readJson(surfdashResult), 'surfdash-pub') : '';
         const wechatmp: Record<string, unknown> = {
             original: true,
-            aiGenerated: true,
+            // 赞赏 is enabled per episode; the plugin fills the 赞赏账户 only when the platform
+            // leaves it empty (it defaults from 作者, operator walk 2026-10-10).
+            reward: true,
             author: '冰原奔狼',
-            collection: collectionArg || '每日AI乱炖',
+            collection: collectionArg || '每日AI资讯',
+            // 创作来源 is the column's own stance, not an AI-declaration label — the operator owns
+            // the wording (2026-10-10).
+            claimSource: '个人观点，仅供参考',
+            // 封面 comes from 图片库: the episode cover is uploaded there as the audio material's
+            // cover, so the library's newest entry is the intended image.
+            coverSource: 'library',
+            ...(originalUrl !== '' ? { originalUrl } : {}),
             ...(isFile(cover) ? { coverPath: cover } : {}),
-            // Audio block at the article top (operator request 2026-09-29): the daily MP3 goes to
-            // the 素材库 under the article title; the plugin reuses an existing same-title material.
+            // Audio block at the article top (operator request 2026-09-29; the plugin UPLOADS the
+            // material when the 素材库 has no same-title entry, 2026-10-10).
             ...(isFile(audio)
                 ? {
                       audioPath: audio,
@@ -1819,8 +1832,19 @@ export function dailyShowNotes(args: string[]): void {
         // Inlined parse — this file must not import @gobing-ai/* (header contract); the same note
         // grammar lives in daily-article-gen's excludedIdsFromNote.
         const postPath = firstPostPath(readJson(result), 'surfdash-pub');
-        const articleBody = readJson(article)?.body;
+        const articleContent = readJson(article);
+        const articleBody = articleContent?.body;
         const excluded = new Set<string>();
+        // Article Content carries the dropped ids as `metadata.excludedIds` (2026-10-10): the boundary
+        // note is stripped from the published body, so re-parsing the body alone would silently stop
+        // filtering and leak excluded docs into the show notes. The note parse below stays as the
+        // fallback for Content produced before the field existed.
+        const metaExcluded = metadataOf(articleContent)?.excludedIds;
+        if (Array.isArray(metaExcluded)) {
+            for (const id of metaExcluded) {
+                if (typeof id === 'string' && id !== '') excluded.add(id);
+            }
+        }
         // Script-plan exclusions are the prompt-layer topic boundary (foreign public affairs the
         // keyword floor deliberately leaves in the plan). Show notes must match what was spoken.
         const scriptPlan = readJson(join(workDir, '24-script', `${runDate}_08_script-write_plan.json`));

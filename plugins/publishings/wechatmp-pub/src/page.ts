@@ -258,3 +258,23 @@ export function wrapPlaywrightContext(raw: unknown, entryPage: unknown): OpenedC
         close: () => context.close(),
     };
 }
+
+/** Polls a selector list for visibility; optionally returns `undefined` instead of throwing. */
+export async function waitForVisible(
+    page: WechatPage,
+    selector: string,
+    timeoutMs: number,
+    opts: { required?: boolean } = {},
+): Promise<string | undefined> {
+    const visible = await waitUntil(
+        async () => {
+            const found = await trySelectors(page, [selector]).catch(() => ({ found: false, selector: null }));
+            return found.found;
+        },
+        timeoutMs,
+        POLL_MS,
+    );
+    if (visible) return selector;
+    if (opts.required === false) return undefined;
+    throw new Error(`${selector}: not visible within ${timeoutMs}ms`);
+}

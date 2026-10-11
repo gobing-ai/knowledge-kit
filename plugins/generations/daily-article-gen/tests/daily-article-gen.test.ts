@@ -183,6 +183,12 @@ describe('daily-article-gen', () => {
             expect(content.references?.map((r) => r.cite)).toEqual(['4954f1a6cbc0fc44']);
             expect(content.title).toBe('每日AI乱炖 · 2026-09-04');
             expect(content.body).not.toContain('RFK');
+            // The note is bookkeeping, not copy: it must not reach a customer-visible body (operator
+            // report 2026-10-10), and the ids it named move to metadata for the show-notes filter.
+            expect(content.body).not.toContain('选题边界');
+            expect(content.body).not.toContain('b039f703ebf7885f');
+            expect(content.body).toContain('正文。');
+            expect(content.metadata?.excludedIds).toEqual(['b039f703ebf7885f', '3615960163537c76']);
         } finally {
             delete process.env.ARTICLE_DATE;
             delete process.env.ARTICLE_BODY_FILE;

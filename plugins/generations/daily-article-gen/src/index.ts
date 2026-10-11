@@ -141,6 +141,20 @@ const LEADING_H1_RE = /^#(?!#)\s*[^\n]+\n+/.source;
 const NOTE_EXCLUDED_RE = /未写入[：:](.*)/g;
 const HEX_ID_RE = /(?:[a-zA-Z0-9_-]+:)?[0-9a-f]{16,64}/g;
 
+/**
+ * The 选题边界 note is pipeline bookkeeping: it names dropped doc ids and the rule that dropped them.
+ * It is the machine-readable exclusion signal (`excludedIdsFromNote`), so it stays in the agent's body
+ * file — but it must never reach a published body, where it printed an internal doc id and pipeline
+ * vocabulary to readers (operator report 2026-10-10). Matches only blockquote lines, which the article
+ * body reserves for exactly this note, so ordinary prose is untouched.
+ */
+const BOUNDARY_NOTE_RE = /^>[^\n]*(?:选题边界|未写入)[^\n]*\n?/gm;
+
+/** Strip the internal boundary note from a body destined for a customer-visible surface. */
+export function stripBoundaryNote(body: string): string {
+    return body.replace(BOUNDARY_NOTE_RE, '');
+}
+
 /** Parse the boundary-note ids out of an article body so references/metadata never cite excluded docs (judge finding 2026-10-02). */
 export function excludedIdsFromNote(body: string | undefined): Set<string> {
     const ids = new Set<string>();
@@ -162,15 +176,30 @@ export function docsToContent(docs: Doc[], date: string, bodyOverride?: string):
     if (bodyOverride) {
         // The canonical episode title is computed from the lead item; a leading H1 the agent may
         // still have written is replaced (not duplicated) so body and metadata agree on every path.
-        const stripped = stripScaffold(bodyOverride.trim()).trim().replace(new RegExp(LEADING_H1_RE), '');
-        body = `# ${title}\n\n${stripped}\n`;
+        // The boundary note is stripped here, not dropped upstream: the agent's body file keeps it as
+        // the exclusion signal, this Content is what readers see.
+        const cleaned = stripBoundaryNote(
+            stripScaffold(bodyOverride.trim()).trim().replace(new RegExp(LEADING_H1_RE), ''),
+        ).trim();
+        body = `# ${title}\n\n${cleaned}\n`;
+    } else {
+        body = stripBoundaryNote(body);
     }
+    // The ids the note named become metadata, so consumers that must filter excluded docs (show-notes
+    // plan copies) read a field instead of re-parsing a note that no longer exists.
+    const excludedIds = [...excludedIdsFromNote(bodyOverride)];
     return ContentSchema.parse({
         title,
         body,
         format: 'markdown',
         references: docs.filter((d) => d.sourceUri).map((d) => ({ url: d.sourceUri, title: d.title, cite: d.id })),
-        metadata: { generator: 'kk:daily-article', date, doc_count: docs.length, tags: tagsFor(docs) },
+        metadata: {
+            generator: 'kk:daily-article',
+            date,
+            doc_count: docs.length,
+            tags: tagsFor(docs),
+            ...(excludedIds.length > 0 ? { excludedIds } : {}),
+        },
     });
 }
 

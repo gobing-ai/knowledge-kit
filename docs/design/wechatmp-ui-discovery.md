@@ -4,6 +4,25 @@
 
 > **Third pass — attended items resolved (task 0200, 2026-10-06 evening, walks v6–v9, evidence `.spur/run/discovery/wechatmp-{tietu,tietu2,attended,tietu-final,tietu-final2,tietu-final3,vp}.json`, scripts `probe-wechatmp-tieTu.ts`, `walk-wechatmp6–9.ts`).** (1) **贴图 保存为草稿 mystery solved**: the click was never a no-op — it opens a save-settings dialog whose validation blocks save with inline prompts `请在这里输入标题` / `请输入作者` / `文字消息正文不能为空` (a 0/1000 counter field). Earlier walks saw "no observable effect" because the blocking dialog is the effect. (2) **The 贴图 route never gains `appmsgid`** (checked after 4 save attempts) — for 贴图 the plugin draft signal is the dialog validation state plus the 草稿箱 row (conclusion 1 below stands; the W11 URL-rewrite signal is 文章-only). (3) **贴图 title is a TEXTAREA** `textarea.frm_input.js_title` (placeholder `请在这里输入标题（选填）` despite being enforced) — the §3 `input.frm_input.js_title` shape is 文章-only. (4) **视频 picker unchanged in kind**: entry still auto-opens the vue picker (`div#vue_app`/`more-video` present; Vue 3 — no `data-v` attrs, so data-v probes false-negative), but `本地上传` is reachable in DOM and **no channels/直播 binding hints appeared this pass** — the sub-path remains artifact-gated and attended-only. (5) Session token `860958155` persisted across every walk; **no draft was created** (dialog left unclosed = nothing saved).
 
+> **Fourth pass — the 文章 field rail completed (operator walk 2026-10-10, attended, draft-only).**
+> This supersedes the 2026-09-29 reading that 原创/赞赏/原文链接/创作来源 must stay manual. Every
+> settings row has ONE shape: open it from the row control, act in the dialog, click `确定`.
+> Measured: **原创** (`>` → `确定`; no 声明类型 choice and no 赏账户 search is required), **赞赏**
+> (`>` → `确定`; the 赞赏账户 defaults from 作者 and only needs filling when the platform leaves it
+> empty), **合集** (`>` → `请选择合集` → the collection name → `确定`; the real collection is
+> 「每日AI资讯」, *not* the column name 「AI 乱炖」), **原文链接** (`>` → the URL → `确定`), **创作来源**
+> (`>` → `个人观点，仅供参考` → `确定` — the operator's own stance, not the platform's AI-generation label).
+> **作者** is the editor's own `请输入作者` field (`input#author`); filling it is what makes 赞赏
+> default correctly downstream. **上传音频** is a real form, not an iframe: `音频` menu → `上传音频` →
+> audio file → `上传封面` → cover file → title → the 《公众平台音频上传服务规则》 acknowledgement →
+> `保存` → the list reopens with the new material first (`默认第一个`) → `插入`, which places it at the
+> **body start**. **封面** comes from `从图片库选择` (`a.js_imagedialog`) → first item → `下一步` → `确认`,
+> i.e. the image the same run uploaded as the audio material's cover. `一键排版` **is** to be applied
+> (→ `匹配目标格式`); a build that renders no option set is a reported warning, never a silent skip.
+> The upload form's inner controls (file inputs, title field, acknowledgement checkbox, 保存) were not
+> individually re-probed on this pass, so `wechatmp-pub`'s selectors for them are candidate shapes
+> resolved by visible label text; the flow reports each by name when one misses.
+
 Method: the plugins' own Chromium (Playwright 1.55 build) on the real profile dir
 `~/.config/kk/browser-profiles/wechatmp`, headed, driven by `.spur/run/discovery/wechatmp-walk.ts`.
 Operator attended and scanned the login QR in-window (the stored session had expired).

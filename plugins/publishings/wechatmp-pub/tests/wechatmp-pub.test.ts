@@ -8,7 +8,8 @@ import * as tsBrowserAutomation from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Page } from 'playwright';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
-import { enrichArticle, insertAudio } from '../src/enrich';
+import { enrichArticle } from '../src/enrich';
+import { insertAudioMaterial } from '../src/flow';
 import {
     checkWechatSession,
     getPublishTransport,
@@ -52,6 +53,8 @@ async function seedMedia(): Promise<void> {
 }
 
 const ARTICLE_TITLE = '每日 AI 资讯 — 2026-09-29';
+/** The audio material the 文章 operation uploads when the 素材库 holds no same-title entry. */
+const AUDIO_INPUT = { title: ARTICLE_TITLE, audioPath: '/tmp/episode.mp3', coverPath: '/tmp/episode-cover.png' };
 
 const ARTICLE: Content = {
     title: ARTICLE_TITLE,
@@ -142,6 +145,18 @@ const isLayoutControl = (selector: string) => selector.includes('ailayout') || s
 const isLayoutTarget = (selector: string) => selector.includes('匹配目标格式');
 const isCoverFromContent = (selector: string) =>
     selector.includes('js_selectCoverFromContent') || selector.includes('从正文选择');
+const isCoverFromLibrary = (selector: string) =>
+    selector.includes('js_imagedialog') || selector.includes('从图片库选择');
+/**
+ * The 文章 settings rows the enrichment rail opens: 原创 / 赞赏 / 合集 / 原文链接 / 创作来源.
+ * The rail resolves each row before clicking it, so the fake has to model them.
+ */
+const isSettingsRow = (selector: string) =>
+    selector.includes('js_edit_ori') ||
+    selector.includes('js_can_reward') ||
+    selector.includes('js_article_tags_label') ||
+    selector.includes('js_url_checkbox') ||
+    selector.includes('js_claim_source');
 const isCoverOpener = (selector: string) =>
     selector.includes('js_cover_btn_area') || selector.includes('换一张') || selector.includes('修改');
 const isCoverItem = (selector: string) => selector.includes('cover') && selector.includes(' li');
@@ -194,7 +209,8 @@ function makeConsole(initial: ConsoleState) {
         if (isAudioInput(selector)) return state.mode === '播客' && pickerOpen;
         if (isSaveBar(selector)) return state.mode === '文章' || state.mode === '贴图' || state.mediaSatisfied;
         if (isLayoutControl(selector) || isLayoutTarget(selector)) return state.mode === '文章';
-        if (isCoverOpener(selector) || isCoverFromContent(selector)) return true;
+        if (isSettingsRow(selector)) return state.mode === '文章';
+        if (isCoverOpener(selector) || isCoverFromContent(selector) || isCoverFromLibrary(selector)) return true;
         if (isCoverItem(selector)) return coverPanelOpen;
         if (isVideoUpload(selector)) return state.mode === '视频';
         if (isPodcastUpload(selector) || isPodcastInsert(selector)) return state.mode === '播客';
@@ -302,7 +318,8 @@ function makeConsole(initial: ConsoleState) {
                 return;
             }
             if (isLayoutTarget(selector)) return;
-            if (isCoverOpener(selector) || isCoverFromContent(selector)) {
+            if (isSettingsRow(selector)) return;
+            if (isCoverOpener(selector) || isCoverFromContent(selector) || isCoverFromLibrary(selector)) {
                 coverPanelOpen = true;
                 return;
             }
@@ -1039,9 +1056,10 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
                     wechatmp: {
                         coverPath: bodyImage,
                         original: true,
-                        aiGenerated: true,
+                        reward: true,
                         author: '冰原奔狼',
                         collection: '每日AI资讯',
+                        claimSource: '个人观点，仅供参考',
                     },
                 },
             },
@@ -1055,7 +1073,10 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(clicks).toContain('#js_claim_source_area .frm_checkbox_label');
         expect(clicks.some((selector) => selector.includes('文字原创'))).toBe(true);
         expect(clicks.some((selector) => selector.includes('每日AI资讯'))).toBe(true);
-        expect(clicks.some((selector) => selector.includes('内容由AI生成'))).toBe(true);
+        // 创作来源 is the operator's own stance, not the platform's AI-generation label.
+        expect(clicks.some((selector) => selector.includes('个人观点，仅供参考'))).toBe(true);
+        // 赞赏 opens alongside 原创 now (operator walk 2026-10-10).
+        expect(clicks).toContain('.setting-group__switch.js_can_reward');
         const fills = console.calls.editor.filter((call) => call.op === 'fill').map((call) => String(call.args[1]));
         expect(fills).toContain('每日AI资讯');
     });
@@ -1066,7 +1087,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
             original: true,
             author: '冰原奔狼',
         });
-        expect(warnings).toEqual(['原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置']);
+        expect(warnings).toEqual(['原创声明: dialog did not close — check the draft']);
         expect(ops).toContain('click button:has-text("取消")');
     });
 
@@ -1076,34 +1097,59 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(warnings).toEqual([]);
     });
 
-    test('a creation-source checkbox that does not stick becomes a warning', async () => {
+    test('a creation-source choice that does not stick becomes a warning', async () => {
         const ops: string[] = [];
-        const warnings = await enrichArticle(recordingPage(ops, [false]), { aiGenerated: true });
-        expect(warnings).toEqual(['创作来源: 勾选未生效，请手动设置']);
+        const warnings = await enrichArticle(recordingPage(ops, [false]), { claimSource: '个人观点，仅供参考' });
+        expect(warnings).toEqual(['创作来源: 未生效，请手动设置']);
     });
 
-    test('insertAudio reuses the same-title 素材库 material and verifies placement at the top', async () => {
+    test('insertAudioMaterial reuses the same-title 素材库 material and verifies placement at the top', async () => {
         const ops: string[] = [];
-        const warning = await insertAudio(
+        const warning = await insertAudioMaterial(
             recordingPage(ops, [undefined, undefined, 'checked', true, 'top']),
-            ARTICLE_TITLE,
+            AUDIO_INPUT,
         );
         expect(warning).toBe('');
         expect(ops).toContain('open-audio-menu');
         expect(ops.filter((op) => op === 'pause')).toHaveLength(1);
+        // A reused material uploads nothing.
+        expect(ops.some((op) => op.startsWith('files '))).toBe(false);
     });
 
-    test('insertAudio warns for manual upload when no same-title material exists', async () => {
+    test('insertAudioMaterial uploads the audio + cover when the 素材库 has no same-title material', async () => {
         const ops: string[] = [];
-        const warning = await insertAudio(
-            recordingPage(ops, [undefined, undefined, 'missing', 'missing', 'missing']),
-            ARTICLE_TITLE,
+        const warning = await insertAudioMaterial(
+            // caret, menu, 3× dedupe (the 素材库 rows stream in), agree, select-first, insert, verify.
+            recordingPage(ops, [
+                undefined,
+                undefined,
+                'missing',
+                'missing',
+                'missing',
+                'checked',
+                'checked',
+                true,
+                'top',
+            ]),
+            AUDIO_INPUT,
         );
-        expect(warning).toContain('素材库无同名音频');
-        // Two 素材库 retries while the rows stream in, then the dialog is dismissed rather than
-        // left covering the save bar.
-        expect(ops.filter((op) => op === 'pause')).toHaveLength(2);
+        expect(warning).toBe('');
+        // Both artifacts reach the form, and the service-rules box is ticked before 保存.
+        const uploads = ops.filter((op) => op.startsWith('files '));
+        expect(uploads).toHaveLength(2);
+        expect(uploads[0]).toContain('audio');
+        expect(uploads[1]).toContain('image/');
         expect(ops.filter((op) => op === 'open-audio-menu')).toHaveLength(1);
+    });
+
+    test('insertAudioMaterial reports an unticked service-rules box instead of silently saving', async () => {
+        const ops: string[] = [];
+        const warning = await insertAudioMaterial(
+            recordingPage(ops, [undefined, undefined, 'missing', 'missing', 'missing', 'no-label']),
+            AUDIO_INPUT,
+        );
+        expect(warning).toContain('服务规则勾选失败');
+        expect(warning).toContain('no-label');
     });
 
     test('a step whose row keeps detaching is retried once, then warned and swept', async () => {
@@ -1150,9 +1196,8 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(ops.filter((op) => op === 'click button:has-text("取消")')).toHaveLength(2);
     });
 
-    test('insertAudio warns for each non-committed outcome it can meet', async () => {
+    test('insertAudioMaterial warns for each non-committed insert outcome it can meet', async () => {
         const cases: Array<[unknown[], string]> = [
-            [[undefined, undefined, 'nobox'], '同名素材行未找到勾选框'],
             [[undefined, undefined, 'checked', false], '插入按钮未找到'],
             [[undefined, undefined, 'checked', true, 'absent'], '插入未生效'],
             [[undefined, undefined, 'checked', true, 'notop'], '未在文首'],
@@ -1160,7 +1205,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         ];
         for (const [returns, expected] of cases) {
             const ops: string[] = [];
-            const warning = await insertAudio(recordingPage(ops, returns), ARTICLE_TITLE);
+            const warning = await insertAudioMaterial(recordingPage(ops, returns), AUDIO_INPUT);
             expect(warning).toContain(expected);
         }
     });

@@ -1171,6 +1171,22 @@ export function firstPostPath(parsed: Record<string, unknown> | null, target: st
     return '';
 }
 
+/**
+ * The public URL a target published to, or '' — the sibling of {@link firstPostPath} for consumers
+ * that need the reader-facing address (WeChat's 原文链接 points at the surfdash post).
+ */
+export function firstTargetUrl(parsed: Record<string, unknown> | null, target: string): string {
+    const targets = parsed?.targets;
+    if (!Array.isArray(targets)) return '';
+    for (const entry of targets) {
+        if (entry === null || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        if (record.target !== target || record.ok !== true) continue;
+        if (typeof record.url === 'string' && record.url !== '') return record.url;
+    }
+    return '';
+}
+
 function dailyPublishClassify(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
     const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);
