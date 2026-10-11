@@ -569,7 +569,7 @@ async function setCover(page: WechatPage, source: 'library' | 'body', deps: Mode
         if (item === undefined) return `cover: ${what} listed no image to choose (its list is not <img>-based, §5.2)`;
         await clickSelector(page, item, deps.stepTimeoutMs);
         // The library picker stages the choice: 下一步 advances it, then the dialog confirms.
-        const next = await tryFindSelector(page, COVER_LIBRARY_NEXT, 4_000);
+        const next = await tryFindSelector(page, COVER_LIBRARY_NEXT, Math.min(deps.stepTimeoutMs, 4_000));
         if (next !== undefined) await clickSelector(page, next, deps.stepTimeoutMs);
         const confirm = await tryFindSelector(page, COVER_CONFIRM, Math.min(deps.stepTimeoutMs, 8_000));
         if (confirm === undefined) return 'cover: the choice panel offered no confirm control';
