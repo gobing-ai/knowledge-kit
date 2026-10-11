@@ -47,7 +47,10 @@ vars:
   xhs_live: "false"
   wechat_enabled: "true"
   wechat_live: "false"
-  wechat_collection: "每日AI乱炖"
+  # 合集 tag for the MP draft (passed to wechatmp-pub). 2026-10-10 operator: the real MP 合集 is
+  # 「每日AI资讯」, not the column name — a wrong value makes the 合集 picker miss and the draft
+  # ship with no collection.
+  wechat_collection: "每日AI资讯"
   plan_max_items: "20"
   plan_translate_enabled: "true"
   article_write_enabled: "true"

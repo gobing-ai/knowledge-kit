@@ -64,19 +64,25 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
     // Sweep any leaked dialog so the next step (especially 保存为草稿) is never overlay-blocked.
     const sweep = async () => {
         const cancel = await trySelectors(page, ['button:has-text("取消")']);
-        if (cancel.found)
-            await page
-                .locator(cancel.selector ?? '')
-                .first()
-                .click({ timeout: 2_000 })
-                .catch(() => undefined);
+        if (cancel.found) {
+            try {
+                await page
+                    .locator(cancel.selector ?? '')
+                    .first()
+                    .click({ timeout: 2_000 });
+            } catch {
+                // The dialog may already be gone; the sweep is best-effort.
+            }
+        }
         await page.press?.('Escape');
         await page.waitForTimeout?.(SWEEP_SETTLE_MS);
     };
     /** Open a settings row: its label or `>` expander, whichever the build exposes. */
     const openRow = async (row: readonly string[], what: string) => {
         for (const selector of row) {
-            const found = await trySelectors(page, [selector]).catch(() => ({ found: false, selector: null }));
+            // `trySelectors` already absorbs a throwing probe and returns {found:false}, so a
+            // `.catch()` here would be unreachable.
+            const found = await trySelectors(page, [selector]);
             if (found.found) {
                 await clickSelector(page, selector, 8_000);
                 return;

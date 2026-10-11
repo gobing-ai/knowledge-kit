@@ -1097,6 +1097,22 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(warnings).toEqual([]);
     });
 
+    test('原文链接 fills the surfdash URL, and 赞赏 takes its account from 作者 when empty', async () => {
+        const ops: string[] = [];
+        // reward account empty → fill from 作者; the 赞赏 dialog closes; then 原文链接 commits.
+        const warnings = await enrichArticle(recordingPage(ops, [true, true, true]), {
+            reward: true,
+            author: '冰原奔狼',
+            originalUrl: 'https://surfing.salty.vip/zh/posts/20261010-ai-ai',
+        });
+        expect(warnings).toEqual([]);
+        expect(ops).toContain('click .setting-group__switch.js_can_reward');
+        expect(ops).toContain('click .allow_click_opr.js_url_checkbox');
+        // The 赞赏账户 defaults from 作者; the URL lands in the 原文链接 dialog's field.
+        expect(ops.some((op) => op.startsWith('fill ') && op.includes('冰原奔狼'))).toBe(true);
+        expect(ops.some((op) => op.startsWith('fill ') && op.includes('surfing.salty.vip'))).toBe(true);
+    });
+
     test('a creation-source choice that does not stick becomes a warning', async () => {
         const ops: string[] = [];
         const warnings = await enrichArticle(recordingPage(ops, [false]), { claimSource: '个人观点，仅供参考' });
