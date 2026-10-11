@@ -313,6 +313,11 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
     const defaultEffectPreset = options?.effectPreset;
     const broadcastDate = options?.date ?? new Date();
     const dateStr = formatBroadcastDate(broadcastDate, language);
+    // Canonical episode identifier: date-only, matching daily-article-gen's `episodeTitle`. One
+    // title has to cover the post body, ID3, RSS and the show notes, so the voicescript default
+    // must not invent its own form (it used to be `共N条`, which disagreed with the article title
+    // on every path where the workflow passes no explicit title).
+    const episodeDate = `${broadcastDate.getFullYear()}-${String(broadcastDate.getMonth() + 1).padStart(2, '0')}-${String(broadcastDate.getDate()).padStart(2, '0')}`;
     // Column of 咸话咸说. The show is not the speaker; the host is.
     const showName = '咸话咸说之每日AI乱炖';
     let hostName =
@@ -365,7 +370,7 @@ export function buildNewsVoiceScript(docs: Doc[], options?: ScriptBuilderOptions
         });
     }
 
-    const title = options?.title || (isZh ? `每日AI乱炖（共${docs.length}条）` : `每日AI乱炖 (${docs.length} stories)`);
+    const title = options?.title || `每日AI乱炖 · ${episodeDate}`;
     const segments: VoiceScriptSegment[] = [];
 
     // F613: the plan owns the words on the zh path; en keeps templates (design: substitution is

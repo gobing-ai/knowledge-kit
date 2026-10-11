@@ -140,7 +140,9 @@ describe('dailynews-gen plugin (0073)', () => {
     it('R3 & R4 — generates structured Chinese broadcast VoiceScript with intro and news transitions', () => {
         const testDate = new Date(2026, 7, 22);
         const script = buildNewsVoiceScript([SAMPLE_DOC_1, SAMPLE_DOC_2], { date: testDate });
-        expect(script.title).toContain('每日AI乱炖');
+        // One canonical title across surfaces: date-only, identical to daily-article-gen's
+        // episodeTitle. A count-form default here disagreed with the published post title.
+        expect(script.title).toBe('每日AI乱炖 · 2026-08-22');
         expect(script.language).toBe('zh');
         expect(script.default_profile).toBe('Robin');
         expect(script.segments.length).toBeGreaterThanOrEqual(4); // Intro + stories + Outro
