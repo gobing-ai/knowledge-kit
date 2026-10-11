@@ -53,48 +53,62 @@ bootstrap:
           spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet &&
           spur --no-logo self maintain
 
-      # 06:00 daily: kk-daily-ai-voice end-to-end (ingest → article → plan →
-      # publish surfdash + podcast → run report). Morning results (episode
-      # audio, show notes, run report) land in the run's workspace. Voice-gen
-      # runs against hosted Gemini TTS (vdriver=gemini, the workflow default —
+      # 04:30 daily: kk-daily-ai-voice2 end-to-end over the kk store (extract →
+      # plan → article/cover/script → nested safety gate → audio → publish
+      # surfdash + podcast → soft channels → ledger). It supersedes
+      # kk-daily-ai-voice.yaml (design docs/design/kk-collect-and-daily-voice2.md
+      # §8 cut-over): the store, not an in-run ingest fan-in, is its source, so
+      # this job no longer collects. Morning results (episode audio, show notes,
+      # run report) land in .works/kk-daily-ai-voice2/<date>/. Voice-gen runs
+      # against hosted Gemini TTS (vdriver=gemini, the workflow default —
       # GEMINI_API_KEY + GEMINI_TTS_MODEL live in ~/.config/kk/config.yaml's
       # gemini-tts env block; a 1-segment smoke render took 23s on 2026-10-10).
-      # No local Voicebox server is involved. The run fails loud like any other
-      # stage. Voicebox is NOT probed here: the gemini client is a clientOverride
-      # path, so voice-gen's local-server auto-start never fires.
+      # No local Voicebox server is involved: the gemini client is a
+      # clientOverride path, so voice-gen's local-server auto-start never fires.
+      # cover_enabled stays at its workflow default (true, minimax/image-01).
+      #
+      # 04:30 and not 06:00, because the pool must already be in the store:
+      # `kk store extract` only sees what the preceding 04:00 kk-collect tick has
+      # ingested AND labeled. Measured kk-collect durations (runs table,
+      # 2026-10-08..10-10): 8 scheduled ticks avg 9.4 min, max 15.3; the two 04:00
+      # ticks were the fast ones at 4.8 and 5.5 min (collect 253s/308s + label
+      # 19-33s, store ready by 04:05); across all 14 recorded runs the worst was
+      # 16.8 min. A pathological 04:00 tick would therefore still finish by
+      # ~04:17, so 04:30 clears the observed worst case by ~13 min while handing
+      # the run a fresh pool (extract window 24h against a 6h collect cadence).
+      #
+      # Cut-over caveat (2026-10-10): `kk ledger cutover-check --candidate
+      # kk-daily-ai-voice2 --baseline kk-daily-ai-voice --runs 5` still reports
+      # ready=false, streak 1/5 — the newest voice2 runs are dry-run (no classify
+      # step), so publish parity against voice1 is unproven. This job is the first
+      # scheduled voice2 publishing path; check the first two ticks.
       - name: kk-daily-ai-voice
-        cron: "0 6 * * *"
+        cron: "30 4 * * *"
         # 4h child budget (default is 600s — the 06:00 runs of 2026-09-19/20 died
-        # at ten minutes). Covers the slowest healthy E2E: ominivoice voicegen
-        # alone is ~2.4h. Chosen above the queue's two-hour visibility ceiling on
-        # purpose: durable single-flight (queue_jobs unique index, task 0863)
-        # folds any redelivered sibling, so a wedged run is killed at 4h instead
-        # of a legitimate slow run being killed at 2h.
+        # at ten minutes). Covers the slowest healthy E2E: measured voice2
+        # whole-run 1h47m (2026-10-10) and 2h30m (2026-10-08), of which voice
+        # generation alone is 1h47m-2h21m. Chosen above the queue's two-hour
+        # visibility ceiling on purpose: durable single-flight (queue_jobs unique
+        # index, task 0863) folds any redelivered sibling, so a wedged run is
+        # killed at 4h instead of a legitimate slow run being killed at 2h.
         timeoutMs: 14400000
-        # run_date only names the workspace: with work_dir unset, daily-prepare
-        # composes the real dir as works_dir/kk-daily-ai-voice/<stamp> from
-        # ~/.config/kk/config.yaml and writes the effective path to the
-        # .spur/runs/kk-daily-ai-voice/work-dir.txt anchor, which the workflow
-        # reads back into vars. The date must still be resolved here: var values
-        # reach non-shell steps verbatim, so "$(date +%F)" inside a var value only
-        # works for shell steps — that mismatch is the 06:00:01 file.read
-        # failure of 2026-09-13..18 (double quotes let the job worker's /bin/sh
-        # expand it before spur sees it). publish_enabled defaults to false,
-        # and skip_review=true avoids the HITL pause at `review` — a 06:00 cron
-        # run must be headless. safety_escalate_policy=exclude closes the same
-        # hole at `safety-judge`: an `escalate` classification used to pause at
-        # `review` no matter what, which no cron run can answer — the 2026-10-09
-        # and 2026-10-10 jobs both ended exit 1 having published nothing (the XY-01
-        # / WX-02 资质口径 escalation now reads `note` per the 2026-10-10 operator
-        # ruling in the platform reference files; this var is the backstop for the
-        # next legitimate escalation). cover_enabled stays at its workflow default
-        # (true, minimax/image-01): the 09-12 async-image disable is stale — the
-        # pinned-preset cover path (0163/F614) rendered synchronously on
-        # 09-24/25 and was re-verified end-to-end on the 20260928 workspace
-        # (brief → render 18s → normalize → PNG) before re-enabling.
+        # Only two vars, and both are load-bearing:
+        # - publish_enabled defaults to false; this is a publishing run.
+        # - skip_review=true skips the `review` pause node (pause: true) — a cron
+        #   run has nobody to answer it.
+        # No run_date: voice2's prepare derives the date itself
+        # (`kk daily prepare --run-date ""` → today) and projects it back from
+        # <work_dir>/run-date.txt. Not passing it also drops the
+        # "$(date +%F)"-inside-a-var hazard that cost the 2026-09-13..18 runs
+        # (var values reach non-shell steps verbatim, so the date only expands
+        # for shell steps). No safety_escalate_policy either: that var was
+        # voice1's backstop against an escalate landing on the `review` HITL.
+        # voice2 delegates safety to the nested kk-daily-safety.yaml state
+        # machine, whose terminal `clean` already covers pass|escalate|exclude,
+        # so an unattended run can no longer be stranded by an escalation.
         command: >-
-          spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice.yaml --quiet
-          --vars "{\"run_date\":\"$(date +%F)\",\"publish_enabled\":\"true\",\"skip_review\":\"true\",\"safety_escalate_policy\":\"exclude\"}"
+          spur --no-logo workflow run plugins/kk/workflows/kk-daily-ai-voice2.yaml --quiet
+          --vars "{\"publish_enabled\":\"true\",\"skip_review\":\"true\"}"
 
       # 04:00, 10:00, 16:00, 22:00 daily: kk-collect standalone 6-hourly collection
       # into the kk store (aihot + last30days + horizon -> store ingest -> label).
