@@ -630,6 +630,19 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
         return { ...result, dir };
     }
 
+    it('names the judge verdict path with its step prefix and stays inside the ADR-115 prompt cap', () => {
+        const yaml = readFileSync(SAFETY, 'utf-8');
+        const block = yaml.match(/- id: judge\n[\s\S]*?(?=\n {2}- id: )/)?.[0] ?? '';
+        // The reviewer's prompt scalar is indented 12 spaces; anything at <= 10 ends it.
+        const input = (block.split('input: |')[1] ?? '').split(/\n {0,10}\S/)[0] ?? '';
+        // On 2026-10-10 the safety-judge agent wrote its verdict to ..._08_safety-judge_verdict.json
+        // instead of ..._09_..., which spur reports as a contract violation and fails the run with no
+        // verdict at all. The prompt must name the prefix, and it must stay under the 1000-char cap.
+        expect(input).toContain('prefix `09_`, never `08_`');
+        expect(input).toContain('_09_safety-judge_verdict.json');
+        expect(input.length).toBeLessThanOrEqual(1000);
+    });
+
     it('is a state machine whose loop is the review → judge → revise chain', () => {
         expect(safety.kind).toBe('state-machine');
         expect(safety.initialState).toBe('review');
