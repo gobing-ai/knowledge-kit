@@ -2146,6 +2146,37 @@ export function xhsOverflowPoints(stderr: string, card: XhsCard): number[] | nul
 /** The sentence-ending marks the shorten rule cuts at. */
 const POINT_SENTENCE_MARKS = new Set(['。', '！', '？']);
 
+/** Fewest bullets a card keeps: below two, the block stops reading as a list. */
+const XHS_MIN_POINTS = 2;
+
+/** How many rewrites a refused card gets; each attempt re-bills one illustration. */
+const XHS_OVERFLOW_ATTEMPTS = 3;
+
+/**
+ * 0251 R1 + 2026-10-12: reduce the points of a card the composer refused, so the next compose pass
+ * can fit them. Rule 1 shortens each point the composer named ({@link shortenOverflowedPoint}). When
+ * no point can get shorter the block itself is over budget — measured on 20261011-ai-2026-10-11, whose
+ * cover points are 12–16 code-point single sentences that both shortening rules leave untouched, so
+ * the old single-shot retry never fired and the whole series was lost — so rule 2 drops the trailing
+ * point. Returns whether the card changed, the caller's signal to retry.
+ */
+export function reduceOverflowingPoints(points: string[], named: readonly number[]): boolean {
+    let changed = false;
+    for (const n of named) {
+        const point = points[n] ?? '';
+        const next = shortenOverflowedPoint(point);
+        if (next !== point) {
+            points[n] = next;
+            changed = true;
+        }
+    }
+    if (!changed && points.length > XHS_MIN_POINTS) {
+        points.pop();
+        changed = true;
+    }
+    return changed;
+}
+
 /**
  * 0251 R1: shorten one overflowing card point — drop its last sentence (cut at the last
  * 。/！/？ that is not the final character, inclusive); a one-sentence point longer than 36
@@ -2255,30 +2286,21 @@ export function dailyXhsRender(args: string[]): void {
                 const resumeLine = (status: number): string =>
                     `xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}`;
                 let result = kkCaptured(imageGenArgs, { soft: true });
-                if (result.status !== 0) {
-                    // 0251 R1: retry ONCE, only on a points[n] safe-area overflow where at least one
-                    // named point got shorter. The envelope is rewritten in the same shape and
-                    // image-gen is called once more; a second failure takes the resume line.
-                    let shortened = false;
-                    for (const n of xhsOverflowPoints(result.stderr, card) ?? []) {
-                        const point = card.points[n] ?? '';
-                        const next = shortenOverflowedPoint(point);
-                        if (next !== point) {
-                            card.points[n] = next;
-                            shortened = true;
-                        }
-                    }
-                    if (shortened) {
-                        (imageGen.vars as Record<string, unknown>).points = card.points.join('\n');
-                        sted('write', envPath, () =>
-                            writeJsonText(envPath, [
-                                { id: `xhs-card-${card.index}`, title: runDate, body: '', metadata: { imageGen } },
-                            ]),
-                        );
-                        result = kkCaptured(imageGenArgs, { soft: true });
-                    }
-                    if (result.status !== 0) failWith(result.status, resumeLine(result.status));
+                for (let attempt = 0; result.status !== 0 && attempt < XHS_OVERFLOW_ATTEMPTS; attempt += 1) {
+                    // 0251 R1 (+ the block-level rule 2): only a points[n] safe-area overflow is
+                    // rewritable. The envelope is rewritten in the same shape and image-gen is called
+                    // again; a failure that no rewrite addresses takes the resume line immediately.
+                    const named = xhsOverflowPoints(result.stderr, card);
+                    if (named === null || !reduceOverflowingPoints(card.points, named)) break;
+                    (imageGen.vars as Record<string, unknown>).points = card.points.join('\n');
+                    sted('write', envPath, () =>
+                        writeJsonText(envPath, [
+                            { id: `xhs-card-${card.index}`, title: runDate, body: '', metadata: { imageGen } },
+                        ]),
+                    );
+                    result = kkCaptured(imageGenArgs, { soft: true });
                 }
+                if (result.status !== 0) failWith(result.status, resumeLine(result.status));
                 artifact = firstArtifact(requireJson(out, 'xhs render'));
             }
             if (artifact === null) failWith(1, `xhs render: card ${card.index} recorded no image artifact (${out})`);

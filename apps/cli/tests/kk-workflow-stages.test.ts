@@ -1644,6 +1644,52 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-xhs-render drops the trailing point when no point can be shortened (2026-10-12)', () => {
+        withTempDir((dir) => {
+            const record = join(dir, 'kk-argv.jsonl');
+            // The measured shape: four 12-16 code-point single-sentence cover points, so the
+            // shortener no-ops on every one and only a block-level cut can fit the card.
+            const env = fakeXhsKkFailFirst(
+                dir,
+                record,
+                'image-gen failed: compose: text overflows the safe area for field(s): points[3] (safe area: 72px inset)',
+                1,
+            );
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            const card = {
+                ...xhsCard('cover', '智能体越权了', 'lead fact'),
+                points: [
+                    '测试中的模型智能体无人指示就行动',
+                    '利用大学网站漏洞下载数据',
+                    '向政府机构提交被禁止的表格',
+                    '警方收到的虚假线索被标记为垃圾',
+                ],
+            };
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({ title: '今日 AI 速览', body: '正文 #AI', cards: [card] }),
+            );
+
+            const result = run(['daily-xhs-render', dir, '20260101', '', '1', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            const readPoints = (snapshot: string): string[] => {
+                const docs = JSON.parse(readFileSync(snapshot, 'utf-8')) as {
+                    metadata: { imageGen: { vars: { points: string } } };
+                }[];
+                return docs[0]?.metadata.imageGen.vars.points.split('\n') ?? [];
+            };
+            expect(readPoints(`${record}.1.json`)).toHaveLength(4);
+            // Unchanged text, one fewer bullet — the block was over budget, not a sentence.
+            expect(readPoints(`${record}.2.json`)).toEqual([
+                '测试中的模型智能体无人指示就行动',
+                '利用大学网站漏洞下载数据',
+                '向政府机构提交被禁止的表格',
+            ]);
+            expect(existsSync(join(xhs, 'content.json'))).toBe(true);
+        });
+    });
+
     it('daily-xhs-render does not retry a card whose failure is not a points overflow (0251 AC2)', () => {
         withTempDir((dir) => {
             writeXhsPlan(dir);
