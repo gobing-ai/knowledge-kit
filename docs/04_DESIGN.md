@@ -90,7 +90,7 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 | --------- | ------------- | -------- |
 | `executor run <plugin>` | Invoke a plugin with input/output files and contract validation | shipped (A21) |
 | `executor fan-in` | Merge N `Doc[]` files into one (§1.5) | shipped (A21) |
-| `executor fan-out` | Dispatch one `Content` to N publish targets in sequence (§1.6) | shipped (A21) |
+| `executor fan-out` | Dispatch one `Content` to N publish targets concurrently, bounded by `--jobs`; `--serial-target` names are held out and run alone afterwards (§1.6) | shipped (A21) |
 | `plugin status` | List discovered plugins grouped by kind with per-plugin health (`--kind` filter, `--json` report) | shipped (A21) |
 | `plugin check` | Run each plugin's live readiness probe (`check` field, ADR-032; verdicts `verified`/`refused`/`error`/`unsupported`; §`plugin check`) | shipped (E93, 0215+0216) |
 | `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215+0216) |
@@ -313,6 +313,12 @@ succeeded, failed, skipped }, targets }` (spec §3.1) to `--out`.
 
 Partial success is **not** exit 0 — the run fails loud (ADR-007 R5), while successful targets stay
 published and are individually re-runnable via `--retry-from` (spec §5).
+
+**Timeout semantics (0248, shipped):** `--target-timeout <ms>` is the per-target wall-clock budget,
+enforced by the owning spawn rather than by a fan-out-side race: on overrun the publisher's whole
+process tree (descendants first, then the entry) is killed and reaped before the fan-out reads or
+discards that target's temporary output, so a timed-out publisher leaves no live descendant and no
+late output. The target is recorded `failed` naming the target and the budget; siblings continue.
 
 **Retry semantics (0110 I4/I7, shipped):** prior ledgers are validated against kk-core's
 `AggregateResultSchema` (`TargetOutcomeSchema` per entry), so a wrong-typed optional field

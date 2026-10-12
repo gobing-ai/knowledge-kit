@@ -246,8 +246,11 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
   per-source documents never land in the workspace (0097). `--source` discovery uses the merged
   registry by default; `--plugins-root` (exclusive) / `--plugins-path` (union) narrow it, and
   combining them is a usage error (0157 R3).
-- **Fan-out (1→N):** dispatch `Content` to N publishers **in sequence**; emit one aggregate `Result`
-  with a per-target entry (`published | failed | skipped`) plus summary counters.
+- **Fan-out (1→N):** dispatch `Content` to N publishers **concurrently** — bounded by `--jobs`, with
+  `--serial-target` names held out of the batch and run alone afterwards — and emit one aggregate
+  `Result` with a per-target entry (`published | failed | skipped`) plus summary counters; a
+  `--target-timeout <ms>` overrun kills that publisher's owned process tree (descendants then the
+  entry) and is recorded `failed` (ADR-007 R4 amendment 2026-10-03).
 - **Partial success:** successful targets stay published and are individually re-runnable via
   `--retry-from`; the process still exits **non-zero** so the run fails loud (ADR-007 R5). This
   preserves the 0023/0025 hardening — a target that failed is never reported as success — while

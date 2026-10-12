@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectionForKind } from '@gobing-ai/kk-core';
 import { Command } from 'commander';
 import { registerExecutorCommand } from '../../src/commands/executor';
+import * as fanoutModule from '../../src/fanout';
 import { main } from '../../src/main';
 import { captureOutput, silenceOutput } from '../capture';
 
@@ -468,6 +469,67 @@ describe('registerExecutorCommand', () => {
                 expect.objectContaining({ target: 'fake-pub', status: 'published' }),
             ]);
         } finally {
+            await rm(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    it('executor fan-out forwards --serial/--jobs/--serial-target/--target-timeout to the runner (0248 R2)', async () => {
+        const tmpDir = join(import.meta.dir, 'tmp-cmd-fanout-flags');
+        await mkdir(tmpDir, { recursive: true });
+        const contentFile = join(tmpDir, 'content.json');
+        await writeFile(contentFile, JSON.stringify({ title: 'Demo', body: 'hello world' }), 'utf-8');
+
+        // Capture the argv the action hands the runner. Commander declares all four flags, so a
+        // forwarding regression is invisible to the registration/help assertions above (0248 P2).
+        const seen: string[][] = [];
+        const spy = spyOn(fanoutModule, 'runFanout').mockImplementation(async (argv: string[]) => {
+            seen.push([...argv]);
+            return 0;
+        });
+        try {
+            const code = await main([
+                'node',
+                'test',
+                'executor',
+                'fan-out',
+                '--content',
+                contentFile,
+                '--target',
+                'fake-pub',
+                '--serial',
+                '--jobs',
+                '2',
+                '--serial-target',
+                'solo-pub',
+                '--target-timeout',
+                '50',
+                '--out',
+                join(tmpDir, 'result.json'),
+                '--plugins-root',
+                tmpDir,
+            ]);
+
+            expect(code).toBe(0);
+            expect(seen).toHaveLength(1);
+            expect(seen[0]).toEqual(
+                expect.arrayContaining([
+                    '--content',
+                    contentFile,
+                    '--target',
+                    'fake-pub',
+                    '--serial',
+                    '--jobs',
+                    '2',
+                    '--serial-target',
+                    'solo-pub',
+                    '--target-timeout',
+                    '50',
+                    '--plugins-root',
+                    tmpDir,
+                ]),
+            );
+        } finally {
+            spy.mockRestore();
             await rm(tmpDir, { recursive: true, force: true });
         }
     });

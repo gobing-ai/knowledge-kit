@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { type Content, collectionForKind, type PluginKind, type Result } from '@gobing-ai/kk-core';
 import {
     type AggregateResult,
@@ -97,6 +97,91 @@ function writeFakePublishPlugin(pluginsRoot: string, script: string, kind: Plugi
         JSON.stringify({ name: 'fake-pub', kind, entry: './src/index.ts', version: '1.0.0' }),
     );
     writeFileSync(join(dir, 'src', 'index.ts'), script);
+}
+
+/** Sleep for the overlap fixtures: long enough that process-startup jitter cannot fake an overlap. */
+const SLEEP_MS = 250;
+
+interface PublisherInterval {
+    start: number;
+    end: number;
+}
+
+/**
+ * Write a publish plugin that stamps `start`/`end` around a real sleep into
+ * `<pluginsRoot>/ledger.jsonl`, then records its Result. Two of these prove overlap from their own
+ * timestamps rather than from total wall clock (0248 R1).
+ */
+function writeSleepingPublishPlugin(pluginsRoot: string, name: string, sleepMs: number): void {
+    const dir = join(pluginsRoot, collectionForKind('publish'), name);
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(
+        join(dir, 'plugin.json'),
+        JSON.stringify({ name, kind: 'publish', entry: './src/index.ts', version: '1.0.0' }),
+    );
+    writeFileSync(
+        join(dir, 'src', 'index.ts'),
+        [
+            "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';",
+            "import { join } from 'node:path';",
+            'const argv = process.argv.slice(2);',
+            "const inPath = argv[argv.indexOf('--in') + 1];",
+            "const outPath = argv[argv.indexOf('--out') + 1];",
+            // Ledger beside the kind collection: `<pluginsRoot>/ledger.jsonl`.
+            "const ledger = join(import.meta.dir, '..', '..', '..', 'ledger.jsonl');",
+            `const name = ${JSON.stringify(name)};`,
+            "readFileSync(inPath, 'utf-8');",
+            'appendFileSync(ledger, "start:" + name + ":" + Date.now() + "\\n");',
+            `await Bun.sleep(${sleepMs});`,
+            'appendFileSync(ledger, "end:" + name + ":" + Date.now() + "\\n");',
+            "writeFileSync(outPath, JSON.stringify({ ok: true, target: name, url: 'https://example.com/' + name, id: 'id-' + name, message: 'published' }));",
+        ].join('\n'),
+    );
+}
+
+/**
+ * Write a publish plugin whose entry hangs forever after forking a child that writes `marker` two
+ * seconds later. Only a tree-wide kill reaps that child — a direct-child-only kill leaves the late
+ * output (0248 R2, the invoke.ts cancellation pattern).
+ */
+function writeHangingPublishPlugin(pluginsRoot: string, name: string, marker: string): void {
+    const dir = join(pluginsRoot, collectionForKind('publish'), name);
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(
+        join(dir, 'plugin.json'),
+        JSON.stringify({ name, kind: 'publish', entry: './src/index.ts', version: '1.0.0' }),
+    );
+    const child = `setTimeout(() => { const { writeFileSync } = require('node:fs'); writeFileSync(${JSON.stringify(marker)}, 'late'); }, 2000); setInterval(() => {}, 1000);`;
+    writeFileSync(
+        join(dir, 'src', 'index.ts'),
+        [
+            "import { spawn } from 'node:child_process';",
+            `spawn(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'ignore' });`,
+            'setInterval(() => {}, 1000);',
+        ].join('\n'),
+    );
+}
+
+/** Read the named publisher's start/end pair from `<pluginsRoot>/ledger.jsonl`. */
+function readPublisherInterval(pluginsRoot: string, name: string): PublisherInterval {
+    let interval: PublisherInterval | undefined;
+    // One entry per publisher, in start-then-end order (its own writes are sequential).
+    for (const line of readFileSync(join(pluginsRoot, 'ledger.jsonl'), 'utf-8').trim().split('\n')) {
+        const [phase, plugin, ms] = line.split(':');
+        if (plugin !== name || ms === undefined) continue;
+        const at = Number(ms);
+        if (phase === 'start') interval = { start: at, end: Number.NaN };
+        else if (interval !== undefined) interval.end = at;
+    }
+    if (interval === undefined || Number.isNaN(interval.end)) {
+        throw new Error(`publisher '${name}' never stamped a complete start/end pair in the ledger`);
+    }
+    return interval;
+}
+
+/** True when the two windows share an instant — real overlap, not merely adjacent in time. */
+function overlaps(a: PublisherInterval, b: PublisherInterval): boolean {
+    return a.start < b.end && b.start < a.end;
 }
 
 describe('fanout', () => {
@@ -1114,6 +1199,137 @@ describe('fanout interior concurrency', () => {
         expect(result.targets[0]?.status).toBe('published');
         expect(result.targets[1]?.status).toBe('failed');
         expect(result.targets[1]?.error).toContain('exceeded its 50ms budget');
+    });
+
+    it('R1/AC1 — two real publisher processes overlap under --jobs 2', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeSleepingPublishPlugin(pluginsRoot, 'slow-a-pub', SLEEP_MS);
+            writeSleepingPublishPlugin(pluginsRoot, 'slow-b-pub', SLEEP_MS);
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            const code = await runFanout([
+                '--content',
+                contentFile,
+                '--target',
+                'slow-a-pub',
+                '--target',
+                'slow-b-pub',
+                '--jobs',
+                '2',
+                '--out',
+                outFile,
+                '--plugins-root',
+                pluginsRoot,
+            ]);
+
+            expect(code).toBe(0);
+            const a = readPublisherInterval(pluginsRoot, 'slow-a-pub');
+            const b = readPublisherInterval(pluginsRoot, 'slow-b-pub');
+            // Both processes really slept, and their windows intersect: the pool overlapped them.
+            expect(a.end - a.start).toBeGreaterThanOrEqual(SLEEP_MS - 50);
+            expect(b.end - b.start).toBeGreaterThanOrEqual(SLEEP_MS - 50);
+            expect(overlaps(a, b)).toBe(true);
+        });
+    });
+
+    it('R1/AC1 — --jobs 1, --serial and --serial-target keep real publishers from overlapping', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = join(root, 'content.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+            const scenarios: Array<{ label: string; flags: string[] }> = [
+                { label: 'jobs-1', flags: ['--jobs', '1'] },
+                { label: 'serial', flags: ['--serial'] },
+                { label: 'serial-target', flags: ['--serial-target', 'slow-b-pub'] },
+            ];
+
+            for (const scenario of scenarios) {
+                const pluginsRoot = join(root, `plugins-${scenario.label}`);
+                writeSleepingPublishPlugin(pluginsRoot, 'slow-a-pub', SLEEP_MS);
+                writeSleepingPublishPlugin(pluginsRoot, 'slow-b-pub', SLEEP_MS);
+
+                const code = await runFanout([
+                    '--content',
+                    contentFile,
+                    '--target',
+                    'slow-a-pub',
+                    '--target',
+                    'slow-b-pub',
+                    ...scenario.flags,
+                    '--out',
+                    join(root, `result-${scenario.label}.json`),
+                    '--plugins-root',
+                    pluginsRoot,
+                ]);
+
+                // The label rides inside each expected tuple so a failure names its scenario.
+                expect([scenario.label, code]).toEqual([scenario.label, 0]);
+                expect([
+                    scenario.label,
+                    overlaps(
+                        readPublisherInterval(pluginsRoot, 'slow-a-pub'),
+                        readPublisherInterval(pluginsRoot, 'slow-b-pub'),
+                    ),
+                ]).toEqual([scenario.label, false]);
+            }
+        });
+    });
+
+    it('R2/AC2 — a hanging publisher is terminated at its budget while its sibling publishes', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            // Names carry the temp-dir token so the tmpdir cleanup check below cannot match a file
+            // another run left behind.
+            const token = basename(root);
+            const hangName = `hang-pub-${token}`;
+            const fastName = `fast-pub-${token}`;
+            const marker = join(root, 'late-descendant.txt');
+            writeHangingPublishPlugin(pluginsRoot, hangName, marker);
+            writeSleepingPublishPlugin(pluginsRoot, fastName, 0);
+            const contentFile = join(root, 'content.json');
+            const outFile = join(root, 'result.json');
+            writeFileSync(contentFile, JSON.stringify(CONTENT));
+
+            const started = Date.now();
+            const code = await runFanout([
+                '--content',
+                contentFile,
+                '--target',
+                hangName,
+                '--target',
+                fastName,
+                '--jobs',
+                '2',
+                '--target-timeout',
+                '300',
+                '--out',
+                outFile,
+                '--plugins-root',
+                pluginsRoot,
+            ]);
+            const elapsed = Date.now() - started;
+
+            expect(code).toBe(1);
+            // The run settles at the budget, not at the descendant's 2 s deadline.
+            expect(elapsed).toBeLessThan(2000);
+            const outData = JSON.parse(readFileSync(outFile, 'utf-8'));
+            expect(outData.targets[0]).toMatchObject({ target: hangName, status: 'failed', ok: false });
+            expect(outData.targets[0].error).toContain(hangName);
+            expect(outData.targets[0].error).toContain('300ms');
+            expect(outData.targets[1]).toMatchObject({ target: fastName, status: 'published', ok: true });
+            // Cleanup ran for both the failed and the published target.
+            expect(
+                readdirSync(tmpdir()).filter(
+                    (entry) => entry.startsWith('kk-fanout-') && entry.endsWith('.json') && entry.includes(token),
+                ),
+            ).toEqual([]);
+
+            // Grace past the owned descendant's 2 s write deadline: the whole tree is dead.
+            await Bun.sleep(2600);
+            expect(existsSync(marker)).toBe(false);
+        });
     });
 
     it('rejects a malformed --jobs / --target-timeout before touching the filesystem', async () => {
