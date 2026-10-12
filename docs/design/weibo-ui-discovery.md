@@ -6,7 +6,9 @@
 
 **Scope of evidence.** Measurements below come from live DOM reads (`describeNode`-style descriptors:
 tag, placeholder, aria-label, role, class, ≤ 40 chars of text). No page HTML, cookie, token or
-screenshot is recorded here, and none is committed under `.spur/run/`.
+screenshot is recorded here, and none is committed: the run-scoped probe scripts, the two live
+`Result` JSONs and the route/selector dumps live in the run's `.spur/run/` plane (retained with the
+batch evidence), never in the repository.
 
 ## 1. Session / preflight (R1)
 
@@ -14,7 +16,7 @@ screenshot is recorded here, and none is committed under `.spur/run/`.
 | --- | --- | --- |
 | Operator login | `bun plugins/publishings/weibo-pub/src/profile-check.ts login --timeout 600000` | exit 0 — `weibo profile login verified` (the readiness predicate matched after the sign-in) |
 | Operator check | `bun plugins/publishings/weibo-pub/src/profile-check.ts check --timeout 60000` | exit 0 — `{"status":"verified", … "observed headlessly …"}` |
-| **Forced-headless publish preflight** (`headedFallback: false`, no `headedOnly`) | `bun plugins/publishings/weibo-pub/.spur/0246-headless-probe.ts` | `{"status":"verified"}` — a headless pass is sufficient |
+| **Forced-headless publish preflight** (`headedFallback: false`, no `headedOnly`) | a run-scoped probe calling `checkChannelSession(WEIBO_CONFIG, { headedFallback: false })` over the same profile (probe retained with the batch evidence, not committed — the call site is `plugins/publishings/weibo-pub/src/index.ts:271-299`) | `{"status":"verified"}` — a headless pass is sufficient |
 
 **Decision:** `WEIBO_CONFIG.checkHeadedOnly` stays **`false`**. Unlike x-pub (`checkHeadedOnly: true`,
 headless article loads are login-walled), this channel verifies headlessly, so the operator CLI needs
