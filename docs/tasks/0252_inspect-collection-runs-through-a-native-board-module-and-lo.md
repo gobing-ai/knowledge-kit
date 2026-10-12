@@ -4,7 +4,7 @@ name: Inspect collection runs through a native Board module and local reader
 status: todo
 template: feature-impl
 created_at: 2026-10-11T23:22:42.773Z
-updated_at: "2026-10-11T23:52:21.182Z"
+updated_at: "2026-10-12T04:41:30.501Z"
 feature_id: G8
 priority: P2
 tags:
@@ -40,6 +40,17 @@ Also implements R15 — Workflow definitions remain in Settings Workflows.
 - Browser packaging assumed existing staging → CLI prepack only builds CLI/plugins → invoke the shared Bun browser build explicitly from root build and prepack.
 - Foundation AC claimed all three modules → daily/ITC implementations depend on this task → final three-module proof belongs solely to 0255; keep Collect foundation observable here.
 - Workflow relocation described as future work → symlink and catalog/browser proof already exist → preserve that topology and verify it, do not repeat the move.
+
+#### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| The contribution ABI is `apiVersion: 1`, the entry exports `webModule`, and the component renders inside the host's own React tree without `createRoot` | installed `@gobing-ai/spur` declaration-only `./board` export | Read `node_modules/@gobing-ai/spur/board/index.d.ts:21,24,27,38` (0.4.2) | HIGH |
+| The host advertises `react`, `react/jsx-runtime` and `react/jsx-dev-runtime` (plus `react-dom`, `react-dom/client`, `react-router`, `react-router/dom`) at React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0 | installed `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; all seven named `web/_astro/board-facade-*.js` assets exist on disk | HIGH |
+| A module declaration is a `.strict()` discriminated `react`/`iframe` union with `id` matching `^[a-z][a-z0-9-]*$`; a duplicate id or a reserved-identity collision is refused at config load, and the host derives the route as `/modules/<id>` | installed bundle `boardModuleDeclarationSchema`, `validateBoardModuleDeclarations`, `BOARD_MODULE_ROUTE_PREFIX` and `web/board-runtime.json` `reservedModules` | Read the emitted zod shapes, the collision check and the route constant in `node_modules/@gobing-ai/spur/spur.js` (0.4.2) | HIGH |
+| `bootstrap.modules` is validated by the RUNTIME schema only — the shipped `schemas/spur-config.schema.json` `bootstrap` block lists just logging/telemetry/database/scheduler | installed `schemas/spur-config.schema.json:20` and the bundle's `bootstrapSectionSchema` | Read both in `node_modules/@gobing-ai/spur` (0.4.2); the consequence (enable a module only after its assets exist) is in docs/04_DESIGN.md | HIGH |
+| The runs API is `/api/runs` (with `workflow`, `limit`, `cursor`, `status`, `since`), `/api/runs/:runId`, `/api/runs/:runId/progress` and `/api/runs/by-wbs/:wbs`, and the progress route answers 404 `RUN_NOT_FOUND` once the projection carries an `orphan-row` diagnostic | installed bundle route registrations and `projectWorkflowProgress` | Read the `app.get` handlers and the orphan-row guard in `node_modules/@gobing-ai/spur/spur.js` (0.4.2) | HIGH |
+| §9's literal read protocol (`O_NOFOLLOW`, a held descriptor, `fstat` on the descriptor) is not implementable here: `no-direct-fs-io` is an error over `apps/**/src/**` and the `@gobing-ai/ts-runtime` `FileSystem` seam exposes no open/fd primitive | `.spur/rules/strict/runtime-boundaries.yaml` and the installed `FileSystem` declaration | Read both; the reader therefore implements the behavioural guarantee (re-resolve, pre/post-read stat, post-read owner re-verification with `404 board.artifact.owner-changed`) and the residual is recorded in `.spur/memory/runs/g8-0252-465e601c.md` as an open operator decision | HIGH |
 
 ### Requirements
 
