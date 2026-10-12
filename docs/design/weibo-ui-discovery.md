@@ -145,6 +145,33 @@ issues, no app registration, and a returned status id as the observed outcome. R
 `HTTP <status> errno <code>: <msg> (<action>: <url>)` so the operator's next action is never hidden inside a
 JSON blob.
 
+## 4-pre. LIVE VERIFIED — the announcement channel works (2026-10-12)
+
+The mobile-composer route with the page-API submit published a real announcement, after the operator signed a
+**different, healthy account** into the same profile (`uid` `5876554232`, display name 咸话咸说2025):
+
+```json
+{"ok": true, "target": "weibo", "id": "5353432296718677",
+ "url": "https://m.weibo.cn/detail/5353432296718677",
+ "message": "weibo post published live in profile ~/.config/kk/browser-profiles/weibo"}
+```
+
+Reader-visible verification on the status page: the hook renders (`hasHook: true`), the episode link is a live
+anchor (`hasAnchors: 1`; Weibo shows the URL as 网页链接), and the page belongs to the posting account.
+
+Two facts this pass established:
+
+- **The earlier `errno 200001` refusal was account-specific.** The first account is refused by Weibo's API on
+  every route and with every request shape tried; a healthy account publishes on the first attempt with the code
+  unchanged. The channel needed no further submission work.
+- **The profile's session state matters to the preflight.** A headed window holding the profile lock (my
+  operator window) made the *headless* preflight fail with "Authentication was not confirmed within 30000ms";
+  once the holders were cleared, both front ends loaded signed in headlessly and the publish succeeded. A
+  publish preflight must run with the profile free.
+
+The mobile composer also carries a `yidun` (网易易盾) captcha loader on submit — benign for this account, and the
+reason a captcha-aware failure path stays valuable.
+
 ## 4b. Route options for a proper Weibo publish
 
 | Route | Transport | Prerequisites | Evidence today |
