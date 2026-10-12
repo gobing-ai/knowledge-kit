@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.45.0
+version: 2.46.0
 created_at: 2026-07-22
-updated_at: 2026-10-11
+updated_at: 2026-10-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -84,6 +84,9 @@ kk store release --run <id> [--topic <t>] [--db <path>]
 kk schedule render <schedule> --platform launchd|cron [--repo <dir>]
 kk ledger append --workflow <name> --run <run-id> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
+kk board capture --workflow <name> --run <id> --work-dir <dir> --stamp <stamp>
+                 [--definition-digest <sha256:digest>] [--setting <key=value> …]
+kk board serve --board-origin <origin> [--port <n>]
 ```
 
 | Command | Description | Status |
@@ -324,6 +327,51 @@ fresh outcomes; unselected prior failures keep `ok: false` and exit 1. Target el
 spec §5: without explicit targets, exactly the prior failures retry; an explicit `--target`
 selection narrows the attempt set (deduped, published names stay skipped) and previously
 unattempted names remain eligible. No new result fields or flags.
+
+### `kk board` — Board reader and run capture (G8, task 0252)
+
+Two verbs over the frozen contract in `docs/design/workflow-board-modules.md` §9.
+
+**`kk board capture`** binds a run id to its canonical workspace and its sanitized effective
+settings, then writes the immutable record `.works/.board/runs/<run-id>.json` and the workspace
+ownership marker `<work-dir>/.kk-board-owner.json` atomically, revoking the previous owner first.
+
+| Flag | Meaning |
+| -------- | --------- |
+| `--workflow <name>` | one of `kk-collect`, `kk-daily-ai-voice2`, `kk-itc` |
+| `--run <id>` | single safe path segment |
+| `--work-dir <dir>` | run workspace below a works root (`.works/` or `works/`); a relative path resolves against the project. `/`, the home tree, the project root, an ancestor of the project and a works root itself are refused |
+| `--stamp <stamp>` | alphanumerics, dash, underscore, `T`/`Z` |
+| `--definition-digest <sha256:…>` | optional; topology is recorded only on exact `spur workflow list --json` agreement, else a diagnostic and no topology |
+| `--setting <key=value>` | repeatable; allowlisted per workflow. A non-allowlisted key is dropped, never captured; free text (topics, titles, prompts, paths) is never capturable |
+
+Capture never initiates content work and never depends on the reader being alive. A failed
+*optional* capture after a successful revocation warns and leaves artifact access disabled rather
+than aborting production; a failed revocation refuses the result mutation entirely.
+
+**`kk board serve --board-origin <origin> [--port <n>]`** runs the read-only reader on `127.0.0.1`
+(default port 4340) with `GET`/`HEAD`/`OPTIONS` only:
+`/api/health`, `/api/workflows/<name>/runs/<id>/results`, `…/config`, `…/artifacts/<opaque-id>`.
+Exact-Origin plus loopback-Host are required, every read is containment- and symlink-checked and
+re-verifies the workspace owner before the response is written, text/JSON previews cap at 1 MiB, and
+media is served as byte ranges. Status vocabulary: `400` bad identity or query, `403` foreign
+origin or project, `404` unknown capture/artifact or a changed owner, `405` mutating method, `416`
+unsatisfiable range, `422` malformed stored evidence, `503` Board authority unavailable.
+
+**Operator setup (checkout).**
+
+1. Build the browser contributions: `bun scripts/build-board.ts` (invoked by the root `build` and by
+the CLI `build:bundle`/`prepack`, so a packed install ships them).
+2. Declare each module in `.spur/config.yaml` under `bootstrap.modules` — `type: react`,
+   `directory: apps/cli/dist/board/collect`, `entry: index.js`, `styles: [index.css]`,
+   `id: kk-collect` (plus `kk-daily-ai-voice2`/`kk-itc` once their entries exist). Enable a module
+   only after its assets exist: the directory is checked at config load, so a missing build output
+   makes every `spur` invocation in that checkout fail. **Not yet declared in this checkout** — the
+   declaration is part of task 0255's installed-package hardening.
+3. Run `kk board serve --board-origin http://127.0.0.1:<board-port>` and open the module at
+   `/modules/<id>` on that Board origin; definitions stay in **Settings → Workflows**
+   (`/board/settings/workflows`). A validated `kkApi` query parameter selects a non-default loopback
+   reader port and is retained in saved URLs.
 
 ## 1.7 `plugin.json` manifest surface
 
