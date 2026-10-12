@@ -60,7 +60,7 @@ Two consequences had to be fixed in the flow, both measured rather than assumed:
    card **container** (`closest('article, [class*="card"], [class*="Card"], div[class*="Feed"]')`,
    falling back to the link's parent).
 
-## 4. Live post attempt (operator-approved, one write)
+## 4. Live post attempts (operator-approved, two writes)
 
 Content: an explicitly marked temporary dogfood post; `metadata.publishStatus: 'public'`,
 `options.operation: 'post'`. Result (`ok: false`):
@@ -76,9 +76,48 @@ correct and no unintended public write occurred. No failure toast was visible ei
 previously never read toasts, so a site-side rejection could not be named. That gap is closed: a fresh
 toast after the send is now reported as `(site said: …)` with the outcome error.
 
-**Status of the post leg:** one approved attempt, no observed outcome, no published content. A second
-attempt needs fresh operator approval; the measured noise (button enabled, text present, no card, no
-toast) is consistent with Weibo silently declining the send for this brand-new account.
+**Status of the post leg:** two separately approved attempts, no observed outcome, no published
+content. Both the noise (button enabled, text present, no card, no toast) and the silent decline need
+the diagnosis below before a third attempt is worth its approval.
+
+## 4a. Send-path diagnosis (2026-10-12, second pass, read-only)
+
+A later read-only pass (no clicks) measured the state left behind by those attempts:
+
+| Observation | Value | What it rules in / out |
+| --- | --- | --- |
+| Composer content | **still holds the 114-character draft** (`composerValueLength: 113`) | The desktop app never submitted — a successful send clears the composer, and Weibo persists an unsent draft locally. The text is the *previous* attempt's, so the send was a no-op, not a rejected submission with a cleared box. |
+| Send control | present, `disabled: false`, topmost at its centre | Not an actionability block (already measured; re-confirmed) |
+| Dialogs / notices / verification hints on `weibo.com/` | **0** (`verificationHints: 0`, no non-empty notices at rest) | No standing real-name/verification gate is visible *at rest*; a gate that appears **only after the click** is still unmeasured |
+| Session | still valid headlessly (composer attached, no login redirect) | The profile survives; the silence is not an expired session |
+| `https://open.weibo.com/apps` | redirects to `weibo.com/<uid>` | No open-platform app console for this account, so the API route has no ready app either |
+
+**Hypotheses, with the evidence that would settle each** (none is confirmed):
+
+1. **The synthetic click never drives the app's submit handler.** Favoured by the total absence of
+   feedback and the retained draft; a real submission that Weibo rejected would normally toast.
+   *Settles it:* a post-click snapshot (dialog/modal text, composer length before/after, toast list).
+2. **Risk control silently drops the submission** for a brand-new, unverified account. Consistent with
+   the silence, but it would usually surface an error toast. *Settles it:* the same snapshot, plus the
+   account's standing (age, phone/real-name verification, any 异常/受限 notice on the timeline).
+3. **A verification modal appears, then the flow never looks for it.** The existing flow probes cards
+   and toasts only, so a modal would be invisible to it. *Settles it:* the same snapshot — this is the
+   first thing the re-implementation must capture.
+
+## 4b. Route options for a proper Weibo publish
+
+| Route | Transport | Prerequisites | Evidence today |
+| --- | --- | --- | --- |
+| **Desktop web composer** (current) | browser · `script` | A verified account; and a flow that proves the app received the submit (composer cleared or a fresh toast) rather than assuming a DOM click lands | Composer/send/feed selectors measured; the submit is a no-op on this account |
+| **Mobile web composer** (`m.weibo.cn`) — *unmeasured candidate* | browser · `script` | Same account requirement; no separate entitlement | Not measured at all. Its composer is a simpler, API-backed page (`/compose/`), so it is the cheapest next measurement if the desktop handler is the blocker |
+| **Official open-platform API** (`statuses/share.json` for text-with-link, `statuses/update.json` for text) | `file-cli` | A Weibo app (App Key/Secret) with write permission — the API requires an app that passed review — plus an OAuth 2.0 token (`statuses_update` scope) and, for `share`, a bound 安全域名 | No app exists for this account (`open.weibo.com/apps` redirects away), so this route needs an operator-side app registration first. It would slot into the existing threads-pub/x-pub credential pattern (`WEIBO_APP_KEY` / `WEIBO_APP_SECRET` / `WEIBO_ACCESS_TOKEN`, env-only) |
+
+Route **decision rule:** do not spend another public write until the diagnosis in §4a explains the
+silence. If hypothesis 1 or 3 holds, fix the submit path (or move to the mobile composer) and keep the
+browser route; if hypothesis 2 holds, the account is the blocker and either a properly aged/verified
+account or the API route (with an operator-registered app) is the way — the browser flow then stays
+fail-closed rather than retrying.
+
 
 ## 5. 头条文章 (article) — entitlement-gated, not reachable
 

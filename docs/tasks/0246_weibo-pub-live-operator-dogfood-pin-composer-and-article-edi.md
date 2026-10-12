@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: weibo-pub live operator dogfood — pin composer and article editor selectors
-status: wip
+status: blocked
 template: feature-impl
 created_at: 2026-10-09T23:19:30.104Z
-updated_at: "2026-10-12T15:09:10.084Z"
+updated_at: "2026-10-12T17:38:04.512Z"
 feature_id: E94
 priority: P3
 tags:
@@ -37,6 +37,33 @@ Implements (live evidence): R4 — weibo-pub saves a post or article draft by de
 - Feature R5 covers public article and post, but the planned dogfood measured only post → include a separate operator-approved article-public leg or leave R5 live evidence explicitly incomplete.
 - Historical concurrency inventory → Current-tree audit (2026-10-11): no WIP tasks. Other worktree `knowledge-kit-runall-g8-4173` owns G8 board/workflow work and currently edits root `package.json`, `bun.lock`, and `apps/cli/package.json`; coordinate lockfile integration before implementation, preserve its changes. The main tree has pre-existing edits in daily, store-selections, voice2-dag and wechatmp tests; preserve them.
 
+**Diagnosis pass (2026-10-12, extended).** A later read-only pass over the state the two approved attempts
+left behind (`docs/design/weibo-ui-discovery.md` §4a) measured: the home composer **still holds the
+attempt's 114-character draft** (a successful send clears it; Weibo persists an unsent draft), the send
+control is enabled and topmost, **no dialog, notice or real-name hint is present at rest**, the headless
+session still verifies, and `https://open.weibo.com/apps` redirects away — there is no open-platform app
+for this account either. The silence therefore has three candidate causes, and none is confirmed:
+
+1. the synthetic click never drives the desktop app's submit handler (favoured by the total absence of
+   feedback plus the retained draft);
+2. risk control quietly drops the submission for a brand-new, unverified account;
+3. a verification modal appears after the click and the current flow never looks for one — it probes
+   cards and toasts only, so a modal is invisible to it.
+
+The first deliverable of this task is therefore **explaining the silence**, not another live write. The
+existing flow is not wrong — it fails closed, published nothing, and is covered by 39 offline tests — but
+a third approved attempt without that explanation would burn an approval again.
+
+**Route options** (`docs/design/weibo-ui-discovery.md` §4b): the desktop composer (current, measured),
+the **mobile composer** at `m.weibo.cn/compose/` (a simpler API-backed page, entirely unmeasured, and the
+cheapest next measurement), and the **official open-platform API** (`statuses/update.json`; `statuses/share.json`
+for text-plus-link) which needs an operator-registered app with write permission, an OAuth 2.0 token, and a
+bound safe domain for `share` — it would follow the existing threads-pub/x-pub env-only credential pattern.
+
+**Freshness note for a re-implementation.** The current account session is throwaway and its two sends were
+declined; the desktop selectors were measured on it and remain valid, but nothing required a fresh account —
+a properly verified account is a prerequisite for either browser route's public leg.
+
 ### Requirements
 
 - [ ] R1. Operator runs `bun plugins/publishings/weibo-pub/src/profile-check.ts login` then `check` (exit 0) on a disposable Weibo account; record a forced headless `checkChannelSession` call (`headedFallback: false`, no headedOnly) separately from operator `check --headed`; set `WEIBO_CONFIG.checkHeadedOnly` for the operator CLI only if measured. If forced headless fails, record the fail-closed publish limitation and do not run public legs by bypassing preflight.
@@ -46,6 +73,9 @@ Implements (live evidence): R4 — weibo-pub saves a post or article draft by de
 
 
 **Out of scope:** production-account publishing, automatic deletion, credentials/session artifacts, bypassing headless preflight, changing feature scope merely to make a test pass. Any missing draft control or required flow change is documented and re-planned through Spur; no fallback to live publishing.
+- [ ] R5. Diagnose the silent decline **before any further public write**: capture the post-click page state (visible dialog/modal text, the composer's length before and after the click, and the toast list) plus the account's standing (age, phone/real-name verification, any 异常/受限 notice), and record which of the three candidate causes in Background the evidence supports. No third live attempt without approval, and none at all before this diagnosis is recorded.
+- [ ] R6. Measure the alternative browser path: open `https://m.weibo.cn/compose/` in the same profile, record whether the composer and its submit control attach, and capture the post-click state there; if it is cleaner than the desktop app, re-derive `WEIBO_POST_SELECTORS`/the submit step for it and record the decision.
+- [ ] R7. Decide and record the route — desktop composer with a fixed submit path, mobile composer, or the official API with an operator-registered app — including its prerequisites (account standing; for the API: App Key/Secret, token scope, safe domain) and the env-only credential names it would use. The plugin's code and docs must match the chosen route, and a route not yet chosen stays documented as unselected.
 
 ### Acceptance Criteria
 
@@ -55,6 +85,8 @@ Implements (live evidence): R4 — weibo-pub saves a post or article draft by de
 Evidence: live run Result JSON + `docs/design/weibo-ui-discovery.md`; offline suite re-run green after constant changes.
 
 Given 0244/0245 are complete and an operator has a disposable verified account, when the draft leg and separately approved public post/article legs run, then fresh observed signals and cleanup records prove AC1/AC2. `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` must also retain stale-signal refusal and headless-only preflight regression cases after selector changes. Offline tests alone cannot verify live AC.
+- [ ] AC3 — the silence is explained by measured evidence (post-click dialog state, composer before/after, toasts, account standing) and recorded in `docs/design/weibo-ui-discovery.md`, with no public write made before the diagnosis (req: R5)
+- [ ] AC4 — the chosen publish route and its prerequisites are recorded, `m.weibo.cn`'s composer is measured either way, and the plugin's selectors/docs match the route (req: R6) (req: R7)
 
 ### Q&A
 
@@ -86,7 +118,34 @@ Given 0244/0245 are complete and an operator has a disposable verified account, 
 - **Finalization:** only after both draft/public evidence and cleanup are recorded does the 04 row and satellite status become shipped. If flow changes exceed constants/config, persist discovery and re-plan rather than improvising a new flow under a selector task.
 - Current-tree audit (2026-10-11): no WIP tasks. Other worktree `knowledge-kit-runall-g8-4173` owns G8 board/workflow work and currently edits root `package.json`, `bun.lock`, and `apps/cli/package.json`; coordinate lockfile integration before implementation, preserve its changes. The main tree has pre-existing edits in daily, store-selections, voice2-dag and wechatmp tests; preserve them.
 
+**Diagnosis-first order (extension, 2026-10-12).** R5 is now the gate for every other leg: a third approved
+attempt is only worth its approval once the post-click snapshot names the cause. The snapshot is bounded —
+visible dialogs/modals (text ≤ 200 chars), the composer's length before and after the click, the toast list,
+and the account's standing indicators — and lives in the run plane, never in the repository.
+
+**Route selection.** Prefer fixing the browser path when the cause is a submission-handler or modal problem
+(hypothesis 1 or 3) — cheapest, no app review. Measure `m.weibo.cn/compose/` in parallel because it is a
+different, simpler front end and may sidestep the desktop React app entirely. Choose the API route
+(hypothesis 2, or when a stable CI-grade channel is wanted) only with an operator-registered app; then the
+plugin grows a `file-cli` transport beside the browser one, with `WEIBO_APP_KEY` / `WEIBO_APP_SECRET` /
+`WEIBO_ACCESS_TOKEN` env-only credentials and the same redaction rail, and the browser transport stays as
+the fallback it is today.
+
+**Invariants unchanged.** No public write without `publishStatus: 'public'` *and* contemporaneous operator
+approval; the headless preflight is never bypassed; a send whose outcome cannot be observed is `ok: false`;
+drafts remain the default; the account's credentials/session never enter the repository.
+
 ### Plan
+
+- [ ] 1. Re-verify the session (`profile-check.ts check`) and capture the composer's current draft state; then obtain one operator approval for a **diagnostic** send whose purpose is the post-click snapshot (dialog text, composer length before/after, toasts). Record the outcome in `docs/design/weibo-ui-discovery.md` → R5, AC3.
+- [ ] 2. Check the account's standing in the same pass (profile header, 实名/手机 verification state, 异常/受限 notices) and record whether hypothesis 2 is live → R5.
+- [ ] 3. Measure `https://m.weibo.cn/compose/`: composer and submit selectors, post-click state (a draft-only check if the page offers one, otherwise the same approved diagnostic) → R6, AC4.
+- [ ] 4. Pick the route from the evidence and implement it: fix the desktop submit path, adopt the mobile composer, or add the API transport with its env-only credentials → R7, AC4.
+- [ ] 5. Re-run the offline suite (selector changes keep the stale-signal and preflight regressions) and `bun run spur-check`; update `docs/04_DESIGN.md`'s satellite row to the honest status → R4.
+- [ ] 6. Only then: the article/draft leg if the account gained the 头条文章 entitlement, and one approved live post/article leg per R3, with the operator removing the content afterwards.
+
+_(Superseded first plan retained for context: original steps 0/2/3/4 above were written before the diagnosis
+pass; step 1 of the original plan is folded into step 1 here.)_
 
 - [ ] 0. Confirm 0244/0245 complete and operator/account available; agree disposable content. Login then forced headless and headed checks → R1. Preserve partial evidence if unavailable; no fake live verdict.
 - [ ] 2. Article draft run; adjust selectors/URL → R2.
@@ -183,4 +242,5 @@ This task's own contract is explicit: *"Missing draft control, failed headless p
 ### History
 
 - 2026-10-12T15:01:44.562Z todo → wip (system)
+- 2026-10-12T17:38:04.512Z wip → blocked (system)
 
