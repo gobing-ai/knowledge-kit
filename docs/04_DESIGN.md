@@ -845,15 +845,26 @@ future ones — gets authoritative timing and token figures without kk-owned tim
 
 `kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` prints the scheduling
 artifact for a shipped workflow from `plugins/kk/schedules/{launchd.plist.tmpl,cron.tmpl}`, with
-`{{repo}}` bound to the `--repo` checkout (default: cwd). **Installing it is an operator action** —
+`{{repo}}` bound to the `--repo` checkout (default: cwd) and `{{home}}` to the operator's home.
+**Installing it is an operator action** —
 `spur` has no scheduler and kk never writes a crontab or a `LaunchAgents` plist, so the command's
 only side effect is the text it prints (`plugins/kk/README.md` §Schedule documents the two
 install lines).
 
+Both artifacts also bind `TYPESAFE_API_KEY` from the environment `render` runs in (2026-10-12).
+The scheduled workflow labels its items through `kk store label`, which consults the `typesafe`
+decision maker for `kk-item-china-politics` / `-sensitivity` / `-audience`; spur keeps that
+credential env-only, and an OS-scheduled job inherits nothing from the operator's shell. Without it
+every one of those labels degrades to its fail-closed default (`kk-item-china-politics` = 3), the
+`ai-news` extract profile's `lte: 1` gate excludes the whole day, and the next daily tick finds an
+empty pool and closes as no-content. An unset or empty value renders as the empty string, which
+spur reads as "not set", so a keyless render still produces a valid artifact; in the plist the
+value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstrap` refuse the file.
+
 | Platform | Rendered artifact |
 | ---------- | ------------------ |
-| `launchd` | plist for `ai.gobing.kk-collect`: `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
-| `cron` | `0 4,10,16,22 * * * cd <repo> && spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
+| `launchd` | plist for `ai.gobing.kk-collect`: `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
+| `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
 
 Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to the running
 package's copy, so a checkout without the templates still renders. An unknown schedule or platform

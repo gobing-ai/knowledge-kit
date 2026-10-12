@@ -59,6 +59,15 @@ also carries an absolute `Program` (`{{home}}/.bun/bin/spur`) while keeping `Pro
 frozen argv. Set both to wherever `spur`/`bun` actually live, and `mkdir -p` the log directory first
 (cron's `>>` aborts before the command runs when its directory is missing).
 
+Both artifacts **also bind `TYPESAFE_API_KEY` from the environment `kk schedule render` runs in**, so
+render from a shell that has it. `kk store label` consults the `typesafe` decision maker for
+`kk-item-china-politics`/`-sensitivity`/`-audience`, spur keeps that credential env-only, and a
+scheduled job inherits nothing from your shell: without the key those labels degrade to their
+fail-closed defaults (`china-politics` = 3), the `ai-news` extract profile's `lte: 1` gate drops the
+whole day, and the daily run closes as no-content. A render without the key is still valid — the
+value is simply empty, which spur reads as "not set". The rendered artifact carries a live
+credential: keep it in `~/Library/LaunchAgents` (or your crontab), never in a committed file.
+
 `kk-collect` collects every ingestion source into the kk store and never publishes. Two ticks that
 overlap are **one** collection: the first state takes `kk store lock acquire --name collect` and a
 tick that finds the claim inside its TTL exits 0 (`skipped`) without collecting. Before relying on

@@ -46,6 +46,32 @@ const REPO_PLACEHOLDER = '{{repo}}';
 const HOME_PLACEHOLDER = '{{home}}';
 
 /**
+ * The `{{typesafe_api_key}}` template placeholder bound to the decision-maker credential in the
+ * rendering shell's environment.
+ *
+ * spur keeps that credential env-only (`spur decision status` reports `missing-key` without it), and
+ * an OS-scheduled job inherits none of the operator's shell. Without the key `kk store label`
+ * answers every `typesafe`-routed decision with its fail-closed default — `kk-item-china-politics`
+ * = 3, `kk-item-sensitivity` = 1 — and the `ai-news` extract profile gates china-politics at
+ * `lte: 1`, so the pool comes back empty and the daily run closes as no-content (2026-10-12: the
+ * launchd collect ticks 04:00/10:00 labelled all 22 fresh items `no-backend`). Carrying the value
+ * from the environment is the same trade the `PATH` binding below already makes: the rendered
+ * artifact is a local operator file (a `LaunchAgents` plist or a crontab line), never committed, and
+ * a render without the key in the environment still produces a valid artifact — spur reads an empty
+ * value as "not set".
+ */
+const TYPESAFE_API_KEY_PLACEHOLDER = '{{typesafe_api_key}}';
+
+/**
+ * Escape one value interpolated into a rendered plist. A plist is XML, so an unescaped `&` (or a
+ * stray `<`) in an environment value makes the whole artifact unparsable and `launchctl bootstrap`
+ * refuses it — silently, from the operator's point of view, since the render itself succeeded.
+ */
+function xmlEscape(value: string): string {
+    return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/**
  * Read the schedule template, preferring the scheduled checkout's own copy (the operator
  * schedules the checkout they are in) and falling back to the running package's shipped copy —
  * so `--repo` can name a checkout that does not carry `plugins/kk/schedules/`.
@@ -79,7 +105,12 @@ async function renderAction(schedule: string, options: RenderOptions): Promise<v
         }
         const repo = resolve(options.repo);
         const template = await readTemplate(createNodeFileSystem(), repo, templates[options.platform]);
-        consoleOutput.write(template.replaceAll(REPO_PLACEHOLDER, repo).replaceAll(HOME_PLACEHOLDER, homedir()));
+        consoleOutput.write(
+            template
+                .replaceAll(REPO_PLACEHOLDER, repo)
+                .replaceAll(HOME_PLACEHOLDER, homedir())
+                .replaceAll(TYPESAFE_API_KEY_PLACEHOLDER, xmlEscape(process.env.TYPESAFE_API_KEY ?? '')),
+        );
     } catch (error) {
         const cause = error instanceof Error ? error.message : String(error);
         const message = `kk.schedule.render.failed: ${cause}`;

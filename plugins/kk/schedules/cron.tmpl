@@ -12,4 +12,12 @@
 # `mkdir -p` + an explicit PATH are load-bearing, not decoration: cron runs with a minimal PATH (no
 # `spur`/`kk`/`jq`/`bun`) and its `>>` redirect fails on a missing directory BEFORE the command runs,
 # so a bare line would produce no log and no tick. The README install steps mirror this.
-0 4,10,16,22 * * * cd {{repo}} && mkdir -p .works/kk-collect && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" spur workflow run plugins/kk/workflows/kk-collect.yaml >> {{repo}}/.works/kk-collect/launchd.log 2>&1
+#
+# TYPESAFE_API_KEY is bound by `kk schedule render` from the environment it runs in, for the same
+# reason PATH is: `kk store label` consults the `typesafe` decision maker, spur keeps that credential
+# env-only, and cron inherits nothing from the operator's shell — without it every typesafe label
+# degrades to its fail-closed default and the daily pool comes back empty (2026-10-12).
+#
+# shortcut: the value is single-quoted verbatim, so it must not contain a literal `'` — true of the
+# apikey_<hex>_<hex> form; escape it here (or move to a wrapper script) if a credential ever can.
+0 4,10,16,22 * * * cd {{repo}} && mkdir -p .works/kk-collect && PATH="{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TYPESAFE_API_KEY='{{typesafe_api_key}}' spur workflow run plugins/kk/workflows/kk-collect.yaml >> {{repo}}/.works/kk-collect/launchd.log 2>&1

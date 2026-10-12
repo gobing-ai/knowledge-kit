@@ -61,11 +61,21 @@
     </array>
     <!-- The job environment applies only AFTER exec, so it is not what resolves `spur` above —
          it is what the workflow's own children need (`kk`, `jq`, `bun` are all `#!/usr/bin/env bun`
-         or PATH-resolved). -->
+         or PATH-resolved).
+
+         TYPESAFE_API_KEY is the same kind of dependency one step further: `kk store label` consults the
+         `typesafe` decision maker for kk-item-china-politics / -sensitivity / -audience, spur keeps that
+         credential env-only, and launchd inherits nothing from the operator's shell. Without it every one
+         of those labels degrades to its fail-closed default (china-politics = 3), the `ai-news` extract
+         profile's `lte: 1` gate then excludes the whole day, and the next `kk-daily-ai-voice` tick finds
+         an empty pool. `kk schedule render` binds it from the environment it runs in, so render from a
+         shell that has the key (2026-10-12). -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>{{home}}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>TYPESAFE_API_KEY</key>
+        <string>{{typesafe_api_key}}</string>
     </dict>
     <key>StandardOutPath</key>
     <string>{{repo}}/.works/kk-collect/launchd.log</string>
