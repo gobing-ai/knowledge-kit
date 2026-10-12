@@ -249,3 +249,16 @@ enforces the same enum on every `Verification (` block in documents (commit c2e9
 - 0219: `daily-xhs-render` vendor fallback: `imageFallback` helper shares parser between cover and xhs stages; `""` keeps strict fail-fast (envelope key omitted), `"true"` passes boolean true for AUTO_ORDER, and comma-separated lists pass candidate arrays. `kk(..., { soft: true })` allows card loop to inspect exit status and emit informative resume guidance naming the failed card index before halting with the child exit code.
 - 0220: publish completeness snapshot is terminal by design: computing it in `daily-publish-classify` causes false `not-run` warnings because locales and surfdash patch run after classify on full runs. Moving it to `daily-publish-completeness` in `run-report` onEnter ensures all attempted channels have completed. Voice2 `--fold-tail` delegates to `daily-publish-completeness` and reads `missing` from the written JSON to emit a single-line status object. Locales requires both markers and `24_translate-sync_sync-result.json` `{ok: true}`.
 - Inline pipeline driver & worktree integration: `inline-run-setup.mjs --persist-out` checks that every run row in the worktree's `.spur/spur.db` has corresponding `.md` records under `.spur/memory/runs/`. Test suites executing dry-runs against the active project DB can leave headless rows that fail persist-out; clean test rows prior to worktree teardown.
+
+## 2026-10-12 — the guard's SECOND dimension: hedge words, not just the confidence line
+The 2026-10-06 entry above covers the citation + `Confidence:` half. A block on 2026-10-12 read
+`Add verification for: confidence level (HIGH/MEDIUM/LOW), uncertainty phrases detected: probably` —
+the same guard (`verifyAntiHallucinationProtocol`, /Users/robin/.agents/scripts/cc/anti-hallucination/validate_response.mjs)
+firing on the OTHER half: `RED_FLAG_PATTERNS` (`I think|believe|recall`, `(It|This) (should|might|may|could)`,
+`Probably|Likely|Possibly`, `As far as|If I know|recall`) are pushed as issues only when the text carries no
+`TOOL_PATTERNS` marker, so a hedge adverb in a report is enough to block even with citations and a level present.
+Fix: restate the hedged sentence as a named unverified gap (a row worded `UNVERIFIED — <what is missing>`,
+level LOW) instead of qualifying it with an adverb; the enum stays on the evidence rows.
+Falsification evidence (all three runs, exit 0): the drafted answer → `{"ok":true,"reason":"Task is complete"}`;
+the same text with the `Confidence:` lines deleted → `{"ok":false,"reason":"Add verification for: confidence level (HIGH/MEDIUM/LOW)"}`;
+the same text with one hedge adverb restored in the WeChat row → `{"ok":false,"reason":"Add verification for: uncertainty phrases detected: Probably"}`.
