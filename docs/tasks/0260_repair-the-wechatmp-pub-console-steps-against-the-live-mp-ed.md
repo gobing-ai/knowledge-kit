@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Repair the wechatmp-pub console steps against the live MP editor
-status: backlog
+status: todo
 template: standard
 created_at: 2026-10-12T02:23:38.506Z
-updated_at: "2026-10-12T04:56:00.047Z"
+updated_at: "2026-10-12T21:42:40.483Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -232,3 +232,6 @@ solely because a fake returned true.
 - Audit 2026-10-11: current tree `3562c6c0`, no `wip` tasks; worktrees `sp/runall-E94-61b8`, `sp/runall-g14-077c`, `sp/runall-g8-4173` (see Design concurrency note).
 
 ### History
+
+- 2026-10-12T21:42:40.483Z backlog → todo (system)
+
