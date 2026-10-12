@@ -73,6 +73,9 @@ rules:
         args:
           - ".spur/rules/structure/api-library-claim-citation.sh"
           - "--require-block=docs/design/workflow-board-modules.md"
+          - "--require-block=docs/00_ADR.md"
+          - "--require-block=docs/03_ARCHITECTURE.md"
+          - "--require-block=docs/04_DESIGN.md"
           - "--require-block=docs/tasks/0252_inspect-collection-runs-through-a-native-board-module-and-lo.md"
           - "--require-block=docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md"
           - "--require-block=docs/tasks/0254_inspect-it-content-authoring-runs-and-target-results-in-spur.md"
