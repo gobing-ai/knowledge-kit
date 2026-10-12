@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Scope the verification-answer confidence rule to verification answers
-status: backlog
+status: cancelled
 template: feature-impl
 created_at: 2026-10-12T17:00:27.606Z
-updated_at: "2026-10-12T17:04:24.924Z"
+updated_at: "2026-10-12T17:22:36.449Z"
 feature_id: G8
 
 priority: P2
@@ -111,3 +111,6 @@ and matching predicates.
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-12T17:22:36.449Z backlog → cancelled (system)
+

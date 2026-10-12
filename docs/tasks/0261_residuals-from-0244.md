@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Residuals from 0244
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-10-12T06:39:09.010Z
-updated_at: "2026-10-12T06:39:09.776Z"
+updated_at: "2026-10-12T17:22:35.881Z"
 
 ---
 
@@ -55,3 +55,6 @@ Source task: 0244 (feature E94) — deferred residuals filed by residual-scan se
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-12T17:22:35.881Z backlog → cancelled (system)
+

@@ -418,6 +418,17 @@ describe('weibo-pub article flow (R2, R4)', () => {
         expect(result.error).toContain('weibo article publish');
     });
 
+    test('an unreachable 头条文章 editor (the measured entitlement gate) is refused, never a silent draft', async () => {
+        // Measured 2026-10-12 (task 0246, docs/design/weibo-ui-discovery.md §5): for an account without
+        // the 头条文章 entitlement the legacy editor URL redirects to the home page, so no editor control
+        // attaches. That must stay a loud refusal naming the step — never an ok:true draft that was not saved.
+        const fake = makeFakeLauncher({ landedUrl: WEIBO_HOME_URL, missingTitle: true, missingBody: true });
+        const result = await transport(fake).publish({ content });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('article title input');
+        expect(fake.calls.some((call) => call.startsWith('click:'))).toBe(false);
+    });
+
     test('a dropped title is refused on readback before any save control is clicked', async () => {
         const fake = makeFakeLauncher({ emptyReadback: true });
         const result = await transport(fake).publish({ content });
