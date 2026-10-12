@@ -51,6 +51,7 @@ describe('registerBoardCommand', () => {
             '--work-dir',
             '--stamp',
             '--definition-digest',
+            '--trusted-root',
             '--setting',
         ]);
         expect(capture?.options.filter((option) => option.mandatory).map((option) => option.long)).toEqual([

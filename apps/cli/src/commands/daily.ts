@@ -102,11 +102,12 @@ function expandHome(path: string): string {
 }
 
 /**
- * works_dir for composed daily workspaces — `KK_WORKS_DIR` env > config `works_dir` > the compiled
+ * works_dir for composed workspaces — `KK_WORKS_DIR` env > config `works_dir` > the compiled
  * default `~/.config/kk/works`. An unreadable config falls through to the default; composition
- * never fails a run.
+ * never fails a run. Shared with the ITC Board capture, whose external workspace must be a
+ * canonical child of this configured root (§9).
  */
-function resolveWorksDir(): string {
+export function resolveWorksDir(): string {
     const fromEnv = process.env.KK_WORKS_DIR;
     if (fromEnv) return fromEnv;
     const configPath = process.env.KK_CONFIG ?? resolveKkConfigPath();

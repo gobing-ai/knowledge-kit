@@ -8,6 +8,7 @@ import type {
     WorkflowName,
 } from '@gobing-ai/kk-board/contracts';
 import { createNodeFileSystem, type FileSystem, NodeSyncProcessExecutor } from '@gobing-ai/ts-runtime';
+import { resolveKkConfigPath } from '../invoke';
 import { WORKFLOW_NAMES, WORKFLOW_SETTINGS } from './manifest';
 
 /**
@@ -138,6 +139,11 @@ export interface CaptureDeps {
      * the config tree or the project — so a workspace outside the project can be captured (§9).
      */
     trustedWorksRoot?: string;
+    /**
+     * The kk config directory (`dirname(resolveKkConfigPath())`). A trusted works root must never
+     * BE this directory: a run workspace is a narrow canonical child, never the config tree (§9).
+     */
+    configRoot?: string;
     /** Topology lookup by exact digest agreement; defaults to the `spur workflow list` catalog. */
     lookupTopology?: (
         fs: FileSystem,
@@ -282,7 +288,13 @@ export function topologyFromYaml(source: string): RunTopology | null {
  * True when `workDir` is a canonical CHILD of an explicitly trusted, configured works root (§9).
  * The root itself, the home/config root and the project tree are refused even when trusted.
  */
-function isTrustedChildWorkspace(fs: FileSystem, root: string, workDir: string, projectPath: string): boolean {
+function isTrustedChildWorkspace(
+    fs: FileSystem,
+    root: string,
+    workDir: string,
+    projectPath: string,
+    configRoot: string | null,
+): boolean {
     const resolvedRoot = resolve(projectPath, root);
     let canonicalRoot = resolvedRoot;
     try {
@@ -291,6 +303,7 @@ function isTrustedChildWorkspace(fs: FileSystem, root: string, workDir: string, 
         canonicalRoot = resolvedRoot;
     }
     if (canonicalRoot === '/' || canonicalRoot === homedir() || canonicalRoot === projectPath) return false;
+    if (configRoot !== null && canonicalRoot === configRoot) return false;
     if (projectPath.startsWith(`${canonicalRoot}/`)) return false;
     return workDir !== canonicalRoot && workDir.startsWith(`${canonicalRoot}/`);
 }
@@ -353,8 +366,10 @@ export async function captureRun(input: RunCaptureInput, deps: CaptureDeps = {})
     // §9: a configured works root may sit outside the project and not be named `.works`/`works`.
     // `kk daily prepare` passes its resolved configured root explicitly; accept only that root's
     // canonical CHILD workspace — never the root, home, the config tree or the project itself.
+    const configRoot = deps.configRoot ?? dirname(resolveKkConfigPath());
     const insideTrustedWorksRoot =
-        deps.trustedWorksRoot !== undefined && isTrustedChildWorkspace(fs, deps.trustedWorksRoot, workDir, projectPath);
+        deps.trustedWorksRoot !== undefined &&
+        isTrustedChildWorkspace(fs, deps.trustedWorksRoot, workDir, projectPath, configRoot);
     if (
         workDir === '/' ||
         workDir === homedir() ||

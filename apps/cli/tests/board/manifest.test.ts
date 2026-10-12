@@ -10,6 +10,7 @@ import {
     artifactsFor,
     COLLECT_ARTIFACTS,
     expandPattern,
+    ITC_ARTIFACTS,
     resolveAvailability,
     resolveWithin,
     WORKFLOW_NAMES,
@@ -35,9 +36,26 @@ describe('artifact manifest', () => {
             'store:onEnter:0',
             'label:onEnter:0',
         ]);
-        expect(artifactsFor('kk-itc')).toEqual([]);
+        expect(artifactsFor('kk-itc')).toBe(ITC_ARTIFACTS);
         expect(artifactById('kk-collect', 'facts')?.producerNode).toBe('collect');
         expect(artifactById('kk-collect', 'nope')).toBeUndefined();
+    });
+
+    it('registers the ITC fixed artifacts with their state-machine producer keys (0254)', () => {
+        expect(ITC_ARTIFACTS.map((spec) => spec.id)).toEqual([
+            'outline-a',
+            'outline-b',
+            'outline-c',
+            'outline-approved',
+            'draft',
+            'judge-verdict',
+            'cover',
+            'publish-plan',
+            'report',
+        ]);
+        expect(artifactById('kk-itc', 'judge-verdict')?.producerActionKey).toBe('judge:onEnter:0');
+        expect(artifactById('kk-itc', 'draft')?.pattern).toBe('3-draft-draft-article.md');
+        expect(artifactById('kk-itc', 'nope')).toBeUndefined();
     });
 
     it('expands the stamp and refuses traversal or an absolute pattern', () => {

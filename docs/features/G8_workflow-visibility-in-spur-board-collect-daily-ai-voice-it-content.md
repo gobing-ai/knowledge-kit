@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-10-11T23:18:58.413Z"
-updated_at: "2026-10-12T02:15:55.614Z"
+updated_at: "2026-10-12T07:03:28.391Z"
 ---
 
 # G8: Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content
@@ -30,6 +30,8 @@ Give operators one native Spur Board module per key Knowledge Kit workflow, with
 - Start, retry, cancel, edit, publishing, or operator-answer actions from these modules; scheduling changes.
 - New workflow engine, plugin kind, result database, upstream Spur modifications, remote/multi-user deployment, or private Spur React context imports.
 - Arbitrary file browsing, raw shell commands/prompts/secrets, retrospective invention of missing historical configuration, and extra tabs without concrete content.
+- In: the `kk board` capture/serve surface and the three native Board modules (Collect,
+  Daily AI Voice, IT Content) — G8 owns this family; the workflow children only invoke it.
 
 ## Acceptance Criteria
 

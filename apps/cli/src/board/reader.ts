@@ -3,6 +3,7 @@ import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
 import { type ArtifactObservation, isTerminalStatus, projectCollectResults, type RunDetailSummary } from './collect';
 import { dagProducerState, projectDailyResults } from './daily-voice';
+import { itcResultSpecs, projectItcResults } from './itc';
 import {
     type ArtifactSpec,
     allowlistedKeys,
@@ -354,10 +355,16 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
     async function producerEvidence(
         workflow: WorkflowName,
         runId: string,
-    ): Promise<{ states: Map<string, ProducerState>; diagnostics: BoardDiagnostic[]; actions: unknown[] }> {
+        specs: readonly ArtifactSpec[] = artifactsFor(workflow),
+    ): Promise<{
+        states: Map<string, ProducerState>;
+        diagnostics: BoardDiagnostic[];
+        actions: unknown[];
+        progress: unknown;
+    }> {
         const states = new Map<string, ProducerState>();
-        const specs = artifactsFor(workflow);
         const actions: unknown[] = [];
+        let progress: unknown = null;
         const stateSpecs = specs.filter((spec) => spec.producerActionKey !== undefined);
         if (stateSpecs.length > 0) {
             const response = await boardGet(`/api/runs/${encodeURIComponent(runId)}/progress`);
@@ -365,6 +372,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 return {
                     states,
                     actions,
+                    progress,
                     diagnostics: [
                         {
                             code: 'board.progress.unavailable',
@@ -373,6 +381,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                     ],
                 };
             }
+            progress = response.body;
             for (const spec of stateSpecs) {
                 states.set(
                     spec.producerActionKey ?? spec.producerNode,
@@ -387,16 +396,30 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             if (Array.isArray(list)) actions.push(...list);
             for (const spec of nodeSpecs) states.set(spec.producerNode, dagProducerState(actions, spec.producerNode));
         }
-        return { states, diagnostics: [], actions };
+        return { states, diagnostics: [], actions, progress };
+    }
+
+    /** The captured publish plan's text, or undefined when it is absent/unavailable (ITC). */
+    async function planTextOf(record: RunCapture, specs: readonly ArtifactSpec[]): Promise<string | undefined> {
+        const planSpec = specs.find((spec) => spec.id === 'publish-plan');
+        if (planSpec === undefined) return undefined;
+        const observation = await observe(record, planSpec);
+        return observation.state === 'present' ? observation.text : undefined;
     }
 
     async function resultsFor(workflow: WorkflowName, runId: string): Promise<BoardResponse> {
         const authorized = await authorize(workflow, runId);
         if (!authorized.ok) return authorized.response;
         const { record, detail } = authorized;
-        const evidence = await producerEvidence(workflow, runId);
+        const baseSpecs = artifactsFor(workflow);
+        // §9: ITC target names are open-ended, so the run's own plan names the per-target result
+        // files. Deriving them from the plan (never a client path) keeps the manifest fixed while
+        // still exposing real publisher results.
+        const resultSpecs = workflow === 'kk-itc' ? itcResultSpecs(await planTextOf(record, baseSpecs)) : [];
+        const allSpecs = [...baseSpecs, ...resultSpecs.map((entry) => entry.spec)];
+        const evidence = await producerEvidence(workflow, runId, allSpecs);
         const observations = new Map<string, ArtifactObservation>();
-        for (const spec of artifactsFor(workflow)) {
+        for (const spec of allSpecs) {
             observations.set(spec.id, await observe(record, spec));
         }
         // §9: ownership is re-verified AFTER the bounded reads, so a workspace that changed owner
@@ -412,10 +435,14 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             observationOf: (spec: ArtifactSpec) => observations.get(spec.id),
         };
         // The DAG projection also consumes the run-detail action rows (node attempts + retries).
-        const results: RunResults =
-            workflow === 'kk-daily-ai-voice2'
-                ? projectDailyResults({ ...projection, actions: evidence.actions })
-                : projectCollectResults(projection);
+        let results: RunResults;
+        if (workflow === 'kk-daily-ai-voice2') {
+            results = projectDailyResults({ ...projection, actions: evidence.actions });
+        } else if (workflow === 'kk-itc') {
+            results = projectItcResults({ ...projection, resultSpecs, progress: evidence.progress });
+        } else {
+            results = projectCollectResults(projection);
+        }
         return { status: 200, body: results };
     }
 

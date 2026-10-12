@@ -343,6 +343,7 @@ ownership marker `<work-dir>/.kk-board-owner.json` atomically, revoking the prev
 | `--work-dir <dir>` | run workspace below a works root (`.works/` or `works/`), or a canonical child of the configured works root when the caller passes it as a trusted binding (`kk daily prepare`); a relative path resolves against the project. `/`, the home tree, the project root, an ancestor of the project, the config tree and a works root itself are refused |
 | `--stamp <stamp>` | alphanumerics, dash, underscore, `T`/`Z` |
 | `--definition-digest <sha256:…>` | optional; topology is recorded only on exact `spur workflow list --json` agreement, else a diagnostic and no topology |
+| `--trusted-root <dir>` | optional; a configured works root whose canonical CHILD may be captured (an external ITC workspace). The root itself, the home/config tree and the project are refused; the ITC path defaults to the configured works dir |
 | `--setting <key=value>` | repeatable; allowlisted per workflow. A non-allowlisted key is dropped, never captured; free text (topics, titles, prompts, paths) is never capturable |
 
 Capture never initiates content work and never depends on the reader being alive. A failed
@@ -396,6 +397,44 @@ and a **Workflow Config Summary** of the sanitized captured settings only. ADR-0
 optional: only recorded output descriptors are served, and absent evidence is `unavailable`, never
 an invented zero. The digest-first topology capture, the artifact-only projection and the DAG
 producer fallback are frozen in `docs/design/workflow-board-modules.md` §9.
+
+### `kk-itc` Board capture + the IT Content module (G8, task 0254)
+
+`kk-itc` is a state machine. Its `prepare` node now declares and forwards `vars.__runId` and
+`vars.__definitionDigest`, so after the existing `prepare-itc` staging succeeds it binds the run to
+its workspace through `kk board capture --workflow kk-itc` (with the §9 ITC setting allowlist:
+booleans `research,judge,auto,unslop,force,publish_live,cover_enabled,inline_images`, integer
+`max_revisions`, enum `source_locale`). The capture runs *after* preparation and *before* any
+authoring action; `prepareWorkspace`'s XOR/force validation, early `.revise-count` initialization
+and solo-podcast sharing are untouched, and an out-of-breadth workspace (or an absent run identity)
+only warns — it never aborts authoring. ITC's default workspace is `$works_dir/kk-itc/<kebab>`, so
+the configured works dir is the trusted binding for a caller-supplied external `--work-dir`; `/`,
+the home tree, the config tree and the project root are refused.
+
+The IT Content module (`apps/board/src/itc`, built to `apps/board/dist/itc` and
+`apps/cli/dist/board/itc`) renders the four shared tabs over the reader's ITC projection
+(`apps/cli/src/board/itc.ts`, registered in the fixed ITC artifact manifest):
+
+- **Summary** — run id/start/elapsed, execution status kept apart from the recorded result outcome,
+  the judge verdict and confidence, the recorded revision rounds, the target counts and the run
+  report, with every unknown explicit.
+- **Results** — bounded outline alternatives and the selected outline, a bounded draft preview, the
+  judge verdict/feedback, the recorded revision evidence, the optional cover illustration, the
+  per-target outcomes and the final report. Per-target results are read from the publisher-written
+  `4-publish/fanout-result.<variant>.json` and `4-publish/result.<target>.json` files, whose names
+  come from the run's own `4-publish/publish-plan.json` (never a browser path); BOTH recorded Result
+  shapes are parsed (a fan-out `targets[]` aggregate and a single top-level `{ok, target, …}`
+  object). Out-of-vocabulary judge confidences are reported unknown, never echoed.
+- **Execution progress** — the state machine's recorded `states[]` visits and attempts, timings and
+  operator-wait/failure diagnostics (shared with Collect); no execution action is offered.
+- **Workflow Config Summary** — the sanitized captured run settings only; a legacy run without a
+  capture reports uncaptured keys, not today's defaults. Current definitions stay in Settings →
+  Workflows (`/board/settings/workflows`).
+
+Revision counts are derived from the recorded `draft-revise`/`draft-autorevise` visits, never the
+mutable `.revise-count` files; missing evidence is `unavailable`/`unknown`, never a zero. The
+per-target derivation, the judge-confidence validation and the trusted-root binding are frozen in
+`docs/design/workflow-board-modules.md` §9.
 
 ## 1.7 `plugin.json` manifest surface
 

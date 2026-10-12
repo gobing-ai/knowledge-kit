@@ -43,6 +43,7 @@ export const BOARD_ENTRIES: readonly BoardEntry[] = [
         entry: 'apps/board/src/daily-voice/index.tsx',
         css: 'apps/board/src/daily-voice/index.css',
     },
+    { name: 'itc', entry: 'apps/board/src/itc/index.tsx', css: 'apps/board/src/itc/index.css' },
 ];
 
 /** The host facades the bundle must externalize (never inline a second React runtime). */

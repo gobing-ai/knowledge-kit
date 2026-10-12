@@ -270,11 +270,94 @@ export const DAILY_VOICE_ARTIFACTS: readonly ArtifactSpec[] = [
     },
 ];
 
+/**
+ * kk-itc's fixed artifact manifest (producer action keys per §9). ITC is a state machine, so a
+ * producer is its recorded `actionKey`, never a node row. Per-target publish results are DERIVED
+ * from the run's own plan (`itcResultSpecs`), not hard-coded: target names are open-ended.
+ */
+export const ITC_ARTIFACTS: readonly ArtifactSpec[] = [
+    {
+        id: 'outline-a',
+        label: 'Outline option A',
+        kind: 'text',
+        pattern: '2-outline/outline-option-a.md',
+        producerNode: 'outline-write',
+        producerActionKey: 'outline-write:onEnter:0',
+    },
+    {
+        id: 'outline-b',
+        label: 'Outline option B',
+        kind: 'text',
+        pattern: '2-outline/outline-option-b.md',
+        producerNode: 'outline-write',
+        producerActionKey: 'outline-write:onEnter:0',
+    },
+    {
+        id: 'outline-c',
+        label: 'Outline option C',
+        kind: 'text',
+        pattern: '2-outline/outline-option-c.md',
+        producerNode: 'outline-write',
+        producerActionKey: 'outline-write:onEnter:0',
+    },
+    {
+        id: 'outline-approved',
+        label: 'Selected outline',
+        kind: 'text',
+        pattern: '2-outline/outline-approved.md',
+        producerNode: 'outline-commit',
+        producerActionKey: 'outline-commit:onEnter:0',
+    },
+    {
+        id: 'draft',
+        label: 'Draft article',
+        kind: 'text',
+        pattern: '3-draft-draft-article.md',
+        producerNode: 'draft-write',
+        producerActionKey: 'draft-write:onEnter:0',
+    },
+    {
+        id: 'judge-verdict',
+        label: 'Judge verdict',
+        kind: 'json',
+        pattern: '.itc-verdict.json',
+        producerNode: 'judge',
+        producerActionKey: 'judge:onEnter:0',
+        // A PASS here is only usable with one of these levels; the projection nulls anything else.
+        confidenceVocabulary: CONFIDENCE_LEVELS,
+    },
+    {
+        id: 'cover',
+        label: 'Cover illustration',
+        kind: 'image',
+        pattern: '4-illustrations/cover.png',
+        producerNode: 'illustrate',
+        producerActionKey: 'illustrate:onEnter:0',
+        mime: 'image/png',
+    },
+    {
+        id: 'publish-plan',
+        label: 'Publish plan',
+        kind: 'json',
+        pattern: '4-publish/publish-plan.json',
+        producerNode: 'publish-plan',
+        producerActionKey: 'publish-plan:onEnter:0',
+    },
+    {
+        id: 'report',
+        label: 'Run report',
+        kind: 'json',
+        pattern: '5-report/report.json',
+        producerNode: 'report',
+        producerActionKey: 'report:onEnter:0',
+    },
+];
+
 /** The fixed artifact manifest for a workflow (empty until 0253/0254 register their entries). */
 export function artifactsFor(workflow: WorkflowName): readonly ArtifactSpec[] {
     if (workflow === 'kk-collect') return COLLECT_ARTIFACTS;
     if (workflow === 'kk-daily-ai-voice2') return DAILY_VOICE_ARTIFACTS;
-    return [];
+    return ITC_ARTIFACTS;
 }
 
 /** Look one artifact spec up by its opaque id. */
