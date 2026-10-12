@@ -1,17 +1,18 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, cp, writeFile } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import type { PublishTransport, PublishTransportPayload } from '@gobing-ai/publish-harness';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
+import { type PatchPostOutcome, patchPostFiles } from './patch';
 
 /** Result target name for this plugin. */
 const TARGET = 'surfdash';
 
 /** Management operations routed via `options.operation` (L1 R7; pattern from podcast-pub). */
-const OPERATIONS = ['publish', 'scaffold-locale', 'sync'] as const;
+const OPERATIONS = ['publish', 'scaffold-locale', 'sync', 'patch'] as const;
 type Operation = (typeof OPERATIONS)[number];
 
 /** Locales `scaffold-locale` can scaffold; LLM translation stays in the workflow's agent step. */
@@ -24,10 +25,18 @@ const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 /** Target-specific options carried on the invoke payload's `options` channel. */
 interface SurfdashPubOptions {
     operation?: unknown;
-    /** zh `index.md` absolute path inside the surfdash tree; required for `scaffold-locale` and `sync`. */
+    /** zh `index.md` absolute path inside the surfdash tree; required for `scaffold-locale`, `sync` and `patch`. */
     postPath?: unknown;
     /** Draft locale to scaffold; required for `scaffold-locale`. */
     target?: unknown;
+    /** `patch`: podcast-hosted cover URL for `image`/`og_image` (empty → the local cover fallback). */
+    coverUrl?: unknown;
+    /** `patch`: podcast episode URL appended as the cross-link (empty → none). */
+    showNotesUrl?: unknown;
+    /** `patch`: this run's rendered cover, used when `coverUrl` is empty. */
+    localCover?: unknown;
+    /** `patch`: `YYYY-MM-DD` episode date for the cross-link text. */
+    dateIso?: unknown;
 }
 
 /**
@@ -81,9 +90,16 @@ export function mapContentToSurfingMarkdown(content: Content, options: MapConten
         : Array.isArray(content.metadata?.keywords)
           ? content.metadata.keywords
           : [];
-    const tags = rawTags
-        .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-        .map((t: string) => slugify(t));
+    // `slugify` drops non-ASCII, so a Chinese tag (`硬件发布`) collapsed to '' and shipped as an empty
+    // YAML tag — the site renders it as a blank chip (seen on 20261011-ai-2026-10-11). Case variants
+    // also collapsed to the same slug twice (`AI` + `ai`), so the set dedupes.
+    const tags = [
+        ...new Set(
+            rawTags
+                .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+                .map((t: string) => slugify(t)),
+        ),
+    ].filter((tag) => tag.length > 0);
 
     const isoDate = options.publishDate ?? new Date().toISOString().slice(0, 10);
     const firstRefUrl = content.references?.[0]?.url;
@@ -250,6 +266,10 @@ export type GitPushOutcome = { ok: true; hash: string } | { ok: false; error: st
  * out of the publish commit. Fails loud on branch/commit/push errors.
  */
 export async function pushPostGit(surfdashRoot: string, relPostDir: string, message: string): Promise<GitPushOutcome> {
+    return commitPostPaths(surfdashRoot, [relPostDir], message);
+}
+/** Refuse a checkout that cannot deploy before anything is written (`deploy.yml` builds `main` only). */
+async function assertMainBranch(surfdashRoot: string): Promise<{ ok: true } | { ok: false; error: string }> {
     const branch = await spawnCli(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], surfdashRoot);
     if (branch.exitCode !== 0) return { ok: false, error: `surfdash git branch check failed: ${cliErrorText(branch)}` };
     const branchName = branch.stdout.trim();
@@ -259,14 +279,34 @@ export async function pushPostGit(surfdashRoot: string, relPostDir: string, mess
             error: `surfdash checkout is on '${branchName}', not 'main' — deploy.yml only builds main; refusing to push from a feature branch`,
         };
     }
-    const add = await spawnCli(['git', 'add', '--', relPostDir], surfdashRoot);
+    return { ok: true };
+}
+
+/**
+ * Commits several paths of the surfdash checkout and pushes them to `main` — the plural form of
+ * {@link pushPostGit} the post-patch needs (it writes the posts and any copied cover). Same
+ * pathspec-scoped commit, so unrelated staged work is never swept in, and the same idempotent retry:
+ * content identical to HEAD stages nothing and only pushes when `origin/main` lacks the paths.
+ */
+export async function commitPostPaths(
+    surfdashRoot: string,
+    relPaths: string[],
+    message: string,
+    push = true,
+): Promise<GitPushOutcome> {
+    if (relPaths.length === 0) return { ok: true, hash: 'unchanged' };
+    const branch = await assertMainBranch(surfdashRoot);
+    if (!branch.ok) return branch;
+    const add = await spawnCli(['git', 'add', '--', ...relPaths], surfdashRoot);
     if (add.exitCode !== 0) return { ok: false, error: `surfdash git add failed: ${cliErrorText(add)}` };
-    // Idempotent retry: post content identical to HEAD stages nothing. Only push when
-    // origin lacks commits touching this post; a clean post means it's already live.
-    const staged = await spawnCli(['git', 'diff', '--cached', '--quiet', '--', relPostDir], surfdashRoot);
+    const staged = await spawnCli(['git', 'diff', '--cached', '--quiet', '--', ...relPaths], surfdashRoot);
     if (staged.exitCode === 0) {
+        if (!push) {
+            const hash = await spawnCli(['git', 'rev-parse', '--short', 'HEAD'], surfdashRoot);
+            return { ok: true, hash: hash.stdout.trim() || 'unknown' };
+        }
         const unpushed = await spawnCli(
-            ['git', 'diff', '--quiet', 'origin/main..HEAD', '--', relPostDir],
+            ['git', 'diff', '--quiet', 'origin/main..HEAD', '--', ...relPaths],
             surfdashRoot,
         );
         if (unpushed.exitCode === 0) {
@@ -274,14 +314,18 @@ export async function pushPostGit(surfdashRoot: string, relPostDir: string, mess
             return { ok: true, hash: hash.stdout.trim() || 'unknown' };
         }
     } else {
-        const commit = await spawnCli(['git', 'commit', '-m', message, '--', relPostDir], surfdashRoot);
+        const commit = await spawnCli(['git', 'commit', '-m', message, '--', ...relPaths], surfdashRoot);
         if (commit.exitCode !== 0) return { ok: false, error: `surfdash git commit failed: ${cliErrorText(commit)}` };
     }
-    const push = await spawnCli(['git', 'push', 'origin', 'main'], surfdashRoot);
-    if (push.exitCode !== 0) {
+    if (!push) {
+        const hash = await spawnCli(['git', 'rev-parse', '--short', 'HEAD'], surfdashRoot);
+        return { ok: true, hash: hash.stdout.trim() || 'unknown' };
+    }
+    const pushed = await spawnCli(['git', 'push', 'origin', 'main'], surfdashRoot);
+    if (pushed.exitCode !== 0) {
         return {
             ok: false,
-            error: `surfdash git push failed (deploy.yml deploys on push to main): ${cliErrorText(push)}`,
+            error: `surfdash git push failed (deploy.yml deploys on push to main): ${cliErrorText(pushed)}`,
         };
     }
     const hash = await spawnCli(['git', 'rev-parse', '--short', 'HEAD'], surfdashRoot);
@@ -433,6 +477,82 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
     }
 }
 
+/** `options.<key>` when it is a string, trimmed; else ''. `patch`'s four optional fields read this way. */
+function strOption(options: SurfdashPubOptions, key: 'coverUrl' | 'showNotesUrl' | 'localCover' | 'dateIso'): string {
+    const raw = options[key];
+    return typeof raw === 'string' ? raw.trim() : '';
+}
+
+/**
+ * `patch` — post-publish healing for one published episode (2026-10-12; moved here from the kk stage
+ * `daily-patch-surfdash`, which owned the publisher's work): the podcast-hosted cover URL in
+ * `image`/`og_image`, the per-locale podcast cross-link, the local cover's `assets/` fallback, the
+ * EmDash re-sync that makes CMS cards carry a servable image, then a pathspec commit + push.
+ *
+ * Ordering is load-bearing: the branch guard runs before anything is written (a checkout that cannot
+ * deploy must not be patched, and the failure leaves the tree untouched), and the re-sync runs even
+ * when no file changed, so a re-run heals rows an earlier run left stale.
+ */
+async function patchPost(options: SurfdashPubOptions): Promise<Result> {
+    const postPath = resolvePostPath(options);
+    if ('error' in postPath) return fail(postPath.error);
+    const surfdashRoot = resolveSurfdashRoot();
+    if (!surfdashRoot) {
+        return fail('SURFDASH_ROOT is required when POSTSURFING_BIN is not a path inside the surfdash checkout');
+    }
+    const outsideRoot = postPathOutsideRoot(postPath.postPath, surfdashRoot);
+    if (outsideRoot) return fail(outsideRoot);
+    const branch = await assertMainBranch(surfdashRoot);
+    if (!branch.ok) return fail(branch.error);
+
+    let outcome: PatchPostOutcome;
+    try {
+        outcome = patchPostFiles({
+            postPath: postPath.postPath,
+            coverUrl: strOption(options, 'coverUrl'),
+            showNotesUrl: strOption(options, 'showNotesUrl'),
+            localCover: strOption(options, 'localCover'),
+            dateIso: strOption(options, 'dateIso'),
+        });
+    } catch (error: unknown) {
+        return fail(`patch error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (outcome.changed === 0) echoError(`patch: no post bytes changed for ${outcome.slug}`);
+    const synced = await syncPost({ postPath: postPath.postPath });
+    const commit = await commitPostPaths(
+        surfdashRoot,
+        outcome.written.map((path) => relative(surfdashRoot, path)),
+        `feat: cover + podcast cross-link for ${outcome.slug} (kk daily patch)`,
+        process.env.SURFDASH_AUTO_PUSH !== '0',
+    );
+    if (!commit.ok) return fail(`patch: ${commit.error}`);
+    const metadata = {
+        postPath: postPath.postPath,
+        changed: outcome.changed,
+        locales: Object.keys(outcome.images),
+        absentLocales: outcome.absent,
+        cmsResync: synced.ok ? 'ok' : 'failed',
+        gitCommit: commit.hash,
+    };
+    if (!synced.ok) {
+        // The posts are patched and committed; only the CMS rows keep the unservable cover. Reported
+        // as a failure so the completeness report says `cms-resync=failed`, with `metadata.cmsResync`
+        // letting the caller treat it as the soft channel it is.
+        return ResultSchema.parse({
+            ok: false,
+            target: TARGET,
+            error: `cms re-sync failed: ${synced.error ?? 'ok=false'}`,
+            metadata,
+        });
+    }
+    return ResultSchema.parse({
+        ok: true,
+        target: TARGET,
+        message: `patched ${outcome.changed} post(s) for ${outcome.slug}`,
+        metadata,
+    });
+}
+
 /**
  * Publish path (behavior unchanged since E3): maps Content into surfdash markdown under
  * `content/posts/<collection>/<locale>/<slug>/index.md` and invokes the postsurfing CLI.
@@ -565,6 +685,8 @@ export class PostsurfingFileCliTransport implements PublishTransport {
                 return scaffoldLocale(options);
             case 'sync':
                 return syncPost(options);
+            case 'patch':
+                return patchPost(options);
             case 'publish':
                 return publishPost(payload);
         }

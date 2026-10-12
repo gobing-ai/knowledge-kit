@@ -55,7 +55,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 export const SCRIPTS_DIR = import.meta.dir;
 export const VALIDATE_SIDECAR = 'validate-voicescript.ts';
@@ -1345,10 +1345,16 @@ function dailyPublishPartial(args: string[]): void {
 }
 
 /**
- * 20260917 review #4/#6: after both publishes land, patch the surfdash disk posts —
- * reuse the podcast-hosted cover URL in frontmatter (image/og_image; no re-upload; fallback:
- * copy the local cover into assets/) and append a podcast cross-link at the end of zh/en/ja.
- * Idempotent per post; commits + pushes the surfdash checkout (SURFDASH_AUTO_PUSH=0 keeps commit-only).
+ * Post-publish surfdash healing — a thin delegation to the publisher that owns it (2026-10-12).
+ *
+ * The work itself (podcast cover URL into `image`/`og_image`, the per-locale podcast cross-link, the
+ * local cover's `assets/` fallback, the EmDash re-sync that makes CMS cards carry a servable image,
+ * and the pathspec commit + push) lives in the `surfdash-pub` `patch` operation now: it is the
+ * publisher's job, and every path that publishes a post needs it. This stage only reads the run's
+ * publish results into the operation's payload and reports its outcome.
+ *
+ * `KK_SURFDASH_PATCH_OFFLINE=1` keeps fixture tests hermetic — the plugin would otherwise write to,
+ * commit and push a real checkout.
  */
 function dailyPatchSurfdash(args: string[]): void {
     const [workDir = '', runDate = '', surfdashRoot = '', pluginsPath = ''] = args;
@@ -1369,149 +1375,53 @@ function dailyPatchSurfdash(args: string[]): void {
         const sd = targetOf(sdResult);
         const pod = targetOf(podcastResult);
         const postPath = (sd.metadata as Record<string, unknown> | undefined)?.postPath;
-        if (typeof postPath !== 'string' || postPath === '')
+        if (typeof postPath !== 'string' || postPath === '') {
             failWith(1, 'patch-surfdash: surfdash result carries no postPath');
-        // Refuse before anything is written: surfdash's deploy.yml publishes from main, so a commit
-        // on any other branch is invisible to production. Placed here (after the input checks) so a
-        // refusal leaves the working tree untouched.
-        const head = spawnSync('git', ['-C', surfdashRoot, 'rev-parse', '--abbrev-ref', 'HEAD'])
-            .stdout?.toString()
-            .trim();
-        if (head !== 'main')
-            failWith(1, `patch-surfdash: refusing to commit on '${head}' — surfdash deploys from main`);
-        // Paths this run actually wrote, relative to surfdashRoot. `git add`/`commit` take these as a
-        // pathspec so the operator's unrelated staged work is never swept into the commit.
-        const written: string[] = [];
-        const slugDir = dirname(postPath);
-        const showNotesUrl = typeof pod.url === 'string' ? pod.url : '';
-        const coverUrl = ((pod.metadata as Record<string, unknown> | undefined)?.imageUrl as string | undefined) ?? '';
-        const localCover = join(workDir, '23-cover', `${runDate}_07_cover_cover.png`);
-        const dateIso = `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`;
-        const crossLink: Record<string, string> = {
-            // Task 0189 R4: cross-links carry the column's episode-title pattern, not the retired
-            // news-bulletin name (the VoiceScript episode title is episodeTitle(lead, date)).
-            zh: `🎧 本期已同步制作为播客节目，[点击收听《每日AI乱炖 · ${dateIso}》](${showNotesUrl})。`,
-            en: `🎧 This episode is also available as a podcast: [listen to 每日AI乱炖 · ${dateIso}](${showNotesUrl}).`,
-            ja: `🎧 本エピソードはポッドキャストでも配信中：[每日AI乱炖 · ${dateIso} を聴く](${showNotesUrl})。`,
-        };
-        let changed = 0;
-        for (const [locale, dir] of [
-            // zh posts live under articles/zh/<slug>; en/ja under articles/<locale>/<slug> —
-            // two dirnames up, not one (20260919: `articles/zh/en/...` never existed, so en/ja
-            // were silently skipped by the not-published branch).
-            ['zh', slugDir],
-            ['en', join(dirname(dirname(slugDir)), 'en', basename(slugDir))],
-            ['ja', join(dirname(dirname(slugDir)), 'ja', basename(slugDir))],
-        ] as const) {
-            const indexMd = join(dir, 'index.md');
-            if (!existsSync(indexMd)) {
-                console.error(`patch-surfdash: ${locale} post not published (${indexMd}) — skip`);
-                continue;
-            }
-            let md = readFileSync(indexMd, 'utf-8');
-            const fmEnd = md.indexOf('---', 3); // frontmatter is `---\n ... \n---\n`
-            if (fmEnd < 0) failWith(1, `patch-surfdash: no frontmatter in ${indexMd}`);
-            // Upsert a single-line `key: 'value'`; the regex consumes folded-scalar continuation
-            // lines (`og_image: >-\n  https://...`) so multi-line publish output is replaced whole.
-            const upsertKey = (src: string, key: string, value: string): string => {
-                // YAML single-quoted scalars escape `'` as `''`; the replacement is a function so
-                // `$&`/`$1`/`$$` in the value are never expanded. Scope the match to the frontmatter
-                // (recomputed per call, since each upsert shifts offsets) so a body line starting with
-                // `image:` is not rewritten.
-                const end = src.indexOf('\n---', 3);
-                const fm = src.slice(0, end);
-                const body = src.slice(end);
-                const line = `${key}: '${value.replaceAll("'", "''")}'`;
-                const re = new RegExp(`^${key}:.*(?:\\n[ \\t]+.*)*`, 'm');
-                const next = re.test(fm)
-                    ? fm.replace(re, () => line)
-                    : fm.replace(/^publishDate: .*$/m, (m0) => `${m0}\n${line}`);
-                return next + body;
-            };
-            if (coverUrl !== '') {
-                // 20260919 prod feedback: the podcast-hosted cover URL wins even when surfdash-pub
-                // already wrote `image:` — its resolved og_image points at /content-posts/<slug>/
-                // assets/cover.png, which the deployed worker does not serve (404).
-                md = upsertKey(md, 'image', coverUrl);
-                md = upsertKey(md, 'og_image', coverUrl);
-            } else if (!/^image:/m.test(md.slice(0, fmEnd))) {
-                // Fallback for runs without a podcast cover: copy the local cover instead.
-                if (existsSync(localCover)) {
-                    const assets = join(dir, 'assets');
-                    mkdirSync(assets, { recursive: true });
-                    copyFileSync(localCover, join(assets, 'cover.png'));
-                    written.push(relative(surfdashRoot, join(assets, 'cover.png')));
-                    md = upsertKey(md, 'image', './assets/cover.png');
-                    md = upsertKey(md, 'og_image', './assets/cover.png');
-                }
-            }
-            if (showNotesUrl !== '' && !md.includes(showNotesUrl)) {
-                md = `${md.replace(/\s*$/, '')}\n\n${crossLink[locale]}\n`;
-            }
-            if (md !== readFileSync(indexMd, 'utf-8')) {
-                sted('write', indexMd, () => writeFileSync(indexMd, md));
-                written.push(relative(surfdashRoot, indexMd));
-                changed++;
-            }
         }
-        // 20260929 prod feedback: CMS cards (homepage hero/tag/search) read EmDash rows whose
-        // featured_image is snapshotted at translate-sync time — i.e. the pre-patch
-        // `./assets/cover.png`, which the deployed worker does not serve (404). The patch only
-        // rewrites files, so re-sync the EmDash rows from the patched files through the same
-        // `kk executor` path as translate-sync (its plugin child gets EMDASH_API_TOKEN from kk
-        // config; a direct orchestrator spawn gets 403 from prod dev-bypass). Runs before the
-        // changed===0 early-return so re-runs heal rows an earlier commit left stale
-        // (20260925/20260929). Fixture tests pass no plugins-path and must not shell out.
-        if (pluginsPath === '') {
-            // A missing plugins-path silently drops the CMS re-sync, and the CMS cards then keep the
-            // pre-patch `./assets/cover.png` the deployed worker cannot serve (20261002 lost its
-            // cover this way). Leave a marker for the classify step's completeness report.
+        const resultPath = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
+        if (process.env.KK_SURFDASH_PATCH_OFFLINE === '1') {
+            // The marker keeps the completeness report's cms-resync row honest in offline runs.
             const skipMarker = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_emdash-resync.txt`);
-            sted('write', skipMarker, () => writeRaw(skipMarker, 'skipped: no plugins-path\n'));
-            console.error('patch-surfdash: no plugins-path — skip emdash re-sync');
-        } else {
-            const syncIn = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync.json`);
-            const syncResult = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_sync-result.json`);
-            sted('write', syncIn, () =>
-                writeJqText(syncIn, { body: '', options: { operation: 'sync', postPath: join(slugDir, 'index.md') } }),
-            );
-            const status = kk(
-                ['executor', 'run', 'surfdash-pub', '--in', syncIn, '--out', syncResult, ...pluginsArgs(pluginsPath)],
-                { unset: NESTED_SPUR_UNSET, soft: true },
-            );
-            const result = isFile(syncResult) ? readJson(syncResult) : null;
-            const ok =
-                status === 0 &&
-                result !== null &&
-                (result.ok === true || (result.targets as Array<{ ok?: boolean }> | undefined)?.[0]?.ok === true);
-            if (!ok) {
-                console.error(
-                    `patch-surfdash: WARNING: emdash re-sync failed (exit ${status}) — CMS cards keep the stale cover; fix: kk executor run surfdash-pub --in ${syncIn} --out ${syncResult} --plugins-path ${pluginsPath}`,
-                );
-            } else {
-                console.error('patch-surfdash: emdash rows re-synced from patched files');
-            }
-        }
-        if (changed === 0) {
-            console.error('patch-surfdash: nothing to change');
+            sted('write', skipMarker, () => writeRaw(skipMarker, 'skipped: offline (KK_SURFDASH_PATCH_OFFLINE=1)\n'));
+            console.error('patch-surfdash: offline — skip the plugin patch (KK_SURFDASH_PATCH_OFFLINE=1)');
             return;
         }
-        const git = (...a: string[]): void => {
-            const r = spawnSync('git', ['-C', surfdashRoot, ...a]);
-            if (r.status !== 0) failWith(1, `patch-surfdash: git ${a[0]} failed: ${r.stderr?.toString().trim()}`);
-        };
-        git('add', '--', ...written);
-        git(
-            'commit',
-            '-m',
-            `feat: cover + podcast cross-link for ${basename(slugDir)} (kk daily patch)`,
-            '--',
-            ...written,
+        const payload = join(workDir, '31-publish', `${runDate}_23_patch-surfdash_patch.json`);
+        const podcastMeta = (pod.metadata ?? {}) as Record<string, unknown>;
+        sted('write', payload, () =>
+            writeJqText(payload, {
+                body: '',
+                options: {
+                    operation: 'patch',
+                    postPath,
+                    coverUrl: typeof podcastMeta.imageUrl === 'string' ? podcastMeta.imageUrl : '',
+                    showNotesUrl: typeof pod.url === 'string' ? pod.url : '',
+                    dateIso: `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)}`,
+                    localCover: join(workDir, '23-cover', `${runDate}_07_cover_cover.png`),
+                },
+            }),
         );
-        if (process.env.SURFDASH_AUTO_PUSH !== '0') git('push', 'origin', 'main');
-        console.error(
-            `patch-surfdash: patched ${changed} post(s), committed${process.env.SURFDASH_AUTO_PUSH !== '0' ? ' + pushed' : ' (push skipped: SURFDASH_AUTO_PUSH=0)'}`,
+        const status = kk(
+            ['executor', 'run', 'surfdash-pub', '--in', payload, '--out', resultPath, ...pluginsArgs(pluginsPath)],
+            { unset: NESTED_SPUR_UNSET, env: { SURFDASH_ROOT: surfdashRoot }, soft: true },
         );
+        const result = isFile(resultPath) ? readJson(resultPath) : null;
+        const meta = (result?.metadata ?? {}) as Record<string, unknown>;
+        if (result?.ok === true) {
+            console.error(
+                `patch-surfdash: ${String(result.message ?? 'patched')} — cms-resync ${String(meta.cmsResync ?? 'ok')}, commit ${String(meta.gitCommit ?? 'unchanged')}${Array.isArray(meta.absentLocales) && meta.absentLocales.length > 0 ? `, no post for ${(meta.absentLocales as string[]).join('/')}` : ''}`,
+            );
+            return;
+        }
+        // The posts are patched and committed; only the EmDash rows keep the unservable cover. That is
+        // the soft channel the completeness report carries, so warn instead of failing the run.
+        if (meta.cmsResync === 'failed') {
+            console.error(
+                `patch-surfdash: WARNING: cms re-sync failed — ${String(result?.error ?? `exit ${status}`)}; fix: kk executor run surfdash-pub --in ${payload} --out ${resultPath}${pluginsArgs(pluginsPath).join(' ')}`,
+            );
+            return;
+        }
+        failWith(1, `patch-surfdash: ${String(result?.error ?? `surfdash-pub patch exited ${status}`)}`);
     });
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeFileCliTransport } from '@gobing-ai/publish-harness';
@@ -18,6 +19,7 @@ import {
     slugify,
     withEmdashTokenHint,
 } from '../src/index';
+import { localeIndexPath, patchPostFiles, upsertFrontmatterKey } from '../src/patch';
 
 // Auto-push targets the real surfdash checkout — CLI-path tests run offline with stub binaries.
 process.env.SURFDASH_AUTO_PUSH ??= '0';
@@ -1013,5 +1015,118 @@ describe('path-derived metadata validation (R4)', () => {
             else delete process.env.SURFDASH_ROOT;
             await rm(tmpDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('surfdash-pub frontmatter tags (2026-10-12)', () => {
+    test('drops tags that slugify to nothing and collapses duplicates', () => {
+        const markdown = mapContentToSurfingMarkdown({
+            title: 'tag case',
+            body: 'Body.',
+            format: 'markdown',
+            metadata: { tags: ['ai-news', 'AI', 'ai', '硬件发布', '   ', 'IPO'] },
+        });
+        const frontmatter = markdown.split('---')[1] ?? '';
+        const parsed = Bun.YAML.parse(frontmatter) as { tags: string[] };
+        // `硬件发布` slugifies to '' (non-ASCII), `AI`/`ai` collapse to one slug.
+        expect(parsed.tags).toEqual(['ai-news', 'ai', 'ipo']);
+    });
+});
+
+describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)', () => {
+    const post = (root: string, locale: string): string =>
+        join(root, 'content', 'posts', 'articles', locale, '20261011-post', 'index.md');
+
+    async function withTree<T>(fn: (root: string, localCover: string) => Promise<T>): Promise<T> {
+        const root = await mkdtemp(join(tmpdir(), 'sd-patch-'));
+        const localCover = join(root, 'cover.png');
+        await writeFile(localCover, 'png-bytes');
+        for (const locale of ['zh', 'en']) {
+            await mkdir(dirname(post(root, locale)), { recursive: true });
+            await writeFile(
+                post(root, locale),
+                `---\ntitle: T\npublishDate: '2026-10-11'\nimage: ./assets/cover.png\n---\n\nBody line\nimage: keep-me\n`,
+            );
+        }
+        try {
+            return await fn(root, localCover);
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    }
+
+    test('localeIndexPath swaps the last /zh/ segment and refuses a path without one', () => {
+        const zh = '/sd/content/posts/articles/zh/slug/index.md';
+        expect(localeIndexPath(zh, 'zh')).toBe(zh);
+        expect(localeIndexPath(zh, 'en')).toBe('/sd/content/posts/articles/en/slug/index.md');
+        expect(localeIndexPath(zh, 'ja')).toBe('/sd/content/posts/articles/ja/slug/index.md');
+        expect(localeIndexPath('/sd/elsewhere/index.md', 'en')).toBeUndefined();
+    });
+
+    test('upsertFrontmatterKey rewrites folded scalars and escapes quotes without expanding $&', () => {
+        const md = '---\ntitle: T\nog_image: >-\n  https://old.example/x.png\n---\n\nimage: keep-me\n';
+        const next = upsertFrontmatterKey(md, 'og_image', "https://cdn/it's-$&-x.png");
+        expect(next).toContain("og_image: 'https://cdn/it''s-$&-x.png'");
+        expect(next).not.toContain('https://old.example');
+        expect(next).toContain('image: keep-me');
+        // An absent key lands after publishDate, inside the frontmatter only.
+        const inserted = upsertFrontmatterKey('---\ntitle: T\npublishDate: X\n---\nBody\n', 'image', 'u');
+        expect(inserted).toBe("---\ntitle: T\npublishDate: X\nimage: 'u'\n---\nBody\n");
+    });
+
+    test('patchPostFiles writes the cover URL and the cross-link for every published locale', async () => {
+        await withTree(async (root, localCover) => {
+            const outcome = patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: 'https://cdn.example/cover.png',
+                showNotesUrl: 'https://pod.example/i/1',
+                localCover,
+                dateIso: '2026-10-11',
+            });
+            expect(outcome.slug).toBe('20261011-post');
+            expect(outcome.changed).toBe(2);
+            expect(outcome.absent).toEqual(['ja']);
+            expect(outcome.images).toEqual({
+                zh: 'https://cdn.example/cover.png',
+                en: 'https://cdn.example/cover.png',
+            });
+            const zh = await readFile(post(root, 'zh'), 'utf-8');
+            expect(zh).toContain("image: 'https://cdn.example/cover.png'");
+            expect(zh).toContain('[点击收听《每日AI乱炖 · 2026-10-11》](https://pod.example/i/1)');
+            const en = await readFile(post(root, 'en'), 'utf-8');
+            expect(en).toContain('[listen to 每日AI乱炖 · 2026-10-11](https://pod.example/i/1)');
+
+            // Idempotent: a second pass changes nothing and writes nothing.
+            const again = patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: 'https://cdn.example/cover.png',
+                showNotesUrl: 'https://pod.example/i/1',
+                localCover,
+                dateIso: '2026-10-11',
+            });
+            expect(again.changed).toBe(0);
+            expect(again.written).toEqual([]);
+        });
+    });
+
+    test('patchPostFiles copies the local cover when no podcast cover URL exists', async () => {
+        await withTree(async (root, localCover) => {
+            // Strip the pre-existing `image:` so the fallback branch is reachable.
+            for (const locale of ['zh', 'en']) {
+                const md = await readFile(post(root, locale), 'utf-8');
+                await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
+            }
+            const outcome = patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: '',
+                showNotesUrl: '',
+                localCover,
+                dateIso: '2026-10-11',
+            });
+            const asset = join(dirname(post(root, 'zh')), 'assets', 'cover.png');
+            expect(existsSync(asset)).toBe(true);
+            expect(outcome.written).toContain(asset);
+            expect(await readFile(post(root, 'zh'), 'utf-8')).toContain("image: './assets/cover.png'");
+        });
     });
 });
