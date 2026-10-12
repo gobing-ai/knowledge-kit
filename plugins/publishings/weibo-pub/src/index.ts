@@ -646,7 +646,13 @@ function apiSubmitScript(text: string, picId: string): string {
         response = await fetch('https://m.weibo.cn/api/statuses/update', {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            // The app's own XHR carries these two; m.weibo.cn's write endpoint distinguishes a
+            // page-originated request from a bare one (measured 2026-10-12).
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                Referer: 'https://m.weibo.cn/compose/',
+            },
             body: form.toString(),
         });
     } catch (error) {
