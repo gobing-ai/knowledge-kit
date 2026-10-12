@@ -1,0 +1,43 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# A `## Review` record that claims a confidence level must claim an allowed, EARNED one.
+#
+# Every other confidence surface already has a gate: the `Verification (` block and the `## Testing`
+# record (`verification-block-carries-confidence-level`), the durable verdict artifact
+# (`durable-verdict-carries-confidence-proof`), the run-plane verify/review answers
+# (`verification-answer-carries-confidence-level`), the verdict artifact's own level
+# (`verdict-artifact-asserts-confidence-level`) and the claim table
+# (`api-library-claim-cites-source-and-confidence`). The `## Review` record — what a task keeps of the
+# review coordinator's verdict — had none.
+#
+# Measured 2026-10-12, the day this rule landed: of 258 task records with a `## Review` section, all
+# 258 state a verdict or findings and only 4 carry a `Confidence:` line. So a review record could
+# claim a level outside the enum, or an unearned HIGH, and nothing noticed.
+#
+# PRESENCE IS NOT ENFORCED, and the measurement is why: 254 of those 258 records predate any
+# review-level practice, and a review-record level cannot be retro-fitted honestly — the level belongs
+# to the review that produced it, and none of those reviews stated one. A presence rule would fail on
+# history and invite invented levels. Presence becomes possible once the record step copies the review
+# answer's level into `## Review`; that is a pipeline change, not a rule change. Until then this rule
+# judges what a record claims, never whether it claims — the same doctrine as its siblings.
+#
+# The checker lives in review-record-confidence-level.sh so its file/line detail is reachable by hand
+# — the `exit-code` evaluator reports only the exit status. Falsification cases (12) live in
+# review-record-confidence-level.test.sh, including the out-of-scope seams (a Testing level, a Review
+# section without a level, a record with no Review section at all).
+rules:
+  - id: review-record-carries-confidence-level
+    description: "Every `Confidence:` value inside a task or feature `## Review` record is inside `HIGH|MEDIUM|LOW`, and a claimed level is EARNED: HIGH cites an http(s) URL, a `path:line` or a repo path with a code/doc extension; MEDIUM/LOW cites the same or names what is unverified. A review record therefore cannot invent, misspell or unsupportedly claim its level. Presence of the line is deliberately not required (254 of the 258 existing review records predate the practice)."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/review-record-confidence-level.sh"
+        message: "exit {code}: a `## Review` record claims a confidence level outside HIGH|MEDIUM|LOW, or claims a level it does not earn (a HIGH with no citation, or a MEDIUM/LOW that cites nothing and names no gap) — run `sh .spur/rules/structure/review-record-confidence-level.sh` for the file and line, and `sh .spur/rules/structure/review-record-confidence-level.test.sh` for the cases"
+    include:
+      - "docs/tasks*/**/*.md"
+      - "docs/features/**/*.md"
+    exclude:
+      - "**/node_modules/**"
+      - "**/vendors/**"
