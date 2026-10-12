@@ -753,7 +753,12 @@ describe('kk daily prepare — the release hint (R7)', () => {
         writeFileSync(configFile, `store:\n  db_path: ${dbPath}\n`);
         process.env.KK_CONFIG = configFile;
         try {
-            return await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--work-dir', join(dir, 'w')]);
+            // `daily prepare` writes its anchor relative to the cwd: run it inside the temp dir, or the
+            // test rewrites the repo's real `.spur/runs/kk-daily-ai-voice2/work-dir.txt` (2026-10-12).
+            return await run(
+                ['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--work-dir', join(dir, 'w')],
+                dir,
+            );
         } finally {
             delete process.env.KK_CONFIG;
         }

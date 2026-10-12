@@ -963,28 +963,37 @@ describe('kk-daily-ai-voice2 — independent branches run concurrently and fan i
 
 describe('kk daily — the DAG nodes’ commands', () => {
     /** Run `kk …` in-process, returning the exit code plus the captured echo/echoError output. */
-    async function run(args: string[]): Promise<{ code: number; out: string; err: string }> {
+    async function run(args: string[], cwd?: string): Promise<{ code: number; out: string; err: string }> {
+        const previous = process.cwd();
+        // `daily prepare` writes `.spur/runs/<workflow>/work-dir.txt` relative to the cwd, so a test
+        // that runs it from the repo root rewrites (and can delete) the real anchor the DAG reads —
+        // it clobbered a live run's anchor on 2026-10-12.
+        if (cwd !== undefined) process.chdir(cwd);
         const capture = captureOutput();
         try {
             const code = await main(['node', 'kk', ...args]);
             return { code, out: capture.read(), err: capture.readErr() };
         } finally {
             capture.restore();
+            process.chdir(previous);
         }
     }
 
     it('prepare composes the workspace and writes both fixed anchors', async () => {
         const dir = tempDir('kk-daily-prepare-');
-        const result = await run([
-            'daily',
-            'prepare',
-            '--workflow',
-            'kk-daily-ai-voice2',
-            '--run-date',
-            '2026-10-07',
-            '--work-dir',
-            join(dir, 'w'),
-        ]);
+        const result = await run(
+            [
+                'daily',
+                'prepare',
+                '--workflow',
+                'kk-daily-ai-voice2',
+                '--run-date',
+                '2026-10-07',
+                '--work-dir',
+                join(dir, 'w'),
+            ],
+            dir,
+        );
         expect(result.code).toBe(0);
         expect(JSON.parse(result.out).workDir).toBe(join(dir, 'w'));
         expect(readFileSync(join(dir, 'w/run-date.txt'), 'utf-8')).toBe('20261007\n');

@@ -44,6 +44,23 @@ afterAll(() => {
 });
 
 /**
+ * Run `fn` with the process cwd inside `dir`. `kk daily prepare` writes its anchor to the
+ * cwd-relative `.spur/runs/<workflow>/work-dir.txt` and `daily-publish-partial` writes
+ * `.spur/run/<marker>.txt`, so a test that asserted them from the repo root wrote — and then
+ * DELETED — the real files; on 2026-10-12 that clobbered a live run's anchor mid-session. The
+ * corrupt-config test below already chdirs for the same isolation reason.
+ */
+async function inCwd<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+    const previous = process.cwd();
+    process.chdir(dir);
+    try {
+        return await fn();
+    } finally {
+        process.chdir(previous);
+    }
+}
+
+/**
  * Point every in-process `kk` call at a throwaway store (0242 R6). `kk daily prepare` resolves
  * `store.db_path` through `KK_CONFIG`; with no `--db` flag and no config, the store falls back to
  * the cwd-relative `.works/kk.db`, which is the operator's LIVE store when the suite runs from the
@@ -87,7 +104,9 @@ describe('kk daily prepare', () => {
     it('composes the workspace from the run date and writes both fixed anchors', async () => {
         const dir = tempDir();
         process.env.KK_WORKS_DIR = join(dir, 'works');
-        const result = await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']);
+        const result = await inCwd(dir, () =>
+            run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']),
+        );
         expect(result.code).toBe(0);
         const workDir = join(dir, 'works/kk-daily-ai-voice2/20261007');
         expect(JSON.parse(result.out).workDir).toBe(workDir);
@@ -95,23 +114,22 @@ describe('kk daily prepare', () => {
         expect(readFileSync(join(workDir, '.safety-revise-count'), 'utf-8')).toBe('0\n');
         expect(existsSync(join(workDir, '10-ingest/source.json'))).toBe(true);
         // The anchor the DAG's file.read.into-var node reads, cwd-relative to the run.
-        const anchor = join(process.cwd(), '.spur', 'runs', 'kk-daily-ai-voice2', 'work-dir.txt');
+        const anchor = join(dir, '.spur', 'runs', 'kk-daily-ai-voice2', 'work-dir.txt');
         expect(readFileSync(anchor, 'utf-8')).toBe(`${workDir}\n`);
-        rmSync(join(process.cwd(), '.spur', 'runs', 'kk-daily-ai-voice2'), { recursive: true, force: true });
     });
 
     it('a digits-only run date re-derives the directory a dashed date named', async () => {
         const dir = tempDir();
         process.env.KK_WORKS_DIR = join(dir, 'works');
-        await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']);
-        const dashed = JSON.parse(
-            (await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07'])).out,
-        ).workDir;
-        const digits = JSON.parse(
-            (await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '20261007'])).out,
-        ).workDir;
+        const { dashed, digits } = await inCwd(dir, async () => ({
+            dashed: JSON.parse(
+                (await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07'])).out,
+            ).workDir as string,
+            digits: JSON.parse(
+                (await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '20261007'])).out,
+            ).workDir as string,
+        }));
         expect(digits).toBe(dashed);
-        rmSync(join(process.cwd(), '.spur', 'runs', 'kk-daily-ai-voice2'), { recursive: true, force: true });
     });
 
     it('warns instead of failing when the ledger sync cannot run', async () => {
@@ -120,17 +138,19 @@ describe('kk daily prepare', () => {
         // A `spur` that is not there at all: the sync must degrade to a warning, never abort the run.
         process.env.KK_SPUR_BIN = join(dir, 'no-such-spur');
         try {
-            const result = await run([
-                'daily',
-                'prepare',
-                '--workflow',
-                'kk-daily-ai-voice2',
-                '--run-date',
-                '2026-10-07',
-                '--ledger-sync',
-                '--work-dir',
-                join(dir, 'w'),
-            ]);
+            const result = await inCwd(dir, () =>
+                run([
+                    'daily',
+                    'prepare',
+                    '--workflow',
+                    'kk-daily-ai-voice2',
+                    '--run-date',
+                    '2026-10-07',
+                    '--ledger-sync',
+                    '--work-dir',
+                    join(dir, 'w'),
+                ]),
+            );
             expect(result.code).toBe(0);
             expect(result.err).toContain('kk.daily.prepare.ledger-sync-failed');
             expect(existsSync(join(dir, 'w/run-date.txt'))).toBe(true);
@@ -142,9 +162,8 @@ describe('kk daily prepare', () => {
     it('prepare uses default run-date formatRunDate() when omitted', async () => {
         const dir = tempDir();
         process.env.KK_WORKS_DIR = join(dir, 'works');
-        const result = await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2']);
+        const result = await inCwd(dir, () => run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2']));
         expect(result.code).toBe(0);
-        rmSync(join(process.cwd(), '.spur', 'runs', 'kk-daily-ai-voice2'), { recursive: true, force: true });
     });
 });
 
@@ -301,25 +320,27 @@ describe('kk daily publish-classify', () => {
             { targets: [{ target: 'surfdash-pub', ok: true, status: 'published' }] },
             { targets: [{ target: 'podcast-pub', ok: false, status: 'failed' }] },
         );
-        const result = await run([
-            'daily',
-            'publish-classify',
-            '--work-dir',
-            dir,
-            '--run-date',
-            '20261007',
-            '--fold-tail',
-            '--surfdash-root',
-            join(dir, 'no-checkout'),
-        ]);
+        const result = await inCwd(dir, () =>
+            run([
+                'daily',
+                'publish-classify',
+                '--work-dir',
+                dir,
+                '--run-date',
+                '20261007',
+                '--fold-tail',
+                '--surfdash-root',
+                join(dir, 'no-checkout'),
+            ]),
+        );
         expect(result.code).toBe(0);
         expect(JSON.parse(result.out).status).toBe('partial');
-        expect(existsSync(join(process.cwd(), '.spur/run/publish-partial-20261007.txt'))).toBe(true);
-        const marker = readFileSync(join(process.cwd(), '.spur/run/publish-partial-20261007.txt'), 'utf-8');
+        const markerPath = join(dir, '.spur/run/publish-partial-20261007.txt');
+        expect(existsSync(markerPath)).toBe(true);
+        const marker = readFileSync(markerPath, 'utf-8');
         expect(marker).toContain('podcast-pub');
         // The patch stage is plugin-owned and stays where it is: the fold only sequences it.
         expect(existsSync(join(REPO, 'plugins/kk/scripts/kk-workflow-stages.ts'))).toBe(true);
-        rmSync(join(process.cwd(), '.spur/run/publish-partial-20261007.txt'), { force: true });
     });
 });
 
@@ -335,27 +356,17 @@ describe('kk daily works-dir resolution and report edges', () => {
         writeFileSync(config, `works_dir: ~/works-from-config\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
         process.env.KK_CONFIG = config;
         try {
-            const tilde = await run([
-                'daily',
-                'prepare',
-                '--workflow',
-                'kk-daily-ai-voice2',
-                '--run-date',
-                '2026-10-07',
-            ]);
+            const tilde = await inCwd(dir, () =>
+                run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']),
+            );
             expect(tilde.code).toBe(0);
             expect(JSON.parse(tilde.out).workDir).toBe(
                 join(homedir(), 'works-from-config/kk-daily-ai-voice2/20261007'),
             );
             writeFileSync(config, `works_dir: $HOME/works-home-prefix\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
-            const dollar = await run([
-                'daily',
-                'prepare',
-                '--workflow',
-                'kk-daily-ai-voice2',
-                '--run-date',
-                '2026-10-07',
-            ]);
+            const dollar = await inCwd(dir, () =>
+                run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']),
+            );
             expect(dollar.code).toBe(0);
             expect(JSON.parse(dollar.out).workDir).toBe(
                 join(homedir(), 'works-home-prefix/kk-daily-ai-voice2/20261007'),
@@ -480,7 +491,9 @@ describe('kk daily prepare never migrates the store it only reads (0242 R6/AC6)'
         writeFileSync(config, `works_dir: ${dir}\nstore:\n  db_path: ${dbPath}\n`);
         process.env.KK_CONFIG = config;
 
-        const result = await run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']);
+        const result = await inCwd(dir, () =>
+            run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']),
+        );
         // The probe is best-effort: the behind store's missing `selections` table is swallowed, so
         // `prepare` still succeeds — but it must NOT have upgraded the store to make itself work.
         expect(result.code).toBe(0);
