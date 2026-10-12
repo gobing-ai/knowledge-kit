@@ -75,12 +75,6 @@ export const WEIBO_POST_SELECTORS = {
     send: ['a.m-send-btn', 'a:has-text("发送")', 'button:has-text("发送")'],
     /** Post image: the mobile composer's `input[type="file"]`, accept `image/gif,jpeg,webp,jpg,png,bmp`. */
     fileInput: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
-    /**
-     * Feed cards on the mobile feed are `a[href*="/detail/"]` / `a[href*="/status/"]`; the desktop
-     * shape (`a._time_*` → `weibo.com/<uid>/<mblogid>`) is kept as a fallback. A post is usually
-     * observed through the composer page's own navigation first (see `mobileStatusUrl`).
-     */
-    feedCard: ['a[href*="/detail/"]', 'a[href*="/status/"]', 'a[class*="_time_"]'],
 } as const;
 
 /**
@@ -266,9 +260,6 @@ export class WeiboBrowserTransport implements PublishTransport {
     private readonly operation: WeiboOperation;
     private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
-    /** One bounded post-flow refresh while waiting for the new card to render. */
-    private reloadedForPost = false;
-
     constructor(
         operation: WeiboOperation = 'post',
         driver: BrowserDriver = 'script',
@@ -458,6 +449,7 @@ export class WeiboBrowserTransport implements PublishTransport {
      * carries the submitted excerpt. Only reached for `publishStatus: public` (R3, R4).
      */
     private async runPostFlow(page: Page, text: string, profileDir: string, coverPath?: string): Promise<Result> {
+        let picId = '';
         const metadata = { operation: 'post', driver: this.driver, publishStatus: 'public', profileDir };
 
         const composerSelector = await resolveSelector(page, WEIBO_POST_SELECTORS.composer, {
@@ -482,36 +474,57 @@ export class WeiboBrowserTransport implements PublishTransport {
                 label: 'weibo post image attachment',
             });
             if (!attached.ok) return fail(attached.error);
+            // The API submit needs the uploaded image's id. Until that source is measured, an image
+            // whose id cannot be read is refused rather than posted as a text-only status while
+            // claiming an image (R9 is fail-closed like every other rail).
+            picId = String(await page.evaluate(picIdScript())).trim();
+            if (picId.length === 0) {
+                return fail(
+                    'weibo image uploaded but its id could not be read from the composer — refusing to post a text-only status while claiming an image',
+                );
+            }
         }
 
-        // Snapshot the feed and the toasts before the send: an existing card is never this run's
-        // outcome (R4), and a fresh toast is the site's own reason when the send is rejected
-        // (measured 2026-10-12: a rejected send produced no card and no captured reason).
-        const existingCards = await this.readFeedCards(page);
+        // Submit the way the web app itself does. Measured 2026-10-12 (0246): both the desktop and the
+        // mobile 发送 anchors are JS-bound with no href, and a synthetic click produced no request at
+        // all (the draft stayed in the composer, no toast, no card, three attempts). The mobile page's
+        // own API answers this session — `GET /api/config` → `{ok:1,data:{login:true,st,uid}}` — so the
+        // browser process posts through it, with the session, the `st` token and the ids taken from the
+        // page. Same request the page issues, no app registration, no synthetic click to lose.
         const toastsBefore = await this.readToasts(page);
-        const sendSelector = await resolveSelector(page, WEIBO_POST_SELECTORS.send, {
-            timeoutMs: this.stepTimeoutMs,
-            label: 'post 发送 control',
-        });
-        await page.locator(sendSelector).first().click();
-        const live = await expectOutcome(() => this.probePostLive(page, existingCards, text), {
-            timeoutMs: this.stepTimeoutMs,
-            label: `weibo post '${sendSelector}'`,
-        });
-        if (!live.ok) {
-            // Diagnosis-first (R5, 0246): a silent send must leave its own explanation behind —
-            // composer length before/after, any dialog/modal that appeared, any fresh toast — so the
-            // next operator never has to re-run a write to learn why.
-            return fail(`${live.error} [${await this.postDiagnostics(page, composerSelector, text, toastsBefore)}]`);
-        }
+        const submitted = await this.submitViaMobileApi(page, text, picId);
+        if (!submitted.ok)
+            return fail(
+                `${submitted.error} [${await this.postDiagnostics(page, composerSelector, text, toastsBefore)}]`,
+            );
         return ResultSchema.parse({
             ok: true,
             target: TARGET,
-            id: statusIdFrom(live.evidence),
-            url: live.evidence,
+            id: submitted.id,
+            url: `https://m.weibo.cn/detail/${submitted.id}`,
             message: `${TARGET} post published live in profile ${profileDir}`,
             metadata,
         });
+    }
+
+    /**
+     * Posts through the page's own mobile API (`POST /api/statuses/update`) with the page's `st`
+     * token, and returns the created status id. A response without an id is a refusal carrying the
+     * site's own bounded error text — never a success.
+     */
+    private async submitViaMobileApi(
+        page: Page,
+        text: string,
+        picId?: string,
+    ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+        const raw = await page
+            .evaluate(apiSubmitScript(text, picId ?? ''))
+            .catch((error: unknown) => `eval-failed: ${String(error)}`);
+        const parsed = parseApiSubmit(raw);
+        if (parsed.id === undefined) {
+            return { ok: false, error: `weibo mobile api refused the post: ${parsed.detail}` };
+        }
+        return { ok: true, id: parsed.id };
     }
 
     /** Polls until the field shows the submitted text; a field the editor dropped is a refusal. */
@@ -546,11 +559,6 @@ export class WeiboBrowserTransport implements PublishTransport {
     /** Visible toast texts before a save, so an already-visible toast cannot satisfy the draft rail. */
     private async readToasts(page: Page): Promise<readonly string[]> {
         return parseStringArray(await page.evaluate(toastTextsScript()));
-    }
-
-    /** Feed-card hrefs before a send, so a pre-existing card cannot satisfy the post rail. */
-    private async readFeedCards(page: Page): Promise<readonly string[]> {
-        return parseStringArray(await page.evaluate(feedCardHrefsScript()));
     }
 
     /**
@@ -591,38 +599,6 @@ export class WeiboBrowserTransport implements PublishTransport {
     private async probeArticleLive(page: Page): Promise<string | null> {
         return liveArticleUrl(page.url());
     }
-
-    /**
-     * Post evidence: a feed-card href that appeared after the send and whose **card** carries the
-     * excerpt. Measured 2026-10-12: the matched link's own text is the timestamp, so the excerpt is
-     * read from the card container (see {@link cardTextScript}); if the live feed has not inserted
-     * the new card yet, one bounded reload refreshes it.
-     */
-    private async probePostLive(page: Page, existingCards: readonly string[], text: string): Promise<string | null> {
-        // The mobile composer navigates to the new status on success — that URL *is* the outcome.
-        const landed = mobileStatusUrl(page.url());
-        if (landed !== null) return landed;
-        const before = new Set(existingCards);
-        const wanted = excerpt(text);
-        const fresh = (await this.readFeedCards(page)).filter((card) => !before.has(card));
-        for (const card of fresh) {
-            if (await this.cardCarries(page, card, wanted)) return card;
-        }
-        if (!this.reloadedForPost && fresh.length === 0) {
-            // The composer sits at the top of the timeline, but Weibo may only render the new card
-            // after a refresh. One reload per run keeps the probe bounded.
-            this.reloadedForPost = true;
-            await page.reload({ timeout: this.stepTimeoutMs }).catch(() => undefined);
-        }
-        return null;
-    }
-
-    /** True when the card's own text carries the submitted excerpt (whitespace-insensitive). */
-    private async cardCarries(page: Page, href: string, wanted: string): Promise<boolean> {
-        if (wanted.length === 0) return true;
-        const text = normalizeText(String(await page.evaluate(cardTextScript(href))));
-        return text.includes(wanted);
-    }
 }
 
 /** Session failures whose one-liner must name the recovery command. */
@@ -657,12 +633,86 @@ function liveArticleUrl(url: string): string | null {
 }
 
 /**
- * Mobile-status evidence: on `m.weibo.cn` a successful post lands on `/detail/<id>` or
- * `/status/<id>` — the URL itself carries the new status id, so it is the strongest signal the mobile
- * route can give. Measured 2026-10-12 (0246, `docs/design/weibo-ui-discovery.md` §2b).
+ * The page-context submit: same form-encoded request the mobile web app issues, with the page's own
+ * `st` token and session cookies. Returns a JSON string so the caller parses a bounded payload.
  */
-function mobileStatusUrl(url: string): string | null {
-    return /m\.weibo\.cn\/(?:detail|status)\/[A-Za-z0-9]+/.test(url) ? url : null;
+function apiSubmitScript(text: string, picId: string): string {
+    return `(async () => { // kk-weibo-submit
+    const cfg = (window.config || {});
+    const form = new URLSearchParams({ content: ${JSON.stringify(text)}, st: String(cfg.st || '') });
+    ${picId === '' ? '' : `form.set('pic_id', ${JSON.stringify(picId)});`}
+    let response;
+    try {
+        response = await fetch('https://m.weibo.cn/api/statuses/update', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: form.toString(),
+        });
+    } catch (error) {
+        return JSON.stringify({ status: 0, detail: 'no HTTP response was received: ' + String(error).slice(0, 80) });
+    }
+    let body = null;
+    try { body = await response.json(); } catch { body = null; }
+    const data = (body && body.data) || {};
+    const id = String(data.id ?? data.idstr ?? '');
+    const detail = id !== '' ? '' : JSON.stringify(body ?? {}).replace(/s+/g, ' ').slice(0, 160);
+    return JSON.stringify({ status: response.status, id: id, detail: detail });
+})()`;
+}
+
+/** Parses the page-context submit result into an id or a bounded failure detail. */
+/**
+ * Parses the page-context submit result into an id or a bounded failure detail. When the site's own
+ * refusal payload is present it is rendered as `HTTP <status> errno <code>: <msg> (<action>: <url>)`
+ * — measured 2026-10-12: a flagged account answers `errno 200001 账号异常` with an activation link,
+ * which is the operator's next action and must not be hidden inside a raw JSON blob.
+ */
+function parseApiSubmit(raw: unknown): { id?: string; detail: string } {
+    try {
+        const parsed = JSON.parse(String(raw)) as { status?: number; id?: string; detail?: string };
+        if (typeof parsed.id === 'string' && parsed.id.length > 0) return { id: parsed.id, detail: '' };
+        const status = parsed.status === undefined ? 'no status' : `HTTP ${parsed.status}`;
+        if (parsed.detail === undefined || parsed.detail.length === 0) return { detail: status };
+        const site = parseSiteRefusal(parsed.detail);
+        return { detail: site === undefined ? `${status}: ${parsed.detail}` : `${status} ${site}` };
+    } catch {
+        return { detail: String(raw).slice(0, 160) };
+    }
+}
+
+/** Renders Weibo's own refusal payload (`errno`/`msg`/activation link) as one bounded phrase. */
+function parseSiteRefusal(detail: string): string | undefined {
+    try {
+        const body = JSON.parse(detail) as {
+            errno?: unknown;
+            msg?: unknown;
+            title?: unknown;
+            btn?: { text?: unknown; url?: unknown };
+        };
+        const msg = typeof body.msg === 'string' ? body.msg.trim() : '';
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        const errno = body.errno === undefined ? '' : `errno ${String(body.errno)}`;
+        const action = typeof body.btn?.url === 'string' ? ` (${String(body.btn.text ?? 'fix')}: ${body.btn.url})` : '';
+        const text = msg.length > 0 ? msg : title;
+        if (text.length === 0) return undefined;
+        return `${errno.length > 0 ? `${errno}: ` : ''}${text}${action}`;
+    } catch {
+        return undefined;
+    }
+}
+
+/** The uploaded image's id, if the composer exposes one; '' means "not readable" (fail closed). */
+function picIdScript(): string {
+    return `(() => { // kk-weibo-picid
+    const cfg = (window.config || {});
+    const candidates = [cfg.pic_id, cfg.picId, (window.$render_data || {}).pic_id];
+    for (const value of candidates) {
+        if (typeof value === 'string' && value.length > 0) return value;
+    }
+    const img = document.querySelector('img[src*="sinaimg"]');
+    return img === null ? '' : '';
+})()`;
 }
 
 /** The first visible dialog/modal/verification text on the page, bounded; '' when none. */
@@ -712,34 +762,6 @@ function toastTextsScript(): string {
         if (text.length > 0) texts.push(text);
     }
     return JSON.stringify(texts);
-})()`;
-}
-
-/** Feed-card hrefs, used as the pre-send baseline and as the fresh-signal read. */
-function feedCardHrefsScript(): string {
-    return `(() => { // kk-weibo-feed
-    const hrefs = [];
-    for (const link of document.querySelectorAll(${JSON.stringify(WEIBO_POST_SELECTORS.feedCard.join(', '))})) {
-        if (link.href) hrefs.push(link.href);
-    }
-    return JSON.stringify(hrefs);
-})()`;
-}
-
-/**
- * The card's own **container** text, for the submitted-excerpt comparison. Measured 2026-10-12: the
- * card link itself is the timestamp anchor (`a._time_*`, text "3小时前"), so the excerpt lives in the
- * nearest ancestor that holds the card.
- */
-function cardTextScript(href: string): string {
-    return `(() => { // kk-weibo-card-text
-    for (const link of document.querySelectorAll(${JSON.stringify(WEIBO_POST_SELECTORS.feedCard.join(', '))})) {
-        if (link.href !== ${JSON.stringify(href)}) continue;
-        const card = link.closest('article, [class*="card"], [class*="Card"], div[class*="Feed"]') || link.parentElement;
-        const scope = card === null ? link : card;
-        return (scope.textContent || '').trim();
-    }
-    return '';
 })()`;
 }
 

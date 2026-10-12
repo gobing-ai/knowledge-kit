@@ -77,6 +77,12 @@ interface FakePageOptions {
     existingFeed?: string[];
     /** Text of the card the send creates; defaults to the submitted composer text. */
     feedText?: string;
+    /** What the page's own mobile API answers to a submit: an id (success) or a status/detail. */
+    apiSubmit?: { id?: string; status?: number; detail?: string };
+    /** The image id the composer exposes after an upload; '' means "not readable". */
+    picId?: string;
+    /** A fresh toast the submit emits (the site's own reason for a rejection). */
+    submitFailureToast?: string;
 }
 
 interface LauncherHandle {
@@ -169,6 +175,18 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
                 return values.get(selector) ?? editorText;
             }
             if (expression.includes('kk-weibo-cover')) return String(images);
+            if (expression.includes('kk-weibo-picid')) return options.picId ?? '';
+            if (expression.includes('kk-weibo-submit')) {
+                const api = options.apiSubmit ?? {};
+                calls.push(expression.includes('pic_id') ? 'submit:with-pic' : 'submit:no-pic');
+                if (options.submitFailureToast !== undefined) toasts.push(options.submitFailureToast);
+                const id = api.id ?? '';
+                return JSON.stringify({
+                    status: api.status ?? (id === '' ? 500 : 200),
+                    id,
+                    detail: id === '' ? (api.detail ?? '{"ok":0}') : '',
+                });
+            }
             if (expression.includes('kk-weibo-dialog')) return options.dialogText ?? '';
             if (expression.includes('kk-weibo-toasts')) return JSON.stringify(toasts);
             if (expression.includes('kk-weibo-feed')) return JSON.stringify(cards.map((card) => card.href));
@@ -462,65 +480,87 @@ describe('weibo-pub article flow (R2, R4)', () => {
     });
 });
 
-describe('weibo-pub post flow (R3, R4)', () => {
-    test('a public post fills the composer, sends, and requires a new card carrying the excerpt', async () => {
-        const fake = makeFakeLauncher({ onSend: 'feedCard' });
+describe('weibo-pub post flow (R3, R4, R9)', () => {
+    test('a public post fills the mobile composer and submits through the page api', async () => {
+        const fake = makeFakeLauncher({ apiSubmit: { id: '5001234567890' } });
         const result = await transport(fake, 'post').publish({ content: livePost });
 
         expect(result.ok).toBe(true);
-        expect(result.url).toBe(STATUS_URL);
-        expect(result.id).toBe('PabcDEF123');
+        expect(result.id).toBe('5001234567890');
+        expect(result.url).toBe('https://m.weibo.cn/detail/5001234567890');
         expect(fake.calls).toContain(`goto:${WEIBO_MOBILE_COMPOSE_URL}`);
         expect(fake.calls.some((call) => call.startsWith(`fill:${WEIBO_POST_SELECTORS.composer[0]}|Hello Weibo`))).toBe(
             true,
         );
-        expect(fake.calls.some((call) => call.startsWith(`click:${WEIBO_POST_SELECTORS.send[0]}`))).toBe(true);
+        expect(fake.calls).toContain('submit:no-pic');
     });
 
-    test('an existing feed card is never the outcome', async () => {
-        const fake = makeFakeLauncher({ onSend: 'none', existingFeed: [STATUS_URL] });
-        const result = await transport(fake, 'post').publish({ content: livePost });
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('weibo post');
-        expect(result.error).toContain('no outcome observed within');
-    });
-
-    test('a new card whose text does not carry the submitted excerpt is refused', async () => {
-        const fake = makeFakeLauncher({ onSend: 'feedCard', feedText: 'something else entirely' });
-        const result = await transport(fake, 'post').publish({ content: livePost });
-        expect(result.ok).toBe(false);
-    });
-
-    test('a blank body falls back to the title as the post text', async () => {
-        const fake = makeFakeLauncher({ onSend: 'feedCard' });
-        const result = await transport(fake, 'post').publish({
-            content: { body: '  ', title: 'Only a title', format: 'markdown', metadata: { publishStatus: 'public' } },
-        });
-        expect(result.ok).toBe(true);
-        expect(fake.calls.some((call) => call.includes('fill:') && call.includes('Only a title'))).toBe(true);
-    });
-
-    test('a public post with one cover image uploads it and requires the fresh attachment', async () => {
-        const fake = makeFakeLauncher({ onSend: 'feedCard' });
+    test('a one-image post uploads the cover and submits its pic id', async () => {
+        const fake = makeFakeLauncher({ apiSubmit: { id: '5001' }, picId: 'PIC123' });
         const result = await transport(fake, 'post').publish({ content: livePost, options: { coverPath: COVER_PATH } });
+
         expect(result.ok).toBe(true);
         expect(
             fake.calls.some((call) =>
                 call.startsWith(`setInputFiles:${WEIBO_POST_SELECTORS.fileInput[0]}|${COVER_PATH}`),
             ),
         ).toBe(true);
+        expect(fake.calls).toContain('submit:with-pic');
     });
 
-    test('the mobile composer navigating to the new status is the outcome', async () => {
-        const fake = makeFakeLauncher({ onSend: 'mobileUrl' });
+    test('an uploaded image whose id cannot be read is refused, never posted text-only', async () => {
+        const fake = makeFakeLauncher({ apiSubmit: { id: '5001' } });
+        const result = await transport(fake, 'post').publish({ content: livePost, options: { coverPath: COVER_PATH } });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('could not be read');
+        expect(fake.calls.some((call) => call.startsWith('submit:'))).toBe(false);
+    });
+
+    test("a refused submit reports the site's own bounded error", async () => {
+        const fake = makeFakeLauncher({
+            apiSubmit: { status: 403, detail: '{"ok":0,"msg":"\u9700\u8981\u9a8c\u8bc1"}' },
+        });
         const result = await transport(fake, 'post').publish({ content: livePost });
-        expect(result.ok).toBe(true);
-        expect(result.url).toBe(MOBILE_STATUS_URL);
-        expect(result.id).toBe('5001234567890');
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('mobile api refused');
+        expect(result.error).toContain('HTTP 403');
+    });
+
+    test("an account-state refusal names the site's errno, message and activation link", async () => {
+        const siteRefusal = JSON.stringify({
+            ok: 0,
+            errno: '200001',
+            msg: '\u60a8\u7684\u5fae\u535a\u8d26\u53f7\u5904\u4e8e\u5f02\u5e38\u72b6\u6001\uff0c\u8bf7\u7acb\u5373\u6fc0\u6d3b\u8d26\u53f7',
+            title: '\u8d26\u53f7\u5f02\u5e38',
+            btn: { text: '\u7acb\u5373\u6fc0\u6d3b', url: 'http://m.weibo.cn/security?callback=http' },
+        });
+        const fake = makeFakeLauncher({ apiSubmit: { status: 200, detail: siteRefusal } });
+        const result = await transport(fake, 'post').publish({ content: livePost });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('errno 200001');
+        expect(result.error).toContain('\u60a8\u7684\u5fae\u535a\u8d26\u53f7\u5904\u4e8e\u5f02\u5e38\u72b6\u6001');
+        expect(result.error).toContain('m.weibo.cn/security');
+    });
+
+    test('a failed submit reports the post-click diagnosis', async () => {
+        const fake = makeFakeLauncher({
+            apiSubmit: { status: 500, detail: 'boom' },
+            dialogText: '\u8bf7\u5148\u5b8c\u6210\u624b\u673a\u9a8c\u8bc1',
+            submitFailureToast: '\u53d1\u9001\u5931\u8d25',
+        });
+        const result = await transport(fake, 'post').publish({ content: livePost });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('composer ');
+        expect(result.error).toContain('\u8bf7\u5148\u5b8c\u6210\u624b\u673a\u9a8c\u8bc1');
+        expect(result.error).toContain('site said: \u53d1\u9001\u5931\u8d25');
     });
 
     test('more than one image, a non-image path and an oversized file are refused by name', async () => {
-        const fake = makeFakeLauncher({ onSend: 'feedCard' });
+        const fake = makeFakeLauncher({ apiSubmit: { id: '5001' } });
         const many = await transport(fake, 'post').publish({
             content: livePost,
             options: { images: [COVER_PATH, COVER_PATH] },
@@ -538,29 +578,16 @@ describe('weibo-pub post flow (R3, R4)', () => {
         const oversized = await transport(fake, 'post').publish({ content: livePost, options: { coverPath: big } });
         expect(oversized.ok).toBe(false);
         expect(oversized.error).toContain('MB');
-        // All three refuse before a browser exists.
         expect(fake.requests).toHaveLength(0);
     });
 
-    test('a failed send reports the post-click diagnosis', async () => {
-        const fake = makeFakeLauncher({
-            onSend: 'none',
-            dialogText: '请先完成手机验证',
-            sendFailureToast: '发送失败',
+    test('a blank body falls back to the title as the post text', async () => {
+        const fake = makeFakeLauncher({ apiSubmit: { id: '5001' } });
+        const result = await transport(fake, 'post').publish({
+            content: { body: '  ', title: 'Only a title', format: 'markdown', metadata: { publishStatus: 'public' } },
         });
-        const result = await transport(fake, 'post').publish({ content: livePost });
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('composer ');
-        expect(result.error).toContain('请先完成手机验证');
-        expect(result.error).toContain('site said: 发送失败');
-    });
-
-    test('a fresh failure toast is named when the send produces no card', async () => {
-        const fake = makeFakeLauncher({ onSend: 'none', sendFailureToast: '发送失败，请稍后重试' });
-        const result = await transport(fake, 'post').publish({ content: livePost });
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('no outcome observed within');
-        expect(result.error).toContain('site said: 发送失败');
+        expect(result.ok).toBe(true);
+        expect(fake.calls.some((call) => call.includes('fill:') && call.includes('Only a title'))).toBe(true);
     });
 });
 

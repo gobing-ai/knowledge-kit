@@ -46,6 +46,10 @@ rules:
       # threads-pub's index.ts implements PublishTransport (ThreadsPostApiTransport); the
       # transport class is the sanctioned HTTP boundary, exactly as for x-pub above.
       - "plugins/publishings/threads-pub/src/index.ts"
+      # weibo-pub's index.ts implements PublishTransport (WeiboBrowserTransport). Its `fetch(` lives in
+      # the page-context submit string (`kk-weibo-submit`) that posts the same request the mobile web
+      # app issues — the transport's own HTTP boundary, evaluated in the browser, not scattered logic.
+      - "plugins/publishings/weibo-pub/src/index.ts"
       # surfdash-pub's index.ts implements PublishTransport (PostsurfingFileCliTransport);
       # its awaitArticleLive poll is deploy-URL liveness verification at the boundary.
       - "plugins/publishings/surfdash-pub/src/index.ts"
