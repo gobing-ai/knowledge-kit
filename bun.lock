@@ -188,6 +188,17 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/generations/voxcpm-tts": {
+      "name": "@gobing-ai/voxcpm-tts",
+      "dependencies": {
+        "@gobing-ai/ts-utils": "catalog:",
+        "@gobing-ai/voice-gen": "workspace:*",
+      },
+      "devDependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/ingestions/aihot-ingest": {
       "name": "@gobing-ai/aihot-ingest",
       "dependencies": {
@@ -521,6 +532,8 @@
     "@gobing-ai/ts-utils": ["@gobing-ai/ts-utils@0.5.21", "", {}, "sha512-bSgpcK8z4LChZpFc3scWHwHy1VPu/m0t8YvVEbbezGjIQ2sKDTNBNRv/MkXcrhbR/mJ2gnCdM1zEyXTtjaouEA=="],
 
     "@gobing-ai/voice-gen": ["@gobing-ai/voice-gen@workspace:plugins/generations/voice-gen"],
+
+    "@gobing-ai/voxcpm-tts": ["@gobing-ai/voxcpm-tts@workspace:plugins/generations/voxcpm-tts"],
 
     "@gobing-ai/web-search": ["@gobing-ai/web-search@workspace:plugins/ingestions/web-search"],
 

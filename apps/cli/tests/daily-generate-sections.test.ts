@@ -31,6 +31,7 @@ if (process.env.KK_SHIM_CALL_INDEX_FILE) {
     writeFileSync(process.env.KK_SHIM_CALL_INDEX_FILE, String(callIndex + 1));
 }
 
+const plugin = args[2] ?? '';
 let inPath = '';
 let outPath = '';
 for (let i = 0; i < args.length; i++) {
@@ -55,19 +56,33 @@ if (failAt >= 0 && callIndex === failAt) {
 
 if (outPath) {
     const wavPath = outPath.replace(/\\.json$/, '.wav');
-    // Generate a clean 1s 24000Hz mono WAV
-    spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1:sample_rate=24000', '-c:a', 'pcm_s16le', '-ac', '1', wavPath]);
+    // Generate a clean 1s mono WAV; rate is overridable so the 24 kHz regression and the
+    // 0257 48 kHz native-rate join both run through the same harness.
+    const rate = process.env.KK_SHIM_SAMPLE_RATE ?? '24000';
+    spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1:sample_rate=' + rate, '-c:a', 'pcm_s16le', '-ac', '1', wavPath]);
     writeFileSync(outPath, JSON.stringify({
+        title: 'Section',
         body: '',
+        format: 'audio',
+        references: [],
         mediaType: 'audio/wav',
         audioPath: wavPath,
         metadata: {
+            // 0257 R2: section reuse requires the driving generator's identity, so the fake
+            // executor stamps the real provenance the driver would (kk:<plugin>).
+            generator: 'kk:' + plugin,
             audioPath: wavPath,
             duration: 1.0,
             // The real driver stamps one entry per spoken segment; the join must carry them into the
             // joined Content or podcast-pub's timeline renders 0:00 for every item.
             segments: [{ duration: 1.0, transcription: 'セクション' }],
-            qc: { passed: true }
+            qc: {
+                passed: true,
+                overallScore: 100,
+                totalDuration: 1.0,
+                segmentAudits: [{ segmentIndex: 0, duration: 1.0, passed: true }],
+                criticalIssues: []
+            }
         }
     }, null, 2));
 }
@@ -323,7 +338,10 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
 
             expect(Math.abs(joinedSamples - expectedSamples)).toBeLessThanOrEqual(1);
 
-            // Verify five-arg command compatibility (voice1 untouched, 1 call)
+            // Verify five-arg command compatibility (voice1 untouched, 1 call). The sectioned join
+            // left a valid QC-passing cache at the same path, so drop it to exercise the whole-
+            // document render path (0257 R2: a valid cache should otherwise be reused).
+            rmSync(contentFile, { force: true });
             rmSync(logFile, { force: true });
             const runVoice1 = runStage(['daily-generate', dir, date, '', '', 'voicebox'], binDir, logFile);
             expect(runVoice1.status).toBe(0);
@@ -609,6 +627,284 @@ describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 f
                 }
             ).metadata;
             expect(meta.mp3Path).toBeUndefined();
+        });
+    });
+});
+
+describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audio reuse', () => {
+    const contentPath = (dir: string, date: string): string =>
+        join(dir, '30-audio', `${date}_11_generate_content.json`);
+    const probeScalar = (file: string, entries: string): string =>
+        spawnSync(
+            'ffprobe',
+            ['-v', 'error', '-select_streams', 'a:0', '-show_entries', entries, '-of', 'csv=p=0', file],
+            {
+                encoding: 'utf-8',
+            },
+        ).stdout.trim();
+    const probeSamples = (file: string): number => parseInt(probeScalar(file, 'stream=duration_ts'), 10);
+
+    it('AC1 — whole-document vdriver=voxcpm renders voxcpm-tts with no Gemini probe', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const res = runStage(['daily-generate', dir, date, '', '', 'voxcpm'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            const starts = startEvents(logFile);
+            expect(starts).toHaveLength(1);
+            expect(starts[0]?.args).toContain('voxcpm-tts');
+            expect(starts[0]?.args).not.toContain('gemini-tts');
+            expect(res.stdout).not.toContain('gemini quota probe');
+            const meta = (
+                JSON.parse(readFileSync(contentPath(dir, date), 'utf-8')) as { metadata: Record<string, unknown> }
+            ).metadata;
+            expect(meta.generator).toBe('kk:voxcpm-tts');
+        });
+    });
+
+    it('AC1/R2 — a matching whole-document cache reuses without a probe; a missing MP3 is repaired with zero generator calls', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const first = runStage(['daily-generate', dir, date, '', 'true', 'voicebox'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            const contentFile = contentPath(dir, date);
+            const mp3Path = contentFile.replace(/\.json$/, '.mp3');
+            expect(existsSync(mp3Path)).toBe(true);
+
+            // Valid matching cache → reuse, 0 generator calls.
+            rmSync(logFile, { force: true });
+            const second = runStage(['daily-generate', dir, date, '', 'true', 'voicebox'], binDir, logFile);
+            expect(second.status, second.stderr).toBe(0);
+            expect(second.stdout).toContain('audio cached');
+            expect(existsSync(logFile)).toBe(false);
+
+            // Matching valid speech missing only the derivative → transcode, no resynthesis.
+            rmSync(mp3Path, { force: true });
+            const seeded = JSON.parse(readFileSync(contentFile, 'utf-8')) as { metadata: Record<string, unknown> };
+            seeded.metadata.mp3Path = '';
+            writeFileSync(contentFile, JSON.stringify(seeded));
+            rmSync(logFile, { force: true });
+            const third = runStage(['daily-generate', dir, date, '', 'true', 'voicebox'], binDir, logFile);
+            expect(third.status, third.stderr).toBe(0);
+            expect(third.stdout).toContain('wrote publish MP3');
+            expect(existsSync(logFile)).toBe(false); // zero generator calls
+            expect(existsSync(mp3Path)).toBe(true);
+        });
+    });
+
+    it('AC3 — foreign, legacy and corrupt whole-document caches regenerate', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const contentFile = contentPath(dir, date);
+            const wavPath = join(dir, '30-audio', 'cached.wav');
+            spawnSync('ffmpeg', [
+                '-y',
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-f',
+                'lavfi',
+                '-i',
+                'sine=frequency=700:duration=1:sample_rate=24000',
+                '-c:a',
+                'pcm_s16le',
+                '-ac',
+                '1',
+                wavPath,
+            ]);
+            const seed = (metadata: Record<string, unknown>) => {
+                writeFileSync(
+                    contentFile,
+                    JSON.stringify({ title: 'cached', body: '', format: 'audio', audioPath: wavPath, metadata }),
+                );
+                rmSync(logFile, { force: true });
+                const res = runStage(['daily-generate', dir, date, '', '', 'voicebox'], binDir, logFile);
+                expect(res.status, res.stderr).toBe(0);
+                expect(startEvents(logFile)).toHaveLength(1); // miss → one voice-gen render
+            };
+            // foreign driver identity
+            seed({ generator: 'kk:gemini-tts', audioPath: wavPath, duration: 1, qc: { passed: true } });
+            // legacy metadata without a generator
+            seed({ audioPath: wavPath, duration: 1, qc: { passed: true } });
+            // matching identity but a missing/corrupt WAV
+            seed({
+                generator: 'kk:voice-gen',
+                audioPath: join(dir, '30-audio', 'missing.wav'),
+                duration: 1,
+                qc: { passed: true },
+            });
+        });
+    });
+
+    it('AC2/R4 — 48 kHz sections join at 48 kHz with native sample counts and gaps', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const res = runStage(['daily-generate', dir, date, '', 'true', 'voxcpm', '1'], binDir, logFile, {
+                KK_SHIM_SAMPLE_RATE: '48000',
+            });
+            expect(res.status, res.stderr).toBe(0);
+            const final = JSON.parse(readFileSync(contentPath(dir, date), 'utf-8')) as {
+                audioPath: string;
+                metadata: Record<string, unknown>;
+            };
+            expect(final.metadata.generator).toBe('kk:voxcpm-tts');
+            expect(probeScalar(final.audioPath, 'stream=sample_rate')).toBe('48000');
+
+            const secDir = join(dir, '30-audio', 'sections', date);
+            const scriptYaml = Bun.YAML.parse(
+                readFileSync(join(dir, '24-script', `${date}_08_script_voicescript.yaml`), 'utf-8'),
+            ) as { segments: Array<{ gap_ms?: number }> };
+            let expectedSamples = 0;
+            for (let i = 0; i <= 7; i++) {
+                const role = i === 0 ? 'opening' : i === 7 ? 'closing' : 'item';
+                const stem = `${String(i).padStart(2, '0')}-${role}`;
+                expectedSamples += probeSamples(join(secDir, `${stem}.wav`));
+                if (i < 7) {
+                    const gapMs = i === 0 ? (scriptYaml.segments[0]?.gap_ms ?? 1200) : 1200;
+                    expectedSamples += Math.round(48000 * (gapMs / 1000));
+                }
+            }
+            expect(Math.abs(probeSamples(final.audioPath) - expectedSamples)).toBeLessThanOrEqual(1);
+            expect(final.metadata.segments).toHaveLength(8);
+            expect(existsSync(final.metadata.mp3Path as string)).toBe(true);
+        });
+    });
+
+    it('AC3 — a stale or foreign joined final is rejoint from cached sections with no model calls', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const first = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            const contentFile = contentPath(dir, date);
+            const readFinal = () =>
+                JSON.parse(readFileSync(contentFile, 'utf-8')) as { metadata: Record<string, unknown> };
+            expect((readFinal().metadata.sectionHashes as string[]).length).toBe(8);
+
+            // Sections stay valid; only the frozen join identity is stale.
+            const stale = readFinal();
+            stale.metadata.sectionHashes = [];
+            writeFileSync(contentFile, JSON.stringify(stale));
+            rmSync(logFile, { force: true });
+            const resumed = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile);
+            expect(resumed.status, resumed.stderr).toBe(0);
+            expect(existsSync(logFile)).toBe(false); // rejoined cached sections, no synthesis
+            expect((readFinal().metadata.sectionHashes as string[]).length).toBe(8);
+
+            // Foreign joined Content with matching section files must not early-return either.
+            const foreign = readFinal();
+            foreign.metadata.generator = 'kk:gemini-tts';
+            writeFileSync(contentFile, JSON.stringify(foreign));
+            rmSync(logFile, { force: true });
+            const fixed = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile);
+            expect(fixed.status, fixed.stderr).toBe(0);
+            expect(existsSync(logFile)).toBe(false);
+            expect(readFinal().metadata.generator).toBe('kk:voice-gen');
+        });
+    });
+
+    it('AC3 — matching valid sections with only the joined MP3 missing transcode once with zero generator calls', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const first = runStage(['daily-generate', dir, date, '', 'true', 'voicebox', '1'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            const contentFile = contentPath(dir, date);
+            const meta = (JSON.parse(readFileSync(contentFile, 'utf-8')) as { metadata: Record<string, unknown> })
+                .metadata;
+            const mp3Path = meta.mp3Path as string;
+            expect(existsSync(mp3Path)).toBe(true);
+
+            rmSync(mp3Path, { force: true });
+            rmSync(logFile, { force: true });
+            const second = runStage(['daily-generate', dir, date, '', 'true', 'voicebox', '1'], binDir, logFile);
+            expect(second.status, second.stderr).toBe(0);
+            expect(second.stdout).toContain('joined speech reused');
+            expect(existsSync(logFile)).toBe(false); // zero generator calls
+            expect(existsSync(mp3Path)).toBe(true);
+        });
+    });
+
+    it('AC2/AC3 — a fresh join rebuilds the ordered timeline and leaks no previous-run metadata', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const first = runStage(['daily-generate', dir, date, '', 'true', 'voicebox', '1'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            const contentFile = contentPath(dir, date);
+
+            // Poison the final with previous-run junk, then change one section's text to force a
+            // fresh join (that section's hash changes → it resynthesises).
+            const poisoned = JSON.parse(readFileSync(contentFile, 'utf-8')) as { metadata: Record<string, unknown> };
+            poisoned.metadata.generator = 'kk:gemini-tts';
+            poisoned.metadata.qc = { passed: false, criticalIssues: ['stale'] };
+            poisoned.metadata.mp3Path = '/nope.mp3';
+            poisoned.metadata.introMerged = true;
+            poisoned.metadata.segments = [{ duration: 999, transcription: 'STALE' }];
+            writeFileSync(contentFile, JSON.stringify(poisoned));
+
+            const yamlPath = join(dir, '24-script', `${date}_08_script_voicescript.yaml`);
+            const vs = Bun.YAML.parse(readFileSync(yamlPath, 'utf-8')) as { segments: Array<{ text: string }> };
+            vs.segments[3]!.text = '修改后的简短内容。';
+            writeFileSync(yamlPath, Bun.YAML.stringify(vs));
+
+            rmSync(logFile, { force: true });
+            const second = runStage(['daily-generate', dir, date, '', 'true', 'voicebox', '1'], binDir, logFile);
+            expect(second.status, second.stderr).toBe(0);
+            expect(startEvents(logFile)).toHaveLength(1); // only the changed section
+
+            const final = JSON.parse(readFileSync(contentFile, 'utf-8')) as { metadata: Record<string, unknown> };
+            expect(final.metadata.generator).toBe('kk:voice-gen');
+            expect(final.metadata.introMerged).toBeUndefined();
+            expect((final.metadata.qc as { passed: boolean }).passed).toBe(true);
+            const segments = final.metadata.segments as Array<{ duration?: number; transcription?: string }>;
+            expect(segments).toHaveLength(8);
+            expect(segments.every((s) => typeof s.duration === 'number')).toBe(true);
+            expect(segments.some((s) => s.transcription === 'STALE')).toBe(false);
+            expect(final.metadata.mp3Path).not.toBe('/nope.mp3');
+            expect(existsSync(final.metadata.mp3Path as string)).toBe(true);
+            expect((final.metadata.sectionHashes as string[]).length).toBe(8);
+        });
+    });
+
+    it('AC2 — daily-intro merges the joined output and daily-episode-duration reads the merged length', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const gen = runStage(['daily-generate', dir, date, '', 'true', 'voicebox', '1'], binDir, logFile);
+            expect(gen.status, gen.stderr).toBe(0);
+            const contentFile = contentPath(dir, date);
+            const readMeta = () =>
+                (JSON.parse(readFileSync(contentFile, 'utf-8')) as { metadata: Record<string, unknown> }).metadata;
+            const before = readMeta();
+            expect(typeof before.mp3Path).toBe('string');
+
+            const introPath = join(dir, 'intro.wav');
+            spawnSync('ffmpeg', [
+                '-y',
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-f',
+                'lavfi',
+                '-i',
+                'sine=frequency=330:duration=0.5:sample_rate=24000',
+                '-c:a',
+                'pcm_s16le',
+                '-ac',
+                '1',
+                introPath,
+            ]);
+            const intro = runStage(['daily-intro', dir, date, introPath], binDir, logFile);
+            expect(intro.status, intro.stderr).toBe(0);
+            const after = readMeta();
+            expect(after.introMerged).toBe(true);
+            expect((after.audioPath as string).endsWith('.intro.wav')).toBe(true);
+            expect(existsSync(after.audioPath as string)).toBe(true);
+            expect(after.duration as number).toBeGreaterThan(before.duration as number);
+            // the publish MP3 is re-transcoded from the merged audio at the same recorded path
+            expect(after.mp3Path).toBe(before.mp3Path);
+            expect(existsSync(after.mp3Path as string)).toBe(true);
+
+            // the duration gate consumes the merged metadata: an ~8.5 s episode is under the floor
+            const dur = runStage(['daily-episode-duration', dir, date, '15', '20'], binDir, logFile);
+            expect(dur.status).not.toBe(0);
+            expect(dur.stderr + dur.stdout).toContain('below the 15');
         });
     });
 });

@@ -83,6 +83,10 @@ rules:
             # (survives plugin exit) — vendor-app transport by contract, same
             # class as the file-cli/ffmpeg entries above.
             - "plugins/generations/voice-gen/src/voicebox-server.ts"
+            # VoxCPM TTS adapter owns a long-lived `uv run` NDJSON worker: streaming
+            # stdin/stdout + process-group teardown (SIGTERM/SIGKILL), not expressible
+            # with a one-shot ProcessExecutor — same class as voicebox-server/workflow.ts.
+            - "plugins/generations/voxcpm-tts/src/voxcpm-client.ts"
 
   - id: no-direct-fs-io
     description: "File IO must go through @gobing-ai/ts-runtime's FileSystem seam (createNodeFileSystem). Sync-structural sites are allowlisted below."
@@ -150,6 +154,11 @@ rules:
             # — the seam is text-only and cannot produce an fd (same fd-transport class
             # as podcast-pub binary bytes).
             - "plugins/generations/voice-gen/src/voicebox-server.ts"
+            # VoxCPM TTS adapter reads binary worker WAV buffers and does sync
+            # realpath/existsSync vendor-exclusion probes plus a scratch mkdtemp —
+            # the FileSystem seam is text-only (cannot produce bytes), same
+            # binary-audio class as voice-gen/podcast-pub.
+            - "plugins/generations/voxcpm-tts/src/voxcpm-client.ts"
             # publish-harness profile-dir guard (0214): owner-only (0o700) mkdir of a
             # browser profile that holds session cookies; the ts-runtime ensureDir seam
             # takes no mode. Mirrors ts-browser-automation's own sanctioned launcher exception.

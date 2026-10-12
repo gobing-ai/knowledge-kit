@@ -573,6 +573,110 @@ function ensurePublishMp3(contentPath: string, transcodeMp3: string): void {
     console.log(`generate: wrote publish MP3 ${mp3Path}`);
 }
 
+/** ffprobe one audio attribute; empty string when the file is absent/unreadable. */
+function probeAudio(file: string, entries: string): string {
+    return (
+        spawnSync('ffprobe', [
+            '-v',
+            'error',
+            '-select_streams',
+            'a:0',
+            '-show_entries',
+            entries,
+            '-of',
+            'csv=p=0',
+            file,
+        ])
+            .stdout?.toString()
+            .trim() ?? ''
+    );
+}
+
+/** A playable local audio artifact: present, positive native sample rate and positive duration. */
+function validNativeAudio(path: unknown): boolean {
+    if (typeof path !== 'string' || path === '' || !existsSync(resolve(path))) return false;
+    const rate = Number.parseFloat(probeAudio(resolve(path), 'stream=sample_rate'));
+    const duration = Number.parseFloat(probeAudio(resolve(path), 'format=duration'));
+    return Number.isFinite(rate) && rate > 0 && Number.isFinite(duration) && duration > 0;
+}
+
+/**
+ * Whole-document speech cache hit (0105 R2 / 0257 R2): the recorded Content must carry THIS run's
+ * generator identity (`kk:<plugin>`), a passing QC report and a playable native-rate WAV. Foreign,
+ * legacy or corrupt output is a miss — never relabel another driver's audio. A valid cache missing
+ * only the requested MP3 is repaired in place from the already-rendered speech (no resynthesis).
+ */
+function wholeDocCache(contentPath: string, plugin: string, transcodeMp3: string): boolean {
+    const content = readJson(contentPath);
+    if (content === null) return false;
+    const meta = metadataOf(content);
+    const qc = meta.qc as Record<string, unknown> | undefined;
+    if (meta.generator !== `kk:${plugin}`) return false;
+    if (qc?.passed === true && validNativeAudio(meta.audioPath)) {
+        ensurePublishMp3(contentPath, transcodeMp3);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Joined-final cache identity (0257 R3): exact ordered `metadata.sectionHashes` equality, matching
+ * generator, passing QC and a playable WAV. A stale or legacy final is a miss even when every
+ * section still hits — the caller rejoins the cached sections without model calls. The requested
+ * MP3 is repaired from the valid joined WAV; a failed derivative fails loud.
+ */
+function joinedFinalFresh(contentPath: string, plugin: string, hashes: string[], transcodeMp3: string): boolean {
+    const content = readJson(contentPath);
+    if (content === null) return false;
+    const meta = metadataOf(content);
+    if (meta.generator !== `kk:${plugin}`) return false;
+    const frozen = meta.sectionHashes;
+    if (!Array.isArray(frozen) || frozen.length !== hashes.length || !frozen.every((h, i) => h === hashes[i])) {
+        return false;
+    }
+    const qc = meta.qc as Record<string, unknown> | undefined;
+    if (qc?.passed !== true || !validNativeAudio(meta.audioPath)) return false;
+    ensurePublishMp3(contentPath, transcodeMp3);
+    return true;
+}
+
+/**
+ * Aggregate the current sections' QC into the shared VoiceQualityReport names (0257 R3): passed
+ * iff every section passed; overallScore is the minimum when every section reports a finite one
+ * (absent evidence stays unavailable, never an invented zero); segmentAudits are concatenated with
+ * globally ordered segmentIndex; criticalIssues are flattened with section labels.
+ */
+function aggregateSectionQc(
+    plans: Array<{ def: { name: string }; jsonPath: string }>,
+    totalDuration: number,
+): Record<string, unknown> {
+    const segmentAudits: Array<Record<string, unknown>> = [];
+    const criticalIssues: string[] = [];
+    const scores: number[] = [];
+    let allPassed = true;
+    let allScored = true;
+    for (const plan of plans) {
+        const report = metadataOf(readJson(plan.jsonPath)).qc;
+        const qc = report !== null && typeof report === 'object' ? (report as Record<string, unknown>) : {};
+        if (qc.passed !== true) allPassed = false;
+        if (typeof qc.overallScore === 'number' && Number.isFinite(qc.overallScore)) scores.push(qc.overallScore);
+        else allScored = false;
+        if (Array.isArray(qc.segmentAudits)) {
+            for (const audit of qc.segmentAudits) {
+                if (audit !== null && typeof audit === 'object') {
+                    segmentAudits.push({ ...(audit as Record<string, unknown>), segmentIndex: segmentAudits.length });
+                }
+            }
+        }
+        if (Array.isArray(qc.criticalIssues)) {
+            for (const issue of qc.criticalIssues) criticalIssues.push(`${plan.def.name}: ${String(issue)}`);
+        }
+    }
+    const aggregate: Record<string, unknown> = { passed: allPassed, totalDuration, segmentAudits, criticalIssues };
+    if (allScored && scores.length > 0) aggregate.overallScore = Math.min(...scores);
+    return aggregate;
+}
+
 export function dailyGenerate(args: string[]): void {
     const [
         workDir = '',
@@ -589,6 +693,7 @@ export function dailyGenerate(args: string[]): void {
         ominivoice: 'omni-voice-gen',
         voicebox: 'voice-gen',
         gemini: 'gemini-tts',
+        voxcpm: 'voxcpm-tts',
     };
     let voiceGenerator = VOICE_DRIVERS[vdriver];
     if (!voiceGenerator) {
@@ -607,13 +712,9 @@ export function dailyGenerate(args: string[]): void {
 
     if (!sectionConcurrency) {
         timed(workDir, 'generate', () => {
-            if (isFile(content) && metadataOf(readJson(content)).qc !== undefined) {
-                const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
-                if (qc?.passed === true) {
-                    console.log(`audio cached: ${content} (QC passed)`);
-                    ensurePublishMp3(content, transcodeMp3);
-                    return;
-                }
+            if (wholeDocCache(content, voiceGenerator, transcodeMp3)) {
+                console.log(`audio cached: ${content} (QC passed)`);
+                return;
             }
             // Gemini quota probe (20261006): the 06:00 cron hit gemini-3.8-flash-tts 429 with a
             // multi-hour retry-after after the shared key's window drained overnight. One tiny
@@ -627,6 +728,13 @@ export function dailyGenerate(args: string[]): void {
                     !geminiQuotaProbeOk(workDir, pluginsPath, transcodeMp3, [{ ...docsList[0], body: 'Hello.' }])
                 ) {
                     voiceGenerator = VOICE_DRIVERS.voicebox;
+                    // The fallback driver's own cache may already hold this episode (0257 R2) —
+                    // reuse it instead of paying for a second local render. VoxCPM never probes
+                    // Gemini and never falls back, so this branch is Gemini-only.
+                    if (wholeDocCache(content, voiceGenerator, transcodeMp3)) {
+                        console.log(`audio cached: ${content} (QC passed)`);
+                        return;
+                    }
                 }
             }
             kk(voiceExecutorArgs(voiceGenerator, docs, content, pluginsPath), {
@@ -757,6 +865,8 @@ export function dailyGenerate(args: string[]): void {
         // 4645 / 789.9 s of section speech = 5.88 — a 5.3–5.9 range, so 5.4 deliberately errs low (a
         // slightly early refusal is cheaper than a rendered episode the duration gate then rejects).
         // voice-gen: 20261006 6376 / 1135 = 5.62. A 20-minute ceiling is therefore ~6400 characters.
+        // VoxCPM (voxcpm-tts) shares the 5.6 voicebox estimate — PROVISIONAL: no measured VoxCPM
+        // episode exists yet (0258 supplies the evidence); the measured duration stays authoritative.
         // The style sidecar's 3.3 / 6.3 figures are stale and mutually inconsistent with its own
         // 4300–5800 字 budget (which is 13–29 min at 3.3); using them refused a script that really
         // renders in 17 min. Recalibrate from a fresh pair of `metadata.duration` readings when a
@@ -802,7 +912,16 @@ export function dailyGenerate(args: string[]): void {
                     try {
                         const sidecar = readJson(jsonPath) as Record<string, unknown>;
                         const sidecarMeta = metadataOf(sidecar) as Record<string, unknown>;
-                        if (sidecar.hash === hash || sidecarMeta.hash === hash) {
+                        const sidecarQc = sidecarMeta.qc as Record<string, unknown> | undefined;
+                        // A completed section is reusable only when its provenance, QC and audio
+                        // all belong to this driver/text/profile — a foreign or half-written
+                        // sidecar re-renders (0257 R2). The hash already folds in the driver.
+                        if (
+                            (sidecar.hash === hash || sidecarMeta.hash === hash) &&
+                            sidecarMeta.generator === `kk:${driver}` &&
+                            sidecarQc?.passed === true &&
+                            validNativeAudio(wavPath)
+                        ) {
                             cached = true;
                         }
                     } catch {}
@@ -820,9 +939,19 @@ export function dailyGenerate(args: string[]): void {
         let plans = computePlans(voiceGenerator);
         const anySynthesisNeeded = plans.some((p) => p.needsSynthesis);
 
-        if (!anySynthesisNeeded && existsSync(joinedWavPath) && existsSync(joinedContentPath)) {
+        // All sections hit, but the joined final is reusable only when its frozen identity matches
+        // this run's ordered section hashes (0257 R3). A stale or legacy final — e.g. a previous
+        // join failed — falls through and rejoins the cached sections below, with no model calls.
+        if (
+            !anySynthesisNeeded &&
+            joinedFinalFresh(
+                joinedContentPath,
+                voiceGenerator,
+                plans.map((p) => p.hash),
+                transcodeMp3,
+            )
+        ) {
             console.log('generate: all sections cached, joined speech reused');
-            ensurePublishMp3(joinedContentPath, transcodeMp3);
             return;
         }
 
@@ -930,21 +1059,15 @@ export function dailyGenerate(args: string[]): void {
         }
 
         const joinedDuration = Number.parseFloat(probeHelper(joinedWavPath, 'format=duration'));
-
-        let contentObj: Record<string, unknown> = {};
-        if (existsSync(joinedContentPath)) {
-            try {
-                contentObj = readJson(joinedContentPath) as Record<string, unknown>;
-            } catch {}
+        if (!validNativeAudio(joinedWavPath) || !Number.isFinite(joinedDuration)) {
+            failWith(1, `generate: joined audio is not a playable native-rate WAV: ${joinedWavPath}`);
         }
-        const meta = (contentObj.metadata ?? {}) as Record<string, unknown>;
-        delete meta.introMerged;
-        meta.audioPath = joinedWavPath;
-        meta.duration = joinedDuration;
+
         // podcast-pub renders the show-notes timeline from `metadata.segments[]` (per-segment
         // duration + ASR transcription). The one-shot path receives them from the voice plugin, but
         // this sectioned path synthesizes one sidecar per section and dropped them at the join — every
-        // timeline row rendered 0:00 (2026-10-11). Rebuild the list in section order.
+        // timeline row rendered 0:00 (2026-10-11). Rebuild the list in section order from the CURRENT
+        // sidecars, never inherit the previous final's list (0257 R3).
         const joinedSegments: Array<Record<string, unknown>> = [];
         for (const plan of plans) {
             const sectionSegments = metadataOf(readJson(plan.jsonPath)).segments;
@@ -952,12 +1075,36 @@ export function dailyGenerate(args: string[]): void {
                 joinedSegments.push(...(sectionSegments as Array<Record<string, unknown>>));
             }
         }
-        if (joinedSegments.length > 0) meta.segments = joinedSegments;
-        contentObj.audioPath = joinedWavPath;
-        contentObj.mediaType = 'audio/wav';
-        contentObj.metadata = meta;
+        // Rebuild the Content envelope from the current script/sections. The previous final's
+        // generator/QC/mp3Path/sectionHashes must never survive a fresh join, and mp3Path is
+        // deliberately absent so ensurePublishMp3 regenerates the requested derivative (0257 R3).
+        const baseMeta: Record<string, unknown> = {
+            generator: `kk:${voiceGenerator}`,
+            audioPath: joinedWavPath,
+            duration: joinedDuration,
+        };
+        if (joinedSegments.length > 0) baseMeta.segments = joinedSegments;
+        const contentObj: Record<string, unknown> = {
+            title: typeof script.title === 'string' && script.title !== '' ? script.title : 'Daily AI News',
+            body: scriptRaw,
+            format: 'audio',
+            references: [],
+            audioPath: joinedWavPath,
+            mediaType: 'audio/wav',
+            metadata: baseMeta,
+        };
         writeJsonText(joinedContentPath, contentObj);
+        // Transcode the requested MP3 before any success claim is written: a failed conversion
+        // fails loud with no qc.passed on disk, so the next run rejoins the cached sections rather
+        // than trusting a broken final (0257 R3).
         ensurePublishMp3(joinedContentPath, transcodeMp3);
+        // Join and derivative are proven; only now record the frozen identity and aggregated QC.
+        const finalized = readJson(joinedContentPath) ?? contentObj;
+        const finalMeta = metadataOf(finalized);
+        finalMeta.qc = aggregateSectionQc(plans, joinedDuration);
+        finalMeta.sectionHashes = plans.map((p) => p.hash);
+        finalized.metadata = finalMeta;
+        writeJsonText(joinedContentPath, finalized);
     });
 }
 
@@ -1776,7 +1923,7 @@ function voicescriptToBlockYaml(script: Record<string, unknown>): string {
     return lines.join('\n');
 }
 
-/** Measured driver rates from dailyGenerate. Unknown drivers use the voicebox rate. */
+/** Measured driver rates from dailyGenerate. Unknown drivers (incl. voxcpm, provisionally) use the voicebox rate. */
 function spokenCharRate(vdriver: string): number {
     return vdriver === 'gemini' ? 5.4 : 5.6;
 }

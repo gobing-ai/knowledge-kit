@@ -22,8 +22,9 @@ vars:
   window: "24h"
   language: "zh"
   voice_profile: "robin-news"
-  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts).
-  # Same default as kk-daily-ai-voice: gemini-tts (20260929 operator override, verified live).
+  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts)
+  # | voxcpm (voxcpm-tts, opt-in; ADR-036; provisional 5.6 字/秒 estimate). Same default as
+  # kk-daily-ai-voice: gemini-tts (20260929 operator override, verified live).
   vdriver: "gemini"
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   surfdash_root: "/Users/robin/xprojects/surfdash"
@@ -509,7 +510,7 @@ nodes:
           kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
-    description: "Invoke the voice driver plugin (vdriver: gemini -> gemini-tts) to generate the audio"
+    description: "Invoke the voice driver plugin (vdriver: gemini -> gemini-tts, voxcpm -> voxcpm-tts) to generate the audio"
     # wrap-docs is a data dependency, not a sibling: daily-generate reads its _10_wrap-docs_docs.json
     # as the TTS input. Without this edge the two nodes race in the same wave (0212 dogfood finding).
     dependsOn: [script, safety, review, wrap-docs]

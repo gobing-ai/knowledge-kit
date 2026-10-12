@@ -121,8 +121,12 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         expect(yaml).toContain(`\${vars.run_date}_06_article-write_body.md`);
         expect(yaml).toContain(`\${vars.run_date}_08_script_voicescript.yaml`);
         expect(yaml).toContain(`\${vars.run_date}_07_cover_cover.png`);
-        // Audio is cached when the day's content.json exists and QC passed (daily-generate).
+        // Audio is cached when the day's content.json exists and QC passed for THIS driver
+        // (daily-generate; 0257 R2 adds the generator identity check).
         expect(runnerSource).toContain('qc?.passed === true');
+        expect(runnerSource).toContain("voxcpm: 'voxcpm-tts'");
+        // 0257 R1: both workflows document the opt-in voxcpm alias without changing the default.
+        expect(yaml).toContain('voxcpm (voxcpm-tts');
         // Publish fan-out shells into postsurfing's own spur workflow — the runner unsets both
         // async-launcher vars (run-active guard + digest binding) at the nested-spur boundary.
         expect(runnerSource).toContain('const NESTED_SPUR_UNSET = [');
@@ -469,6 +473,7 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
             [undefined, true],
             ['ominivoice', true],
             ['gemini', true],
+            ['voxcpm', true],
             [undefined, false],
         ] as const) {
             const testRoot = mkdtempSync(join(tmpdir(), 'kk-daily-ai-voice-'));
@@ -609,7 +614,7 @@ if (plugin === 'aihot-ingest') {
         body,
         format: 'markdown',
     }));
-} else if (plugin === 'voice-gen') {
+} else if (plugin === 'voice-gen' || plugin === 'voxcpm-tts') {
     readFileSync(inPath, 'utf8');
     const wavPath = join(dirname(outPath), 'content.wav');
     writeWav(wavPath);
@@ -617,8 +622,9 @@ if (plugin === 'aihot-ingest') {
         title: 'Daily AI News',
         body: wavPath,
         format: 'audio',
-        // The real voice plugins stamp the probed audio length; the duration gate reads it.
-        metadata: { audioPath: wavPath, duration: 1080, qc },
+        // The real voice plugins stamp the probed audio length and their own generator identity;
+        // the duration gate reads the length and 0257 the identity.
+        metadata: { audioPath: wavPath, duration: 1080, generator: 'kk:' + plugin, qc },
     }));
 } else if (plugin === 'omni-voice-gen') {
     readFileSync(inPath, 'utf8');
@@ -724,6 +730,7 @@ if (plugin === 'aihot-ingest') {
                     ominivoice: 'kk:omni-voice-gen',
                     gemini: 'kk:gemini-tts',
                     voicebox: 'kk:voice-gen',
+                    voxcpm: 'kk:voxcpm-tts',
                 };
                 const generator = typeof vdriver === 'string' ? generatorByDriver[vdriver] : generatorByDriver.gemini;
                 expect(generated.metadata.generator).toBe(generator);
@@ -749,8 +756,17 @@ if (plugin === 'aihot-ingest') {
                     // The gemini driver invokes gemini-tts TWICE by design since 7fd290b4: a one-off
                     // quota probe render runs before the episode (any probe failure flips the run to
                     // the keyless voicebox driver), and both invocations reach the plugin.
-                    ...(vdriver === 'ominivoice' ? ['omni-voice-gen'] : ['gemini-tts', 'gemini-tts']),
+                    ...(vdriver === 'ominivoice'
+                        ? ['omni-voice-gen']
+                        : vdriver === 'voxcpm'
+                          ? ['voxcpm-tts']
+                          : ['gemini-tts', 'gemini-tts']),
                 ]);
+                // 0257 AC1: VoxCPM never probes Gemini and never falls back to another voice.
+                if (vdriver === 'voxcpm') {
+                    expect(result.stdout.toString()).not.toContain('gemini quota probe');
+                    expect(calls.map((call) => call.plugin)).not.toContain('gemini-tts');
+                }
                 // 0097: plan run then QC filter run — the filter rides EPISODE_PLAN_MODE because
                 // kk executor run forwards only --in/--out (0092 spawn contract).
                 expect(calls.filter((call) => call.plugin === 'episode-plan-gen').map((call) => call.mode)).toEqual([
@@ -785,9 +801,10 @@ if (plugin === 'aihot-ingest') {
                 rmSync(testRoot, { recursive: true, force: true });
             }
         }
-        // 4 real workflow executions (spur engine + bun subprocesses per state): the old 30s
-        // budget tripped under load (30985ms timeout flake). 160s leaves headroom for the gemini row.
-    }, 160_000);
+        // 5 real workflow executions (spur engine + bun subprocesses per state): the old 30s
+        // budget tripped under load (30985ms timeout flake). 160s covered 4 rows; the 0257 voxcpm
+        // row adds one more, so the budget scales.
+    }, 220_000);
 
     // --- 0128 R3: the flattening enumeration ---------------------------------
 

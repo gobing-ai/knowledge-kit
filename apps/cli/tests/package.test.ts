@@ -23,6 +23,13 @@ describe('package publish metadata (R1/R2)', () => {
         for (const bin of Object.values(pkg.bin)) {
             expect(existsSync(join(pkgDir, bin))).toBe(true);
         }
+        // 0256: the voxcpm-tts uv worker + project assets ship as copied assets beside the
+        // bundled dist entry, and resolve outside the checkout.
+        const voxcpmDir = join(pkgDir, 'plugins', 'generations', 'voxcpm-tts');
+        expect(existsSync(join(voxcpmDir, 'dist', 'index.js'))).toBe(true);
+        for (const asset of ['python/worker.py', 'pyproject.toml', 'uv.lock', 'profiles.json']) {
+            expect(existsSync(join(voxcpmDir, asset)), asset).toBe(true);
+        }
         // 0111: staged product plugins must not carry checkout-bound node_modules.
         for (const collection of ['ingestions', 'generations', 'publishings'] as const) {
             const collectionDir = join(pkgDir, 'plugins', collection);

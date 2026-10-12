@@ -162,6 +162,16 @@ describe('bundle-plugins EXCLUDE (0111)', () => {
             ) as { entry: string };
             expect(stagedManifest.entry).toBe('./dist/index.js');
             expect(existsSync(join(pluginTarget, 'publishings', 'podcast-pub', 'plugin.json'))).toBe(true);
+            // 0256: the voxcpm-tts uv worker + project assets are copied assets (never bundled),
+            // while its manifest entry bundles to dist/index.js like every other generator.
+            const voxcpmDir = join(pluginTarget, 'generations', 'voxcpm-tts');
+            expect(existsSync(join(voxcpmDir, 'dist', 'index.js'))).toBe(true);
+            for (const asset of ['python/worker.py', 'pyproject.toml', 'uv.lock', 'profiles.json']) {
+                expect(existsSync(join(voxcpmDir, asset)), asset).toBe(true);
+            }
+            expect((JSON.parse(readFileSync(join(voxcpmDir, 'plugin.json'), 'utf-8')) as { entry: string }).entry).toBe(
+                './dist/index.js',
+            );
             for (const collection of ['ingestions', 'generations', 'publishings'] as const) {
                 const collectionDir = join(pluginTarget, collection);
                 if (!existsSync(collectionDir)) {

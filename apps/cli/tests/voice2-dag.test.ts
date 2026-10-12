@@ -19,7 +19,9 @@
  *    must not exist — one action per node, `kk`/`agent.run`/`file.read.into-var` only;
  * 8. anything that writes vars after the first fan-out (`setVars`) would be last-writer-wins across
  *    concurrent nodes, so the head chain is the only var-projecting part and there is none later;
- * 9. `kk-daily-ai-voice.yaml` must stay byte-identical (the DAG supersedes it without editing it).
+ * 9. `kk-daily-ai-voice.yaml` must stay behaviourally identical — the DAG supersedes it without
+ *    editing it. 0257 R4 documents the opt-in `voxcpm` alias in both workflows, so documentation
+ *    (comments and `description:` scalars) may change; any state/command/edge edit still fails.
  *
  * The DAG runs for real against a PATH `kk` shim that records every call, composes the workspace,
  * and returns fixture pools — plus the real `kk store pool-count` / `kk store extract` conditions and
@@ -553,7 +555,7 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
 
     it('threads the 0236 发播客 follow-up arg into the voice2 daily-publish-xhs call only', () => {
         const yaml = readFileSync(WORKFLOW, 'utf-8');
-        // voice2 asks for the episode's 发播客 note in the same visit; voice1 (byte-identical,
+        // voice2 asks for the episode's 发播客 note in the same visit; voice1 (behaviourally identical,
         // asserted below) passes no fifth arg, so its packaged note is untouched.
         expect(yaml).toContain(
             `kk stage daily-publish-xhs "${'$'}{vars.work_dir}" "${'$'}{vars.run_date}" "${'$'}{vars.plugins_path}" "${'$'}{vars.xhs_live}" "true"`,
@@ -585,15 +587,19 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(input.length).toBeLessThanOrEqual(1000);
     });
 
-    it('leaves kk-daily-ai-voice.yaml byte-identical (R1)', () => {
+    it('leaves kk-daily-ai-voice.yaml behaviourally identical (R1; 0257 allows docs-only edits)', () => {
         expect(existsSync(VOICE1)).toBe(true);
-        const diff = Bun.spawnSync(
-            ['git', 'diff', '--exit-code', '--', 'plugins/kk/workflows/kk-daily-ai-voice.yaml'],
-            {
-                cwd: REPO,
-            },
-        );
-        expect(diff.exitCode, `kk-daily-ai-voice.yaml changed:\n${diff.stdout.toString()}`).toBe(0);
+        const diff = Bun.spawnSync(['git', 'diff', '--', 'plugins/kk/workflows/kk-daily-ai-voice.yaml'], {
+            cwd: REPO,
+        });
+        // Only comments and `description:` scalars may differ. A changed state id, command, edge,
+        // var default or condition line still fails here — the behaviour is what R1 froze.
+        const changed = diff.stdout
+            .toString()
+            .split('\n')
+            .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line));
+        const behavioural = changed.filter((line) => !/^[+-]\s*#/.test(line) && !/^[+-]\s*description:/.test(line));
+        expect(behavioural, `kk-daily-ai-voice.yaml changed beyond docs:\n${diff.stdout.toString()}`).toEqual([]);
     });
 });
 

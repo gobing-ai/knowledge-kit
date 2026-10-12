@@ -21,7 +21,9 @@ vars:
   limit: "10"
   language: "zh"
   voice_profile: "robin-news"
-  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts).
+  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts)
+  # | voxcpm (voxcpm-tts, opt-in; ADR-036). VoxCPM never probes Gemini and never falls back; its
+  # 5.6 字/秒 spoken-rate estimate is PROVISIONAL until 0258 measures a real render.
   # 20260917 introduced the switch; 20260920 flipped default to voicebox after an operator A/B;
   # 20260929 operator override: gemini-tts is the default again (verified live on this machine —
   # robin-news replicated profile, GEMINI_API_KEY + GEMINI_TTS_MODEL via ~/.config/kk/config.yaml
@@ -400,7 +402,7 @@ states:
             kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
-    description: "Invoke voice driver plugin (vdriver var: ominivoice -> omni-voice-gen, voicebox -> voice-gen, gemini -> gemini-tts) to generate audio"
+    description: "Invoke voice driver plugin (vdriver var: ominivoice -> omni-voice-gen, voicebox -> voice-gen, gemini -> gemini-tts, voxcpm -> voxcpm-tts) to generate audio"
     onEnter:
       - kind: shell
         options:

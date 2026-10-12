@@ -298,7 +298,7 @@ Capture is local preparation, not an HTTP mutation. Validate name against the th
 run IDs are single safe path segments; stamps accept only alphanumeric, dash, underscore and T/Z.
 Settings arrive as repeatable strings and are parsed/validated against each workflow's allowlist;
 Collect captures `limit` and `horizon_hours` as nonnegative integers. Daily captures `window`
-(duration), `language` (en/zh/ja), `vdriver` (voicebox/ominivoice/gemini), boolean keys
+(duration), `language` (en/zh/ja), `vdriver` (voicebox/ominivoice/gemini/voxcpm), boolean keys
 `skip_review,transcode_mp3,cover_enabled,xhs_enabled,xhs_live,wechat_enabled,wechat_live,
 plan_translate_enabled,article_write_enabled,script_write_enabled,publish_enabled`, and numeric
 keys `xhs_cards,plan_max_items,safety_max_revise,qc_min_quality,qc_min_importance,qc_min_urgency,

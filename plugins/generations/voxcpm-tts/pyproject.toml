@@ -1,0 +1,9 @@
+[project]
+name = "voxcpm-tts"
+version = "1.0.0"
+description = "VoxCPM-backed voice generator worker for knowledge-kit (independent uv project)"
+requires-python = "==3.12.*"
+dependencies = ["voxcpm==2.0.3"]
+
+[dependency-groups]
+dev = ["pytest"]

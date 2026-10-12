@@ -67,7 +67,7 @@
         ├── [verifying] **G11**: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over ([G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md](./G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md))
         ├── [done] **G12**: XHS notes for 每日AI乱炖: 上传图文 and single-episode 发播客 ([G12_xhs-notes-for-ai-and-single-episode.md](./G12_xhs-notes-for-ai-and-single-episode.md))
         ├── [active] **G13**: Segmented episode speech for daily voice2 ([G13_segmented-episode-speech-for-daily-voice2.md](./G13_segmented-episode-speech-for-daily-voice2.md))
-        └── [backlog] **G14**: VoxCPM voice driver for both daily AI voice workflows ([G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md](./G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md))
+        └── [active] **G14**: VoxCPM voice driver for both daily AI voice workflows ([G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md](./G14_voxcpm-voice-driver-for-both-daily-ai-voice-workflows.md))
     ├── [done] **G2**: kk-itc ([G2_kk-itc.md](./G2_kk-itc.md))
     ├── [backlog] **G3**: kk-collect ([G3_kk-collect.md](./G3_kk-collect.md))
         ├── [done] **G31**: kk-collect: SQLite store, 4h collection, decision labels, topic extraction ([G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md](./G31_kk-collect-kk-daily-ai-voice2-sqlite-store-decision-labels-dag-daily-workflow-run-ledger.md))
