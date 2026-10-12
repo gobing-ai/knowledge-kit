@@ -99,6 +99,14 @@ interface ConsoleState {
     saveMovesStamp: boolean;
     /** What the platform answers after 发表. */
     publish: 'sent' | 'refused' | 'silent';
+    /** A console modal is laid out: it covers the save bar until a close control clears it (2026-10-12). */
+    dialogOpen?: boolean;
+    /** The open modal offers no close control (`false` models the 插入音频 picker, which leaked). */
+    dialogCloseable?: boolean;
+    /** The 保存为草稿 click throws, the way a covered control times out in Playwright. */
+    saveClickThrows?: boolean;
+    /** The cover panel offers no 从图片库选择 entry (the 2026-10-12 console). */
+    coverLibraryMissing?: boolean;
 }
 
 const STALE_STAMP = '更新于 13:00';
@@ -184,6 +192,7 @@ function makeConsole(initial: ConsoleState) {
     let pastedHtml = '';
     let pickerOpen = false;
     let coverPanelOpen = false;
+    let dialogOpen = initial.dialogOpen === true;
     let layoutOpen = false;
     let uploads: string[] = [];
 
@@ -210,7 +219,8 @@ function makeConsole(initial: ConsoleState) {
         if (isSaveBar(selector)) return state.mode === '文章' || state.mode === '贴图' || state.mediaSatisfied;
         if (isLayoutControl(selector) || isLayoutTarget(selector)) return state.mode === '文章';
         if (isSettingsRow(selector)) return state.mode === '文章';
-        if (isCoverOpener(selector) || isCoverFromContent(selector) || isCoverFromLibrary(selector)) return true;
+        if (isCoverOpener(selector) || isCoverFromContent(selector)) return true;
+        if (isCoverFromLibrary(selector)) return state.coverLibraryMissing !== true;
         if (isCoverItem(selector)) return coverPanelOpen;
         if (isVideoUpload(selector)) return state.mode === '视频';
         if (isPodcastUpload(selector) || isPodcastInsert(selector)) return state.mode === '播客';
@@ -258,6 +268,9 @@ function makeConsole(initial: ConsoleState) {
                         },
                         click: async () => {
                             log.push({ op: 'click', args: [selector] });
+                            if (state.saveClickThrows === true && isSaveBar(selector)) {
+                                throw new Error('click: Timeout 30000ms exceeded.');
+                            }
                             applyClick(selector);
                         },
                         type: async (text) => {
@@ -293,6 +306,11 @@ function makeConsole(initial: ConsoleState) {
                     return true;
                 }
                 if (expression.includes('a[href*="token="]')) return state.tokenLink ?? '';
+                // The modal probes `saveDraft` and the submit-failure inventory added on 2026-10-12.
+                if (expression.includes('weui-desktop-dialog__wrp, .weui-desktop-dialog')) return dialogOpen;
+                if (expression.includes('weui-desktop-dialog, .weui-desktop-dialog__wrp')) {
+                    return dialogOpen ? 'weui-desktop-dialog__wrp align_edge audio_dialog :: 插入音频 上传音频' : '';
+                }
                 if (expression.includes('textContent')) return pastedHtml.length > 0 ? '正文' : '';
                 return '';
             },
@@ -301,6 +319,11 @@ function makeConsole(initial: ConsoleState) {
         };
 
         function applyClick(selector: string): void {
+            if (selector.includes('__close') || selector.includes('取消')) {
+                // A closeable modal goes away; `dialogCloseable: false` models the picker that leaked.
+                if (state.dialogCloseable !== false) dialogOpen = false;
+                return;
+            }
             if (menuItemLabel(selector) !== undefined) {
                 if (state.opensNewTab) openEditor();
                 return;
@@ -1044,7 +1067,52 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
     };
 }
 
+describe('wechatmp-pub modal recovery before the draft save (2026-10-12)', () => {
+    test('closes a leaked modal before the save click, so the draft still saves', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ dialogOpen: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.draftAttempts).toBe(1);
+        // The close control ran before the save click, and the save click followed it.
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        const closeIndex = clicks.findIndex((selector) => selector.includes('__close') || selector.includes('取消'));
+        const saveIndex = clicks.findIndex(isSaveBar);
+        expect(closeIndex).toBeGreaterThan(-1);
+        expect(saveIndex).toBeGreaterThan(closeIndex);
+    });
+
+    test('an unclosable modal is named in the submit failure instead of a bare timeout', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ dialogOpen: true, dialogCloseable: false, saveClickThrows: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('Timeout 30000ms exceeded');
+        // The inventory is what made 2026-10-12's empty 草稿箱 diagnosable at all.
+        expect(result.error).toContain('open dialogs at submit');
+        expect(result.error).toContain('插入音频');
+    });
+});
+
 describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
+    test('a cover panel without 从图片库选择 warns and closes the panel instead of leaking it', async () => {
+        await seedMedia();
+        // The measured 2026-10-12 console: the library entry is gone, and the panel stayed open,
+        // which then click-blocked 赞赏/原文链接/创作来源/音频 and finally 保存为草稿.
+        const console = makeConsole(happyState({ coverLibraryMissing: true }));
+        const result = await makeTransport(console).publish({
+            content: { ...ARTICLE, metadata: { ...ARTICLE.metadata, wechatmp: { coverPath: bodyImage } } },
+        });
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.warnings).toEqual(['cover: 从图片库选择 was not offered by the open cover panel']);
+        // The panel was dismissed on the way out, so the settings rail and the save still ran.
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.some((selector) => selector.includes('__close') || selector.includes('取消'))).toBe(true);
+        expect(selectorsOf(console.calls.editor, 'click').some(isSaveBar)).toBe(true);
+    });
+
     test('drives 原创声明, 合集 and 创作来源 in order and sweeps the panel', async () => {
         await seedMedia();
         const console = makeConsole(happyState());
