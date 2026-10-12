@@ -151,6 +151,10 @@ dist
 /.spur/runs/
 /.spur/memory/sessions/*-checkpoint.md
 /.spur/memory/wrapup-metrics.jsonl
+# Plugin-local run-scoped scratch (ADR-131): probes and dumps written beside a plugin are
+# disposable, and `commit-guard` stages files rather than directories, so an unignored one
+# gets committed by the next enumerating `git ls-files --others`.
+plugins/*/*/.spur/
 /docs/memo.md
 
 /docs/dogfood/*.md
