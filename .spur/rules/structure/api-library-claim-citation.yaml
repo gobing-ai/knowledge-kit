@@ -27,6 +27,10 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # the `exit-code` evaluator reports only the exit status. Its falsification cases (11) live in
 # api-library-claim-citation.test.sh, including the row-scope negative control and the real-corpus
 # positive control.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match (measured 2026-10-12: an `include` that matched nothing still executed), so the checker's
+# own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
 rules:
   - id: api-library-claim-cites-source-and-confidence
     description: "Every row of an `API/library claim sources and confidence` block carries a Confidence cell beginning with HIGH|MEDIUM|LOW and EARNS it for that row: HIGH cites an http(s) URL, a `path:line`, or a path with a code/doc extension; MEDIUM/LOW cite the same or name what is unverified. The block must hold at least one data row. A claim therefore cannot ship as an uncited assertion, and a level cannot be invented or smuggled past the enum."

@@ -25,6 +25,10 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # PRESENCE is not enforced: 155 of the repo's 204 verdict-carrying done tasks predate the practice, so
 # the rule judges what a record claims, not whether it claims. The checker lives in `verification-confidence-level.sh` so its file/line detail is
 # reachable by hand — the `exit-code` evaluator reports only the exit status.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match (measured 2026-10-12: an `include` that matched nothing still executed), so the checker's
+# own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
 rules:
   - id: verification-block-carries-confidence-level
     description: "Every `Verification (` block in a repo document carries exactly one `Confidence: HIGH|MEDIUM|LOW` line and earns it, and every level claimed anywhere — including the `## Testing` record `spur task record` writes — is inside the enum and, in a verification record, earned: HIGH cites evidence (`path:line`, a repo path, or a URL), MEDIUM/LOW either cites evidence or names what is unverified. A close-out or a task record therefore cannot misspell or unsupportedly claim its confidence level."

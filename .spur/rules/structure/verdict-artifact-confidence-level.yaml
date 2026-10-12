@@ -1,0 +1,61 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# A verdict artifact that asserts PASS must declare a HIGH|MEDIUM|LOW confidence — and every workflow
+# consumer must read that PASS confidence-aware.
+#
+# WHY THIS EXISTS. Four sibling confidence rules already gate a level: the `Verification (` block and
+# the `## Testing` record (`verification-block-carries-confidence-level`), the durable verdict
+# artifact (`durable-verdict-carries-confidence-proof`), the `.spur/run/` verification ANSWER
+# (`verification-answer-carries-confidence-level`), and the API/library claim table
+# (`api-library-claim-cites-source-and-confidence`). None read the machine-readable VERDICT ARTIFACT:
+# `.spur/run/**/*verdict*.json`, written by `spur task verdict` and by the kk judge
+# (`verdict-<step>.json`, `.itc-verdict.json`, `*_judge_verdict.json`). Measured here on 2026-10-12:
+# 297 such artifacts exist, the 179 written before 2026-10-05 carry `{"verdict":"PASS"}` with no
+# `confidence` field at all, and every artifact from 2026-10-09 onward carries one. So a PASS could be
+# recorded with no level and nothing re-read the file.
+#
+# WHY THE CONSUMER HALF LIVES HERE. A level on the artifact is worthless if the reader ignores it.
+# Each kk workflow guard reads a judge PASS through a confidence-aware `jq` filter that normalizes an
+# out-of-contract PASS to `PASS!`, and `plugins/kk/tests/verdict-confidence.test.ts` fails a workflow
+# that accepts a PASS without the enum. That test is the behavioural gate; this rule is the same
+# contract as a text check, so a hand-edited guard is refused by the gate rather than by a reviewer.
+# The byte-identical twins under `apps/cli/plugins/kk/workflows/` are generated and are covered by the
+# repo's paired-file parity test, not duplicated here.
+#
+# THREE CONSTRUCTION DECISIONS, all deliberate (see the checker's header for the full rationale):
+#  * only `PASS` is judged — a level is what makes a PASS usable, and requiring one on
+#    FAIL/NEEDS_REVISION would fail compliant artifacts;
+#  * presence is never required — `.spur/run/` is a disposable plane (ADR-131), so the rule judges the
+#    artifacts that exist rather than demanding one;
+#  * a CUTOFF, not a 179-entry backlog — artifacts older than the adoption instant are reported as one
+#    debt count, so the rule is green on history and enforcing from adoption onward (`--no-since`
+#    exposes the full pre-rule set).
+#
+# SEVERITY. `info` — the operator's chosen level: this rule ADVISES and never blocks. The level is a
+# real choice here, not a default: the project's pre-check preset runs `--fail-on warning`
+# (`bun run test-pre-check`), so a `warning` severity would have blocked `bun run gate`, and `info` is
+# the only level that stays out of that gate. Its findings therefore surface on a by-hand run, under
+# `--fail-on info`, or in the falsification suite that `bun test` executes — not in the gate.
+#
+# The checker lives in verdict-artifact-confidence-level.sh so its file/line detail is reachable by
+# hand — the `exit-code` evaluator reports only the exit status. Its 24 falsification cases live in
+# verdict-artifact-confidence-level.test.sh.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match (measured 2026-10-12: an `include` that matched nothing still executed), so the checker's
+# own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
+rules:
+  - id: verdict-artifact-asserts-confidence-level
+    description: "Every `.spur/run/` verdict artifact that asserts `verdict: PASS` declares a HIGH|MEDIUM|LOW `confidence`, and every `plugins/kk/workflows/` guard that reads a judge verdict and compares it to `\"PASS\"` applies the same enum guard. A PASS therefore cannot be recorded or accepted without a usable level; FAIL/NEEDS_REVISION artifacts, verdict-free JSON, absent and empty files, and artifacts older than the 2026-10-12 adoption cutoff are out of scope (reported as debt). Repair by re-recording the task so the harness writes the level, or by re-running the judge — never by deleting the evidence."
+    severity: info
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/verdict-artifact-confidence-level.sh"
+        message: "exit {code}: a verdict artifact asserts PASS without a HIGH|MEDIUM|LOW confidence, or a workflow guard reads a judge PASS without the enum check — run `sh .spur/rules/structure/verdict-artifact-confidence-level.sh` for the file and line, `--no-since` for the pre-rule set, and `sh .spur/rules/structure/verdict-artifact-confidence-level.test.sh` for the cases"
+    include:
+      - ".spur/run/**/*verdict*.json"
+      - "plugins/kk/workflows/*.yaml"
+    exclude:
+      - "**/node_modules/**"

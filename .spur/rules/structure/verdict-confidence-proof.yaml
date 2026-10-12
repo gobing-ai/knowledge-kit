@@ -20,6 +20,10 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # falsification cases live in `verdict-confidence-proof.test.sh`. Repair by recording the task again
 # (the harness then writes the row), or by adding the task to the backlog only when it predates the
 # fix.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match (measured 2026-10-12: an `include` that matched nothing still executed), so the checker's
+# own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
 rules:
   - id: durable-verdict-carries-confidence-proof
     description: >

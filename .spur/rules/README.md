@@ -24,6 +24,22 @@ install or to ts-libs.
 | `recommended-post-check` | After tests | `quality` |
 | `strict-check` | Opt-in | `strict` |
 
+## `include` on an `exit-code` rule is documentation, not scope
+
+The `exit-code` evaluator shells out once and gates on the exit status, so it runs whether or not a
+rule's `include` globs match anything — measured 2026-10-12: a copy whose `include` pointed at a
+nonexistent path still executed (`✗ 1 warning`, reported against `<workspace>`). Scope for these
+rules therefore lives in the checker's own discovery (`--run-dir` / `--workflows` / explicit path
+arguments), and the `include` block is a reader's summary of that scope. **Do not narrow an
+`exit-code` rule's globs expecting the rule to stop firing** — change the checker. Rules with this
+shape here: `structure/verification-confidence-level`, `structure/verdict-confidence-proof`,
+`structure/verification-answer-confidence-level`, `structure/verdict-artifact-confidence-level`,
+`structure/api-library-claim-citation`, `structure/scratch-citation-existence`,
+`strict/rule-files-structural`, `migration/rg-dialect`. (Content-scanning evaluators — `regex`, `rg`,
+`forbidden-import`, `secrets-scanner` — are the opposite trap: their globs match in *loose*
+substring/suffix mode, so a deep glob like `apps/**/*.ts` collapses to a fragment; see
+`structure/protected-files.yaml` for the fragment-scoped idiom.)
+
 ## Relationship to ts-libs
 
 Rules originally authored in `ts-libs/.spur/rules/` were **absorbed and adapted**

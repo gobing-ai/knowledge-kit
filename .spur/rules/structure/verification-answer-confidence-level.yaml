@@ -24,6 +24,10 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # The checker lives in verification-answer-confidence-level.sh so its file/line detail is reachable by
 # hand — the `exit-code` evaluator reports only the exit status. Its 15 falsification cases live in
 # verification-answer-confidence-level.test.sh.
+#
+# SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the
+# globs match (measured 2026-10-12: an `include` that matched nothing still executed), so the checker's
+# own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
 rules:
   - id: verification-answer-carries-confidence-level
     description: "Every `.spur/run/` verification answer that asserts a `Verdict:` declares exactly one `Confidence: HIGH|MEDIUM|LOW` line and EARNS it: HIGH cites an http(s) URL, a `path:line`, or a repo path with a code/doc extension; MEDIUM/LOW cite the same or name what is unverified. A level outside the enum, a missing level, or an unearned level is refused. Absent, empty and verdict-free answers are out of scope, as are answers older than the 2026-10-12 adoption cutoff (reported as debt)."
