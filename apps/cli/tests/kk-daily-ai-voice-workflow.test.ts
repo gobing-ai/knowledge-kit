@@ -499,6 +499,13 @@ const flags = (name) => {
 
 const DOC = (id) => [{ id, title: 'AI News ' + id, sourceUri: 'https://example.com/' + id, body: 'Body ' + id, mediaType: 'text/markdown' }];
 
+// 0171 R2: the real runner transcodes this WAV into the publish MP3 when transcode_mp3 is on,
+// so the stub has to write real audio — the old 'RIFF-fake-wave' literal is unreadable by ffmpeg.
+const writeWav = (p) => {
+    const wav = Bun.spawnSync(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1:sample_rate=24000', '-ac', '1', '-c:a', 'pcm_s16le', p]);
+    if (wav.exitCode !== 0) process.exit(5);
+};
+
 const inPath = flag('--in');
 const outPath = flag('--out');
 if (args[0] === 'stage') {
@@ -605,7 +612,7 @@ if (plugin === 'aihot-ingest') {
 } else if (plugin === 'voice-gen') {
     readFileSync(inPath, 'utf8');
     const wavPath = join(dirname(outPath), 'content.wav');
-    writeFileSync(wavPath, 'RIFF-fake-wave');
+    writeWav(wavPath);
     writeFileSync(outPath, JSON.stringify({
         title: 'Daily AI News',
         body: wavPath,
@@ -616,7 +623,7 @@ if (plugin === 'aihot-ingest') {
 } else if (plugin === 'omni-voice-gen') {
     readFileSync(inPath, 'utf8');
     const wavPath = join(dirname(outPath), 'content.wav');
-    writeFileSync(wavPath, 'RIFF-fake-wave');
+    writeWav(wavPath);
     writeFileSync(outPath, JSON.stringify({
         title: 'Daily AI News',
         body: wavPath,
@@ -626,7 +633,7 @@ if (plugin === 'aihot-ingest') {
 } else if (plugin === 'gemini-tts') {
     readFileSync(inPath, 'utf8');
     const wavPath = join(dirname(outPath), 'content.wav');
-    writeFileSync(wavPath, 'RIFF-fake-wave');
+    writeWav(wavPath);
     writeFileSync(outPath, JSON.stringify({
         title: 'Daily AI News',
         body: wavPath,
@@ -655,8 +662,8 @@ if (plugin === 'aihot-ingest') {
                     last30days_enabled: 'true',
                     plugins_path: join(testRoot, 'plugin root'),
                     vdriver,
-                    // 0149: generate now really routes into daily-intro; the stub's wav is fake
-                    // bytes no ffprobe can read, so point the intro var at the stage's blank
+                    // 0149: generate now really routes into daily-intro; the stub writes a 1 s
+                    // sine WAV, not an episode, so point the intro var at the stage's blank
                     // skip branch and exercise the merge itself only in live runs. A bare ''
                     // override is rejected by spur (blanking a declared non-empty default), so
                     // the skip rides the runner's trim-based blank check instead.
