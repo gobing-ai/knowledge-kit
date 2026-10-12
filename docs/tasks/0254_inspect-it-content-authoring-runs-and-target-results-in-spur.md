@@ -4,7 +4,7 @@ name: Inspect IT Content authoring runs and target results in Spur Board
 status: todo
 template: feature-impl
 created_at: 2026-10-11T23:22:42.779Z
-updated_at: "2026-10-11T23:52:49.193Z"
+updated_at: "2026-10-12T04:36:18.208Z"
 feature_id: G8
 priority: P2
 tags:
@@ -35,6 +35,16 @@ Rubric: E6 D1 L3 C1 R1 = 12; retain this cohesive deliverable with steps in Plan
 - External roots described broadly → common reader accepts only an explicitly captured canonical child workspace → reuse 0252 containment and producer proof without an ITC bypass.
 - Acceptance checkbox titles lacked requirement/test binding → freeze executable feature-title scenarios and real prep/reader test paths.
 - Implicit foundation contract → frontmatter depends on 0252 → consume its types/capture/reader intact and hand only ITC entry/projection fixtures to 0255.
+
+#### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| The installed host advertises React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0 and the facade specifiers a contribution may externalize | installed `@gobing-ai/spur` `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; the seven named facade assets exist on disk | HIGH |
+| The reader's status vocabulary is 400 bad identity/query, 403 foreign origin or project, 404 unknown capture/artifact, 405 mutating method, 416 unsatisfiable range, 422 malformed stored evidence, 503 Board authority unavailable | the shipped reader in this repo | `apps/cli/src/board/reader.ts:207,217,296,414,488` — read the branch that sets each status; the second review reproduced the 422 cases against a real server | HIGH |
+| `kk-itc.yaml` does NOT declare `__runId` today, so §9's capture cannot bind an ITC run until it does | the workflow definition | `grep -c '__runId' plugins/kk/workflows/kk-itc.yaml` returns 0 (checked 2026-10-12); §9 requires the declaration with `__definitionDigest` | HIGH |
+| A caller-supplied ITC workspace outside any works root is refused by the capture guard, so an external child workspace needs the §9 trusted-record binding rather than a relaxed guard | the shipped capture guard | `apps/cli/src/board/capture.ts:309` (structural refusal) plus the handoff note in this task's Background | HIGH |
+| `readCaptureRecord` validates the record SHAPE and returns null on a missing string field, non-absolute `workspacePath` or absent `settings`, so any new record field must be added to that validation | the shipped capture module | `apps/cli/src/board/capture.ts:191` (read); the reader answers 422 via `authorize` rather than 500 | HIGH |
 
 ### Requirements
 

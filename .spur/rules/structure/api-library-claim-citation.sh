@@ -5,7 +5,20 @@
 # only the exit status, not this script's output:
 #
 #   sh .spur/rules/structure/api-library-claim-citation.sh      # 0 = ok, 1 = findings on stdout
+#   sh .spur/rules/structure/api-library-claim-citation.sh <file>…               # explicit files
+#   sh .spur/rules/structure/api-library-claim-citation.sh --require-block=<path> # presence arm
 #   sh .spur/rules/structure/api-library-claim-citation.test.sh # falsification cases for the above
+#
+# PRESENCE ARM (`--require-block`, rule `api-library-claim-block-required`). The contract below judges
+# a block that EXISTS; a document asserting API/library claims with no block at all was therefore
+# ungated. Measured 2026-10-12: 161 docs carry a strong claim signal (an installed `node_modules/`
+# path, a scoped package, an `/api/` route or a host ABI token such as `apiVersion`) and only 4 carry
+# a block — so requiring the block on that signal repo-wide would fail on 157 documents of history,
+# the same trap the sibling confidence rule avoided. The arm is therefore a DECLARED REGISTRY: the
+# operator names the documents whose claims are load-bearing (a delivery's design satellite and its
+# task files), and the rule makes that declaration binding. It is a rule argument, so it stays
+# reviewable in one place and extends to a new delivery with one line — never a prose heuristic over
+# 400 documents.
 #
 # Contract, per `#### API/library claim sources and confidence` block:
 #
@@ -45,15 +58,42 @@
 # self-test uses (`.test.sh`), and handy by hand for a single document.
 set -u
 
-if [ "$#" -gt 0 ]; then
-    files="$*"
+# `--require-block=<path>` (repeatable) declares a claim-bearing document; every other argument is an
+# explicit file to judge, and no argument at all means the repo sweep.
+registry=""
+explicit=""
+for arg in "$@"; do
+    case "$arg" in
+        --require-block=*) registry="$registry ${arg#--require-block=}" ;;
+        *) explicit="$explicit $arg" ;;
+    esac
+done
+
+if [ -n "$explicit" ]; then
+    files="$explicit"
 else
     files="$(rg --files -g 'docs/**/*.md' -g '!**/node_modules/**' -g '!**/vendors/**' . 2>/dev/null || true)"
 fi
 
-gap_re='unverif|not (yet )?(re-)?(run|verified|tested|checked|confirmed|fetched|reproduced|demonstrated)|missing|could not|unable to|assumed|inferred|no evidence|unknown|not available|left untested'
-
 errors=0
+
+# Presence arm: a declared claim-bearing document must carry the block (and then joins the judgement
+# list, so its rows face the same contract as every other block). A declared file that is absent from
+# disk is a NOTE, never a finding — a renamed task must not break the gate.
+for f in $registry; do
+    if [ ! -f "$f" ]; then
+        echo "NOTE: declared claim-bearing document is absent: $f"
+        continue
+    fi
+    if grep -qiE '^#{2,4}[ \t]+API[ \t]*/?[ \t]*library claim sources and confidence' "$f"; then
+        files="$files $f"
+    else
+        printf 'INVALID: %s: declared API/library claim-bearing but carries no `API/library claim sources and confidence` block — add the cited claim table, or drop it from the registry (rule api-library-claim-block-required)\n' "$f"
+        errors=$((errors + 1))
+    fi
+done
+
+gap_re='unverif|not (yet )?(re-)?(run|verified|tested|checked|confirmed|fetched|reproduced|demonstrated)|missing|could not|unable to|assumed|inferred|no evidence|unknown|not available|left untested'
 
 for f in $files; do
     [ -f "$f" ] || continue

@@ -43,3 +43,39 @@ rules:
     exclude:
       - "**/node_modules/**"
       - "**/vendors/**"
+
+  # The presence half of the same contract. The rule above judges a block that EXISTS; a document
+  # asserting API/library claims with no block at all was therefore ungated — the gap that let G8's
+  # four task files carry ABI/version claims with nothing cited. Measured 2026-10-12: 161 docs carry a
+  # strong claim signal (an installed `node_modules/` path, a scoped package, an `/api/` route, a host
+  # ABI token such as `apiVersion`) and only 4 carried a block, so a presence rule on that signal
+  # would fail on 157 documents of history. The registry below is the operator's declaration of which
+  # documents' claims are load-bearing, and the arm makes that declaration binding: listed and without
+  # a block ⇒ error; listed and absent from disk ⇒ a NOTE, never a finding (a renamed task must not
+  # break the gate); unlisted ⇒ untouched.
+  #
+  # SEQUENCED ROLLOUT (recorded, not a loophole): task 0252 joined the registry in the same change
+  # that added its claim block, immediately after its run reached `done`. Before that its task file was
+  # proof-digest-anchored — a task file's CONTENT is part of the digest, so writing into it mid-run
+  # invalidates the run. The pipeline's own order is the same: task sections are written at `record`, Extending this to a new delivery
+  # is one line: add its design satellite and its task files.
+  - id: api-library-claim-block-required
+    description: "Every document on the declared claim registry carries an `API/library claim sources and confidence` block whose rows cite a source and earn their confidence level (the contract of api-library-claim-cites-source-and-confidence). The registry names the documents whose API/library claims are load-bearing; a listed document without the block fails, a listed document that is absent from disk is a NOTE, and an unlisted document is untouched."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/api-library-claim-citation.sh"
+          - "--require-block=docs/design/workflow-board-modules.md"
+          - "--require-block=docs/tasks/0252_inspect-collection-runs-through-a-native-board-module-and-lo.md"
+          - "--require-block=docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md"
+          - "--require-block=docs/tasks/0254_inspect-it-content-authoring-runs-and-target-results-in-spur.md"
+          - "--require-block=docs/tasks/0255_verify-three-workflow-modules-from-an-installed-package-and-.md"
+        message: "exit {code}: a document declared in the claim registry carries no API/library claim block, or its rows do not cite and earn their level — add the cited claim table, or drop the document from the registry in .spur/rules/structure/api-library-claim-citation.yaml"
+    include:
+      - "docs/**/*.md"
+    exclude:
+      - "**/node_modules/**"
+      - "**/vendors/**"

@@ -4,7 +4,7 @@ name: Verify three workflow modules from an installed package and harden operato
 status: todo
 template: feature-impl
 created_at: 2026-10-11T23:22:42.780Z
-updated_at: "2026-10-11T23:52:29.726Z"
+updated_at: "2026-10-12T04:36:38.775Z"
 feature_id: G8
 priority: P2
 tags:
@@ -39,6 +39,17 @@ Also implements R15 — Workflow definitions remain in Settings Workflows.
 - Workflow relocation seemed pending → relative symlink and unchanged file are already present → assert discovery/compatibility without copying or moving again.
 - Acceptance checkbox titles lacked requirement/test binding → bind all five local requirements to executable scenarios and package/browser test layers.
 - Generic prerequisites and source-import risk → consume completed 0253/0254 and transitive 0252 artifacts only → isolated install proof must run without either checkout or sibling Spur sources.
+
+#### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| The installed host advertises contributionApiVersion 1 and React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0, and `board/index.d.ts` fixes the contribution shape (`apiVersion: 1`, `webModule`, a `component` mounted in the host's own React tree) | installed `@gobing-ai/spur` `board/index.d.ts` + `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/board/index.d.ts:21,27,38` and `web/board-runtime.json:4-11` (0.4.2) | HIGH |
+| A module declaration is a discriminated `react`/`iframe` union validated `.strict()` with `id` matching `^[a-z][a-z0-9-]*$`, `name`, `icon`, optional `sidebarLabel`/`description`/`order`, and for `type: react` a `directory`, `entry` and optional `styles`; a duplicate id or a reserved-identity collision is refused at config load | installed bundle zod schema `boardModuleDeclarationSchema` / `validateBoardModuleDeclarations` | Read the emitted schema and the collision check in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); the reserved ids come from `web/board-runtime.json` `reservedModules` | HIGH |
+| A declared module's route is `/modules/<id>` (the host derives it; the declaration carries no route field) | installed bundle constant `BOARD_MODULE_ROUTE_PREFIX = "/modules/"` | Read the constant and `boardModuleRoute(id)` in `spur.js`; the reserved-module routes in `web/board-runtime.json` are the `board/<route>` family instead | HIGH |
+| `bootstrap.modules` is validated by the RUNTIME zod schema only — the shipped `schemas/spur-config.schema.json` `bootstrap` block lists just logging/telemetry/database/scheduler | installed `schemas/spur-config.schema.json:20` (bootstrap) and the emitted `bootstrapSectionSchema` in installed `spur.js` | Read both files in `node_modules/@gobing-ai/spur`: `schemas/spur-config.schema.json:20` opens the `bootstrap` object whose properties are only logging/telemetry/database/scheduler, while `spur.js` extends it with `modules: boardModuleDeclarationsSchema.optional()` | HIGH |
+| Settings → Workflows is the real route `/board/settings/workflows`, its tab set is general/agents/workflows, and the definition view already renders `rawYaml` plus a Mermaid diagram | installed Board web bundle `web/_astro/BoardApp.*.js` | Read the route composition (`selectTab` → `/board/settings/<id>`), the tab array, and the `/project/workflows` payload fields (`rawYaml`, `mermaidDiagram`) | HIGH |
+| The published package ships the `board` and `web` trees, and Chromium is pinned by the root catalog at playwright 1.55.0 | installed `package.json` `files`; the repo root `package.json` `workspaces.catalog` | Read both: `files` includes `board` and `web`; the catalog entry is `"playwright": "1.55.0"` | HIGH |
 
 ### Requirements
 

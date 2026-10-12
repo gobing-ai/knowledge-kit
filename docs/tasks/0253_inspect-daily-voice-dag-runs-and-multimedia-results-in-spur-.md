@@ -4,7 +4,7 @@ name: Inspect daily voice DAG runs and multimedia results in Spur Board
 status: todo
 template: feature-impl
 created_at: 2026-10-11T23:22:42.778Z
-updated_at: "2026-10-11T23:53:42.790Z"
+updated_at: "2026-10-12T04:36:17.893Z"
 feature_id: G8
 priority: P2
 tags:
@@ -37,6 +37,16 @@ Rubric: E8 D1 L3 C1 R1 = 14; retain this cohesive deliverable with steps in Plan
 - Section audio treated as existing → ADR-034 is accepted design, not required shipped output → show recorded final audio now and sections only if actually described by outputs.
 - Acceptance checkbox titles lacked requirement/test binding → executable feature-title scenarios are available → bind every local R item and name its observing test file.
 - Dependency referenced a volatile sidecar → frontmatter already depends on 0252 → freeze the exact shared contracts consumed and daily projection handed to 0255.
+
+#### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| The installed host advertises the facade specifiers `react`, `react/jsx-runtime`, `react/jsx-dev-runtime` (plus `react-dom`, `react-dom/client`, `react-router`, `react-router/dom`) at React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0, and a module may externalize only what that manifest names | installed `@gobing-ai/spur` `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; all seven `web/_astro/board-facade-*.js` files the manifest names exist on disk | HIGH |
+| The runs API is `/api/runs` (accepting `workflow`, `limit`, `cursor`, `status`, `since`), `/api/runs/:runId`, `/api/runs/:runId/progress` and `/api/runs/by-wbs/:wbs`; an action row carries `resultSummary` | installed `@gobing-ai/spur` bundle route registrations | Read the four `app.get` handlers and the `resultSummary` projection in `node_modules/@gobing-ai/spur/spur.js` (0.4.2) | HIGH |
+| `/api/runs/:runId/progress` answers 404 `RUN_NOT_FOUND` as soon as the projection carries an `orphan-row` diagnostic, so a DAG run can lose the whole projection and an unknown run is indistinguishable from an orphan-row run | installed bundle progress handler | Read the guard (`projection.diagnostics.some(d => d.code === 'orphan-row')` → 404) and the diagnostic push in `projectWorkflowProgress` (`spur.js`, 0.4.2); consequence recorded in `docs/tasks/0253_*.md` Background | HIGH |
+| A media artifact's bytes are fetched AFTER the reader's owner re-check, so a future image/audio descriptor must move the fetch inside `observe` or re-verify ownership after it | the shipped reader in this repo | `apps/cli/src/board/reader.ts:431,475,603` (read; this constraint is in this task's Background as a handoff) | HIGH |
+| The daily pipeline's default works root is `~/.config/kk/works`, outside the project, while the capture guard accepts only a `.works`/`works`-rooted path | `apps/cli/src/commands/daily.ts:97,113` and the capture guard | Read both: `return join(homedir(), '.config/kk/works')` and the structural guard at `apps/cli/src/board/capture.ts:309` | HIGH |
 
 ### Requirements
 
