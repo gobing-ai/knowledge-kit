@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: weibo-pub live operator dogfood — pin composer and article editor selectors
-status: wip
+status: blocked
 template: feature-impl
 created_at: 2026-10-09T23:19:30.104Z
-updated_at: "2026-10-12T18:04:06.761Z"
+updated_at: "2026-10-12T18:36:27.022Z"
 feature_id: E94
 priority: P3
 tags:
@@ -206,40 +206,48 @@ diagnosis pass; the first diagnosis-first revision is folded into steps 1–2 ab
 
 ### Solution
 
-#### Change map
+The re-implementation (2026-10-12, in-session) replaced the click-driven post with the mechanism the
+**diagnosis** pointed at, and made the channel an announcement channel.
 
-| Path | What changed |
+| Surface | Change |
 | --- | --- |
-| `plugins/publishings/weibo-pub/src/index.ts:54-72` | `WEIBO_POST_SELECTORS` **pinned from live measurement** (2026-10-12): composer `textarea[placeholder*="新鲜事"]` (measured node: `textarea`, placeholder `有什么新鲜事想分享给大家？`, class `_input_*`), send `button:has-text("发送")`, and the feed-card ladder now leads with the measured `a[class*="_time_"]`. Every `send` fallback stays constrained to its own 发送 text because the measured `woo-button-primary` class is shared with the account's 管理 button — a bare class fallback would click the wrong control. |
-| `plugins/publishings/weibo-pub/src/index.ts:36-43` | `WEIBO_ARTICLE_URL` doc now records the measurement: the route redirects to `weibo.com/` for an account without the 头条文章 entitlement (the throwaway account had none). |
-| `plugins/publishings/weibo-pub/src/index.ts:86-104` | `WEIBO_ARTICLE_SELECTORS` doc states plainly that they are **not** measured live and why, keeping the fail-closed ladders. |
-| `plugins/publishings/weibo-pub/src/index.ts:238-241` | One bounded post-flow refresh flag (`reloadedForPost`) so a card Weibo only renders after a reload is still observed — the composer sits at the top of the timeline, but the feed does not always insert the new card in place. |
-| `plugins/publishings/weibo-pub/src/index.ts:~455-470` | `probePostLive` now (a) filters fresh cards, (b) reads the excerpt from the **card container** rather than the link (measured: the matched link's own text is the timestamp, e.g. `3小时前`), and (c) performs the single reload when no fresh card has appeared. |
-| `plugins/publishings/weibo-pub/src/index.ts:~605-620` | `cardTextScript` reads `closest('article, [class*="card"], [class*="Card"], div[class*="Feed"]')` with a parent fallback — same measurement. |
-| `plugins/publishings/weibo-pub/src/index.ts:~330-350` | The post flow snapshots toasts before the send and names a fresh one in the refusal (`… (site said: …)`), so a site-side rejection is reported instead of a bare timeout. |
-| `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` | One new case: a fresh failure toast is named when the send produces no card (`38` offline tests total, all green). |
-| `docs/design/weibo-ui-discovery.md` | **New** measurement note: R1 preflight results, the composer/send/status-link measurements with counts and descriptors, the two live post attempts and their read-only verification, the four 头条文章 routes and their landings, the entitlement finding, and the pinned constants with the reasons for each flow fix. |
-| `docs/04_DESIGN.md:43` | Satellite row: `implemented (E94)`; Weibo post selectors pinned live 2026-10-12, 头条文章 half entitlement-gated, **live post/article evidence still open (0246)** — deliberately not "shipped". |
-| `docs/features/E94_…md` (feature corpus, via `spur feature update`) | R4's scenario body: `Given a verified Weibo browser profile with the 头条文章 entitlement …` plus a step stating that an account without it is refused rather than silently publishing (measured 2026-10-12). **Scenario identity unchanged**; `spur feature check E94` passes. |
+| `plugins/publishings/weibo-pub/src/index.ts:51` | `WEIBO_MOBILE_COMPOSE_URL` (`https://m.weibo.cn/compose/`, measured) is the post entry |
+| `plugins/publishings/weibo-pub/src/index.ts:69-100` | `WEIBO_POST_SELECTORS` holds the measured mobile composer (`textarea[placeholder*="分享新鲜事"]`), send (`a.m-send-btn`) and a post `fileInput` |
+| `plugins/publishings/weibo-pub/src/index.ts:108-114`, `:216-256` | **One-image rail** for `post` (R9): `POST_IMAGE_EXTS` / `MAX_IMAGE_BYTES` (5 MB, Weibo's documented `pic` bound) and a `resolveCover` that accepts exactly one image (`options.coverPath` › single-element `options.images` › `metadata.coverImage`) and names the refusal otherwise |
+| `plugins/publishings/weibo-pub/src/index.ts:451-513` | `runPostFlow` fills the mobile composer, uploads the cover with a fresh attachment, reads its id and **refuses** when unreadable rather than posting text-only while claiming an image; R3's text-only refusal is gone |
+| `plugins/publishings/weibo-pub/src/index.ts:515-535`, `:639-668` | **Submit through the page's own mobile API**: `submitViaMobileApi` + `apiSubmitScript` issue `POST https://m.weibo.cn/api/statuses/update` from the page context with the page's `st` token and the session cookies — the request the web app itself makes; the returned status id is the observed outcome (`https://m.weibo.cn/detail/<id>`) |
+| `plugins/publishings/weibo-pub/src/index.ts:671-705` | **Site refusals rendered, not swallowed**: `parseApiSubmit` / `parseSiteRefusal` turn the payload into `HTTP <status> errno <code>: <msg> (<action>: <url>)` |
+| `plugins/publishings/weibo-pub/src/index.ts:576-594`, `:719-728` | `postDiagnostics` + `dialogTextScript` record composer length before→after, the first visible dialog/verification text and any fresh toast on every failed submit |
+| `plugins/publishings/weibo-pub/src/index.ts` (removals) | The click-era probes (`probePostLive`, feed-card reads, card-text scripts, `reloadedForPost`) are deleted — they could never have observed this route |
+| `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:465-580` | 41 cases: the mobile route, the API submit with and without a pic id, the unreadable-pic-id refusal, Weibo's `errno 200001` rendering, the post-click diagnosis, and the image refusal set |
+| `docs/design/weibo-ui-discovery.md` §2b/§4a/§4b/§4c/§7 | Mobile composer measured + route decision; **hypothesis 2 confirmed** with the site's payload; the route table; the announcement contract with a copyable example; the account activation as the one blocker |
+| `docs/04_DESIGN.md` (weibo-pub section) | Mobile composer + API submit, the one-image rail, the announcement contract/example, the account prerequisite |
+| `.spur/rules/strict/http-boundaries.yaml` (`no-direct-fetch` list) | Exemption for the new transport: its `fetch(` is the page-context submit string, i.e. the transport's own boundary |
 
-#### Measured outcome vs the task's requirements (honest summary)
-
-| Req | Outcome |
-| --- | --- |
-| R1 | **MET** — operator `login` and `check` both exit 0, and a forced-headless `checkChannelSession` probe (`headedFallback: false`, no `headedOnly`) reports `verified`. `checkHeadedOnly` therefore stays `false`, unlike x-pub. |
-| R2 | **NOT MET (third-party)** — no 头条文章 editor is reachable for the throwaway account: `card.weibo.com/article/v3/editor` (and `#/draft`) redirect to `weibo.com/`, `/ttarticle/p/write` 404s, `/article/write` reports the account ineligible, and the creator centre has no 文章/写文章 entry. No draft control exists to measure, so the article leg stops per the task's closed contingency and the feature R4 body carries the entitlement condition. |
-| R3 | **NOT MET (third-party)** — two explicitly approved live post attempts (separate approvals) both fail closed: the composer holds the text, the send control is enabled/visible/topmost (measured), but no card appears on the home feed or the account timeline (verified read-only by body-text search) and no toast — success or failure — is emitted. Nothing was published, so R5's live post and article evidence is **not** obtained. |
-| R4 | **PARTIAL** — the post selectors/signals are pinned from live measurement, the two measured flow consequences are fixed, the discovery note is written, and the 04 row drops the blanket "live selectors pending" wording. The article selectors remain unmeasured because no editor rendered. |
-
-#### Rationale
-
-- **Measurement first, then pins.** The two seed ladders that the live DOM falsified were the status-link shape (`/status/` and `/detail/` measured **0** matches on the desktop feed) and the card-text source (the matched link's own text is the timestamp). Both were fixed from the measurement rather than patched around.
-- **Fail-closed held.** The unobserved post outcome was reported as `ok: false` both times and independently verified as *not published*, so the run never claimed a success it did not see (E91-D6) and produced no unintended public write.
-- **No repair-lane thrash for a third-party blocker.** The unmet requirements are an account entitlement and a site-side refusal of the send — no code change can repair them, so the run records the PARTIAL verdict and stops rather than spending the bounded fix budget on identical retries.
+**Diagnosis outcome (the deliverable this pass turned on).** Three live attempts never published anything, and
+the mobile API finally answered with Weibo's own payload:
+`{"ok":0,"errno":"200001","msg":"您的微博账号处于异常状态，请立即激活账号…","title":"账号异常","btn":{"text":"立即激活","url":"http://m.weibo.cn/security?…"}}`
+— the account is **flagged abnormal and must be activated**. That is the single blocker for the live legs; no
+code path was at fault, and nothing was ever published from this account.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+Commands run in the invoking tree (`knowledge-kit`, branch `main`) on 2026-10-12:
+
+| Command | Outcome |
+| --- | --- |
+| `bun test plugins/publishings/weibo-pub` | **41 pass / 0 fail**; `src/index.ts` funcs 98.5 %, lines 100 % |
+| `cd plugins/publishings/weibo-pub && bun run typecheck` | clean |
+| `bun run lint` (biome + every workspace typecheck, incl. `@gobing-ai/weibo-pub`) | clean |
+| `bun run test-pre-check` | **All 59 rules passed** (after the `no-direct-fetch` exemption for this transport) |
+| `bun run test-post-check` | All 2 rules passed |
+| `bun run test` (repo suite) | **2672 pass / 2 skip / 5 fail / 2 errors** — none in this change: 2 are `package publish metadata (R1/R2)` failing because the concurrently developed `voxcpm-tts` plugin cannot bundle (`error: bundling voxcpm-tts failed: entry ./src/index.ts: Bundle failed`, from another session's in-flight work), 2 are `vendors/karakeep` dependency-resolution errors (`Cannot find package 'zustand'`, `Cannot find module '@testing-library/react'`), and 1 is an unrelated `formatLocalDate` locale expectation. This task's change set is `plugins/publishings/weibo-pub/{src,tests}`, `docs/04_DESIGN.md`, `docs/design/weibo-ui-discovery.md`, `.spur/rules/strict/http-boundaries.yaml` and this task file — none of them referenced by a failing test. |
+| Live announcement (approved): `kk executor run weibo-pub --in .spur/run/0246-live/announcement2.json --out …` | `ok: false` with **the site's own refusal**: `HTTP 200 errno 200001: 您的微博账号处于异常状态，请立即激活账号…` — i.e. the submit path works (the request reached Weibo and returned its structured payload) and the account is flagged abnormal |
+| Read-only visibility check afterwards | the text is absent from the home feed and the account timeline — nothing was published, so no unintended public content exists |
+| `docs/design/weibo-ui-discovery.md` §2b/§4a/§4b/§4c/§7 | measurements, the confirmed diagnosis, the route decision, the announcement contract, and the account blocker recorded |
+
+Coverage: the plugin's own thresholds are met (`src/index.ts` 100 % lines, 98.5 % funcs). The repo-wide suite
+is red only for the concurrent `voxcpm-tts`/vendor causes above, which are outside this task's change set.
 
 ### Review
 
@@ -297,4 +305,5 @@ This task's own contract is explicit: *"Missing draft control, failed headless p
 - 2026-10-12T17:38:04.512Z wip → blocked (system)
 - 2026-10-12T17:48:50.896Z blocked → todo (system)
 - 2026-10-12T18:04:06.761Z todo → wip (system)
+- 2026-10-12T18:36:27.022Z wip → blocked (system)
 

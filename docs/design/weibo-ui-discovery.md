@@ -114,24 +114,43 @@ A later read-only pass (no clicks) measured the state left behind by those attem
 | Session | still valid headlessly (composer attached, no login redirect) | The profile survives; the silence is not an expired session |
 | `https://open.weibo.com/apps` | redirects to `weibo.com/<uid>` | No open-platform app console for this account, so the API route has no ready app either |
 
-**Hypotheses, with the evidence that would settle each** (none is confirmed):
+**Hypotheses, with the evidence that would settle each** — **resolved 2026-10-12: hypothesis 2 is CONFIRMED.**
 
-1. **The synthetic click never drives the app's submit handler.** Favoured by the total absence of
-   feedback and the retained draft; a real submission that Weibo rejected would normally toast.
-   *Settles it:* a post-click snapshot (dialog/modal text, composer length before/after, toast list).
-2. **Risk control silently drops the submission** for a brand-new, unverified account. Consistent with
-   the silence, but it would usually surface an error toast. *Settles it:* the same snapshot, plus the
-   account's standing (age, phone/real-name verification, any 异常/受限 notice on the timeline).
-3. **A verification modal appears, then the flow never looks for it.** The existing flow probes cards
-   and toasts only, so a modal would be invisible to it. *Settles it:* the same snapshot — this is the
-   first thing the re-implementation must capture.
+1. ~~The synthetic click never drives the app's submit handler.~~ Ruled out as the *cause*: it was the same on
+the mobile page (`<a class="m-send-btn">` with no href, `composer 96->96`), and the page's own submit path
+reproduces the refusal immediately (below).
+2. **Risk control / account state silently drops the submission — CONFIRMED.** Submitting through the page's
+own mobile API (`POST https://m.weibo.cn/api/statuses/update`, the request the web app itself issues)
+returned the site's own payload:
+
+```json
+{"ok":0,"errno":"200001",
+ "msg":"您的微博账号处于异常状态，请立即激活账号，确保正常使用。",
+ "title":"账号异常",
+ "btn":{"color":"red","text":"立即激活","url":"http://m.weibo.cn/security?callback=…"}}
+```
+
+So the account is **flagged as abnormal and must be activated** (`m.weibo.cn/security`, normally a
+phone/real-name step). Both front ends had been showing the same refusal and this session's probes simply
+never read it; the mobile app swallows it into a dialog the composer flow never looked for. Nothing was ever
+published from this account, and no code path was at fault.
+3. ~~A verification modal appears, then the flow never looks for it.~~ Still true as a *client-side* rendering
+of the above — and the flow now records dialogs, composer length and toasts on every failed submit.
+
+**Submission mechanism (adopted this pass).** `post` no longer relies on a synthetic click. The mobile page's
+own API answers this session — measured `GET https://m.weibo.cn/api/config` →
+`200 {"ok":1,"data":{"login":true,"st":"…","uid":"1409996644",…}}` — so the browser process submits through
+`POST /api/statuses/update` with the page's `st` token and the session's cookies: the same request the web app
+issues, no app registration, and a returned status id as the observed outcome. Refusals are rendered as
+`HTTP <status> errno <code>: <msg> (<action>: <url>)` so the operator's next action is never hidden inside a
+JSON blob.
 
 ## 4b. Route options for a proper Weibo publish
 
 | Route | Transport | Prerequisites | Evidence today |
 | --- | --- | --- | --- |
 | **Desktop web composer** (current) | browser · `script` | A verified account; and a flow that proves the app received the submit (composer cleared or a fresh toast) rather than assuming a DOM click lands | Composer/send/feed selectors measured; the submit is a no-op on this account |
-| **Mobile web composer** (`m.weibo.cn`) — *unmeasured candidate* | browser · `script` | Same account requirement; no separate entitlement | Not measured at all. Its composer is a simpler, API-backed page (`/compose/`), so it is the cheapest next measurement if the desktop handler is the blocker |
+| **Mobile composer** (`m.weibo.cn/compose/`) — *adopted* | browser · `script`, submitting through the page's own mobile API | A **verified/activated account** (see §4a — this account is flagged abnormal) | Composer, send anchor and image input measured; `GET /api/config` answers `{ok:1,data:{login:true,st,uid}}`; the submit reaches Weibo and returns its structured refusal |
 | **Official open-platform API** (`statuses/share.json` for text-with-link, `statuses/update.json` for text) | `file-cli` | A Weibo app (App Key/Secret) with write permission — the API requires an app that passed review — plus an OAuth 2.0 token (`statuses_update` scope) and, for `share`, a bound 安全域名 | No app exists for this account (`open.weibo.com/apps` redirects away), so this route needs an operator-side app registration first. It would slot into the existing threads-pub/x-pub credential pattern (`WEIBO_APP_KEY` / `WEIBO_APP_SECRET` / `WEIBO_ACCESS_TOKEN`, env-only) |
 
 Route **decision rule:** do not spend another public write until the diagnosis in §4a explains the
@@ -223,7 +242,12 @@ Every `send` fallback stays constrained to its own 发送 text because the measu
 
 ## 7. Open items
 
-- One more explicitly approved live post attempt (fresh approval) to determine whether this account can
-  publish at all; if it cannot, the post leg of R5 stays unverified with this note as the evidence.
-- The article draft/live legs need an account **with** the 头条文章 entitlement; the selectors there
-  remain unmeasured, which the code states in its own TSDoc.
+- **The account must be activated** (`errno 200001` → `m.weibo.cn/security`). That is the single blocker for
+  every live leg; a fresh account's sends are refused regardless of mechanism, which is exactly what the
+  three approved attempts hit.
+- The **cover's pic-id source** is unmeasured: an image uploads through the composer, but the API submit needs
+  the image's id, so the flow refuses rather than posting text-only while claiming an image. Measure it on the
+  activated account (`window.config` / the composer's own state after a `setInputFiles`).
+- The desktop composer route stays deprecated in favour of the mobile one; its no-op is explained by §4a and
+  needs no further work.
+- The 头条文章 article leg still needs an account with that entitlement (§5).

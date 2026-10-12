@@ -1145,7 +1145,7 @@ An undeclared `operation` fails by name before any browser or profile work. Live
 
 | Export | Kind | Notes |
 | -------- | ------ | ------- |
-| `WeiboBrowserTransport` | class | `browser` / `driver: script`; headless session preflight, then one headed flow. `article` fills 头条文章 and clicks `保存草稿` (default) or the publish control; `post` fills the **mobile composer** (`https://m.weibo.cn/compose/`, measured 2026-10-12), optionally uploads one image, and clicks `发送` |
+| `WeiboBrowserTransport` | class | `browser` / `driver: script`; headless session preflight, then one headed flow. `article` fills 头条文章 and clicks `保存草稿` (default) or the publish control; `post` fills the **mobile composer** (`https://m.weibo.cn/compose/`, measured 2026-10-12), optionally uploads one image, and **submits through the page's own mobile API** (`POST https://m.weibo.cn/api/statuses/update` with the page's `st` token and session cookies) — a synthetic click on either front end produces no request |
 | `WEIBO_OPERATIONS` / `resolveOperation` | const / function | Declared set is `post` and `article`; an unknown operation is refused by name before a transport is built. `options.driver` is resolved separately and refuses anything but `script` |
 | `WEIBO_POST_SELECTORS` / `WEIBO_ARTICLE_SELECTORS` | const | Ordered selector ladders (fail-closed). **Provisional** until task 0246 pins them against the live DOM |
 | `isWeiboAuthenticated` / `WEIBO_CONFIG` | const | Readiness predicate (no login redirect, composer or editor reachable) and its site-owned config for `checkChannelSession` and the operator CLI |
@@ -1168,7 +1168,9 @@ kk executor run weibo-pub --in weibo-announcement.json --out weibo-result.json
   "options": { "operation": "post", "coverPath": "/abs/path/s05e12-cover.png" } }
 ```
 
-Route and limits are measured: `docs/design/weibo-ui-discovery.md` §2b (mobile composer), §4a (send-path diagnosis), §4b/§4c (route options and this contract). Operator CLI: `bun plugins/publishings/weibo-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>] [--headed]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage); profile dir precedence `--profile` > `WEIBO_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/weibo`. Deferred: the Weibo `statuses/share` API, post images, and the live selector measurements that task 0246 owns.
+Route and limits are measured: `docs/design/weibo-ui-discovery.md` §2b (mobile composer), §4a (send-path diagnosis — **the account is flagged `errno 200001` and must be activated**, which is the one blocker for every live leg), §4b/§4c (route options and this contract).
+
+**Account prerequisite (measured 2026-10-12).** Every live leg needs an **activated, verified account**: an abnormal-state account answers the submit with `errno 200001 账号异常` and an activation link (`m.weibo.cn/security`). The plugin renders that refusal as `HTTP <status> errno <code>: <msg> (<action>: <url>)`, so the operator sees the required action rather than a bare failure. Nothing is published while the account is in that state, on any route. Operator CLI: `bun plugins/publishings/weibo-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>] [--headed]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage); profile dir precedence `--profile` > `WEIBO_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/weibo`. Deferred: the Weibo `statuses/share` API, post images, and the live selector measurements that task 0246 owns.
 
 ### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
 
