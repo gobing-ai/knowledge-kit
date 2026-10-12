@@ -31,7 +31,7 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # own discovery owns the scope and these globs are documentation. Do not narrow them expecting effect.
 rules:
   - id: verification-block-carries-confidence-level
-    description: "Every `Verification (` block in a repo document carries exactly one `Confidence: HIGH|MEDIUM|LOW` line and earns it, and every level claimed anywhere — including the `## Testing` record `spur task record` writes — is inside the enum and, in a verification record, earned: HIGH cites evidence (`path:line`, a repo path, or a URL), MEDIUM/LOW either cites evidence or names what is unverified. A close-out or a task record therefore cannot misspell or unsupportedly claim its confidence level."
+    description: "Every `Verification (` block in a repo document carries exactly one `Confidence: HIGH|MEDIUM|LOW` line and earns it, and every level claimed anywhere — including the `## Testing` record `spur task record` writes — is inside the enum and, in a verification record, earned: HIGH cites evidence (`path:line`, a repo path, or a URL), MEDIUM/LOW either cites evidence or names what is unverified. A close-out or a task record therefore cannot misspell or unsupportedly claim its confidence level. Mentions are not claims: a quoted token inside inline code (`` `Confidence:` ``) documents the contract and is not judged."
     severity: error
     evaluator:
       type: exit-code

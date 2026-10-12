@@ -99,13 +99,27 @@ for f in $docs_files; do
     ' "$f" || errors=$((errors + 1))
 done
 
-# 2. Every claimed level, in close-out documents AND verification records, must be inside the enum.
+# 2. Every CLAIMED level, in close-out documents AND verification records, must be inside the enum.
+#    Mentions are not claims: prose that quotes the contract writes the token inside inline code
+#    (`` `Confidence:` ``), and a line whose token sits in a code span is describing the grammar, not
+#    claiming a level. Stripping code spans first keeps the check on real claims while letting a task
+#    or design doc document the contract without failing the gate (measured 2026-10-12: this task's
+#    own body tripped the check on four quoted mentions). An unquoted bare mention is
+#    indistinguishable from a wrong claim — quote it, or name the enum.
 for f in $docs_files $record_files; do
-    out_of_enum="$(rg -n '\bConfidence:' "$f" 2>/dev/null | rg -v '\bConfidence: ?\** *(HIGH|MEDIUM|LOW)' || true)"
-    if [ -n "$out_of_enum" ]; then
-        printf 'INVALID: %s: confidence level outside HIGH|MEDIUM|LOW:\n%s\n' "$f" "$out_of_enum"
-        errors=$((errors + 1))
-    fi
+    awk -v file="$f" '
+        {
+            line = $0
+            # Mentions are prose: a token inside inline code (`` `Confidence:` ``) describes the
+            # contract, so code spans come out before matching. One process per file, and no `\b`.
+            gsub(/`[^`]*`/, "", line)
+            if (line !~ /(^|[^A-Za-z])Confidence:/) next
+            if (line ~ /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)/) next
+            printf "INVALID: %s: confidence level outside HIGH|MEDIUM|LOW:\n%s\n", file, $0
+            bad = 1
+        }
+        END { exit bad }
+    ' "$f" || errors=$((errors + 1))
 done
 
 # 3. Verification records: a level claimed inside `## Testing` must be earned.

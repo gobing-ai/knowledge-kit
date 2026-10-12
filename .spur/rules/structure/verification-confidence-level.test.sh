@@ -168,5 +168,19 @@ case_check record-level-outside-testing-is-not-judged 0 <<'EOF'
 - A reviewer asked about Confidence: HIGH in prose, outside the verification record.
 EOF
 
+# --- mentions are not claims (check 2 strips inline code before matching) ---
+case_check mention-in-inline-code-is-not-a-claim 0 <<'EOF'
+### Background
+
+The answer rule judges verification answers: an answer that asserts a verdict must carry exactly one
+`Confidence:` line, and the review contract declares one too. Quote the token when describing it.
+EOF
+
+case_check bare-non-enum-claim-is-flagged 1 <<'EOF'
+### Testing
+
+Confidence: CERTAIN — every requirement was re-checked by hand.
+EOF
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

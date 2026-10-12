@@ -177,8 +177,45 @@ else
     printf 'ok   %-32s exit=1\n' no-since-judges-debt
 fi
 
+# --- review answers are judged too (the 2026-10-12 contract extension) ---
+review_with_level="$tmp/review-with-level-review-answer.txt"
+cat >"$review_with_level" <<'EOF'
+Verdict: PASS
+Confidence: HIGH — no P1-P3 findings; checked apps/cli/tests/board/reader.test.ts:88.
+#### Findings
+none open
+EOF
+if sh "$checker" --no-since "$review_with_level" >"$tmp/rwl.out" 2>&1; then
+    pass=$((pass + 1))
+    printf 'ok   %-32s exit=0\n' review-answer-with-level
+else
+    fail=$((fail + 1))
+    printf 'FAIL %-32s a review answer declaring and earning its level must pass\n' review-answer-with-level
+    sed 's/^/     /' "$tmp/rwl.out"
+fi
+
+review_without_level="$tmp/review-without-level-review-answer.txt"
+cat >"$review_without_level" <<'EOF'
+Verdict: PASS
+#### Findings
+none open
+EOF
+if sh "$checker" --no-since "$review_without_level" >"$tmp/rwol.out" 2>&1; then
+    fail=$((fail + 1))
+    printf 'FAIL %-32s a review answer asserting a verdict must declare its level\n' review-answer-without-level
+    sed 's/^/     /' "$tmp/rwol.out"
+else
+    pass=$((pass + 1))
+    printf 'ok   %-32s exit=1\n' review-answer-without-level
+fi
+
 # --- no artifacts at all: nothing to judge, never a failure ---
-if sh "$checker" >"$tmp/none.out" 2>&1; then
+# Hermetic: the checker scans `.spur/run/` relative to the cwd, so run it from an isolated empty plane.
+# The live plane legitimately holds post-cutoff answers, which is not this case's subject — it failed
+# exactly that way on 2026-10-12, right after a batch wrote its review answers.
+checker_abs="$(cd "$(dirname "$0")" && pwd)/verification-answer-confidence-level.sh"
+mkdir -p "$tmp/empty-plane"
+if (cd "$tmp/empty-plane" && sh "$checker_abs") >"$tmp/none.out" 2>&1; then
     pass=$((pass + 1))
     printf 'ok   %-32s exit=0\n' no-artifacts-is-not-a-finding
 else
