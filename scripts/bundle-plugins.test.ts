@@ -31,8 +31,16 @@ const FIXTURE_SHELL_CHECK = '#!/bin/sh\necho \'{"status":"error","detail":"fixtu
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const STAGING_SCRIPT = fileURLToPath(new URL('./bundle-plugins.ts', import.meta.url));
 
-/** Real plugins whose manifest declares a TypeScript readiness check (0249 review F2). */
-const CHECK_DECLARING_PLUGINS = ['infoq-pub', 'juejin-pub', 'substack-pub', 'wechatmp-pub', 'x-pub', 'xhs-pub'];
+/** Real plugins whose manifest declares a TypeScript readiness check (0249 review F2; `weibo-pub` added 0245). */
+const CHECK_DECLARING_PLUGINS = [
+    'infoq-pub',
+    'juejin-pub',
+    'substack-pub',
+    'wechatmp-pub',
+    'weibo-pub',
+    'x-pub',
+    'xhs-pub',
+];
 
 function makeScratch(label: string): string {
     return mkdtempSync(join(tmpdir(), `kk-0111-${label}-`));

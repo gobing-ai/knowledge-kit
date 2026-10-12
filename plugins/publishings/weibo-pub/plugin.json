@@ -1,0 +1,8 @@
+{
+    "name": "weibo-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "post and 头条文章 article via a script browser transport (ts-browser-automation), draft by default"
+}

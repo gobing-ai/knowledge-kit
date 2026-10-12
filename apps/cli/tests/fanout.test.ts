@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { type Content, collectionForKind, type PluginKind, type Result } from '@gobing-ai/kk-core';
+import {
+    AggregateResultSchema,
+    type Content,
+    collectionForKind,
+    type PluginKind,
+    type Result,
+} from '@gobing-ai/kk-core';
 import {
     type AggregateResult,
     fanout,
@@ -11,6 +17,7 @@ import {
     type Target,
     type TargetOutcome,
 } from '../src/fanout';
+import { runInvoke } from '../src/invoke';
 import { captureOutput } from './capture';
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -1113,6 +1120,138 @@ describe('runFanout', () => {
             }
         });
     });
+});
+
+// --- E94 channels (0245 R6) ------------------------------------------------------------------
+//
+// The cross-plugin half of E94's R8/R9/R10: both new channels are driven through the REAL plugin
+// entries (`kk fanout` spawns them), so the claims are about the shipped manifests and
+// `processPublishIO`, not about injected fakes. Raw `options` travel inside the content file, which
+// is the same path production dispatch passes to the plugin subprocess.
+describe('E94 channels through the real fan-out path (0245 R6)', () => {
+    /** The fake env is process-wide; snapshot and restore it around every case. */
+    async function withFakeTransport(fn: () => Promise<void>): Promise<void> {
+        const origEnv = process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
+        process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
+        try {
+            await fn();
+        } finally {
+            if (origEnv !== undefined) process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = origEnv;
+            else delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
+        }
+    }
+
+    /** A Content fixture plus whatever raw `options` the case needs. */
+    function writeE94Content(dir: string, extra: Record<string, unknown> = {}): string {
+        const file = join(dir, 'e94-content.json');
+        writeFileSync(
+            file,
+            JSON.stringify({ title: 'E94 fan-out', body: 'hello threads and weibo', format: 'markdown', ...extra }),
+        );
+        return file;
+    }
+
+    async function runE94Fanout(contentFile: string, outFile: string): Promise<{ code: number; out: AggregateResult }> {
+        const code = await runFanout(
+            ['--content', contentFile, '--target', 'threads-pub', '--target', 'weibo-pub', '--out', outFile],
+            { pluginsRoot: join(process.cwd(), 'plugins') },
+        );
+        return { code, out: JSON.parse(await Bun.file(outFile).text()) as AggregateResult };
+    }
+
+    it('R6/AC2 — threads-pub and weibo-pub fan out offline, one entry per plugin name', async () => {
+        await withTempDir(async (root) => {
+            // The Weibo home composer has no draft, so the shared fixture opts into a live post.
+            const contentFile = writeE94Content(root, { metadata: { publishStatus: 'public' } });
+            const outFile = join(root, 'e94-result.json');
+            await withFakeTransport(async () => {
+                const { code, out } = await runE94Fanout(contentFile, outFile);
+
+                expect(code).toBe(0);
+                expect(AggregateResultSchema.parse(out).ok).toBe(true);
+                expect(out.summary).toEqual({ total: 2, succeeded: 2, failed: 0, skipped: 0 });
+                expect(out.targets.map((t: TargetOutcome) => t.target)).toEqual(['threads-pub', 'weibo-pub']);
+                for (const target of out.targets as TargetOutcome[]) {
+                    expect(target.status).toBe('published');
+                    expect(target.ok).toBe(true);
+                }
+            });
+        });
+    }, 120_000);
+
+    it('R6 — each plugin picks its own transport kind under the fake env', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = writeE94Content(root, { metadata: { publishStatus: 'public' } });
+            await withFakeTransport(async () => {
+                // In fake mode the Result identity is the fake's own target, so the observable here is
+                // WHICH fake each channel resolved: threads-pub is a file-cli channel, weibo-pub is a
+                // browser one. The `threads` / `weibo` site names are asserted on the real transports
+                // by each plugin's own suite.
+                const expected: Record<string, string> = {
+                    'threads-pub': 'fake-file-cli',
+                    'weibo-pub': 'fake-browser',
+                };
+                for (const [plugin, fakeTarget] of Object.entries(expected)) {
+                    const outPath = join(root, `${plugin}-result.json`);
+                    const code = await runInvoke({
+                        plugin,
+                        inPath: contentFile,
+                        outPath,
+                        pluginsRoot: join(process.cwd(), 'plugins'),
+                    });
+                    expect(code, `${plugin} exit`).toBe(0);
+                    const result = JSON.parse(await Bun.file(outPath).text()) as Result;
+                    expect(result.ok, `${plugin} ok`).toBe(true);
+                    expect(result.target, `${plugin} fake transport`).toBe(fakeTarget);
+                }
+            });
+        });
+    }, 120_000);
+
+    it('R6/AC1 — an unknown operation fails each target by name and supported set', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = writeE94Content(root, {
+                metadata: { publishStatus: 'public' },
+                options: { operation: 'dm' },
+            });
+            const outFile = join(root, 'e94-bad-op.json');
+            await withFakeTransport(async () => {
+                const { code, out } = await runE94Fanout(contentFile, outFile);
+
+                expect(code).toBe(1);
+                expect(AggregateResultSchema.parse(out).ok).toBe(false);
+                expect(out.summary).toEqual({ total: 2, succeeded: 0, failed: 2, skipped: 0 });
+                const errors = (out.targets as TargetOutcome[]).map((t) => t.error ?? '');
+                // Each real plugin subprocess names its own site in the refusal.
+                expect(errors[0]).toContain("unsupported operation 'dm'");
+                expect(errors[0]).toContain('threads-pub');
+                expect(errors[0]).toContain('post');
+                expect(errors[1]).toContain("unsupported operation 'dm'");
+                expect(errors[1]).toContain('weibo');
+                expect(errors[1]).toContain('post, article');
+            });
+        });
+    }, 120_000);
+
+    it('R6/AC1 — the agent driver is refused through both real plugin entries', async () => {
+        await withTempDir(async (root) => {
+            const contentFile = writeE94Content(root, {
+                metadata: { publishStatus: 'public' },
+                options: { driver: 'agent' },
+            });
+            const outFile = join(root, 'e94-bad-driver.json');
+            await withFakeTransport(async () => {
+                const { code, out } = await runE94Fanout(contentFile, outFile);
+
+                expect(code).toBe(1);
+                const errors = (out.targets as TargetOutcome[]).map((t) => t.error ?? '');
+                expect(errors[0]).toContain("unsupported driver option 'agent'");
+                expect(errors[0]).toContain('threads-pub posts text only');
+                expect(errors[1]).toContain("unsupported driver 'agent'");
+                expect(errors[1]).toContain('script');
+            });
+        });
+    }, 120_000);
 });
 
 // --- interior concurrency (ADR-007 R4 amendment, 2026-10-03) --------------------------------

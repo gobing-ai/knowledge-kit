@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.33",
+      "version": "0.0.35",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -339,8 +339,34 @@
         "@types/bun": "1.3.14",
       },
     },
+    "plugins/publishings/threads-pub": {
+      "name": "@gobing-ai/threads-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
     "plugins/publishings/wechatmp-pub": {
       "name": "@gobing-ai/wechatmp-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+    },
+    "plugins/publishings/weibo-pub": {
+      "name": "@gobing-ai/weibo-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
@@ -469,6 +495,8 @@
 
     "@gobing-ai/surfdash-pub": ["@gobing-ai/surfdash-pub@workspace:plugins/publishings/surfdash-pub"],
 
+    "@gobing-ai/threads-pub": ["@gobing-ai/threads-pub@workspace:plugins/publishings/threads-pub"],
+
     "@gobing-ai/ts-browser-automation": ["@gobing-ai/ts-browser-automation@0.5.21", "", { "dependencies": { "@gobing-ai/ts-runtime": "^0.5.21" }, "peerDependencies": { "playwright": "^1.55.0" } }, "sha512-Zl/hxsx+Yjfzin3Nb9hWYd1dSsizG2zT66teIx7qAAGjebHz9u5qLHsuZcMnwwBQ3Iw9edhNSz5kjjPStZtiQg=="],
 
     "@gobing-ai/ts-db": ["@gobing-ai/ts-db@0.5.21", "", { "dependencies": { "@gobing-ai/ts-runtime": "^0.5.21", "@gobing-ai/ts-utils": "^0.5.21" }, "peerDependencies": { "drizzle-orm": ">=0.38.0", "drizzle-zod": ">=0.5.0", "zod": ">=3.23.0" }, "optionalPeers": ["drizzle-zod", "zod"] }, "sha512-hMRovZ5Dy5zZzVYFRAWNXn1WeJNDy8hiFMO0yCzH2UiWDJtMaA8JOEahxs4dWK7V2qB5X8eoaqHSq8czaHfj+Q=="],
@@ -484,6 +512,8 @@
     "@gobing-ai/web-search": ["@gobing-ai/web-search@workspace:plugins/ingestions/web-search"],
 
     "@gobing-ai/wechatmp-pub": ["@gobing-ai/wechatmp-pub@workspace:plugins/publishings/wechatmp-pub"],
+
+    "@gobing-ai/weibo-pub": ["@gobing-ai/weibo-pub@workspace:plugins/publishings/weibo-pub"],
 
     "@gobing-ai/x-pub": ["@gobing-ai/x-pub@workspace:plugins/publishings/x-pub"],
 

@@ -21,7 +21,7 @@ sync: [T3]
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
-| [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all six channels (E93, 0215+0216) |
+| [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all seven channels (E93, 0215+0216; E94 adds `weibo-pub`) |
 | [fan-in-and-fan-out-specification.md](design/fan-in-and-fan-out-specification.md) | `executor fan-in` merge and concurrent `executor fan-out` | shipped (B6) |
 | [ingestion-plugin-specification.md](design/ingestion-plugin-specification.md) | Ingestion kind contract | shipped (C1) |
 | [generator-plugin-specification.md](design/generator-plugin-specification.md) | Generator kind contract | shipped (D3) |
@@ -40,7 +40,7 @@ sync: [T3]
 | [podcast-pub.md](design/podcast-pub.md) | microfeed podcast publish channel + instance deploy; Apple enclosure MIME gate and channel compliance checklist | shipped (E6; 0170/0173) |
 | [remaining-wt-publish-harvest.md](design/remaining-wt-publish-harvest.md) | Leftover wt publish channels + browser drivers on the harness | shipped (E7) |
 | [browser-publish-channels.md](design/browser-publish-channels.md) | InfoQ/Juejin/Substack/X-article script flows on ts-browser-automation + `publish-harness/browser` command library; per-channel transport verdict | shipped (E91, ADR-027; 0183–0188) |
-| [weibo-threads-publish-channels.md](design/weibo-threads-publish-channels.md) | Weibo (script browser: post + 头条文章 draft) and Threads (official text API) publish channels on the x-pub split | proposed (E94) |
+| [weibo-threads-publish-channels.md](design/weibo-threads-publish-channels.md) | Weibo (script browser: post + 头条文章 draft) and Threads (official text API) publish channels on the x-pub split | implemented (E94); Threads API live-verified offline-only, Weibo post selectors pinned live 2026-10-12 and the 头条文章 half is entitlement-gated — live post/article evidence still open (0246, `docs/design/weibo-ui-discovery.md`) |
 | [kk-daily-ai-voice-gap-analysis.md](design/kk-daily-ai-voice-gap-analysis.md) | Gap analysis vs ideal end-to-end daily pipeline | research (F61) |
 | [ingestion-source-adapters.md](design/ingestion-source-adapters.md) | last30days + Horizon ingestion adapter briefs (Doc[] mapping) | research (F61) |
 | [core-facts-template.md](design/core-facts-template.md) | Core-facts markdown template & blend contract prototype | prototype (F61) |
@@ -817,7 +817,7 @@ Product file: `$KK_CONFIG` (default `~/.config/kk/config.yaml`). Spur harness co
 | `MICROFEED_API_KEY` | yes (podcast-pub) | microfeed named API key (`mf_…`) with write scope |
 | `MICROFEED_TIMEOUT_MS` | no (podcast-pub) | Request / upload timeout in ms (default: `300000`) |
 | `SUBSTACK_PUBLICATION_URL` | yes (substack-pub) | Publication the Substack editor URL is derived from: the URL without its trailing `/` or `/publish`, plus `/publish/post` (the bare route — Substack rewrites it to `/publish/post/<id>` on autosave; the legacy `/publish/post/new` never rewrites, measured 0193). Unset, blank or non-`https:` → `ok: false` naming this var before any browser opens (there is no default publication — `substack.com/new` picks an arbitrary one). A per-run `options.publicationUrl` (or the CLI's `--publication <url>`) wins |
-| `KK_BROWSER_PROFILE_DIR` | no (x-pub `article`, xhs-pub, juejin-pub, infoq-pub, substack-pub) | Shared fallback browser profile dir for the `script` browser transports; a per-channel override wins (`X_PROFILE_DIR` / `XHS_PROFILE_DIR` / `JUEJIN_PROFILE_DIR` / `INFOQ_PROFILE_DIR` / `SUBSTACK_PROFILE_DIR`). Tiers are resolved by `resolveChannelProfileDir(channel, override)` (`@gobing-ai/publish-harness/browser`, ADR-027); blank values count as unset. Default `~/.config/kk/browser-profiles/<channel>` (`resolveBrowserProfileDir`) |
+| `KK_BROWSER_PROFILE_DIR` | no (x-pub `article`, xhs-pub, juejin-pub, infoq-pub, substack-pub, weibo-pub) | Shared fallback browser profile dir for the `script` browser transports; a per-channel override wins (`X_PROFILE_DIR` / `XHS_PROFILE_DIR` / `JUEJIN_PROFILE_DIR` / `INFOQ_PROFILE_DIR` / `SUBSTACK_PROFILE_DIR` / `WEIBO_PROFILE_DIR`). Tiers are resolved by `resolveChannelProfileDir(channel, override)` (`@gobing-ai/publish-harness/browser`, ADR-027); blank values count as unset. Default `~/.config/kk/browser-profiles/<channel>` (`resolveBrowserProfileDir`) |
 | `KK_BROWSER_CHANNEL` | no (every browser publish channel) | Playwright channel for `kkBrowserLauncher` (0214): `chromium` (default; full Chromium, also in headless mode) or `chrome` (installed Google Chrome). Blank counts as unset. Headed login and headless check then share one cookie store; Playwright's default headless shell can't read a headed login's cookies |
 
 ### Request timeouts
@@ -831,7 +831,7 @@ constant per plugin:
 | -------- | ----- | ----- |
 | `PROVIDER_REQUEST_TIMEOUT_MS` | `300_000` | Every `image-gen` provider call. Declared in `src/providers/timeouts.ts` (a leaf module) and re-exported from `src/providers/types.ts` — it cannot live in `types.ts` directly, because that file builds the `PROVIDERS` registry from value imports of each adapter, so the constant would create a `types.ts ⇄ <adapter>` runtime cycle (TDZ on `create` for consumers that import an adapter first) |
 | `ProviderOptions.timeoutMs` | optional | `image-gen` only, `@internal` test hook: providers resolve the timeout as `options?.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS`, so a test can drive the abort path without waiting 300s |
-| `REQUEST_TIMEOUT_MS` | `120_000` | One per plugin in `aihot-ingest`, `web-search`, `emdash-pub`, `medium-pub`, `qiita-pub`, `x-pub` |
+| `REQUEST_TIMEOUT_MS` | `120_000` | One per plugin in `aihot-ingest`, `web-search`, `emdash-pub`, `medium-pub`, `qiita-pub`, `x-pub`, `threads-pub` |
 | `resolveVoiceboxTimeoutMs()` | `VOICEBOX_TIMEOUT_MS` or `600_000` | `voice-gen`, shared by `voicebox-client` and `voicebox-server` |
 
 Already-signalled at the time of the fix and unchanged: `podcast-pub/src/microfeed-client.ts`
@@ -938,6 +938,8 @@ meaningful for `kind: 'browser'` transports.
 | `substack-pub` | browser · `script` | Implement | No public write API; ProseMirror editor, HTML paste |
 | `x-pub` `article` | browser · `script` | Implement | No Articles API; `x.com/compose/articles`, HTML paste + cover upload |
 | `x-pub` `post` | `file-cli` (API v2, OAuth 1.0a) | Keep | Official, deterministic, headless; browser posting invites anti-bot flags |
+| `threads-pub` `post` | `file-cli` (Threads Graph, two-step container → publish) | Keep | Meta's official publishing API, deterministic and headless; no browser path exists in this channel |
+| `weibo-pub` `post` / `article` | browser · `script` | Implement | The open-platform share endpoint needs an approved app plus a bound safe-domain URL in every post; the web composer (post) and 头条文章 editor (article) are the delivery path, draft by default |
 | `medium-pub` | `file-cli` (REST, integration token) | Keep | Works for existing token holders; the browser console path fights Cloudflare — **deferred** until the token path stops accepting posts (R12) |
 | `qiita-pub` | `file-cli` (API v2) | Keep | Official API; a browser flow is strictly worse |
 | `zenn-pub` | `file-cli` (zenn-cli + git sync) | Keep | Git sync is Zenn's official publishing model |
@@ -1010,6 +1012,30 @@ An undeclared `operation` fails by name before any browser or profile work. Live
 | `XArticleBrowserTransport` | class | `browser` / `driver: script`; headless session preflight, `x.com/compose/articles` Draft.js composer; observed `/compose/articles/edit/<id>` or fail-loud |
 | `oauth1Header` | function | User-context OAuth 1.0a Authorization header |
 | `processPublishIO` / `main()` | function | `--in`/`--out`; `options.operation` `post` (default) or `article` |
+
+### `@gobing-ai/threads-pub` (`plugins/publishings/threads-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `ThreadsPostApiTransport` | class | `file-cli`: `POST /{THREADS_USER_ID}/threads` (`media_type=TEXT`) then `POST /{THREADS_USER_ID}/threads_publish` (`creation_id`); no browser fallback |
+| `THREADS_OPERATIONS` / `resolveOperation` | const / function | Declared set is `post` alone; an unknown operation, any `options.driver` and any `options.images`/`metadata.images` are refused by name before a transport is built |
+| `getPublishTransport` | function | `FakeFileCliTransport` under `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else the Graph transport |
+| `processPublishIO` / `main()` | function | `--in`/`--out`; validates the Content and the operation before resolving any transport |
+
+`threads-pub` (2026-10-12, E94 / task 0243) is the Threads half of the x-pub split: text only, through Meta's official two-step publishing API (create a container, then publish it), so it has **no browser path at all** — a `driver` option is refused rather than ignored. Credentials are env-only (`THREADS_ACCESS_TOKEN` + `THREADS_USER_ID`), both checked, with `THREADS_USER_ID` named when absent. Text is `content.body.trim() || content.title?.trim()` (the schema has no `text` field, exactly as x-pub), counted in code points against `MAX_TEXT_CHARS = 500`, and overlong text is refused **without truncation** — x-pub's `slice(0, 280)` is deliberately not copied. Each request carries `AbortSignal.timeout(REQUEST_TIMEOUT_MS)`; a non-2xx, a non-JSON body, a missing/empty/non-decimal id and a timeout each return `ok: false` naming the step (`threads container` vs `threads_publish`), the HTTP status when a response exists (never the raw body) and a bounded Graph `error.message`, and a publish-step failure also names the created container id. Every error passes through a redactor that removes the token value in both its raw and percent-encoded forms, so no Result, stderr line or `--out` file can carry it. The permalink lookup is a best-effort GET and can only shorten the Result: it is accepted only as an HTTPS `threads.net`/`threads.com` URL without token material, and any failure or rejection omits `url` without flipping `ok`. Deferred by decision (E94 scope): Threads media and carousel posts (they need a public `image_url` host), token refresh automation, container-readiness polling and retries.
+
+### `@gobing-ai/weibo-pub` (`plugins/publishings/weibo-pub`, kind `publish`)
+
+| Export | Kind | Notes |
+| -------- | ------ | ------- |
+| `WeiboBrowserTransport` | class | `browser` / `driver: script`; headless session preflight, then one headed flow. `article` fills 头条文章 and clicks `保存草稿` (default) or the publish control; `post` fills the home composer and clicks `发送` |
+| `WEIBO_OPERATIONS` / `resolveOperation` | const / function | Declared set is `post` and `article`; an unknown operation is refused by name before a transport is built. `options.driver` is resolved separately and refuses anything but `script` |
+| `WEIBO_POST_SELECTORS` / `WEIBO_ARTICLE_SELECTORS` | const | Ordered selector ladders (fail-closed). **Provisional** until task 0246 pins them against the live DOM |
+| `isWeiboAuthenticated` / `WEIBO_CONFIG` | const | Readiness predicate (no login redirect, composer or editor reachable) and its site-owned config for `checkChannelSession` and the operator CLI |
+| `getPublishTransport` | function | `FakeBrowserTransport('script')` under `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake`, else the browser transport |
+| `processPublishIO` / `main()` | function | `--in`/`--out`; validates the Content, the operation and the driver before resolving any transport |
+
+`weibo-pub` (2026-10-12, E94 / task 0244) is the Weibo half of the x-pub split: a script browser flow with **draft by default** (E91-D5) and **success only from an observed signal** (E91-D6). Refusals all precede the browser, in this order: operation → driver → `publishStatus` value → post-without-`public` → post text → cover → session preflight. The home composer has no draft, so `post` **requires** `metadata.publishStatus: 'public'` (refusing beats silently going live) and is text-only — a cover on a post is refused rather than dropped. `article` fills the 头条文章 editor (title, then the body through the shared `pasteHtml` as rendered HTML), attaches an optional cover from `options.coverPath ?? metadata.coverImage` (absolute, existing `.png|.jpg|.jpeg|.webp`, refused pre-browser otherwise), reads both fields back, then clicks `保存草稿` — or the publish control only for `public`. Every success is a *fresh* signal: a draft needs a 保存草稿 toast that was not on screen before the click or a URL that left the editor entry carrying a draft id, a live article needs a `ttarticle` show URL, and a post needs a feed card that appeared after the send and whose own text carries the submitted excerpt — so an existing card, an already-visible toast or the editor URL itself is never an outcome. Failure messages are one bounded line: the step, the deadline and the operator recovery command (`bun plugins/publishings/weibo-pub/src/profile-check.ts login`), never a DOM dump, cookie or stack. The session preflight is headless and single-pass (`headedFallback: false`); `checkHeadedOnly` belongs to the operator CLI and is deliberately never forwarded to a publish preflight, so a refusal can never escalate to a headed window. Operator CLI: `bun plugins/publishings/weibo-pub/src/profile-check.ts login|check [--profile <dir>] [--timeout <ms>] [--headed]` over the shared `runProfileCli` (exit 0 verified / 1 refused / 2 usage); profile dir precedence `--profile` > `WEIBO_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/weibo`. Deferred: the Weibo `statuses/share` API, post images, and the live selector measurements that task 0246 owns.
 
 ### Leftover CMS browser plugins (`juejin-pub`, `infoq-pub`, `substack-pub`, `xhs-pub`)
 

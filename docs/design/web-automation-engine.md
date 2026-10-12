@@ -108,7 +108,7 @@ Run semantics that matter here:
 ## 3. Cached login credentials as a workflow option
 
 The credential cache **is the persistent profile dir**
-(`~/.config/kk/browser-profiles/<channel>` — already shipped for all six
+(`~/.config/kk/browser-profiles/<channel>` — already shipped for all seven
 channels; see the skill's `references/browser-launch.md`).
 
 Design rules:

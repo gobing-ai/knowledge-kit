@@ -1,0 +1,7 @@
+{
+    "name": "threads-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "post text via the official Threads two-step publishing API (no browser path)"
+}

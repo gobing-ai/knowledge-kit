@@ -24,10 +24,12 @@ not add a `kk publish` noun.
 | medium | `medium-pub` | `file-cli` (token API) | `kk executor run medium-pub --in <content.json> --out <result.json>` |
 | wechatmp | `wechatmp-pub` | `file-cli` (`draft/add`) | `kk executor run wechatmp-pub` (default operation `draft`) |
 | x post | `x-pub` | `file-cli` (`POST /2/tweets`) | `kk executor run x-pub` (`options.operation` omitted / `post`) |
-| x article | `x-pub` | `browser` / `agent` | workflow `agent.run` — not `kk fanout` |
-| juejin | `juejin-pub` | `browser` / `agent` | workflow `agent.run` |
-| infoq | `infoq-pub` | `browser` / `agent` | workflow `agent.run` |
-| substack | `substack-pub` | `browser` / `agent` | workflow `agent.run` |
+| x article | `x-pub` | `browser` / `script` | `kk executor run x-pub --in <content.json> --out <result.json>` (`options.operation: article`); a missing or expired profile refuses (`ok: false`, naming `profile-check.ts login`) before any window opens |
+| juejin | `juejin-pub` | `browser` / `script` | `kk executor run juejin-pub --in <content.json> --out <result.json>` |
+| infoq | `infoq-pub` | `browser` / `script` | `kk executor run infoq-pub --in <content.json> --out <result.json>` |
+| substack | `substack-pub` | `browser` / `script` | `kk executor run substack-pub --in <content.json> --out <result.json>` (needs `SUBSTACK_PUBLICATION_URL`) |
+| threads | `threads-pub` | `file-cli` (Threads Graph, container → `threads_publish`) | `kk executor run threads-pub --in <content.json> --out <result.json>` — text only; needs `THREADS_ACCESS_TOKEN` + `THREADS_USER_ID`, no browser path |
+| weibo | `weibo-pub` | `browser` / `script` | `kk executor run weibo-pub --in <content.json> --out <result.json>`; `options.operation` `article` (头条文章, draft via 保存草稿 by default) or `post` (home composer, which has **no draft** — it requires `metadata.publishStatus: public`) |
 | xhs | `xhs-pub` | `browser` / `script` | `kk executor run xhs-pub --in <content.json> --out <result.json>` — its default `script` driver uploads the ordered card images with Playwright `setInputFiles`; the `agent` driver fails loud for this channel (ADR-024) |
 
 Already-harvested file-cli channels (`qiita-pub`, `zenn-pub`, `surfdash-pub`,
@@ -99,5 +101,7 @@ the confirmed live status; otherwise fail naming the switch.
 | medium-pub | `MEDIUM_INTEGRATION_TOKEN` |
 | wechatmp-pub | `WECHAT_APP_ID`, `WECHAT_APP_SECRET` |
 | x-pub `post` | `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` |
+| threads-pub `post` | `THREADS_ACCESS_TOKEN`, `THREADS_USER_ID` |
+| weibo-pub | none — its session lives in the browser profile (`WEIBO_PROFILE_DIR` overrides the dir; tier: `--profile` > `WEIBO_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > `~/.config/kk/browser-profiles/weibo`) |
 
 Missing env → plugin exit 1, `Result.ok false`, error names the variable.

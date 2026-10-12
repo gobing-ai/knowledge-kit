@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: weibo-pub live operator dogfood — pin composer and article editor selectors
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-10-09T23:19:30.104Z
-updated_at: "2026-10-12T04:28:58.442Z"
+updated_at: "2026-10-12T15:09:10.084Z"
 feature_id: E94
 priority: P3
 tags:
@@ -95,7 +95,36 @@ Given 0244/0245 are complete and an operator has a disposable verified account, 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+#### Change map
+
+| Path | What changed |
+| --- | --- |
+| `plugins/publishings/weibo-pub/src/index.ts:54-72` | `WEIBO_POST_SELECTORS` **pinned from live measurement** (2026-10-12): composer `textarea[placeholder*="新鲜事"]` (measured node: `textarea`, placeholder `有什么新鲜事想分享给大家？`, class `_input_*`), send `button:has-text("发送")`, and the feed-card ladder now leads with the measured `a[class*="_time_"]`. Every `send` fallback stays constrained to its own 发送 text because the measured `woo-button-primary` class is shared with the account's 管理 button — a bare class fallback would click the wrong control. |
+| `plugins/publishings/weibo-pub/src/index.ts:36-43` | `WEIBO_ARTICLE_URL` doc now records the measurement: the route redirects to `weibo.com/` for an account without the 头条文章 entitlement (the throwaway account had none). |
+| `plugins/publishings/weibo-pub/src/index.ts:69-80` | `WEIBO_ARTICLE_SELECTORS` doc states plainly that they are **not** measured live and why, keeping the fail-closed ladders. |
+| `plugins/publishings/weibo-pub/src/index.ts:226-231` | One bounded post-flow refresh flag (`reloadedForPost`) so a card Weibo only renders after a reload is still observed — the composer sits at the top of the timeline, but the feed does not always insert the new card in place. |
+| `plugins/publishings/weibo-pub/src/index.ts:~455-470` | `probePostLive` now (a) filters fresh cards, (b) reads the excerpt from the **card container** rather than the link (measured: the matched link's own text is the timestamp, e.g. `3小时前`), and (c) performs the single reload when no fresh card has appeared. |
+| `plugins/publishings/weibo-pub/src/index.ts:~605-620` | `cardTextScript` reads `closest('article, [class*="card"], [class*="Card"], div[class*="Feed"]')` with a parent fallback — same measurement. |
+| `plugins/publishings/weibo-pub/src/index.ts:~330-350` | The post flow snapshots toasts before the send and names a fresh one in the refusal (`… (site said: …)`), so a site-side rejection is reported instead of a bare timeout. |
+| `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` | One new case: a fresh failure toast is named when the send produces no card (`38` offline tests total, all green). |
+| `docs/design/weibo-ui-discovery.md` | **New** measurement note: R1 preflight results, the composer/send/status-link measurements with counts and descriptors, the two live post attempts and their read-only verification, the four 头条文章 routes and their landings, the entitlement finding, and the pinned constants with the reasons for each flow fix. |
+| `docs/04_DESIGN.md:43` | Satellite row: `implemented (E94)`; Weibo post selectors pinned live 2026-10-12, 头条文章 half entitlement-gated, **live post/article evidence still open (0246)** — deliberately not "shipped". |
+| `docs/features/E94_…md` (feature corpus, via `spur feature update`) | R4's scenario body: `Given a verified Weibo browser profile with the 头条文章 entitlement …` plus a step stating that an account without it is refused rather than silently publishing (measured 2026-10-12). **Scenario identity unchanged**; `spur feature check E94` passes. |
+
+#### Measured outcome vs the task's requirements (honest summary)
+
+| Req | Outcome |
+| --- | --- |
+| R1 | **MET** — operator `login` and `check` both exit 0, and a forced-headless `checkChannelSession` probe (`headedFallback: false`, no `headedOnly`) reports `verified`. `checkHeadedOnly` therefore stays `false`, unlike x-pub. |
+| R2 | **NOT MET (third-party)** — no 头条文章 editor is reachable for the throwaway account: `card.weibo.com/article/v3/editor` (and `#/draft`) redirect to `weibo.com/`, `/ttarticle/p/write` 404s, `/article/write` reports the account ineligible, and the creator centre has no 文章/写文章 entry. No draft control exists to measure, so the article leg stops per the task's closed contingency and the feature R4 body carries the entitlement condition. |
+| R3 | **NOT MET (third-party)** — two explicitly approved live post attempts (separate approvals) both fail closed: the composer holds the text, the send control is enabled/visible/topmost (measured), but no card appears on the home feed or the account timeline (verified read-only by body-text search) and no toast — success or failure — is emitted. Nothing was published, so R5's live post and article evidence is **not** obtained. |
+| R4 | **PARTIAL** — the post selectors/signals are pinned from live measurement, the two measured flow consequences are fixed, the discovery note is written, and the 04 row drops the blanket "live selectors pending" wording. The article selectors remain unmeasured because no editor rendered. |
+
+#### Rationale
+
+- **Measurement first, then pins.** The two seed ladders that the live DOM falsified were the status-link shape (`/status/` and `/detail/` measured **0** matches on the desktop feed) and the card-text source (the matched link's own text is the timestamp). Both were fixed from the measurement rather than patched around.
+- **Fail-closed held.** The unobserved post outcome was reported as `ok: false` both times and independently verified as *not published*, so the run never claimed a success it did not see (E91-D6) and produced no unintended public write.
+- **No repair-lane thrash for a third-party blocker.** The unmet requirements are an account entitlement and a site-side refusal of the send — no code change can repair them, so the run records the PARTIAL verdict and stops rather than spending the bounded fix budget on identical retries.
 
 ### Testing
 
@@ -103,10 +132,55 @@ Given 0244/0245 are complete and an operator has a disposable verified account, 
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0246
+
+**Scope:** task 0246's working diff inside the batch's uncommitted tree (37 files, +3709 / −102; this task's own edits are `plugins/publishings/weibo-pub/src/index.ts`, its test file, `docs/design/weibo-ui-discovery.md`, `docs/04_DESIGN.md`, and the E94 feature R4 body via `spur feature update`)
+**Dimensions:** functional traceability, security, efficiency, correctness, usability, architecture
+**Verdict:** PASS
+
+_PASS applies to the change under review (no P1–P3 findings; the implementation, its tests and its documentation are sound). The requirement-level outcome is unmet for R2/R3 for third-party reasons, which the verify stage records as PARTIAL — no code repair can address an account entitlement or a site-side refusal of the send._
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 (advisory) | correctness | The post-live acceptance compares a 30-character normalized excerpt against the card container's text. A real card may truncate the body (an ellipsis or a 全文 link), which would read as a refusal. The two live attempts never reached the card stage, so this remains **unverified against a published card** — it is the most likely next failure mode for the post leg. | `plugins/publishings/weibo-pub/src/index.ts` (`cardTextScript`, `probePostLive`) | OPEN (unverified: no published card observed) |
+| 2 | P4 (advisory) | correctness | `reloadedForPost` is per-instance and never reset, so a second publish on the same transport instance would not refresh the feed. Production resolves a fresh transport per `processPublishIO` call, so this is a direct-caller edge only. | `plugins/publishings/weibo-pub/src/index.ts` (transport field) | ACCEPTED |
+| 3 | P4 (advisory) | correctness | The 头条文章 selectors and `WEIBO_ARTICLE_URL` remain **unmeasured** because no editor rendered for the throwaway account (entitlement). They stay fail-closed ladders; the feature R4 body now carries the entitlement condition and the discovery note records the four measured route landings. | `plugins/publishings/weibo-pub/src/index.ts:60-80`, `docs/design/weibo-ui-discovery.md` §5 | DEFER (needs an account with the 头条文章 entitlement) |
+| 4 | P4 (advisory) | correctness | Two separately approved live posts were **declined by Weibo**: the composer held the text, the send control measured enabled/visible/topmost, no card appeared on the home feed or the account timeline (verified read-only by body-text search) and no toast was emitted. The fail-closed path behaved correctly (nothing published, `ok: false` both times) but R5's live post evidence is not obtained on this account. | `.spur/run/0246-weibo-*/post*-result.json`, `docs/design/weibo-ui-discovery.md` §4 | OPEN (platform/account behaviour; needs a different account or a later retry) |
+| 5 | P4 (advisory) | efficiency | The first `task-diffstat` run for this task was **fail-closed** (`files: 0`, `sensitive: true`) because the task's base SHA had not been captured at precheck; the lane still resolved to `safety`, i.e. the strictest lane, and the diffstat was re-measured after recording the base SHA. No decision was taken from the empty artifact. | `.spur/run/0246-diffstat.json`, `.spur/run/0246-base.sha` | ACCEPTED |
+
+No P1–P3 findings. Security-relevant negatives, measured: the forced-headless preflight verifies and is never bypassed (no headed fallback on the publish path, `checkHeadedOnly` stays `false`), no page HTML/cookie/token/screenshot is committed (only bounded node descriptors), and both live writes were individually approved and independently verified as not published.
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | operator `bun plugins/publishings/weibo-pub/src/profile-check.ts login` → exit 0 (`verified`); `check --timeout 60000` → exit 0 headless; forced-headless `checkChannelSession(WEIBO_CONFIG, { headedFallback: false })` → `verified`. Recorded in `docs/design/weibo-ui-discovery.md` §1. `checkHeadedOnly` stays `false`. |
+| R2 | UNMET | No 头条文章 editor is reachable for the account: four measured routes (editor → `weibo.com/`, `#/draft` → `weibo.com/`, `/ttarticle/p/write` → 404, `/article/write` → ineligible) and no 文章 entry in the creator centre (`docs/design/weibo-ui-discovery.md` §5). The task's closed contingency applies: the leg stops, and the feature R4 body was re-scoped through `spur feature update E94` (scenario identity unchanged, `spur feature check E94` passes). |
+| R3 | UNMET | Two separately approved live post runs returned `ok: false` (`no outcome observed within 30000ms`) and a read-only re-check found the text absent from both `weibo.com/` and `weibo.com/u/<uid>`, i.e. nothing published; the article-public leg is blocked by the same entitlement. R5's live evidence is therefore **not** obtained. |
+| R4 | PARTIAL | Pinned from measurement: `WEIBO_POST_SELECTORS` (composer/send/feedCard) with the measured node descriptors, `send` fallbacks constrained to their own 发送 text, the card-container text source, the single bounded reload and the fresh-toast naming; `docs/design/weibo-ui-discovery.md` written; `docs/04_DESIGN.md:43` no longer claims live verification is merely pending. Unmeasured remainder: the article selectors and the card-excerpt comparison. |
+
+##### Acceptance Criteria Verification
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — weibo-pub saves a post or article draft by default from an observed signal (req: R2) | UNMET | manual-review | No draft control exists for the account (`docs/design/weibo-ui-discovery.md` §5); the offline suite covers the draft rail (`plugins/publishings/weibo-pub/tests/weibo-pub.test.ts`) but a live draft was never observed |
+| AC2 — weibo-pub publishes live only when publishStatus is public (req: R3) | UNMET | manual-review | Two approved live post runs were declined by the site without publishing (`docs/design/weibo-ui-discovery.md` §4); the refusal path itself is green offline and in both live runs |
+| R4 — weibo-pub saves a post or article draft by default from an observed signal | PARTIAL | test | selector/signal pins are exercised by `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` (38 pass); the live draft leg is entitlement-blocked |
+| R5 — weibo-pub publishes live only when publishStatus is public | UNMET | manual-review | no published post or article was observed; both attempts fail closed with nothing written |
+
+##### Consequence for the task and the batch
+
+This task's own contract is explicit: *"Missing draft control, failed headless preflight or unavailable approval stops that leg and retains partial evidence"* and *"do not mark the task done or the satellite shipped"*. With R2 and R3 unmet, 0246 **stops** here: the run is closed `interrupted` (evidence retained, resumable) rather than advanced into the bounded repair lane — the unmet requirements are an account entitlement and a site-side refusal of the send, neither of which any code fix can repair.
+
+**Operator actions required to finish this task later:** (1) an account **with** the 头条文章 entitlement for the draft/article legs, and (2) a determination of why this fresh account's sends are declined (or a different account for the post leg). The pinned post selectors, both live Result JSONs and the discovery note are the retained evidence.
 
 ### References
 
 - Feature E94; design `docs/design/weibo-threads-publish-channels.md` §3/§6; precedent `docs/design/x-article-ui-discovery.md`; depends on 0244
 
 ### History
+
+- 2026-10-12T15:01:44.562Z todo → wip (system)
+

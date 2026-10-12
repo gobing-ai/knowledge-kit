@@ -262,3 +262,50 @@ level LOW) instead of qualifying it with an adverb; the enum stays on the eviden
 Falsification evidence (all three runs, exit 0): the drafted answer → `{"ok":true,"reason":"Task is complete"}`;
 the same text with the `Confidence:` lines deleted → `{"ok":false,"reason":"Add verification for: confidence level (HIGH/MEDIUM/LOW)"}`;
 the same text with one hedge adverb restored in the WeChat row → `{"ok":false,"reason":"Add verification for: uncertainty phrases detected: Probably"}`.
+
+## 2026-10-12 · tasks 0243, 0244, 0245, 0246 (E94 threads-pub & weibo-pub)
+
+### Test isolation
+- `bun test` runs every file in **one process**. A `spyOn(globalThis, 'fetch')` that is never restored makes the
+  *next* suite's fetches throw; the symptom surfaces as an unrelated timing test (surfdash-pub's 2 s
+  `awaitArticleLive` budget expiring at 2012 ms). Keep one live spy in a module-level holder and
+  `mockRestore()` it in `afterEach`; pairing the two test files reproduces it in seconds instead of a
+  full-suite bisect. Evidence: `.spur/memory/runs/0243-e94-0ee12e5a.md`.
+- A full-suite red gate whose failures pass in isolation is not automatically a flake: pair the suspect file
+  with the changed one before believing the flake story.
+
+### Worktree batches (--worktree)
+- The `no-dead-run-scoped-citation` pre-check fails in a worktree even when the invoking tree is clean: a
+  `done` task citing `.spur/memory/runs/<id>.md` resolves only in the tree that produced it, and the evidence
+  staging step copies **verdicts only**. Copy any cited run-scoped file into the worktree before the first gate.
+- `commit-guard` classifies **every** `.spur/**` path as bookkeeping and refuses to stage it, and it stages
+  **files, not directories**. Enumerate `git diff --name-only <base>` plus `git ls-files --others
+  --exclude-standard` and pass files; commit a tracked `.spur/rules/**` change with an explicit `git add -- <path>`.
+- Only `/.spur/run/` (root) is gitignored — a plugin-local `.spur/` scratch dir is **not** ignored and its
+  probe scripts get committed if they are enumerated. Keep run-scoped probes outside the tracked tree, or add the
+  ignore pattern.
+- Gate receipts are fingerprint-bound and carry a `no-progress` guard: a recheck at the same input digest is
+  refused outright. Preserve the red receipt as `<wbs>-check-receipt.false-fail-<reason>.json` and say so in the
+  run log before retrying (never delete it silently).
+
+### Verdict / answer-file lint
+- AC rows must key by the **exact** feature scenario title or the task's AC checklist label. Invented ids
+  (`R11 — …`) fail lint, and a `[docs-only]`-style marker placed inside the id breaks identity resolution —
+  for a documentation requirement, give the row machine-checked `test` evidence instead of the marker.
+- `Confidence: HIGH` is rejected whenever any row is not MET (use `MEDIUM`), and a backticked call or
+  version claim in an evidence cell needs a `path:line`/URL citation in the *same* cell.
+- `spur feature check` reports the L4 scenario findings from the covering tasks' **verdict artifacts**, so a
+  task's PASS with MET scenario rows is what clears a previously unverified feature scenario.
+
+### Channel measurement (Weibo, E94)
+- Measured 2026-10-12: the desktop status link is `https://weibo.com/<uid>/<mblogid>` carried by
+  `a[class*="_time_"]`; `a[href*="/status/"]` and `/detail/` match **0** nodes on the signed-in feed, and the
+  matched link's own text is the *timestamp*, so the submitted excerpt must be read from the card container.
+- The measured `woo-button-primary` class is shared by the account's 管理 button: constrain every send fallback
+  with its own 发送 text.
+- The 头条文章 editor is account-entitlement-gated: `card.weibo.com/article/v3/editor` (and `#/draft`) redirect
+  to `weibo.com/`, `/ttarticle/p/write` 404s, `/article/write` reports the account ineligible and the creator
+  centre has no 文章 entry. A fresh account's home-composer sends can also be declined silently (nothing
+  published, no toast) — verify a live write read-only by body-text search before believing either outcome.
+- A headless session check can fully verify where x-pub needed `checkHeadedOnly: true`: Weibo verified
+  headlessly, so the publish preflight keeps `headedFallback: false` and the flag stays `false`.
