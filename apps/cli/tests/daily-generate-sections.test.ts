@@ -64,6 +64,9 @@ if (outPath) {
         metadata: {
             audioPath: wavPath,
             duration: 1.0,
+            // The real driver stamps one entry per spoken segment; the join must carry them into the
+            // joined Content or podcast-pub's timeline renders 0:00 for every item.
+            segments: [{ duration: 1.0, transcription: 'セクション' }],
             qc: { passed: true }
         }
     }, null, 2));
@@ -574,6 +577,23 @@ describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 f
             const meta = (JSON.parse(readFileSync(contentPath, 'utf-8')) as { metadata: Record<string, unknown> })
                 .metadata;
             expect(meta.mp3Path).toBe(mp3Path);
+        });
+    });
+
+    it('the sectioned join carries metadata.segments so show-notes offsets are real', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const res = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            const meta = (
+                JSON.parse(readFileSync(join(dir, '30-audio', `${date}_11_generate_content.json`), 'utf-8')) as {
+                    metadata: Record<string, unknown>;
+                }
+            ).metadata;
+            const segments = meta.segments as Array<{ duration?: number; transcription?: string }>;
+            // 8 driver calls = opening + 6 items + closing, one sidecar each.
+            expect(segments).toHaveLength(8);
+            expect(segments.every((s) => typeof s.duration === 'number')).toBe(true);
         });
     });
 

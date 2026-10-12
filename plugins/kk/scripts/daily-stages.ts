@@ -876,6 +876,18 @@ export function dailyGenerate(args: string[]): void {
         delete meta.introMerged;
         meta.audioPath = joinedWavPath;
         meta.duration = joinedDuration;
+        // podcast-pub renders the show-notes timeline from `metadata.segments[]` (per-segment
+        // duration + ASR transcription). The one-shot path receives them from the voice plugin, but
+        // this sectioned path synthesizes one sidecar per section and dropped them at the join — every
+        // timeline row rendered 0:00 (2026-10-11). Rebuild the list in section order.
+        const joinedSegments: Array<Record<string, unknown>> = [];
+        for (const plan of plans) {
+            const sectionSegments = metadataOf(readJson(plan.jsonPath)).segments;
+            if (Array.isArray(sectionSegments)) {
+                joinedSegments.push(...(sectionSegments as Array<Record<string, unknown>>));
+            }
+        }
+        if (joinedSegments.length > 0) meta.segments = joinedSegments;
         contentObj.audioPath = joinedWavPath;
         contentObj.mediaType = 'audio/wav';
         contentObj.metadata = meta;
