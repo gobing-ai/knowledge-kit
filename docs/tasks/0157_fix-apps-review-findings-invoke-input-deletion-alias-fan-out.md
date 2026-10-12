@@ -4,7 +4,7 @@ name: "Fix apps review findings: invoke input-deletion alias, fan-out duplicate 
 status: done
 template: issue
 created_at: 2026-09-24T00:17:20.579Z
-updated_at: "2026-09-24T16:19:23.181Z"
+updated_at: "2026-10-12T00:16:21.828Z"
 
 priority: P1
 ac_altitude: task-local
@@ -739,7 +739,7 @@ test shown red pre-fix and green post-fix.
 | Zod `z.object` strips unknown keys by default; `.safeParse` returns `{ success, data \| error.issues }` with `issues[].path` | https://zod.dev/api#objects · https://zod.dev/basics#handling-errors | Every existing `safeParse` site in `apps/cli/src` uses this shape | HIGH |
 | `apps/cli` has no direct `zod` dependency | `apps/cli/package.json:49-52` | Read at task creation | HIGH |
 | `fanout()` promises once-per-target; the fresh path does not dedupe | `apps/cli/src/fanout.ts:87`, `:456` | Review repro: 2 dispatch calls for `--target x --target x` | HIGH |
-| Only `apps/cli/tests/fanout.test.ts` imports `AggregateResult` / `TargetOutcome` outside `fanout.ts` | `rg -l "AggregateResult\|TargetOutcome" apps plugins packages` | Run at task creation | HIGH |
+| Only `apps/cli/tests/fanout.test.ts` imports `AggregateResult` / `TargetOutcome` outside `fanout.ts` | `rg -l "AggregateResult\|TargetOutcome" apps plugins packages` → only `apps/cli/tests/fanout.test.ts` | Run at task creation | HIGH |
 | Exploitability of the R4 current-directory fallback | Inferred | Requires a planted file plus a missing package copy | LOW (exploitability); HIGH (defect exists) |
 
 #### Adjustments since the review

@@ -1,0 +1,45 @@
+$schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
+# API/library claim blocks must cite their source and carry an EARNED HIGH|MEDIUM|LOW level.
+#
+# The convention this rule enforces already exists by hand: a `#### API/library claim sources and
+# confidence` block holding a 4-column table `| Claim | Source | Local verification | Confidence |`
+# (docs/tasks/0155, 0156, 0157 — 38 rows before this rule landed). Nothing checked it, so the block
+# was prose: a row could claim HIGH with an empty Source cell, or invent a level outside the enum,
+# and no gate noticed. That is the same failure the sibling `verification-confidence-level` rule
+# closes for `Verification (` blocks — and this rule is that rule's second half, not a duplicate:
+# the sibling owns the close-out surface, this one owns the claim table.
+#
+# Why source citations at all: a claim about an API, library, framework or version is externally
+# changeable, so the reader needs the artifact that was inspected (`path:line`, a URL) or an explicit
+# statement of the gap. A reproducible command is deliberately NOT accepted as a citation — it names
+# no openable artifact; the honest repair is to append the path the command resolved to, which is
+# what task 0157's row did rather than weakening the rule.
+#
+# Scope decisions, both deliberate:
+#  - ROW-scoped earnedness: a HIGH row must cite, and a MEDIUM/LOW row must cite or name its gap.
+#    Judging the block instead would let one weak row be laundered by a cited neighbour.
+#  - PRESENCE is not enforced: 3 of this repo's documents carry the convention and hundreds assert
+#    API/library facts without it, so a presence rule would fail the gate on history rather than on a
+#    defect (the sibling rule made the same call for 155 pre-practice verdict records). Requiring the
+#    block is a task-AC decision, and the rule's `## Testing`-side sibling still covers each record.
+#
+# The checker lives in api-library-claim-citation.sh so its file/line detail is reachable by hand —
+# the `exit-code` evaluator reports only the exit status. Its falsification cases (11) live in
+# api-library-claim-citation.test.sh, including the row-scope negative control and the real-corpus
+# positive control.
+rules:
+  - id: api-library-claim-cites-source-and-confidence
+    description: "Every row of an `API/library claim sources and confidence` block carries a Confidence cell beginning with HIGH|MEDIUM|LOW and EARNS it for that row: HIGH cites an http(s) URL, a `path:line`, or a path with a code/doc extension; MEDIUM/LOW cite the same or name what is unverified. The block must hold at least one data row. A claim therefore cannot ship as an uncited assertion, and a level cannot be invented or smuggled past the enum."
+    severity: error
+    evaluator:
+      type: exit-code
+      config:
+        command: sh
+        args:
+          - ".spur/rules/structure/api-library-claim-citation.sh"
+        message: "exit {code}: an API/library claim block is empty, a row's confidence is outside HIGH|MEDIUM|LOW, or a row claims a level it does not earn (a HIGH with no citation, or a MEDIUM/LOW that cites nothing and names no gap) — run `sh .spur/rules/structure/api-library-claim-citation.sh` for the file and line, and `sh .spur/rules/structure/api-library-claim-citation.test.sh` for the cases"
+    include:
+      - "docs/**/*.md"
+    exclude:
+      - "**/node_modules/**"
+      - "**/vendors/**"
