@@ -3,7 +3,7 @@
 Status: accepted design, not implemented. Feature G14; ADR-036; refined 2026-10-11.
 Implementation specifications: tasks 0256 → 0257 → 0258. Their Design, Requirements and Plan
 sections freeze the detailed contracts; the refinement report is
-[2026-10-11-g14-ready-refinement.md](../plans/2026-10-11-g14-ready-refinement.md).
+[2026-10-11-g14-ready-recheck.md](../plans/2026-10-11-g14-ready-recheck.md).
 
 ## Outcome and boundaries
 
@@ -21,7 +21,8 @@ tree. Test without moving or deleting the user's reference checkout.
 ## Standalone generator — task 0256
 
 Add `plugins/generations/voxcpm-tts` with manifest, workspace package, TypeScript entry/client,
-private Python worker, uv project/lock, profiles, tests and README. Follow Gemini's injection
+private Python worker, uv project/lock, profiles, tests and README. Update both complete plugin-name
+enumerations in registry tests with the manifest. Follow Gemini's injection
 into `processGeneratorIO` with identity `kk:voxcpm-tts`. Import existing
 `@gobing-ai/voice-gen` exports; client types/helpers are already exported. Reuse shared
 VoiceScript segmentation, gaps, speed, retry, WAV concatenation, MP3 and QC handling.
@@ -33,7 +34,12 @@ without a shell. A sequential integer-id NDJSON protocol carries health/render r
 validated response ids, owned WAV paths, duration/provenance or errors. Validate framing, paths,
 finite nonempty mono waveform and positive actual `tts_model.sample_rate`. Write PCM16 at that
 rate; do not label 48kHz data as 24kHz. Redirect all library stdout to stderr. At most one model
-loads per invocation; no cross-invocation service.
+loads per invocation; no cross-invocation service. `createVoxCpmClient` exposes the shared client plus
+an asynchronous close operation. `generate` promptly returns a decimal request id; `waitUntilDone`
+awaits its stored promise and `downloadAudio` copies only the owned result. Allow one in-flight
+render, integer protocol ids starting at 1, at most 1 MiB per line and 64 KiB of retained stderr.
+Malformed framing, wrong ids, EOF or escaped paths terminate the worker without restart, including
+shared retries. Ordinary backend errors may retry the same healthy model.
 
 Daily commands currently use the synchronous executor path; its async process-tree cleanup is
 not a guarantee for these callers. The plugin owns startup/request/run deadlines, SIGTERM/SIGINT
@@ -48,7 +54,10 @@ other work. SIGKILL of the entire host is outside the cleanup guarantee.
 Pin independently published `voxcpm==2.0.3` in uv with Python 3.12. Step 0 of implementation
 must verify the locked installation/import/API; source inspection does not prove hardware/model
 viability. Use `from_pretrained` with `load_denoiser=False,optimize=False`. Record package version
-and resolved model snapshot revision, or explicitly unknown provenance.
+and resolved model snapshot revision, or explicitly unknown provenance. Resolve and retain the
+snapshot directory with the installed Hub API before calling `from_pretrained` on that local path;
+the published instance does not expose the documented `voxcpm_model_path` attribute. Validate
+canonical import, uv, Hub/cache and profile paths before spawning/loading, including symlinks.
 
 Frozen environment: `VOXCPM_MODEL=openbmb/VoxCPM2`, `VOXCPM_DEVICE=auto` (auto/cpu/cuda/mps),
 `VOXCPM_PROFILES_PATH=<plugin-root>/profiles.json`. The registry is a `profiles` array with unique
@@ -79,8 +88,8 @@ Add `voxcpm: 'voxcpm-tts'` once to the shared alias map. Document opt-in usage i
 YAMLs/operator docs without new workflow-only options. Exercise voice1 whole-document rendering
 and voice2 sequential opening/items/closing rendering.
 
-Whole-document cache reuse requires matching requested generator, passing QC, present WAV and
-present requested MP3. Return a matching cache before Gemini probing. On a Gemini cache miss,
+Whole-document speech cache reuse requires matching requested generator, passing QC and a valid WAV.
+Repair a missing requested MP3 from that cached speech before returning, without resynthesizing it. Return a matching cache before Gemini probing. On a Gemini cache miss,
 preserve its existing probe/fallback policy, then check the resolved Voicebox cache before
 rendering. VoxCPM never probes Gemini or silently falls back. Foreign/legacy/invalid metadata
 regenerates; never relabel foreign audio.
@@ -89,10 +98,17 @@ Keep voice2's text/profile/driver section hashes and completed valid sections af
 Check matching section provenance/QC/WAV before reuse. Join only after all sections succeed,
 using current ordering/gaps and existing ffmpeg normalization at the first section's actual rate.
 Rebuild a complete Content envelope and current generator/audioPath/duration/QC rather than
-spreading old final metadata. Aggregate section QC conservatively: all must pass; minimum score
-when all sections supply one; labelled critical issues; unavailable ASR stays unavailable.
+spreading old final metadata. Preserve the ordered `metadata.segments` timeline. Final reuse also
+requires `metadata.sectionHashes` to equal the current ordered section hashes, with matching
+identity, valid Content/WAV and passing QC. Missing or stale fingerprints force a rejoin even if
+all section caches hit; failed join followed by retry must never reuse an older final. Publish
+final metadata only after successful join and requested transcode. Validate Content with its
+existing schema and artifacts with the WAV parser/ffprobe.
+Aggregate section QC conservatively using `overallScore` and `segmentAudits`: all must pass;
+minimum overall score when all sections supply one; reindex audits, total durations and label
+critical issues; unavailable ASR stays unavailable.
 
-A concurrent change supplies ensurePublishMp3 for missing output; reuse that helper and its
+The committed ensurePublishMp3 supplies missing output repair; reuse that helper and its
 MP3 truthiness convention. Clear stale mp3Path before calling it on a fresh join, forcing
 regeneration of the requested MP3; otherwise omit old mp3Path.
 Reset old introMerged on a fresh join so intro processing updates the correct MP3 exactly once.
@@ -116,10 +132,19 @@ renders precede four full-episode renders: two drivers × two stage forms, each 
 roots using the same hashed existing script/plan/Doc inputs. Render-related commands only; no
 collection or publication. Verify actual generator identity on final and section artifacts:
 Gemini fallback is incomplete Gemini evidence. Set finite run budgets before rendering and stop
-affected expensive work after one diagnosed environment failure.
+affected expensive work after one diagnosed environment failure. Direct plugin commands use the
+supported `--plugins-root` option. Finish each full render with the same hashed existing intro via
+`daily-intro <work> <date> <absolute-intro-file>`, then `daily-episode-duration <work> <date> 15 20`.
+Record duration before and after intro; a missing intro yields partial evidence.
 
 Record hashes, commands, package/model revision, effective voice/seed settings, hardware/device,
 startup/section throughput, ffprobe duration/sample rate, QC limitations and artifact paths.
+Eight scheduled renders are not a backend-request cap: account separately for shared transport
+attempts, verification, Gemini HTTP retries, VoxCPM internal retries and quota probes. Seed is
+explicitly effective only where supported; the current Gemini request does not forward it.
+Record effective controls and sanitize unsupported ambient overrides without silently changing
+script fields. Distinguish VoxCPM's hard invocation deadline from the shared/Gemini between-segment
+budget; do not add a supervisor or change timeout code for this evidence task.
 Allowlisted settings only, no secret/environment dumps. Listen before recording pronunciation,
 completeness, timbre, prosody, pauses and artifact judgments; otherwise mark listening pending
 and conclusion inconclusive. A report of failed inference is partial evidence, not full task
