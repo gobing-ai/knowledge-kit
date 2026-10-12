@@ -198,10 +198,13 @@ If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--fo
 ### Testing
 
 - Tests live in `tests/` next to the code (`<workspace>/tests/*.test.ts`), using `bun:test`.
-- Coverage target: **line >= 90% and function >= 90%** aggregate (`bunfig.toml`).
-- **Judge a single-file run by its pass/fail counts, not its exit code.** The aggregate coverage
-  threshold above is unreachable from one file, so `bun test <file>` exits 1 while reporting
-  `0 fail`; only the full-suite run (`bun run test`) is exit-code meaningful.
+- Coverage target: **line >= 90% and function >= 90% per file** (`bunfig.toml`'s
+  `coverageThreshold`). Measured 2026-10-12: bun enforces it per file, not on the aggregate — a full
+  suite reporting 98% overall still exited 1 because two files sat at 88%, and it prints `0 fail`
+  either way, so read the exit code, not the pass count alone.
+- **`bun test <file>` exits 1 on coverage, not on failures.** One file under-covers the modules it
+  loads, so judge a single-file run by its pass/fail counts; `bun run test` exits 0 only when every
+  file clears 90%.
 - Names describe behavior under a condition; assertions tie to the requirement.
 - For CLI output, assert via `logger` / stdout writers (not log-format coupling).
 
