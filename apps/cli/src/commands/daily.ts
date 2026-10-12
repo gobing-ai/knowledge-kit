@@ -358,6 +358,24 @@ async function publishClassifyAction(options: PublishClassifyOptions): Promise<v
 }
 
 /**
+ * Whether the summary beside a report is the empty-pool branch's `no-content` line. The two branches
+ * disagree about what a report file means, so its existence alone is not a cache hit: a run whose
+ * first attempt found an empty pool writes "no content" to `reportMd`, and a later attempt on the
+ * same day with a real pool then served that stale body as its own report — the published run's
+ * report, and the ledger's Result cell, claiming nothing was produced (2026-10-12, the 04:30 job's
+ * empty-pool attempt followed by the operator's retry on the same `work_dir`). The success path
+ * always rewrites the summary as `<n> items planned`, so the prefix is the discriminator.
+ */
+function reportIsNoContent(summary: string): boolean {
+    if (!existsSync(summary)) return false;
+    try {
+        return readFileSync(summary, 'utf-8').startsWith('no-content:');
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Item count of a pool/candidates JSON: a `Doc[]` array, or an object carrying `metadata.docs`.
  * An absent, empty or differently shaped file counts as 0 — the caller's question is "is there a
  * pool to report on?", and `undefined` is reserved for the option simply not being given.
@@ -403,7 +421,7 @@ async function runReportAction(options: RunReportOptions): Promise<void> {
             consoleOutput.write(JSON.stringify({ runDate, noContent: true, reason, report: reportMd }));
             return;
         }
-        if (existsSync(reportMd)) {
+        if (existsSync(reportMd) && !reportIsNoContent(summary)) {
             consoleOutput.write(JSON.stringify({ runDate, noContent: false, report: reportMd, cached: true }));
             return;
         }

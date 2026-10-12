@@ -451,6 +451,60 @@ describe('kk daily works-dir resolution and report edges', () => {
         expect(result.code).toBe(0);
         expect(JSON.parse(result.out).cached).toBe(true);
     });
+
+    /**
+     * The empty-pool branch and the content branch both write `reportMd`, so the file's existence
+     * cannot authorise a cache hit. A same-day retry after an empty-pool attempt must regenerate:
+     * otherwise the published run's report (and the ledger's Result cell) claims "no content"
+     * (2026-10-12).
+     */
+    it('does not serve the empty-pool report as the cache hit of a run that has a pool', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        const candidates = join(dir, 'candidates.json');
+        const pooledDoc = { id: 'a', title: 'a', body: 'a body', metadata: { source: 'fixture' } };
+        writeFileSync(pool, JSON.stringify([pooledDoc]));
+        writeFileSync(candidates, JSON.stringify({ metadata: { docs: [pooledDoc] } }));
+        // What an earlier attempt on the same work_dir left behind: the no-content pair.
+        writeFileSync(join(dir, '20261007_19_run-report_report.md'), '# Daily run 20261007 — no content\n\nstale\n');
+        writeFileSync(join(dir, 'run-report.summary.txt'), 'no-content: the store pool was empty\n');
+        const plugins = tempDir();
+        const pluginDir = join(plugins, 'generations', 'news-report-gen');
+        mkdirSync(pluginDir, { recursive: true });
+        writeFileSync(
+            join(pluginDir, 'plugin.json'),
+            JSON.stringify({ name: 'news-report-gen', kind: 'generator', entry: './index.ts', version: '1.0.0' }),
+        );
+        writeFileSync(
+            join(pluginDir, 'index.ts'),
+            [
+                "const out = process.argv[process.argv.indexOf('--out') + 1] ?? '';",
+                'await Bun.write(out, JSON.stringify({ body: "regenerated body" }));',
+                '',
+            ].join('\n'),
+        );
+        process.env.KK_PLUGIN_PATH = plugins;
+        try {
+            const result = await run([
+                'daily',
+                'run-report',
+                '--work-dir',
+                dir,
+                '--run-date',
+                '20261007',
+                '--pool',
+                pool,
+                '--candidates',
+                candidates,
+            ]);
+            expect(result.code).toBe(0);
+            expect(JSON.parse(result.out).cached).toBeUndefined();
+            expect(readFileSync(join(dir, '20261007_19_run-report_report.md'), 'utf-8')).toBe('regenerated body');
+            expect(readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8')).toContain('1 items planned');
+        } finally {
+            delete process.env.KK_PLUGIN_PATH;
+        }
+    });
 });
 
 describe('kk daily prepare never migrates the store it only reads (0242 R6/AC6)', () => {
