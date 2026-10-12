@@ -557,3 +557,38 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
         });
     });
 });
+
+describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 first publishing tick)', () => {
+    // The scheduled voice2 run failed at `daily-publish-prep`: vdriver=gemini writes WAV only,
+    // `VOICE_GEN_MP3` is honoured by voice-gen alone, so metadata.mp3Path was never recorded and the
+    // stage refused the enclosure. `transcode_mp3` is the workflow's contract, so generate owns it.
+    it('daily-generate writes the sibling MP3 and records metadata.mp3Path when transcode_mp3 is true', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const contentPath = join(dir, '30-audio', `${date}_11_generate_content.json`);
+            const mp3Path = join(dir, '30-audio', `${date}_11_generate_content.mp3`);
+            const res = runStage(['daily-generate', dir, date, '', 'true', 'voicebox', '1'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stdout).toContain(`generate: wrote publish MP3 ${mp3Path}`);
+            expect(existsSync(mp3Path)).toBe(true);
+            const meta = (JSON.parse(readFileSync(contentPath, 'utf-8')) as { metadata: Record<string, unknown> })
+                .metadata;
+            expect(meta.mp3Path).toBe(mp3Path);
+        });
+    });
+
+    it('daily-generate leaves the WAV-only content untouched when transcode_mp3 is off', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            const res = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            expect(existsSync(join(dir, '30-audio', `${date}_11_generate_content.mp3`))).toBe(false);
+            const meta = (
+                JSON.parse(readFileSync(join(dir, '30-audio', `${date}_11_generate_content.json`), 'utf-8')) as {
+                    metadata: Record<string, unknown>;
+                }
+            ).metadata;
+            expect(meta.mp3Path).toBeUndefined();
+        });
+    });
+});

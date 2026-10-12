@@ -460,6 +460,54 @@ function geminiQuotaProbeOk(workDir: string, pluginsPath: string, transcodeMp3: 
     return true;
 }
 
+/** `VOICE_GEN_MP3` truthiness, matching voice-gen's own parse (`plugins/generations/voice-gen/src/mp3.ts`). */
+const MP3_TRUTHY = new Set(['1', 'true', 'yes', 'on']);
+
+/**
+ * `transcode_mp3=true` is a workflow contract, not a driver hint: the run publishes an MP3
+ * enclosure and `daily-publish-prep` refuses a WAV (0171 R2). Only voice-gen honours
+ * `VOICE_GEN_MP3`; gemini-tts and omni-voice-gen write WAV only, so `metadata.mp3Path` stayed
+ * unset for them and every publishing run died at publish-prep. Derive the sibling MP3 here —
+ * the one place that knows both the requested transcode and what the driver actually wrote —
+ * so `daily-intro` re-transcodes the intro-merged audio to the same recorded path.
+ */
+function ensurePublishMp3(contentPath: string, transcodeMp3: string): void {
+    if (!MP3_TRUTHY.has(transcodeMp3.trim().toLowerCase())) return;
+    const content = readJson(contentPath);
+    if (content === null) return;
+    const meta = (content.metadata ?? {}) as Record<string, unknown>;
+    const recorded = meta.mp3Path;
+    if (typeof recorded === 'string' && recorded !== '' && existsSync(resolve(recorded))) return;
+    const wav = [meta.audioPath, content.audioPath].find(
+        (candidate): candidate is string =>
+            typeof candidate === 'string' && candidate.endsWith('.wav') && existsSync(resolve(candidate)),
+    );
+    if (wav === undefined) return;
+    const wavPath = resolve(wav);
+    const mp3Path = wavPath.replace(/\.wav$/i, '.mp3');
+    const proc = spawnSync('ffmpeg', [
+        '-y',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        wavPath,
+        '-codec:a',
+        'libmp3lame',
+        '-b:a',
+        '64k',
+        mp3Path,
+    ]);
+    if (proc.status !== 0 || !existsSync(mp3Path)) {
+        const detail = (proc.stderr?.toString() ?? '').trim() || `exit ${String(proc.status)}`;
+        failWith(1, `generate: publish MP3 transcode failed: ${detail}`);
+    }
+    meta.mp3Path = mp3Path;
+    content.metadata = meta;
+    sted('write', contentPath, () => writeJsonText(contentPath, content));
+    console.log(`generate: wrote publish MP3 ${mp3Path}`);
+}
+
 export function dailyGenerate(args: string[]): void {
     const [
         workDir = '',
@@ -498,6 +546,7 @@ export function dailyGenerate(args: string[]): void {
                 const qc = metadataOf(readJson(content)).qc as Record<string, unknown> | undefined;
                 if (qc?.passed === true) {
                     console.log(`audio cached: ${content} (QC passed)`);
+                    ensurePublishMp3(content, transcodeMp3);
                     return;
                 }
             }
@@ -518,6 +567,7 @@ export function dailyGenerate(args: string[]): void {
             kk(voiceExecutorArgs(voiceGenerator, docs, content, pluginsPath), {
                 env: { VOICE_GEN_MP3: transcodeMp3 },
             });
+            ensurePublishMp3(content, transcodeMp3);
         });
         return;
     }
@@ -707,6 +757,7 @@ export function dailyGenerate(args: string[]): void {
 
         if (!anySynthesisNeeded && existsSync(joinedWavPath) && existsSync(joinedContentPath)) {
             console.log('generate: all sections cached, joined speech reused');
+            ensurePublishMp3(joinedContentPath, transcodeMp3);
             return;
         }
 
@@ -829,6 +880,7 @@ export function dailyGenerate(args: string[]): void {
         contentObj.mediaType = 'audio/wav';
         contentObj.metadata = meta;
         writeJsonText(joinedContentPath, contentObj);
+        ensurePublishMp3(joinedContentPath, transcodeMp3);
     });
 }
 
