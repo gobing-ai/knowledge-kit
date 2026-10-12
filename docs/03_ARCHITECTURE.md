@@ -62,6 +62,8 @@ plugins/
     infoq-pub/        # @gobing-ai/infoq-pub — publish channel, browser/script (InfoQ CN) (E7, ADR-027)
     substack-pub/     # @gobing-ai/substack-pub — publish channel, browser/script (Substack) (E7, ADR-027)
     xhs-pub/          # @gobing-ai/xhs-pub — publish channel, browser/script (Xiaohongshu) (E7/E8, ADR-024)
+    threads-pub/      # @gobing-ai/threads-pub — publish channel, file-cli (Threads Graph: container → threads_publish, text only) (E94)
+    weibo-pub/        # @gobing-ai/weibo-pub — publish channel, browser/script (Weibo home composer + 头条文章, draft by default) (E94)
   kk/                 # Claude Code plugin: skills, commands, agents, hooks, rules, workflows, scripts
                       # (capability names omit kk- — superskill install prefixes kk:)
 tooling/
@@ -428,6 +430,8 @@ Full spec: `docs/design/storm-evidence-cache.md`.
 | `plugins/publishings/infoq-pub` | `@gobing-ai/infoq-pub` | Publish channel: InfoQ CN browser/script (E7, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/substack-pub` | `@gobing-ai/substack-pub` | Publish channel: Substack browser/script (E7, ADR-027) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `plugins/publishings/xhs-pub` | `@gobing-ai/xhs-pub` | Publish channel: Xiaohongshu browser/script (E7/E8) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/threads-pub` | `@gobing-ai/threads-pub` | Publish channel: Threads Graph two-step text publish (TEXT container → `threads_publish`), no browser path (E94) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
+| `plugins/publishings/weibo-pub` | `@gobing-ai/weibo-pub` | Publish channel: Weibo home composer + 头条文章 browser/script, draft by default (E94) | `@gobing-ai/kk-core`, `@gobing-ai/publish-harness`, `@gobing-ai/ts-browser-automation`, `@gobing-ai/ts-runtime`, `@gobing-ai/ts-utils` |
 | `tooling/typescript` | — | Shared tsconfig only | — |
 
 **Invariants**
@@ -450,8 +454,9 @@ Browser transports stay `kind: 'browser'` and declare `driver: 'script' | 'agent
 processes do not embed an LLM: `agent` drivers are `plugins/kk` skills / workflow `agent.run`
 using harness session helpers. `kk fanout` stays the sequencer for `file-cli` and `script`;
 agent-default channels sequence as workflow steps. Channel plugins (`medium-pub`,
-`wechatmp-pub`, `x-pub`, `juejin-pub`, `substack-pub`, `infoq-pub`, `xhs-pub`) land under
-`plugins/publishings/` like the shipped E3–E6 instances.
+`wechatmp-pub`, `x-pub`, `juejin-pub`, `substack-pub`, `infoq-pub`, `xhs-pub`, `weibo-pub`) land under
+`plugins/publishings/` like the shipped E3–E6 instances; `threads-pub` is a `file-cli` channel on the
+same rails as the tweet-API post half of `x-pub` (E94).
 
 Full design: `docs/design/remaining-wt-publish-harvest.md`.
 

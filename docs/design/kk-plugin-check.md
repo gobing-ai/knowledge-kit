@@ -1,7 +1,7 @@
 # kk plugin check / login — live channel readiness probe
 
-> Feature **E93** · Decision **ADR-032** (amends ADR-011 R3) · Tasks **0215** (verbs + manifest), **0216** (six channels)
-> Status: shipped — verbs + manifest (0215), all six browser channels on the contract (0216)
+> Feature **E93** · Decision **ADR-032** (amends ADR-011 R3) · Tasks **0215** (verbs + manifest), **0216** (six channels), **0245** (`weibo-pub`, the seventh)
+> Status: shipped — verbs + manifest (0215), all seven browser channels on the contract (0216 + E94's `weibo-pub`)
 
 ## Problem
 
@@ -57,8 +57,8 @@ probe — kk never chooses the profile dir.)
   `SUBSTACK_PUBLICATION_URL` therefore reach the probe without new flags.
 - `runProfileCli` (`packages/publish-harness/src/browser.ts:238`) implements this contract, including the
   0216 `--headed` flag. xhs-pub and wechatmp-pub keep bespoke CLIs (xhs draws on the ADR-025 automation
-  budget; wechatmp checks its own console session) that follow the same contract. 0216 gave all
-  six channels a manifest `check` entry, and set `checkHeadedOnly: true` for x-pub (X login-walls headless
+  budget; wechatmp checks its own console session) that follow the same contract. 0216 gave six
+  channels a manifest `check` entry and E94's `weibo-pub` is the seventh, and set `checkHeadedOnly: true` for x-pub (X login-walls headless
   article loads, so the headless pass is dead weight that blew kk's 30s probe-kill).
 
 ## Safety (ADR-032 R5)

@@ -43,6 +43,9 @@ rules:
       - "plugins/publishings/medium-pub/src/index.ts"
       - "plugins/publishings/wechatmp-pub/src/index.ts"
       - "plugins/publishings/x-pub/src/index.ts"
+      # threads-pub's index.ts implements PublishTransport (ThreadsPostApiTransport); the
+      # transport class is the sanctioned HTTP boundary, exactly as for x-pub above.
+      - "plugins/publishings/threads-pub/src/index.ts"
       # surfdash-pub's index.ts implements PublishTransport (PostsurfingFileCliTransport);
       # its awaitArticleLive poll is deploy-URL liveness verification at the boundary.
       - "plugins/publishings/surfdash-pub/src/index.ts"
