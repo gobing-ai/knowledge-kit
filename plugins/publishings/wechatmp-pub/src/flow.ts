@@ -95,6 +95,77 @@ const COVER_LIBRARY_NEXT = ['button:has-text("下一步")'];
 const COVER_ITEM = COVER_LIBRARY_ITEM;
 const COVER_CONFIRM = ['button:has-text("确定")', 'button:has-text("确认")', 'button:has-text("完成")'];
 
+/** The controls that close whatever modal the cover step left open, most specific first. */
+const DIALOG_DISMISS = [
+    '.weui-desktop-dialog:visible button:has-text("取消")',
+    '.weui-desktop-dialog__close',
+    'button:has-text("取消")',
+];
+
+/**
+ * Close an open console dialog, best-effort. Measured 2026-10-12: `setCover` returned its warning
+ * while the cover panel stayed open, and an open panel's footer (`div.weui-desktop-dialog__ft`)
+ * covers the editor — 赞赏 / 原文链接 / 创作来源 / 音频 each click-timed out behind it and the final
+ * `保存为草稿` was blocked for 30 s, so the run saved no draft at all. The same sweep shape the
+ * settings rail already uses (`./enrich`): the dialog's own 取消, else Escape.
+ */
+async function dismissOpenDialog(page: WechatPage): Promise<void> {
+    for (const selector of DIALOG_DISMISS) {
+        const control = await tryFindSelector(page, [selector], 2_000);
+        if (control === undefined) continue;
+        try {
+            await clickSelector(page, control, 2_000);
+        } catch {
+            // Gone between the probe and the click — nothing left to dismiss.
+        }
+        break;
+    }
+    await page.press?.('Escape');
+    await page.waitForTimeout?.(400);
+}
+
+/** The close controls a console modal exposes, most specific first (the audio picker shows no 取消). */
+const DIALOG_CLOSE = [
+    '.weui-desktop-dialog__wrp .weui-desktop-dialog__close',
+    '.weui-desktop-dialog__close',
+    '.weui-desktop-dialog__wrp button:has-text("取消")',
+    'button:has-text("取消")',
+];
+
+/** True while any console modal is still laid out — the signal both the wrp and the inner dialog expose. */
+async function anyDialogOpen(page: WechatPage): Promise<boolean> {
+    const raw = await page
+        .evaluate(
+            `[...document.querySelectorAll('.weui-desktop-dialog__wrp, .weui-desktop-dialog')].some((d) => d.offsetWidth)`,
+        )
+        .catch(() => false);
+    return raw === true;
+}
+
+/**
+ * Close every open console modal before a submit click. Measured 2026-10-12: the 插入音频 dialog
+ * (`weui-desktop-dialog__wrp align_edge audio_dialog js_audio_music_dialog`) stayed open after its
+ * own 上传音频 click timed out, its footer covered `保存为草稿` for 30 s, and the run saved no draft
+ * at all. A failed enrichment is a warning by contract, never a gate — so nothing may outlive it.
+ */
+async function closeOpenDialogs(page: WechatPage): Promise<void> {
+    for (let pass = 0; pass < 3; pass += 1) {
+        if (!(await anyDialogOpen(page))) return;
+        for (const selector of DIALOG_CLOSE) {
+            const control = await tryFindSelector(page, [selector], 1_500);
+            if (control === undefined) continue;
+            try {
+                await clickSelector(page, control, 2_000);
+            } catch {
+                // Gone between the probe and the click.
+            }
+            break;
+        }
+        await page.press?.('Escape');
+        await page.waitForTimeout?.(400);
+    }
+}
+
 /** 视频's media modal (§5.2): tabs 素材库/视频号动态/视频链接 + 本地上传 + 确定/取消. */
 const VIDEO_LOCAL_UPLOAD = ['text=本地上传', 'button:has-text("本地上传")'];
 const VIDEO_FILE_INPUT = [
@@ -557,26 +628,35 @@ async function fillOptional(
 async function setCover(page: WechatPage, source: 'library' | 'body', deps: ModeRunDeps): Promise<string | null> {
     const picker = source === 'library' ? COVER_FROM_LIBRARY : COVER_FROM_CONTENT;
     const what = source === 'library' ? '从图片库选择' : '从正文选择';
+    // A cover miss is a warning, never a gate — so the panel must not outlive the step that opened
+    // it (see {@link dismissOpenDialog} for what its footer blocked on 2026-10-12).
+    const warn = async (message: string): Promise<string> => {
+        await dismissOpenDialog(page);
+        return message;
+    };
     try {
         const open = await tryFindSelector(page, COVER_PANEL_OPEN, Math.min(deps.stepTimeoutMs, 5_000));
         if (open === undefined)
-            return 'cover: the panel offers none of 从正文选择 / 从图片库选择 — the platform default (默认首图为封面) is all this run has';
+            return await warn(
+                'cover: the panel offers none of 从正文选择 / 从图片库选择 — the platform default (默认首图为封面) is all this run has',
+            );
         await clickSelector(page, open, deps.stepTimeoutMs);
         const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
-        if (pick === undefined) return `cover: ${what} was not offered by the open cover panel`;
+        if (pick === undefined) return await warn(`cover: ${what} was not offered by the open cover panel`);
         await clickSelector(page, pick, deps.stepTimeoutMs);
         const item = await tryFindSelector(page, COVER_ITEM, Math.min(deps.stepTimeoutMs, 8_000));
-        if (item === undefined) return `cover: ${what} listed no image to choose (its list is not <img>-based, §5.2)`;
+        if (item === undefined)
+            return await warn(`cover: ${what} listed no image to choose (its list is not <img>-based, §5.2)`);
         await clickSelector(page, item, deps.stepTimeoutMs);
         // The library picker stages the choice: 下一步 advances it, then the dialog confirms.
         const next = await tryFindSelector(page, COVER_LIBRARY_NEXT, Math.min(deps.stepTimeoutMs, 4_000));
         if (next !== undefined) await clickSelector(page, next, deps.stepTimeoutMs);
         const confirm = await tryFindSelector(page, COVER_CONFIRM, Math.min(deps.stepTimeoutMs, 8_000));
-        if (confirm === undefined) return 'cover: the choice panel offered no confirm control';
+        if (confirm === undefined) return await warn('cover: the choice panel offered no confirm control');
         await clickSelector(page, confirm, deps.stepTimeoutMs);
         return null;
     } catch (error) {
-        return `cover: ${error instanceof Error ? error.message : String(error)}`;
+        return await warn(`cover: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -783,6 +863,7 @@ async function saveDraft(
     while (signal === null && attempts < deps.submitAttempts) {
         attempts += 1;
         await sleep(deps.submitSettleMs);
+        await closeOpenDialogs(entry.editor);
         control = await findSelector(entry.editor, SAVE_DRAFT, '保存为草稿 control', deps.stepTimeoutMs);
         await clickSelector(entry.editor, control, deps.stepTimeoutMs);
         // The editor lives in its own tab, so re-read the console entry page — and ENTER the 草稿箱
@@ -887,15 +968,47 @@ async function publishContent(
 }
 
 /**
+ * Text inventory of whatever modal is still open on `page` — the diagnostic a blocked submit click
+ * needs (2026-10-12: `保存为草稿` was covered by a dialog footer for 30 s and the failure named only
+ * the Playwright timeout). Covers the inner dialog and the overlay wrapper, both of which can be the
+ * element that intercepts pointer events.
+ */
+async function openDialogInventory(page: WechatPage): Promise<string> {
+    const raw = await page
+        .evaluate(
+            `[...document.querySelectorAll('.weui-desktop-dialog, .weui-desktop-dialog__wrp')]` +
+                `.filter((d) => d.offsetWidth).map((d) => (d.className || '') + ' :: ' + ` +
+                `(d.innerText || '').replace(/\\s+/g, ' ').slice(0, 160)).join(' || ')`,
+        )
+        .catch(() => '');
+    return typeof raw === 'string' ? raw.slice(0, 600) : '';
+}
+
+/**
  * Run one validated operation end to end: enter its mode, compose the post, then take it to a draft
  * or — only on an explicit live request — publish it.
  */
 export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
     const entry = await enterMode(deps, input.operation);
     const composed = await compose(input, deps, entry);
-    return deps.publishStatus === 'public'
-        ? publishContent(input, deps, entry, composed)
-        : saveDraft(input, deps, entry, composed);
+    // 2026-10-12: a throw from the submit step drops every diagnostic the compose phase collected —
+    // a leaked settings dialog blocked 保存为草稿 on the daily run and the failure Result carried only
+    // the Playwright timeout, so the stuck step had to be rediscovered by hand. Ride them on the error.
+    const diagnostics = [...composed.warnings, ...composed.enrichWarnings];
+    try {
+        return deps.publishStatus === 'public'
+            ? await publishContent(input, deps, entry, composed)
+            : await saveDraft(input, deps, entry, composed);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const blocked = await openDialogInventory(entry.editor);
+        const carried = [
+            ...(diagnostics.length > 0 ? [`compose diagnostics: ${diagnostics.join(' | ')}`] : []),
+            ...(blocked !== '' ? [`open dialogs at submit: ${blocked}`] : []),
+        ];
+        if (carried.length === 0) throw error;
+        throw new Error(`${message} — ${carried.join(' — ')}`);
+    }
 }
 
 /**
