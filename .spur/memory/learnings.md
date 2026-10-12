@@ -2067,3 +2067,33 @@ Skipped: no `bun run lint`/test run — the only edit is markdown prose in a des
 - 0250: `no-dead-run-scoped-citation` fires in a fresh worktree for done tasks citing `.spur/memory/runs/<id>.md` — verdict-only evidence staging does not carry run logs; stage the cited run file before the gate or the pre-check fails on isolation, not code.
 - 0250/0251: the inline driver scratch path is flat `.spur/run/<run-id>-*`; a `<run-id>/` subdirectory does not exist and silently fails heredoc writes.
 
+I'll start by loading the doc-evolve wrapup runbook and the validated task list, then repair only the docs the constitution allows.Task 0248 is the only wrapup member. I'll compare its change map to the ADR, architecture, and design docs, then repair only real drift.The ADR already records interior fan-out concurrency. The remaining drift is the architecture sentence that still says sequential dispatch, and the design spec and index that still describe that dispatch as sequential. I'll update those and leave superseded index rows out.Doc-sync for task 0248 is in `docs/` only. `docs/00_ADR.md` is unchanged: the 2026-10-03 ADR-007 R4 amendment already decides interior fan-out concurrency and failed-on-overrun, and 0248 enforces that contract. No satellite row was added to `docs/04_DESIGN.md`.
+
+| Doc | What the code does | What the doc said | Authority | Repair |
+| --- | --- | --- | --- | --- |
+| `docs/03_ARCHITECTURE.md` | `state-machine` / `transition-flow` run one node at a time; `kind: dag` does not. Fan-out non-serial targets overlap, bounded by `--jobs`. | The substrate "executes one node at a time" and "engine-level concurrency is deferred." The 0110 paragraph still said retry keeps "sequential dispatch." The fan-out sketch omitted the four flags. | ADR-007 R4 amendment, ADR-031; §6.4 | Current mechanism text. Sketch matches the shipped flags. |
+| `docs/04_DESIGN.md` | Concurrent fan-out. §1.6 was already accurate. | §0 called the satellite "Sequential `executor fan-in` / `fan-out`." §6 omitted the timeout. | §6.5 T3 | Index and §6 wording only. |
+| `docs/design/fan-in-and-fan-out-specification.md` | Flags from `withFanoutOptions`; overrun kills and reaps the owned tree, then `target '<name>' exceeded its <ms>ms budget`. | §1.1 called the dispatch sequential. §1.3 stopped at `--retry-from`. | §6.5, transcribed from `executor.ts` | Dated correction, signature, flag table, §3 sentence. §1.2 `--dedupe` left unshipped. |
+| `docs/design/kk-cli-surface.md` | Same four flags on `kk executor fan-out`. | Signature ended at `--plugins-path` and said engine flags were unchanged. | §6.5 | Signature and the A21-rename sentence. |
+
+Checks that produced no further delta: `docs/00_ADR.md` fan-out amendment versus `apps/cli/src/fanout.ts` and `executor.ts`; no `sequential dispatch` / `in sequence` left in these four docs; `04` §1.6 timeout paragraph already matched the spawn.
+
+## 2026-10-10
+
+### 0248
+
+- Production fan-out blocked the event loop in `spawnPluginEntry` (`Bun.spawnSync`). The pool and the timeout race were already in `fanout.ts`, but two real 250ms publishers with `--target-timeout 50` still exited 0 after about 591ms and their start/end stamps did not overlap. A blocking spawn makes `--jobs`, `--serial`, `--serial-target`, and `--target-timeout` look wired while none of them can run.
+- Overlap has to be read from each publisher's own ledger interval. Total wall time cannot separate a concurrent pair from a fast serial pair.
+
+## 2026-10-11
+
+### 0248
+
+- Production dispatch awaits `spawnPluginEntryAsync`, the same seam `collectSourceDocs` uses. The run's per-target budget is that spawn's `timeoutMs`. The seam kills descendants, then the entry, reaps the tree, and resolves only after `proc.exited` and the pipes drain.
+- The fan-out's generic `Promise.race` applies only to an injected dispatch. On the production path the race would settle while an owned child was still dying. Read the `Result` and delete `kk-fanout-*.json` only after the awaited spawn resolves. Cleanup stays in `finally`.
+- Inspect `timedOut` before `exitCode`. The operator text is `target '<name>' exceeded its <ms>ms budget`. A non-zero plugin exit is a different error.
+- Commander registered `--serial`, `--jobs`, `--serial-target`, and `--target-timeout`, and `runFanoutAction` dropped all four. That was harmless while spawn was synchronous and became a broken shipped verb once dispatch overlapped. Forward each flag in the parser's shape: bare `--serial`, and each value flag immediately followed by its value. `--jobs` and `--target-timeout` cross as raw strings. `runFanout` rejects a non-positive integer (`--jobs abc`) with exit 2.
+- Default `--jobs` is the size of the non-serial batch. `--serial-target` names are filtered out of that batch and run one at a time after `Promise.all`. When `--serial` is set it wins and runs every target one at a time. The aggregate stays in the caller's `--target` order, not completion order.
+- A timeout regression needs a publisher that forks a child and writes a marker after the budget. The absent marker, a failed entry that names the target and the budget, a published sibling, and no leftover temp file are the proof. `detached` on the async seam means an operator SIGINT no longer kills in-flight publishers; fan-in has had that residual since 0110. A descendant that escapes the group (`setsid`) can still rewrite a temp path after cleanup.
+- `expect.arrayContaining` shows that the tokens arrived. It does not show that a value sits in the next argv slot, which is what `argv[++i]` requires.
+- The same stale-wording class survived three sweeps. "in sequence" in the architecture boundary and the command index was fixed in-task. "sequential dispatch" inside the dated 0110 paragraph was still present tense and did not match those patterns. A design satellite can stay wrong after `04` §1.6 is right: `fan-in-and-fan-out-specification.md` and `kk-cli-surface.md` still described a sequential fan-out and omitted the four flags. That is T3 surface. The ADR-007 amendment of 2026-10-03 already decided interior concurrency and failed-on-overrun; 0248 enforced the kill and reap, so it does not get a new ADR entry. A satellite row that is absent from `docs/04_DESIGN.md` stays absent.

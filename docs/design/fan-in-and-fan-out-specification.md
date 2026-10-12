@@ -33,6 +33,14 @@ This specification defines the CLI surface, data contracts, exit codes, deduplic
 > `--plugins-root <dir>` (exclusive single root) and `--plugins-path <dir>` (repeatable union with
 > the defaults), with the same mutual-exclusion usage error → exit `2`. Previously fan-in always
 > used the default merged registry, so a pipeline could not isolate its ingestion sources.
+>
+> **Dated correction (2026-10-11).** Task 0248 enforces the ADR-007 R4 amendment (2026-10-03):
+> non-serial fan-out targets run concurrently. §1.1 no longer calls that dispatch sequential.
+> §1.1's signature and §1.3's table include `--serial`, `--jobs`, `--serial-target`, and
+> `--target-timeout`, plus fan-out `--plugins-root` / `--plugins-path` from the 2026-08-13
+> correction. An overrun kills and reaps that publisher's owned process tree before its
+> temporary output is read or discarded (§3). §1.2's merge table, including the unshipped
+> `--dedupe` row, is unchanged.
 
 ---
 
@@ -44,16 +52,18 @@ This specification defines the CLI surface, data contracts, exit codes, deduplic
 hidden one-release alias), constrained by ADR-006 as a **single-plugin invoker**
 (`kk executor run <plugin> --in <path> --out <path>`), not a DAG execution engine.
 
-To respect this boundary while providing sequential fan-in/fan-out capabilities:
+To respect this boundary while providing fan-in merge and fan-out publish:
 - **`kk executor fan-in`** and **`kk executor fan-out`** are siblings of `executor run` (ADR-011);
   `kk fanin` / `kk fanout` are hidden one-release aliases.
-- They are pure utility tools owned by `kk` for sequential file aggregation and multi-target dispatch.
+- They are pure utility tools owned by `kk`. Fan-in merges files. Fan-out dispatches non-serial
+  targets concurrently (ADR-007 R4 amendment 2026-10-03), bounded by `--jobs`; `--serial` and
+  `--serial-target` keep targets out of that batch.
 - Neither subcommand manages workflow DAG execution or state transitions (which remain owned by `spur workflow`).
 
 ```text
 kk executor run <plugin> --in <f> --out <f>
 kk executor fan-in --in <f1> [--in <f2> ...] --out <out.json> [--dedupe <rule>]
-kk executor fan-out --content <content.json> --target <p1> [--target <p2> ...] --out <result.json> [--retry-from <prior-result.json>]
+kk executor fan-out --content <content.json> --target <p1> [--target <p2> ...] --out <result.json> [--retry-from <prior-result.json>] [--jobs <n>] [--serial] [--serial-target <plugin> ...] [--target-timeout <ms>] [--plugins-root <dir>] [--plugins-path <dir> ...]
 ```
 
 ### 1.2 `executor fan-in` CLI Specification
@@ -70,6 +80,12 @@ kk executor fan-out --content <content.json> --target <p1> [--target <p2> ...] -
 | `--target <plugin>` | string (repeatable) | yes (>=1) | Target publish plugin names to invoke |
 | `--out <file>` | string | yes | Aggregate `Result` JSON file path written upon completion |
 | `--retry-from <file>` | string | no | Prior `Result` JSON file to skip already-successful targets |
+| `--serial` | flag | no | Dispatch the parallel batch one target at a time |
+| `--jobs <n>` | positive integer | no | Concurrent-start bound for the parallel batch. Default: every non-serial target at once. `--jobs 1` matches `--serial` |
+| `--serial-target <plugin>` | string (repeatable) | no | Target held out of the parallel batch and run alone afterwards |
+| `--target-timeout <ms>` | positive integer | no | Per-target wall-clock budget. An overrun kills and reaps that publisher's owned process tree, then records `failed` (`target '<name>' exceeded its <ms>ms budget`); siblings continue |
+| `--plugins-root <dir>` | string | no | Exclusive single-root override (no union). Mutually exclusive with `--plugins-path` (exit `2`) |
+| `--plugins-path <dir>` | string (repeatable) | no | Extra root unioned with the default roots |
 
 ---
 
@@ -99,7 +115,7 @@ The output array retains stable ordering:
 
 ## 3. Fan-Out & Partial-Success Result Schema (R4)
 
-`fanout` invokes the named target publish plugins concurrently (ADR-007 R4 amendment 2026-10-03; `--serial`/`--serial-target` keep a target out of the batch), aggregating outcomes into a unified `Result` schema in `--target` order.
+`fanout` invokes the named target publish plugins concurrently (ADR-007 R4 amendment 2026-10-03; `--serial`/`--serial-target` keep a target out of the batch), aggregating outcomes into a unified `Result` schema in `--target` order. A `--target-timeout <ms>` overrun is enforced by the owning spawn: that publisher's process tree is killed and reaped before its temporary output is read or discarded, and the target is recorded `failed` (`target '<name>' exceeded its <ms>ms budget`) without aborting siblings (task 0248).
 
 ### 3.1 Aggregate Partial-Success `ResultSchema`
 The aggregate outcome is written to `--out` conforming to the extended `ResultSchema`:

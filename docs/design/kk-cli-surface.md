@@ -82,7 +82,7 @@ kk --version | -V
 kk --verbose | -v <command> …
 kk executor run     <plugin> --in <path> --out <path> [--plugins-root <dir>] [--plugins-path <dir> …]
 kk executor fan-in  --in <f>… --out <path> [--plugins-root <dir> | --plugins-path <dir> …]
-kk executor fan-out --content <path> --target <p>… --out <path> [--retry-from <path>] [--plugins-root <dir>] [--plugins-path <dir> …]
+kk executor fan-out --content <path> --target <p>… --out <path> [--retry-from <path>] [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>] [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status    [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
 ```
 
@@ -102,7 +102,7 @@ Hidden aliases (not listed in `kk --help`): `invoke` → `executor run`; `fanin`
 
 Exit: `0` when `healthy`, `1` when any diagnostic exists, `2` on usage errors.
 
-Engine flag names and exit codes for run / fan-in / fan-out are **unchanged**. `--verbose` may
+The A21 rename kept each engine's exit codes. Fan-out's later flags `--jobs`, `--serial`, `--serial-target`, and `--target-timeout` are part of the signature above (ADR-007 R4 amendment 2026-10-03; the budget is enforced by the owning spawn, task 0248). `--verbose` may
 write diagnostics via `logger.info`; it must not interleave into a command's `--json` payload
 (diagnostics go to stderr, or are suppressed when `--json` is set).
 

@@ -110,17 +110,19 @@ argv
 
 ### Execution substrate — sequential by design
 
-`spur workflow` runs on `@gobing-ai/ts-dual-workflow-engine`, which executes **one node at a time**.
-The `transition-flow` schema declares a node `type` of `action | gate | parallel | decision`, but no
-executor reads that field — verified at `0.4.14`: `parallel` occurs only in `src/types.ts:77`,
-`src/schema.ts:100`, and `schemas/transition-flow-workflow.schema.json:38`, and `src/service.ts:24`
-documents deliberate per-run serialization. **Authoring a `parallel` node does not fan out.**
+`spur workflow` runs on `@gobing-ai/ts-dual-workflow-engine`. `state-machine` and `transition-flow`
+execute **one node at a time**. The `transition-flow` schema declares a node `type` of
+`action | gate | parallel | decision`, but no executor reads that field — verified at `0.4.14`:
+`parallel` occurs only in `src/types.ts:77`, `src/schema.ts:100`, and
+`schemas/transition-flow-workflow.schema.json:38`, and `src/service.ts:24` documents deliberate
+per-run serialization. **Authoring a `parallel` node does not fan out.**
 
-Consequently fan-in and fan-out are `kk`'s responsibility, expressed as ordinary sequential steps
-(ADR-007 R4). Engine-level concurrency is deferred, not rejected.
+Consequently fan-in and fan-out stay `kk` steps (ADR-007 R4). Inside fan-out, non-serial targets
+run concurrently (amendment 2026-10-03). A `type: parallel` node still does not fan out;
+engine-level concurrency is the `kind: dag` case below.
 
-**DAG workflows (ADR-031; shipped 2026-10-08, tasks 0211–0212).** Still true for `state-machine` and
-`transition-flow`. Since `0.5.16` the engine also runs `kind: dag`: each wave of ready nodes is
+**DAG workflows (ADR-031; shipped 2026-10-08, tasks 0211–0212).** One node at a time remains true for
+`state-machine` and `transition-flow`. Since `0.5.16` the engine also runs `kind: dag`: each wave of ready nodes is
 dispatched with `Promise.all` (`src/dag.ts`), so independent steps run concurrently. Constraints
 kk designs around: one action per node, no back-edges (loops → nested state-machine via
 `spur workflow run`), fail-fast on any node failure, wave-level waiting (a successor waits for
@@ -234,6 +236,7 @@ Siblings of `executor run`, so the single-plugin invoker contract stays intact (
 kk executor fan-in  --in <f1> [--in <f2> …] --out <merged.json> [--plugins-root <dir> | --plugins-path <dir> …]
 kk executor fan-out --content <content.json> --target <p1> [--target <p2> …]
                     --out <result.json> [--retry-from <prior-result.json>]
+                    [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>]
                     [--plugins-root <dir>] [--plugins-path <dir> …]
 ```
 
@@ -298,10 +301,11 @@ copied assets remain alongside the entry.
 
 Show-notes rendering keeps its markdown deliverable through the declared
 `operations["show-notes"]` (doc-list → markdown) path; the daily workflow artifact is unchanged.
-Retry repairs preserve the existing aggregate fields and sequential dispatch, and target
-eligibility is reconciled: without explicit targets exactly the prior failures retry; an explicit
-selection narrows that attempt set and previously unattempted names remain eligible, while
-unselected prior failures are retained in the aggregate.
+Retry repairs preserve the existing aggregate fields. Retry dispatch uses the same concurrent
+pool as a fresh fan-out (`--jobs`, `--serial`, `--serial-target`); target eligibility is
+unchanged: without explicit targets exactly the prior failures retry; an explicit selection
+narrows that attempt set and previously unattempted names remain eligible, while unselected
+prior failures are retained in the aggregate.
 
 Verification exercises these boundaries directly: execution outside workspace dependency
 resolution, nested child cancellation, negative plugin output, and a persisted-result round trip
