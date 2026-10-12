@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.35.0
+version: 1.36.0
 created_at: 2026-05-28
 updated_at: 2026-10-11
 edit_rules: 99 §6.1
@@ -1305,3 +1305,13 @@ access disabled without aborting production. A running reader is never a workflo
 New-run ownership alone does not prove an old file was produced by the new run: result access also
 requires recorded success of that artifact's producer in the selected run. Definition topology is
 captured only when the current catalog digest matches the engine-injected execution digest.
+
+## ADR-036: VoxCPM reuses the TypeScript voice pipeline with an isolated Python worker
+
+**Status:** Accepted (design) · **Date:** 2026-10-11 · **Supersedes:** ADR-020's restriction to one Python-bearing product plugin, only to admit the private VoxCPM worker below.
+
+**Decision.** Add an opt-in `voxcpm` alias backed by `plugins/generations/voxcpm-tts`, a TypeScript generator reusing voice-gen's processing pipeline and owning a private uv-managed Python inference worker. Install VoxCPM independently from a pinned external distribution; `vendors/` remains reference-only and is never a product dependency, runtime path or packaging input. Keep both daily workflows' current defaults.
+
+**Why.** The existing adapter seam preserves one VoiceScript/QC/audio implementation while VoxCPM inference requires its native Python stack.
+
+**Detail:** [VoxCPM daily voice driver](design/voxcpm-daily-voice-driver.md); feature G14. This decision does not assert improved audio quality or validated hardware performance.

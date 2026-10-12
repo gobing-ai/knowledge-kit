@@ -3,7 +3,7 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.26.0
+version: 2.27.0
 created_at: 2026-07-22
 updated_at: 2026-10-11
 derived_from: [01_PRD, 02_ROADMAP]
@@ -92,6 +92,7 @@ sync: [T4]
 | F41 | kk-itc end-to-end (rough idea → multi-platform publish) | ✅ done | 3 | tasks `0149`–`0154` done; var-gated auto/unslop/judge-revise path + publish tail (materialize → plan → gate → fan-out/browser loop → report) + illustrations/adapt in `plugins/kk/workflows/kk-itc.yaml`; `kk stage itc-*` helpers in `itc-stages.ts`; `/workflow-run` kk-itc profile flags; draft-default publish rule (ADR-022); satellites `docs/design/kk-itc-end-to-end.md`; no new workflow file, `kk` noun or slash command (verified 0154) |
 | **G** | kk workflows (repurposed 2026-10-07) | ⏳ planned | — | parent: one child per `plugins/kk/workflows/*.yaml`; shipped workflow features keep their IDs (see children Notes) |
 | G1 | kk-daily-ai-voice | ⏳ planned | — | home node; historical: F6, F61*, L, L1, N, O |
+| G14 | VoxCPM voice driver for both daily AI voice workflows | ⏳ planned | P2 | opt-in adapter, driver-aware cache and render-only quality comparison; ADR-036; `docs/design/voxcpm-daily-voice-driver.md`; no product access to `vendors/` |
 | G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ✅ done | — | tasks `0211`, `0212` done; ADR-031 shipped; first green dogfood run `4a9b22f0` (article/script/audio/cover/xhs, `qc.passed`, draft-only) 2026-10-08; `kk ledger cutover-check` shipped (R6); satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G2 | kk-itc | ⏳ planned | — | home node; historical: F4, F41 |
 | G3 | kk-collect | ⏳ planned | — | home node |

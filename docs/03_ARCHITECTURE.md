@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.34.0
+version: 2.35.0
 created_at: 2026-07-22
 updated_at: 2026-10-11
 derived_from: [00_ADR, 01_PRD]
@@ -16,6 +16,14 @@ sync: [T1]
 > Derived. Decisions live in `00_ADR`; this file holds mechanism, boundaries, and data flow.
 
 ## System shape
+
+**Planned VoxCPM adapter (G14, ADR-036).** `voxcpm-tts` will supply a `VoiceboxClient` to the
+existing voice-gen pipeline and own one private Python worker per generator invocation. Its
+model, package, profile and worker assets resolve independently of the reference-only `vendors/`
+tree. Both daily workflows opt in through the existing `vdriver` variable; defaults stay as shipped.
+Driver-aware one-shot cache validation is part of this delivery. The current tree below remains
+the shipped layout; [the design satellite](design/voxcpm-daily-voice-driver.md) owns the planned
+worker protocol, profile behavior, distribution checks and comparison procedure.
 
 ```
 apps/
