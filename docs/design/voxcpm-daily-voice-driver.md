@@ -1,120 +1,128 @@
 # VoxCPM daily voice driver
 
-Status: accepted design, not implemented. Feature G14; ADR-036; 2026-10-11.
+Status: accepted design, not implemented. Feature G14; ADR-036; refined 2026-10-11.
+Implementation specifications: tasks 0256 → 0257 → 0258. Their Design, Requirements and Plan
+sections freeze the detailed contracts; the refinement report is
+[2026-10-11-g14-ready-refinement.md](../plans/2026-10-11-g14-ready-refinement.md).
 
 ## Outcome and boundaries
 
 Both daily workflows accept `vdriver=voxcpm` through `dailyGenerate`. Keep Gemini defaults,
-current fallback behavior, output paths, intro and publish preparation. No automatic publication
-or default change is part of this experiment. Better quality is a question answered by evidence.
+existing fallback policy, stage arguments and downstream intro/publish-preparation contracts.
+Audio quality remains an empirical question. No automatic publication, training, daemon, HTTP
+service, new benchmark framework or default change belongs to this feature.
 
-`vendors/VoxCPM` was inspected only to understand the upstream API. No product code may access
-any part of `vendors/`: imports, subprocess paths, editable/path dependencies, PYTHONPATH,
-model/reference defaults, symlinks, fallback lookup, build inputs and copied upstream modules are
-excluded. Resolve configured filesystem paths canonically and refuse paths within that tree before
-opening model or reference assets. Installed inference dependencies and model caches live outside
-the repository's vendor tree. Do not move or delete the user's reference checkout for testing.
+`vendors/VoxCPM` is reference-only. No product import, subprocess, dependency, PYTHONPATH,
+model/cache/profile/reference path, symlink, fallback, copied upstream module, build input or
+packaging source may access `vendors/`. Validate configured paths canonically before access,
+including external cache settings. Independent installed dependencies/caches live outside that
+tree. Test without moving or deleting the user's reference checkout.
 
-## Chosen seam
+## Standalone generator — task 0256
 
-Add `plugins/generations/voxcpm-tts` with a generator manifest, workspace package, TypeScript entry,
-client adapter, profiles, private Python worker, uv project/lock, tests and setup README. Follow
-gemini-tts's `processGeneratorIO(..., client, ..., 'kk:voxcpm-tts')` use; do not fork the audio pipeline
-or import Python code from omni-voice-gen. TypeScript imports use `@gobing-ai/voice-gen`.
+Add `plugins/generations/voxcpm-tts` with manifest, workspace package, TypeScript entry/client,
+private Python worker, uv project/lock, profiles, tests and README. Follow Gemini's injection
+into `processGeneratorIO` with identity `kk:voxcpm-tts`. Import existing
+`@gobing-ai/voice-gen` exports; client types/helpers are already exported. Reuse shared
+VoiceScript segmentation, gaps, speed, retry, WAV concatenation, MP3 and QC handling.
 
-The adapter implements `VoiceboxClient` locally: health starts and checks the worker; profile
-resolution reads its own registry; generate requests synthesis; wait/download return the worker's
-render result. Keep generated buffers/files scoped to the invocation and release them after use.
-The worker loads at most one model and handles sequential requests over newline-delimited JSON
-on stdin/stdout. Use an integer request id, render text/profile settings, and a response containing
-the same id, WAV location/duration or an error. Validate protocol messages and returned paths;
-all model/library logs go to stderr, never the protocol stream. Temporary WAV paths must stay in
-the invocation-owned scratch directory. Reuse the existing WAV decoder/concatenation contract;
-write PCM16 mono at the model's actual reported sample rate, never label 48 kHz data as 24 kHz.
+The entry owns a lazy invocation-scoped client and closes it in `finally`. Start the worker
+only after shared input validation; preserve empty-input behavior. Resolve worker/project/assets
+from the plugin installation root for both source and bundled `dist` entries. Spawn argv arrays
+without a shell. A sequential integer-id NDJSON protocol carries health/render requests and
+validated response ids, owned WAV paths, duration/provenance or errors. Validate framing, paths,
+finite nonempty mono waveform and positive actual `tts_model.sample_rate`. Write PCM16 at that
+rate; do not label 48kHz data as 24kHz. Redirect all library stdout to stderr. At most one model
+loads per invocation; no cross-invocation service.
 
-Invoke the worker with argument arrays through Bun, no shell interpolation. Resolve worker and
-uv project from the plugin installation root, supporting both source entry and bundled `dist`
-entry. Bound startup and request waits using the existing voice generation deadline conventions;
-on success, exception, timeout or cancellation close stdin, terminate and reap owned children,
-then remove invocation-owned temporary files. The existing executor remains cancellation owner;
-test descendant cleanup through its established process-tree seam.
+Daily commands currently use the synchronous executor path; its async process-tree cleanup is
+not a guarantee for these callers. The plugin owns startup/request/run deadlines, SIGTERM/SIGINT
+handling, process-group teardown and reaping. Use existing `VOICEBOX_TIMEOUT_MS` (default 600000)
+for startup and `waitUntilDone`'s supplied render deadline; a positive `VOICE_GEN_MAX_RUN_MS`
+also bounds the whole invocation. Close stdin, TERM owned children, wait at most two seconds,
+then force termination/reap before removing scratch. Do not change the executor seam owned by
+other work. SIGKILL of the entire host is outside the cleanup guarantee.
 
-An isolated private Python worker is preferred to a copied Python audio pipeline (duplicate QC)
-or an HTTP service (deployment and service lifecycle). Per-invocation startup remains deliberate;
-measure voice2 overhead before proposing a cross-invocation daemon.
+## Backend and controls
 
-## Backend and profiles
+Pin independently published `voxcpm==2.0.3` in uv with Python 3.12. Step 0 of implementation
+must verify the locked installation/import/API; source inspection does not prove hardware/model
+viability. Use `from_pretrained` with `load_denoiser=False,optimize=False`. Record package version
+and resolved model snapshot revision, or explicitly unknown provenance.
 
-Use a pinned published VoxCPM distribution and uv lock; never install from the vendor checkout.
-The downloaded reference exposes `VoxCPM.from_pretrained(..., device=..., load_denoiser=False)`
-and `generate`, with sample rate on `tts_model.sample_rate`. Intended initial model is
-`openbmb/VoxCPM2`; implementation first verifies that the pinned installed package supports it.
-Do not claim package-release parity from the downloaded source. Record the actual version and
-model revision in generated provenance/comparison evidence. No extra Python runtime is needed
-outside the existing uv toolchain; choose a supported interpreter for the pinned package.
+Frozen environment: `VOXCPM_MODEL=openbmb/VoxCPM2`, `VOXCPM_DEVICE=auto` (auto/cpu/cuda/mps),
+`VOXCPM_PROFILES_PATH=<plugin-root>/profiles.json`. The registry is a `profiles` array with unique
+ids/names. Ship `robin-news` as an instruct profile. Reference mode uses `reference_wav_path`;
+continuation requires paired `prompt_wav_path`/`prompt_text`. Relative assets resolve against the
+registry directory. Reject mixed/unsupported modes, missing assets and OmniVoice serialized prompts.
+The shared pipeline resolves profile precedence; the adapter resolves the resulting name/id.
 
-Use an explicit `VOXCPM_MODEL`, `VOXCPM_DEVICE`, `VOXCPM_PROFILES_PATH` interface; document defaults
-and validate values in the implementation's same-commit `docs/04_DESIGN.md` update. Use the existing
-VoiceScript profile precedence. Supply a `robin-news` instruct profile matching the daily workflow's
-profile name; support reference WAV plus transcript for continuation/cloning only when the installed
-API supports that mode. The inspected VoxCPM2 API has no `instruct` keyword: its README specifies
-a parenthesized description prefix in `text` for voice design/style. Map the profile instruction
-to that supported form after verifying the pinned release, leaving the source transcript used
-for comparison/QC unchanged. Continuation uses paired `prompt_wav_path`/`prompt_text`; reference
-cloning uses `reference_wav_path`. Do not reuse OmniVoice serialized prompt files. Reject unknown profiles,
-unsupported modes and absent reference assets. Use explicit seed where supported; do not silently
-discard unsupported generation controls. Existing shared MP3, retry and run-budget settings keep
-their meaning. Do not add a new configuration surface for every upstream inference parameter.
+For instruct profiles, map per-request instruction or the profile instruction to VoxCPM2's
+parenthesized text prefix, preserving the spoken transcript used for QC. The published 2.0.3
+API has neither a native `instruct` nor `seed` keyword: explicit seed calls
+`torch.manual_seed` before generation. Null seed leaves backend RNG unchanged; no cross-device
+bit-identical promise. Normalize maps directly; language uses automatic multilingual inference
+with a diagnostic. Shared max-chunk/crossfade controls are advisory with one warning per
+invocation; do not add a chunk engine. Reject nonempty engine, personality=true and active
+effects. Speed remains shared postprocessing. Omit optional transcription initially and report
+ASR-dependent QC unavailable; QC passing is not listener-quality evidence.
 
-Transcription is optional on `VoiceboxClient`; initially omit it and report ASR-dependent QC as
-unavailable, preserving existing non-ASR QC. Do not fabricate transcription or declare listener
-quality from `qc.passed` alone. Verify malformed/nonfinite/empty waveforms before accepting output.
+The published wheel was read without installing or executing it. Release source:
+[PyPI 2.0.3](https://pypi.org/project/voxcpm/2.0.3/),
+[official release README](https://github.com/OpenBMB/VoxCPM/blob/19b6bf7590025418821a86dcb817504e0ad7e5df/README.md).
+Wheel SHA256: `24da58a30d094a9e9a7ead450ae9cffda0d31eaeba620b61ad99179dd87e486b`.
+The downloaded reference checkout differs from this release; never use it as a runtime fallback.
 
-## Workflow and cache integration
+## Workflow and artifacts — task 0257
 
-Add `voxcpm: 'voxcpm-tts'` once in `dailyGenerate`'s existing alias map. Update both workflow
-descriptions/comments and operator documentation, preserving defaults and stage argument lists.
-Exercise voice1's whole-document path and voice2's sequential opening/items/closing path.
+Add `voxcpm: 'voxcpm-tts'` once to the shared alias map. Document opt-in usage in both workflow
+YAMLs/operator docs without new workflow-only options. Exercise voice1 whole-document rendering
+and voice2 sequential opening/items/closing rendering.
 
-Voice1 currently reuses any QC-passing audio Content. Require a compatible generator identity and
-existing audio artifacts before reusing it; unknown provenance triggers regeneration. Account for
-the existing Gemini fallback: decide/cache against the actual resolved driver and never relabel
-fallback speech as VoxCPM. Preserve the Gemini probe's existing policy. Voice2 already hashes text,
-profile and resolved driver; extend tests for the new alias, changed driver, resume after a failed
-section and matching reuse. Different model/settings comparisons use isolated work directories;
-general cache redesign is outside this delivery.
+Whole-document cache reuse requires matching requested generator, passing QC, present WAV and
+present requested MP3. Return a matching cache before Gemini probing. On a Gemini cache miss,
+preserve its existing probe/fallback policy, then check the resolved Voicebox cache before
+rendering. VoxCPM never probes Gemini or silently falls back. Foreign/legacy/invalid metadata
+regenerates; never relabel foreign audio.
 
-Character-rate estimates for existing drivers are measured, whereas VoxCPM has no calibration.
-Do not present the shared 5.6 characters/second heuristic as measured VoxCPM performance. Until
-the comparison provides evidence, preserve the final measured duration check, document the estimate
-as provisional, and record any refusal/overrun without manufacturing a passing 15–20 minute episode.
+Keep voice2's text/profile/driver section hashes and completed valid sections after failure.
+Check matching section provenance/QC/WAV before reuse. Join only after all sections succeed,
+using current ordering/gaps and existing ffmpeg normalization at the first section's actual rate.
+Rebuild a complete Content envelope and current generator/audioPath/duration/QC rather than
+spreading old final metadata. Aggregate section QC conservatively: all must pass; minimum score
+when all sections supply one; labelled critical issues; unavailable ASR stays unavailable.
 
-## Verification and comparison
+A concurrent change supplies ensurePublishMp3 for missing output; reuse that helper and its
+MP3 truthiness convention. Clear stale mp3Path before calling it on a fresh join, forcing
+regeneration of the requested MP3; otherwise omit old mp3Path.
+Reset old introMerged on a fresh join so intro processing updates the correct MP3 exactly once.
+Failed join/transcode cannot leave a final Content claiming success. Preserve downstream publish
+preparation's MP3 contract. Model/profile/settings comparisons use separate work directories;
+no general cache redesign. VoxCPM's 5.6 characters/second estimate remains provisional; final
+measured duration is authoritative and refusals/overruns remain visible.
 
-Model-free Bun tests cover adapter protocol, actual-rate WAVs, profile validation, generator
-Content/MP3/QC contracts, errors, timeouts, cleanup and both workflow paths. Python assertions/tests
-use an injected fake model for the worker; live inference is separate. Distribution smoke runs the
-staged package outside the checkout with the vendor tree unavailable, checking discovery, entry,
-worker, lock and assets. Scan imports/manifests/config/build paths for vendor references, allowing
-only reference documentation and the guard refusing vendor paths. Do not download models in unit
-tests. Run repository lint, tests, build and relevant Spur rules in implementation.
+## Verification and evidence — tasks 0256–0258
 
-Use the same fixed Chinese and mixed Chinese-English VoiceScript, punctuation and segment
-boundaries for VoxCPM and Gemini in separate work directories; record differing voice mechanisms
-honestly rather than claiming identical timbre. Render a representative existing daily episode
-through both stage invocation shapes without collection or publication. Capture text hash, source
-script path, package/model revision, profile, seed/settings, hardware/device, elapsed time, duration,
-file locations and QC including missing ASR. Compare pronunciation (names/numbers/English), omitted
-or repeated words, timbre consistency, prosody, pauses, clipping and noise. Record listener findings
-only after listening; otherwise mark listening pending and the result inconclusive. Report better,
-comparable, worse or inconclusive plus startup/throughput and the real duration measurement. If the
-environment cannot run inference, preserve the exact blocker and command; this is incomplete live
-evidence, never a passing quality claim. No comparison result automatically changes the default.
+Model-free tests exercise actual NDJSON framing with private fake inference, Content/WAV/MP3/QC,
+invalid controls/paths/waveforms, stale output and owned worker descendants through the direct
+entry and synchronous executor. Distribution smoke stages bundled assets outside the checkout;
+mocking the adapter alone cannot verify installation-root resolution. No unit model downloads.
+Stage shims verify routing/cache/resume; real ffmpeg fixtures verify 48kHz join/gaps/intro/MP3.
+Implementation runs lint, full tests, build and Spur rules, and updates `docs/04_DESIGN.md` with
+the surface in the same change.
 
-## Reach of implementation
+Task 0258 freezes Chinese/mixed-language fixture texts and settings. Four short direct-plugin
+renders precede four full-episode renders: two drivers × two stage forms, each in isolated scratch
+roots using the same hashed existing script/plan/Doc inputs. Render-related commands only; no
+collection or publication. Verify actual generator identity on final and section artifacts:
+Gemini fallback is incomplete Gemini evidence. Set finite run budgets before rendering and stop
+affected expensive work after one diagnosed environment failure.
 
-- New plugin, workspace manifest/lock and backend lock; existing voice-gen exports only if a required type is not already exported.
-- Shared `plugins/kk/scripts/daily-stages.ts`, both daily workflow YAMLs, workflow/stage tests and fake fixtures.
-- Installed-plugin/bundle smoke tests and invocation cleanup tests at their existing seams.
-- `docs/04_DESIGN.md`, plugin README, workflow operator docs and this design's calibration/evidence links.
-- No edits to `vendors/`, scheduled production configuration, secrets or `.github/workflows/`.
+Record hashes, commands, package/model revision, effective voice/seed settings, hardware/device,
+startup/section throughput, ffprobe duration/sample rate, QC limitations and artifact paths.
+Allowlisted settings only, no secret/environment dumps. Listen before recording pronunciation,
+completeness, timbre, prosody, pauses and artifact judgments; otherwise mark listening pending
+and conclusion inconclusive. A report of failed inference is partial evidence, not full task
+verification. Persist the dated comparison in `docs/plans/`; generated audio/models remain
+untracked. Calibration/default adoption is a recommendation for later authorization, never an
+automatic source edit in the evidence task.
