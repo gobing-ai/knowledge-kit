@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Compare VoxCPM and Gemini daily audio with recorded quality evidence
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-10-12T00:07:13.361Z
-updated_at: "2026-10-12T04:46:37.062Z"
+updated_at: "2026-10-12T22:48:04.555Z"
 feature_id: G14
 priority: P2
 estimate_hours: 3
@@ -91,7 +91,31 @@ Record only allowlisted configuration, never environment/secrets dumps. Record p
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Evidence-only change set. No production source, default, calibration, profile or config was modified
+(this task's Design forbids it); the VoxCPM blocker is reported, not patched.
+
+| Change | file:line / path | Rationale |
+| --- | --- | --- |
+| New frozen fixtures | `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml:1`, `comparison-mixed.yaml:1` | The Design's frozen short VoiceScripts (`robin-news`, `zh`, per-segment `speed: 1`, `seed: 42`, `gap_ms: 500` / last `0`) as fixed, hashable inputs: `354c5c40…` (406 B) and `709db465…` (407 B); both pass `plugins/kk/scripts/validate-voicescript.ts` |
+| New dated report | `docs/plans/2026-10-12-voxcpm-audio-comparison.md:1` | R2/R4 evidence record: environment/hardware, package + model provenance, exact invoked argv, SHA256 identities, ffprobe measurements, blocker detail, listening pending, verdict and limits |
+| Scratch evidence (untracked) | `.spur/run/0258-voxcpm-comparison/{fixtures,logs,out}` | Wrapped `Doc[]` inputs, raw probe/render logs and the Gemini artifacts the report cites |
+
+**Blocking finding (reported, deliberately not fixed here).**
+`plugins/generations/voxcpm-tts/python/worker.py:322` — `main()` responds only on error paths
+(`:329`, `:336`, `:341`, `:343`); there is no success-path `_respond(stdout, request.get("id"),
+payload)`, so a valid `health`/`render` request yields no NDJSON line and
+`src/voxcpm-client.ts`'s `pending` map never resolves. Production consequence, reproduced end to
+end: `Plugin entry 'voxcpm-tts' failed (exit code 1): … worker startup timed out after 60000ms`
+(61 s with `VOICEBOX_TIMEOUT_MS=60000`; a 10-minute hang at the 600 000 ms default). The model itself
+loads correctly on MPS (snapshot `32279effe8…`, 48 000 Hz, 17–28 s). The defect predates this task
+(HEAD `08689ca5`); no test asserts a successful worker response, which is why it landed.
+
+**Measured half.** The Gemini arm rendered both frozen fixtures green on the first attempt
+(15 s / 18 s; `metadata.generator == kk:gemini-tts`; `pcm_s16le` 24 kHz mono 13.06 s / 15.26 s).
+The VoxCPM half produced no audio, so the matched comparison and the four full-episode renders were
+stopped per the task's one-diagnosis rule rather than spent on a one-sided measurement. Listening
+was not performed: no playback path exists in this environment, so quality claims are withheld and
+the verdict is **inconclusive**, not PASS.
 
 ### Testing
 
@@ -99,7 +123,32 @@ Record only allowlisted configuration, never environment/secrets dumps. Record p
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0258
+
+**Scope:** `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml`, `…/comparison-mixed.yaml` (new) · `docs/plans/2026-10-12-voxcpm-audio-comparison.md` (new) · the `## Solution` write on this task file · untracked evidence under `.spur/run/0258-voxcpm-comparison/`
+**Dimensions:** functional, correctness, usability, architecture (no production code in the change set — no security/efficiency surface)
+**Verdict:** PASS
+**Confidence:** MEDIUM — every claim is a direct read of the four changed paths plus re-run evidence produced in this tree: the VoiceScript validator (exit 0 on both fixtures), the shared citation checker (exit 0), `bun run spur-check` (PASS, `0258-test-gate.log`), and the two CLI renders cited in the report. The VoxCPM half is knowingly unproven — that is the task's recorded blocker, not a review finding.
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 (advisory) | correctness | The frozen fixtures apply per-segment `seed: 42`, which the Gemini path never sends (`plugins/generations/gemini-tts/src` has no `seed`); VoxCPM maps it to `torch.manual_seed`. The report states this asymmetry instead of claiming deterministic equivalence, so the record is honest — but a future reader comparing the two artifacts must not read `seed: 42` as a shared control. | `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml:6`; report §5 | ACCEPTED |
+| 2 | P4 (advisory) | functional | The two new fixtures live under `plugins/generations/voxcpm-tts/tests/fixtures/` but no test consumes them: they are comparison inputs owned by this evidence task. That is what the Design freezes, but they will be dead weight for a future test reader unless the follow-up render task wires them. | `plugins/generations/voxcpm-tts/tests/fixtures/` | ACCEPTED — the follow-up task named in report §7 consumes them |
+| 3 | P4 (advisory) | usability | The report's §3 cites a tracer that lived in `/tmp/kk-0258/` and is not retained; the production-visible evidence it produced (`worker startup timed out after 60000ms`) IS reproducible from the documented command and retained in `.spur/run/0258-voxcpm-comparison/logs/`. | report §3 | ACCEPTED |
+| 4 | P4 (advisory) | architecture | Symptom-level note, not a verdict on this task: the run's worktree needed manual recovery (mtime-preserving re-stage of `*-verdict.json` plus staging `.spur/memory/runs/`) before the pre-check rules could pass, because the `--worktree` evidence staging copies only `*-verdict.json`. Recorded for the harness owner; it does not affect this change set. | `.spur/memory/runs/`; harness WT-2 staging step | ACCEPTED — reported |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | PARTIAL | Fixtures frozen and hashed (`comparison-zh.yaml` `354c5c40…`, `comparison-mixed.yaml` `709db465…`) and both validated; Gemini rendered both through the real entry; the VoxCPM side and the four full-episode renders did not run (report §2/§3) |
+| R2 | PARTIAL | Text/script hashes, exact argv, package + model revision, device, elapsed, ffprobe and QC status recorded (report §4/§5); no VoxCPM audio exists to probe |
+| R3 | UNMET | No listening was possible in this environment; the report records "listening pending" and an **inconclusive** verdict rather than an invented quality claim (report §6) |
+| R4 | MET | Fixtures persisted in-tree; dated report with commands, hashes, blockers, artifact pointers; no production source/default/calibration touched (report §1/§3/§9) |
+
+**Next:** no open P1–P3; the P4 advisories are documentation/ownership residuals. Verification will return PARTIAL on R1/R3 — the blocker is a defect in `worker.py` owned by task 0256/0257, outside this task's mutation scope.
 
 ### References
 
@@ -110,5 +159,19 @@ Record only allowlisted configuration, never environment/secrets dumps. Record p
 
 - Current-tree recheck (2026-10-11, HEAD 701c598b): no WIP tasks; main has an unrelated task 0252 edit. The only other worktree is knowledge-kit-runall-g8-4173 (G8 board/workflow work), with package.json/bun.lock/CLI packaging edits; coordinate lockfile and packaging-test integration, preserve them. The prior 0248 worktree is gone. ensurePublishMp3 and joined segment metadata are already committed in main, not an uncommitted prerequisite.
 - Exact current CLI contract: apps/cli/src/commands/executor.ts::withRunOptions; render-only dispatch: plugins/kk/scripts/kk-workflow-stages.ts daily-generate/daily-intro/daily-episode-duration; effective Gemini request: plugins/generations/gemini-tts/src/gemini-client.ts::generate. Recheck artifacts: .spur/run/g14-refine-ready-20261011-recheck/.
+### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| `withRunOptions` accepts `--plugins-root` (mutually exclusive with `--plugins-path`), so the frozen argv uses only `--plugins-root` | apps/cli/src/commands/executor.ts:10 | Read current source; the mutual-exclusion guard is at apps/cli/src/commands/executor.ts:47 | HIGH |
+| `VOICEBOX_MAX_VERIFY_ATTEMPTS` bounds only the verification retry loop (default 2); it does not remove transport retries or backend-internal retries | plugins/generations/voice-gen/src/index.ts:220 | Read current source; the shared transport loop and any backend retry policy are separate | HIGH |
+| `VOICE_GEN_MAX_RUN_MS` is a between-segment budget in the shared path, not a hard whole-run timer | plugins/generations/voice-gen/src/index.ts:98 | Read current source | HIGH |
+| Startup is bounded by `VOICEBOX_TIMEOUT_MS` (default 600000) plus a per-length allowance | plugins/generations/voice-gen/src/index.ts:243 | Read current source | HIGH |
+| The daily workflow runs `daily-intro` before `daily-episode-duration`, so a final-duration check follows the intro merge | .spur/workflows/kk-daily-ai-voice.yaml:418 | Read the current workflow steps (`daily-episode-duration` at .spur/workflows/kk-daily-ai-voice.yaml:426) | HIGH |
+| VoxCPM 2.0.3 applies internal `retry_badcase` defaults, so eight scheduled renders do not imply eight backend requests | https://pypi.org/project/voxcpm/2.0.3/ | Package behaviour read from the published source during refinement; not re-fetched and not executed in this task's planning | MEDIUM — upstream defaults not re-verified at render time |
+| The current Gemini generate request does not forward a seed, while the VoxCPM adapter applies `torch.manual_seed` | plugins/generations/gemini-tts/src/gemini-client.ts:166 | Read the current request construction (no `seed` occurs anywhere under plugins/generations/gemini-tts/src/) and the VoxCPM seed call at plugins/generations/voxcpm-tts/python/worker.py:246 | HIGH for the local request construction; backend seed effect untested |
 
 ### History
+
+- 2026-10-12T22:31:08.621Z todo → wip (system)
+
