@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: weibo-pub live operator dogfood — pin composer and article editor selectors
-status: blocked
+status: todo
 template: feature-impl
 created_at: 2026-10-09T23:19:30.104Z
-updated_at: "2026-10-12T18:36:27.022Z"
+updated_at: "2026-10-12T20:54:48.576Z"
 feature_id: E94
 priority: P3
 tags:
@@ -89,6 +89,30 @@ URL, so the announcement's value must not depend on a preview card rendering.
 0244 R3) — written when the channel was a text mirror. An announcement wants the cover, so that refusal has to
 become a *supported one-image* rail (R9).
 
+**Current state (2026-10-12, after the in-session re-implementation).** The channel is implemented and
+offline-verified; the live legs are blocked by the account, not by code. Delivered: `post` submits through the
+mobile composer's own API (the request the web app issues), one image per post with the composer's measured
+accept set and the 5 MB `pic` bound, site refusals rendered as `HTTP <status> errno <code>: <msg> (<action>:
+<url>)`, post-click diagnostics on every failed submit, and the announcement contract with a copyable
+invocation (`docs/design/weibo-ui-discovery.md` §2b/§4a/§4b/§4c). Evidence: 41 plugin tests, 59 pre-check + 2
+post-check rules green, and the live submit returning Weibo's own `errno 200001 账号异常` refusal.
+
+**Remaining work — what a re-implementation picks up:**
+
+1. **Activate the account** (`m.weibo.cn/security`) or supply a healthy, verified account. This is the single
+   prerequisite for every live leg: while the account is flagged, a submit is refused with `errno 200001` and
+   nothing is published.
+2. **The image path's remaining measurement.** The composer's `input[type="file"]` accepts images (measured,
+   accept `image/gif,jpeg,webp,jpg,png,bmp`), but driving that input directly with `setInputFiles` produced no
+   observable state change — no thumbnail, no `window.config` change, the composer untouched — and the obvious
+   upload endpoints (`https://m.weibo.cn/api/upload`, `/api/upload/photo`) answer 404. So the app's own image
+   **entry point** and the authoritative **pic-id source** remain unmeasured. The flow refuses an image post it
+   cannot identify rather than posting text-only while claiming an image (fail-closed, tested). Recipe: click
+   the composer's image control (not the bare input), upload the cover, then read the thumbnail's `sinaimg` URL,
+   `window.config` and the app's own state; record which source is authoritative and wire `picIdScript` to it.
+3. **The live announcement** — one approved post carrying the hook and the episode link — followed by the
+   reader-visible verification (post on the timeline, link resolving to the episode, cover state recorded).
+
 ### Requirements
 
 - [ ] R1. Operator runs `bun plugins/publishings/weibo-pub/src/profile-check.ts login` then `check` (exit 0) on a disposable Weibo account; record a forced headless `checkChannelSession` call (`headedFallback: false`, no headedOnly) separately from operator `check --headed`; set `WEIBO_CONFIG.checkHeadedOnly` for the operator CLI only if measured. If forced headless fails, record the fail-closed publish limitation and do not run public legs by bypassing preflight.
@@ -102,7 +126,7 @@ become a *supported one-image* rail (R9).
 - [ ] R6. Measure the alternative browser path: open `https://m.weibo.cn/compose/` in the same profile, record whether the composer and its submit control attach, and capture the post-click state there; if it is cleaner than the desktop app, re-derive `WEIBO_POST_SELECTORS`/the submit step for it and record the decision.
 - [ ] R7. Decide and record the route — desktop composer with a fixed submit path, mobile composer, or the official API with an operator-registered app — including its prerequisites (account standing; for the API: App Key/Secret, token scope, safe domain) and the env-only credential names it would use. The plugin's code and docs must match the chosen route, and a route not yet chosen stays documented as unselected.
 - [ ] R8. A **dedicated Weibo announcement content shape** for a new episode, plus the reusable way to hand it to the channel: the visible body carries the episode title plus a one-line hook **inside ~140 characters** (the feed's display budget — the platform allows 2000–5000, the feed truncates), followed by the episode **link** as plain text in the same body so Weibo autolinks it; `options.coverPath` / `metadata.coverImage` carries the cover artwork (R9). Record the shape as a concrete worked example derived from a real episode's Content and metadata (daily/ITC episode title, link, cover) together with the copyable `kk executor run weibo-pub --in <content.json> --out <result.json>` invocation and its env prerequisites, so any workflow can produce the announcement. Wiring the channel into daily/ITC stays a separate feature (E94 scope), so this is the documented handoff surface, not a new workflow step.
-- [ ] R9. `post` accepts **one** cover image, replacing the unconditional text-only refusal: the browser flow uploads it through the composer's image input and requires a fresh observed attachment before the send; the API route (if chosen under R7) sends it as the `pic` binary (JPEG/GIF/PNG, under 5 MB — <https://open.weibo.com/wiki/2/statuses/share>). Refuse only genuinely unsupported input (more than one image, a non-image path, an oversized file), naming the reason, and never drop an image silently. `article` keeps its existing cover rail.
+- [ ] R9. `post` accepts **one** cover image, replacing the unconditional text-only refusal (delivered; the pic-id source is the remaining measurement named in Background step 2 — until it is wired the flow refuses an image post instead of dropping the image): the browser flow uploads it through the composer's image input and requires a fresh observed attachment before the send; the API route (if chosen under R7) sends it as the `pic` binary (JPEG/GIF/PNG, under 5 MB — <https://open.weibo.com/wiki/2/statuses/share>). Refuse only genuinely unsupported input (more than one image, a non-image path, an oversized file), naming the reason, and never drop an image silently. `article` keeps its existing cover rail.
 - [ ] R11. **Reader-visible verification**: after a live announcement, the post is observable on the account's timeline/home feed, its id/URL is recorded, the embedded link resolves to the episode, and the cover renders (or the absence of a cover card is recorded as an observation, since previews are not guaranteed). The evidence goes into `docs/design/weibo-ui-discovery.md`, not the repository's committed scratch.
 
 ### Acceptance Criteria
@@ -193,16 +217,15 @@ default for `article`; no credential, cookie or page HTML in the repository.
 
 ### Plan
 
-- [ ] 1. **Diagnose the silence** (R5, AC3): re-verify the session, capture the composer's retained draft, then obtain one operator approval for a diagnostic send whose purpose is the post-click snapshot (dialog text, composer length before/after, toasts); record it in `docs/design/weibo-ui-discovery.md`. Also record the account's standing (verified/phone/异常 notices) — hypothesis 2 either dies here or becomes the blocker.
-- [ ] 2. **Measure the mobile composer** `https://m.weibo.cn/compose/` in the same profile (R6, AC4): composer/submit selectors and post-click state; if cleaner than the desktop app, re-derive `WEIBO_POST_SELECTORS` and the submit step for it.
-- [ ] 3. **Add the one-image post rail** (R9, AC6): cover resolution/validation pre-browser, composer upload with a fresh-attachment signal, refusal cases for >1 image / non-image / oversized, and the fake-page tests replacing the old text-only assertion. Keep the offline suite green.
-- [ ] 4. **Author the announcement shape** (R8, AC5): the hook + link body, the cover field, a worked example from a real episode's Content/metadata, and the display-budget validation (warn, never truncate).
-- [ ] 5. **Document the reusable invocation** (R8, AC7): `kk executor run weibo-pub --in …` with the announcement fields, a copyable `content.json`, and the env prerequisites; note that daily/ITC wiring is out of scope here.
-- [ ] 6. **Live announcement, once approved** (R3, R11, AC7): one approved public post, then check the timeline for the post, click the link through to the episode, and record whether the cover rendered. The article/头条文章 leg stays optional and entitlement-gated (`docs/design/weibo-ui-discovery.md` §5).
-- [ ] 7. **Finish**: `bun run spur-check`, update `docs/04_DESIGN.md`'s satellite row to the honest status, and leave the run-scoped evidence in the run plane.
+- [ ] 1. **Prerequisite (operator):** activate the Weibo account at `m.weibo.cn/security`, or supply a healthy verified account; confirm with `bun plugins/publishings/weibo-pub/src/profile-check.ts login` then `check` (exit 0). Steps 3–4 cannot pass before this.
+- [ ] 2. **Image path (R9):** drive the composer's own image control (not the bare `input[type=file]` — measured inert), upload the cover, and identify the authoritative pic id (thumbnail `sinaimg` URL, `window.config`, or the app's state); wire `picIdScript` to it and extend the offline suite with that source's shape. Keep the fail-closed refusal for an unreadable id.
+- [ ] 3. **Live announcement (R3, R11):** one approved post with the hook + episode link (`metadata.publishStatus: 'public'`), capture the Result with its status URL, then verify reader-visibly that the post exists and the link resolves to the episode; record the cover state (present or absent, and why), and have the operator remove the test content.
+- [ ] 4. **Finalize (R4):** update `docs/design/weibo-ui-discovery.md` §7 and the `docs/04_DESIGN.md` satellite row with what the live run proved; keep the run-scoped evidence in the run plane.
+- [ ] 5. **Gates:** `bun test plugins/publishings/weibo-pub` green, and `bun run spur-check` for the repo gates (R9, R10).
 
- plans, kept for context, not part of this plan: the original 0246 steps 0/2/3/4 predate the
-diagnosis pass; the first diagnosis-first revision is folded into steps 1–2 above.)_
+_(Superseded plans kept for context: the original 0246 steps predate the diagnosis pass; the earlier
+diagnosis-first revision is complete — the diagnosis landed as `errno 200001` and the mobile-API submit is
+implemented. Only the steps above remain.)_
 
 ### Solution
 
@@ -306,4 +329,5 @@ This task's own contract is explicit: *"Missing draft control, failed headless p
 - 2026-10-12T17:48:50.896Z blocked → todo (system)
 - 2026-10-12T18:04:06.761Z todo → wip (system)
 - 2026-10-12T18:36:27.022Z wip → blocked (system)
+- 2026-10-12T20:54:48.576Z blocked → todo (system)
 

@@ -245,9 +245,14 @@ Every `send` fallback stays constrained to its own 发送 text because the measu
 - **The account must be activated** (`errno 200001` → `m.weibo.cn/security`). That is the single blocker for
   every live leg; a fresh account's sends are refused regardless of mechanism, which is exactly what the
   three approved attempts hit.
-- The **cover's pic-id source** is unmeasured: an image uploads through the composer, but the API submit needs
-  the image's id, so the flow refuses rather than posting text-only while claiming an image. Measure it on the
-  activated account (`window.config` / the composer's own state after a `setInputFiles`).
+- The **cover's pic-id source** is unmeasured, with negative evidence recorded 2026-10-12: the composer's
+  `input[type="file"]` accepts images (`image/gif,jpeg,webp,jpg,png,bmp`), but driving that input directly with
+  `setInputFiles` changed nothing observable (no thumbnail, no `window.config` change, composer untouched) and
+  `https://m.weibo.cn/api/upload` / `/api/upload/photo` both answer **404**. So the app's own image **entry
+  point** (its 图片 control) and the authoritative id source are the next measurement; the flow refuses an image
+  post it cannot identify rather than posting text-only while claiming an image. Measure on the activated
+  account: click the composer's image control, upload the cover, then read the thumbnail's `sinaimg` URL,
+  `window.config` and the app's state.
 - The desktop composer route stays deprecated in favour of the mobile one; its no-op is explained by §4a and
   needs no further work.
 - The 头条文章 article leg still needs an account with that entitlement (§5).
