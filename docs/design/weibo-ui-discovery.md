@@ -118,6 +118,21 @@ browser route; if hypothesis 2 holds, the account is the blocker and either a pr
 account or the API route (with an operator-registered app) is the way — the browser flow then stays
 fail-closed rather than retrying.
 
+**Platform limits (verified 2026-10-12) — the "114" in §4a is not one of them.** 114 is the retained
+*draft length* of the failed attempt, not a platform bound. A Weibo post allows up to **5000 Chinese
+characters** per Weibo's own customer-service FAQ updated 2024-09-04
+(<https://kefu.weibo.com/faqdetail?id=21510>); the older `statuses/update` documentation still cites 140
+with long text gated behind `is_longtext` (<https://open.weibo.com/wiki/2/statuses/update>). Feeds
+truncate long posts to roughly 140 characters behind a "show full text" control, so an **announcement
+hook** has a ~140-character *display* budget — a content-quality target, never a refusal condition, and
+never a reason to truncate silently. `statuses/share` additionally requires the text to contain a URL
+under the app's configured safe domain and takes the cover as a `pic` **binary upload**
+(JPEG/GIF/PNG, under 5 MB): <https://open.weibo.com/wiki/2/statuses/share>.
+
+**Channel purpose (operator-set 2026-10-12): announce a new episode.** The Content is an announcement —
+episode title, one-line hook, the episode link, the cover — not a copy of the episode body. That shape is
+what task 0246 now specifies (R8–R11), including the one-image post rail an announcement needs.
+
 
 ## 5. 头条文章 (article) — entitlement-gated, not reachable
 
