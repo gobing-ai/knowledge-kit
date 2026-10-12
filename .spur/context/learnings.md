@@ -309,3 +309,35 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   published, no toast) — verify a live write read-only by body-text search before believing either outcome.
 - A headless session check can fully verify where x-pub needed `checkHeadedOnly: true`: Weibo verified
   headlessly, so the publish preflight keeps `headedFallback: false` and the flag stays `false`.
+
+### Batch execution under `--worktree` (G14 runall, 2026-10-12)
+- **A `--worktree` batch false-fails the full gate** on `no-dead-run-scoped-citation`: the worktree starts
+  with a fresh `.spur` plane while `docs/tasks*` cites `.spur/memory/runs/<run-id>.md` records that exist only
+  in the invoking tree (0256: `docs/tasks/0247:174`; after rebasing onto newer main: `0243:141`, `0252:55`).
+  The evidence-staging step copies only `*-verdict.json`, so the cited run records are never staged.
+  Preserve the FAIL receipt under a distinct name, copy the cited records in from the owning tree, and log why.
+- **`review-gate` reads the task file, the review stage writes the answer file.** `residual-scan.mjs:171`
+  parses `parseReviewFindings(taskContent)`, so a review PASS recorded only in `.spur/run/<id>-review-answer.txt`
+  reads as `blocking=2` and fails `review → verify`. Instruct reviewers to record findings in the task's
+  `### Review` section *and* the answer file, with `RESOLVED|FIXED|DONE` dispositions.
+- **The confidence rule counts mentions as declarations.** `verification-answer-confidence-level` requires
+  exactly one `Confidence:` line; a backticked mid-sentence mention ("...records the `**Confidence:** HIGH` line...")
+  counts as a second and fails the gate — note the rule's own commit message claims it judges *claimed* levels,
+  not mentions, so this is a live false positive.
+- **The fixed fix-budget is per run, not per defect class.** 0256 spent both attempts on gate failures
+  (an AC4 teardown defect and per-file coverage) and then had none left for the review's P2/P3; one extra cycle
+  was needed on operator authorization. Budget for the review round too.
+- **Load makes budget-sensitive tests flaky.** `apps/cli/tests/fanout.test.ts:1321` (a 300 ms publisher deadline)
+  failed at 376 ms with four concurrent suites and passed 3/3 in isolation. `check.skipped-no-progress` then
+  refused a silent re-measure at the same digest — the FAIL receipt had to be moved aside deliberately.
+- **`commit-guard` excludes all of `.spur/` as bookkeeping**, so a tracked rule file (`.spur/rules/**/*.yaml`) is
+  refused as "unchanged since base"; stage that single path explicitly. Passing a directory instead of files also
+  reads as "unchanged since base" — the guard works on file paths.
+- **`dailyPublishPartial` writes scratch relative to cwd**: `plugins/kk/scripts/kk-workflow-stages.ts:1337`
+  writes `.spur/run/publish-partial-<date>.txt` while the sibling path at `:1329` uses `workDir`, so a stage run
+  with cwd=`apps/cli` creates `apps/cli/.spur/run/`. Untracked and not staged, but it litters the tree.
+- **Plan checkboxes are part of the done gate.** 0256 shipped every Plan item and never ticked the boxes; the
+  residual sweep counted 8 `unchecked-box` blockers, downgraded the verdict to PARTIAL and closed
+  `record → done`. Have implementers tick them as they go via `task update --section Plan --from-file`.
+- **`--close` writes a summary file that reads `n/a`** ("no timed attempts") even when every action row carried
+  `--duration-ms`, so the inline path's execution summary is empty on the green path.
