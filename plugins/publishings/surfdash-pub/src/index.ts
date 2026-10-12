@@ -507,7 +507,7 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
 
     let outcome: PatchPostOutcome;
     try {
-        outcome = patchPostFiles({
+        outcome = await patchPostFiles({
             postPath: postPath.postPath,
             coverUrl: strOption(options, 'coverUrl'),
             showNotesUrl: strOption(options, 'showNotesUrl'),

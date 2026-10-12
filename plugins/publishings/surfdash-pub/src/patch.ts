@@ -11,8 +11,8 @@
  * This module owns only the file work (deterministic, no network); the caller (`./index`) owns the
  * branch guard, the CMS re-sync and the git commit, in that order.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, sep } from 'node:path';
+import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 
 /** The locales a daily post carries; zh is the primary whose directory anchors the other two. */
 export const PATCH_LOCALES = ['zh', 'en', 'ja'] as const;
@@ -100,19 +100,20 @@ export function upsertFrontmatterKey(markdown: string, key: string, value: strin
  * then the podcast cross-link. Idempotent per file — a post that already carries the values keeps
  * its bytes and is not committed.
  */
-export function patchPostFiles(request: PatchPostRequest): PatchPostOutcome {
+export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPostOutcome> {
+    const fs = createNodeFileSystem();
     const written: string[] = [];
     const absent: PatchLocale[] = [];
     const images: Record<string, string> = {};
     let changed = 0;
     for (const locale of PATCH_LOCALES) {
         const indexMd = localeIndexPath(request.postPath, locale);
-        if (indexMd === undefined || !existsSync(indexMd)) {
+        if (indexMd === undefined || !(await fs.exists(indexMd))) {
             absent.push(locale);
             continue;
         }
         const dir = dirname(indexMd);
-        const before = readFileSync(indexMd, 'utf-8');
+        const before = await fs.readFile(indexMd);
         let md = before;
         const end = frontmatterEnd(md);
         const fm = end < 0 ? md : md.slice(0, end);
@@ -120,11 +121,11 @@ export function patchPostFiles(request: PatchPostRequest): PatchPostOutcome {
             md = upsertFrontmatterKey(md, 'image', request.coverUrl);
             md = upsertFrontmatterKey(md, 'og_image', request.coverUrl);
             images[locale] = request.coverUrl;
-        } else if (!/^image:/m.test(fm) && existsSync(request.localCover)) {
+        } else if (!/^image:/m.test(fm) && (await fs.exists(request.localCover))) {
             // Fallback for a run without a podcast cover: ship the rendered cover with the post.
             const asset = join(dir, 'assets', 'cover.png');
-            mkdirSync(dirname(asset), { recursive: true });
-            copyFileSync(request.localCover, asset);
+            await fs.ensureDir(dirname(asset));
+            await fs.copy(request.localCover, asset);
             written.push(asset);
             md = upsertFrontmatterKey(md, 'image', './assets/cover.png');
             md = upsertFrontmatterKey(md, 'og_image', './assets/cover.png');
@@ -134,7 +135,7 @@ export function patchPostFiles(request: PatchPostRequest): PatchPostOutcome {
             md = `${md.replace(/\s*$/, '')}\n\n${crossLinkFor(locale, request.dateIso, request.showNotesUrl)}\n`;
         }
         if (md !== before) {
-            writeFileSync(indexMd, md);
+            await fs.writeFile(indexMd, md);
             written.push(indexMd);
             changed += 1;
         }

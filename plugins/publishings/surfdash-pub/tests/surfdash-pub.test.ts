@@ -1076,7 +1076,7 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
 
     test('patchPostFiles writes the cover URL and the cross-link for every published locale', async () => {
         await withTree(async (root, localCover) => {
-            const outcome = patchPostFiles({
+            const outcome = await patchPostFiles({
                 postPath: post(root, 'zh'),
                 coverUrl: 'https://cdn.example/cover.png',
                 showNotesUrl: 'https://pod.example/i/1',
@@ -1097,7 +1097,7 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             expect(en).toContain('[listen to 每日AI乱炖 · 2026-10-11](https://pod.example/i/1)');
 
             // Idempotent: a second pass changes nothing and writes nothing.
-            const again = patchPostFiles({
+            const again = await patchPostFiles({
                 postPath: post(root, 'zh'),
                 coverUrl: 'https://cdn.example/cover.png',
                 showNotesUrl: 'https://pod.example/i/1',
@@ -1116,7 +1116,7 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
                 const md = await readFile(post(root, locale), 'utf-8');
                 await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
             }
-            const outcome = patchPostFiles({
+            const outcome = await patchPostFiles({
                 postPath: post(root, 'zh'),
                 coverUrl: '',
                 showNotesUrl: '',
@@ -1128,5 +1128,126 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
             expect(outcome.written).toContain(asset);
             expect(await readFile(post(root, 'zh'), 'utf-8')).toContain("image: './assets/cover.png'");
         });
+    });
+});
+
+describe('surfdash-pub patch operation (2026-10-12 boundary move)', () => {
+    const RUN_DATE = '20261011';
+
+    const git = (cwd: string, ...args: string[]): { status: number; stdout: string } => {
+        const r = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
+        return { status: r.exitCode ?? 1, stdout: r.stdout.toString() };
+    };
+
+    /** A throwaway checkout on `main` with one zh post, plus a stub sync script when `orchestrator` is set. */
+    async function setupPatched(
+        orchestrator: boolean,
+    ): Promise<{ root: string; postPath: string; outPath: string; inPath: string }> {
+        const root = await mkdtemp(join(tmpdir(), 'sd-patch-op-'));
+        const postDir = join(root, 'content', 'posts', 'articles', 'zh', `${RUN_DATE}-post`);
+        await mkdir(postDir, { recursive: true });
+        const postPath = join(postDir, 'index.md');
+        await writeFile(postPath, `---\ntitle: T\npublishDate: '2026-10-11'\nimage: ./assets/cover.png\n---\n\nBody\n`);
+        if (orchestrator) {
+            await mkdir(join(root, 'scripts'), { recursive: true });
+            await writeFile(join(root, 'scripts', 'publish-orchestrator.ts'), 'process.exit(0);\n');
+        }
+        git(root, 'init', '-q', '-b', 'main');
+        git(root, 'config', 'user.email', 't@t');
+        git(root, 'config', 'user.name', 'T');
+        git(root, 'add', '-A');
+        git(root, 'commit', '-q', '-m', 'init');
+
+        const inPath = join(root, 'patch-in.json');
+        const outPath = join(root, 'patch-out.json');
+        await writeFile(
+            inPath,
+            JSON.stringify({
+                body: '',
+                options: {
+                    operation: 'patch',
+                    postPath,
+                    coverUrl: 'https://cdn.example/cover.png',
+                    showNotesUrl: 'https://pod.example/i/1',
+                    dateIso: '2026-10-11',
+                    localCover: join(root, 'cover.png'),
+                },
+            }),
+        );
+        return { root, postPath, inPath, outPath };
+    }
+
+    test('patches the posts, re-syncs the CMS rows and commits the scoped paths', async () => {
+        const fx = await setupPatched(true);
+        process.env.SURFDASH_ROOT = fx.root;
+        try {
+            await processPublishIO(fx.inPath, fx.outPath);
+            const result = ResultSchema.parse(JSON.parse(await readFile(fx.outPath, 'utf-8')));
+            expect(result.ok, result.error).toBe(true);
+            expect(result.message).toContain('patched 1 post(s)');
+            expect(result.metadata?.cmsResync).toBe('ok');
+            expect(result.metadata?.locales).toEqual(['zh']);
+            expect(result.metadata?.absentLocales).toEqual(['en', 'ja']);
+            expect(typeof result.metadata?.gitCommit).toBe('string');
+            const md = await readFile(fx.postPath, 'utf-8');
+            expect(md).toContain("image: 'https://cdn.example/cover.png'");
+            expect(md).toContain('点击收听');
+            // Committed on main, and the branch guard let it through.
+            expect(git(fx.root, 'log', '-1', '--format=%s').stdout).toContain('cover + podcast cross-link');
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            await rm(fx.root, { recursive: true, force: true });
+        }
+    });
+
+    test('reports a failed CMS re-sync while keeping the patched, committed files', async () => {
+        const fx = await setupPatched(false); // no orchestrator script → the sync spawn fails
+        process.env.SURFDASH_ROOT = fx.root;
+        try {
+            await expect(processPublishIO(fx.inPath, fx.outPath)).rejects.toThrow('cms re-sync failed');
+            const result = ResultSchema.parse(JSON.parse(await readFile(fx.outPath, 'utf-8')));
+            expect(result.ok).toBe(false);
+            expect(String(result.error)).toContain('cms re-sync failed');
+            // `metadata.cmsResync` is what lets the caller treat it as the soft channel it is.
+            expect(result.metadata?.cmsResync).toBe('failed');
+            expect(await readFile(fx.postPath, 'utf-8')).toContain('https://cdn.example/cover.png');
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            await rm(fx.root, { recursive: true, force: true });
+        }
+    });
+
+    test('refuses a feature branch before writing anything', async () => {
+        const fx = await setupPatched(true);
+        git(fx.root, 'checkout', '-q', '-b', 'feature');
+        const before = git(fx.root, 'rev-parse', 'HEAD').stdout.trim();
+        process.env.SURFDASH_ROOT = fx.root;
+        try {
+            await expect(processPublishIO(fx.inPath, fx.outPath)).rejects.toThrow('not');
+            const result = ResultSchema.parse(JSON.parse(await readFile(fx.outPath, 'utf-8')));
+            expect(result.ok).toBe(false);
+            expect(String(result.error)).toContain('feature');
+            expect(await readFile(fx.postPath, 'utf-8')).toContain('./assets/cover.png');
+            expect(git(fx.root, 'rev-parse', 'HEAD').stdout.trim()).toBe(before);
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            await rm(fx.root, { recursive: true, force: true });
+        }
+    });
+
+    test('refuses a postPath that escapes the checkout', async () => {
+        const fx = await setupPatched(true);
+        process.env.SURFDASH_ROOT = fx.root;
+        const escaped = join(dirname(fx.root), 'outside', 'index.md');
+        await writeFile(fx.inPath, JSON.stringify({ body: '', options: { operation: 'patch', postPath: escaped } }));
+        try {
+            await expect(processPublishIO(fx.inPath, fx.outPath)).rejects.toThrow('must resolve inside');
+            const result = ResultSchema.parse(JSON.parse(await readFile(fx.outPath, 'utf-8')));
+            expect(result.ok).toBe(false);
+            expect(String(result.error)).toContain('inside the surfdash checkout');
+        } finally {
+            delete process.env.SURFDASH_ROOT;
+            await rm(fx.root, { recursive: true, force: true });
+        }
     });
 });
