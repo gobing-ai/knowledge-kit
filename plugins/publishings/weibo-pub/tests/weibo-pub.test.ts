@@ -20,6 +20,7 @@ import {
     WEIBO_ARTICLE_URL,
     WEIBO_CONFIG,
     WEIBO_HOME_URL,
+    WEIBO_MOBILE_COMPOSE_URL,
     WEIBO_OPERATIONS,
     WEIBO_POST_SELECTORS,
     WeiboBrowserTransport,
@@ -31,6 +32,8 @@ const LOGIN_URL = 'https://passport.weibo.com/sso/login?entry=weibo';
 const DRAFT_URL = 'https://card.weibo.com/article/v3/editor?draft_id=4901234567890';
 const ARTICLE_LIVE_URL = 'https://weibo.com/ttarticle/p/show?id=2309404901234567890';
 const STATUS_URL = 'https://weibo.com/1234567890/PabcDEF123';
+/** Mobile success shape: the composer navigates to `/detail/<id>` — the URL carries the new id. */
+const MOBILE_STATUS_URL = 'https://m.weibo.cn/detail/5001234567890';
 const COVER_PATH = join(TMP_DIR, 'cover.png');
 
 const content: Content = { title: 'Parity', body: 'Body text', format: 'markdown' };
@@ -62,8 +65,10 @@ interface FakePageOptions {
     onSaveDraft?: 'url' | 'toast' | 'none';
     /** What clicking the article publish control emits. */
     onPublish?: 'article' | 'none';
-    /** What clicking 发送 emits. */
-    onSend?: 'feedCard' | 'none';
+    /** What clicking 发送 emits: a feed card, the mobile composer's own navigation, or nothing. */
+    onSend?: 'feedCard' | 'mobileUrl' | 'none';
+    /** First visible dialog/verification text on the page, as the R5 diagnostic reads it. */
+    dialogText?: string;
     /** A fresh failure toast the send emits (the site's own reason for a rejected post). */
     sendFailureToast?: string;
     /** Toasts already on screen before any click (a stale signal). */
@@ -127,6 +132,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
                     text: options.feedText ?? values.get(post.composer?.[0] ?? '') ?? 'Hello Weibo',
                 });
             }
+            if (post.send?.includes(selector) && options.onSend === 'mobileUrl') url = MOBILE_STATUS_URL;
             if (post.send?.includes(selector) && options.sendFailureToast !== undefined) {
                 toasts.push(options.sendFailureToast);
             }
@@ -163,6 +169,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
                 return values.get(selector) ?? editorText;
             }
             if (expression.includes('kk-weibo-cover')) return String(images);
+            if (expression.includes('kk-weibo-dialog')) return options.dialogText ?? '';
             if (expression.includes('kk-weibo-toasts')) return JSON.stringify(toasts);
             if (expression.includes('kk-weibo-feed')) return JSON.stringify(cards.map((card) => card.href));
             if (expression.includes('kk-weibo-card-text')) {
@@ -303,20 +310,12 @@ describe('weibo-pub refusals before any browser (R3, R5, R8)', () => {
         expect(fake.requests).toHaveLength(0);
     });
 
-    test('a cover on post is refused as text-only', async () => {
-        const fake = makeFakeLauncher();
-        const result = await transport(fake, 'post').publish({ content: livePost, options: { coverPath: COVER_PATH } });
-        expect(result.ok).toBe(false);
-        expect(result.error).toContain('text-only');
-        expect(fake.requests).toHaveLength(0);
-    });
-
     test('a relative, wrong-extension or missing cover is refused before any browser opens', async () => {
         const fake = makeFakeLauncher();
-        for (const coverPath of ['cover.png', '/tmp/cover.gif', join(TMP_DIR, 'absent.png')]) {
+        for (const coverPath of ['cover.png', '/tmp/cover.txt', join(TMP_DIR, 'absent.png')]) {
             const result = await transport(fake).publish({ content, options: { coverPath } });
             expect(result.ok).toBe(false);
-            expect(result.error).toContain('cover');
+            expect(result.error).toContain('image');
         }
         expect(fake.requests).toHaveLength(0);
     });
@@ -471,7 +470,7 @@ describe('weibo-pub post flow (R3, R4)', () => {
         expect(result.ok).toBe(true);
         expect(result.url).toBe(STATUS_URL);
         expect(result.id).toBe('PabcDEF123');
-        expect(fake.calls).toContain(`goto:${WEIBO_HOME_URL}`);
+        expect(fake.calls).toContain(`goto:${WEIBO_MOBILE_COMPOSE_URL}`);
         expect(fake.calls.some((call) => call.startsWith(`fill:${WEIBO_POST_SELECTORS.composer[0]}|Hello Weibo`))).toBe(
             true,
         );
@@ -499,6 +498,61 @@ describe('weibo-pub post flow (R3, R4)', () => {
         });
         expect(result.ok).toBe(true);
         expect(fake.calls.some((call) => call.includes('fill:') && call.includes('Only a title'))).toBe(true);
+    });
+
+    test('a public post with one cover image uploads it and requires the fresh attachment', async () => {
+        const fake = makeFakeLauncher({ onSend: 'feedCard' });
+        const result = await transport(fake, 'post').publish({ content: livePost, options: { coverPath: COVER_PATH } });
+        expect(result.ok).toBe(true);
+        expect(
+            fake.calls.some((call) =>
+                call.startsWith(`setInputFiles:${WEIBO_POST_SELECTORS.fileInput[0]}|${COVER_PATH}`),
+            ),
+        ).toBe(true);
+    });
+
+    test('the mobile composer navigating to the new status is the outcome', async () => {
+        const fake = makeFakeLauncher({ onSend: 'mobileUrl' });
+        const result = await transport(fake, 'post').publish({ content: livePost });
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(MOBILE_STATUS_URL);
+        expect(result.id).toBe('5001234567890');
+    });
+
+    test('more than one image, a non-image path and an oversized file are refused by name', async () => {
+        const fake = makeFakeLauncher({ onSend: 'feedCard' });
+        const many = await transport(fake, 'post').publish({
+            content: livePost,
+            options: { images: [COVER_PATH, COVER_PATH] },
+        });
+        expect(many.ok).toBe(false);
+        expect(many.error).toContain('only one image');
+        const wrong = await transport(fake, 'post').publish({
+            content: livePost,
+            options: { coverPath: join(TMP_DIR, 'notes.txt') },
+        });
+        expect(wrong.ok).toBe(false);
+        expect(wrong.error).toContain('.png, .jpg, .jpeg, .webp, .gif, .bmp');
+        const big = join(TMP_DIR, 'big.png');
+        await writeFile(big, Buffer.alloc(5 * 1024 * 1024 + 1));
+        const oversized = await transport(fake, 'post').publish({ content: livePost, options: { coverPath: big } });
+        expect(oversized.ok).toBe(false);
+        expect(oversized.error).toContain('MB');
+        // All three refuse before a browser exists.
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    test('a failed send reports the post-click diagnosis', async () => {
+        const fake = makeFakeLauncher({
+            onSend: 'none',
+            dialogText: '请先完成手机验证',
+            sendFailureToast: '发送失败',
+        });
+        const result = await transport(fake, 'post').publish({ content: livePost });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('composer ');
+        expect(result.error).toContain('请先完成手机验证');
+        expect(result.error).toContain('site said: 发送失败');
     });
 
     test('a fresh failure toast is named when the send produces no card', async () => {
@@ -614,10 +668,12 @@ describe('weibo-pub fake transport and IO (R9)', () => {
                 body: 'B',
                 format: 'markdown',
                 metadata: { publishStatus: 'public' },
-                options: { operation: 'post', coverPath: COVER_PATH },
+                // Two images is the deterministic pre-browser refusal now that a post accepts one
+                // (0246 R9) — this case must never reach a transport, real or fake.
+                options: { operation: 'post', images: [COVER_PATH, COVER_PATH] },
             }),
         );
-        await expect(processPublishIO(inPath, outPath)).rejects.toThrow(/text-only/);
+        await expect(processPublishIO(inPath, outPath)).rejects.toThrow(/only one image/);
         const written = ResultSchema.parse(JSON.parse(await readFile(outPath, 'utf-8')));
         expect(written.ok).toBe(false);
     });

@@ -41,6 +41,14 @@ export const WEIBO_HOME_URL = 'https://weibo.com';
  * leg stays entitlement-gated. See `docs/design/weibo-ui-discovery.md`.
  */
 export const WEIBO_ARTICLE_URL = 'https://card.weibo.com/article/v3/editor';
+/**
+ * Post composer entry. **Measured 2026-10-12** (task 0246, `docs/design/weibo-ui-discovery.md` §2b):
+ * the mobile web composer is the route this channel posts through. It is a plain server-rendered page —
+ * one real `<textarea>`, one `a.m-send-btn` — where the desktop React app's 发送 click produced no
+ * submission at all (the draft stayed in the composer, no toast, no card, twice), and it accepts an
+ * image through `input[type="file"]` natively, which an episode announcement needs.
+ */
+export const WEIBO_MOBILE_COMPOSE_URL = 'https://m.weibo.cn/compose/';
 /** Login and passport redirects: while the browser sits on one, the composer never renders. */
 export const LOGIN_URL_RE = /(passport\.weibo\.com|\/login)/;
 
@@ -59,22 +67,20 @@ export type WeiboOperation = (typeof WEIBO_OPERATIONS)[number];
  * click the wrong control.
  */
 export const WEIBO_POST_SELECTORS = {
-    composer: [
-        'textarea[placeholder*="新鲜事"]',
-        'textarea[placeholder*="分享"]',
-        'div[contenteditable="true"][class*="Form"]',
-    ],
-    send: [
-        'button:has-text("发送")',
-        'button[class*="woo-button-primary"]:has-text("发送")',
-        'button[class*="Submit"]:has-text("发送")',
-    ],
+    composer: ['textarea[placeholder*="分享新鲜事"]', 'textarea[placeholder*="新鲜事"]', 'textarea'],
     /**
-     * Feed cards: the measured desktop shape is `a._time_*` → `https://weibo.com/<uid>/<mblogid>`.
-     * The `status`/`detail` forms are kept as legacy/mobile fallbacks; on the signed-in home feed the
-     * measured counts for them were **0**, so they alone could never observe a post.
+     * Send control: measured as `a.m-send-btn` (text 发送) on the mobile composer. The 发送-text
+     * constraint is kept on every fallback so a bare class can never match a different control.
      */
-    feedCard: ['a[class*="_time_"]', 'a[href*="/status/"]', 'a[href*="/detail/"]'],
+    send: ['a.m-send-btn', 'a:has-text("发送")', 'button:has-text("发送")'],
+    /** Post image: the mobile composer's `input[type="file"]`, accept `image/gif,jpeg,webp,jpg,png,bmp`. */
+    fileInput: ['input[type="file"][accept*="image"]', 'input[type="file"]'],
+    /**
+     * Feed cards on the mobile feed are `a[href*="/detail/"]` / `a[href*="/status/"]`; the desktop
+     * shape (`a._time_*` → `weibo.com/<uid>/<mblogid>`) is kept as a fallback. A post is usually
+     * observed through the composer page's own navigation first (see `mobileStatusUrl`).
+     */
+    feedCard: ['a[href*="/detail/"]', 'a[href*="/status/"]', 'a[class*="_time_"]'],
 } as const;
 
 /**
@@ -100,8 +106,18 @@ const STEP_TIMEOUT_MS = 30_000;
 const LOGIN_TIMEOUT_MS = 180_000;
 /** Operator recovery command every session failure names — never a cookie, DOM dump or stack. */
 export const LOGIN_INSTRUCTION = 'bun plugins/publishings/weibo-pub/src/profile-check.ts login';
-/** Cover extensions accepted from `options.coverPath` / `metadata.coverImage`. */
-const COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+/**
+ * Image extensions this channel accepts — the mobile composer's measured `accept` list
+ * (`image/gif,image/jpeg,image/webp,image/jpg,image/png,image/bmp`), which is also what the
+ * open-platform `pic` parameter takes.
+ */
+const POST_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']);
+/**
+ * One-image cap. Weibo documents the open-platform `pic` upload as under 5 MB
+ * (<https://open.weibo.com/wiki/2/statuses/share>); the same Content must be portable between the
+ * browser and API routes, so the stricter documented bound is the channel's bound.
+ */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** Body excerpt length compared on readback and on the fresh-post signal. */
 const EXCERPT_CHARS = 30;
@@ -207,19 +223,33 @@ async function resolveCover(
     options: Record<string, unknown> | undefined,
     content: Content,
 ): Promise<{ path: string } | { error: string } | undefined> {
-    const raw = options?.coverPath ?? content.metadata?.coverImage;
+    const list = options?.images;
+    if (Array.isArray(list) && list.length > 1) {
+        return { error: `only one image is supported, got ${list.length} — weibo-pub posts one image` };
+    }
+    const single = Array.isArray(list) && list.length === 1 ? list[0] : undefined;
+    const raw = options?.coverPath ?? single ?? content.metadata?.coverImage;
     if (raw === undefined) return undefined;
     if (typeof raw !== 'string' || raw.trim().length === 0) {
-        return { error: `cover path must be a non-empty local file path, got '${bounded(raw)}'` };
+        return { error: `image path must be a non-empty local file path, got '${bounded(raw)}'` };
     }
     if (!isAbsolute(raw)) {
-        return { error: `cover path must be an absolute path, got '${raw}'` };
+        return { error: `image path must be an absolute path, got '${raw}'` };
     }
-    if (!COVER_EXTS.has(extname(raw).toLowerCase())) {
-        return { error: `cover path must be a .png, .jpg, .jpeg or .webp file, got '${raw}'` };
+    const ext = extname(raw).toLowerCase();
+    if (!POST_IMAGE_EXTS.has(ext)) {
+        return {
+            error: `image must be one of .png, .jpg, .jpeg, .webp, .gif, .bmp (Weibo's accepted set), got '${raw}'`,
+        };
     }
     if (!(await createNodeFileSystem().exists(raw))) {
-        return { error: `cover file does not exist: '${raw}'` };
+        return { error: `image file does not exist: '${raw}'` };
+    }
+    const size = Bun.file(raw).size;
+    if (size > MAX_IMAGE_BYTES) {
+        return {
+            error: `image is ${Math.round(size / 1024 / 1024)} MB, over the ${MAX_IMAGE_BYTES / 1024 / 1024} MB weibo limit: ${raw}`,
+        };
     }
     return { path: raw };
 }
@@ -282,9 +312,7 @@ export class WeiboBrowserTransport implements PublishTransport {
         }
         const cover = await resolveCover(payload.options, payload.content);
         if (cover !== undefined && 'error' in cover) return fail(cover.error);
-        if (this.operation === 'post' && cover?.path !== undefined) {
-            return fail('weibo post is text-only: a cover is not supported (use operation article)');
-        }
+        // An episode announcement carries its cover: `post` accepts exactly one image (R9, 0246).
 
         const override = typeof payload.options?.profileDir === 'string' ? payload.options.profileDir : undefined;
         const profileDir = resolveChannelProfileDir(TARGET, override);
@@ -307,7 +335,7 @@ export class WeiboBrowserTransport implements PublishTransport {
             return await withProfilePage(
                 {
                     profileDir,
-                    url: this.operation === 'article' ? WEIBO_ARTICLE_URL : WEIBO_HOME_URL,
+                    url: this.operation === 'article' ? WEIBO_ARTICLE_URL : WEIBO_MOBILE_COMPOSE_URL,
                     isAuthenticated: isWeiboAuthenticated,
                     // Headed by default; the headless preflight above is the unattended pass and
                     // `options.headless === true` the opt-in.
@@ -320,7 +348,7 @@ export class WeiboBrowserTransport implements PublishTransport {
                 async ({ page }) =>
                     this.operation === 'article'
                         ? this.runArticleFlow(page, payload.content, publishStatus, cover?.path, profileDir)
-                        : this.runPostFlow(page, text, profileDir),
+                        : this.runPostFlow(page, text, profileDir, cover?.path),
             );
         } catch (error) {
             // Same ordering rule as the preflight refusal: the recovery command is never the tail
@@ -429,7 +457,7 @@ export class WeiboBrowserTransport implements PublishTransport {
      * The home-composer flow: fill → readback → `发送`, then require a **new** feed card whose text
      * carries the submitted excerpt. Only reached for `publishStatus: public` (R3, R4).
      */
-    private async runPostFlow(page: Page, text: string, profileDir: string): Promise<Result> {
+    private async runPostFlow(page: Page, text: string, profileDir: string, coverPath?: string): Promise<Result> {
         const metadata = { operation: 'post', driver: this.driver, publishStatus: 'public', profileDir };
 
         const composerSelector = await resolveSelector(page, WEIBO_POST_SELECTORS.composer, {
@@ -439,6 +467,22 @@ export class WeiboBrowserTransport implements PublishTransport {
         await page.locator(composerSelector).first().fill(text);
         const readback = await this.requireReadback(page, composerSelector, text, 'post composer readback');
         if (!readback.ok) return fail(readback.error);
+
+        // The announcement's cover: one image, uploaded through the composer's own input, with a
+        // fresh observed attachment before the send (R9, 0246) — the same rail `article` uses.
+        if (coverPath !== undefined) {
+            const fileInputSelector = await resolveSelector(page, WEIBO_POST_SELECTORS.fileInput, {
+                timeoutMs: this.stepTimeoutMs,
+                label: 'post image input',
+            });
+            const baseline = await this.countImages(page, composerSelector);
+            await uploadFile(page, fileInputSelector, coverPath, { timeoutMs: this.stepTimeoutMs });
+            const attached = await expectOutcome(() => this.probeCoverAttached(page, composerSelector, baseline), {
+                timeoutMs: this.stepTimeoutMs,
+                label: 'weibo post image attachment',
+            });
+            if (!attached.ok) return fail(attached.error);
+        }
 
         // Snapshot the feed and the toasts before the send: an existing card is never this run's
         // outcome (R4), and a fresh toast is the site's own reason when the send is rejected
@@ -455,8 +499,10 @@ export class WeiboBrowserTransport implements PublishTransport {
             label: `weibo post '${sendSelector}'`,
         });
         if (!live.ok) {
-            const said = (await this.readToasts(page)).find((toast) => !new Set(toastsBefore).has(toast));
-            return fail(said === undefined ? live.error : `${live.error} (site said: ${said})`);
+            // Diagnosis-first (R5, 0246): a silent send must leave its own explanation behind —
+            // composer length before/after, any dialog/modal that appeared, any fresh toast — so the
+            // next operator never has to re-run a write to learn why.
+            return fail(`${live.error} [${await this.postDiagnostics(page, composerSelector, text, toastsBefore)}]`);
         }
         return ResultSchema.parse({
             ok: true,
@@ -515,6 +561,25 @@ export class WeiboBrowserTransport implements PublishTransport {
         return (await this.probeFreshToast(page, toastsBefore)) ?? probeDraftUrl(page.url(), editorUrl);
     }
 
+    /**
+     * One bounded line of what the page shows after a failed send (R5): the composer's length change,
+     * the first visible dialog/modal/verification text, and any fresh toast. Never page HTML.
+     */
+    private async postDiagnostics(
+        page: Page,
+        composerSelector: string,
+        text: string,
+        toastsBefore: readonly string[],
+    ): Promise<string> {
+        const now = String(await page.evaluate(readbackScript(composerSelector))).length;
+        const parts = [`composer ${[...text].length}->${now}`];
+        const dialog = String(await page.evaluate(dialogTextScript())).trim();
+        if (dialog.length > 0) parts.push(`dialog: ${dialog}`);
+        const toast = (await this.readToasts(page)).find((entry) => !new Set(toastsBefore).has(entry));
+        if (toast !== undefined) parts.push(`site said: ${toast}`);
+        return parts.join('; ');
+    }
+
     /** A toast carrying a save/success word that was not already on screen before the click. */
     private async probeFreshToast(page: Page, toastsBefore: readonly string[]): Promise<string | null> {
         const before = new Set(toastsBefore);
@@ -534,6 +599,9 @@ export class WeiboBrowserTransport implements PublishTransport {
      * the new card yet, one bounded reload refreshes it.
      */
     private async probePostLive(page: Page, existingCards: readonly string[], text: string): Promise<string | null> {
+        // The mobile composer navigates to the new status on success — that URL *is* the outcome.
+        const landed = mobileStatusUrl(page.url());
+        if (landed !== null) return landed;
         const before = new Set(existingCards);
         const wanted = excerpt(text);
         const fresh = (await this.readFeedCards(page)).filter((card) => !before.has(card));
@@ -586,6 +654,27 @@ function statusIdFrom(url: string): string | undefined {
  */
 function liveArticleUrl(url: string): string | null {
     return /(?:\/ttarticle\/p\/show\?id=|\/article\/(?:show|detail)\/)[A-Za-z0-9]+/.test(url) ? url : null;
+}
+
+/**
+ * Mobile-status evidence: on `m.weibo.cn` a successful post lands on `/detail/<id>` or
+ * `/status/<id>` — the URL itself carries the new status id, so it is the strongest signal the mobile
+ * route can give. Measured 2026-10-12 (0246, `docs/design/weibo-ui-discovery.md` §2b).
+ */
+function mobileStatusUrl(url: string): string | null {
+    return /m\.weibo\.cn\/(?:detail|status)\/[A-Za-z0-9]+/.test(url) ? url : null;
+}
+
+/** The first visible dialog/modal/verification text on the page, bounded; '' when none. */
+function dialogTextScript(): string {
+    return `(() => { // kk-weibo-dialog
+    const nodes = document.querySelectorAll('[role="dialog"], [class*="dialog" i], [class*="modal" i], [class*="verify" i], [class*="captcha" i]');
+    for (const node of nodes) {
+        const text = (node.textContent || '').replace(/s+/g, ' ').trim();
+        if (text.length > 0) return text.slice(0, 120);
+    }
+    return '';
+})()`;
 }
 
 /** A draft URL: left the editor entry and carries a draft/article id. */

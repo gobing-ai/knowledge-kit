@@ -40,6 +40,28 @@ Send-control state after `fill()` **and** after human-style typing: `enabled: tr
 `elementFromPoint` at the button centre is the button itself (no overlay), `disabled: false`,
 `aria-disabled: null`. So the click is not blocked by actionability.
 
+## 2b. Mobile composer — the route `post` now uses (measured 2026-10-12)
+
+| Measurement | Value |
+| --- | --- |
+| URL | `https://m.weibo.cn/compose/` — loads with the same profile, **not** login-walled (`loginWall: false`) |
+| Composer | one real `<textarea>` with placeholder `分享新鲜事…` |
+| Send control | `a.m-send-btn` (text 发送), `disabled=false` |
+| Image input | `input[type="file"]`, `accept="image/gif,image/jpeg,image/webp,image/jpg,image/png,image/bmp"` |
+| `m.weibo.cn/` root | no send control — `/compose/` is the entry |
+
+**Route decision (R6/R7):** `post` goes through the **mobile composer**. It is a plain, server-rendered page
+with one textarea, one send anchor and a native image input, where the desktop React app's 发送 click produced
+no submission at all (draft retained, no toast, no card, twice — §4a). The desktop selectors stay in the
+ladder only as fallbacks, and the desktop no-op remains a documented hypothesis rather than something a live
+write has to settle.
+
+**Live signals on this route.** On success the composer page navigates to `/detail/<id>` (or `/status/<id>`) —
+that URL carries the new status id and is the strongest evidence available, so it is probed first; a fresh
+feed card carrying the excerpt and a fresh success toast remain secondary. On failure the flow now records its
+own diagnosis (composer length before→after, the first visible dialog/verification text, any fresh toast),
+so a silent send cannot recur without an explanation attached.
+
 ## 3. Status links / cards (measured — the decisive finding)
 
 | Candidate | Matches on the signed-in home feed | Matches on `weibo.com/u/<uid>` |
@@ -133,6 +155,42 @@ under the app's configured safe domain and takes the cover as a `pic` **binary u
 episode title, one-line hook, the episode link, the cover — not a copy of the episode body. That shape is
 what task 0246 now specifies (R8–R11), including the one-image post rail an announcement needs.
 
+
+## 4c. The announcement contract (episode is out)
+
+The channel exists so a reader learns **a new episode is out**, so its Content is an announcement, not a copy
+of the episode. Verified limits (`kefu.weibo.com/faqdetail?id=21510`, 2024-09-04: up to 5000 characters;
+feeds truncate to ~140 behind a "show full text" control) make the binding budget a **display** one:
+
+| Field | Value |
+| --- | --- |
+| `title` | the episode name (kept for the Result and for a future card) |
+| `body` | one hook line **inside ~140 characters** so it survives the feed preview, then the episode **link** on its own line (Weibo autolinks it; `statuses/share` requires a URL in the text) |
+| `metadata.publishStatus` | `'public'` — a post has no draft, so an announcement is inherently a live write and needs the operator's contemporaneous approval |
+| `options.coverPath` | exactly **one** image, ≤ 5 MB, one of `.png .jpg .jpeg .webp .gif .bmp` (the composer's measured `accept` list; the 5 MB bound is Weibo's documented `pic` limit) |
+| `options.operation` | `post` |
+
+Copyable example — `weibo-announcement.json`:
+
+```json
+{
+  "title": "S05E12 · MoE 推理的显存账",
+  "body": "新一期上线：MoE 推理到底吃多少显存？三种量化档位实测，结论有点反直觉。\nhttps://episodes.example.com/s05e12",
+  "format": "markdown",
+  "metadata": { "publishStatus": "public" },
+  "options": { "operation": "post", "coverPath": "/abs/path/s05e12-cover.png" }
+}
+```
+
+```bash
+kk executor run weibo-pub --in weibo-announcement.json --out weibo-result.json
+# Result: { ok: true, target: 'weibo', id: '<status id>', url: 'https://m.weibo.cn/detail/<id>', ... }
+```
+
+The hook above is 45 characters — well inside the display budget and far inside the platform's 5000. A body
+over the display budget is a content-quality defect, not a refusal: the plugin never truncates. Wiring the
+channel into the daily/ITC workflows stays a separate feature (E94 scope); this contract plus the invocation
+above is the handoff surface.
 
 ## 5. 头条文章 (article) — entitlement-gated, not reachable
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: weibo-pub live operator dogfood — pin composer and article editor selectors
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-10-09T23:19:30.104Z
-updated_at: "2026-10-12T17:50:15.126Z"
+updated_at: "2026-10-12T18:04:06.761Z"
 feature_id: E94
 priority: P3
 tags:
@@ -296,4 +296,5 @@ This task's own contract is explicit: *"Missing draft control, failed headless p
 - 2026-10-12T15:01:44.562Z todo → wip (system)
 - 2026-10-12T17:38:04.512Z wip → blocked (system)
 - 2026-10-12T17:48:50.896Z blocked → todo (system)
+- 2026-10-12T18:04:06.761Z todo → wip (system)
 
