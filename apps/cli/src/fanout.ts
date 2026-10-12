@@ -14,7 +14,7 @@ import {
 } from '@gobing-ai/kk-core';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echoError } from '@gobing-ai/ts-utils';
-import { spawnPluginEntry } from './invoke';
+import { spawnPluginEntryAsync } from './invoke';
 import { formatIssues, readPluginJson } from './plugin-output';
 
 /** A publish target: the name of a publish-kind plugin (spec §1.3). */
@@ -408,13 +408,23 @@ function parseArgs(argv: string[]): FanoutOptions {
 
 /**
  * Default dispatch: run the publish plugin named by the target through its
- * entry script (same `--in`/`--out` contract as `kk invoke`) and return the
- * `Result` it wrote. Throws on any failure so the target is recorded as failed.
+ * entry script asynchronously (same `--in`/`--out` contract as `kk invoke`)
+ * and return the `Result` it wrote. Throws on any failure so the target is
+ * recorded as failed.
  *
- * Process spawn goes through `spawnPluginEntry` in `invoke.ts` — the only
- * sanctioned `Bun.spawnSync` site under `no-direct-process-spawn`.
+ * Process spawn goes through `spawnPluginEntryAsync` in `invoke.ts` — the
+ * sanctioned spawn seam under `no-direct-process-spawn`, and the one that lets
+ * independent publishers overlap (ADR-007 R4 amendment 2026-10-03).
+ * `targetTimeoutMs` is that spawn's own budget: it is enforced there, tree and
+ * all, before this function reads or deletes the temporary output — the
+ * fan-out must never race an owned subprocess (R2).
  */
-async function pluginDispatch(target: string, contentPath: string, discovery: DiscoveryResult): Promise<ResultEntry> {
+async function pluginDispatch(
+    target: string,
+    contentPath: string,
+    discovery: DiscoveryResult,
+    targetTimeoutMs: number | undefined,
+): Promise<ResultEntry> {
     const record = getByName(discovery, target);
     if (record?.kind !== 'publish') {
         throw new Error(`Publish plugin '${target}' not found in the merged plugin registry`);
@@ -428,14 +438,19 @@ async function pluginDispatch(target: string, contentPath: string, discovery: Di
 
     const outTmp = join(tmpdir(), `kk-fanout-${target}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     try {
-        const proc = spawnPluginEntry({
+        const proc = await spawnPluginEntryAsync({
             entryPath,
             cwd: record.dir,
             inPath: resolve(contentPath),
             outPath: outTmp,
             pluginKind: record.kind,
             pluginName: record.name,
+            ...(targetTimeoutMs !== undefined ? { timeoutMs: targetTimeoutMs } : {}),
         });
+        if (proc.timedOut === true) {
+            // `timedOut` is only ever set by a spawn given a budget; name it (R2).
+            throw new Error(`target '${target}' exceeded its ${targetTimeoutMs}ms budget`);
+        }
         if (proc.exitCode !== 0) {
             throw new Error(`Plugin '${target}' exited ${proc.exitCode}: ${proc.stderr || proc.stdout || 'no output'}`);
         }
@@ -545,16 +560,22 @@ export async function runFanout(argv: string[], deps: FanoutDeps = {}): Promise<
         }
     }
 
-    const dispatch = deps.dispatch ?? ((t: Target) => pluginDispatch(t, opts.contentPath, discovery));
-    if (deps.dispatch === undefined && !validateTargets(targets, discovery)) {
+    const productionDispatch = deps.dispatch === undefined;
+    const dispatch =
+        deps.dispatch ?? ((t: Target) => pluginDispatch(t, opts.contentPath, discovery, opts.targetTimeoutMs));
+    if (productionDispatch && !validateTargets(targets, discovery)) {
         return EXIT_INPUT;
     }
 
+    // R2: the production dispatch owns its own budget — the spawn terminates and reaps its process
+    // tree before it resolves, so the fan-out's generic race would settle cleanup while the process
+    // is still running. Keep that race for an injected dispatch only (it owns no subprocess).
+    const raceTimeoutMs = productionDispatch ? undefined : opts.targetTimeoutMs;
     const fresh = await fanout(content, targets, dispatch, {
         ...(opts.serial === true ? { mode: 'serial' as const } : {}),
         ...(opts.jobs !== undefined ? { jobs: opts.jobs } : {}),
         ...(opts.serialTargets !== undefined ? { serialTargets: opts.serialTargets } : {}),
-        ...(opts.targetTimeoutMs !== undefined ? { timeoutMs: opts.targetTimeoutMs } : {}),
+        ...(raceTimeoutMs !== undefined ? { timeoutMs: raceTimeoutMs } : {}),
     });
     const result = prior !== undefined ? aggregate([...skipped, ...retainedFailed, ...fresh.targets]) : fresh;
 

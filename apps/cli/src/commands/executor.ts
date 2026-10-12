@@ -28,6 +28,10 @@ interface FanoutOptions {
     target: string[];
     out: string;
     retryFrom?: string;
+    serial?: boolean;
+    jobs?: string;
+    serialTarget?: string[];
+    targetTimeout?: string;
     pluginsRoot?: string;
     pluginsPath?: string[];
 }
@@ -96,6 +100,20 @@ async function runFanoutAction(options: FanoutOptions): Promise<void> {
     }
     if (options.retryFrom) {
         argv.push('--retry-from', options.retryFrom);
+    }
+    // Forward the scheduling and budget flags: without these the fan-out's concurrency is real but
+    // the isolation guards and the per-target deadline are silently inert on the shipped verb (0248 R2).
+    if (options.serial === true) {
+        argv.push('--serial');
+    }
+    if (options.jobs !== undefined) {
+        argv.push('--jobs', options.jobs);
+    }
+    for (const target of options.serialTarget ?? []) {
+        argv.push('--serial-target', target);
+    }
+    if (options.targetTimeout !== undefined) {
+        argv.push('--target-timeout', options.targetTimeout);
     }
     if (options.pluginsRoot) {
         argv.push('--plugins-root', options.pluginsRoot);
