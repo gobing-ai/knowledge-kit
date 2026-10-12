@@ -841,7 +841,9 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
 
             const yamlPath = join(dir, '24-script', `${date}_08_script_voicescript.yaml`);
             const vs = Bun.YAML.parse(readFileSync(yamlPath, 'utf-8')) as { segments: Array<{ text: string }> };
-            vs.segments[3]!.text = '修改后的简短内容。';
+            const target = vs.segments[3];
+            if (target === undefined) throw new Error('fixture drift: the script has no 4th segment to modify');
+            target.text = '修改后的简短内容。';
             writeFileSync(yamlPath, Bun.YAML.stringify(vs));
 
             rmSync(logFile, { force: true });
