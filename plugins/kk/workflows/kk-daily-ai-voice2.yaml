@@ -167,13 +167,16 @@ nodes:
       Content QC: filter the plan's annotated candidates by category allowlist + score thresholds
       (episode-plan-gen --mode filter). Writes 21-plan/<date>_04_quality-control-content_candidates.json,
       whose length guards the whole content fan-out below — a pool that filtered to zero items ends
-      the run as no-content instead of building an empty episode.
+      the run as no-content instead of building an empty episode. The stage also applies the
+      pre-spend floor gate (2026-10-12): a kept pool whose estimated spoken length cannot reach
+      `episode_min_minutes` is emptied here, so a thin day closes as no-content instead of paying
+      for a synthesis pass that `daily-episode-duration` then refuses.
     dependsOn: [plan]
     action:
       kind: shell
       options:
         command: >-
-          kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}" "${vars.qc_min_episode_items}"
+          kk stage daily-qc-content "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.qc_categories}" "${vars.qc_min_quality}" "${vars.qc_min_importance}" "${vars.qc_min_urgency}" "${vars.qc_min_impact}" "${vars.qc_min_episode_items}" "${vars.episode_min_minutes}" "${vars.vdriver}"
 
   - id: select
     description: >-

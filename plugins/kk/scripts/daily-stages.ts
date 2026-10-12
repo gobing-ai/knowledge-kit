@@ -124,6 +124,8 @@ export function dailyQcContent(args: string[]): void {
         minUrgency = '',
         minImpact = '',
         minEpisodeItems = '',
+        minMinutes = '',
+        vdriver = '',
     ] = args;
     const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
     const annotated = join(workDir, '21-plan', `${runDate}_04_quality-control-content_annotated.json`);
@@ -158,6 +160,7 @@ export function dailyQcContent(args: string[]): void {
                 },
             },
         );
+        applyFloorGate(candidates, workDir, runDate, minMinutes, vdriver);
     });
     // Topic boundary (task 0189 R2) runs on every invocation — re-applying to already-filtered
     // candidates is a no-op, so cached reruns stay idempotent while a crash between the candidates
@@ -208,6 +211,68 @@ export function dailyQcContent(args: string[]): void {
  * episode-plan-gen's `titleSimilarity`. Duplicated on purpose: this file is node-builtins-only
  * (no workspace imports), so it cannot reach that module.
  */
+/**
+ * The factor between a candidate's raw body characters and the characters the episode actually
+ * speaks, calibrated on the two 2026-10-11 runs: 3 thin candidates (1.8k chars) scripted to 1270
+ * spoken characters (4.0 min, failed the 15-min gate) and 7 candidates (4.3k chars) scripted to 5925
+ * (16.8 min, shipped). The agent expands the news register, so the raw count under-predicts by ~1.4x;
+ * with it, both runs land on the right side of the floor.
+ */
+const SPEAK_CHAR_EXPANSION = 1.4;
+
+/**
+ * Pre-spend floor gate (2026-10-12). `daily-episode-duration` already refuses a final episode below
+ * the floor, but it runs after the TTS spend and its failure aborts the run — a thin pool therefore
+ * cost a full synthesis pass and skipped run-report/ledger (the 04:30 tick of 2026-10-11: 3
+ * candidates → 4.0 min episode, nothing published). This estimates the spoken length from the kept
+ * candidates and, when it cannot reach the floor, empties the candidate list: every downstream
+ * `pool-count --min 1` guard then skips the content, audio, publish and XHS subtrees, and the run
+ * closes through run-report and the ledger exactly like an empty pool. The estimate and its inputs
+ * land in a refusal artifact next to the candidates.
+ */
+function applyFloorGate(
+    candidates: string,
+    workDir: string,
+    runDate: string,
+    minMinutes: string,
+    vdriver: string,
+): void {
+    const floor = Number(minMinutes);
+    if (minMinutes === '' || !Number.isFinite(floor) || floor <= 0) return;
+    const content = readJson(candidates);
+    const docs = metadataOf(content).docs;
+    if (!Array.isArray(docs) || docs.length === 0) return;
+    const chars = docs.reduce((sum, doc) => {
+        const entry = (doc ?? {}) as Record<string, unknown>;
+        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
+    }, 0);
+    const estimatedSeconds = 8 + (chars * SPEAK_CHAR_EXPANSION) / spokenCharRate(vdriver);
+    const estimatedMinutes = Math.round((estimatedSeconds / 60) * 10) / 10;
+    if (estimatedSeconds >= floor * 60) {
+        console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
+        return;
+    }
+    const refusal = join(workDir, '21-plan', `${runDate}_04_quality-control-content_floor-refusal.json`);
+    const ids = docs.map((doc) => String((doc as Record<string, unknown> | null)?.id ?? ''));
+    sted('write', refusal, () =>
+        writeJqText(refusal, {
+            estimatedMinutes,
+            minMinutes: floor,
+            candidateChars: chars,
+            expansion: SPEAK_CHAR_EXPANSION,
+            charRate: spokenCharRate(vdriver),
+            ids,
+            reason: `a ${docs.length}-item pool estimates ${estimatedMinutes} min of speech, below the ${floor} min floor — refusing before any TTS spend`,
+        }),
+    );
+    sted('write', candidates, () =>
+        writeJsonText(candidates, { ...(content ?? {}), metadata: { ...metadataOf(content), docs: [] } }),
+    );
+    console.error(
+        `floor gate: ${docs.length} candidates estimate ${estimatedMinutes} min < ${floor} min — candidates emptied, the run closes as no-content (see ${refusal})`,
+    );
+}
+
 export function dailyArticle(args: string[]): void {
     const [workDir = '', runDate = '', pluginsPath = ''] = args;
     const articleMd = join(workDir, '22-article', `${runDate}_06_article_article.md`);

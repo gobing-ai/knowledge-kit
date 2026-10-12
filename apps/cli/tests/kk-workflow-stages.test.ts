@@ -757,6 +757,97 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-qc-content empties a thin pool below the floor so no TTS is spent (2026-10-12)', () => {
+        withTempDir((dir) => {
+            // ≈ the 04:30 pool of 2026-10-11: three short items, which scripted to a 4.0-minute episode.
+            const thin = [
+                { id: 'a', title: 'A', body: 'x'.repeat(600) },
+                { id: 'b', title: 'B', body: 'x'.repeat(500) },
+                { id: 'c', title: 'C', body: 'x'.repeat(540) },
+            ];
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `fs.writeFileSync(out, JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs: ${JSON.stringify(thin)} } }));`,
+                ].join('\n'),
+            );
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const stamp = '20261011';
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_plan_content.json`),
+                JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs: thin } }),
+            );
+            const res = run(
+                ['daily-qc-content', dir, stamp, '', 'ai-news', '2', '3', '2', '1', '8', '15', 'gemini'],
+                env,
+            );
+            expect(res.status, res.stderr).toBe(0);
+            const candidates = JSON.parse(
+                readFileSync(join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`), 'utf-8'),
+            ) as { metadata: { docs: unknown[] } };
+            // Emptied: every downstream `pool-count --min 1` guard now skips the spending subtree.
+            expect(candidates.metadata.docs).toEqual([]);
+            const refusal = JSON.parse(
+                readFileSync(join(dir, `21-plan/${stamp}_04_quality-control-content_floor-refusal.json`), 'utf-8'),
+            ) as { estimatedMinutes: number; minMinutes: number; ids: string[] };
+            expect(refusal.minMinutes).toBe(15);
+            expect(refusal.estimatedMinutes).toBeLessThan(15);
+            expect(refusal.ids).toEqual(['a', 'b', 'c']);
+            expect(res.stderr).toContain('floor gate');
+        });
+    });
+
+    it('daily-qc-content keeps a pool that clears the floor and never gates without the arg', () => {
+        withTempDir((dir) => {
+            // Distinct titles: the QC stage's title-similarity dedup would merge `Item 1`/`Item 2`.
+            const titles = [
+                'DuckDB 并行执行重构',
+                'Deno 团队被收购',
+                '微软发布端侧笔记本',
+                '澳洲数据中心撤回募资',
+                '一只鸟喂食器',
+                '默认分词器切换',
+                '边缘运行时路线',
+            ];
+            const fat = titles.map((title, i) => ({ id: `d${i}`, title, body: 'y'.repeat(900) }));
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    "const out = args[args.indexOf('--out') + 1];",
+                    `fs.writeFileSync(out, JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs: ${JSON.stringify(fat)} } }));`,
+                ].join('\n'),
+            );
+            mkdirSync(join(dir, '21-plan'), { recursive: true });
+            const stamp = '20261011';
+            writeFileSync(
+                join(dir, `21-plan/${stamp}_03_plan_content.json`),
+                JSON.stringify({ body: '', title: 'T', format: 'markdown', metadata: { docs: fat } }),
+            );
+            const candidatesPath = join(dir, `21-plan/${stamp}_04_quality-control-content_candidates.json`);
+            const above = run(
+                ['daily-qc-content', dir, stamp, '', 'ai-news', '2', '3', '2', '1', '8', '15', 'gemini'],
+                env,
+            );
+            expect(above.status, above.stderr).toBe(0);
+            const kept = JSON.parse(readFileSync(candidatesPath, 'utf-8')) as { metadata: { docs: unknown[] } };
+            expect(kept.metadata.docs).toHaveLength(7);
+            expect(existsSync(join(dir, `21-plan/${stamp}_04_quality-control-content_floor-refusal.json`))).toBe(false);
+            expect(above.stdout).toContain('above the 15 min floor');
+
+            // The legacy 9-arg call (voice1 and the fixtures it drives) has no floor argument: ungated.
+            rmSync(candidatesPath, { force: true });
+            const legacy = run(['daily-qc-content', dir, stamp, '', 'ai-news', '2', '3', '2', '1', '8'], env);
+            expect(legacy.status, legacy.stderr).toBe(0);
+            const keptLegacy = JSON.parse(readFileSync(candidatesPath, 'utf-8')) as { metadata: { docs: unknown[] } };
+            expect(keptLegacy.metadata.docs).toHaveLength(7);
+        });
+    });
+
     it('daily-article unwraps a plan.json that carries the Content envelope instead of the Doc[]', () => {
         // `plan-translate`'s executor has been observed writing the generator's Content envelope
         // back to the plan path — valid JSON of the wrong shape. The article generator refuses it
