@@ -340,7 +340,7 @@ ownership marker `<work-dir>/.kk-board-owner.json` atomically, revoking the prev
 | -------- | --------- |
 | `--workflow <name>` | one of `kk-collect`, `kk-daily-ai-voice2`, `kk-itc` |
 | `--run <id>` | single safe path segment |
-| `--work-dir <dir>` | run workspace below a works root (`.works/` or `works/`); a relative path resolves against the project. `/`, the home tree, the project root, an ancestor of the project and a works root itself are refused |
+| `--work-dir <dir>` | run workspace below a works root (`.works/` or `works/`), or a canonical child of the configured works root when the caller passes it as a trusted binding (`kk daily prepare`); a relative path resolves against the project. `/`, the home tree, the project root, an ancestor of the project, the config tree and a works root itself are refused |
 | `--stamp <stamp>` | alphanumerics, dash, underscore, `T`/`Z` |
 | `--definition-digest <sha256:…>` | optional; topology is recorded only on exact `spur workflow list --json` agreement, else a diagnostic and no topology |
 | `--setting <key=value>` | repeatable; allowlisted per workflow. A non-allowlisted key is dropped, never captured; free text (topics, titles, prompts, paths) is never capturable |
@@ -364,7 +364,7 @@ unsatisfiable range, `422` malformed stored evidence, `503` Board authority unav
 the CLI `build:bundle`/`prepack`, so a packed install ships them).
 2. Declare each module in `.spur/config.yaml` under `bootstrap.modules` — `type: react`,
    `directory: apps/cli/dist/board/collect`, `entry: index.js`, `styles: [index.css]`,
-   `id: kk-collect` (plus `kk-daily-ai-voice2`/`kk-itc` once their entries exist). Enable a module
+   `id: kk-collect` (plus `kk-daily-ai-voice2`, whose entry 0253 builds; `kk-itc` follows in 0254). Enable a module
    only after its assets exist: the directory is checked at config load, so a missing build output
    makes every `spur` invocation in that checkout fail. **Not yet declared in this checkout** — the
    declaration is part of task 0255's installed-package hardening.
@@ -372,6 +372,30 @@ the CLI `build:bundle`/`prepack`, so a packed install ships them).
    `/modules/<id>` on that Board origin; definitions stay in **Settings → Workflows**
    (`/board/settings/workflows`). A validated `kkApi` query parameter selects a non-default loopback
    reader port and is retained in saved URLs.
+
+### `kk daily prepare` Board capture + the Daily AI Voice module (G8, task 0253)
+
+`kk daily prepare` gains the capture seam when the launch injects a run identity: `--run <id>` (the
+engine `vars.__runId`), `--definition-digest <sha256:…>` (`vars.__definitionDigest`) and repeatable
+`--setting <key=value>` for the §9 daily allowlist. Without `--run` — voice1 and direct callers —
+prepare is unchanged. The capture runs after the workspace is composed and before any result
+producer, so a refused revocation stops the run before it writes results. The daily workspace lives
+under the configured works root (``KK_WORKS_DIR`` > config `works_dir` > `~/.config/kk/works`), which
+is usually OUTSIDE the project: `captureRun` accepts a path outside a `.works`/`works` tree only when
+the caller passes that exact configured root as a trusted binding, and then only its canonical CHILD
+— never the root, the home/config tree or the project.
+
+The `kk-daily-ai-voice2` module (`apps/board/src/daily-voice`, built to `apps/board/dist/daily-voice`
+and `apps/cli/dist/board/daily-voice`) renders the four shared tabs over the reader's daily
+projection (`apps/cli/src/board/daily-voice.ts`): a **Summary** that keeps execution status apart
+from the published outcome, a **Results** tab with the article/cover/script/final audio, the run
+report and per-channel draft/live/skipped/failed outcomes with validated public links, an
+**Execution progress** tab built from the DAG's run-detail action rows (retry siblings stay distinct)
+plus the captured digest-verified edges — unknown edges stay unknown and link Settings → Workflows —
+and a **Workflow Config Summary** of the sanitized captured settings only. ADR-034 section audio is
+optional: only recorded output descriptors are served, and absent evidence is `unavailable`, never
+an invented zero. The digest-first topology capture, the artifact-only projection and the DAG
+producer fallback are frozen in `docs/design/workflow-board-modules.md` §9.
 
 ## 1.7 `plugin.json` manifest surface
 

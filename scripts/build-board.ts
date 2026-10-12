@@ -38,6 +38,11 @@ export interface BoardEntry {
  */
 export const BOARD_ENTRIES: readonly BoardEntry[] = [
     { name: 'collect', entry: 'apps/board/src/collect/index.tsx', css: 'apps/board/src/collect/index.css' },
+    {
+        name: 'daily-voice',
+        entry: 'apps/board/src/daily-voice/index.tsx',
+        css: 'apps/board/src/daily-voice/index.css',
+    },
 ];
 
 /** The host facades the bundle must externalize (never inline a second React runtime). */

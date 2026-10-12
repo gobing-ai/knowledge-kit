@@ -82,6 +82,9 @@ vars:
   # Run id, injected by spur at launch (0674 R5/R8) — the selections / ledger / mark-published
   # identity. A shell command may only reference declared vars.
   __runId: ""
+  # Executed definition digest, injected by spur at launch (G8 §9). The Board capture compares it
+  # with the named definition and records the topology only on exact agreement.
+  __definitionDigest: ""
 
 # One action per node (engine: DagNodeDef.action), no back-edges (ADR-031). A node whose deps are
 # ALL skipped is skipped; a done+skipped mix proceeds — which is how the empty-pool path still
@@ -111,6 +114,19 @@ nodes:
       options:
         command: >-
           kk daily prepare --workflow kk-daily-ai-voice2 --run-date "${vars.run_date}" --ledger-sync
+          --run "${vars.__runId}" --definition-digest "${vars.__definitionDigest}"
+          --setting window="${vars.window}" --setting language="${vars.language}" --setting vdriver="${vars.vdriver}"
+          --setting skip_review="${vars.skip_review}" --setting transcode_mp3="${vars.transcode_mp3}"
+          --setting cover_enabled="${vars.cover_enabled}" --setting xhs_enabled="${vars.xhs_enabled}"
+          --setting xhs_live="${vars.xhs_live}" --setting wechat_enabled="${vars.wechat_enabled}"
+          --setting wechat_live="${vars.wechat_live}" --setting plan_translate_enabled="${vars.plan_translate_enabled}"
+          --setting article_write_enabled="${vars.article_write_enabled}"
+          --setting script_write_enabled="${vars.script_write_enabled}" --setting publish_enabled="${vars.publish_enabled}"
+          --setting xhs_cards="${vars.xhs_cards}" --setting plan_max_items="${vars.plan_max_items}"
+          --setting safety_max_revise="${vars.safety_max_revise}" --setting qc_min_quality="${vars.qc_min_quality}"
+          --setting qc_min_importance="${vars.qc_min_importance}" --setting qc_min_urgency="${vars.qc_min_urgency}"
+          --setting qc_min_impact="${vars.qc_min_impact}" --setting qc_min_episode_items="${vars.qc_min_episode_items}"
+          --setting episode_min_minutes="${vars.episode_min_minutes}" --setting episode_max_minutes="${vars.episode_max_minutes}"
 
   - id: read-work-dir
     description: "Project the effective work_dir into vars (single-node wave: nothing has fanned out yet)"

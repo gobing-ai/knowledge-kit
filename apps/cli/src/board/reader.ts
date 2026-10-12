@@ -1,7 +1,8 @@
 import type { BoardDiagnostic, RunCapture, RunConfig, RunResults, WorkflowName } from '@gobing-ai/kk-board/contracts';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
-import { type ArtifactObservation, projectCollectResults, type RunDetailSummary } from './collect';
+import { type ArtifactObservation, isTerminalStatus, projectCollectResults, type RunDetailSummary } from './collect';
+import { dagProducerState, projectDailyResults } from './daily-voice';
 import {
     type ArtifactSpec,
     allowlistedKeys,
@@ -10,6 +11,7 @@ import {
     expandPattern,
     type MarkerState,
     type ProducerState,
+    resolveAvailability,
     resolveWithin,
     WORKFLOW_NAMES,
 } from './manifest';
@@ -341,32 +343,51 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { state: 'present', bytes: stat.size, path: canonical };
     }
 
-    /** Producer evidence for every manifest artifact, read once per request from the run's progress. */
+    /**
+     * Producer evidence for every manifest artifact, read once per request.
+     *
+     * A state machine's producers come from the progress projection's recorded `actionKey`s. A DAG
+     * (`kk-daily-ai-voice2`) has no state projection: its producers come from the run-detail action
+     * rows keyed by node (§9 orphan-row fallback), and those rows are returned so the daily
+     * projection can render node attempts and retry siblings.
+     */
     async function producerEvidence(
         workflow: WorkflowName,
         runId: string,
-    ): Promise<{ states: Map<string, ProducerState>; diagnostics: BoardDiagnostic[] }> {
+    ): Promise<{ states: Map<string, ProducerState>; diagnostics: BoardDiagnostic[]; actions: unknown[] }> {
         const states = new Map<string, ProducerState>();
         const specs = artifactsFor(workflow);
-        const response = await boardGet(`/api/runs/${encodeURIComponent(runId)}/progress`);
-        if (response === null || response.status !== 200) {
-            return {
-                states,
-                diagnostics: [
-                    {
-                        code: 'board.progress.unavailable',
-                        message: 'Recorded producer evidence is unavailable; artifacts stay unverified.',
-                    },
-                ],
-            };
+        const actions: unknown[] = [];
+        const stateSpecs = specs.filter((spec) => spec.producerActionKey !== undefined);
+        if (stateSpecs.length > 0) {
+            const response = await boardGet(`/api/runs/${encodeURIComponent(runId)}/progress`);
+            if (response === null || response.status !== 200) {
+                return {
+                    states,
+                    actions,
+                    diagnostics: [
+                        {
+                            code: 'board.progress.unavailable',
+                            message: 'Recorded producer evidence is unavailable; artifacts stay unverified.',
+                        },
+                    ],
+                };
+            }
+            for (const spec of stateSpecs) {
+                states.set(
+                    spec.producerActionKey ?? spec.producerNode,
+                    producerStateFrom(response.body, spec.producerActionKey, spec.producerNode),
+                );
+            }
         }
-        for (const spec of specs) {
-            states.set(
-                spec.producerActionKey ?? spec.producerNode,
-                producerStateFrom(response.body, spec.producerActionKey, spec.producerNode),
-            );
+        const nodeSpecs = specs.filter((spec) => spec.producerActionKey === undefined);
+        if (nodeSpecs.length > 0) {
+            const detail = await boardGet(`/api/runs/${encodeURIComponent(runId)}`);
+            const list = detail === null ? undefined : asRecord(detail.body)?.actions;
+            if (Array.isArray(list)) actions.push(...list);
+            for (const spec of nodeSpecs) states.set(spec.producerNode, dagProducerState(actions, spec.producerNode));
         }
-        return { states, diagnostics: [] };
+        return { states, diagnostics: [], actions };
     }
 
     async function resultsFor(workflow: WorkflowName, runId: string): Promise<BoardResponse> {
@@ -381,14 +402,20 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         // §9: ownership is re-verified AFTER the bounded reads, so a workspace that changed owner
         // mid-read discards the observations instead of serving the successor's bytes.
         const marker = await markerState(record);
-        const results: RunResults = projectCollectResults({
+        const projection = {
             record,
             detail,
             marker,
             diagnostics: [...authorized.diagnostics, ...evidence.diagnostics],
-            producerOf: (spec) => evidence.states.get(spec.producerActionKey ?? spec.producerNode) ?? 'unknown',
-            observationOf: (spec) => observations.get(spec.id),
-        });
+            producerOf: (spec: ArtifactSpec) =>
+                evidence.states.get(spec.producerActionKey ?? spec.producerNode) ?? 'unknown',
+            observationOf: (spec: ArtifactSpec) => observations.get(spec.id),
+        };
+        // The DAG projection also consumes the run-detail action rows (node attempts + retries).
+        const results: RunResults =
+            workflow === 'kk-daily-ai-voice2'
+                ? projectDailyResults({ ...projection, actions: evidence.actions })
+                : projectCollectResults(projection);
         return { status: 200, body: results };
     }
 
@@ -430,30 +457,14 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         const evidence = await producerEvidence(workflow, runId);
         const markerBefore = await markerState(record);
         const observed = await observe(record, spec);
-        // §9: re-verify ownership AFTER the bounded read, immediately before serialising. A marker
-        // written mid-read discards the observation instead of serving the superseded run's bytes.
-        if ((await markerState(record)) !== markerBefore) {
-            return {
-                status: 404,
-                body: {
-                    code: 'board.artifact.owner-changed',
-                    message: `Artifact '${artifactId}' ownership changed during the read.`,
-                },
-            };
-        }
-        const marker = markerBefore;
-        const state = projectCollectResults({
-            record,
-            detail,
-            marker,
-            diagnostics: evidence.diagnostics,
-            producerOf: (candidate) =>
-                evidence.states.get(candidate.producerActionKey ?? candidate.producerNode) ?? 'unknown',
-            observationOf: (candidate) => (candidate.id === spec.id ? observed : undefined),
-        });
-        const descriptor = state.artifacts.find((artifact) => artifact.id === spec.id);
-        if (descriptor === undefined || descriptor.availability !== 'available') {
-            if (descriptor?.availability === 'invalid') {
+        const availability = resolveAvailability(
+            markerBefore,
+            evidence.states.get(spec.producerActionKey ?? spec.producerNode) ?? 'unknown',
+            observed.state,
+            isTerminalStatus(detail.status),
+        );
+        if (availability !== 'available') {
+            if (availability === 'invalid') {
                 return {
                     status: 422,
                     body: { code: 'board.artifact.invalid', message: `Artifact '${artifactId}' is malformed.` },
@@ -472,12 +483,26 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 body: { code: 'board.artifact.range', message: 'Requested range is not satisfiable.' },
             };
         }
+        // §9 / 0252 P2: the bytes are read HERE, before the ownership re-check below, so a marker
+        // swap during the fetch discards them. A ranged media request reads only its slice — the whole
+        // file is never loaded for a preview. Text is already read inside `observe`.
         const content = await artifactContent(spec.kind, observed, range, size);
+        // §9: re-verify ownership AFTER the bounded read, immediately before serialising. A marker
+        // written mid-read discards the observation instead of serving the superseded run's bytes.
+        if ((await markerState(record)) !== markerBefore) {
+            return {
+                status: 404,
+                body: {
+                    code: 'board.artifact.owner-changed',
+                    message: `Artifact '${artifactId}' ownership changed during the read.`,
+                },
+            };
+        }
         return {
             status: range === null ? 200 : 206,
             body: {
                 __binary: true,
-                mime: mimeFor(spec.kind, descriptor.mime),
+                mime: mimeFor(spec.kind, spec.mime),
                 text: content,
                 bytes: size,
                 range,

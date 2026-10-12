@@ -132,6 +132,12 @@ export interface CaptureDeps {
     /** The project root the record is filed under; defaults to the canonical cwd. */
     projectPath?: string;
     now?: () => Date;
+    /**
+     * The exact configured works root a caller resolved (e.g. `kk daily prepare`'s `works_dir`).
+     * When set, the workspace guard accepts only this root's canonical CHILD — never the root, home,
+     * the config tree or the project — so a workspace outside the project can be captured (§9).
+     */
+    trustedWorksRoot?: string;
     /** Topology lookup by exact digest agreement; defaults to the `spur workflow list` catalog. */
     lookupTopology?: (
         fs: FileSystem,
@@ -273,6 +279,23 @@ export function topologyFromYaml(source: string): RunTopology | null {
 }
 
 /**
+ * True when `workDir` is a canonical CHILD of an explicitly trusted, configured works root (§9).
+ * The root itself, the home/config root and the project tree are refused even when trusted.
+ */
+function isTrustedChildWorkspace(fs: FileSystem, root: string, workDir: string, projectPath: string): boolean {
+    const resolvedRoot = resolve(projectPath, root);
+    let canonicalRoot = resolvedRoot;
+    try {
+        canonicalRoot = fs.realPath?.(resolvedRoot) ?? resolvedRoot;
+    } catch {
+        canonicalRoot = resolvedRoot;
+    }
+    if (canonicalRoot === '/' || canonicalRoot === homedir() || canonicalRoot === projectPath) return false;
+    if (projectPath.startsWith(`${canonicalRoot}/`)) return false;
+    return workDir !== canonicalRoot && workDir.startsWith(`${canonicalRoot}/`);
+}
+
+/**
  * Capture one run: revoke the previous workspace owner, then write this run's immutable record
  * and ownership marker.
  *
@@ -326,16 +349,21 @@ export async function captureRun(input: RunCaptureInput, deps: CaptureDeps = {})
             break;
         }
     }
+    const insideNamedWorksRoot = worksRootIndex !== -1 && worksRootIndex !== segments.length - 1;
+    // §9: a configured works root may sit outside the project and not be named `.works`/`works`.
+    // `kk daily prepare` passes its resolved configured root explicitly; accept only that root's
+    // canonical CHILD workspace — never the root, home, the config tree or the project itself.
+    const insideTrustedWorksRoot =
+        deps.trustedWorksRoot !== undefined && isTrustedChildWorkspace(fs, deps.trustedWorksRoot, workDir, projectPath);
     if (
         workDir === '/' ||
         workDir === homedir() ||
         workDir === projectPath ||
         projectPath.startsWith(`${workDir}/`) ||
-        worksRootIndex === -1 ||
-        worksRootIndex === segments.length - 1
+        (!insideNamedWorksRoot && !insideTrustedWorksRoot)
     ) {
         throw new Error(
-            '--work-dir must resolve to a run workspace below a works root (.works/ or works/), never a filesystem, home or project root',
+            '--work-dir must resolve to a run workspace below a works root (.works/ or works/) or the configured works root, never a filesystem, home or project root',
         );
     }
 

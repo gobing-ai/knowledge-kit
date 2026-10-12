@@ -92,8 +92,8 @@ export function factsPreview(text: string | undefined, lines = 20): string | nul
     return text.split('\n').slice(0, lines).join('\n');
 }
 
-/** Build one `ArtifactDescriptor` from its spec and the observed state. */
-function descriptorFor(
+/** Build one `ArtifactDescriptor` from its spec and the observed state (shared by both projections). */
+export function descriptorFor(
     spec: ArtifactSpec,
     availability: ArtifactDescriptor['availability'],
     observation: ArtifactObservation | undefined,
@@ -110,8 +110,8 @@ function descriptorFor(
     };
 }
 
-/** A diagnostic for an artifact whose workspace ownership cannot be trusted. */
-function markerDiagnostic(marker: MarkerState): BoardDiagnostic[] {
+/** A diagnostic for an artifact whose workspace ownership cannot be trusted (shared by both projections). */
+export function markerDiagnostic(marker: MarkerState): BoardDiagnostic[] {
     if (marker === 'owned') return [];
     if (marker === 'foreign') {
         return [

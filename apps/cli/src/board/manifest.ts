@@ -71,6 +71,25 @@ export const WORKFLOW_SETTINGS: Readonly<Record<WorkflowName, Readonly<Record<st
 };
 
 /** One fixed artifact an allowlisted relative pattern maps to, with its producer identity. */
+/**
+ * The confidence vocabulary a judge verdict must carry.
+ *
+ * The nested `kk-daily-safety` / content-judge gate refuses a verdict whose `confidence` is not one
+ * of these three spellings, so anything reading such a verdict — the daily projection, and this
+ * manifest's judge-verdict artifact declaration — recognizes exactly this vocabulary and reports
+ * anything else as an explicit unknown rather than echoing it.
+ */
+export const CONFIDENCE_LEVELS = ['HIGH', 'MEDIUM', 'LOW'] as const;
+
+/** One recognized content-judge confidence level. */
+export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
+
+/** True when `value` is one of the recognized confidence levels. */
+export function isConfidenceLevel(value: unknown): value is ConfidenceLevel {
+    return value === 'HIGH' || value === 'MEDIUM' || value === 'LOW';
+}
+
+/** One declared artifact: a run-workspace-relative pattern plus the producer evidence it needs. */
 export interface ArtifactSpec {
     /** Opaque id the client may use; never a path. */
     id: string;
@@ -84,6 +103,11 @@ export interface ArtifactSpec {
     producerActionKey?: string;
     /** Declared media type for image/audio kinds; the kind is the fallback. */
     mime?: string;
+    /**
+     * Judge-verdict artifacts only: the levels a PASS may carry. Its presence marks the artifact as
+     * a verdict whose recorded `confidence` must be validated against this vocabulary.
+     */
+    confidenceVocabulary?: readonly ConfidenceLevel[];
 }
 
 /** kk-collect's fixed artifact manifest (producer action keys per §9). */
@@ -122,9 +146,135 @@ export const COLLECT_ARTIFACTS: readonly ArtifactSpec[] = [
     },
 ];
 
+/**
+ * kk-daily-ai-voice2's fixed artifact manifest (producer nodes per §9). The daily workflow is a
+ * DAG, so a producer is identified by its node id and the recorded run-detail action row — never by
+ * a state-machine `actionKey`. Patterns use the run's digits-only date as `{stamp}`.
+ */
+export const DAILY_VOICE_ARTIFACTS: readonly ArtifactSpec[] = [
+    {
+        id: 'article-body',
+        label: 'Article body',
+        kind: 'text',
+        pattern: '22-article/{stamp}_06_article_article.md',
+        producerNode: 'article',
+    },
+    {
+        id: 'article-content',
+        label: 'Article content',
+        kind: 'json',
+        pattern: '22-article/{stamp}_06_article_content.json',
+        producerNode: 'article',
+    },
+    {
+        id: 'cover',
+        label: 'Cover image',
+        kind: 'image',
+        pattern: '23-cover/{stamp}_07_cover_cover.png',
+        producerNode: 'cover-normalize',
+        mime: 'image/png',
+    },
+    {
+        id: 'script',
+        label: 'VoiceScript',
+        kind: 'text',
+        pattern: '24-script/{stamp}_08_script_voicescript.yaml',
+        producerNode: 'script',
+    },
+    {
+        id: 'safety-verdict',
+        label: 'Content safety verdict',
+        kind: 'json',
+        pattern: '24-script/{stamp}_09_safety-judge_verdict.json',
+        producerNode: 'safety',
+        // A PASS here is only usable with one of these levels; the projection nulls anything else.
+        confidenceVocabulary: CONFIDENCE_LEVELS,
+    },
+    {
+        id: 'safety-report',
+        label: 'Content safety review',
+        kind: 'json',
+        pattern: '24-script/{stamp}_09_safety-review_report.json',
+        producerNode: 'safety',
+    },
+    {
+        id: 'audio',
+        label: 'Episode audio',
+        kind: 'audio',
+        pattern: '30-audio/{stamp}_11_generate_content.mp3',
+        producerNode: 'generate',
+        mime: 'audio/mpeg',
+    },
+    {
+        id: 'audio-record',
+        label: 'Audio generation record',
+        kind: 'json',
+        pattern: '30-audio/{stamp}_11_generate_content.json',
+        producerNode: 'generate',
+    },
+    {
+        id: 'surfdash-result',
+        label: 'SurfDash result',
+        kind: 'json',
+        pattern: '31-publish/{stamp}_14_publish-surfdash_result.json',
+        producerNode: 'publish-surfdash',
+    },
+    {
+        id: 'show-notes',
+        label: 'Show notes',
+        kind: 'text',
+        pattern: '31-publish/{stamp}_15_show-notes_show-notes.md',
+        producerNode: 'show-notes',
+    },
+    {
+        id: 'podcast-result',
+        label: 'Podcast result',
+        kind: 'json',
+        pattern: '31-publish/{stamp}_16_publish-podcast_result.json',
+        producerNode: 'publish-podcast',
+    },
+    {
+        id: 'publish-status',
+        label: 'Publish status',
+        kind: 'text',
+        pattern: '31-publish/{stamp}_17_publish_publish-status.txt',
+        producerNode: 'publish-classify',
+    },
+    {
+        id: 'xhs-result',
+        label: 'Xiaohongshu result',
+        kind: 'json',
+        pattern: '31-publish/{stamp}_19_publish-xhs_result.json',
+        producerNode: 'xhs-publish',
+    },
+    {
+        id: 'wechat-result',
+        label: 'WeChat MP result',
+        kind: 'json',
+        pattern: '31-publish/{stamp}_20_publish-wechat_result.json',
+        producerNode: 'wechat-publish',
+    },
+    {
+        id: 'locales-result',
+        label: 'Locale sync result',
+        kind: 'json',
+        pattern: '31-publish/{stamp}_24_translate-sync_sync-result.json',
+        producerNode: 'translate-sync',
+    },
+    {
+        id: 'report',
+        label: 'Run report',
+        kind: 'text',
+        pattern: '{stamp}_19_run-report_report.md',
+        producerNode: 'run-report',
+    },
+];
+
 /** The fixed artifact manifest for a workflow (empty until 0253/0254 register their entries). */
 export function artifactsFor(workflow: WorkflowName): readonly ArtifactSpec[] {
-    return workflow === 'kk-collect' ? COLLECT_ARTIFACTS : [];
+    if (workflow === 'kk-collect') return COLLECT_ARTIFACTS;
+    if (workflow === 'kk-daily-ai-voice2') return DAILY_VOICE_ARTIFACTS;
+    return [];
 }
 
 /** Look one artifact spec up by its opaque id. */

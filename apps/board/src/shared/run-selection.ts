@@ -127,9 +127,12 @@ export function selectionQuery(selection: RunSelection, search = ''): string {
 /** The host route the Collect module is mounted at (`/modules/<id>`). */
 export const COLLECT_MODULE_PATH = '/modules/kk-collect';
 
-/** The address-bar target the selection deep-links to: the module route plus its query. */
-export function selectionPath(selection: RunSelection, search = ''): string {
-    return `${COLLECT_MODULE_PATH}${selectionQuery(selection, search)}`;
+/**
+ * The address-bar target the selection deep-links to: a module route plus its query. `modulePath`
+ * defaults to the Collect route; the daily-voice/itc entries pass their own host route.
+ */
+export function selectionPath(selection: RunSelection, search = '', modulePath = COLLECT_MODULE_PATH): string {
+    return `${modulePath}${selectionQuery(selection, search)}`;
 }
 
 /** The slice of `window` the selection write-back touches. */
@@ -143,10 +146,14 @@ export interface SelectionUrlTarget {
  * restores it. The host router's own history state is passed through — only the URL changes — and
  * the call is a no-op when the address already matches, so it can never fight the router.
  */
-export function syncSelectionUrl(selection: RunSelection, target: SelectionUrlTarget): void {
+export function syncSelectionUrl(
+    selection: RunSelection,
+    target: SelectionUrlTarget,
+    modulePath = COLLECT_MODULE_PATH,
+): void {
     // Never fight the host router: only write while this module owns the address bar.
-    if (target.location.pathname !== COLLECT_MODULE_PATH) return;
-    const url = selectionPath(selection, target.location.search);
+    if (target.location.pathname !== modulePath) return;
+    const url = selectionPath(selection, target.location.search, modulePath);
     if (`${target.location.pathname}${target.location.search}` === url) return;
     target.history.replaceState(target.history.state, '', url);
 }
