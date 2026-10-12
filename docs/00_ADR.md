@@ -1306,6 +1306,14 @@ New-run ownership alone does not prove an old file was produced by the new run: 
 requires recorded success of that artifact's producer in the selected run. Definition topology is
 captured only when the current catalog digest matches the engine-injected execution digest.
 
+#### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| The contribution ABI is `apiVersion: 1`, the entry exports `webModule`, and the component renders inside the host's own React tree without calling `createRoot` | installed `@gobing-ai/spur` declaration-only `./board` export | Read `node_modules/@gobing-ai/spur/board/index.d.ts:21,24,27,38` (0.4.2) | HIGH |
+| The host mounts compiled browser contributions but exposes no downstream server-route extension point, which is the constraint this decision rests on | the contribution contract plus the Board's served route table | Read `node_modules/@gobing-ai/spur/board/index.d.ts` and the `app.get` registrations in `spur.js` (0.4.2); no route is mounted from a contribution | MEDIUM — inferred from the shipped contract and route table, not from an attempted injection |
+| A declared module's page is mounted at `/board/modules/<id>` and its declaration is validated `.strict()` at config load | installed `BOARD_MODULE_ROUTE_PREFIX`, `boardModuleDeclarationSchema` | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); the mounted path was measured live by `apps/board/tests/installed-board.test.ts` | HIGH |
+
 ## ADR-036: VoxCPM reuses the TypeScript voice pipeline with an isolated Python worker
 
 **Status:** Accepted (design) · **Date:** 2026-10-11 · **Supersedes:** ADR-020's restriction to one Python-bearing product plugin, only to admit the private VoxCPM worker below.

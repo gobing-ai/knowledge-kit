@@ -331,8 +331,19 @@ spec §5: without explicit targets, exactly the prior failures retry; an explici
 selection narrows the attempt set (deduped, published names stay skipped) and previously
 unattempted names remain eligible. No new result fields or flags.
 
-## 1.7 `plugin.json` manifest surface
+#### API/library claim sources and confidence
 
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| A module declaration is a `.strict()` discriminated `react`/`iframe` union, `id` must match `^[a-z][a-z0-9-]*$`, and a duplicate id or a reserved-host-identity collision is refused at config load | installed `@gobing-ai/spur` bundle: `boardModuleDeclarationSchema`, `validateBoardModuleDeclarations` | Read the emitted zod shapes in `node_modules/@gobing-ai/spur/spur.js` (0.4.2) | HIGH |
+| The host's route CONSTANT for a module is `/modules/<id>` while the mounted page path is `/board/modules/<id>`; the declaration carries no route field | installed `BOARD_MODULE_ROUTE_PREFIX` and `boardModuleRoute(id)` | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); `web/board-runtime.json` `reservedModules` lists the separate `board/<route>` family | HIGH |
+| `bootstrap.modules` is validated by the RUNTIME schema only — the shipped `schemas/spur-config.schema.json` `bootstrap` block lists just logging/telemetry/database/scheduler | installed `schemas/spur-config.schema.json:20` and the bundle's `bootstrapSectionSchema` | Read both files in `node_modules/@gobing-ai/spur` (0.4.2) | HIGH |
+| A module whose `directory` does not exist is a config-load error, so every `spur` invocation in that checkout fails until the assets are built | installed bundle: `directory: exports_external.string().min(1)` plus the indexed `bootstrap.modules[<index>] ("<id>"): <reason>` error shape | Read the schema and the validation error path in `spur.js`; NOT exercised against a live `spur` run with a missing directory, which is why this is MEDIUM and why the setup step says to enable a module only once its assets exist | MEDIUM |
+| The host advertises `react`, `react/jsx-runtime` and `react/jsx-dev-runtime` (plus `react-dom`, `react-dom/client`, `react-router`, `react-router/dom`) at React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0 | installed `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; all seven named `web/_astro/board-facade-*.js` assets exist on disk | HIGH |
+| The reader answers 400/403/404/405/416/422/503 for the cases this section names | the shipped reader in this repo | `apps/cli/src/board/reader.ts:207,217,296,414,488` and the per-status tests in `apps/cli/tests/board/reader.test.ts:177,189,202,266,326,371` | HIGH |
+| `GET /api/runs/:runId/progress` answers 404 `RUN_NOT_FOUND` once the projection carries an `orphan-row` diagnostic, which is why DAG progress falls back to run-detail action rows | installed bundle: the progress handler guard and `projectWorkflowProgress`'s diagnostic push | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); the fallback is `apps/cli/src/board/reader.ts:354` | HIGH |
+
+## 1.7 `plugin.json` manifest surface
 Product plugins live under kind collections (ADR-009):
 
 | Collection | `kind` | Example |
