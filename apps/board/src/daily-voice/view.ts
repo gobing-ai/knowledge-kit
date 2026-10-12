@@ -1,0 +1,283 @@
+import type { RunResults } from '../contracts';
+import type { ResultFact } from '../shared/collect';
+import { formatElapsed, formatTimestamp } from '../shared/format';
+
+/**
+ * The Daily AI Voice module's read-only view model.
+ *
+ * Pure projection of the reader's `RunResults.summary` bag into render rows, so the entry stays a
+ * thin component. Absent evidence is an explicit availability, never an invented zero — the reader
+ * never fabricates a value and the view never fills one in.
+ */
+
+/** The semantic publish outcome of one channel, independent of engine execution status. */
+export type ChannelOutcome = 'live' | 'draft' | 'skipped' | 'error' | 'pending' | 'unavailable';
+
+/** The content-judge confidence levels the daily safety gate accepts (`HIGH` | `MEDIUM` | `LOW`). */
+export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** The three recognized confidence levels, in strength order. */
+export const CONFIDENCE_LEVELS: readonly ConfidenceLevel[] = ['HIGH', 'MEDIUM', 'LOW'];
+
+/** One channel row. */
+export interface DailyChannelView {
+    channel: string;
+    label: string;
+    outcome: ChannelOutcome;
+    /** Operator-facing outcome text. */
+    state: string;
+    /** A validated public link, or null. */
+    url: string | null;
+    detail: string | null;
+}
+
+/** One DAG node row. */
+export interface DailyProgressNodeView {
+    id: string;
+    status: string;
+    attempts: number;
+    timing: string;
+}
+
+/** The recorded DAG progress. */
+export interface DailyProgressView {
+    nodes: DailyProgressNodeView[];
+    edges: { from: string; to: string }[] | null;
+    edgesKnown: boolean;
+    childRunId: string | null;
+}
+
+/** Channel counts for the Summary tab. */
+export interface DailyChannelCounts {
+    live: number;
+    draft: number;
+    failed: number;
+    skipped: number;
+}
+
+/** The narrowed daily summary. */
+export interface DailySummaryView {
+    status: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    outcome: string | null;
+    articleTitle: string | null;
+    channels: DailyChannelView[];
+    quality: { overallScore: number | null; passed: boolean | null; criticalIssues: string[] } | null;
+    safety: { verdict: string | null; confidence: ConfidenceLevel | null } | null;
+    progress: DailyProgressView | null;
+    counts: DailyChannelCounts;
+    /** False when the reader sent no counts bag — the counts rows then state the gap, never 0. */
+    countsRecorded: boolean;
+}
+
+const CHANNEL_OUTCOME_LABELS: Record<ChannelOutcome, string> = {
+    live: 'Live',
+    draft: 'Draft',
+    skipped: 'Skipped',
+    error: 'Failed',
+    pending: 'Not yet recorded',
+    unavailable: 'Unavailable',
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+}
+
+function asString(value: unknown): string | null {
+    return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function asNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function asBool(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : null;
+}
+
+/** True when `value` is one of the six channel outcomes. */
+export function isChannelOutcome(value: unknown): value is ChannelOutcome {
+    return (
+        value === 'live' ||
+        value === 'draft' ||
+        value === 'skipped' ||
+        value === 'error' ||
+        value === 'pending' ||
+        value === 'unavailable'
+    );
+}
+
+/**
+ * True when `value` is one of the three recognized confidence levels. An out-of-vocabulary value is
+ * reported as unknown, never echoed as a confidence.
+ */
+export function isConfidenceLevel(value: unknown): value is ConfidenceLevel {
+    return value === 'HIGH' || value === 'MEDIUM' || value === 'LOW';
+}
+
+/** Narrow one channel entry from the summary bag, dropping a malformed row. */
+function channelView(value: unknown): DailyChannelView | null {
+    const record = asRecord(value);
+    if (record === null || typeof record.channel !== 'string' || !isChannelOutcome(record.outcome)) return null;
+    return {
+        channel: record.channel,
+        label: asString(record.label) ?? record.channel,
+        outcome: record.outcome,
+        state: CHANNEL_OUTCOME_LABELS[record.outcome],
+        url: asString(record.url),
+        detail: asString(record.detail),
+    };
+}
+
+/** Narrow one DAG node entry, dropping a malformed row. */
+function nodeView(value: unknown): DailyProgressNodeView | null {
+    const record = asRecord(value);
+    if (record === null || typeof record.id !== 'string') return null;
+    return {
+        id: record.id,
+        status: asString(record.status) ?? 'unknown',
+        attempts: asNumber(record.attempts) ?? 0,
+        timing: asString(record.timing) ?? 'timing unknown',
+    };
+}
+
+/** Narrow the recorded progress bag. */
+function progressView(value: unknown): DailyProgressView | null {
+    const record = asRecord(value);
+    if (record === null) return null;
+    const edges = Array.isArray(record.edges)
+        ? record.edges
+              .map((edge) => asRecord(edge))
+              .filter((edge): edge is Record<string, unknown> => edge !== null)
+              .map((edge) => ({ from: String(edge.from ?? ''), to: String(edge.to ?? '') }))
+        : null;
+    return {
+        nodes: Array.isArray(record.nodes)
+            ? record.nodes.map(nodeView).filter((node): node is DailyProgressNodeView => node !== null)
+            : [],
+        edges,
+        edgesKnown: record.edgesKnown === true,
+        childRunId: asString(record.childRunId),
+    };
+}
+
+/** Narrow the reader's `summary` bag into the Daily projection without inventing values. */
+export function dailySummary(results: RunResults): DailySummaryView {
+    const raw = results.summary ?? {};
+    const counts = asRecord(raw.counts);
+    const quality = asRecord(raw.quality);
+    const safety = asRecord(raw.safety);
+    return {
+        status: asString(raw.status),
+        startedAt: asString(raw.startedAt),
+        completedAt: asString(raw.completedAt),
+        outcome: asString(raw.outcome),
+        articleTitle: asString(raw.articleTitle),
+        channels: Array.isArray(raw.channels)
+            ? raw.channels.map(channelView).filter((channel): channel is DailyChannelView => channel !== null)
+            : [],
+        quality:
+            quality === null
+                ? null
+                : {
+                      overallScore: asNumber(quality.overallScore),
+                      passed: asBool(quality.passed),
+                      criticalIssues: Array.isArray(quality.criticalIssues)
+                          ? quality.criticalIssues.filter((issue): issue is string => typeof issue === 'string')
+                          : [],
+                  },
+        safety:
+            safety === null
+                ? null
+                : {
+                      verdict: asString(safety.verdict),
+                      confidence: isConfidenceLevel(safety.confidence) ? safety.confidence : null,
+                  },
+        progress: progressView(raw.progress),
+        counts: {
+            live: asNumber(counts?.live) ?? 0,
+            draft: asNumber(counts?.draft) ?? 0,
+            failed: asNumber(counts?.failed) ?? 0,
+            skipped: asNumber(counts?.skipped) ?? 0,
+        },
+        countsRecorded: counts !== null,
+    };
+}
+
+function count(value: number | null): string {
+    return value === null ? 'unavailable' : String(value);
+}
+
+/**
+ * The Summary tab's fact rows: execution status kept apart from result outcome, with every unknown
+ * explicit and channel counts that never read a partial run as fully successful.
+ */
+export function dailySummaryFacts(results: RunResults, now: number): ResultFact[] {
+    const summary = dailySummary(results);
+    const available = results.artifacts.filter((artifact) => artifact.availability === 'available').length;
+    const facts: ResultFact[] = [
+        {
+            label: 'Execution status',
+            value: summary.status ?? 'unavailable',
+            availability: summary.status === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Result outcome',
+            value: summary.outcome ?? 'unavailable',
+            availability: summary.outcome === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Result availability',
+            value: `${available}/${results.artifacts.length} artifacts available`,
+            availability: results.availability,
+        },
+        {
+            label: 'Started',
+            value: formatTimestamp(summary.startedAt),
+            availability: summary.startedAt === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Elapsed',
+            value: formatElapsed(summary.startedAt, now),
+            availability: summary.startedAt === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Channels live / draft',
+            value: summary.countsRecorded
+                ? `${summary.counts.live} live, ${summary.counts.draft} draft`
+                : 'not recorded',
+            availability: summary.countsRecorded ? 'available' : 'unverified',
+        },
+        {
+            label: 'Channels failed / skipped',
+            value: summary.countsRecorded
+                ? `${summary.counts.failed} failed, ${summary.counts.skipped} skipped`
+                : 'not recorded',
+            availability: !summary.countsRecorded ? 'unverified' : summary.counts.failed > 0 ? 'missing' : 'available',
+        },
+        {
+            label: 'Article',
+            value: summary.articleTitle ?? 'unavailable',
+            availability: summary.articleTitle === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Audio QC score',
+            value: count(summary.quality?.overallScore ?? null),
+            availability: summary.quality === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Content safety verdict',
+            value: summary.safety?.verdict ?? 'not recorded',
+            availability: summary.safety === null ? 'unverified' : 'available',
+        },
+        {
+            label: 'Safety confidence',
+            value: summary.safety?.confidence ?? 'not recorded',
+            availability: summary.safety?.confidence == null ? 'unverified' : 'available',
+        },
+    ];
+    return facts;
+}

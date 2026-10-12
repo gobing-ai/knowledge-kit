@@ -1,8 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import type { WorkflowName } from '@gobing-ai/kk-board/contracts';
 import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
 import { type Command, CommanderError } from 'commander';
+import { captureRun, parseSetting } from '../board/capture';
+import { WORKFLOW_NAMES } from '../board/manifest';
 import { resolveKkConfigPath, runInvoke } from '../invoke';
 import { consoleOutput } from '../output';
 import { runStage } from '../stage';
@@ -50,6 +53,12 @@ interface DailyPrepareOptions {
     runDate?: string;
     ledgerSync?: boolean;
     worksDir?: string;
+    /** Engine-injected run id; its presence enables Board capture (no flag = current behaviour). */
+    run?: string;
+    /** Engine-injected definition digest, forwarded to the capture when present. */
+    definitionDigest?: string;
+    /** Repeatable allowlisted `key=value` effective settings. */
+    setting?: string[];
 }
 
 /** Options accepted by `kk daily publish-classify`. */
@@ -93,11 +102,12 @@ function expandHome(path: string): string {
 }
 
 /**
- * works_dir for composed daily workspaces — `KK_WORKS_DIR` env > config `works_dir` > the compiled
+ * works_dir for composed workspaces — `KK_WORKS_DIR` env > config `works_dir` > the compiled
  * default `~/.config/kk/works`. An unreadable config falls through to the default; composition
- * never fails a run.
+ * never fails a run. Shared with the ITC Board capture, whose external workspace must be a
+ * canonical child of this configured root (§9).
  */
-function resolveWorksDir(): string {
+export function resolveWorksDir(): string {
     const fromEnv = process.env.KK_WORKS_DIR;
     if (fromEnv) return fromEnv;
     const configPath = process.env.KK_CONFIG ?? resolveKkConfigPath();
@@ -153,6 +163,51 @@ async function warnUnreleasedRuns(workflow: string): Promise<void> {
 }
 
 /**
+ * Bind the composing run to its workspace + sanitized settings through the shared `captureRun`
+ * seam (§9). Skipped entirely without a run id, so voice1 and direct callers keep their behaviour.
+ *
+ * A refused revocation or an invalid input THROWS (the caller must not overwrite results); the
+ * optional record write after revocation only warns.
+ */
+async function captureForBoard(
+    input: Pick<DailyPrepareOptions, 'workflow' | 'run' | 'definitionDigest' | 'setting'>,
+    workDir: string,
+    stamp: string,
+    worksRoot: string,
+): Promise<void> {
+    const runId = input.run;
+    if (runId === undefined || runId === '') return;
+    const settings: Record<string, string> = {};
+    if (WORKFLOW_NAMES.includes(input.workflow as WorkflowName)) {
+        for (const raw of input.setting ?? []) {
+            const parsed = parseSetting(input.workflow as WorkflowName, raw);
+            if (parsed !== null) settings[parsed.key] = parsed.value;
+        }
+    }
+    try {
+        const outcome = await captureRun(
+            {
+                workflow: input.workflow as WorkflowName,
+                runId,
+                workDir,
+                stamp,
+                settings,
+                ...(input.definitionDigest === undefined || input.definitionDigest === ''
+                    ? {}
+                    : { definitionDigest: input.definitionDigest }),
+            },
+            { trustedWorksRoot: worksRoot },
+        );
+        for (const diagnostic of outcome.diagnostics) {
+            consoleOutput.error(`kk.daily.prepare.${diagnostic.code}: ${diagnostic.message}`);
+        }
+    } catch (error) {
+        // §9: refuse to mutate results when the workspace cannot be bound to this run.
+        failLoud('kk.daily.prepare.capture-failed', error);
+    }
+}
+
+/**
  * `kk daily prepare --workflow <w> [--work-dir <dir>] [--run-date <stamp>] [--ledger-sync]` —
  * compose the run workspace and anchor it for the workflow's read chain.
  *
@@ -185,6 +240,20 @@ async function prepareAction(options: DailyPrepareOptions): Promise<void> {
         writeFileSync(join(workDir, '10-ingest/last30days.json'), `${JSON.stringify({})}\n`);
         writeFileSync(join(workDir, '10-ingest/horizon.json'), `${JSON.stringify({})}\n`);
         consoleOutput.write(JSON.stringify({ workDir, runDate: dirDate, workflow: options.workflow }));
+
+        // §9: bind this run to its canonical workspace and sanitized settings BEFORE any result
+        // producer runs. No `--run` flag (voice1 and direct callers) keeps the current behaviour.
+        await captureForBoard(
+            {
+                workflow: options.workflow,
+                run: options.run,
+                definitionDigest: options.definitionDigest,
+                setting: options.setting,
+            },
+            workDir,
+            dirDate,
+            options.worksDir ?? resolveWorksDir(),
+        );
 
         // R7: name the earlier runs whose planned items are still held, before this run selects.
         await warnUnreleasedRuns(options.workflow);
@@ -417,6 +486,14 @@ export function registerDailyCommand(program: Command): void {
         .option('--work-dir <dir>', 'Explicit work dir (default: <works_dir>/<workflow>/<run-date>)')
         .option('--run-date <stamp>', 'Run date (dashed or digits; default: today, UTC-independent)')
         .option('--ledger-sync', 'Also append finished runs the workflow ledger is missing (warn-only on failure)')
+        .option('--run <id>', 'Engine run id; its presence captures the run for the Board')
+        .option('--definition-digest <digest>', 'Executed definition digest sha256:<64 hex> (Board capture)')
+        .option(
+            '--setting <key=value>',
+            'Allowlisted effective setting (Board capture; repeatable)',
+            collectSetting,
+            [],
+        )
         .action(prepareAction);
 
     daily
@@ -442,4 +519,9 @@ export function registerDailyCommand(program: Command): void {
         .option('--qc-min-urgency <n>', 'QC urgency threshold forwarded to the report generator')
         .option('--qc-min-impact <n>', 'QC impact threshold forwarded to the report generator')
         .action(runReportAction);
+}
+
+/** Collect repeated `--setting key=value` values in order. */
+function collectSetting(value: string, previous: string[]): string[] {
+    return [...previous, value];
 }

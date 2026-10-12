@@ -28,6 +28,8 @@ vars:
   rubric: "tech-accuracy"
   verdictFile: "" # empty -> ${vars.work_dir}/.itc-verdict.json (set by prepare)
   agent: ""
+  __runId: "" # Engine-injected run id; its presence captures the run for the Board (G8/0254 §9)
+  __definitionDigest: "" # Executed definition digest; the capture compares it with the catalog (G8 §9)
   __hitlAnswer: ""
   __hitlInput: ""
   __verdictFeedback: "" # raw .itc-verdict.json, read by judge so draft-revise can show the feedback
@@ -50,7 +52,8 @@ states:
             st="$pkg/plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || st="plugins/kk/scripts/kk-workflow-stages.ts";
             [ -f "$st" ] || echo "kk-workflow-stages.ts not found at $st — install or refresh the kk package (bun link in a checkout)" >&2;
-            bun "$st" prepare-itc "${vars.work_dir}" "${vars.topic}" "${vars.input_file}" "${vars.force}"
+            bun "$st" prepare-itc "${vars.work_dir}" "${vars.topic}" "${vars.input_file}" "${vars.force}" &&
+            { [ -z "${vars.__runId}" ] || [ -z "${vars.__definitionDigest}" ] || kk board capture --workflow kk-itc --run "${vars.__runId}" --work-dir "${vars.work_dir}" --stamp "$(date +%Y%m%d)" --definition-digest "${vars.__definitionDigest}" --setting research="${vars.research}" --setting judge="${vars.judge}" --setting auto="${vars.auto}" --setting unslop="${vars.unslop}" --setting force="${vars.force}" --setting publish_live="${vars.publish_live}" --setting cover_enabled="${vars.cover_enabled}" --setting inline_images="${vars.inline_images}" --setting max_revisions="${vars.max_revisions}" --setting source_locale="${vars.source_locale}" || echo "kk-itc: Board capture skipped (workspace is not a trusted-root child); previews disabled" >&2; }
 
   - id: research
     description: "Conduct preliminary topic research via storm-research (agent.run)"

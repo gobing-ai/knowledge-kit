@@ -40,7 +40,7 @@
         "start": "bun run src/index.ts",
         "dev": "bun run src/index.ts",
         "build": "bun build src/index.ts --target=bun --outdir=dist",
-        "build:bundle": "bun run build && bun run ../../scripts/bundle-plugins.ts",
+        "build:bundle": "bun run build && bun run ../../scripts/bundle-plugins.ts && bun run ../../scripts/build-board.ts",
         "prepack": "bun run build:bundle",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
         "typecheck": "tsc --noEmit"
@@ -54,6 +54,7 @@
         "commander": "15.0.0"
     },
     "devDependencies": {
+        "@gobing-ai/kk-board": "workspace:*",
         "@types/bun": "1.3.14"
     },
     "publishConfig": {

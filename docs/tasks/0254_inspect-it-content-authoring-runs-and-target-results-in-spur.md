@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Inspect IT Content authoring runs and target results in Spur Board
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-11T23:22:42.779Z
-updated_at: "2026-10-12T04:36:18.208Z"
+updated_at: "2026-10-12T07:27:00.780Z"
 feature_id: G8
 priority: P2
 tags:
@@ -15,6 +15,8 @@ estimate_hours: 6
 dependencies: ["0252"]
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0254-verdict.json
 ---
 
 ## 0254. Inspect IT Content authoring runs and target results in Spur Board
@@ -36,23 +38,29 @@ Rubric: E6 D1 L3 C1 R1 = 12; retain this cohesive deliverable with steps in Plan
 - Acceptance checkbox titles lacked requirement/test binding → freeze executable feature-title scenarios and real prep/reader test paths.
 - Implicit foundation contract → frontmatter depends on 0252 → consume its types/capture/reader intact and hand only ITC entry/projection fixtures to 0255.
 
-#### API/library claim sources and confidence
+**Consumed from 0252 (2026-10-12).** The reader/capture contract is shipped and frozen — consume it,
+do not clone it. Three constraints the 0252 verify pass surfaced for this task:
 
-| Claim | Source | Local verification | Confidence |
-| --- | --- | --- | --- |
-| The installed host advertises React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0 and the facade specifiers a contribution may externalize | installed `@gobing-ai/spur` `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; the seven named facade assets exist on disk | HIGH |
-| The reader's status vocabulary is 400 bad identity/query, 403 foreign origin or project, 404 unknown capture/artifact, 405 mutating method, 416 unsatisfiable range, 422 malformed stored evidence, 503 Board authority unavailable | the shipped reader in this repo | `apps/cli/src/board/reader.ts:207,217,296,414,488` — read the branch that sets each status; the second review reproduced the 422 cases against a real server | HIGH |
-| `kk-itc.yaml` does NOT declare `__runId` today, so §9's capture cannot bind an ITC run until it does | the workflow definition | `grep -c '__runId' plugins/kk/workflows/kk-itc.yaml` returns 0 (checked 2026-10-12); §9 requires the declaration with `__definitionDigest` | HIGH |
-| A caller-supplied ITC workspace outside any works root is refused by the capture guard, so an external child workspace needs the §9 trusted-record binding rather than a relaxed guard | the shipped capture guard | `apps/cli/src/board/capture.ts:309` (structural refusal) plus the handoff note in this task's Background | HIGH |
-| `readCaptureRecord` validates the record SHAPE and returns null on a missing string field, non-absolute `workspacePath` or absent `settings`, so any new record field must be added to that validation | the shipped capture module | `apps/cli/src/board/capture.ts:191` (read); the reader answers 422 via `authorize` rather than 500 | HIGH |
+1. **External child workspaces.** `captureRun`'s guard requires a `.works`/`works` segment and
+   refuses roots (`apps/cli/src/board/capture.ts:309`); an ITC caller-supplied workspace outside any
+   works root is therefore refused today. §9 allows it "only when a trusted capture record bound that
+   exact directory" — implement that binding explicitly rather than relaxing the structural guard,
+   and keep the XOR/force validation ahead of the capture call.
+2. **`readCaptureRecord` validates the record SHAPE** (string ids, absolute `workspacePath`, a
+   `settings` object) and returns null otherwise, so a malformed record answers 422 rather than 500 —
+   any new record field must be added to that validation.
+3. **Progress rows carry `timing` + `operatorWait`** and the module reuses `dedupeDiagnostics`; the
+   judge/revision evidence you project should state missing counters as `unavailable` rather than
+   zero, per `overallAvailability` (`apps/cli/src/board/collect.ts:220`) — available only when EVERY
+   artifact is available.
 
 ### Requirements
 
-- [ ] R1. Ship the IT Content native module with four tabs, run-bound authoring previews and truthful summary/recorded-config presentation.
-- [ ] R2. Show outline alternatives/selection, draft, judge feedback/revision evidence, optional images, per-target outcomes and final report when present.
-- [ ] R3. Reuse recorded state visits/retries/pause diagnostics and capture sanitized run settings while keeping all authoring/review/publishing actions read-only in the Board.
-- [ ] R4. Support trusted captured external ITC workspaces with narrow canonical allowlists and explicit missing/legacy/superseded states; preserve current prepare validation and force semantics.
-- [ ] R5. Reuse Settings → Workflows for definition browsing, YAML/copy and static graphs; link /board/settings/workflows and expose only captured run settings in the module. No duplicate current-definition endpoint.
+- [x] R1. Ship the IT Content native module with four tabs, run-bound authoring previews and truthful summary/recorded-config presentation.
+- [x] R2. Show outline alternatives/selection, draft, judge feedback/revision evidence, optional images, per-target outcomes and final report when present.
+- [x] R3. Reuse recorded state visits/retries/pause diagnostics and capture sanitized run settings while keeping all authoring/review/publishing actions read-only in the Board.
+- [x] R4. Support trusted captured external ITC workspaces with narrow canonical allowlists and explicit missing/legacy/superseded states; preserve current prepare validation and force semantics.
+- [x] R5. Reuse Settings → Workflows for definition browsing, YAML/copy and static graphs; link /board/settings/workflows and expose only captured run settings in the module. No duplicate current-definition endpoint.
 
 Non-goals: no execution/edit/publish controls, extra workflow-definition UI/API, raw store reads, arbitrary file access, upstream Spur edits or paid/live workflow runs. Preserve existing unrelated behavior.
 
@@ -138,15 +146,97 @@ Audit baseline: git worktree list shows this main checkout only; spur task list 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/src/board/capture.ts:11` |
+| `apps/cli/src/board/capture.ts:142` |
+| `apps/cli/src/board/capture.ts:291` |
+| `apps/cli/src/board/capture.ts:306` |
+| `apps/cli/src/board/capture.ts:369` |
+| `apps/cli/src/board/capture.ts:371` |
+| `apps/cli/src/board/manifest.ts:273` |
+| `apps/cli/src/board/manifest.ts:360` |
+| `apps/cli/src/board/reader.ts:358` |
+| `apps/cli/src/board/reader.ts:365` |
+| `apps/cli/src/board/reader.ts:367` |
+| `apps/cli/src/board/reader.ts:375` |
+| `apps/cli/src/board/reader.ts:384` |
+| `apps/cli/src/board/reader.ts:399` |
+| `apps/cli/src/board/reader.ts:414` |
+| `apps/cli/src/board/reader.ts:422` |
+| `apps/cli/src/board/reader.ts:438` |
+| `apps/cli/src/board/reader.ts:6` |
+| `apps/cli/src/commands/board.ts:143` |
+| `apps/cli/src/commands/board.ts:30` |
+| `apps/cli/src/commands/board.ts:7` |
+| `apps/cli/src/commands/board.ts:99` |
+| `apps/cli/src/commands/daily.ts:105` |
+| `apps/cli/src/commands/daily.ts:107` |
+| `apps/cli/src/commands/daily.ts:110` |
+| `apps/cli/tests/board/manifest.test.ts:13` |
+| `apps/cli/tests/board/manifest.test.ts:39` |
+| `apps/cli/tests/board/manifest.test.ts:44` |
+| `apps/cli/tests/commands/board.test.ts:54` |
+| `docs/04_DESIGN.md:346` |
+| `docs/04_DESIGN.md:401` |
+| `docs/features/G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md:33` |
+| `docs/features/G8_workflow-visibility-in-spur-board-collect-daily-ai-voice-it-content.md:9` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:156` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:18` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:210` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:236` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:253` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:4` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:65` |
+| `docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md:7` |
+| `plugins/kk/workflows/kk-itc.yaml:31` |
+| `plugins/kk/workflows/kk-itc.yaml:55` |
+| `scripts/build-board.ts:46` |
+| `apps/board/src/itc/index.css:1` |
+| `apps/board/src/itc/index.tsx:1` |
+| `apps/board/src/itc/view.ts:1` |
+| `apps/board/tests/itc/view.test.ts:1` |
+| `apps/cli/src/board/itc.ts:1` |
+| `apps/cli/tests/board/itc.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Four-tab IT Content entry with shared run selection and polling over the selected run's captured record: apps/board/src/itc/index.tsx:87-233 renders the four BOARD_TABS, the run selector and the no-runs state; the truthful summary projection is apps/cli/src/board/itc.ts:307-420 and its facts are apps/board/src/itc/view.ts:202-262. Fresh this session: apps/cli/tests/board/itc.test.ts:352 and apps/board/tests/itc/view.test.ts:102 pass in the focused run (102 pass / 0 fail across 7 suites). |
+| R2 | MET | Outline options a/b/c + selected outline + draft + judge verdict/feedback + revision evidence + cover image + per-target outcomes + final report are all projected: fixed manifest apps/cli/src/board/manifest.ts:278-354, projection apps/cli/src/board/itc.ts:220-260,340-400 and plan-derived target specs apps/cli/src/board/itc.ts:259-305. Fresh tests: apps/cli/tests/board/itc.test.ts:352 asserts judge verdict+feedback, selected-outline text, draft text, cover available and report available; apps/cli/tests/board/itc.test.ts:299 asserts both publisher result shapes. My own probe this session (under $TMPDIR) drove the fan-out targets[] aggregate (t1 ok, t2 failed) and the browser single-object Result (b1 ok) through the real projection: both shapes parse. |
+| R3 | MET | Recorded state visits/attempts/timing/operator-wait render through the shared progress path apps/board/src/itc/index.tsx:421-451; revision counts come from recorded draft-revise/draft-autorevise VISITS, never the mutable counter files, apps/cli/src/board/itc.ts:200-215; only captured sanitized settings are exposed apps/cli/src/board/reader.ts:449-463; the module exposes only GET reads plus Refresh/Load-more buttons (no authoring/review/publish action) apps/board/src/itc/index.tsx:87-460. Fresh tests: apps/cli/tests/board/itc.test.ts:205 and apps/board/tests/itc/view.test.ts:102. |
+| R4 | MET | Trusted-capture of an external canonical child workspace: apps/cli/src/board/capture.ts:291-310 refuses the filesystem root, home, the project root, the trusted root itself, a prefix lookalike and out-of-root traversal; apps/cli/src/commands/board.ts:102 binds the ITC work-dir to the configured works root. Tests apps/cli/tests/board/itc.test.ts:423 (canonical child accepted; root, / and project refused) and apps/cli/tests/board/itc.test.ts:457 (the config tree is never a works root); prepare XOR/force/revise-count semantics preserved at apps/cli/tests/board/itc.test.ts:472. My own probe this session (8 cases, under $TMPDIR) reproduced REFUSE for /, home, the project root, the trusted root itself, the dir-evil lookalike and a .. traversal, ACCEPT only the canonical child, and no escaped marker write. Explicit missing/unknown/superseded states: apps/cli/src/board/itc.ts:330-345,410-418. |
+| R5 | MET | Config tab shows only captured sanitized settings plus the uncaptured keys and links to Settings Workflows: apps/board/src/itc/index.tsx:432-462 and apps/board/src/itc/index.tsx:238; the captured values are served by apps/cli/src/board/reader.ts:449-463, asserted in apps/cli/tests/board/itc.test.ts:352 (settings judge/auto/max_revisions and unavailableKeys contains research). No current-definition endpoint is added: the reader route surface stays health/results/config/artifacts with no definition route. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Summary separates execution status from result outcome (req: R1) | MET | test | apps/board/tests/itc/view.test.ts:102 keeps Execution status apart from Result outcome and labels every unknown; a partial publish (1 ok, 1 failed) never reads as fully successful (Publish targets availability missing); distinct facts are apps/board/src/itc/view.ts:202-262. |
+| AC2 — IT Content results show authoring and review evidence (req: R2) | MET | test | apps/cli/tests/board/itc.test.ts:352 (reader route serves both publisher shapes, judge verdict+feedback, selected outline, draft, cover, report); apps/cli/tests/board/itc.test.ts:299 (pure projection reads both shapes); my own probe this session confirmed the fan-out targets[] aggregate and the browser single-object Result both project. |
+| AC3 — Progress preserves state visits and retries (req: R3) | MET | test | apps/cli/tests/board/itc.test.ts:205 counts recorded revise/auto-revise visits and never invents a zero without progress; the shared progress rows render visits/attempts/timing with no execution action, apps/board/src/itc/index.tsx:421-451. |
+| AC4 — Configuration distinguishes current defaults and recorded run values (req: R3; R5) | MET | test | apps/cli/tests/board/itc.test.ts:352 serves captured settings {judge,auto,max_revisions} and unavailableKeys including research; apps/board/src/itc/index.tsx:460 links Settings Workflows; captured-only values are apps/cli/src/board/reader.ts:449-463. |
+| AC5 — No runs and unavailable artifacts have explicit states (req: R1; R4) | MET | test | apps/cli/tests/board/itc.test.ts:379 (a failed publisher artifact is unavailable and the target unknown) and apps/cli/tests/board/itc.test.ts:330 (an unrecorded producer/report is explicit null, never zero); apps/board/tests/itc/view.test.ts:89 (an absent summary bag is all-unknown); the no-runs state is apps/board/src/itc/index.tsx:227-241. |
+| AC6 — Overwritten workspaces never impersonate historical outputs (req: R4) | MET | test | apps/cli/tests/board/itc.test.ts:408: a later owner of the same workspace makes the earlier run's artifacts superseded with the board.artifact.superseded diagnostic; ownership is re-verified after the bounded reads, apps/cli/src/board/reader.ts:418-424. |
+| AC7 — Refreshing and connection failures preserve a truthful view (req: R1) | MET | test | apps/board/tests/shared/refresh.test.ts:15 (a tick while a request is pending is ignored — no overlapping requests), apps/board/tests/shared/refresh.test.ts:28 (last success kept while failing, backoff capped), apps/board/tests/shared/refresh.test.ts:38 (never presents stale data as fresh); selection preserved via apps/board/tests/shared/run-selection.test.ts:41; per-source busy refs and the independent progress fetch are apps/board/src/itc/index.tsx:103-167. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -157,3 +247,7 @@ Audit baseline: git worktree list shows this main checkout only; spur task list 
 - Existing project worktree only; no active wip tasks at audit. Prior authorized changes remain in the shared checkout.
 
 ### History
+
+- 2026-10-12T07:26:58.242Z todo → testing (system)
+- 2026-10-12T07:27:00.769Z testing → done (system)
+

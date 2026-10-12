@@ -65,6 +65,7 @@ describe('kk main exit seam', () => {
             // (add/invoke/fanin/fanout/plugins) and no alias rendering such as
             // `plugin|plugins` — the loose line-start regex could not see that.
             expect(visibleCommandNames(out).sort()).toEqual([
+                'board',
                 'daily',
                 'executor',
                 'help',

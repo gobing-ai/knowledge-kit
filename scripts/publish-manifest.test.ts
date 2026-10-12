@@ -83,8 +83,9 @@ describe('preparePublishedManifest', () => {
             catalog,
             // Must mirror `collectPrivateWorkspaceNames()` (scripts/publish.ts:24) — it globs
             // `{apps,packages}/*/package.json` for `private: true`, so every private workspace
-            // package the CLI depends on belongs here. kk-store joined with task 0206.
-            privateWorkspaceNames: new Set(['@gobing-ai/kk-core', '@gobing-ai/kk-store']),
+            // package the CLI depends on belongs here. kk-store joined with task 0206;
+            // kk-board joined with G8 task 0252 (a devDependency for the `./contracts` types).
+            privateWorkspaceNames: new Set(['@gobing-ai/kk-core', '@gobing-ai/kk-store', '@gobing-ai/kk-board']),
         });
         const deps = manifest.dependencies as Record<string, string>;
         for (const range of Object.values(deps)) {

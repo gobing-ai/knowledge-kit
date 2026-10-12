@@ -1,0 +1,588 @@
+/**
+ * G8/0252 — the loopback Board reader against a REAL Bun HTTP server and real temp files.
+ *
+ * Failure-first list (written before the code):
+ * 1. only the configured exact Board origin may call the reader (wrong origin -> 403);
+ * 2. a non-loopback Host is refused (DNS rebinding);
+ * 3. an unknown capture, artifact or route -> 404; a bad workflow/run/query -> 400;
+ * 4. a Board project that does not own the record -> 403; another workflow's run -> 404;
+ * 5. an unlisted artifact id or a traversal id -> 404 (an id is never a path);
+ * 6. a symlink escaping the workspace is not read -> 404;
+ * 7. a later owner's marker makes the earlier run's files superseded (AC7/AC8);
+ * 8. a failed or absent producer attempt never authorises stale content;
+ * 9. >1 MiB evidence is reported oversized, never truncated silently;
+ * 10. an unsatisfiable byte range -> 416, a satisfiable one -> 206 with Content-Range.
+ */
+
+import { afterAll, describe, expect, it } from 'bun:test';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import { captureRun, markerPath } from '../../src/board/capture';
+import type { ArtifactObservation } from '../../src/board/collect';
+import {
+    artifactContent,
+    artifactResponse,
+    createBoardReader,
+    MAX_PREVIEW_BYTES,
+    mimeFor,
+    producerStateFrom,
+} from '../../src/board/reader';
+
+const STAMP = '20261011T1200Z';
+const tempDirs: string[] = [];
+const servers: { stop(): void }[] = [];
+
+function tempDir(prefix: string): string {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+    tempDirs.push(dir);
+    return dir;
+}
+
+afterAll(() => {
+    for (const server of servers) server.stop();
+    for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+});
+
+/** A JSON answer. */
+function json(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
+/** The fake Board: the two public identity routes plus the progress projection. */
+function startFakeBoard(projectPath: string) {
+    const state = {
+        projectPath,
+        run: { id: 'run-1', workflowName: 'kk-collect', status: 'done' },
+        progress: {
+            schemaVersion: 1,
+            runId: 'run-1',
+            workflow: 'kk-collect',
+            status: 'done',
+            states: [
+                {
+                    state: 'collect',
+                    visit: 1,
+                    status: 'passed',
+                    actions: [
+                        { actionKey: 'collect:onEnter:0', status: 'passed', attempts: [] },
+                        { actionKey: 'collect:onEnter:1', status: 'passed', attempts: [] },
+                    ],
+                },
+                {
+                    state: 'store',
+                    visit: 1,
+                    status: 'passed',
+                    actions: [{ actionKey: 'store:onEnter:0', status: 'passed' }],
+                },
+                {
+                    state: 'label',
+                    visit: 1,
+                    status: 'passed',
+                    actions: [{ actionKey: 'label:onEnter:0', status: 'passed' }],
+                },
+            ],
+        } as unknown,
+    };
+    const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        fetch(request) {
+            const url = new URL(request.url);
+            if (url.pathname === '/api/project') return json({ name: 'proj', path: state.projectPath });
+            if (url.pathname === `/api/runs/${state.run.id}`)
+                return json({ run: state.run, phases: [], transitions: [], actions: [] });
+            if (url.pathname === `/api/runs/${state.run.id}/progress`) {
+                return state.progress === null
+                    ? json({ error: 'not found', code: 'RUN_NOT_FOUND' }, 404)
+                    : json(state.progress);
+            }
+            return json({ error: 'unknown' }, 404);
+        },
+    });
+    servers.push(server);
+    return { origin: `http://127.0.0.1:${server.port}`, state };
+}
+
+/** Mark one recorded producer action as failed inside the fake Board's progress payload. */
+function failProducer(board: ReturnType<typeof startFakeBoard>, actionKey: string): void {
+    const progress = board.state.progress as {
+        states?: { actions?: { actionKey: string; status: string }[] }[];
+    } | null;
+    for (const state of progress?.states ?? []) {
+        for (const action of state.actions ?? []) {
+            if (action.actionKey === actionKey) action.status = 'failed';
+        }
+    }
+}
+
+/** A captured project root with all four collect artifacts written. */
+async function seededProject(): Promise<{ root: string; workDir: string; stamp: string }> {
+    const root = tempDir('kk-board-reader-');
+    const workDir = join(root, '.works', 'kk-collect', STAMP);
+    mkdirSync(join(workDir, '10-ingest'), { recursive: true });
+    mkdirSync(join(workDir, '20-facts'), { recursive: true });
+    writeFileSync(
+        join(workDir, '10-ingest', `${STAMP}_02_collect_blended.json`),
+        JSON.stringify([
+            { id: 'a', body: 'x', metadata: { sources: [{ file: 'aihot-ingest' }] } },
+            { id: 'b', body: 'y', metadata: { sources: [{ file: 'aihot-ingest' }, { file: 'horizon-ingest' }] } },
+        ]),
+    );
+    writeFileSync(join(workDir, '20-facts', `${STAMP}_02_collect_core-facts.md`), '# Core facts\n- one\n');
+    writeFileSync(join(workDir, 'store-result.json'), JSON.stringify({ inserted: 2, updated: 1, unchanged: 0 }));
+    writeFileSync(
+        join(workDir, 'label-result.txt'),
+        JSON.stringify({ verdict: 'PASS', confidence: 'HIGH', labeled: 2, model: 1, fallback: 1 }),
+    );
+    await captureRun(
+        { workflow: 'kk-collect', runId: 'run-1', workDir, stamp: STAMP, settings: { limit: '10' } },
+        {
+            projectPath: root,
+        },
+    );
+    return { root, workDir, stamp: STAMP };
+}
+
+/** Start a reader wired to one fake Board + one project root (optionally a readonly fs seam). */
+function startReader(boardOrigin: string, projectPath: string, fs?: FileSystem) {
+    const reader = createBoardReader({ boardOrigin, port: 0, projectPath, ...(fs === undefined ? {} : { fs }) });
+    servers.push(reader);
+    return reader.url;
+}
+
+/** The reader's JSON shapes the assertions read (kept loose on purpose: a projection, not a schema). */
+interface ResultsJson {
+    availability: string;
+    summary: Record<string, unknown>;
+    artifacts: { id: string; availability: string }[];
+    diagnostics: { code: string }[];
+}
+
+/** GET a reader URL and decode its JSON body with the test's own shape. */
+async function getJson<T = ResultsJson>(url: string): Promise<T> {
+    return (await (await fetch(url)).json()) as T;
+}
+
+const resultsUrl = (reader: string) => `${reader}/api/workflows/kk-collect/runs/run-1/results`;
+const artifactUrl = (reader: string, id = 'facts') => `${reader}/api/workflows/kk-collect/runs/run-1/artifacts/${id}`;
+
+/** The named diagnostic code from a reader error body. */
+async function errorCode(response: Response): Promise<string | undefined> {
+    return ((await response.json()) as { code?: string }).code;
+}
+
+describe('reader authorization', () => {
+    it('answers health and refuses a foreign origin and a non-loopback Host', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const health = await fetch(`${reader}/api/health`);
+        expect(health.status).toBe(200);
+        expect(await health.json()).toEqual({ schemaVersion: 1, projectPath: root });
+        expect((await fetch(`${reader}/api/health`, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
+        expect((await fetch(`${reader}/api/health`, { headers: { host: 'evil.example' } })).status).toBe(403);
+        expect((await fetch(`${reader}/api/health`, { method: 'POST' })).status).toBe(405);
+    });
+
+    it('returns 400 for an unknown workflow, an unsafe run id and an unknown query', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        expect((await fetch(`${reader}/api/workflows/nope/runs/run-1/results`)).status).toBe(400);
+        expect(
+            (await fetch(`${reader}/api/workflows/kk-collect/runs/${encodeURIComponent('../x')}/results`)).status,
+        ).toBe(400);
+        const badQuery = await fetch(`${resultsUrl(reader)}?limit=5`);
+        expect(badQuery.status).toBe(400);
+        expect(await badQuery.json()).toMatchObject({ code: 'board.query.invalid' });
+    });
+
+    it('returns 404 for an unknown capture and 403 when the Board project does not own it', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        expect((await fetch(`${reader}/api/workflows/kk-collect/runs/run-unknown/results`)).status).toBe(404);
+        board.state.projectPath = tempDir('kk-other-project-');
+        expect((await fetch(resultsUrl(reader))).status).toBe(403);
+    });
+
+    it('returns 404 when the Board has no matching run or the workflow differs', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        board.state.run = { id: 'run-1', workflowName: 'kk-itc', status: 'done' };
+        expect((await fetch(resultsUrl(reader))).status).toBe(404);
+    });
+});
+
+describe('reader projections', () => {
+    it('serves results and config built from the captured artifacts', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const results = await getJson(resultsUrl(reader));
+        expect(results.summary).toMatchObject({
+            sourceCounts: { 'aihot-ingest': 2, 'horizon-ingest': 1 },
+            inserted: 2,
+            updated: 1,
+            unchanged: 0,
+            labeled: 2,
+            model: 1,
+            fallback: 1,
+            verdict: 'PASS',
+            confidence: 'HIGH',
+        });
+        expect(results.summary.factsPreview).toContain('# Core facts');
+        expect(results.artifacts.map((artifact: { availability: string }) => artifact.availability)).toEqual([
+            'available',
+            'available',
+            'available',
+            'available',
+        ]);
+        const config = await getJson<{
+            settings: Record<string, string>;
+            capturedAt: string;
+            unavailableKeys: string[];
+        }>(`${reader}/api/workflows/kk-collect/runs/run-1/config`);
+        expect(config.settings).toEqual({ limit: '10' });
+        expect(config.capturedAt).toBeTruthy();
+        expect(config.unavailableKeys).toEqual(['horizon_hours']);
+    });
+
+    it('never invents counts when an artifact is absent', async () => {
+        const { root, workDir } = await seededProject();
+        rmSync(join(workDir, 'store-result.json'));
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const results = await getJson(resultsUrl(reader));
+        expect(results.summary.inserted).toBeNull();
+        expect(results.summary.updated).toBeNull();
+    });
+});
+
+describe('artifact access', () => {
+    it('serves an allowlisted artifact and refuses an unlisted or traversal id', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const facts = await fetch(artifactUrl(reader));
+        expect(facts.status).toBe(200);
+        expect(await facts.text()).toContain('# Core facts');
+        expect((await fetch(artifactUrl(reader, 'unknown-id'))).status).toBe(404);
+        expect((await fetch(artifactUrl(reader, encodeURIComponent('../../etc/passwd')))).status).toBe(404);
+    });
+
+    it('does not follow a symlink that escapes the workspace', async () => {
+        const { root, workDir } = await seededProject();
+        const outside = join(tempDir('kk-outside-'), 'secret.md');
+        writeFileSync(outside, 'TOP SECRET');
+        rmSync(join(workDir, '20-facts', `${STAMP}_02_collect_core-facts.md`));
+        symlinkSync(outside, join(workDir, '20-facts', `${STAMP}_02_collect_core-facts.md`));
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+    });
+
+    it('marks a later owner and a failed producer as unavailable, never stale content', async () => {
+        const { root, workDir } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        // A later run claims the same workspace: the earlier run's files are superseded (AC7).
+        await captureRun(
+            { workflow: 'kk-collect', runId: 'run-2', workDir, stamp: STAMP, settings: {} },
+            { projectPath: root },
+        );
+        const superseded = await getJson(resultsUrl(reader));
+        expect(superseded.artifacts[0]?.availability).toBe('superseded');
+        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+        // Re-claim the workspace for run-1, then fail its facts producer.
+        await captureRun(
+            { workflow: 'kk-collect', runId: 'run-1', workDir, stamp: STAMP, settings: { limit: '10' } },
+            {
+                projectPath: root,
+            },
+        );
+        failProducer(board, 'collect:onEnter:1');
+        const failed = await getJson(resultsUrl(reader));
+        expect(failed.artifacts.find((artifact) => artifact.id === 'facts')?.availability).toBe('missing');
+        expect((await fetch(artifactUrl(reader, 'blended'))).status).toBe(200);
+    });
+
+    it('reports an unavailable progress projection as unverified', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        board.state.progress = null;
+        const reader = startReader(board.origin, root);
+        const results = await getJson(resultsUrl(reader));
+        expect(results.availability).toBe('unverified');
+        expect(results.diagnostics.map((diagnostic: { code: string }) => diagnostic.code)).toContain(
+            'board.progress.unavailable',
+        );
+        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+    });
+
+    it('reports evidence over the preview cap as oversized instead of truncating it', async () => {
+        const { root, workDir } = await seededProject();
+        writeFileSync(
+            join(workDir, '20-facts', `${STAMP}_02_collect_core-facts.md`),
+            'x'.repeat(MAX_PREVIEW_BYTES + 10),
+        );
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const results = await getJson(resultsUrl(reader));
+        expect(results.artifacts.find((artifact) => artifact.id === 'facts')?.availability).toBe('oversized');
+        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+    });
+
+    it('serves a satisfiable byte range as 206 and refuses an unsatisfiable one with 416', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const ranged = await fetch(artifactUrl(reader), { headers: { range: 'bytes=0-3' } });
+        expect(ranged.status).toBe(206);
+        expect(ranged.headers.get('content-range')).toMatch(/^bytes 0-3\/\d+$/);
+        expect(await ranged.text()).toBe('# Co');
+        expect((await fetch(artifactUrl(reader), { headers: { range: 'bytes=99999999-' } })).status).toBe(416);
+    });
+});
+
+describe('marker re-verification and malformed evidence', () => {
+    it('discards a read whose workspace owner changed mid-read (P2)', async () => {
+        const { root, workDir } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root, swappingMarkerFs(root, workDir));
+        // The capture revokes run-1's ownership and writes run-2's marker while the facts file is
+        // being read: the successor's bytes must never be served under run-1's identity.
+        const full = await fetch(artifactUrl(reader));
+        expect(full.status).toBe(404);
+        expect(await errorCode(full)).toBe('board.artifact.owner-changed');
+    });
+
+    it('re-verifies ownership per bounded range chunk too (P2)', async () => {
+        const { root, workDir } = await seededProject();
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root, swappingMarkerFs(root, workDir));
+        const ranged = await fetch(artifactUrl(reader), { headers: { range: 'bytes=0-3' } });
+        expect(ranged.status).toBe(404);
+    });
+
+    it('answers 422 for a malformed capture record, never 404', async () => {
+        const { root } = await seededProject();
+        writeFileSync(join(root, '.works/.board/runs/run-1.json'), '{not json');
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const response = await fetch(resultsUrl(reader));
+        expect(response.status).toBe(422);
+        expect(await errorCode(response)).toBe('board.capture.invalid');
+    });
+
+    it('answers 422 for a malformed marker file, not unverified (P3)', async () => {
+        const { root, workDir } = await seededProject();
+        // A marker without `schemaVersion: 1` is malformed stored evidence.
+        writeFileSync(
+            markerPath(workDir),
+            JSON.stringify({ projectPath: root, workflow: 'kk-collect', runId: 'run-1' }),
+        );
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const results = await getJson(resultsUrl(reader));
+        expect(results.availability).toBe('invalid');
+        const artifact = await fetch(artifactUrl(reader));
+        expect(artifact.status).toBe(422);
+        expect(await errorCode(artifact)).toBe('board.artifact.invalid');
+    });
+
+    it('resolves a same-run retry across visits instead of the first visit (P3)', async () => {
+        const { root } = await seededProject();
+        const board = startFakeBoard(root);
+        const progress = board.state.progress as { states?: unknown[] } | null;
+        if (progress !== null) {
+            progress.states = [
+                {
+                    state: 'collect',
+                    visit: 1,
+                    status: 'failed',
+                    actions: [
+                        { actionKey: 'collect:onEnter:0', status: 'failed' },
+                        { actionKey: 'collect:onEnter:1', status: 'failed' },
+                    ],
+                },
+                {
+                    state: 'collect',
+                    visit: 2,
+                    status: 'passed',
+                    actions: [
+                        { actionKey: 'collect:onEnter:0', status: 'passed' },
+                        { actionKey: 'collect:onEnter:1', status: 'passed' },
+                    ],
+                },
+                {
+                    state: 'store',
+                    visit: 1,
+                    status: 'passed',
+                    actions: [{ actionKey: 'store:onEnter:0', status: 'passed' }],
+                },
+                {
+                    state: 'label',
+                    visit: 1,
+                    status: 'passed',
+                    actions: [{ actionKey: 'label:onEnter:0', status: 'passed' }],
+                },
+            ];
+        }
+        const reader = startReader(board.origin, root);
+        const results = await getJson(resultsUrl(reader));
+        expect(results.artifacts.find((artifact) => artifact.id === 'blended')?.availability).toBe('available');
+        expect((await fetch(artifactUrl(reader, 'blended'))).status).toBe(200);
+    });
+});
+
+describe('producerStateFrom', () => {
+    it('aggregates every recorded attempt for one action key across visits', () => {
+        const retried = {
+            states: [
+                { actions: [{ actionKey: 'k', status: 'failed' }] },
+                { actions: [{ actionKey: 'k', status: 'passed' }] },
+            ],
+        };
+        expect(producerStateFrom(retried, 'k', 'n')).toBe('success');
+        expect(
+            producerStateFrom(
+                {
+                    states: [
+                        { actions: [{ actionKey: 'k', status: 'failed' }] },
+                        { actions: [{ actionKey: 'k', status: 'running' }] },
+                    ],
+                },
+                'k',
+                'n',
+            ),
+        ).toBe('pending');
+        expect(producerStateFrom({ states: [{ actions: [{ actionKey: 'k', status: 'failed' }] }] }, 'k', 'n')).toBe(
+            'failure',
+        );
+        expect(producerStateFrom({ states: [] }, 'k', 'n')).toBe('unknown');
+        expect(producerStateFrom(retried, undefined, 'n')).toBe('unknown');
+        expect(producerStateFrom(null, 'k', 'n')).toBe('unknown');
+    });
+});
+
+describe('artifact bytes and mime', () => {
+    it('prefers a declared mime and serves real media bytes sliced by range', async () => {
+        expect(mimeFor('audio', 'audio/ogg')).toBe('audio/ogg');
+        expect(mimeFor('audio')).toBe('audio/mpeg');
+        expect(mimeFor('image')).toBe('image/png');
+        expect(mimeFor('json')).toBe('application/json');
+        const root = tempDir('kk-board-media-');
+        const file = join(root, 'clip.bin');
+        writeFileSync(file, new Uint8Array([0, 1, 2, 3, 4]));
+        const observed: ArtifactObservation = { state: 'present', bytes: 5, path: file };
+        const whole = await artifactContent('audio', observed, null, 5);
+        expect(whole).toBeInstanceOf(Uint8Array);
+        expect([...(whole as Uint8Array)]).toEqual([0, 1, 2, 3, 4]);
+        const sliced = await artifactContent('audio', observed, { start: 1, end: 2 }, 5);
+        expect([...(sliced as Uint8Array)]).toEqual([1, 2]);
+        // An in-memory observation (no file) falls back to a character slice.
+        expect(await artifactContent('text', { state: 'present', text: 'hello' }, { start: 1, end: 3 }, 5)).toBe('ell');
+        // With a real file the text slice is cut by BYTE, so it agrees with `Content-Range`.
+        const facts = join(root, 'facts.md');
+        writeFileSync(facts, 'héllo');
+        const rangedText = await artifactContent(
+            'text',
+            { state: 'present', bytes: 6, path: facts, text: 'héllo' },
+            { start: 0, end: 2 },
+            6,
+        );
+        expect(new TextEncoder().encode(String(rangedText)).byteLength).toBeLessThanOrEqual(3);
+        expect(String(rangedText).startsWith('h')).toBe(true);
+    });
+
+    it('sends media bytes with their real content-length and content-range', () => {
+        const response = artifactResponse(
+            {
+                status: 206,
+                body: {
+                    __binary: true,
+                    mime: 'audio/mpeg',
+                    text: new Uint8Array([9, 8, 7]),
+                    bytes: 10,
+                    range: { start: 0, end: 2 },
+                },
+            },
+            {},
+        );
+        expect(response.status).toBe(206);
+        expect(response.headers.get('content-type')).toBe('audio/mpeg');
+        expect(response.headers.get('content-length')).toBe('3');
+        expect(response.headers.get('content-range')).toBe('bytes 0-2/10');
+    });
+});
+
+/** A fs seam whose artifact read revokes run-1's ownership and writes run-2's marker mid-read. */
+function swappingMarkerFs(root: string, workDir: string): FileSystem {
+    const base = createNodeFileSystem();
+    let swapped = false;
+    return new Proxy(base, {
+        get(target, property, receiver) {
+            if (property === 'readFile') {
+                return async (path: string): Promise<string> => {
+                    if (!swapped && path.endsWith('core-facts.md')) {
+                        swapped = true;
+                        writeFileSync(
+                            markerPath(workDir),
+                            JSON.stringify({
+                                schemaVersion: 1,
+                                projectPath: root,
+                                workflow: 'kk-collect',
+                                runId: 'run-2',
+                            }),
+                        );
+                    }
+                    return base.readFile(path);
+                };
+            }
+            const value = Reflect.get(target, property, receiver) as unknown;
+            return typeof value === 'function' ? value.bind(base) : value;
+        },
+    }) as FileSystem;
+}
+
+describe('structurally invalid stored evidence (P3, second review)', () => {
+    it('answers 422 for a record that parses but is missing required fields, never 500', async () => {
+        const { root } = await seededProject();
+        // The reviewer's repro: valid JSON, a known workflow, schemaVersion 1 — but no workspacePath,
+        // which the routes dereference. Validating the shape at the read keeps 422 the only answer.
+        writeFileSync(
+            join(root, '.works/.board/runs/run-1.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                workflow: 'kk-collect',
+                projectPath: root,
+                runId: 'run-1',
+                settings: { limit: '10' },
+            }),
+        );
+        const board = startFakeBoard(root);
+        const reader = startReader(board.origin, root);
+        const results = await fetch(resultsUrl(reader));
+        expect(results.status).toBe(422);
+        expect(await errorCode(results)).toBe('board.capture.invalid');
+        const artifact = await fetch(artifactUrl(reader));
+        expect(artifact.status).toBe(422);
+    });
+});
+
+describe('text byte ranges (P4-6)', () => {
+    it('cuts a ranged text preview by BYTE, matching the Content-Range it promises', async () => {
+        const dir = tempDir('kk-board-range-');
+        const file = join(dir, 'facts.md');
+        writeFileSync(file, 'héllo');
+        const observed = { state: 'present' as const, path: file, bytes: 6, text: 'héllo' };
+        expect(await artifactContent('text', observed, null, 6)).toBe('héllo');
+        // Bytes 0-2 are 'h' + the first of the two 0xC3 0xA9 bytes that make 'é' — 3 bytes, not 3 chars.
+        const ranged = await artifactContent('text', observed, { start: 0, end: 2 }, 6);
+        expect(new TextEncoder().encode(String(ranged)).byteLength).toBeLessThanOrEqual(3);
+    });
+});

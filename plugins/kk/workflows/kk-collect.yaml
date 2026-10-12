@@ -27,6 +27,10 @@ vars:
   # builtin — a shell command may only reference declared vars). It is the lock owner and the
   # `collect_runs` / ledger identity.
   __runId: ""
+  # Definition digest of the executed workflow, injected by spur at launch (G8/0252 §9). The
+  # Board capture compares it with the public `spur workflow list --json` catalog and reads the
+  # topology only on exact agreement; a missing/mismatched digest omits topology with a diagnostic.
+  __definitionDigest: ""
   # Per-source collection parameters, seeded into the plugin source configs by `lock`.
   limit: "10"
   last30days_topic: "AI news"
@@ -76,14 +80,30 @@ states:
 
   - id: collect
     description: >-
-      Fan-in every ingestion source into the run's blended Doc[] (same sources and timeout overrides as
-      kk-daily-ai-voice's collect state) and render the core-facts markdown with the existing stage (R3/R4).
+      Bind the run to its workspace for the Board (G8/0252 §9), then fan-in every ingestion source into
+      the run's blended Doc[] (same sources and timeout overrides as kk-daily-ai-voice's collect state)
+      and render the core-facts markdown with the existing stage (R3/R4).
     onEnter:
       - kind: shell
-        # onError: continue on both actions, with the artifact guard below as the positive success
-        # contract: a state-machine aborts the run on a failed action without taking a transition, so a
-        # hard failure here would leave the lock behind. The run still ends `failed` — through
-        # `release-failed`, which releases the lock first.
+        # Board capture (G8/0252 §9): revoke any previous workspace owner and bind THIS run to the
+        # workspace before any collection output exists. Revocation is mandatory — a refusal writes no
+        # board-capture.json, so the artifact guard below routes to `release-failed` and no result is
+        # ever stored over another owner's files. An optional capture failure after a successful
+        # revocation warns (captured:false) and only disables Board previews.
+        # onError: continue keeps the lock-releasing failure path intact instead of a hard abort.
+        options:
+          onError: continue
+          command: >-
+            kk board capture --workflow kk-collect --run "${vars.__runId}"
+            --work-dir "${vars.work_dir}" --stamp "${vars.stamp}"
+            --definition-digest "${vars.__definitionDigest}"
+            --setting "limit=${vars.limit}" --setting "horizon_hours=${vars.horizon_hours}"
+            > "${vars.work_dir}/board-capture.json"
+      - kind: shell
+        # onError: continue on both ingestion actions, with the artifact guard below as the positive
+        # success contract: a state-machine aborts the run on a failed action without taking a
+        # transition, so a hard failure here would leave the lock behind. The run still ends `failed`
+        # — through `release-failed`, which releases the lock first.
         onError: continue
         options:
           # horizon-ingest's latency straddles the fan-in 30m per-source default (0098/0099), so it gets
@@ -192,13 +212,14 @@ transitions:
 
   - from: collect
     to: store
-    description: "Blended Doc[] written and core facts rendered -> store it"
+    description: "Blended Doc[], core facts and Board capture recorded -> store it"
     guard:
       kind: shell
       options:
         command: >-
           test -s "${vars.work_dir}/10-ingest/${vars.stamp}_02_collect_blended.json" &&
-          test -s "${vars.work_dir}/20-facts/${vars.stamp}_02_collect_core-facts.md"
+          test -s "${vars.work_dir}/20-facts/${vars.stamp}_02_collect_core-facts.md" &&
+          test -s "${vars.work_dir}/board-capture.json"
 
   - from: collect
     to: release-failed
