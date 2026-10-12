@@ -177,9 +177,34 @@ The answer rule judges verification answers: an answer that asserts a verdict mu
 EOF
 
 case_check bare-non-enum-claim-is-flagged 1 <<'EOF'
-### Testing
+## Testing
 
 Confidence: CERTAIN — every requirement was re-checked by hand.
+EOF
+
+# --- the level must BE a level, not merely contain one (measured 2026-10-12) ---
+# The substring form read `HIGHWAY` as HIGH in both planes and certified the record; the whole-word
+# guard is what refuses it. `exact-level-still-certifies` is the positive control for the tightening.
+case_check block-level-with-suffix 1 <<'EOF'
+<!--
+Verification (2026-01-01, some-procedure): HIGH
+- The guard is plugins/publishings/wechatmp-pub/src/flow.ts:657.
+- Confidence: HIGHWAY — a suffix must not read as HIGH.
+-->
+EOF
+
+case_check testing-level-with-suffix 1 <<'EOF'
+## Testing
+
+Confidence: MEDIUM-rare — the unit suite is green.
+EOF
+
+case_check exact-level-still-certifies 0 <<'EOF'
+<!--
+Verification (2026-01-01, some-procedure): HIGH
+- The guard is plugins/publishings/wechatmp-pub/src/flow.ts:657.
+- Confidence: HIGH — the citation is a checked-in path:line.
+-->
 EOF
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

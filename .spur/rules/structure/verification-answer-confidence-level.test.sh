@@ -141,6 +141,57 @@ Confidence: HIGH — apps/board/src/shared/collect.ts:93 carries the projection.
 The catalog keeps `minConfidence: 0` untouched.
 EOF
 
+# --- declaration vs mention (2026-10-12) ---
+# The hole this closes: a mention satisfied the "exactly one" count, so an answer that NEVER declared a
+# level passed as long as it talked about one. Both directions are pinned — the bypass, and the false
+# refusal of a valid answer that happens to mention the line it carries.
+case_check mention-is-not-a-declaration 1 <<'EOF'
+Verdict: PASS
+
+### Notes
+The guard asks for the `Confidence: HIGH` line before it will accept a stop, so the level was attached
+to each row instead of declared.
+
+### Per-Requirement Traceability
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | apps/cli/src/index.ts:1 |
+EOF
+
+case_check declaration-plus-mention-is-one 0 <<'EOF'
+Verdict: PASS
+Confidence: HIGH — apps/cli/src/index.ts:1 carries the change.
+
+### Notes
+The record carries the `Confidence: HIGH` line discussed above.
+
+### Per-Requirement Traceability
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | apps/cli/src/index.ts:1 |
+EOF
+
+case_check bold-list-declaration 0 <<'EOF'
+Verdict: PASS
+- **Confidence**: MEDIUM — the live render is unverified (apps/cli/src/index.ts:1).
+
+### Per-Requirement Traceability
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | apps/cli/src/index.ts:1 |
+EOF
+
+# The level token must BE a level, not merely contain one — the fourth hole this suite now pins.
+case_check level-with-trailing-letters 1 <<'EOF'
+Verdict: PASS
+Confidence: HIGHWAY — apps/cli/src/index.ts:1
+EOF
+
+case_check level-with-suffix 1 <<'EOF'
+Verdict: PASS
+Confidence: MEDIUM-rare — apps/cli/src/index.ts:1
+EOF
+
 # --- the cutoff ---
 # A file written NOW is after the adoption instant, so it must be JUDGED, not grandfathered. This case
 # pins the UTC parse: under the local-parse bug (2026-10-12) the boundary moved +7h in this timezone and

@@ -54,6 +54,14 @@
 #
 # Contract, for each in-scope file:
 #   * exactly one `Confidence: HIGH|MEDIUM|LOW` line, and no `Confidence:` line outside the enum;
+#   * ONLY A DECLARATION COUNTS. A declaration is the line's own statement — `Confidence: HIGH`,
+#     `**Confidence**: MEDIUM`, `- Confidence: LOW`. A MENTION inside prose or backticks ("the
+#     `Confidence: HIGH` line the guard asks for") is neither counted nor an enum violation.
+#     Measured 2026-10-12 before this distinction existed: a substring count let an answer with NO
+#     declared level satisfy "exactly one" whenever it merely talked about a level, so the rule
+#     could not see the thing it exists to verify; and one declaration plus one mention read as
+#     "2 line(s)" and refused a valid answer. Both directions are pinned in the suite
+#     (`mention-is-not-a-declaration`, `declaration-plus-mention-is-one`).
 #   * the level is EARNED: HIGH cites evidence (an http(s) URL, a `path:line`, or a repo path with a
 #     code/doc extension); MEDIUM/LOW either cite evidence or name what is unverified. The citation
 #     and gap heuristics are the ones the sibling confidence checker already uses — one vocabulary,
@@ -139,12 +147,37 @@ for f in $FILES; do
             for (i = 1; i <= n; i++) if (index(line, "." exts[i]) > 0) return 1
             return 0
         }
+        # A DECLARATION is the statement the line itself makes; a MENTION in prose or backticks is not.
+        # See the contract note at the top: counting mentions both hid a missing level and refused a
+        # valid one.
+        function is_decl(line,   s, t, c, pre) {
+            s = line
+            sub(/^[ \t]+/, "", s)
+            sub(/^[-*][ \t]+/, "", s)
+            t = tolower(s)
+            c = index(t, ":")
+            if (c <= 0 || c > 24) return 0
+            pre = substr(t, 1, c)
+            gsub(/\*/, "", pre)
+            gsub(/[ \t]/, "", pre)
+            return (pre == "confidence:")
+        }
+        # The level must be a WHOLE word: `HIGHWAY`, `HIGHly` and `MEDIUM-rare` are not levels, and a
+        # substring match accepted each of them as one (the same class as the mention bug above).
+        function level_of(line,   s) {
+            s = line
+            if (s ~ /(^|[^A-Za-z0-9_-])HIGH([^A-Za-z0-9_-]|$)/) return "HIGH"
+            if (s ~ /(^|[^A-Za-z0-9_-])MEDIUM([^A-Za-z0-9_-]|$)/) return "MEDIUM"
+            if (s ~ /(^|[^A-Za-z0-9_-])LOW([^A-Za-z0-9_-]|$)/) return "LOW"
+            return ""
+        }
         {
             line = $0
-            if (tolower(line) ~ /(^|[^a-z])confidence:/) {
-                if (match(line, /(HIGH|MEDIUM|LOW)/)) {
+            if (is_decl(line)) {
+                lvl = level_of(line)
+                if (lvl != "") {
                     conf += 1
-                    if (level == "") { level = substr(line, RSTART, RLENGTH); levelline = NR }
+                    if (level == "") { level = lvl; levelline = NR }
                 } else {
                     bad_enum += 1
                     printf "INVALID: %s:%d: `Confidence:` line is outside HIGH|MEDIUM|LOW — %s\n", file, NR, substr(line, 1, 70)

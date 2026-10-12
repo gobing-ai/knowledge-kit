@@ -73,10 +73,20 @@ for f in $docs_files; do
         }
         !inb && /<!--/ { inb = 1; seen = 0; conf = 0; cites = 0; gaps = 0; level = "" }
         inb && /Verification \(/ { seen = 1 }
-        inb && /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)/ {
+        # A level is a WHOLE word: HIGHWAY / HIGHly / MEDIUM-rare are not levels. Measured 2026-10-12:
+        # the substring gate-and-match accepted `Confidence: HIGHWAY` as HIGH and certified the block.
+        function level_of(line,   s) {
+            s = line
+            if (s ~ /(^|[^A-Za-z0-9_-])HIGH([^A-Za-z0-9_-]|$)/) return "HIGH"
+            if (s ~ /(^|[^A-Za-z0-9_-])MEDIUM([^A-Za-z0-9_-]|$)/) return "MEDIUM"
+            if (s ~ /(^|[^A-Za-z0-9_-])LOW([^A-Za-z0-9_-]|$)/) return "LOW"
+            return ""
+        }
+        inb && /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)([^A-Za-z0-9_-]|$)/ {
             conf += 1
             line = $0
-            if (match(line, /(HIGH|MEDIUM|LOW)/)) level = substr(line, RSTART, RLENGTH)
+            lvl = level_of(line)
+            if (lvl != "") level = lvl
         }
         inb && is_cite($0) { cites += 1 }
         inb && tolower($0) ~ gap_re { gaps += 1 }
@@ -114,7 +124,7 @@ for f in $docs_files $record_files; do
             # contract, so code spans come out before matching. One process per file, and no `\b`.
             gsub(/`[^`]*`/, "", line)
             if (line !~ /(^|[^A-Za-z])Confidence:/) next
-            if (line ~ /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)/) next
+            if (line ~ /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)([^A-Za-z0-9_-]|$)/) next
             printf "INVALID: %s: confidence level outside HIGH|MEDIUM|LOW:\n%s\n", file, $0
             bad = 1
         }
@@ -144,9 +154,17 @@ for f in $record_files; do
             }
         }
         /^## / { judge(); in_test = ($0 ~ /^##[ \t]+Testing[ \t]*$/); conf = 0; cites = 0; gaps = 0; level = ""; next }
-        in_test && /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)/ {
+        function level_of(line,   s) {
+            s = line
+            if (s ~ /(^|[^A-Za-z0-9_-])HIGH([^A-Za-z0-9_-]|$)/) return "HIGH"
+            if (s ~ /(^|[^A-Za-z0-9_-])MEDIUM([^A-Za-z0-9_-]|$)/) return "MEDIUM"
+            if (s ~ /(^|[^A-Za-z0-9_-])LOW([^A-Za-z0-9_-]|$)/) return "LOW"
+            return ""
+        }
+        in_test && /(^|[^A-Za-z])Confidence: ?\** *(HIGH|MEDIUM|LOW)([^A-Za-z0-9_-]|$)/ {
             conf += 1
-            if (match($0, /(HIGH|MEDIUM|LOW)/)) level = substr($0, RSTART, RLENGTH)
+            lvl = level_of($0)
+            if (lvl != "") level = lvl
         }
         in_test && is_cite($0) { cites += 1 }
         in_test && tolower($0) ~ gap_re { gaps += 1 }
