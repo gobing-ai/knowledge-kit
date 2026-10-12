@@ -3,7 +3,7 @@ kind: design
 title: Native workflow visibility modules for Spur Board
 status: accepted
 created_at: 2026-10-11
-updated_at: 2026-10-11
+updated_at: 2026-10-12
 related: [G8, ADR-035]
 tags: [board, workflows, observability]
 ---
@@ -92,7 +92,11 @@ The installed host was inspected at `/Users/robin/node_modules/@gobing-ai/spur`:
 `board/index.d.ts` and `web/board-runtime.json` advertise contributionApiVersion 1, React 19.2.1,
 React DOM 19.2.1 and React Router 7.11.0. These are evidence for this planning run, not future fixed
 compatibility promises. Validate the actual installation when building/testing. Module declarations
-are strict and flat; backend configuration does not belong inside bootstrap.modules.
+are strict and flat; backend configuration does not belong inside bootstrap.modules. The declaration
+is enforced (`.strict()`): a module contributes `id`, `name`, `icon`, optionally
+`sidebarLabel`/`description`/`order`, and for `type: react` a `directory` plus `entry` and optional
+`styles`. A duplicate id, or one colliding with a reserved host identity, is refused at config load,
+and the host derives each module's route as `/modules/<id>`.
 
 Proposed checkout declarations (enable each only after its assets exist):
 
@@ -159,9 +163,24 @@ opened through a genuinely read-only path.
 
 Browser uses same-origin supported Spur routes:
 `GET /api/runs?workflow=<name>&limit=25&cursor=...`, `/api/runs/<id>`, and
-`/api/runs/<id>/progress`. Settings already consumes `GET /api/project/workflows` for definitions;
+`/api/runs/<id>/progress`. The list route also accepts `status` and `since`, and
+`/api/runs/by-wbs/<wbs>` resolves a run from a task WBS; a malformed cursor or `since` answers 400
+with a named code rather than an empty page. Settings already consumes `GET /api/project/workflows` for definitions;
 reuse its UI rather than rebuilding that catalog. Validate payloads, selection and workflow binding. No private React
 contexts, raw SQLite reads, CLI spawns on each browser refresh, or raw trace payload exposure.
+
+#### API/library claim sources and confidence
+
+| Claim (used by) | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| The contribution ABI is `apiVersion: 1`, the entry exports `webModule`, and the component renders inside the host's own React tree without `createRoot` (R1, R14) | `@gobing-ai/spur` declaration-only export `./board` (`board/index.d.ts`), listed in the installed `package.json` `exports` | Read `node_modules/@gobing-ai/spur/board/index.d.ts:21,24,27,38` in the installed 0.4.2: `readonly apiVersion: 1`, `component: ComponentType`, `mounted … must not call createRoot`, `export declare const webModule` | HIGH |
+| The host advertises the facade specifiers `react`, `react/jsx-runtime`, `react/jsx-dev-runtime` (plus `react-dom`, `react-dom/client`, `react-router`, `react-router/dom`) at React 19.2.1, ReactDOM 19.2.1, React Router 7.11.0 (R14, section 3 build) | Installed `web/board-runtime.json` (`manifestVersion` 1, `contributionApiVersion` 1, `imports`) | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; all seven `web/_astro/board-facade-*.js` files the manifest names exist on disk (7/7) | HIGH |
+| `bootstrap.modules` is the supported declaration surface: a discriminated `react`\|`iframe` union, `.strict()`, `id` matching `^[a-z][a-z0-9-]*$`, `name`, `icon`, optional `sidebarLabel`/`description`/`order`, and `type: react` requiring `directory` + `entry` with optional `styles` (R1, section 4) | Installed runtime config schema: `bootstrapSectionSchema` and `boardModuleDeclarationSchema` in the shipped bundle | Read the emitted zod shapes in installed `spur.js` (search `boardModuleDeclarationSchema =`); the shipped `schemas/spur-config.schema.json` `bootstrap` block lists only logging/telemetry/database/scheduler, so declaration validation is runtime-only, not schema-level | HIGH |
+| A declared module's route is `/modules/<id>`; a duplicate id or one colliding with a reserved host identity is refused at config load (R1, R14) | Installed `BOARD_MODULE_ROUTE_PREFIX = "/modules/"` with `validateBoardModuleDeclarations`, and `reservedModules` in `web/board-runtime.json` | Read both in installed `@gobing-ai/spur` 0.4.2; `kk-collect`, `kk-daily-ai-voice2` and `kk-itc` match the id pattern and collide with no reserved id (`observability, history, plans, designs, features, tasks, projects, settings`) | HIGH |
+| Settings → Workflows is the real route `/board/settings/workflows`, its tab set is `general`\|`agents`\|`workflows`, and its definition view already renders `rawYaml` plus a Mermaid diagram (R9, R15) | Installed Board web bundle `web/_astro/BoardApp.*.js` (`selectTab` composing `/board/settings/${id}`; the tab array) | Read the route composition and tab array; the `/project/workflows` payload carries `rawYaml` + `mermaidDiagram` | HIGH |
+| The runs API is `/api/runs` accepting `workflow, limit, cursor, status, since`, plus `/api/runs/:runId`, `/api/runs/:runId/progress` and `/api/runs/by-wbs/:wbs`; `/api/project` answers `{name, path}` (R2, R3, R7, R12) | Installed `spur.js` route registrations | Read the four `app.get` handlers; `/api/project` returns `{ name: basename(cwd), path: normalizeProjectPath(cwd) }`; `RunStoreBadCursorError` and a malformed `since` answer 400 with named codes | HIGH |
+| `/api/runs/:runId/progress` answers 404 `RUN_NOT_FOUND` instead of a diagnostics payload as soon as the projection carries an `orphan-row` diagnostic, so a DAG run can lose its entire progress projection and the R8 fallback must read `/api/runs/:runId` action rows (R8) | Installed `spur.js` progress handler guard | Read the guard (`projection.diagnostics.some(d => d.code === "orphan-row")` → 404 with `code: "RUN_NOT_FOUND"`); the run-detail route has no equivalent guard — this corrects section 6's "returned … orphan-action-row diagnostics for DAG actions" | HIGH |
+| Module assets are served from the installed package's `web/` tree, so `directory` must resolve inside the installed package rather than a source checkout (R14, section 8) | Installed `package.json` `files` (`board`, `web`, `schemas`, `plugins`) plus the manifest asset URLs | `files` includes `board` and `web`; every facade path under `web/_astro/` resolves | MEDIUM — the serving path from an installed (packed) install is inferred from `files` + the manifest URLs, not exercised here; task 0255 exercises it |
 
 ## 5. Run provenance and config truth
 
@@ -196,8 +215,10 @@ For state machines, consume Spur's shared progress projection: visits, per-actio
 timings/provenance, transitions, pending/skipped/failed states and recorded diagnostics. Derive
 operator-wait labels only from recorded pause/definition evidence. No answer or resume action.
 
-Daily voice is a DAG. The installed 0.4.2 live response audit returned a state-oriented projection
-and orphan-action-row diagnostics for DAG actions. Use a deterministic DAG regression fixture to
+Daily voice is a DAG. The installed 0.4.2 exposes a state-oriented progress projection, and its
+progress route answers 404 `RUN_NOT_FOUND` rather than a diagnostics payload as soon as that
+projection carries an `orphan-row` diagnostic — a DAG run can therefore lose the whole projection.
+Use a deterministic DAG regression fixture to
 preserve that observed limitation. For this incomplete projection, use the supported run-detail action rows for executed-node status/attempts and a
 captured DAG definition for run dependency edges; when absent, link to the existing Settings
 static graph and mark historical dependencies unavailable. Never interpret a missing action row as definitely skipped; show unknown unless recorded
@@ -372,6 +393,16 @@ when a later facts action fails. DAG artifacts use their distinct producer node 
 captured topology and the public action rows. Missing/failed producer evidence
 never authorizes stale content. Same-run parallel branches can expose their independently finished
 outputs. On terminal runs, reread evidence once to pick up final committed artifacts.
+
+### Claim discipline (all four tasks)
+
+Every API/library claim this sequence adds — the installed Board contract, the Bun build and
+packaging behaviour, the Playwright pin — goes into a cited `#### API/library claim sources and
+confidence` block in the document that asserts it, in the repo's 4-column row form. Presence is a
+task deliverable here because the repo rule `api-library-claim-cites-source-and-confidence` judges
+only blocks that already exist: it refuses a row whose confidence falls outside `HIGH|MEDIUM|LOW`,
+or whose level is unearned (a `HIGH` with no URL, `path:line` or repo path; a `MEDIUM`/`LOW` that
+neither cites nor names its gap). A claim is recorded where it is made, not retro-fitted at review.
 
 ### Test ownership and handoff
 
