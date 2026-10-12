@@ -1080,8 +1080,11 @@ describe('kk daily — the DAG nodes’ commands', () => {
 
     it('publish-classify snapshots completeness after the folded patch writes its own artifact (0220 AC5)', async () => {
         // The seeded case above passes under either order; this one does not. The folded
-        // daily-patch-surfdash (real checkout on main, no plugins-path) writes the emdash-resync skip
-        // marker itself, so only a snapshot taken after the fold sees cms-resync=skipped.
+        // daily-patch-surfdash writes the emdash-resync skip marker itself when it runs offline, so
+        // only a snapshot taken after the fold sees cms-resync=skipped. KK_SURFDASH_PATCH_OFFLINE is
+        // the hermetic switch: online, the stage delegates to the surfdash-pub `patch` operation,
+        // which commits into the checkout (2026-10-12 boundary move).
+        process.env.KK_SURFDASH_PATCH_OFFLINE = '1';
         const dir = tempDir('kk-daily-classify-order-');
         const surfdash = join(dir, 'surfdash');
         mkdirSync(surfdash, { recursive: true });
@@ -1127,5 +1130,6 @@ describe('kk daily — the DAG nodes’ commands', () => {
             readFileSync(join(publish, '20261007_17_publish_completeness.json'), 'utf-8'),
         ) as { rows: { channel: string; state: string }[] };
         expect(completeness.rows.find((row) => row.channel === 'cms-resync')?.state).toBe('skipped');
+        delete process.env.KK_SURFDASH_PATCH_OFFLINE;
     });
 });

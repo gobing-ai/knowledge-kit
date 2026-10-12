@@ -80,7 +80,10 @@ export function resolveStagesScript(argv1 = process.argv[1], checkoutRoot = CHEC
  */
 export function runStage(args: string[], execPath = process.execPath, argv1?: string): number {
     const script = resolveStagesScript(argv1);
-    const res = spawnSync(execPath, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // `env: process.env` is explicit on purpose: Bun's `spawnSync` snapshots the environment at
+    // startup, so a variable set on `process.env` later (a test's hermetic switch, a stage's own
+    // override) never reached the child without this (measured 2026-10-12).
+    const res = spawnSync(execPath, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
     if (res.error) {
         throw new Error(`failed to spawn stage runner at ${script}: ${res.error.message}`);
     }
