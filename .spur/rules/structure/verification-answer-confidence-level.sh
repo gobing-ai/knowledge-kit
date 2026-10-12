@@ -19,12 +19,18 @@
 # afterwards, so a hand-written or agent-written answer could assert `Verdict: PASS` with no level at
 # all and no gate noticed — the same class the sibling rules close for every other surface.
 #
-# WHY REVIEW ANSWERS ARE NOT JUDGED. `*review-answer*` files were measured too (6 of 45 carried a
-# level), but the review-stage artifact contract owns priority cells only and never declares a
-# `Confidence:` line, so requiring one here would fail a compliant reviewer artifact. They are
-# counted in a `review-answer` NOTE instead. Making a level mandatory for reviews is a contract
-# change owned by the review stage itself (the sp plugin's reviewer contract), not a rule that can be
-# smuggled in from this repository.
+# WHY REVIEW ANSWERS ARE NOW JUDGED TOO (extended 2026-10-12). They were excluded at first: the
+# review-stage contract owned priority cells only and declared no `Confidence:` line, so requiring one
+# here would have failed a compliant reviewer artifact. That contract changed — the sp plugin's
+# reviewer (`plugins/sp/agents/super-reviewer.md`, spur-new `78cf054e`) now requires exactly one
+# `Confidence: HIGH | MEDIUM | LOW` line with the same earning rule — so this rule's net widened to the
+# review answer. A separate rule was the other option and was rejected: the concern is identical and
+# only the glob differs, which the rule-authoring doctrine classifies as EXTEND, not ADD. Measured
+# before the extension: 48 review answers, 38 asserting a verdict, 6 of those carrying a level.
+#
+# NAMING: the id and this filename keep `verification-answer` because a rule id is never renamed (a
+# rename silently breaks every suppression and report reference). The id is narrower than the rule now
+# is; the `description` and this header are the authority on scope.
 #
 # SCOPE, two deliberate rules of construction.
 #
@@ -33,13 +39,18 @@
 #     there: an answer that asserts a verdict must declare its level and earn it. An absent or empty
 #     answer is out of scope, and so is a file with no verdict line (a log, a partial scrap).
 #
-#  2. A CUTOFF, NOT A 212-ENTRY BACKLOG. The sibling `verdict-confidence-proof` rule grandfathers
-#     pre-rule debt in an explicit list; that list would be unusable here (212 answer files today,
-#     growing with every run). Answers written before the adoption timestamp are therefore reported as
-#     a single count line and not judged — debt that may only shrink as old answers age out of the
-#     run plane. `--no-since` removes the cutoff for the negative control and for an operator who
-#     wants the full pre-rule set. The cutoff is an exact UTC timestamp, not a date, so answers a
-#     concurrent session wrote earlier today are debt rather than findings.
+#  2. A CUTOFF, NOT A BACKLOG. The sibling `verdict-confidence-proof` rule grandfathers pre-rule debt
+#     in an explicit list; that list would be unusable here (~218 answer files today across both
+#     planes, growing with every run). Answers written before the adoption timestamp are therefore
+#     reported as a single count line and not judged — debt that may only shrink as old answers age
+#     out of the run plane. `--no-since` removes the cutoff for the negative control and for an
+#     operator who wants the full pre-rule set. The cutoff is an exact UTC timestamp, not a date, so
+#     answers a concurrent session wrote earlier today are debt rather than findings. It is
+#     `2026-10-12T04:00:00Z` — immediately after the newest pre-adoption artifact (03:34:49Z, measured
+#     across both planes' 218 artifacts), while the review contract itself landed at 07:09Z. Placing it
+#     at the newest legacy artifact rather than at the contract's own instant makes the rule enforce
+#     from the moment it is committed. The first attempt used 07:15Z and silently grandfathered
+#     everything written before it — including the proof artifact, which is how that was caught.
 #
 # Contract, for each in-scope file:
 #   * exactly one `Confidence: HIGH|MEDIUM|LOW` line, and no `Confidence:` line outside the enum;
@@ -53,10 +64,9 @@
 # consumes it) — never to delete the evidence, and never by widening this rule.
 set -u
 
-SINCE="2026-10-12T02:30:00Z"   # adoption instant (UTC); earlier answers are debt, not findings
+SINCE="2026-10-12T04:00:00Z"   # adoption instant (UTC); earlier answers are debt, not findings
 USE_SINCE=1
 FILES=""
-REVIEWS=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -72,28 +82,13 @@ if [ -z "$FILES" ]; then
         for f in "$d"*-verify-answer.txt; do
             [ -f "$f" ] && FILES="$FILES $f"
         done
-        # Counted, never judged — the review contract declares no Confidence line (see header).
+        # Judged since 2026-10-12: the review contract now declares the Confidence line (see header).
         for f in "$d"*review-answer*.txt; do
-            [ -f "$f" ] && REVIEWS="$REVIEWS $f"
+            [ -f "$f" ] && FILES="$FILES $f"
         done
     done
 fi
-N_REVIEWS=0
-# A review answer is classified by name, whether it was discovered or passed explicitly — the
-# exemption must not depend on how the file reached the checker.
-if [ -n "$FILES" ]; then
-    KEEP=""
-    for f in $FILES; do
-        case "$f" in
-            *review-answer*) REVIEWS="$REVIEWS $f" ;;
-            *) KEEP="$KEEP $f" ;;
-        esac
-    done
-    FILES="$KEEP"
-fi
-for f in $REVIEWS; do [ -f "$f" ] && N_REVIEWS=$((N_REVIEWS + 1)); done
-[ "$N_REVIEWS" -gt 0 ] && echo "NOTE: $N_REVIEWS review answer(s) present but not judged — the review contract declares no Confidence line; requiring one is a review-contract change, not this rule's"
-[ -n "$FILES" ] || { echo "NOTE: no verification answer present — nothing to judge (ADR-131: the run plane is disposable)"; exit 0; }
+[ -n "$FILES" ] || { echo "NOTE: no answer artifact present — nothing to judge (ADR-131: the run plane is disposable)"; exit 0; }
 
 # Epoch seconds, BSD then GNU. A file whose mtime cannot be read is judged (fails closed).
 mtime_of() {
@@ -101,9 +96,15 @@ mtime_of() {
 }
 # Instant → epoch: ISO-8601 UTC first, then a bare date; an unparseable cutoff falls back to the
 # compiled default rather than judging history.
+#
+# `-u` is load-bearing. BSD `date` without it parses the UTC instant as LOCAL time, which silently
+# moves the adoption boundary +7h in this timezone and grandfathers answers written after it (measured
+# 2026-10-12: `2026-10-12T04:00:00Z` parsed to 11:00Z, so a fresh answer read as debt and the rule
+# enforced nothing for hours). GNU `date -d` already reads the trailing Z as UTC, so that fallback is
+# correct without the flag. The `post-cutoff-is-judged` case in the suite pins this.
 cutoff_epoch() {
-    date -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s 2>/dev/null || date -d "$1" +%s 2>/dev/null || \
-        date -j -f %Y-%m-%d "$1" +%s 2>/dev/null || echo ""
+    date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s 2>/dev/null || date -d "$1" +%s 2>/dev/null || \
+        date -u -j -f %Y-%m-%d "$1" +%s 2>/dev/null || echo ""
 }
 CUTOFF=""
 [ "$USE_SINCE" = 1 ] && CUTOFF="$(cutoff_epoch "$SINCE")"

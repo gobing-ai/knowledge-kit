@@ -105,6 +105,20 @@ EOF
 case_check empty-file-is-out-of-scope 0 </dev/null
 
 # --- the cutoff ---
+# A PASS artifact written NOW is after the adoption instant, so it must be JUDGED, not grandfathered.
+# This case pins the UTC parse: under the local-parse bug (2026-10-12) the boundary moved +7h in this
+# timezone and a fresh artifact silently read as debt, disabling enforcement for hours.
+recent="$tmp/recent-verdict.json"
+printf '{"verdict":"PASS"}\n' >"$recent"
+if sh "$checker" "$recent" >"$tmp/recent-verdict.out" 2>&1; then
+    fail=$((fail + 1))
+    printf 'FAIL %-34s a post-cutoff artifact must be judged, not grandfathered (is the cutoff parsed as UTC?)\n' post-cutoff-is-judged
+    sed 's/^/     /' "$tmp/recent-verdict.out"
+else
+    pass=$((pass + 1))
+    printf 'ok   %-34s exit=1\n' post-cutoff-is-judged
+fi
+
 old="$tmp/old-verdict.json"
 printf '{"verdict":"PASS"}\n' >"$old"
 touch -t 202001010000 "$old"

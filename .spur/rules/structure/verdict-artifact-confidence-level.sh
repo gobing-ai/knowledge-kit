@@ -120,9 +120,15 @@ mtime_of() {
 }
 # Instant → epoch: ISO-8601 UTC first, then a bare date; an unparseable cutoff falls back to the
 # compiled default rather than judging history.
+#
+# `-u` is load-bearing. BSD `date` without it parses the UTC instant as LOCAL time, which silently
+# moves the adoption boundary +7h in this timezone and grandfathers artifacts written after it
+# (measured 2026-10-12: `2026-10-12T04:00:00Z` parsed to 11:00Z, so a fresh artifact read as debt and
+# the rule enforced nothing for hours). GNU `date -d` already reads the trailing Z as UTC, so that
+# fallback is correct without the flag. The `post-cutoff-is-judged` case in the suite pins this.
 cutoff_epoch() {
-    date -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s 2>/dev/null || date -d "$1" +%s 2>/dev/null ||
-        date -j -f %Y-%m-%d "$1" +%s 2>/dev/null || echo ""
+    date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s 2>/dev/null || date -d "$1" +%s 2>/dev/null ||
+        date -u -j -f %Y-%m-%d "$1" +%s 2>/dev/null || echo ""
 }
 CUTOFF=""
 [ "$USE_SINCE" = 1 ] && CUTOFF="$(cutoff_epoch "$SINCE")"

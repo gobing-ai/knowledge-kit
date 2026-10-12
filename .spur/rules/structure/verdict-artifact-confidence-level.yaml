@@ -37,7 +37,7 @@ $schema: "@gobing-ai/spur/schemas/rule-file.schema.json"
 # `--fail-on info`, or in the falsification suite that `bun test` executes — not in the gate.
 #
 # The checker lives in verdict-artifact-confidence-level.sh so its file/line detail is reachable by
-# hand — the `exit-code` evaluator reports only the exit status. Its 24 falsification cases live in
+# hand — the `exit-code` evaluator reports only the exit status. Its 25 falsification cases live in
 # verdict-artifact-confidence-level.test.sh.
 #
 # SCOPE NOTE: `include` does not scope an `exit-code` rule — the evaluator runs whether or not the

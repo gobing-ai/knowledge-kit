@@ -88,19 +88,44 @@ Confidence: HIGH — apps/cli/tests/board/reader.test.ts:1
 Confidence: LOW — added later.
 EOF
 
-# --- files that are out of scope ---
+# --- the review plane (extended 2026-10-12: its contract now requires the line) ---
 
-# A review answer is counted, never judged (its contract declares no Confidence line).
-review="$tmp/pipeline-0999-review-answer.txt"
-printf 'Verdict: PASS\n## P1 (blocker)\nnone\n' >"$review"
-if sh "$checker" --no-since "$review" >"$tmp/review.out" 2>&1; then
+review_ok="$tmp/pipeline-0999-review-answer.txt"
+cat >"$review_ok" <<'EOF'
+#### Review Report — 0999
+**Verdict:** PASS
+**Confidence:** HIGH — every requirement row is MET and every finding is dispositioned; see `apps/cli/src/board/reader.ts:88`.
+EOF
+if sh "$checker" --no-since "$review_ok" >"$tmp/review-ok.out" 2>&1; then
     pass=$((pass + 1))
-    printf 'ok   %-32s exit=0\n' review-answer-not-judged
+    printf 'ok   %-32s exit=0\n' review-answer-with-earned-level
 else
     fail=$((fail + 1))
-    printf 'FAIL %-32s a review answer must not be judged (its contract declares no level)\n' review-answer-not-judged
-    sed 's/^/     /' "$tmp/review.out"
+    printf 'FAIL %-32s a review answer carrying an earned level must pass\n' review-answer-with-earned-level
+    sed 's/^/     /' "$tmp/review-ok.out"
 fi
+
+review_missing="$tmp/pipeline-0998-review-answer.txt"
+printf '#### Review Report — 0998\n**Verdict:** PASS\n| 1 | P1 (blocker) | security | x | `a.ts:1` | OPEN |\n' >"$review_missing"
+if sh "$checker" --no-since "$review_missing" >"$tmp/review-missing.out" 2>&1; then
+    fail=$((fail + 1))
+    printf 'FAIL %-32s a review answer that asserts a verdict without a level must be refused\n' review-answer-without-level
+else
+    pass=$((pass + 1))
+    printf 'ok   %-32s exit=1\n' review-answer-without-level
+fi
+
+review_unearned="$tmp/pipeline-0997-review-answer.txt"
+printf '**Verdict:** PASS\n**Confidence:** HIGH — everything looks right to me.\n' >"$review_unearned"
+if sh "$checker" --no-since "$review_unearned" >"$tmp/review-unearned.out" 2>&1; then
+    fail=$((fail + 1))
+    printf 'FAIL %-32s an unearned HIGH in a review answer must be refused\n' review-answer-unearned-high
+else
+    pass=$((pass + 1))
+    printf 'ok   %-32s exit=1\n' review-answer-unearned-high
+fi
+
+# --- files that are out of scope ---
 
 case_check no-verdict-line-is-out-of-scope 0 <<'EOF'
 # Review log
@@ -117,6 +142,21 @@ The catalog keeps `minConfidence: 0` untouched.
 EOF
 
 # --- the cutoff ---
+# A file written NOW is after the adoption instant, so it must be JUDGED, not grandfathered. This case
+# pins the UTC parse: under the local-parse bug (2026-10-12) the boundary moved +7h in this timezone and
+# a fresh answer silently read as debt, disabling enforcement for hours.
+recent="$tmp/pre-cutoff-verify-answer.txt"
+cp /dev/null "$recent"
+printf 'Verdict: PASS\n' >"$recent"
+if sh "$checker" "$recent" >"$tmp/recent.out" 2>&1; then
+    fail=$((fail + 1))
+    printf 'FAIL %-32s a post-cutoff answer must be judged, not grandfathered (is the cutoff parsed as UTC?)\n' post-cutoff-is-judged
+    sed 's/^/     /' "$tmp/recent.out"
+else
+    pass=$((pass + 1))
+    printf 'ok   %-32s exit=1\n' post-cutoff-is-judged
+fi
+
 file="$tmp/old-verify-answer.txt"
 cat >"$file" <<'EOF'
 Verdict: PASS
