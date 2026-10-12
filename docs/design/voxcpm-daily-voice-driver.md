@@ -151,3 +151,14 @@ and conclusion inconclusive. A report of failed inference is partial evidence, n
 verification. Persist the dated comparison in `docs/plans/`; generated audio/models remain
 untracked. Calibration/default adoption is a recommendation for later authorization, never an
 automatic source edit in the evidence task.
+#### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| `voxcpm==2.0.3` exposes `from_pretrained(..., load_denoiser=, optimize=, device=)`, supports reference/continuation modes, and has no `seed=` keyword | https://pypi.org/project/voxcpm/2.0.3/ | Published wheel SHA256 `24da58a3…e486b` and AST inspection of `voxcpm/core.py` retained in the 0256 audit artifacts; the 2.0.3 constructor never assigns `voxcpm_model_path`, so the design resolves the snapshot explicitly | HIGH for the source signatures; runtime untested |
+| VoxCPM2 applies an instruction as a parenthesized text prefix | https://github.com/OpenBMB/VoxCPM/blob/19b6bf7590025418821a86dcb817504e0ad7e5df/README.md | Official release source read at that commit; no vendor runtime import — voice quality unverified | HIGH for documented syntax; listening untested |
+| The shared client contract the adapter implements already exists — `VoiceboxClient` plus `processGeneratorIO` and re-exports | plugins/generations/voice-gen/src/voicebox-client.ts:36 | Read the interface at that line and `processGeneratorIO` at plugins/generations/voice-gen/src/index.ts:41; no shared edit is needed | HIGH |
+| The uv project is pinned to Python 3.12 and installed locked, never editable or path-installed | plugins/generations/voxcpm-tts/pyproject.toml:5 | The pin now ships: `requires-python = "==3.12.*"` at `:5` and `dependencies = ["voxcpm==2.0.3"]` at plugins/generations/voxcpm-tts/pyproject.toml:6 | HIGH for the pin itself; lock contents beyond the pin are not audited by this document |
+| Hub model ids resolve through the installed Hub snapshot API before loading, with the returned directory retained as provenance | plugins/generations/voxcpm-tts/python/worker.py:195 | Call site ships at `:195` (`snapshot_download(repo_id=model_id)`); the upstream Hub response signature is not re-fetched here | MEDIUM — upstream Hub API not re-fetched for this document |
+| Render budget semantics: `VOICE_GEN_MAX_RUN_MS` is checked between segments in the shared path, while the adapter's own deadline bounds the whole invocation | plugins/generations/voice-gen/src/index.ts:98 | Read current shared implementation | HIGH |
+| Missing-MP3 repair is available from the committed helper rather than a second transcoder | plugins/kk/scripts/daily-stages.ts:539 | Read current source; helper is committed on the base ref | HIGH |
