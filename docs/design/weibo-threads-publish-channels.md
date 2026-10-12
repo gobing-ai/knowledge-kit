@@ -21,9 +21,11 @@ a script browser flow otherwise**. No new shared harness code, no new dependenci
   <https://developers.facebook.com/documentation/threads/reference/publishing>. A browser path adds
   bot-detection risk for no capability gain → **no browser fallback** (R11).
 - **Weibo → browser.** The open-platform `statuses/share` endpoint requires an approved app and a
-  bound safe-domain URL embedded in every post (<https://v2ex.com/t/379387>), which makes it
-  unusable for arbitrary content. The weibo.com composer and the 头条文章 editor are the only
-  general-purpose paths → script driver, same rails as x-article / xhs / wechatmp.
+  bound safe-domain URL embedded in every post (<https://v2ex.com/t/379387>, historical third-party
+  report). This is the filed rationale for
+  excluding that API, not a newly verified statement about current access. E94 selects the
+  weibo.com composer and 头条文章 editor → script driver, same rails as x-article / xhs / wechatmp;
+  the live availability and draft controls remain a measurement owned by 0246.
 
 ## 2. threads-pub
 
@@ -43,6 +45,8 @@ Content(text | markdown body) ──► resolveOperation('post') ──► Threa
   goes in the form body on POSTs (query param only on the permalink GET) and is redacted from every
   error string, log line and Result. Timeout uses the
   shared `REQUEST_TIMEOUT_MS = 120_000` pattern from x-pub.
+- **Timing:** a single create then publish attempt; no claim of immediate container readiness.
+  A not-ready response fails with the created container id; retries/polling are out of scope.
 - **Permalink:** best-effort `GET /{mediaId}?fields=permalink`; failure leaves `url` unset and
   does not flip `ok` (the publish already happened).
 - **Deferred (R11):** `metadata.images` / any `driver` option → `ok:false` stating threads-pub
@@ -57,8 +61,8 @@ selector ladders + `expectOutcome` observed-signal success.
 
 | Op | Entry URL | Draft path (default) | Live path (`publishStatus:'public'`) | Success signal |
 | --- | --- | --- | --- | --- |
-| `post` | `https://weibo.com` home composer | **Refused before the browser opens** — the web composer has no draft | fill composer → 发送 | new feed card / toast observed; status id from the card link |
-| `article` | 头条文章 editor (`https://card.weibo.com/article/v3/editor` — provisional, pinned by 0246) | title + `pasteHtml(markdownToHtml(body))` + optional cover via `uploadFile` → **保存草稿** | same, then 发布 | 保存成功 toast (draft) / article URL (live) |
+| `post` | `https://weibo.com` home composer | **Refused before the browser opens** — the web composer has no draft | fill composer → 发送 | new status link matching the submitted text, absent before send; status id from the link |
+| `article` | 头条文章 editor (`https://card.weibo.com/article/v3/editor` — provisional, pinned by 0246) | title + `pasteHtml(markdownToHtml(body))` + optional cover via `uploadFile` → **保存草稿** | same, then 发布 | fresh 保存成功 toast or changed draft URL after content readback (draft) / published article URL after leaving editor (live) |
 
 - **Draft-by-default (E91-D5, R4/R5):** only `metadata.publishStatus === 'public'` clicks a live
   button. A `post` run without it returns `ok:false` *"weibo post has no draft; set
@@ -66,11 +70,13 @@ selector ladders + `expectOutcome` observed-signal success.
 - **Session preflight (R6):** `checkChannelSession` headless probe; unauthenticated (login-URL
   redirect / missing composer) → `ok:false` with the login instruction
   `bun plugins/publishings/weibo-pub/src/profile-check.ts login`; no headed window opens.
+  Publish never forwards `checkHeadedOnly` to `headedOnly`; the former is an operator-CLI
+  setting. If forced headless verification fails, publishing remains refused.
 - **profile-check (R7):** `src/profile-check.ts login|check` via `runProfileCli`, profile resolved
   by `resolveChannelProfileDir('weibo', …)`; exit 0 authenticated / 1 not authenticated /
   2 usage error. `plugin.json` declares `"check": "./src/profile-check.ts"` (ADR-032).
 - **Operation/driver gate (R8):** `resolveOperation` accepts `post|article`; the driver is a
-  constructor / `getPublishTransport` seam (as x-pub, xhs-pub) accepting `script` only (`agent` fails fast). Unknown values are refused by name.
+  constructor / `getPublishTransport` seam plus `options.driver ?? 'script'`, accepting `script` only (`agent` fails fast). Unknown values are refused by name before any injected/fake/real transport resolves.
 - **Selectors:** `WEIBO_POST_SELECTORS` / `WEIBO_ARTICLE_SELECTORS` exported constants with
   ordered fallbacks; the live operator dogfood (task 4) pins them and records the discovery note at
   `docs/design/weibo-ui-discovery.md` (same pattern as `x-article-ui-discovery.md`).
@@ -99,3 +105,29 @@ share API; new harness helpers or dependencies; wiring into daily / itc workflow
 | Weibo DOM churn breaks selectors | Selector ladders + live dogfood task; failures surface as `ok:false` naming the step, never false success (E91-D6) |
 | Weibo risk-control (captcha / 安全验证) mid-flow | Detected as an unobserved success signal → `ok:false`; operator re-runs `login` headed |
 | Threads token expiry (60-day long-lived) | Graph 190 error surfaced verbatim (redacted); refresh is out of scope |
+
+## 7. Ready audit — 2026-10-11
+
+- Feature R1 body now agrees with the closed 0243 design: reject text over 500 Unicode code
+  points without truncation, and return the permalink only when its best-effort lookup succeeds.
+  Counting code points is this plugin's explicit policy, not a verified claim about Meta's
+  internal Unicode counting. Every failed request names its step; HTTP status exists only after
+  a response. API echoes and thrown errors must redact raw and encoded token values.
+- First-party cross-check: [Meta's official Threads collection](https://www.postman.com/meta/threads/documentation/dht3nzz/threads-api)
+  documents the separate TEXT-container and publish calls;
+  [container status reference](https://www.postman.com/meta/threads/request/m47wqlq/check-container-s-publishing-status)
+  lists processing states. Developer-site links returned 429/unavailable during this audit. No
+  live API request was made, and no readiness timing guarantee is inferred.
+- Fresh browser evidence excludes old feed cards, old toasts and the initial editor URL. Read
+  title/body back before save/publish; a requested cover requires observed attachment. Seed
+  selectors remain provisional and fail closed until 0246 measures them.
+- Fake transports bypass real credentials/session/browser only; deterministic unsupported
+  operation/driver/media and Weibo draft/live guards still apply. Shared fake fan-out fixtures
+  use `metadata.publishStatus: 'public'` and never perform a public write.
+- Execution order: 0243, 0244, 0245, 0246. 0246 now depends on 0245 for serialized status-row
+  ownership. 0245 leaves implementation/live-pending status; only completed live evidence and
+  operator cleanup permit shipped status.
+- 0246 is an attended measurement task: unpublished article draft is permitted; public post
+  and public article each require explicit operator approval at execution. Missing draft control,
+  failed headless preflight or unavailable approval stops that leg and retains partial evidence.
+  Do not bypass preflight or silently change feature scope to get a passing dogfood result.

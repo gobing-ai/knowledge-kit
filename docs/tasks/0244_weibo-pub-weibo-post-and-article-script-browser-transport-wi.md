@@ -4,7 +4,7 @@ name: weibo-pub — Weibo post and 头条文章 article script browser transport
 status: todo
 template: feature-impl
 created_at: 2026-10-09T23:19:30.101Z
-updated_at: "2026-10-09T23:48:32.073Z"
+updated_at: "2026-10-12T04:29:59.551Z"
 feature_id: E94
 priority: P2
 tags:
@@ -33,16 +33,22 @@ Implements: R4 — weibo-pub saves a post or article draft by default from an ob
 - `cover` handling → x-pub's `resolveCover` is module-private (`plugins/publishings/x-pub/src/index.ts:236`) → copied into weibo-pub (peer pattern), not extracted.
 - Concurrency: no `wip` tasks; worktree `knowledge-kit-runall-0237-0238-53a2` touches only `plugins/kk/scripts/daily-stages.ts` + `plugins/kk/workflows/kk-daily-ai-voice2.yaml` → no overlap.
 
+**Refine corrections (2026-10-11)**
+- The x-pub peer already pins `checkHeadedOnly: true`, but shared `checkChannelSession` only obeys `opts.headedOnly`; `runProfileCli` forwards the config → keep the operator setting separate from a publish preflight, which always uses `headedFallback: false` and never `headedOnly: true`.
+- An existing feed card or success toast could satisfy the proposed outcome probe → snapshot old links/toast visibility before the action and accept only a fresh signal afterward.
+- The proposed draft URL and controls remain unmeasured → explicitly provisional selectors, fail closed; 0246 owns live discovery and no-draft contingency.
+- Historical worktree claim → Current-tree audit (2026-10-11): no WIP tasks. Other worktree `knowledge-kit-runall-g8-4173` owns G8 board/workflow work and currently edits root `package.json`, `bun.lock`, and `apps/cli/package.json`; coordinate lockfile integration before implementation, preserve its changes. The main tree has pre-existing edits in daily, store-selections, voice2-dag and wechatmp tests; preserve them.
+
 ### Requirements
 
 - [ ] R1. Scaffold `plugins/publishings/weibo-pub` (`plugin.json` with `"check": "./src/profile-check.ts"`, `package.json` `@gobing-ai/weibo-pub` with x-pub's dependency set, `tsconfig.json`, `src/index.ts`, `src/profile-check.ts`, `tests/weibo-pub.test.ts`).
 - [ ] R2. `article`: opens `WEIBO_ARTICLE_URL`, fills title (`content.title ?? 'Untitled'`), pastes `markdownToHtml(content.body)` via `pasteHtml`, optional cover via `uploadFile` (`options.coverPath ?? metadata.coverImage`, absolute existing `.png|.jpg|.jpeg|.webp`, refused pre-browser otherwise), then clicks `saveDraft` (default) or `publish` (`publishStatus: 'public'`).
 - [ ] R3. `post`: only with `metadata.publishStatus === 'public'` — opens `WEIBO_HOME_URL`, fills the composer with `content.body.trim() || content.title`, clicks `send`. Without `public` it returns `ok: false` ("weibo post has no draft; set publishStatus: public") before any browser opens. A cover on `post` is refused (text-only).
-- [ ] R4. Success only from an `expectOutcome` signal (article draft: saved toast or draft-URL change; article live: published article URL; post: new feed card link carrying the status id); no signal within the step deadline → `ok: false` naming the step and deadline.
+- [ ] R4. Success only from an `expectOutcome` signal (article draft: saved toast or draft-URL change; article live: published article URL; post: new feed card link carrying the status id); no fresh signal within the step deadline → `ok: false` naming the step and deadline. A pre-existing feed card, editor URL or already-visible toast is never success. Article title and body must be read back before save/publish; a provided cover needs a fresh observed attachment signal.
 - [ ] R5. A `publishStatus` other than absent/`draft`/`public` → `ok: false` pre-browser.
 - [ ] R6. Headless `checkChannelSession(WEIBO_CONFIG, {headedFallback: false})` preflight; not verified → `ok: false` naming `bun plugins/publishings/weibo-pub/src/profile-check.ts login`; no headed window opens.
 - [ ] R7. `profile-check.ts` = `runProfileCli(WEIBO_CONFIG, argv)`: `login|check`, precedence `--profile` > `WEIBO_PROFILE_DIR` > `KK_BROWSER_PROFILE_DIR` > default, exit 0/1/2.
-- [ ] R8. `resolveOperation` accepts `post|article`; unknown → `ok: false` naming the value and set, pre-transport. A driver other than `script` → `ok: false` `unsupported driver '<d>' for weibo` pre-browser.
+- [ ] R8. `resolveOperation` accepts `post|article`; unknown → `ok: false` naming the value and set, pre-transport. Driver is resolved from `options.driver ?? 'script'`; a driver other than `script` (including a wrong type) → `ok: false` naming the value and supported set before transport resolution. Retain the constructor/getPublishTransport seam for tests and callers.
 - [ ] R9. `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` → `FakeBrowserTransport('script')`.
 - [ ] R10. `docs/04_DESIGN.md` weibo-pub section, profile-env row and verdict rows in the same commit.
 
@@ -70,15 +76,28 @@ Test layer: `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` with a copie
 - **Article editor URL + 保存草稿** — deferred to 0246 (owner): provisional constants until measured live.
 - **Post text cap** — closed: not enforced client-side.
 
+#### Q&A entry — 2026-10-12T04:28:47.716Z
+
+- **Driver input** — closed: `options.driver` is supported only as `script`; expose the same refusal through IO and constructor seams.
+- **Operator versus publish probe** — closed: `checkHeadedOnly` can affect the operator CLI; never forward it to publish preflight.
+- **Freshness** — closed: old feed cards/toasts are negative tests; live selectors remain owned by 0246.
+
 ### Design
 
 - **Approach:** copy the x-article skeleton — `WEIBO_CONFIG: ChannelBrowserConfig`, selector ladders resolved with `resolveSelector`, `withProfilePage` session, `expectOutcome` signals, one transport class branching on operation. Reason: the harness already owns every browser primitive; the plugin is selectors + flow.
 - **Where:** `plugins/publishings/weibo-pub/{plugin.json,package.json,tsconfig.json,src/index.ts,src/profile-check.ts,tests/weibo-pub.test.ts}`; `docs/04_DESIGN.md`.
 - **Frozen names:** `TARGET = 'weibo'` (also the profile channel); `WEIBO_HOME_URL = 'https://weibo.com'`; `WEIBO_ARTICLE_URL = 'https://card.weibo.com/article/v3/editor'` (provisional); `LOGIN_URL_RE` (passport.weibo.com / `/login`); `export const WEIBO_OPERATIONS = ['post', 'article'] as const`; `export const WEIBO_POST_SELECTORS = {composer, send, feedCard}`; `export const WEIBO_ARTICLE_SELECTORS = {title, body, fileInput, saveDraft, publish}`; `export const isWeiboAuthenticated: IsAuthenticatedPredicate`; `export const WEIBO_CONFIG`; `export class WeiboBrowserTransport implements PublishTransport` (`kind = 'browser'`, ctor `(operation, driver = 'script', deps = {launcher?, stepTimeoutMs?})`); `export function getPublishTransport(operation = 'post', driver = 'script')`; `processPublishIO`, `main` as x-pub.
-- **Order of refusals (all pre-browser):** driver → operation → publishStatus value → post-without-public → cover validity → session preflight. Then the headed flow.
+- **Order of refusals (all pre-browser):** operation → driver → publishStatus value → post-without-public → non-empty post text → cover validity → session preflight. This ordering also applies before injected/fake transport resolution; the real transport repeats relevant guards for direct callers. Then the headed flow.
 - **Anti-patterns:** never click `publish`/`send` without `publishStatus: 'public'`; never return ok from a timeout or a click alone; no headed window on a refused preflight; no new harness helper; no `agent` driver path; no post text cap (Weibo's composer enforces its own; an over-limit run shows up as no signal).
-- **checkHeadedOnly:** `false` by default; 0246 measures whether Weibo login-walls headless and flips it if so.
+- `checkHeadedOnly`: `false` by default; 0246 may change it for the operator CLI only. Publish always calls `checkChannelSession(WEIBO_CONFIG, {profileDir, launcher, headedFallback: false, timeoutMs: stepTimeoutMs})` with `headedOnly` absent/false. A headed operator check never authorizes an automatic headed preflight fallback.
 - **Handoff:** 0246 pins `WEIBO_ARTICLE_URL` and every selector against the live DOM; 0245 enumerates `weibo-pub` and relies on `plugin.json.check`.
+
+- **Frozen driver input:** `options.driver ?? 'script'`, with runtime validation before `getPublishTransport(operation, driver)`; reject `agent` and unknown values. This makes the feature's Content-carried driver refusal observable through the real CLI as well as the constructor seam. Operation uses `options.operation ?? metadata.operation ?? 'post'` exactly as x-pub.
+- **IO/fake contract:** follow `processPublishIO`/`main` in x-pub (schema-valid failure output then nonzero exit). Fake mode skips profile/session and real browser, but preserves deterministic input, operation, driver, publishStatus, empty-post-text and cover refusals. Successful fake fixtures use article/no publishStatus or post/public. Never leak browser exception messages verbatim: emit only bounded site-owned step/deadline/recovery text; no DOM, cookie, token or stack in stderr/Result.
+- **Bounded flow:** `stepTimeoutMs` defaults to 30_000; pass it to every selector wait, fill, click, navigation, upload and outcome probe. Default flow is headed after the single headless preflight, with `options.headless === true` opting in to a headless flow. Use `options.profileDir` as the publish override and shared profile precedence.
+- **Fresh outcomes:** snapshot existing feed status hrefs and toast visibility before send/save. For posts accept only a newly appearing status link with matching submitted text and an extracted status id. For article draft accept a newly appearing saved toast after readback, or a changed draft URL carrying its id; for article live require departure from editor onto a published article URL. Capture evidence in Result (`operation`, `driver`, `publishStatus`, id/url when observed); no click-only success. Candidate DOM labels/URL shapes are provisional until 0246: use fail-closed ladders, never invent measured selectors.
+- **Dependencies/build:** use x-pub's existing catalog dependency set, record the new workspace in `bun.lock`, and rely on `scripts/bundle-plugins.ts` to bundle both entry and declared check (0249 is already shipped). Do not copy or modify the bundler.
+- Current-tree audit (2026-10-11): no WIP tasks. Other worktree `knowledge-kit-runall-g8-4173` owns G8 board/workflow work and currently edits root `package.json`, `bun.lock`, and `apps/cli/package.json`; coordinate lockfile integration before implementation, preserve its changes. The main tree has pre-existing edits in daily, store-selections, voice2-dag and wechatmp tests; preserve them.
 
 ### Plan
 
@@ -88,7 +107,9 @@ Test layer: `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` with a copie
 - [ ] 3. Profile tests: precedence + exit codes through `runProfileCli` → R7; fake-env test → R9.
 - [ ] 4. Implement `src/index.ts`, `src/profile-check.ts` → R1–R9.
 - [ ] 5. `docs/04_DESIGN.md` entries → R10.
-- [ ] 6. `bun run lint` and `bun run test` green.
+- [ ] 6. `bun run lint`, `bun run test`, `bun run build` and applicable Spur rule gates pass; inspect intentional changes, including `bun.lock`.
+
+- [ ] 7. In recording fake-page tests assert stale toast/feed/URL refusal, attachment/readback failure, explicit action deadlines, real driver option refusal before injected/fake transport, empty post text, operation precedence, safe failure output/stderr, and headless-only preflight even with `checkHeadedOnly: true` → R2–R9. Test `runProfileCli(WEIBO_CONFIG, argv, {launcher, stdout})` for 0/1/2 and profile tiers; the thin `profile-check.ts` wrapper mirrors x-pub, with a subprocess usage-error smoke check requiring no browser. Restore env afterward; do not add an exported wrapper API just for testing.
 
 ### Solution
 

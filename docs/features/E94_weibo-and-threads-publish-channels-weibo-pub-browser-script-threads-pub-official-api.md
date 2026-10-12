@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-10-09T23:15:23.509Z"
-updated_at: "2026-10-09T23:16:20.554Z"
+updated_at: "2026-10-12T04:28:42.017Z"
 ---
 
 # E94: Weibo and Threads publish channels (weibo-pub browser script, threads-pub official API)
@@ -44,8 +44,8 @@ Feature: Weibo and Threads publish channels (weibo-pub browser script, threads-p
     Given THREADS_ACCESS_TOKEN and THREADS_USER_ID are set and a Content with a body or title
     When kk executor run threads-pub runs with operation post or no operation
     Then the plugin creates a TEXT media container and publishes it with the returned creation_id
-    And the Result is ok true with target threads, the published media id and its permalink
-    And the post text is truncated to the 500-character Threads limit
+    And the Result is ok true with target threads and the published media id, with a permalink when the best-effort lookup succeeds
+    And text longer than 500 Unicode code points is refused before any network call without truncation
 
   @core
   Scenario: R2 — threads-pub refuses without credentials or text and never opens a browser
@@ -60,7 +60,7 @@ Feature: Weibo and Threads publish channels (weibo-pub browser script, threads-p
     # covers: I2, I4
     Given the container or publish request returns a non-2xx status, times out, or lacks an id
     When threads-pub runs
-    Then the Result is ok false naming the failing step and HTTP status
+    Then the Result is ok false naming the failing step and HTTP status when a response exists, or stating that no HTTP response was received
     And the access token never appears in the Result, stderr or the --out file
 
   @core

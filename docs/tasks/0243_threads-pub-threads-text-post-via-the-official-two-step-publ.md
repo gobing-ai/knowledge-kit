@@ -4,7 +4,7 @@ name: threads-pub — Threads text post via the official two-step publishing API
 status: todo
 template: feature-impl
 created_at: 2026-10-09T23:19:30.092Z
-updated_at: "2026-10-09T23:48:28.599Z"
+updated_at: "2026-10-12T04:28:45.241Z"
 feature_id: E94
 priority: P2
 tags:
@@ -31,12 +31,18 @@ Implements: R1 — threads-pub posts text through the official Threads publishin
 - New workspace package → picked up by the `plugins/publishings/*` glob (`package.json:12`) but `bun.lock` must be regenerated → Plan step 0.
 - Concurrency: no `wip` tasks; worktree `knowledge-kit-runall-0237-0238-53a2` touches only `plugins/kk/scripts/daily-stages.ts` + `plugins/kk/workflows/kk-daily-ai-voice2.yaml` → no overlap.
 
+**Refine corrections (2026-10-11)**
+- Feature R1 promised truncation and a mandatory permalink, while the task and satellite reject overlong text and use best-effort lookup → preserve the already closed no-truncation design and align feature R1 (scenario title unchanged).
+- “TEXT containers publish immediately” → Meta’s official collection documents separate create/publish and container status; it does not establish that timing guarantee → remove the guarantee, keep a single attempt and explicit failure without automatic retry.
+- All failures promised HTTP status → a timeout has no response → include status only when a response exists; name the failing step in every case.
+- Old peer file line anchors and worktree inventory are historical → current peer symbols and Current-tree audit (2026-10-11): no WIP tasks. Other worktree `knowledge-kit-runall-g8-4173` owns G8 board/workflow work and currently edits root `package.json`, `bun.lock`, and `apps/cli/package.json`; coordinate lockfile integration before implementation, preserve its changes. The main tree has pre-existing edits in daily, store-selections, voice2-dag and wechatmp tests; preserve them.
+
 ### Requirements
 
 - [ ] R1. Scaffold `plugins/publishings/threads-pub` (`plugin.json` `kind: publish` with no `check` field, `package.json` `@gobing-ai/threads-pub`, `tsconfig.json`, `src/index.ts`, `tests/threads-pub.test.ts`) copying x-pub's shape.
 - [ ] R2. `ThreadsPostApiTransport.publish` POSTs `{THREADS_API_BASE}/{THREADS_USER_ID}/threads` (`media_type=TEXT`, `text`) then `{THREADS_API_BASE}/{THREADS_USER_ID}/threads_publish` (`creation_id`) and returns `Result {ok: true, target: 'threads', id: <media id>, url?: <permalink>, metadata: {operation: 'post'}}`; the permalink GET is best-effort and its failure never flips `ok`.
 - [ ] R3. Before any network call, returns `ok: false` when `THREADS_ACCESS_TOKEN` or `THREADS_USER_ID` is missing/blank (naming the env), when text (`body.trim() || title.trim()`) is empty, or when text exceeds 500 characters (counted as code points; no truncation).
-- [ ] R4. Non-2xx, malformed JSON (missing `id`), and timeout (`REQUEST_TIMEOUT_MS = 120_000`) each map to `ok: false` naming the step (`threads` container vs `threads_publish`), HTTP status and Graph `error.message`; a publish-step failure names the created container id. The token value never appears in any error string, log line or Result.
+- [ ] R4. Non-2xx, malformed JSON or missing/empty/non-numeric string `id`, and timeout (`REQUEST_TIMEOUT_MS = 120_000`) each map to `ok: false` naming the step (`threads` container vs `threads_publish`), HTTP status when a response exists (otherwise explicitly no HTTP response) and a bounded, redacted Graph `error.message` when present; a publish-step failure names the created container id. The token value (including URL-encoded forms) never appears in any error string, stderr, Result or output file, including malformed-input failures and API echoes. Do not return raw response bodies, request URLs, headers or stack traces.
 - [ ] R5. `resolveOperation` accepts only `post` (from `options.operation ?? metadata.operation ?? 'post'`); an unknown operation, any `options.driver`, `options.images` or `metadata.images` returns `ok: false` naming the value and stating threads-pub posts text only — before any transport is built.
 - [ ] R6. `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` makes `getPublishTransport()` return `FakeFileCliTransport`.
 - [ ] R7. `docs/04_DESIGN.md` gains the `@gobing-ai/threads-pub` package section, the `REQUEST_TIMEOUT_MS` row entry and a transport-verdict row, in the same commit.
@@ -65,14 +71,24 @@ Test layer: `plugins/publishings/threads-pub/tests/threads-pub.test.ts` stubs `g
 - **Container status poll** — deferred: added only if a live run reports a not-ready container (owner: whoever runs the first live post).
 - **Driver option** — closed: threads-pub has no browser, so any `options.driver` is refused rather than ignored.
 
+#### Q&A entry — 2026-10-12T04:28:43.701Z
+
+- **Feature alignment** — closed: retain the 2026-10-09 no-truncation decision and best-effort permalink; E94 R1 body is corrected without renaming its identity.
+- **Timing** — closed: no readiness guarantee or retry in this delivery; a not-ready publish fails with container context.
+
 ### Design
 
 - **Approach:** one `src/index.ts` mirroring x-pub's post path — `resolveOperation` → `getPublishTransport` → `processPublishIO(--in, --out)` → `main()`; `fetch` with `AbortSignal.timeout(REQUEST_TIMEOUT_MS)`. Reason: identical rails to x-pub keep review, registry and fan-out uniform.
-- **Where:** `plugins/publishings/threads-pub/{plugin.json,package.json,tsconfig.json,src/index.ts,tests/threads-pub.test.ts}`; `docs/04_DESIGN.md`. No other package changes.
+- **Where:** `plugins/publishings/threads-pub/{plugin.json,package.json,tsconfig.json,src/index.ts,tests/threads-pub.test.ts}`; `docs/04_DESIGN.md`. Also regenerate the existing `bun.lock` workspace entry; no new shared package or dependency. Use only the API-path dependencies from x-pub; omit browser-only dependencies.
 - **Frozen names:** `TARGET = 'threads'`; `THREADS_API_BASE = 'https://graph.threads.net/v1.0'`; `TOKEN_ENVS = ['THREADS_ACCESS_TOKEN', 'THREADS_USER_ID']`; `MAX_TEXT_CHARS = 500`; `REQUEST_TIMEOUT_MS = 120_000`; `export const THREADS_OPERATIONS = ['post'] as const`; `export function resolveOperation(options?, content?)`; `export class ThreadsPostApiTransport implements PublishTransport` (`kind = 'file-cli'`); `export function getPublishTransport(): PublishTransport`; `export async function processPublishIO(inputPath, outputPath, transport?)`; `export async function main(): Promise<number>`.
 - **Algorithm:** (1) env + text + option refusals; (2) POST container, form body `media_type=TEXT&text=…&access_token=…` → `{id}`; (3) POST publish, form body `creation_id=…&access_token=…` → `{id}`; (4) GET `/{id}?fields=permalink&access_token=…`, swallow failure. Every error string passes through `redact(msg)` that replaces the token value with `***`.
-- **Anti-patterns:** no truncation (x-pub's `slice(0, 280)` is not copied); no browser import; no retry/poll loop on the container (TEXT containers publish immediately — add a status poll only if a live run shows `not ready`); no shared Graph client package (one consumer).
+- **Anti-patterns:** no truncation (x-pub's `slice(0, 280)` is not copied); no browser import; no retry/poll loop on the container in this scope; a not-ready response is an explicit failed publish naming the container id, never evidence that no later manual retry could duplicate a post; no shared Graph client package (one consumer).
 - **Handoff:** 0245 adds `threads-pub` to channel enumerations and a fan-out test; it relies on `getPublishTransport()` honouring the fake env and on `processPublishIO`'s `--in/--out` contract.
+
+- **Validation and fake mode:** `processPublishIO` validates input shape and operation/driver/images before resolving even an injected or fake transport. Missing options defaults to post; only `undefined`/`null` operation follows the existing nullish precedence. A present driver or images option is unsupported (including wrong types); refuse with a bounded, redacted value. Real transport independently validates credentials, trimmed text and the 500-code-point bound before its first fetch. Fake mode needs no real credentials, network or browser; it does not bypass operation/driver/media refusals.
+- **Failure details:** retain step and created container id on second-step HTTP, JSON and thrown timeout errors. Require decimal-string ids before interpolation into URLs or Results. Best-effort permalink accepts only an HTTPS Threads permalink without token material; omit invalid/missing/failed lookup rather than returning arbitrary Graph strings. Redact raw and percent-encoded token values at the failure/output boundary, including input-validation errors.
+- **Timeout/test seam:** every fetch gets `AbortSignal.timeout(REQUEST_TIMEOUT_MS)`; tests simulate thrown `TimeoutError` and inspect the signal rather than sleeping 120 seconds. Restore `globalThis.fetch` and modified env after each case. No promise of immediate container readiness or guaranteed permalink.
+- Current-tree audit (2026-10-11): no WIP tasks. Other worktree `knowledge-kit-runall-g8-4173` owns G8 board/workflow work and currently edits root `package.json`, `bun.lock`, and `apps/cli/package.json`; coordinate lockfile integration before implementation, preserve its changes. The main tree has pre-existing edits in daily, store-selections, voice2-dag and wechatmp tests; preserve them.
 
 ### Plan
 
@@ -82,7 +98,9 @@ Test layer: `plugins/publishings/threads-pub/tests/threads-pub.test.ts` stubs `g
 - [ ] 3. Fake-env test → R6.
 - [ ] 4. Implement `src/index.ts` until green → R1–R6.
 - [ ] 5. `docs/04_DESIGN.md` entries → R7.
-- [ ] 6. `bun run lint` and `bun run test` green.
+- [ ] 6. `bun run lint`, `bun run test`, `bun run build` and applicable Spur rule gates pass; inspect only intentional Git changes.
+
+- [ ] 7. Verify malformed input and Graph error echoes (raw/encoded token) through `processPublishIO` and the CLI stderr/output file; test empty/non-string ids, missing permalink, 500/501 Unicode code points, operation option precedence, and fake-mode operation/media/driver refusal → R2–R6.
 
 ### Solution
 
@@ -101,5 +119,8 @@ Test layer: `plugins/publishings/threads-pub/tests/threads-pub.test.ts` stubs `g
 - Feature E94; design `docs/design/weibo-threads-publish-channels.md` §2
 - Template: `plugins/publishings/x-pub/src/index.ts:90-162`
 - Meta Threads posting: https://developers.facebook.com/docs/threads/posts/ · publishing reference: https://developers.facebook.com/documentation/threads/reference/publishing
+
+- Current first-party API evidence (2026-10-11): https://www.postman.com/meta/threads/documentation/dht3nzz/threads-api and https://www.postman.com/meta/threads/request/m47wqlq/check-container-s-publishing-status . Meta developer links above returned 429/unavailable during this audit.
+- Current peer implementation: `XPostApiTransport`, `resolveOperation`, `getPublishTransport`, `processPublishIO` in `plugins/publishings/x-pub/src/index.ts`; `ContentSchema`/`ResultSchema` in `packages/kk-core/src/schemas.ts`.
 
 ### History
