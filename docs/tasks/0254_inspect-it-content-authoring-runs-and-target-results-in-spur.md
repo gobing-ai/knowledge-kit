@@ -4,7 +4,7 @@ name: Inspect IT Content authoring runs and target results in Spur Board
 status: todo
 template: feature-impl
 created_at: 2026-10-11T23:22:42.779Z
-updated_at: "2026-10-11T23:52:49.193Z"
+updated_at: "2026-10-12T04:28:52.775Z"
 feature_id: G8
 priority: P2
 tags:
@@ -35,6 +35,22 @@ Rubric: E6 D1 L3 C1 R1 = 12; retain this cohesive deliverable with steps in Plan
 - External roots described broadly → common reader accepts only an explicitly captured canonical child workspace → reuse 0252 containment and producer proof without an ITC bypass.
 - Acceptance checkbox titles lacked requirement/test binding → freeze executable feature-title scenarios and real prep/reader test paths.
 - Implicit foundation contract → frontmatter depends on 0252 → consume its types/capture/reader intact and hand only ITC entry/projection fixtures to 0255.
+
+**Consumed from 0252 (2026-10-12).** The reader/capture contract is shipped and frozen — consume it,
+do not clone it. Three constraints the 0252 verify pass surfaced for this task:
+
+1. **External child workspaces.** `captureRun`'s guard requires a `.works`/`works` segment and
+   refuses roots (`apps/cli/src/board/capture.ts:309`); an ITC caller-supplied workspace outside any
+   works root is therefore refused today. §9 allows it "only when a trusted capture record bound that
+   exact directory" — implement that binding explicitly rather than relaxing the structural guard,
+   and keep the XOR/force validation ahead of the capture call.
+2. **`readCaptureRecord` validates the record SHAPE** (string ids, absolute `workspacePath`, a
+   `settings` object) and returns null otherwise, so a malformed record answers 422 rather than 500 —
+   any new record field must be added to that validation.
+3. **Progress rows carry `timing` + `operatorWait`** and the module reuses `dedupeDiagnostics`; the
+   judge/revision evidence you project should state missing counters as `unavailable` rather than
+   zero, per `overallAvailability` (`apps/cli/src/board/collect.ts:220`) — available only when EVERY
+   artifact is available.
 
 ### Requirements
 

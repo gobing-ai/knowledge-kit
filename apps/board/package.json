@@ -1,0 +1,25 @@
+{
+    "name": "@gobing-ai/kk-board",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Native React Board modules for knowledge-kit workflows",
+    "files": [
+        "dist/",
+        "src/contracts.ts"
+    ],
+    "exports": {
+        "./contracts": {
+            "types": "./src/contracts.ts"
+        }
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "react": "19.2.1",
+        "react-dom": "19.2.1"
+    }
+}

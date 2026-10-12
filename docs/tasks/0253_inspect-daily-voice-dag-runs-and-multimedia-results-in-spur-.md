@@ -4,7 +4,7 @@ name: Inspect daily voice DAG runs and multimedia results in Spur Board
 status: todo
 template: feature-impl
 created_at: 2026-10-11T23:22:42.778Z
-updated_at: "2026-10-11T23:53:42.790Z"
+updated_at: "2026-10-12T04:28:52.481Z"
 feature_id: G8
 priority: P2
 tags:
@@ -37,6 +37,26 @@ Rubric: E8 D1 L3 C1 R1 = 14; retain this cohesive deliverable with steps in Plan
 - Section audio treated as existing → ADR-034 is accepted design, not required shipped output → show recorded final audio now and sections only if actually described by outputs.
 - Acceptance checkbox titles lacked requirement/test binding → executable feature-title scenarios are available → bind every local R item and name its observing test file.
 - Dependency referenced a volatile sidecar → frontmatter already depends on 0252 → freeze the exact shared contracts consumed and daily projection handed to 0255.
+
+**Consumed from 0252 (2026-10-12).** The reader/capture contract is shipped and frozen — consume it,
+do not clone it. Four constraints the 0252 verify pass surfaced for this task:
+
+1. **Media bytes are fetched AFTER the owner re-check.** `artifactContent`
+   (`apps/cli/src/board/reader.ts:603`) re-reads the file for `image|audio` kinds after
+   `artifactFor` has compared the pre/post marker. Harmless today (`COLLECT_ARTIFACTS` is json/text
+   only) but a media descriptor you register would inherit it: read the bytes inside `observe`
+   (before the check) or re-verify ownership after the fetch, and extend the P2 fixtures.
+2. **`captureRun`'s works root is structural, not project-bound.** The guard accepts any path with a
+   `.works`/`works` segment and refuses `/`, home, the project root, its ancestors and a works root
+   itself (`apps/cli/src/board/capture.ts:309`). The daily default workspace lives under the
+   configured works root (`~/.config/kk/works/...`, `apps/cli/src/commands/daily.ts:113`), which is
+   outside the project — pass that root explicitly rather than widening the guard.
+3. **Progress rows now carry `timing` (durationMs / startedAt→completedAt / `timing unknown`) and
+   `operatorWait`, derived only from recorded evidence.** Reuse them for the DAG view; do not
+   re-derive a percentage.
+4. **The progress route 404s on an orphan-row diagnostic** instead of returning diagnostics, so a
+   DAG run can lose the whole projection — fall back to `/api/runs/<id>` action rows and mark the
+   dependency edges unavailable rather than inventing them.
 
 ### Requirements
 
