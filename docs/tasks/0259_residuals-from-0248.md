@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Residuals from 0248
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-10-12T02:23:31.909Z
-updated_at: "2026-10-12T02:23:32.525Z"
+updated_at: "2026-10-12T04:11:34.867Z"
 
 ---
 
@@ -15,6 +15,8 @@ updated_at: "2026-10-12T02:23:32.525Z"
 Source task: 0248 (feature B6) — deferred residuals filed by residual-scan settle (unlinked: a deferral must not hold the completing feature open).
 
 - review-finding:dabfad89 — docs/03_ARCHITECTURE.md:301: `docs/03_ARCHITECTURE.md:301` still reads "Retry repairs preserve the existing aggregate fields and sequential dispatch" inside the dated `Shipped (2026-09-10, task 0110)` subsection — the same class Finding 2 and Finding 4 fixed, missed by attempt 2's sweep pattern. Stale as a present-tense claim (today the retry path uses the concurrent pool at `apps/cli/src/fanout.ts:150-183`), held to minor by its dated framing; one phrase at wrap.
+
+**Resolved before starting — 2026-10-11.** The 0248 wrap commit `835c9381` fixed this item. `docs/03_ARCHITECTURE.md:304` now reads "Retry repairs preserve the existing aggregate fields. Retry dispatch uses the same concurrent pool as a fresh fan-out (`--jobs`, `--serial`, `--serial-target`)", and `grep -n "sequential dispatch" docs/03_ARCHITECTURE.md` returns no match on the current tree. No requirement in this file remains unmet, so the task is closed as cancelled rather than carried in the backlog.
 
 ### Requirements
 
@@ -55,3 +57,6 @@ Source task: 0248 (feature B6) — deferred residuals filed by residual-scan set
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-12T04:11:34.867Z backlog → cancelled (system)
+
