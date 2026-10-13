@@ -80,10 +80,10 @@ ADR-009); `plugins/kk` is skipped. Default runtime discovery is a **multi-root m
 
 ## Runtime model
 
-- **Runtime / PM / tests:** Bun `1.3.14` (`packageManager` pin). Prefer `bun:*` over `node:*`.
+- **Runtime / PM / tests:** Bun `1.4.3` (`packageManager` pin). Prefer `bun:*` over `node:*`.
   Exception (ADR-020): `plugins/generations/omni-voice-gen` is Python — uv-managed venv,
   `make` targets, pytest; outside Bun workspaces, Biome, and `bun:test`.
-- **Lint / format:** Biome **2.5.5** (root `devDependency` + `.prototools`).
+- **Lint / format:** Biome **2.5.15** (root `devDependency` + `.prototools`).
 - **CLI entry:** `apps/cli/src/index.ts` → `process.exit(await main())` when `import.meta.main`.
   `main(argv) → number` (ADR-010 R3). `createProgram()` stays side-effect-free.
 - **Command tree:** `apps/cli/src/commands/<noun>.ts` exports `registerXCommand`; `createProgram()`
@@ -507,7 +507,7 @@ Full signatures: `docs/design/multi-root-plugin-discovery.md`.
 
 | Gate | Command |
 | ------ | --------- |
-| Lint + typecheck | `bun run lint` (Biome 2.5.5 + tsc) |
+| Lint + typecheck | `bun run lint` (Biome 2.5.15 + tsc) |
 | Tests | `bun run test` |
 | Build | `bun run build` |
 | Spur architecture/workflow | `bun run spur-check` |

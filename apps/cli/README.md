@@ -18,7 +18,7 @@ workflows — `kk` owns each step, `spur` owns the orchestration.
 bun add -g @gobing-ai/knowledge-kit
 ```
 
-Requires [Bun](https://bun.sh) ≥ 1.3.14.
+Requires [Bun](https://bun.sh) ≥ 1.4.3.
 
 ### Optional: install the `kk` agent plugin collection
 

@@ -66,7 +66,7 @@ bun run test                # unit tests + coverage
 bun run spur-check          # full quality gate: lint → rules → tests → rules
 ```
 
-Requires [Bun 1.3.14](https://bun.sh) (`proto use` installs the pinned toolchain from
+Requires [Bun 1.4.3](https://bun.sh) (`proto use` installs the pinned toolchain from
 `.prototools`).
 
 ---
@@ -131,10 +131,10 @@ subcommands — `kk` owns steps; `spur workflow` owns orchestration, never the r
 
 | Tool | Version | Role |
 | --- | --- | --- |
-| Bun | 1.3.14 | Runtime, package manager, test runner |
+| Bun | 1.4.3 | Runtime, package manager, test runner |
 | TypeScript | ESNext, strict | Language |
-| Biome | 2.5.5 | Lint + format (pinned in `package.json` + `.prototools`) |
-| Lefthook | 2.1.10 | Git hooks |
+| Biome | 2.5.15 | Lint + format (pinned in `package.json` + `.prototools`) |
+| Lefthook | 2.2.2 | Git hooks |
 | Cocogitto | 7.0.0 | Conventional commits |
 | proto | — | Tool version pins (`.prototools`) |
 | Spur | — | Project quality harness (rules, tasks, workflows) |
@@ -146,7 +146,7 @@ subcommands — `kk` owns steps; `spur workflow` owns orchestration, never the r
 bun run autofix && bun run spur-check   # format + typecheck, then lint → rules → tests → rules
 ```
 
-1. `bun run lint` clean — Biome 2.5.5 and typecheck.
+1. `bun run lint` clean — Biome 2.5.15 and typecheck.
 2. `bun run test` passes; no skipped tests. Coverage target: line ≥ 90%, function ≥ 90%.
 3. `bun run build` succeeds across workspaces.
 4. `git status` shows only intentional changes.
