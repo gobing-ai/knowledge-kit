@@ -253,6 +253,17 @@ transitions:
         # refusal names the offending value on stderr before the transition falls through to
         # `release-failed` — fail-closed, and never a deadlock (that state is `always`).
         # Kept at 3 logical commands: spur's ADR-115 composition lint errors on a guard above 5.
+        # Task 0268 — degraded pass is a WARNING, not a gate. `kk store label` prints
+        # `degraded: true` and writes `kk.store.label.degraded: fallback: N/M consults (P%)` to
+        # stderr whenever the fallback share of its consults exceeds 0.5 — a majority of consults
+        # answered `source: default` (spur's `no-backend` degradation). Chosen at one-half because
+        # the 2026-10-12 incident measured `fallback: 22/26` (0.85) and `33/45` (0.73), well past
+        # it, while a healthy pass stays near zero; the threshold is the operator's signal in
+        # launchd.log/the ledger, not a transition. A degraded pass still prints `verdict: PASS`,
+        # so this guard releases the lock and the labels it DID write survive for the next tick —
+        # making the verdict non-`PASS` instead would route to `release-failed` and, with the
+        # label state's `onError: continue`, throw away a whole day's labels for a backend the
+        # next tick can reach. The fail-closed defaults themselves are unchanged (task 0268 R3).
         command: >-
           test "$(jq -r 'if (.verdict // "") == "PASS" then (.verdict + (if ((.confidence // "") | test("^(HIGH|MEDIUM|LOW)$")) then "" else "!" end)) else (.verdict // "") end' "${vars.work_dir}/label-result.txt" 2>/dev/null)" = PASS ||
           { echo "kk-collect.label.confidence-refused: verdict '$(jq -r '.verdict // "<none>"' "${vars.work_dir}/label-result.txt" 2>/dev/null)' carries confidence '$(jq -r '.confidence // "<absent>"' "${vars.work_dir}/label-result.txt" 2>/dev/null)', not HIGH|MEDIUM|LOW" >&2; false; }

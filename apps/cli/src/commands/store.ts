@@ -1001,6 +1001,18 @@ async function writeRows(store: Store, rows: readonly LabelRow[]): Promise<void>
     }
 }
 
+/**
+ * The share of a label pass's consults that may fall back to the fail-closed default before the pass
+ * reports itself `degraded` (task 0268 R1/R2). A MAJORITY of consults answered `source: default`
+ * (spur's `no-backend` degradation) means the decision backend is sick, not the corpus: the
+ * 2026-10-12 incident measured `fallback: 22/26` (0.85) and `33/45` (0.73), both far past this rail.
+ * Kept at one-half rather than one so a single surviving answer among a mostly-dead backend still
+ * escalates, while a healthy pass (fallback 0, or a rare refused answer) stays silent. The pass
+ * still prints `verdict: PASS`: a non-`PASS` verdict would send `kk-collect` to `release-failed` and
+ * discard the labels it did write, so `degraded` on stdout plus the stderr warning is the signal.
+ */
+const DEGRADED_FALLBACK_SHARE = 0.5;
+
 /** The `--new-ids` pass: annotate, route, write both observation kinds, print the verdict line. */
 async function labelNewIds(
     fs: FileSystem,
@@ -1040,15 +1052,28 @@ async function labelNewIds(
         }
     }
     await writeRows(store, rows);
+    const fallback = rows.filter((row) => row.source === 'default').length;
+    // R2 — a degraded backend, not a corpus fact: warn on the boundary kk-collect reads
+    // (launchd.log/the ledger) so a sick pass is visible without opening the store.
+    const degraded = consults > 0 && fallback / consults > DEGRADED_FALLBACK_SHARE;
+    if (degraded) {
+        const share = Math.round((fallback / consults) * 100);
+        consoleOutput.error(
+            `kk.store.label.degraded: fallback: ${fallback}/${consults} consults (${share}%) — the decision ` +
+                'backend answered from the fail-closed default for most consults; the moderation rail fired ' +
+                "and the labels are not the model's (task 0268 R1/R2)",
+        );
+    }
     consoleOutput.write(
         JSON.stringify({
             verdict: 'PASS',
             confidence: verdictConfidence(rows.map((row) => row.confidence)),
             labeled: rows.length,
             model: rows.filter((row) => row.source === 'model').length,
-            fallback: rows.filter((row) => row.source === 'default').length,
+            fallback,
             consults,
             consultMs,
+            degraded,
             refused: totalRefused,
         }),
     );

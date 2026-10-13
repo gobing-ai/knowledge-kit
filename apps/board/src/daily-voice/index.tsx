@@ -39,7 +39,7 @@ import { type DailyChannelView, type DailyProgressView, dailySummary, dailySumma
 const WORKFLOW = 'kk-daily-ai-voice2';
 
 /** The host route the module is mounted at. */
-const MODULE_PATH = '/modules/kk-daily-ai-voice2';
+const MODULE_PATH = '/board/modules/kk-daily-ai-voice2';
 
 const TAB_LABELS: Record<BoardTab, string> = {
     summary: 'Summary',
@@ -75,7 +75,10 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
             if (!document.hidden) await loaderRef.current();
             if (!cancelled) timer = setTimeout(() => void loop(), delayMs(refreshRef.current, intervalMs));
         };
-        timer = setTimeout(() => void loop(), intervalMs);
+        // Poll immediately on mount, then on the steady interval: a first visit must show the
+        // recorded history/results without waiting a whole interval (a blank module for 30s was the
+        // observed defect this replaces). `loop` awaits a loader that owns its own error handling.
+        void loop();
         return () => {
             cancelled = true;
             clearTimeout(timer);

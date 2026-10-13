@@ -124,8 +124,8 @@ export function selectionQuery(selection: RunSelection, search = ''): string {
     return `?${params.toString()}`;
 }
 
-/** The host route the Collect module is mounted at (`/modules/<id>`). */
-export const COLLECT_MODULE_PATH = '/modules/kk-collect';
+/** The Collect module page route (`/board/modules/<id>`); its assets use the bare `/modules/<id>` prefix. */
+export const COLLECT_MODULE_PATH = '/board/modules/kk-collect';
 
 /**
  * The address-bar target the selection deep-links to: a module route plus its query. `modulePath`

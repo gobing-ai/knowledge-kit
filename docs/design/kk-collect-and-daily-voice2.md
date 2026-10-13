@@ -134,7 +134,12 @@ heuristic cannot classify confidently, or all new items when `label.mode: decisi
 `spur decision run <id> --param title=… --evidence <tmp body file> --maker <maker> --json`; each
 new item therefore costs three EXTRA consults for the judgment decisions. Labels are never re-run
 on unchanged items. A decision returning `source: default` (backend degraded) records the heuristic
-value with `source: default` — the run never fails on labels.
+value with `source: default` — the run never fails on labels. The degradation is made visible at the
+collect boundary: when the fallback share of a pass's consults exceeds `0.5`, `kk store label` adds
+`degraded: true` to its verdict line and warns on stderr (`kk.store.label.degraded: fallback: N/M
+consults (P%)`), so `kk-collect`'s launchd.log/the ledger shows a sick backend without opening the
+store (task 0268 R1/R2 — a warning, not a gate: the verdict stays `PASS` so the labels the pass did
+write survive, and the fail-closed defaults themselves are unchanged).
 
 **Extraction is data, not code.** Topic profiles live in
 `plugins/kk/decisions/extract/<topic>.yaml`:
@@ -171,7 +176,7 @@ closed `HIGH|MEDIUM|LOW` level. `apps/cli/tests/store-docs.test.ts` resolves eac
 | `labels.confidence` column | persist | `packages/kk-store/src/schema/labels.ts:28` | yes (migration `0002`) |
 | Label DAO upsert / read | persist | `packages/kk-store/src/dao/labels.ts:103` | yes |
 | Pass level (weakest row) | emit | `packages/kk-store/src/dao/labels.ts:50` | yes |
-| `kk store label` verdict line | emit | `apps/cli/src/commands/store.ts:705` | yes — `{verdict, confidence, …}` |
+| `kk store label` verdict line | emit | `apps/cli/src/commands/store.ts:1067` | yes — `{verdict, confidence, degraded, …}`; stderr `kk.store.label.degraded:` above a majority fallback (0268) |
 | `kk-collect` `label → release` guard | consume | `plugins/kk/workflows/kk-collect.yaml:236` | yes — absent/out-of-enum refused by name |
 | `kk store extract` | consume | `apps/cli/src/commands/store.ts:817` | named gap — selects by label value, not a verdict consumer |
 | `kk-daily-ai-voice2` judge/safety gates | consume | — | named gap — workflow not built (G11/G71) |

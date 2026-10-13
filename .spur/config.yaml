@@ -9,6 +9,39 @@ name: knowledge-kit
 # Scheduler jobs invoke the installed `spur` CLI (0.3.80) — this project has no
 # repo-local spur source, so the global install is the canonical binary.
 bootstrap:
+  # ── Board contribution modules (G8/0255) ──
+  # The three native KK workflow modules. `enabled: false` is deliberate: the host validates
+  # each `directory` at server start, and both candidate targets are gitignored build trees
+  # (`apps/cli/dist/board`, `apps/board/dist`), so an ENABLED declaration makes every
+  # `spur serve` in a fresh checkout fail with "module directory ... was not found". After
+  # `bun run build` (or `bun scripts/build-board.ts`) flip `enabled` to true — or delete the
+  # flag, whose host default is true — to show the modules. See docs/04_DESIGN.md `kk board`
+  # and the "build first, then enable" flip.
+  modules:
+    - id: kk-collect
+      name: Collect
+      icon: "📥"
+      enabled: false
+      type: react
+      directory: apps/cli/dist/board/collect
+      entry: index.js
+      styles: [index.css]
+    - id: kk-daily-ai-voice2
+      name: Daily AI Voice
+      icon: "🎙️"
+      enabled: false
+      type: react
+      directory: apps/cli/dist/board/daily-voice
+      entry: index.js
+      styles: [index.css]
+    - id: kk-itc
+      name: IT Content
+      icon: "✍️"
+      enabled: false
+      type: react
+      directory: apps/cli/dist/board/itc
+      entry: index.js
+      styles: [index.css]
   logging:
     enabled: true
     level: info

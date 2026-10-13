@@ -165,6 +165,25 @@ function replayAnswers(
 }
 
 /**
+ * A degraded answer set (task 0268): the decision backend was unavailable, so spur answers every
+ * decision with the catalog's own fail-closed default and `source: 'default'` (its `no-backend`
+ * degradation). `kk-item-china-politics` carries catalog default `3` — the moderation rail.
+ */
+function degradedAnswers(): Record<string, unknown> {
+    const meta = { confidence: null, source: 'default', reason: 'no-backend', maker: 'fm-local', durationMs: 0 };
+    return {
+        'kk-item-category': { ...meta, value: 'non-ai' },
+        'kk-item-quality': { ...meta, value: 0 },
+        'kk-item-importance': { ...meta, value: 0 },
+        'kk-item-urgency': { ...meta, value: 0 },
+        'kk-item-impact': { ...meta, value: 0 },
+        'kk-item-china-politics': { ...meta, value: 3 },
+        'kk-item-sensitivity': { ...meta, value: 1 },
+        'kk-item-audience': { ...meta, value: 'general' },
+    };
+}
+
+/**
  * Write an executable `spur` stub that appends the decision id it was asked for to
  * `<dir>/spawns.log` and answers from `answers` (a decision id, or `*` for every id).
  * No answer for an id → exit 1, which is the "answered nothing" degradation path.
@@ -291,9 +310,16 @@ function labelLine(counts: {
     consults: number;
     consultMs: number;
     confidence: string;
+    degraded?: boolean;
     refused?: Record<string, number>;
 }): Record<string, unknown> {
-    return { verdict: 'PASS', refused: counts.refused ?? {}, ...counts };
+    // The `degraded` flag (task 0268 R2) defaults to false so a healthy line stays the old shape.
+    return {
+        verdict: 'PASS',
+        degraded: counts.degraded ?? false,
+        refused: counts.refused ?? {},
+        ...counts,
+    };
 }
 
 /** The id at `index` of a seeded run — a short seed is a broken test, never a silent skip. */
@@ -541,7 +567,15 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         // decisions have no heuristic value, and 'ai-industry' is not a valid answer for either a
         // 0-3 score or the audience choice, so they write no row at all.
         expect(JSON.parse(result.out)).toEqual(
-            labelLine({ labeled: 10, model: 0, fallback: 5, consults: 8, consultMs: 0, confidence: 'LOW' }),
+            labelLine({
+                labeled: 10,
+                model: 0,
+                fallback: 5,
+                consults: 8,
+                consultMs: 0,
+                confidence: 'LOW',
+                degraded: true,
+            }),
         );
 
         const rows = rowsFor(seeded.db, id, 'fm-local');
@@ -552,6 +586,79 @@ describe('kk store label — raw observations (0226 R1/R2)', () => {
         expect(rows.get('kk-item-category')?.raw_value).toBe('ai-industry');
         expect(rows.get('kk-item-category')?.raw_confidence).toBeNull();
         expect(rows.get('kk-item-category')?.reason).toBe('no-backend');
+    });
+
+    it('AC1/R2 (0268) — a pass whose consults mostly fell back reports `degraded` and warns on stderr', async () => {
+        const dir = tempDir();
+        const seeded = await seed(dir, [AMBIGUOUS()]);
+        const id = idAt(seeded.ids, 0);
+        // A dead decision backend: every consult answers `source: default` (spur's no-backend rail).
+        const stub = stubSpur(dir, degradedAnswers());
+
+        const degraded = await run(
+            ['store', 'label', '--run', 'run-1', '--new-ids', seeded.newIds, '--mode', 'decision', '--db', seeded.db],
+            { KK_SPUR_BIN: stub },
+        );
+        expect(degraded.code, degraded.err).toBe(0);
+        // 5 heuristic + 8 default rows = 13 labelled; every one of the 8 consults fell back, so the
+        // pass flags `degraded` — yet keeps `verdict: PASS`, so the collect run keeps the labels it
+        // wrote (R2 tradeoff: a non-PASS verdict would route kk-collect to `release-failed`).
+        expect(JSON.parse(degraded.out)).toEqual(
+            labelLine({
+                labeled: 13,
+                model: 0,
+                fallback: 8,
+                consults: 8,
+                consultMs: 0,
+                confidence: 'LOW',
+                degraded: true,
+            }),
+        );
+        // R1 — the greppable warning lands on the boundary kk-collect reads (launchd.log/the ledger),
+        // carrying the incident's own shape: the fallback count AND the consults denominator.
+        expect(degraded.err).toContain('kk.store.label.degraded:');
+        expect(degraded.err).toContain('fallback: 8/8 consults');
+
+        // R3/AC2 — the rail itself is untouched: china-politics still lands on its catalog default 3
+        // and the row names `source: default`, so nothing is silently reclassified as model output.
+        const china = rowsFor(seeded.db, id, 'fm-local').get('kk-item-china-politics');
+        expect(china?.value).toBe('3');
+        expect(china?.score).toBe(3);
+        expect(china?.source).toBe('default');
+        expect(china?.reason).toBe('no-backend');
+
+        // A healthy pass over the same item is unaffected: no `degraded` flag and no stderr warning.
+        const healthyDir = tempDir();
+        const healthySeeded = await seed(healthyDir, [AMBIGUOUS()]);
+        const healthyStub = stubSpur(healthyDir, acceptedAnswers('ai-industry', [5, 4, 3, 2]));
+        const healthy = await run(
+            [
+                'store',
+                'label',
+                '--run',
+                'run-1',
+                '--new-ids',
+                healthySeeded.newIds,
+                '--mode',
+                'decision',
+                '--db',
+                healthySeeded.db,
+            ],
+            { KK_SPUR_BIN: healthyStub },
+        );
+        expect(healthy.code, healthy.err).toBe(0);
+        expect(JSON.parse(healthy.out)).toEqual(
+            labelLine({
+                labeled: 13,
+                model: 8,
+                fallback: 0,
+                consults: 8,
+                consultMs: 800,
+                confidence: 'LOW',
+                degraded: false,
+            }),
+        );
+        expect(healthy.err).not.toContain('kk.store.label.degraded:');
     });
 
     it('R5 — every row earns exactly one HIGH|MEDIUM|LOW level, derived from its own raw payload', async () => {

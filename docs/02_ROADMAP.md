@@ -67,8 +67,10 @@ B (platform: B1→B2→B3→B4 done; B5 E2E acceptance done)
 **Status legend:** ✅ done · 🔶 partial · ⏳ planned/current · 💤 deferred · 🌫️ fog (undecided)
 
 
-## Planned workflow visibility (G8, Phase 3)
+## Workflow visibility in Spur Board (G8, Phase 3)
 
 Collect with the native module/reader foundation → Daily AI Voice and IT Content views → installed
-package/browser acceptance. Design and task planning only; implementation has not started.
+package/browser acceptance. Tasks `0252`–`0254` are implemented; `0255` adds the separately packed
+Knowledge Kit install proof (three module routes + Settings → Workflows under the installed Board)
+and the operator setup/restart/shutdown steps.
 See [workflow-board-modules.md](design/workflow-board-modules.md).

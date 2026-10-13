@@ -68,16 +68,16 @@ describe('syncSelectionUrl', () => {
             replaceState: (data: unknown, _unused: string, url?: string | null) =>
                 calls.push({ data, url: String(url) }),
         };
-        const location = { pathname: '/modules/kk-collect', search: '?tab=summary' };
+        const location = { pathname: '/board/modules/kk-collect', search: '?tab=summary' };
         syncSelectionUrl({ runId: 'r-1', tab: 'results' }, { history, location });
         expect(calls).toEqual([
-            { data: { key: 'router-key', idx: 3 }, url: '/modules/kk-collect?run=r-1&tab=results' },
+            { data: { key: 'router-key', idx: 3 }, url: '/board/modules/kk-collect?run=r-1&tab=results' },
         ]);
-        expect(selectionPath({ runId: 'r-1', tab: 'results' })).toBe('/modules/kk-collect?run=r-1&tab=results');
+        expect(selectionPath({ runId: 'r-1', tab: 'results' })).toBe('/board/modules/kk-collect?run=r-1&tab=results');
         // Already matching: no write, so the effect can never loop.
         syncSelectionUrl(
             { runId: 'r-1', tab: 'results' },
-            { history, location: { pathname: '/modules/kk-collect', search: '?run=r-1&tab=results' } },
+            { history, location: { pathname: '/board/modules/kk-collect', search: '?run=r-1&tab=results' } },
         );
         expect(calls).toHaveLength(1);
         // The host router has navigated elsewhere: this module must not fight it.
@@ -98,13 +98,13 @@ describe('syncSelectionUrl', () => {
         const search = `?run=old&tab=summary&${kkApi}`;
         syncSelectionUrl(
             { runId: 'r-1', tab: 'results' },
-            { history, location: { pathname: '/modules/kk-collect', search } },
+            { history, location: { pathname: '/board/modules/kk-collect', search } },
         );
         // The write-back keeps unknown module parameters — dropping kkApi would send a reload back to
         // the default reader port (P3 from the second review).
-        expect(calls[0]?.url).toBe(`/modules/kk-collect?run=r-1&tab=results&${kkApi}`);
+        expect(calls[0]?.url).toBe(`/board/modules/kk-collect?run=r-1&tab=results&${kkApi}`);
         expect(selectionPath({ runId: 'r-1', tab: 'results' }, search)).toBe(
-            `/modules/kk-collect?run=r-1&tab=results&${kkApi}`,
+            `/board/modules/kk-collect?run=r-1&tab=results&${kkApi}`,
         );
     });
 });

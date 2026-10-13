@@ -3,7 +3,7 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.46.0
+version: 2.47.0
 created_at: 2026-07-22
 updated_at: 2026-10-12
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
@@ -51,7 +51,7 @@ sync: [T3]
 | [xhs-image-cards.md](design/xhs-image-cards.md) | XHS card skill, image-gen presets, ordered Content images, browser draft/public Result | shipped (E8, ADR-024; 0167 xhs-pub script transport, 0168 xhs-images skill + presets) |
 | [segmented-episode-speech.md](design/segmented-episode-speech.md) | Voice2 section synthesis, per-section cache, join, then the existing intro sting (ADR-034) | implemented (G13) |
 | [voxcpm-daily-voice-driver.md](design/voxcpm-daily-voice-driver.md) | Standalone VoxCPM voice generator: private uv Python worker behind voice-gen (ADR-036) | implemented (G14) |
-| [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; proposed local reader and run capture surface | accepted design (G8), not shipped |
+| [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; local reader and run capture surface | shipped (G8; 0252–0255) |
 
 ## 1. CLI commands
 
@@ -369,17 +369,59 @@ unsatisfiable range, `422` malformed stored evidence, `503` Board authority unav
 **Operator setup (checkout).**
 
 1. Build the browser contributions: `bun scripts/build-board.ts` (invoked by the root `build` and by
-the CLI `build:bundle`/`prepack`, so a packed install ships them).
-2. Declare each module in `.spur/config.yaml` under `bootstrap.modules` — `type: react`,
-   `directory: apps/cli/dist/board/collect`, `entry: index.js`, `styles: [index.css]`,
-   `id: kk-collect` (plus `kk-daily-ai-voice2`, whose entry 0253 builds; `kk-itc` follows in 0254). Enable a module
-   only after its assets exist: the directory is checked at config load, so a missing build output
-   makes every `spur` invocation in that checkout fail. **Not yet declared in this checkout** — the
-   declaration is part of task 0255's installed-package hardening.
-3. Run `kk board serve --board-origin http://127.0.0.1:<board-port>` and open the module at
-   `/modules/<id>` on that Board origin; definitions stay in **Settings → Workflows**
+   the CLI `build:bundle`/`prepack`, so a packed install ships them).
+2. Declare each module in `.spur/config.yaml` under `bootstrap.modules`: `type: react`,
+   `directory: apps/cli/dist/board/<entry>`, `entry: index.js`, `styles: [index.css]`, and one of
+   `id: kk-collect | kk-daily-ai-voice2 | kk-itc`. This checkout ships the declaration **disabled**
+   (`enabled: false`): the host validates every `directory` at *server start*, so an enabled
+   declaration makes `spur serve` fail with `bootstrap.modules[<i>] ("kk-…"): module directory "…"
+   was not found` on any checkout that has not built the assets — and `apps/cli/dist/board` is a
+   gitignored build tree. **Build first, then enable:** after step 1 flip `enabled` to `true` (or
+   delete the flag; the host default is `true`) to show the modules. An installed user points
+   `directory` at their installed package's own `dist/board/<entry>` tree and needs neither this
+   checkout nor a `node_modules` edit.
+3. Start the Board: `spur serve --host 127.0.0.1 [--port <n>]`; the UI is `/board`.
+4. Start the reader in a second terminal: `kk board serve --board-origin http://127.0.0.1:<board-port>`
+   (default port 4340, `127.0.0.1` only). It is a foreground process with no daemon or scheduler.
+5. Open a module at `/board/modules/<id>` on the Board origin. The module PAGE is mounted by the
+   SPA under the `/board` app prefix at `/board/modules/<id>`; its bundles are served from the bare
+   `/modules/<id>/index.js` + `/modules/<id>/index.css` (the descriptor's `route`/`entryUrl` in
+   `GET /api/board/modules` use that `/modules/<id>` prefix). Opening the bare `/modules/<id>` page
+   only shows the SPA's own 404. Definitions stay in **Settings → Workflows**
    (`/board/settings/workflows`). A validated `kkApi` query parameter selects a non-default loopback
    reader port and is retained in saved URLs.
+
+**Restart / shutdown.** Both processes are foreground and stateless. `Ctrl-C` (SIGINT/SIGTERM) stops
+the Board (it releases the scheduler owner lock, stops its job children, closes the DB) and the
+reader. Restart the Board only after `.spur/config.yaml` changes — module declarations and asset
+paths are read at start; restart the reader only after a `kk board capture` wrote a new run record.
+A reader restarted on a different port needs a fresh `?kkApi=http://127.0.0.1:<port>` in the module
+URL. The reader never migrates or writes the KK store.
+
+**Installed-package acceptance.** `apps/board/tests/installed-board.test.ts` packs the CLI
+(`bun pm pack`, honoring `prepack`), installs the tarball into a throwaway project, starts the
+installed `spur` Board against that project's declaration pointing at the installed
+`dist/board/<entry>` trees, and drives the three routes plus Settings → Workflows with real Chromium
+(Playwright, pinned by the root catalog `playwright: catalog:`, declared in `apps/board`). It asserts
+the served bundles are byte-identical to the installed package files, so no source-checkout import
+can satisfy it. A missing Chromium binary FAILS the setup (`bunx playwright install chromium`) —
+never a silent skip.
+
+**Legacy evidence limits.** The reader serves only runs captured through `kk board capture` (0252+).
+A pre-capture run has no `.works/.board/runs/<id>.json`: the reader answers `404` and the module shows
+an explicit no-captured-results state — nothing is reconstructed from dates, mtimes or "latest"
+folders. An existing workspace without a matching owner marker is `unverified`; a workspace owned by
+another run is `superseded`, so its config and Spur progress survive but its artifact bytes are not
+served. Workflow Config Summary shows only sanitized recorded run values — current definitions and
+defaults live in Settings → Workflows, and uncaptured historical keys stay explicitly unknown. All
+operation is local-loopback and read-only; there is no remote or multi-user mode.
+
+**Board contribution ABI.** The three entries export `webModule = { apiVersion: 1, component }` using
+the type-only `@gobing-ai/spur/board` declaration; the installed host advertises `react`,
+`react/jsx-runtime` and `react/jsx-dev-runtime` as facade specifiers in `web/board-runtime.json`, and
+the build externalizes exactly the three (the production JSX runtime emits only the first two). These
+remain MEDIUM for a future host: the ABI is read from installed Spur 0.4.2 and exercised end-to-end by
+the installed-package test, but no forward-compatibility promise is made.
 
 ### `kk daily prepare` Board capture + the Daily AI Voice module (G8, task 0253)
 
@@ -450,9 +492,9 @@ per-target derivation, the judge-confidence validation and the trusted-root bind
 | Claim | Source | Local verification | Confidence |
 | --- | --- | --- | --- |
 | A module declaration is a `.strict()` discriminated `react`/`iframe` union, `id` must match `^[a-z][a-z0-9-]*$`, and a duplicate id or a reserved-host-identity collision is refused at config load | installed `@gobing-ai/spur` bundle: `boardModuleDeclarationSchema`, `validateBoardModuleDeclarations` | Read the emitted zod shapes in `node_modules/@gobing-ai/spur/spur.js` (0.4.2) | HIGH |
-| The host's route CONSTANT for a module is `/modules/<id>` while the mounted page path is `/board/modules/<id>`; the declaration carries no route field | installed `BOARD_MODULE_ROUTE_PREFIX` and `boardModuleRoute(id)` | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); `web/board-runtime.json` `reservedModules` lists the separate `board/<route>` family | HIGH |
+| The module PAGE route is `/board/modules/<id>` (the SPA mounts `.kk-board` there), while the ASSET route and the descriptor-advertised `route`/`entryUrl` use the bare `/modules/<id>` prefix (`/modules/<id>/index.js`); the declaration carries no route field | installed `BOARD_MODULE_ROUTE_PREFIX` / `boardModuleRoute(id)` plus the SPA router | Confirmed live with real Chromium and `GET /api/board/modules`: it lists `route: "/modules/kk-collect"` and `/modules/kk-collect/index.js` returns `text/javascript`, but the bare `/modules/kk-collect` page renders the SPA 404 while `/board/modules/kk-collect` mounts the module (`web/board-runtime.json` `reservedModules` are the separate `board/<route>` family) | HIGH |
 | `bootstrap.modules` is validated by the RUNTIME schema only — the shipped `schemas/spur-config.schema.json` `bootstrap` block lists just logging/telemetry/database/scheduler | installed `schemas/spur-config.schema.json:20` and the bundle's `bootstrapSectionSchema` | Read both files in `node_modules/@gobing-ai/spur` (0.4.2) | HIGH |
-| A module whose `directory` does not exist is a config-load error, so every `spur` invocation in that checkout fails until the assets are built | installed bundle: `directory: exports_external.string().min(1)` plus the indexed `bootstrap.modules[<index>] ("<id>"): <reason>` error shape | Read the schema and the validation error path in `spur.js`; NOT exercised against a live `spur` run with a missing directory, which is why this is MEDIUM and why the setup step says to enable a module only once its assets exist | MEDIUM |
+| An ENABLED `bootstrap.modules` entry whose `directory` is missing (or resolves outside the project root) makes `spur serve` exit 1 before it listens; `enabled: false` starts normally | installed `node_modules/@gobing-ai/spur/spur.js` `prepareBoardModules` + the `bootstrap.modules[<index>] ("<id>"): <reason>` error shape | Probed live in a throwaway project: enabled with an absent/outside dir printed `bootstrap.modules[0] ("kk-collect"): "…" resolves outside the project root …` and exited 1; the same entry with `enabled: false` reached `Spur server listening on …` | HIGH |
 | The host advertises `react`, `react/jsx-runtime` and `react/jsx-dev-runtime` (plus `react-dom`, `react-dom/client`, `react-router`, `react-router/dom`) at React 19.2.1 / ReactDOM 19.2.1 / React Router 7.11.0 | installed `web/board-runtime.json` | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; all seven named `web/_astro/board-facade-*.js` assets exist on disk | HIGH |
 | The reader answers 400/403/404/405/416/422/503 for the cases this section names | the shipped reader in this repo | `apps/cli/src/board/reader.ts:207,217,296,414,488` and the per-status tests in `apps/cli/tests/board/reader.test.ts:177,189,202,266,326,371` | HIGH |
 | `GET /api/runs/:runId/progress` answers 404 `RUN_NOT_FOUND` once the projection carries an `orphan-row` diagnostic, which is why DAG progress falls back to run-detail action rows | installed bundle: the progress handler guard and `projectWorkflowProgress`'s diagnostic push | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); the fallback is `apps/cli/src/board/reader.ts:354` | HIGH |

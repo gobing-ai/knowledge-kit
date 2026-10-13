@@ -103,7 +103,7 @@ sync: [T4]
 | G6 | kk-ingest-generate-publish | ⏳ planned | — | home node; historical: B5 |
 | G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
 | G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
-| G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | ⏳ backlog | 3 | accepted design; tasks `0252`–`0255` (30h), four tabs per module; [satellite](design/workflow-board-modules.md); implementation not started |
+| G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | 🔧 active | 3 | tasks `0252`–`0254` done; `0255` adds the separately-packed-install acceptance (`apps/board/tests/installed-board.test.ts`, `scripts/tests/board-package.test.ts`), four tabs per module, operator setup in `docs/04_DESIGN.md`; [satellite](design/workflow-board-modules.md) |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki | 🌫️ fog | 3 | undecided; go/no-go spike first |
 | **J** | Reposition knowledge-kit as an ingest-create-publish platform (wayfinder map) | ✅ done | 2 | ADR-007, PRD v3, contract designs (0032–0034), tree realignment (0035), doc sync (0036) — feature verified done |
