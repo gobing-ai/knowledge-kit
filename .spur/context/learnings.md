@@ -352,3 +352,12 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
 - 2026-10-12 · 0263 — `spur task verdict --from-answer` resolves AC identities against the linked feature's scenario titles (or the bare `ACn` alias for a task-local AC set); a backtick inside the AC cell truncates the id and fails the lint.
 - 2026-10-12 · 0263 — `commit-guard` treats every `.spur/**` path as bookkeeping and will never stage it, so a tracked rule file (`.spur/rules/**`) needs a targeted `git add -- <path>` — the guard's refusal reason ("unchanged since base") is misleading there.
 - 2026-10-12 · 0263 — the claim-citation checker accepts a citation in either the Source or the Local-verification column (`cited = is_cite($3) || is_cite($4)`), so "empty the Source cell" is not a falsification control: both citation cells must be emptied.
+
+## 2026-10-12 (second pass) — task 0258 operator-authorized scope lift
+
+- 2026-10-12 · 0258 — the VoxCPM worker fix is one line plus `continue`s: the loop must answer once per accepted request, and the missing success-path `_respond` was invisible because every pre-existing test seeded an error. Assert the success shape, not only the error shapes.
+- 2026-10-12 · 0258 — Gemini TTS on Tier 1 is 100 requests/day and a 41-segment episode costs 41 requests: one whole-document episode plus two short renders exhausts the day. Plan a full-render matrix around that budget, or the last cell lands on the next day.
+- 2026-10-12 · 0258 — two different `GEMINI_API_KEY`s can share one daily allowance; swapping the key is not a quota workaround. Verify with a single bounded request before spending render time on it.
+- 2026-10-12 · 0258 — a Gemini quota failure falls back to the local Voicebox engine by design, and the resulting artifact is stamped `kk:voice-gen` with a possibly failing QC — always read `metadata.generator` from the artifact before counting a render as that driver's evidence, and never rename a fallback.
+- 2026-10-12 · 0258 — `daily-episode-duration` checks length only: it does not read `qc.passed` or the generator identity, so a degraded fallback episode still clears that gate (whether a later publish gate catches it is untested).
+- 2026-10-12 · 0258 — the section cache is driver-aware: switching `vdriver` on an existing work root re-renders the mismatched sections, so a quota-blocked cell can be completed later on the same root without deleting scratch.
