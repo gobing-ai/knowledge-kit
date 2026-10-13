@@ -4,7 +4,7 @@ name: Render the Spur server keepalive as a schedule artifact, not a hand-writte
 status: done
 template: issue
 created_at: 2026-10-12T21:45:46.473Z
-updated_at: "2026-10-13T05:25:21.004Z"
+updated_at: "2026-10-13T15:23:21.407Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -173,6 +173,11 @@ No rendered plist committed or left inside the repo; render outputs live in `/tm
 | R5 | MET | `docs/tasks/0265_render-the-spur-server-keepalive-as-a-schedule-artifact-not-.md:112-119` — operator run 2026-10-13T03:46Z: re-render, `launchctl bootout`/`bootstrap`, `state = running`, fresh `Scheduler entries registered` (key redacted) |
 
 **Next:** no remediation required; record transcribes the AC4 host evidence into `## Testing`.
+
+
+
+
+**Confidence:** MEDIUM — code seams re-executed this run (narrow tests, live CLI probe, failure-sensitivity experiment); the AC4 host evidence at `docs/tasks/0265_render-the-spur-server-keepalive-as-a-schedule-artifact-not-.md:112` was not verified by a bootstrap in this review.
 
 ### References
 
