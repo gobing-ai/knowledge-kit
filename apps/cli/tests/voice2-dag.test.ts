@@ -418,6 +418,25 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         expect(dag.nodes.map((node) => node.id)).not.toContain('mark-used');
     });
 
+    it('probes the enabled channels\u2019 saved sessions up front, warning-only (20261012)', () => {
+        const node = dag.nodes.find((candidate) => candidate.id === 'session-preflight');
+        expect(node, 'session-preflight node is missing').toBeDefined();
+        // A leaf off the head chain, deliberately: nothing may depend on it, or a refused session
+        // would start routing the run instead of only warning about it, and `extract` must keep
+        // `read-run-date` as its sole dependency for the single-node head waves above.
+        expect(dependentsOf(dag, 'session-preflight')).toEqual([]);
+        expect(node?.dependsOn).toEqual(['read-run-date']);
+        // Only a publishing run needs a console session.
+        expect(String(node?.condition?.options?.command)).toContain('publish_enabled');
+        expect(String(node?.condition?.options?.command)).toContain('wechat_enabled');
+        // Warning-only: the probe exits non-zero on a refused session, and the channel's own publish
+        // node stays the authority on whether it published (2026-10-12: a dead session failed soft at
+        // the very end of a 40-minute run, so the probe names it at the start instead).
+        expect(node?.action?.options?.onError).toBe('continue');
+        expect(String(node?.action?.options?.command)).toContain('kk plugin check wechatmp-pub');
+        expect(String(node?.action?.options?.command)).toContain('profile-check.ts login');
+    });
+
     it('gives every node exactly one action, and only kk / agent.run / file.read.into-var (R3)', () => {
         const allowed = new Set(['shell', 'agent.run', 'file.read.into-var']);
         for (const node of dag.nodes) {

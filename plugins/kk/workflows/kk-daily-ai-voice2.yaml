@@ -147,6 +147,31 @@ nodes:
         path: ${vars.work_dir}/run-date.txt
         var: run_date
 
+  # 20261012: a dead browser session must be named BEFORE the run's ~40 minutes of generation, not
+  # after. On 2026-10-12 the saved MP session was refused server-side (unexpired cookies, but the
+  # console served its QR login and /cgi-bin/home carried no token), so `wechat-publish` failed soft
+  # at the very end and the operator only learned it by noticing the missing draft. A leaf off the
+  # head chain on purpose: `extract` keeps `read-run-date` as its only dependency, so the head chain
+  # stays single-node waves, and nothing depends on this node — it warns, it never routes.
+  - id: session-preflight
+    description: >-
+      Probe each enabled publish channel's saved browser session up front and WARN when one is
+      dead, naming the operator action. Warning-only by construction (onError: continue): a refused
+      session must not stop a run that can still produce and publish everything else, and the
+      channel's own publish node stays the authority on whether it published.
+    dependsOn: [read-run-date]
+    condition:
+      kind: shell
+      options:
+        command: 'test "${vars.publish_enabled}" = "true" && test "${vars.wechat_enabled}" = "true"'
+    action:
+      kind: shell
+      options:
+        onError: continue
+        command: >-
+          kk plugin check wechatmp-pub
+          || echo "session-preflight: the wechatmp console session was refused — fix it before this run's publish step with: bun plugins/publishings/wechatmp-pub/src/profile-check.ts login"
+
   - id: extract
     description: >-
       Select today's episode pool from the kk store: the ai-news topic profile over the labels
