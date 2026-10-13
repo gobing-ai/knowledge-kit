@@ -178,6 +178,8 @@ describe('kk-items decision catalog registration (R2)', () => {
         const config = Bun.YAML.parse(readFileSync(CONFIG_PATH, 'utf-8')) as {
             decisions?: { paths?: string[] };
         };
-        expect(config.decisions?.paths).toEqual(['plugins/kk/decisions']);
+        // Membership, not equality: the config also lists the installed spur's decision catalog
+        // (added 2026-10-12 in 32182b55), so the repo catalog must be reachable, not exclusive.
+        expect(config.decisions?.paths).toContain('plugins/kk/decisions');
     });
 });
