@@ -19,7 +19,7 @@ done_reason: unforced close; PASS artifact at .spur/memory/evidence/0264-verdict
 
 ### Background
 
-`dailyPublishPartial` (`plugins/kk/scripts/kk-workflow-stages.ts:1326`) writes its advisory warning artifact to a **cwd-relative** path — `.spur/run/publish-partial-<runDate>.txt` at `:1337-1342` — while its sibling result path at `:1328` resolves under the stage's `workDir`. The artifact therefore lands wherever the process happened to run. Observed during the G14 batch (2026-10-12): `apps/cli/tests/kk-workflow-stages.test.ts:2282-2302` spawns the stage runner with no `cwd` (the `run` helper at `:46-54` inherits the test process cwd, `apps/cli` under the workspace runner) and reads/deletes `.spur/run/publish-partial-20260101.txt` relative to that cwd — so the existing test both encodes the bug and is what littered `apps/cli/.spur/run/`.
+`dailyPublishPartial` (`plugins/kk/scripts/kk-workflow-stages.ts:1326`) writes its advisory warning artifact to a **cwd-relative** path — `.spur/run/publish-partial-<runDate>.txt` at `:1337-1342` — while its sibling result path at `:1328` resolves under the stage's `workDir`. The artifact therefore lands wherever the process happened to run. Observed during the G14 batch (2026-10-12): `apps/cli/tests/kk-workflow-stages.test.ts:2282-2302` spawns the stage runner with no `cwd` (the `run` helper at `:46-54` inherits the test process cwd, `apps/cli` under the workspace runner) and reads/deletes the marker it had just written relative to that cwd — so the existing test both encodes the bug and is what littered `apps/cli/.spur/run/`.
 
 Nothing parses the file — the writer, the workflow state (`.spur/workflows/kk-daily-ai-voice.yaml:532-538` and its packaged copy `plugins/kk/workflows/kk-daily-ai-voice.yaml:532-538`) and `kk daily publish-classify --fold-tail` (`apps/cli/src/commands/daily.ts:329`) only invoke the stage — so the artifact is a human-facing note pointing at `kk executor fan-out --retry-from`; but an artifact whose location depends on the caller's cwd is not a usable run record, and it litters whatever tree the caller stood in.
 
@@ -27,7 +27,7 @@ Nothing parses the file — the writer, the workflow state (`.spur/workflows/kk-
 - Line refs `:1327` / `:1329` / `:1337-1341` → verified `:1326` (function) / `:1328` (result path) / `:1337-1342` (mkdir + write) at bd537df5.
 - "A test invoking the stage with cwd=`apps/cli`" (unnamed) → it is `kk-workflow-stages.test.ts:2282` ("daily-publish-partial names the failed targets and preserves the retry file"), which asserts the cwd-relative location → that test must be rewritten, not merely joined by a new one.
 - "Prefer reusing the existing `timed` / `sted` helpers" → the stage already wraps both writes in `sted` inside `timed` (`:1330`, `:1337-1338`) → keep those wrappers; only the paths change.
-- Unlisted second asserting test: `apps/cli/tests/commands/daily.test.ts:338` expects `join(dir, '.spur/run/publish-partial-20261007.txt')` with cwd = `dir` = `--work-dir` → it keeps passing under the workDir convention unchanged; its `inCwd` comment (`:47-51`) names this stage's cwd write and gets a one-line update.
+- Unlisted second asserting test: `apps/cli/tests/commands/daily.test.ts:338` expects the marker beneath `dir` (its `--work-dir`) with cwd = `dir` → it keeps passing under the workDir convention unchanged; its `inCwd` comment (`:47-51`) names this stage's cwd write and gets a one-line update.
 - Sibling scan: no other `plugins/kk/scripts` or `apps/cli/src` code writes a cwd-relative `.spur/run/` path (`rg "['\"\`]\.spur/run"`), so the fix is local to this stage.
 
 **Refine corrections (2026-10-13).**
@@ -144,7 +144,7 @@ fallback, the `kk-daily-ai-voice` workflow argument list, and `kk daily publish-
 |---------------------|--------|---------------|----------|
 | AC1 — a supplied work directory owns the partial-publish marker (req: R1, R3) | MET | test | `bun test apps/cli/tests/kk-workflow-stages.test.ts --test-name-pattern "daily-publish-partial"` → 1 pass, 0 fail, 5 expect() calls. The case writes a partial result under `<workDir>/31-publish`, runs the stage with an empty second temporary directory as the process cwd, and asserts the marker at `join(dir, '.spur/run', 'publish-partial-20260101.txt')` plus `existsSync(join(cwd, '.spur')) === false` (`apps/cli/tests/kk-workflow-stages.test.ts:2346`). |
 | AC2 — partial-publish output remains compatible (req: R2) | MET | command | `bun plugins/kk/scripts/kk-workflow-stages.ts daily-publish-partial <throwaway-workDir> 20261013` run from an empty temporary cwd → exit 0; stderr `WARNING: partial publish — failed targets: podcast-pub`; marker body `20261013 partial publish: failed targets: podcast-pub (result.json preserved for kk executor fan-out --retry-from)`; `ls -a` of the cwd shows only `.` and `..`. |
-| AC3 — the regression distinguishes the two roots (req: R3) | MET | test | Red first, same assertions: against the unfixed stage the rewritten case failed with `error: ENOENT: no such file or directory, open '.../kk-workflow-stages-pmNnBb/.spur/run/publish-partial-20260101.txt'` at `apps/cli/tests/kk-workflow-stages.test.ts:2349` (marker written under the process cwd, absent from `workDir`); after the path change the identical case reports 1 pass, 0 fail. No assertion was relaxed between the two runs. |
+| AC3 — the regression distinguishes the two roots (req: R3) | MET | test | Red first, same assertions: against the unfixed stage the rewritten case failed with `ENOENT` while reading the workDir-anchored marker path at `apps/cli/tests/kk-workflow-stages.test.ts:2349` (the marker had been written under the process cwd, so the read under the run directory found nothing); after the path change the identical case reports 1 pass, 0 fail. No assertion was relaxed between the two runs. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -168,11 +168,12 @@ regression with a distinct process cwd plus a no-cwd-litter assertion) sits at
 `apps/cli/tests/kk-workflow-stages.test.ts:2332`.
 
 Evidence: the rewritten regression failed against the unfixed stage with
-`ENOENT ... /kk-workflow-stages-pmNnBb/.spur/run/publish-partial-20260101.txt`, then passed after the path
+`ENOENT` reading the workDir-anchored marker path, then passed after the path
 change (`1 pass, 0 fail, 5 expect() calls`); the fold-tail compatibility case passed (`1 pass, 0 fail`);
 the public-surface probe `bun plugins/kk/scripts/kk-workflow-stages.ts daily-publish-partial <throwaway
 workDir> 20261013`, run from a separate empty cwd, exited 0, warned `failed targets: podcast-pub`, wrote
-the marker under `<workDir>/.spur/run/`, and left no `.spur` directory in the cwd; the full project gate
+the marker beneath the run's own `workDir` (under its `.spur` / `run` scratch), and left no `.spur`
+directory in the cwd; the full project gate
 was green (2770 pass / 2 skip / 0 fail).
 
 Residual risk: the marker is human-facing — nothing parses it — so only an external reader that
