@@ -677,6 +677,36 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
         expect(safety.vars.safety_max_revise).toBe('2');
     });
 
+    it('every agent step tolerates its own failure so the gate, not the step, owns fail-closed (0270)', () => {
+        type SafetyAction = { kind?: string; onError?: string; options?: Record<string, unknown> };
+        const states = (
+            Bun.YAML.parse(readFileSync(SAFETY, 'utf-8')) as { states: { id: string; onEnter?: SafetyAction[] }[] }
+        ).states;
+        const agentSteps = states.flatMap((state) =>
+            (state.onEnter ?? [])
+                .filter((action) => action.kind === 'agent.run')
+                .map((action) => ({ state: state.id, onError: action.onError })),
+        );
+        // Non-vacuous: review, judge and revise each run one.
+        expect(agentSteps.map((step) => step.state).sort()).toEqual(['judge', 'review', 'revise']);
+        // 0270: an untolerated agent failure aborts the machine at that node, so `daily-safety-gate`
+        // never runs and the nested run ends `-> review` having written no status (2026-10-12 — an out
+        // of balance executor plus a refusing failover model took the whole daily DAG down that way).
+        // The gate is what writes `safety_status` and routes to a declared terminal, so every agent
+        // step must hand its failure to it instead of claiming the machine.
+        for (const step of agentSteps)
+            expect(step.onError, `${step.state} must tolerate its agent failing`).toBe('continue');
+        // …and the gate really does follow the agent step in the SAME state (verified engine behaviour:
+        // a later onEnter action still runs after a tolerated failure), so tolerating it cannot skip it.
+        for (const id of ['review', 'judge']) {
+            const actions = states.find((state) => state.id === id)?.onEnter ?? [];
+            const agentAt = actions.findIndex((action) => action.kind === 'agent.run');
+            const commandAt = actions.findIndex((action) => action.kind === 'shell');
+            expect(agentAt, `${id} has no agent.run step`).toBeGreaterThanOrEqual(0);
+            if (id === 'judge') expect(commandAt, 'the gate must follow the judge agent').toBeGreaterThan(agentAt);
+        }
+    });
+
     it.each([
         ['PASS + HIGH on admitted drafts', { verdict: 'PASS', confidence: 'HIGH' }, 'pass', true, true],
         ['PASS + MEDIUM on an escalated run', { verdict: 'PASS', confidence: 'MEDIUM' }, 'escalate', true, true],
