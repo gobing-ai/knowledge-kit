@@ -214,6 +214,121 @@ describe('kk daily run-report', () => {
         expect(readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8')).toContain('content QC admitted zero');
     });
 
+    it('0266 R3 — with no refusal artifact the fallback line stays byte-identical', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        const candidates = join(dir, 'candidates.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }]));
+        writeFileSync(candidates, JSON.stringify({ metadata: { docs: [] } }));
+        const result = await run([
+            'daily',
+            'run-report',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--pool',
+            pool,
+            '--candidates',
+            candidates,
+        ]);
+        expect(result.code).toBe(0);
+        expect(readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8')).toBe(
+            'no-content: content QC admitted zero of the pooled items\n',
+        );
+    });
+
+    it('0266 R3 — names the pre-spend floor refusal: estimate, floor and pool/kept counts', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        const candidates = join(dir, 'candidates.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }, { id: 'b' }, { id: 'c' }]));
+        writeFileSync(candidates, JSON.stringify({ metadata: { docs: [] } }));
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(dir, '21-plan', '20261007_04_quality-control-content_floor-refusal.json'),
+            JSON.stringify({
+                estimatedMinutes: 9.4,
+                minMinutes: 15,
+                candidateChars: 2400,
+                expansion: 1.4,
+                charRate: 5.4,
+                ids: ['a', 'b', 'c'],
+                reason: 'fixture',
+            }),
+        );
+        const result = await run([
+            'daily',
+            'run-report',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--pool',
+            pool,
+            '--candidates',
+            candidates,
+        ]);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).noContent).toBe(true);
+        const summary = readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8');
+        expect(summary).toContain('a 3-item pool estimated 9.4 min of speech');
+        expect(summary).toContain('below the 15 min floor');
+        expect(summary).toContain('pre-spend refusal (pool 3, kept 3)');
+    });
+
+    it('0266 R2/R3 — names the post-spend duration refusal, which wins over the floor artifact', async () => {
+        const dir = tempDir();
+        const pool = join(dir, 'pool.json');
+        const candidates = join(dir, 'candidates.json');
+        writeFileSync(pool, JSON.stringify([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]));
+        writeFileSync(candidates, JSON.stringify({ metadata: { docs: [] } }));
+        mkdirSync(join(dir, '21-plan'), { recursive: true });
+        writeFileSync(
+            join(dir, '21-plan', '20261007_04_quality-control-content_floor-refusal.json'),
+            JSON.stringify({
+                estimatedMinutes: 16.1,
+                minMinutes: 15,
+                candidateChars: 4000,
+                expansion: 1.4,
+                charRate: 5.4,
+                ids: ['a', 'b', 'c', 'd'],
+                reason: 'fixture',
+            }),
+        );
+        mkdirSync(join(dir, '30-audio'), { recursive: true });
+        writeFileSync(
+            join(dir, '30-audio', '20261007_11_generate_content_duration-refusal.json'),
+            JSON.stringify({
+                measuredMinutes: 12.3,
+                estimatedMinutes: 16.1,
+                minMinutes: 15,
+                keptCount: 9,
+                candidateChars: 4000,
+                reason: 'fixture',
+            }),
+        );
+        const result = await run([
+            'daily',
+            'run-report',
+            '--work-dir',
+            dir,
+            '--run-date',
+            '20261007',
+            '--pool',
+            pool,
+            '--candidates',
+            candidates,
+        ]);
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.out).noContent).toBe(true);
+        const summary = readFileSync(join(dir, 'run-report.summary.txt'), 'utf-8');
+        expect(summary).toContain('the episode ran 12.3 min (pre-spend estimate 16.1 min)');
+        expect(summary).toContain('below the 15 min floor');
+        expect(summary).toContain('duration refusal after synthesis (pool 4, kept 9)');
+        expect(summary).not.toContain('pre-spend refusal');
+    });
+
     it('invokes the report generator for a real pool and writes its body, failing loud when it fails', async () => {
         const dir = tempDir();
         const plugins = tempDir('kk-daily-plugins-');

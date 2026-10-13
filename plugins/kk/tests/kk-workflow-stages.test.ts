@@ -721,12 +721,17 @@ describe('daily-episode-duration stage — 15–20 min standing gate', () => {
         writeFileSync(join(d, `${STAMP}_11_generate_content.json`), JSON.stringify({ metadata: { duration } }));
     };
 
-    it('fails loud below the min bound', () => {
+    it('closes no-content below the min bound — exit 0 + refusal artifact (0266)', () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-duration-'));
         mkAudio(dir, 495); // today's pre-fix episode: 8.25 min
         const result = runStage(['daily-episode-duration', dir, STAMP, '15', '20']);
-        expect(result.status).not.toBe(0);
+        expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toContain('8.3');
+        const refusal = JSON.parse(
+            readFileSync(join(dir, '30-audio', `${STAMP}_11_generate_content_duration-refusal.json`), 'utf-8'),
+        ) as { measuredMinutes: number; minMinutes: number };
+        expect(refusal.measuredMinutes).toBeCloseTo(8.3, 5);
+        expect(refusal.minMinutes).toBe(15);
         rmSync(dir, { recursive: true, force: true });
     });
 

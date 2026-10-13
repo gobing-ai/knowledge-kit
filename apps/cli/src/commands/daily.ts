@@ -394,6 +394,48 @@ function countItems(path: string | undefined): number | undefined {
 }
 
 /**
+ * The `no-content` reason line, naming the refusal artifact that explains the empty candidates
+ * when one exists (0266 R3): the post-spend duration refusal first (it is the later, more specific
+ * fact), then the pre-spend floor refusal, then the pool/QC fallbacks. A missing or unparsable
+ * artifact — or one without its numeric fields — falls through to today's lines unchanged.
+ */
+function noContentReason(workDir: string, runDate: string, poolCount: number | undefined): string {
+    const fallback =
+        poolCount === 0
+            ? 'no-content: the store pool was empty (kk store extract found no unused items)'
+            : 'no-content: content QC admitted zero of the pooled items';
+    const readRefusal = (path: string): Record<string, number | string | string[] | null> | null => {
+        if (!existsSync(path)) return null;
+        try {
+            const parsed = parseJson(readFileSync(path, 'utf-8')) as unknown;
+            return parsed !== null && typeof parsed === 'object'
+                ? (parsed as Record<string, number | string | string[] | null>)
+                : null;
+        } catch {
+            return null;
+        }
+    };
+    const num = (value: number | string | string[] | null | undefined): number | null =>
+        typeof value === 'number' && Number.isFinite(value) ? value : null;
+    const duration = readRefusal(join(workDir, '30-audio', `${runDate}_11_generate_content_duration-refusal.json`));
+    const measured = num(duration?.measuredMinutes);
+    const measuredEstimate = num(duration?.estimatedMinutes);
+    const durationFloor = num(duration?.minMinutes);
+    const keptCount = num(duration?.keptCount);
+    if (measured !== null && measuredEstimate !== null && durationFloor !== null && keptCount !== null) {
+        return `no-content: the episode ran ${measured} min (pre-spend estimate ${measuredEstimate} min), below the ${durationFloor} min floor — duration refusal after synthesis (pool ${poolCount ?? 0}, kept ${keptCount})`;
+    }
+    const floor = readRefusal(join(workDir, '21-plan', `${runDate}_04_quality-control-content_floor-refusal.json`));
+    const estimated = num(floor?.estimatedMinutes);
+    const minMinutes = num(floor?.minMinutes);
+    const ids = Array.isArray(floor?.ids) ? (floor?.ids as string[]) : null;
+    if (estimated !== null && minMinutes !== null && ids !== null) {
+        return `no-content: a ${ids.length}-item pool estimated ${estimated} min of speech, below the ${minMinutes} min floor — pre-spend refusal (pool ${poolCount ?? 0}, kept ${ids.length})`;
+    }
+    return fallback;
+}
+
+/**
  * `kk daily run-report --work-dir <dir> --run-date <stamp> …` — assemble the per-run report from the
  * artifacts that exist, and record the pool outcome next to it.
  *
@@ -411,10 +453,7 @@ async function runReportAction(options: RunReportOptions): Promise<void> {
         const candidateCount = countItems(options.candidates);
         mkdirSync(workDir, { recursive: true });
         if (poolCount === 0 || candidateCount === 0) {
-            const reason =
-                poolCount === 0
-                    ? 'no-content: the store pool was empty (kk store extract found no unused items)'
-                    : 'no-content: content QC admitted zero of the pooled items';
+            const reason = noContentReason(workDir, runDate, poolCount);
             const body = `# Daily run ${runDate} — no content\n\n${reason}\n\nNo article, audio or publish\nartifact was produced; nothing was marked used.\n`;
             writeFileSync(reportMd, body);
             writeFileSync(summary, `${reason}\n`);

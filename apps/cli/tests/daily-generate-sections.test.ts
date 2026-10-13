@@ -191,6 +191,29 @@ function writeScriptTotal(yamlPath: string, target: number): void {
     writeFileSync(yamlPath, Bun.YAML.stringify(vs));
 }
 
+/** Minimal `daily-episode-duration` input: a final content at `seconds` plus a non-empty kept pool. */
+function setupDurationFixture(workDir: string, runDate: string, seconds: number): void {
+    const audioDir = join(workDir, '30-audio');
+    const planDir = join(workDir, '21-plan');
+    mkdirSync(audioDir, { recursive: true });
+    mkdirSync(planDir, { recursive: true });
+    writeFileSync(
+        join(audioDir, `${runDate}_11_generate_content.json`),
+        JSON.stringify({ title: 'Daily AI News', body: '', metadata: { duration: seconds } }),
+    );
+    writeFileSync(
+        join(planDir, `${runDate}_04_quality-control-content_candidates.json`),
+        JSON.stringify({
+            metadata: {
+                docs: [
+                    { id: 'doc-1', title: '重磅模型架构发布', body: '这是一项重大突破。'.repeat(10) },
+                    { id: 'doc-2', title: '开源权重更新', body: '开源社区迎来全新权重发布。' },
+                ],
+            },
+        }),
+    );
+}
+
 function startEvents(logFile: string): Array<{ args: string[]; outPath: string }> {
     return readFileSync(logFile, 'utf-8')
         .trim()
@@ -903,10 +926,68 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(after.mp3Path).toBe(before.mp3Path);
             expect(existsSync(after.mp3Path as string)).toBe(true);
 
-            // the duration gate consumes the merged metadata: an ~8.5 s episode is under the floor
-            const dur = runStage(['daily-episode-duration', dir, date, '15', '20'], binDir, logFile);
-            expect(dur.status).not.toBe(0);
+            // the duration gate consumes the merged metadata: an ~8.5 s episode is under the floor,
+            // which since 0266 refuses-and-closes (exit 0 + refusal artifact) instead of aborting
+            const dur = runStage(['daily-episode-duration', dir, date, '15', '20', 'voicebox'], binDir, logFile);
+            expect(dur.status, dur.stderr).toBe(0);
+            const refusalPath = join(dir, '30-audio', `${date}_11_generate_content_duration-refusal.json`);
+            const refusal = JSON.parse(readFileSync(refusalPath, 'utf-8')) as {
+                measuredMinutes: number;
+            };
+            // the refusal records the merged length the gate read (intro sting included)
+            expect(refusal.measuredMinutes).toBeCloseTo(Math.round(((after.duration as number) / 60) * 10) / 10, 5);
+            expect(refusal.measuredMinutes).toBeLessThan(15);
             expect(dur.stderr + dur.stdout).toContain('below the 15');
+        });
+    });
+});
+
+describe('0266 — post-spend duration refusal closes the run as no-content', () => {
+    const candidatesPath = (dir: string, date: string) =>
+        join(dir, '21-plan', `${date}_04_quality-control-content_candidates.json`);
+    const refusalPath = (dir: string, date: string) =>
+        join(dir, '30-audio', `${date}_11_generate_content_duration-refusal.json`);
+
+    it('AC2 — an under-floor episode writes the refusal artifact, empties the candidates and exits 0', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupDurationFixture(dir, date, 510); // 8.5 min — under the 15-min floor, post-spend
+            const dur = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(dur.status, dur.stderr).toBe(0);
+            const refusal = JSON.parse(readFileSync(refusalPath(dir, date), 'utf-8')) as Record<string, unknown>;
+            expect(refusal.measuredMinutes).toBe(8.5);
+            expect(refusal.minMinutes).toBe(15);
+            expect(refusal.keptCount).toBe(2);
+            expect(refusal.candidateChars).toBeGreaterThan(0);
+            expect(typeof refusal.estimatedMinutes).toBe('number');
+            const kept = JSON.parse(readFileSync(candidatesPath(dir, date), 'utf-8')) as {
+                metadata: { docs: unknown[] };
+            };
+            expect(kept.metadata.docs).toEqual([]);
+            expect(dur.stderr + dur.stdout).toContain('below the 15');
+        });
+    });
+
+    it('AC2 — a rerun with the refusal artifact already present changes nothing (idempotency)', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupDurationFixture(dir, date, 510);
+            const first = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            const refusalBefore = readFileSync(refusalPath(dir, date), 'utf-8');
+            const candidatesBefore = readFileSync(candidatesPath(dir, date), 'utf-8');
+            const second = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(second.status, second.stderr).toBe(0);
+            expect(readFileSync(refusalPath(dir, date), 'utf-8')).toBe(refusalBefore);
+            expect(readFileSync(candidatesPath(dir, date), 'utf-8')).toBe(candidatesBefore);
+        });
+    });
+
+    it('AC2 — an over-max episode still fails loud and writes no refusal artifact', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupDurationFixture(dir, date, 26 * 60); // 26 min — above the 25-min ceiling
+            const dur = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(dur.status).not.toBe(0);
+            expect(dur.stderr + dur.stdout).toContain('above the 15–25');
+            expect(existsSync(refusalPath(dir, date))).toBe(false);
         });
     });
 });

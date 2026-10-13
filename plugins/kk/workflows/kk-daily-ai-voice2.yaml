@@ -560,25 +560,29 @@ nodes:
           kk stage daily-intro "${vars.work_dir}" "${vars.run_date}" "${vars.intro_music}"
 
   - id: duration
-    description: "Fail loud unless final episode duration sits in the 15–25 min window (duration authoritative)"
+    description: "Measured duration gate: under episode_min_minutes the run refuses and closes as no-content (refusal artifact + emptied candidates, exit 0 — 0266); above episode_max_minutes it still fails loud. Duration is authoritative."
     dependsOn: [intro]
     action:
       kind: shell
       options:
         command: >-
-          kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}"
+          kk stage daily-episode-duration "${vars.work_dir}" "${vars.run_date}" "${vars.episode_min_minutes}" "${vars.episode_max_minutes}" "${vars.vdriver}"
 
   # ---- publish-prep branch ----
   # After duration, not wrap-docs: daily-publish-prep reads the generate content's mp3Path.
   # Starting it in the same wave as generate fails the run before TTS has written that file
   # (2026-10-08 dogfood). duration already includes intro, so the stamp lands on the final MP3.
+  # Pool-gated (0266): a duration refusal empties the candidates file, and the publish seam must
+  # not package an episode the measured gate just refused.
   - id: publish-prep
     description: "Merge article Content with the final MP3 (after intro + duration) and stamp its ID3 tags — the publish seam's input"
     dependsOn: [duration]
     condition:
       kind: shell
       options:
-        command: 'test "${vars.publish_enabled}" = "true"'
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.publish_enabled}" = "true"
     action:
       kind: shell
       options:
@@ -614,6 +618,13 @@ nodes:
   - id: show-notes
     description: "Render timeline show notes from the episode plan (podcast-pub show-notes op; article URL from the surfdash result postPath — a surfdash failure degrades to the legacy full-body layout)"
     dependsOn: [quality, publish-surfdash]
+    # Pool-gated (0266): its only skip path was dependency cascade, which a done+skipped mix
+    # defeats — a duration-refused run would still render notes for an unpublished episode.
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
     action:
       kind: shell
       options:
@@ -665,10 +676,14 @@ nodes:
     dependsOn: [xhs-write]
     # A skipped xhs-write still admits its dependents, so each XHS node carries its own gate:
     # without it a run with xhs_enabled=false would re-package a stale same-day 25-xhs/ series.
+    # The pool-count half (0266) stops the same stale re-package after a duration refusal emptied
+    # the candidates — xhs-write runs before duration, so its plan/cards are already on disk.
     condition:
       kind: shell
       options:
-        command: 'test "${vars.xhs_enabled}" = "true"'
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && test "${vars.xhs_enabled}" = "true"
     action:
       kind: shell
       onError: continue

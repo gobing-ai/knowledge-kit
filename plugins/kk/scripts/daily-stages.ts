@@ -221,10 +221,26 @@ export function dailyQcContent(args: string[]): void {
 const SPEAK_CHAR_EXPANSION = 1.4;
 
 /**
- * Pre-spend floor gate (2026-10-12). `daily-episode-duration` already refuses a final episode below
- * the floor, but it runs after the TTS spend and its failure aborts the run — a thin pool therefore
- * cost a full synthesis pass and skipped run-report/ledger (the 04:30 tick of 2026-10-11: 3
- * candidates → 4.0 min episode, nothing published). This estimates the spoken length from the kept
+ * The calibrated pre-spend estimate over a kept pool (title+body characters × the 1.4 expansion,
+ * over the driver's measured char rate, plus the 8 s intro sting) — shared by the pre-spend floor
+ * gate (applyFloorGate) and the post-spend duration refusal (dailyEpisodeDuration, 0266), so both
+ * artifacts report the same arithmetic. `seconds` is unrounded: the floor gate compares seconds.
+ */
+function estimateSpokenMinutes(docs: unknown[], vdriver: string): { minutes: number; seconds: number; chars: number } {
+    const chars = docs.reduce((sum, doc) => {
+        const entry = (doc ?? {}) as Record<string, unknown>;
+        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
+    }, 0);
+    const seconds = 8 + (chars * SPEAK_CHAR_EXPANSION) / spokenCharRate(vdriver);
+    return { minutes: Math.round((seconds / 60) * 10) / 10, seconds, chars };
+}
+
+/**
+ * Pre-spend floor gate (2026-10-12). `daily-episode-duration` also refuses a final episode below
+ * the floor, but it runs after the TTS spend — a thin pool would still pay for a full synthesis
+ * pass (the 04:30 tick of 2026-10-11: 3 candidates → 4.0 min episode, nothing published; since
+ * 0266 that post-spend refusal closes as no-content instead of aborting, but the spend is gone).
+ * This estimates the spoken length from the kept
  * candidates and, when it cannot reach the floor, empties the candidate list: every downstream
  * `pool-count --min 1` guard then skips the content, audio, publish and XHS subtrees, and the run
  * closes through run-report and the ledger exactly like an empty pool. The estimate and its inputs
@@ -242,12 +258,7 @@ function applyFloorGate(
     const content = readJson(candidates);
     const docs = metadataOf(content).docs;
     if (!Array.isArray(docs) || docs.length === 0) return;
-    const chars = docs.reduce((sum, doc) => {
-        const entry = (doc ?? {}) as Record<string, unknown>;
-        return sum + `${String(entry.title ?? '')}`.length + String(entry.body ?? '').length;
-    }, 0);
-    const estimatedSeconds = 8 + (chars * SPEAK_CHAR_EXPANSION) / spokenCharRate(vdriver);
-    const estimatedMinutes = Math.round((estimatedSeconds / 60) * 10) / 10;
+    const { minutes: estimatedMinutes, seconds: estimatedSeconds, chars } = estimateSpokenMinutes(docs, vdriver);
     if (estimatedSeconds >= floor * 60) {
         console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
         return;
@@ -448,9 +459,16 @@ export function dailyCoverNormalize(args: string[]): void {
  * content's `metadata.duration` — after the intro sting merged, this is the true episode length —
  * and fails loud outside `[min, max]` seconds-worth of minutes. A missing duration is a failure,
  * not a pass: the gate must never silently let an under-length episode through again.
+ *
+ * 0266 (policy (c), 2026-10-13): an under-minutes episode is a thin day, not a broken run — the
+ * gate refuses it like the pre-spend floor gate does instead of aborting before run-report/ledger:
+ * write `_11_generate_content_duration-refusal.json` beside the content, empty the candidates
+ * file (every pool-count-gated node downstream then skips) and exit 0, so the run closes as
+ * no-content with the measured vs estimated minutes recorded. Over-max still fails loud — trimming
+ * is a different problem.
  */
 export function dailyEpisodeDuration(args: string[]): void {
-    const [workDir = '', runDate = '', minArg = '', maxArg = ''] = args;
+    const [workDir = '', runDate = '', minArg = '', maxArg = '', vdriver = ''] = args;
     if (!workDir) fail('missing work_dir');
     if (!runDate) fail('missing run_date');
     const minMinutes = Number(minArg);
@@ -476,10 +494,36 @@ export function dailyEpisodeDuration(args: string[]): void {
     const minutes = seconds / 60;
     const shown = minutes.toFixed(1);
     if (minutes < minMinutes) {
-        failWith(
-            1,
-            `episode-duration: episode runs ${shown} min, below the ${minMinutes}–${maxMinutes} min requirement (duration is authoritative). The candidate pool is too thin — deepen per-item treatment or add items; do not ship a short episode silently.`,
+        const refusal = join(workDir, '30-audio', `${runDate}_11_generate_content_duration-refusal.json`);
+        // Idempotency first: a rerun must not recompute an estimate from the already-emptied candidates.
+        if (isFile(refusal)) {
+            console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
+            return;
+        }
+        const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
+        const content = readJson(candidates);
+        const docs = Array.isArray(metadataOf(content).docs) ? (metadataOf(content).docs as unknown[]) : [];
+        const estimated = estimateSpokenMinutes(docs, vdriver);
+        const measuredMinutes = Math.round(minutes * 10) / 10;
+        sted('write', refusal, () =>
+            writeJqText(refusal, {
+                measuredMinutes,
+                estimatedMinutes: estimated.minutes,
+                minMinutes,
+                keptCount: docs.length,
+                candidateChars: estimated.chars,
+                reason: `the episode ran ${shown} min of speech, below the ${minMinutes} min floor (pre-spend estimate ${estimated.minutes} min) — refusing after synthesis`,
+            }),
         );
+        if (content !== null) {
+            sted('write', candidates, () =>
+                writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
+            );
+        }
+        console.error(
+            `episode-duration: episode ran ${shown} min (estimate ${estimated.minutes} min), below the ${minMinutes}–${maxMinutes} min requirement — candidates emptied, the run closes as no-content (see ${refusal})`,
+        );
+        return;
     }
     if (minutes > maxMinutes) {
         failWith(

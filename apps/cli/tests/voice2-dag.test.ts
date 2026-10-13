@@ -590,13 +590,43 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
 
     it('gates xhs-render and xhs-publish on xhs_enabled — a skipped xhs-write still admits its dependents (0236)', () => {
         // Without their own gate, a publishing run with xhs_enabled=false would re-package and
-        // re-publish a stale same-day `25-xhs/content.json` as a draft.
-        for (const id of ['xhs-render', 'xhs-publish']) {
-            const node = dag.nodes.find((candidate) => candidate.id === id);
-            expect(String(node?.condition?.options?.command), `${id} must be xhs-gated`).toBe(
-                `test "\${vars.xhs_enabled}" = "true"`,
-            );
+        // re-publish a stale same-day `25-xhs/content.json` as a draft. xhs-render additionally
+        // carries the candidates pool gate (0266): a duration-refused run emptied the candidates,
+        // so re-packaging that stale series is exactly what the gate stops.
+        const render = String(
+            dag.nodes.find((candidate) => candidate.id === 'xhs-render')?.condition?.options?.command,
+        );
+        expect(render).toContain('kk store pool-count');
+        expect(render).toContain('_04_quality-control-content_candidates.json" --min 1');
+        expect(render).toContain(`test "\${vars.xhs_enabled}" = "true"`);
+        expect(String(dag.nodes.find((node) => node.id === 'xhs-publish')?.condition?.options?.command)).toBe(
+            `test "\${vars.xhs_enabled}" = "true"`,
+        );
+    });
+
+    it('passes vdriver to the duration gate and pool-gates the publish fan after a duration refusal (0266 R2)', () => {
+        // The measured gate needs the driver id to recompute the pre-spend estimate for its refusal
+        // artifact (the same SPEAK_CHAR_EXPANSION/spokenCharRate arithmetic the floor gate uses).
+        const duration = String(dag.nodes.find((node) => node.id === 'duration')?.action?.options?.command);
+        expect(duration).toContain('kk stage daily-episode-duration');
+        expect(duration).toContain(`"\${vars.episode_min_minutes}" "\${vars.episode_max_minutes}" "\${vars.vdriver}"`);
+        // A duration refusal empties the candidates file, so the publish fan mirrors the QC-zero
+        // guards: pool-count first, then the channel enable flag.
+        for (const [id, flag] of [
+            ['publish-prep', 'publish_enabled'],
+            ['xhs-render', 'xhs_enabled'],
+        ] as const) {
+            const condition = String(dag.nodes.find((candidate) => candidate.id === id)?.condition?.options?.command);
+            expect(condition, id).toContain('kk store pool-count');
+            expect(condition, id).toContain('_04_quality-control-content_candidates.json" --min 1');
+            expect(condition, id).toContain(`test "\${vars.${flag}}" = "true"`);
         }
+        // show-notes had no condition of its own - a refusal must skip it too.
+        const showNotes = String(
+            dag.nodes.find((candidate) => candidate.id === 'show-notes')?.condition?.options?.command,
+        );
+        expect(showNotes).toContain('kk store pool-count');
+        expect(showNotes).toContain('_04_quality-control-content_candidates.json" --min 1');
     });
 
     it('keeps the voice2 xhs-write prompt inside the ADR-115 1000-char cap (0235)', () => {
