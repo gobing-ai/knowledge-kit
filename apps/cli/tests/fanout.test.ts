@@ -1342,9 +1342,16 @@ describe('fanout interior concurrency', () => {
 
     it('R1/AC1 — two real publisher processes overlap under --jobs 2', async () => {
         await withTempDir(async (root) => {
+            // The two windows must be wider than this host's process-start jitter, or two processes
+            // launched together can each finish before the other has stamped its start: measured
+            // 240-370 ms of startup jitter under CPU load on 2026-10-12, against a 250 ms sleep, which
+            // made the intended overlap intermittent. Widened here only — this test's claim IS about the
+            // windows intersecting; the serialization test below asserts disjoint boundaries, which does
+            // not depend on how long either window is.
+            const sleepMs = 1200;
             const pluginsRoot = join(root, 'plugins');
-            writeSleepingPublishPlugin(pluginsRoot, 'slow-a-pub', SLEEP_MS);
-            writeSleepingPublishPlugin(pluginsRoot, 'slow-b-pub', SLEEP_MS);
+            writeSleepingPublishPlugin(pluginsRoot, 'slow-a-pub', sleepMs);
+            writeSleepingPublishPlugin(pluginsRoot, 'slow-b-pub', sleepMs);
             const contentFile = join(root, 'content.json');
             const outFile = join(root, 'result.json');
             writeFileSync(contentFile, JSON.stringify(CONTENT));
@@ -1368,9 +1375,9 @@ describe('fanout interior concurrency', () => {
             const a = readPublisherInterval(pluginsRoot, 'slow-a-pub');
             const b = readPublisherInterval(pluginsRoot, 'slow-b-pub');
             // Both processes really slept, and their windows intersect: the pool overlapped them.
-            expect(a.end - a.start).toBeGreaterThanOrEqual(SLEEP_MS - 50);
-            expect(b.end - b.start).toBeGreaterThanOrEqual(SLEEP_MS - 50);
-            expect(overlaps(a, b)).toBe(true);
+            expect(a.end - a.start).toBeGreaterThanOrEqual(sleepMs - 50);
+            expect(b.end - b.start).toBeGreaterThanOrEqual(sleepMs - 50);
+            expect(overlaps(a, b), `a=[${a.start},${a.end}] b=[${b.start},${b.end}]`).toBe(true);
         });
     });
 
@@ -1403,15 +1410,15 @@ describe('fanout interior concurrency', () => {
                     pluginsRoot,
                 ]);
 
-                // The label rides inside each expected tuple so a failure names its scenario.
+                // The label and both windows ride in the message so a failure names its scenario and
+                // the actual intervals — an overlap report without them cannot be acted on.
                 expect([scenario.label, code]).toEqual([scenario.label, 0]);
-                expect([
-                    scenario.label,
-                    overlaps(
-                        readPublisherInterval(pluginsRoot, 'slow-a-pub'),
-                        readPublisherInterval(pluginsRoot, 'slow-b-pub'),
-                    ),
-                ]).toEqual([scenario.label, false]);
+                const a = readPublisherInterval(pluginsRoot, 'slow-a-pub');
+                const b = readPublisherInterval(pluginsRoot, 'slow-b-pub');
+                expect(
+                    overlaps(a, b),
+                    `${scenario.label}: a=[${a.start},${a.end}] (${a.end - a.start}ms) b=[${b.start},${b.end}] (${b.end - b.start}ms)`,
+                ).toBe(false);
             }
         });
     });
@@ -1428,48 +1435,63 @@ describe('fanout interior concurrency', () => {
             writeHangingPublishPlugin(pluginsRoot, hangName, marker);
             writeSleepingPublishPlugin(pluginsRoot, fastName, 0);
             const contentFile = join(root, 'content.json');
-            const outFile = join(root, 'result.json');
             writeFileSync(contentFile, JSON.stringify(CONTENT));
+            const fanout = (out: string, timeoutMs: string, targets: string[]): Promise<number> =>
+                runFanout([
+                    '--content',
+                    contentFile,
+                    ...targets.flatMap((target) => ['--target', target]),
+                    '--jobs',
+                    String(targets.length),
+                    '--target-timeout',
+                    timeoutMs,
+                    '--out',
+                    out,
+                    '--plugins-root',
+                    pluginsRoot,
+                ]);
+            const leftovers = (): string[] =>
+                readdirSync(tmpdir()).filter(
+                    (entry) => entry.startsWith('kk-fanout-') && entry.endsWith('.json') && entry.includes(token),
+                );
 
-            const started = Date.now();
-            const code = await runFanout([
-                '--content',
-                contentFile,
-                '--target',
-                hangName,
-                '--target',
-                fastName,
-                '--jobs',
-                '2',
-                '--target-timeout',
-                '300',
-                '--out',
-                outFile,
-                '--plugins-root',
-                pluginsRoot,
-            ]);
-            const elapsed = Date.now() - started;
+            // The two properties need DIFFERENT budgets, so they get two runs. A budget tight enough
+            // to prove the kill (300 ms, well under the descendant's 2 s marker deadline) is also tight
+            // enough to expire on the sibling's own process spawn — measured 240-370 ms for a live
+            // plugin under CPU load on 2026-10-12 — and asserting a sibling beats it is a wall-clock
+            // assertion about the host, not the product. It failed under load with the behaviour intact.
 
+            // Run 1: the hanging target alone, on the tight budget. The marker is the event evidence
+            // that the run ended at the BUDGET and not at the descendant's deadline: had it waited the
+            // descendant out, the process tree would have lived to write it.
+            const code = await fanout(join(root, 'result.json'), '300', [hangName]);
             expect(code).toBe(1);
-            // The run settles at the budget, not at the descendant's 2 s deadline.
-            expect(elapsed).toBeLessThan(2000);
-            const outData = JSON.parse(readFileSync(outFile, 'utf-8'));
+            const outData = JSON.parse(readFileSync(join(root, 'result.json'), 'utf-8'));
             expect(outData.targets[0]).toMatchObject({ target: hangName, status: 'failed', ok: false });
             expect(outData.targets[0].error).toContain(hangName);
             expect(outData.targets[0].error).toContain('300ms');
-            expect(outData.targets[1]).toMatchObject({ target: fastName, status: 'published', ok: true });
-            // Cleanup ran for both the failed and the published target.
-            expect(
-                readdirSync(tmpdir()).filter(
-                    (entry) => entry.startsWith('kk-fanout-') && entry.endsWith('.json') && entry.includes(token),
-                ),
-            ).toEqual([]);
-
+            expect(leftovers()).toEqual([]);
             // Grace past the owned descendant's 2 s write deadline: the whole tree is dead.
             await Bun.sleep(2600);
             expect(existsSync(marker)).toBe(false);
+
+            // Run 2: the hanging target beside a live sibling, on a budget that only the hanging one
+            // can miss (5x the worst measured spawn). Its sibling must publish — a hanging target must
+            // not become its neighbour's failure.
+            const rivalOut = join(root, 'result-rival.json');
+            const rivalCode = await fanout(rivalOut, '3000', [hangName, fastName]);
+            expect(rivalCode).toBe(1);
+            const rival = JSON.parse(readFileSync(rivalOut, 'utf-8'));
+            expect(rival.targets[0]).toMatchObject({ target: hangName, status: 'failed', ok: false });
+            expect(rival.targets[0].error).toContain('3000ms');
+            expect(rival.targets[1]).toMatchObject({ target: fastName, status: 'published', ok: true });
+            // Cleanup ran for both the failed and the published target.
+            expect(leftovers()).toEqual([]);
         });
-    });
+        // The load headroom belongs here, not in an assertion: the two runs plus the descendant grace
+        // are ~7 s of work on an idle host, and a busy one only stretches the wall clock — which is
+        // exactly the quantity this test must not turn into a product claim.
+    }, 30_000);
 
     it('rejects a malformed --jobs / --target-timeout before touching the filesystem', async () => {
         // The handler reports the refusal through echoError: capture stderr (see capture.ts) so the
