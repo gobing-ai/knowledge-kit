@@ -3,12 +3,12 @@ schema_version: 1
 name: Make the full project gate deterministic under machine load (three load-sensitive fixtures)
 status: todo
 template: issue
-created_at: 2026-10-13T00:48:23.832Z
-updated_at: "2026-10-13T00:48:36.705Z"
+created_at: 2026-10-13T01:34:08.731Z
+updated_at: "2026-10-13T01:34:18.281Z"
 
 ---
 
-## 0270. Make the full project gate deterministic under machine load (three load-sensitive fixtures)
+## 0271. Make the full project gate deterministic under machine load (three load-sensitive fixtures)
 
 ### Background
 
@@ -33,6 +33,13 @@ the batch report `.spur/run/worktree-runall-0255-0268-de19-batch-report.md` in t
 Because the gate flakes, an otherwise-complete task can be certified `failed` for reasons outside its diff: task
 0268 reached `wip` with its own tests green (25 pass / 0 fail in `apps/cli/tests/store-label.test.ts`) and was
 routed to `failed (retry-exhausted)` by the pipeline's bounded fix budget after two no-change diagnosis hops.
+
+**Provenance.** This task was re-created as 0271 through `spur task create` after the 0255/0268 batch's
+worktree allocated the same WBS 0270 as a task filed concurrently on `main` ("Make a failed safety reviewer
+reach the gate instead of aborting the nested run"). WBS allocation scans the tree it runs in, and the
+worktree's base predated that task; the merge that landed the batch is what surfaced the collision as
+`L1.wbs-collision`. The fix followed the rule's own instruction — keep one and re-create the other through
+the allocator, never renumber by hand.
 
 ### Requirements
 
@@ -69,7 +76,30 @@ routed to `failed (retry-exhausted)` by the pipeline's bounded fix budget after 
 
 ### Root Cause
 
-<!-- Verified underlying cause with file:line evidence. Fill once reproduced/isolated. -->
+Three independent environment sensitivities, none of them a logic defect in the code under test:
+
+1. **A hard budget smaller than the cost of starting the process it bounds.** `apps/cli/tests/fanout.test.ts`
+   passes `--target-timeout 300` and then requires a spawned publisher plugin to reach `published` inside
+   that window. Process startup on this machine measures 351–926 ms depending on load, so the "fast" sibling
+   is killed by its own budget and the assertion reports the fixture's timing rather than the behaviour under
+   test (that a hanging publisher is terminated while its sibling still publishes). Reproduced on a clean
+   `main` checkout at `3d9afcf9`/`6b553305` and again after the 0255/0268 merge (`51 pass / 1 fail`).
+
+2. **A read that races a concurrent module/ dependency materialisation.** `apps/cli/tests/commands/stage.test.ts`
+   intermittently fails with `EISDIR reading file: …/@gobing-ai/ts-utils/dist/index.js` while that path is a
+   regular file before and after the run. Seen in 3 full-suite runs and after the merge, never in ~8 isolated
+   attempts. A `bun pm pack`/`bun build` performed by another test file in the same `bun test` process (the
+   packed-distribution suites rebuild the shared `apps/*/dist` trees) is the only writer observed in the
+   window; the repo's cross-process `withBuildLock` is taken by the *packing* files only, so a non-packing
+   reader is not excluded.
+
+3. **A read-before-render.** `apps/board/tests/installed-board.test.ts:713` asserted a link count immediately
+   after navigating, so a module whose React tree had not finished mounting read as absent. Intermittent,
+   observed once under heavy load; the other two gate runs passed it.
+
+Why it matters beyond flakiness: the pipeline's bounded `test-fix` budget is spent on a red gate that no diff
+can fix. Task 0268 — implemented, its own suite green — was routed to `failed (retry-exhausted)` after two
+no-change diagnosis hops for exactly this reason.
 
 ### Solution
 
