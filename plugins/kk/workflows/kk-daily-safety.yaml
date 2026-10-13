@@ -47,8 +47,11 @@ states:
         options:
           command: >-
             kk stage daily-safety-prep "${vars.work_dir}" "${vars.run_date}" "${vars.safety_platforms}"
-      # No onError: a failed or absent report is fail-closed (the gate blocks on a missing file).
       - kind: agent.run
+        # A failed or absent report must reach the gate, which blocks fail-closed on the missing
+        # file — under the engine's default fail policy this state halts the run and the gate never
+        # runs (task 0270).
+        onError: continue
         options:
           role: reviewer
           agent: ${vars.agent}
@@ -65,6 +68,9 @@ states:
     description: "Independent kk:content-judge compliance re-check of the reviewed drafts, then consume report + verdict into safety_status pass|escalate|exclude|revise|block (exit 0 in all five — routing is transition-owned; task 0189 R10, 20261005)"
     onEnter:
       - kind: agent.run
+        # Same policy as review (0270): a failed or absent verdict must reach the gate shell below
+        # in this same onEnter sequence — the gate blocks fail-closed on the missing verdict.
+        onError: continue
         options:
           role: reviewer
           agent: ${vars.agent}
