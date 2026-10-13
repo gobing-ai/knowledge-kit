@@ -216,9 +216,22 @@ workflows:
 # The kk item-label catalog, served to `kk store label` through `spur decision run`
 # (design kk-collect-and-daily-voice2.md §4). Project-relative, so the paths resolve
 # from the repo root on any checkout.
+#
+# The installed package's own catalogs are listed too, for the same reason and with the same
+# TODO as `workflows.paths` above: this list IS the whole search path, so omitting them left the
+# shared task-pipeline's `decide task-triage`, `decide failure-class` and
+# `decide review-failure-class` UNRESOLVABLE — every pipeline run then fell to each decide's
+# hard-coded default with no catalog row to read (observed 2026-10-12/13: the inline driver's
+# `--decide` reported `Unknown decision "task-triage"`, loaded decisions were the eight kk-item-*).
+# With `workflows.decideDecisionMaker` unset (its strict-opt-in default is `false`) the OUTCOME is
+# unchanged — the declared default still wins — but the decide row and its reason become honest
+# instead of a resolution failure, and enabling the decision maker later will actually consult the
+# catalog rather than silently defaulting. TODO: switch to `- bundled:decisions` once the installed
+# spur carries BUNDLED_PATH_PREFIX expansion (mirrors the workflows block; 0.4.2 predates it).
 decisions:
   paths:
     - plugins/kk/decisions
+    - /Users/robin/node_modules/@gobing-ai/spur/config/decisions/
   maker: fm-local
   makers:
     kk-item-category: fm-local

@@ -710,7 +710,12 @@ describe('settings and broken contributions (AC7/AC8)', () => {
         }
         // The module keeps definitions in Settings rather than duplicating a viewer endpoint.
         await openModule('kk-collect', query({ run: 'r-a', tab: 'config' }));
-        expect(await page.locator('a[href="/board/settings/workflows"]').count()).toBeGreaterThan(0);
+        // `.kk-board` mounting is not the same event as the tab body rendering its link: under load the
+        // bare `count()` read 0 in one of three full-gate runs (2026-10-12/13) while the link appeared a
+        // moment later. Await the link the way the module's other selectors are awaited, then assert.
+        const settingsLink = page.locator('a[href="/board/settings/workflows"]');
+        await settingsLink.first().waitFor({ state: 'attached', timeout: 15_000 });
+        expect(await settingsLink.count()).toBeGreaterThan(0);
     }, 30_000);
 
     it('keeps built-in Board navigation usable when a contribution fails', async () => {
