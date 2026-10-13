@@ -5,7 +5,7 @@ owns: STATUS — feature decomposition + state
 authority: derived
 version: 2.27.0
 created_at: 2026-07-22
-updated_at: 2026-10-11
+updated_at: 2026-10-13
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -53,7 +53,7 @@ sync: [T4]
 | B3 | Spur workflow integration | ✅ done | 1 | task `0005`: `knowledge-kit invoke` + pipeline workflow template; E2E proof → **B5** |
 | B4 | CLI surface | ✅ done | 1 | tasks `0020`/`0021` done: `plugins list` + `plugins doctor` (noun group, `--json`); verifyall re-audit PASS + shippable; commit `fed9412` |
 | B5 | End-to-end pipeline acceptance | ✅ done | 1 | tasks `0026`/`0027` done; vertical over B3 invoke + C2/D2/E3 proven (fixture → content → `ok:true`); verifyall re-audit PASS + shippable; commits `662ba0b`/`41bf221` |
-| B6 | Sequential fan-in/fan-out steps | 🔶 partial | 3 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`); tasks `0042`/`0043` done; reopened 2026-10-10 for `0248`: production fan-out concurrency and process deadlines |
+| B6 | Sequential fan-in/fan-out steps | 🔶 partial | 3 | home for 0033 spec (`kk fanin` / `kk fanout`; `docs/design/fan-in-and-fan-out-specification.md`); tasks `0042`/`0043` done; reopened 2026-10-10 for `0248`: production fan-out concurrency and process deadlines; `0274` covers remaining fan-in test determinism |
 | B7 | Multi-root plugin auto-discovery | ✅ done | 2 | task `0053` done; ADR-012 shipped — `discoverAllPlugins` / `resolvePluginRoots` + `origin`-stamped records + `shadowed` diagnostic in `@gobing-ai/kk-core`; repeatable `--plugins-path` on `executor run` / `fan-out` / `plugin status`; `KK_PLUGIN_PATH`; `--plugins-root` exclusive (combined with `--plugins-path` → exit 2); workflow template injects `--plugins-path`. **Not** the historical judge B7 (that work is **F1**). |
 | **C** | Ingestion | ⏳ active | 1 | kind parent; AC rolled up from C1+C2 (DD-09); ingestion optional (`Doc[] \| Brief` pipeline, ADR-007); closed via carrier `0039`, then **reopened for plugin intake** |
 | C1 | Ingestion plugin design | ✅ done | 1 | tasks `0010`–`0012` done; spec `docs/design/ingestion-plugin-specification.md`; verifyall re-audit PASS + shippable |
@@ -78,6 +78,7 @@ sync: [T4]
 | E7 | Remaining wt-publish harvest | ✅ done | 3 | tasks `0141`–`0147` done; harness browser drivers + `medium-pub`/`wechatmp-pub`/`x-pub`/`juejin-pub`/`infoq-pub`/`substack-pub`/`xhs-pub` + thin `kk:publish` skill; satellite `docs/design/remaining-wt-publish-harvest.md`; TCC remainder deferred to F41 |
 | E8 | Xiaohongshu image-card authoring and publishing | ✅ done | 3 | tasks `0167`, `0168`, `0174` done; content-grounded card series via `image-gen`; ordered XHS draft and explicit live path through `xhs-pub`; ADR-024 and `docs/design/xhs-image-cards.md`; verifyall PASS + Shippable PASS |
 | E9 | Reusable browser sessions for publish channels | ⏳ backlog | 3 | task `0177` todo after ts-libs task `0088`; XHS is the first consumer of the planned shared browser-profile package; feature satellite `docs/features/E9_reusable-browser-sessions-for-publish-channels.md` |
+| E92 | Publish channel UI fidelity: per-mode discovery and gap fixes | 🔶 partial | 4 | reopened 2026-10-13 for `0260`: WeChat MP article enrichment repair; original discovery/mode tasks `0199`–`0205` done; see `docs/features/E92_publish-channel-ui-fidelity-per-mode-discovery-and-gap-fixes.md` |
 | E93 | kk plugin check / login — live channel readiness probe | 🔶 partial | 4 | ADR-032 (amends ADR-011 R3); task `0215` done: manifest `check` field + `PluginRecord.check`, `kk plugin check`/`login` verbs, probe spawn seam `spawnPluginProbe` (only sanctioned spawn point), fixture E2E → `.spur/run/e2e/E93-plugin-check.json`; task `0216` done: all six browser channels (infoq/juejin/substack/x/xhs/wechatmp) on the ADR-032 probe contract with manifest `check` entries, xhs+wechatmp on bespoke contract-conformant CLIs, `checkHeadedOnly` for x, live run → `.spur/run/e2e/E93-plugin-check-live.json`; satellite `docs/design/kk-plugin-check.md`; reopened 2026-10-10 for `0249`: bundle installed readiness probes |
 | **F** | kk plugin collection | ⏳ backlog | 2/3 | collection parent for agent capabilities and product workflows; F1–F9 children done; parent stays open for intake |
 | F1 | LLM-as-judge agent skills | ✅ done | 2 | home for 0034/0037: fat skill `content-judge` (was `judge`); persona subagents retired 2026-08-19 — rubric is an `agent.run` field; `agent.run` + shell/jq verdict gate; ADR-007 amdt 2026-08-07 / 2026-08-19 |
@@ -93,7 +94,7 @@ sync: [T4]
 | **G** | kk workflows (repurposed 2026-10-07) | ⏳ planned | — | parent: one child per `plugins/kk/workflows/*.yaml`; shipped workflow features keep their IDs (see children Notes) |
 | G1 | kk-daily-ai-voice | ⏳ planned | — | home node; historical: F6, F61*, L, L1, N, O |
 | G14 | VoxCPM voice driver for both daily AI voice workflows | ⏳ planned | P2 | opt-in adapter, driver-aware cache and render-only quality comparison; ADR-036; `docs/design/voxcpm-daily-voice-driver.md`; no product access to `vendors/` |
-| G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ⏳ active | — | reopened 2026-10-12 by live tasks; runall-g11-74ac closed `0265` (spur-serve keepalive as a rendered schedule artifact), `0266` (thin day closes `no-content` on both refusal paths), `0267` (test suite no longer composes workspaces under `$HOME`), `0269` (transient image-gen failure retries before falling back) and `0270` (a failed safety reviewer reaches the gate); `0272` still todo; earlier: tasks `0211`, `0212` done, ADR-031 shipped, first green dogfood run `4a9b22f0` 2026-10-08, `kk ledger cutover-check` shipped (R6); satellite `docs/design/kk-collect-and-daily-voice2.md` |
+| G11 | kk-daily-ai-voice2 — DAG daily workflow from the store, cut-over | ⏳ active | — | source fixes present for `0269` (stage-owned bounded XHS card retry) and `0270` (failed safety agents reach the fail-closed gate); certification remains under those tasks; `0273` cancelled with its valid retry-coverage concern merged into `0269`; `0272` owns WeChat console measurement/drift repair, upstream of E92 task `0260`; `0265`–`0267` and earlier `0211`/`0212` done; ADR-031 shipped; satellite `docs/design/kk-collect-and-daily-voice2.md` |
 | G2 | kk-itc | ⏳ planned | — | home node; historical: F4, F41 |
 | G3 | kk-collect | ⏳ planned | — | home node |
 | G31 | kk-collect: SQLite store, 4h collection, decision labels, topic extraction | ✅ done | — | tasks `0206` (store + `migrate`), `0208` (`lock`/`ingest`, `kk-collect`, `schedule render`), `0209` (decision catalog + `label`), `0210` (`extract`/`mark-used`, topic profiles) and `0213` (HIGH\|MEDIUM\|LOW confidence on the kk-collect label verdict, R14) done. ADR-030 **shipped**; satellite `docs/design/kk-collect-and-daily-voice2.md` |

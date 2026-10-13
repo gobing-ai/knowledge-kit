@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E92"
 name: "Publish channel UI fidelity: per-mode discovery and gap fixes"
-status: done
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-05T17:58:49.842Z"
-updated_at: "2026-10-06T22:38:06.654Z"
+updated_at: "2026-10-13T20:53:13.202Z"
 ---
 
 # E92: Publish channel UI fidelity: per-mode discovery and gap fixes
@@ -94,6 +94,7 @@ Feature: Publish channel UI fidelity
 | 0203 | Discover the Substack editor and record UI draft drift | done |
 | 0204 | Discover the X compose console (article and post) and record UI draft drift | done |
 | 0205 | Fix the recorded per-channel UI drift and add validated mode dispatch | done |
+| 0260 | Repair the wechatmp-pub console steps against the live MP editor | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -104,4 +105,5 @@ Feature: Publish channel UI fidelity
 - 2026-10-06T17:28:08.395Z backlog → active (system)
 - 2026-10-06T22:27:13.143Z active → verifying (system)
 - 2026-10-06T22:38:06.654Z verifying → done (system)
+- 2026-10-13T20:53:13.202Z done → active (system)
 
