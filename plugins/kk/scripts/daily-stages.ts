@@ -997,10 +997,25 @@ export function dailyGenerate(args: string[]): void {
             };
             writeJsonText(secDocIn, [doc]);
             try {
-                const status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                // 0269-shaped hardening (20261012): one retry for a failed section. The design already
+                // bounds the episode's risk with the pre-flight quota probe and the per-section cache,
+                // but a failure that arrives MID-render (a 429 once the window drains, a network blip)
+                // still cost the whole episode — the one step nothing can publish without. The retry is
+                // cheap and bounded: the successful sections are cache hits, so at most one extra
+                // request per failed section is issued, and a persistent failure still fails loud.
+                let status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
                     env: { VOICE_GEN_MP3: transcodeMp3 },
                     soft: true,
                 });
+                if (status !== 0) {
+                    console.log(
+                        `generate: section ${plan.def.stem} synthesis failed (exit ${status}) — retrying it once`,
+                    );
+                    status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                        env: { VOICE_GEN_MP3: transcodeMp3 },
+                        soft: true,
+                    });
+                }
                 if (status !== 0) {
                     failWith(status, `generate: section synthesis failed for ${plan.def.stem}`);
                 }

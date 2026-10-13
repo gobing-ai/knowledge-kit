@@ -546,8 +546,11 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         );
         expect(dag.nodes.find((node) => node.id === 'run-report')?.dependsOn).toContain('mark-published');
         expect(dependentsOf(dag, 'ledger')).toEqual([]);
+        // The tail cannot write its OWN section (the trace is still `running` there), so it runs the
+        // verb that can act: a backfill of every finished run the ledger is missing. `kk ledger append`
+        // here made every green run record a false `ledger | failed` (20261012).
         expect(String(dag.nodes.find((node) => node.id === 'ledger')?.action?.options?.command)).toContain(
-            'kk ledger append --workflow kk-daily-ai-voice2',
+            'kk ledger sync --workflow kk-daily-ai-voice2',
         );
         // run-report sits between them, so the ledger's Result cell can carry `no-content`.
         expect(dag.nodes.find((node) => node.id === 'ledger')?.dependsOn).toContain('run-report');
@@ -961,14 +964,14 @@ describe('kk-daily-ai-voice2 — empty pool ends the run as no-content (AC3)', (
         expect(called(outcome, 'store mark-published')).toBe(false);
         // run-report and ledger list `extract` in dependsOn, so they still ran.
         expect(called(outcome, 'daily run-report')).toBe(true);
-        expect(called(outcome, 'ledger append')).toBe(true);
+        expect(called(outcome, 'ledger sync')).toBe(true);
         const summary = readFileSync(join(outcome.workDir, 'run-report.summary.txt'), 'utf-8');
         expect(summary).toContain('no-content');
         expect(readFileSync(join(outcome.workDir, '20261007_19_run-report_report.md'), 'utf-8')).toContain(
             'no content',
         );
         // The ledger is the final call of the run.
-        expect(outcome.log[outcome.log.length - 1]).toContain('ledger append');
+        expect(outcome.log[outcome.log.length - 1]).toContain('ledger sync');
         const trace = Bun.spawnSync(['spur', 'workflow', 'trace', outcome.runId, '--json'], { cwd: REPO });
         saveArtifact(`${outcome.runId}-trace.json`, trace.stdout.toString());
         saveArtifact(`${outcome.runId}-calls.log`, outcome.log.join('\n'));
@@ -1005,13 +1008,13 @@ describe('kk-daily-ai-voice2 — independent branches run concurrently and fan i
         // 0228 R6b: a dry run (publish_enabled=false) must NOT promote its rows — the guard refuses,
         // so they stay `selected` and still exclude the next day.
         expect(called(outcome, 'store mark-published')).toBe(false);
-        expect(called(outcome, 'ledger append')).toBe(true);
+        expect(called(outcome, 'ledger sync')).toBe(true);
         // Ordering: extract → plan → qc-content → … → run-report → ledger.
         const order = outcome.log.map((line) => line.split(' ').slice(0, 3).join(' '));
         const index = (needle: string): number => order.findIndex((line) => line.includes(needle));
         expect(index('store extract')).toBeLessThan(index('stage daily-plan'));
         expect(index('stage daily-plan')).toBeLessThan(index('stage daily-qc-content'));
-        expect(index('daily run-report')).toBeLessThan(index('ledger append'));
+        expect(index('daily run-report')).toBeLessThan(index('ledger sync'));
         saveArtifact(`${outcome.runId}-calls.log`, outcome.log.join('\n'));
     }, 120_000);
 });

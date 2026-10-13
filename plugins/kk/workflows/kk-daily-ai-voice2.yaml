@@ -817,15 +817,17 @@ nodes:
 
   - id: ledger
     description: >-
-      Final node: append this run's section to .works/kk-daily-ai-voice2/ledger.md. It lists
-      `extract` in dependsOn so an empty-pool run still records (with the run-report's `no-content`
-      line as its Result). onError: continue — a run's own trace is still `running` while a node
-      executes, so `kk ledger append` refuses it (exit 1); the next run's `prepare` backfills
-      through `kk ledger sync`.
+      Final node: backfill the workflow ledger with every FINISHED run it is missing. The run's own
+      section cannot be written from inside the run — `kk ledger append` refuses a trace that is still
+      `running`, which is why every green run recorded `ledger | failed` for a step that never had a
+      chance (the same trap kk-collect removed, dogfood 2026-10-09). `kk ledger sync` is the verb that
+      can act here: it skips this run and appends every earlier run still missing, measured
+      2026-10-12 backfilling two, so the operator's ledger is complete at the end of the run instead of
+      at the start of the next one. It lists `extract` in dependsOn so an empty-pool run still records.
     dependsOn: [run-report, extract]
     action:
       kind: shell
       onError: continue
       options:
         command: >-
-          kk ledger append --workflow kk-daily-ai-voice2 --run "${vars.__runId}" --work-dir "${vars.work_dir}"
+          kk ledger sync --workflow kk-daily-ai-voice2 --work-dir "${vars.work_dir}"
