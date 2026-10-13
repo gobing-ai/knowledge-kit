@@ -72,9 +72,9 @@ docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan
 
 `*` = specified under ADR-007, not yet implemented. See `docs/04_DESIGN.md` §1.
 
-- **Runtime / package manager / test runner:** Bun `1.3.14`. Prefer `bun:*` APIs over `node:*`
+- **Runtime / package manager / test runner:** Bun `1.4.3`. Prefer `bun:*` APIs over `node:*`
   unless Bun lacks the API.
-- **Lint + format:** Biome **`2.5.5`** only (`@biomejs/biome` root devDependency +
+- **Lint + format:** Biome **`2.5.15`** only (`@biomejs/biome` root devDependency +
   `.prototools`). No ESLint, no Prettier. Always use `bun run lint` / `bun run format` so the
   pinned binary is used — not a system `biome` on PATH.
 - **Build orchestration:** Bun workspaces (Turborepo available where present).
@@ -154,7 +154,7 @@ feature status → `05`.
 
 ---
 
-## Code style (enforced by Biome 2.5.5 / `biome.json`)
+## Code style (enforced by Biome 2.5.15 / `biome.json`)
 
 - 4-space indent, `lineWidth` 120.
 - **Single quotes**, semicolons always, trailing commas everywhere.
@@ -171,7 +171,7 @@ feature status → `05`.
 
 ```bash
 bun run gate            # final quality gate: format + build + lint + rules + tests
-bun run lint            # biome 2.5.5 check + typecheck  (the gate)
+bun run lint            # biome 2.5.15 check + typecheck  (the gate)
 bun run format          # biome check --write
 bun run autofix         # format then typecheck
 bun run test            # unit tests (dots reporter) + coverage → .coverage/
@@ -187,7 +187,7 @@ CLI binary: `@gobing-ai/knowledge-kit` exposes `bin: { kk: "./dist/index.js", "k
 
 ### Verification gate (all must pass before "done")
 
-1. `bun run lint` clean — Biome 2.5.5 and typecheck.
+1. `bun run lint` clean — Biome 2.5.15 and typecheck.
 2. `bun run test` passes; no test skipped, `.skip`'d, or commented out to go green.
 3. `bun run build` succeeds across workspaces that declare a `build` script.
 4. `git status` shows only intentional changes.

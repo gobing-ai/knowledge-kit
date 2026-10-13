@@ -17,7 +17,7 @@
         "@gobing-ai/ts-utils": "catalog:"
     },
     "devDependencies": {
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.3",
         "playwright": "catalog:"
     },
     "version": "0.0.15"
