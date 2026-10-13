@@ -694,6 +694,41 @@ describe('the voice2 safety report producer declares the confidence contract', (
     });
 });
 
+describe('the board confidence vocabulary copies stay in lockstep', () => {
+    // The enum is declared three times: the CLI board manifest (canonical for the reader
+    // projections, `apps/cli/src/board/manifest.ts`) and once per browser view — the packed
+    // browser bundles cannot import the CLI tree, so the copy is deliberate. A drifted copy would
+    // render an out-of-contract level as a real confidence in the Board while the reader reports
+    // unknown for the same bytes, so all three declarations are held byte-identical here.
+    const VOCABULARY_FILES = [
+        'apps/cli/src/board/manifest.ts',
+        'apps/board/src/daily-voice/view.ts',
+        'apps/board/src/itc/view.ts',
+    ];
+    const VOCABULARY = "['HIGH', 'MEDIUM', 'LOW']";
+
+    it('every vocabulary copy declares exactly HIGH/MEDIUM/LOW', () => {
+        const offenders = VOCABULARY_FILES.filter(
+            (rel) => !readFileSync(join(REPO, rel), 'utf-8').includes(VOCABULARY),
+        );
+        const detail = `${VOCABULARY_FILES.length} copies, offenders: ${offenders.join(',') || 'none'}`;
+        expect(record('consumer-scan:confidence-vocabulary-copies', offenders.length === 0, detail)).toBe(true);
+        expect(offenders).toEqual([]);
+    });
+
+    it('each browser view echoes confidence only through its vocabulary guard', () => {
+        // Both views must keep the out-of-vocabulary value explicit as unknown: the echo is always
+        // `confidence: isConfidenceLevel(<bag>.confidence) ? <bag>.confidence : null`, never a raw
+        // pass-through of the recorded string.
+        const views = ['apps/board/src/daily-voice/view.ts', 'apps/board/src/itc/view.ts'];
+        const guarded = /confidence: isConfidenceLevel\((\w+)\.confidence\) \? \1\.confidence : null/;
+        const offenders = views.filter((rel) => !guarded.test(readFileSync(join(REPO, rel), 'utf-8')));
+        const detail = `${views.length} views, offenders: ${offenders.join(',') || 'none'}`;
+        expect(record('consumer-scan:board-view-confidence-guard', offenders.length === 0, detail)).toBe(true);
+        expect(offenders).toEqual([]);
+    });
+});
+
 describe('verdict-confidence artifact', () => {
     it('writes a repeatable summary of every check', () => {
         const failed = checks.filter((check) => !check.ok).map((check) => check.id);

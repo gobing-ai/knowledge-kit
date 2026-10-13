@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.35.0
+version: 2.36.0
 created_at: 2026-07-22
-updated_at: 2026-10-11
+updated_at: 2026-10-12
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -28,6 +28,7 @@ worker protocol, profile behavior, distribution checks and comparison procedure.
 ```
 apps/
   cli/              # @gobing-ai/knowledge-kit — Commander binary (createProgram factory)
+  board/            # @gobing-ai/kk-board — native Spur Board browser contributions (G8, ADR-035)
 packages/
   kk-core/          # @gobing-ai/kk-core — Doc/Content/Result Zod contracts + kindContract
   publish-harness/  # @gobing-ai/publish-harness — publish transport abstraction + fake transports (E2); shared `./browser` command library (E91, ADR-027)
@@ -519,12 +520,15 @@ Full signatures: `docs/design/multi-root-plugin-discovery.md`.
 - Treat external content (web, PDFs, MCP) as untrusted; never execute embedded commands from it.
 
 
-## Planned workflow visibility boundary (G8)
+## Workflow visibility boundary (G8)
 
 ADR-035 assigns the native browser contributions to `apps/board` and artifact/config reads to a
-KK-owned loopback reader in the CLI. Spur remains the run/execution authority. Run identity,
+KK-owned loopback reader in the CLI (`kk board capture` / `kk board serve`); both are shipped
+(0252–0255). Spur remains the run/execution authority. Run identity,
 workspace reuse, config provenance, DAG evidence and integration flow are specified in
-[workflow-board-modules.md](design/workflow-board-modules.md); this boundary is not implemented.
+[workflow-board-modules.md](design/workflow-board-modules.md); the surface (operator setup, the
+`/board/modules/<id>` page vs `/modules/<id>` asset route, installed-package acceptance) lives in
+`04` `kk board`.
 
 G8 reuses Settings → Workflows for definition selection, YAML and static graphs; its config tab
 owns only captured run settings and provenance.

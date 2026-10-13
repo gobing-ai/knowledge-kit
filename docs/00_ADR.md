@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.36.0
+version: 1.37.0
 created_at: 2026-05-28
-updated_at: 2026-10-11
+updated_at: 2026-10-12
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1275,7 +1275,7 @@ illustration across failures is deferred until observed.
 
 ## ADR-035: Workflow visibility uses native Spur Board modules and a KK-owned local reader
 
-**Status:** Accepted (design) · **Date:** 2026-10-11 · **Work:** G8
+**Status:** Accepted · **Date:** 2026-10-11 · **Work:** G8
 
 **Decision.** Deliver the Collect, Daily AI Voice and IT Content views as native project-owned
 Spur Board contributions. Spur retains execution/run authority; a loopback, read-only KK reader
@@ -1305,6 +1305,15 @@ access disabled without aborting production. A running reader is never a workflo
 New-run ownership alone does not prove an old file was produced by the new run: result access also
 requires recorded success of that artifact's producer in the selected run. Definition topology is
 captured only when the current catalog digest matches the engine-injected execution digest.
+
+### Amendment — 2026-10-12 (G8 shipped; module route is page vs asset)
+
+Shipped by 0252–0255. One design-time assumption corrected on evidence: the module PAGE is
+mounted by the SPA at `/board/modules/<id>`, while the bare `/modules/<id>` prefix serves only
+assets and the descriptor's `route`/`entryUrl` — the bare page is the SPA 404 (verified live with
+Chromium and `GET /api/board/modules`). The checkout declares the three modules `enabled: false`
+because the host validates each `directory` at server start and the assets are gitignored build
+output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk board`.
 
 #### API/library claim sources and confidence
 

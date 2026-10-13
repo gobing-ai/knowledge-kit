@@ -1,7 +1,7 @@
 ---
 kind: design
 title: Native workflow visibility modules for Spur Board
-status: accepted
+status: shipped
 created_at: 2026-10-11
 updated_at: 2026-10-12
 related: [G8, ADR-035]
@@ -13,8 +13,8 @@ tags: [board, workflows, observability]
 ## 1. Outcome and scope
 
 Three native modules give the local operator a consistent way to inspect collection,
-daily voice production, and IT content authoring. This is an accepted design, not shipped UI.
-Feature G8 owns the behavioral contract; ADR-035 owns the boundary decision.
+daily voice production, and IT content authoring. Shipped with feature G8 (ADR-035; tasks
+0252–0255). Feature G8 owns the behavioral contract; ADR-035 owns the boundary decision.
 
 | Module ID | Sidebar name | Workflow definition | Kind |
 |---|---|---|---|
@@ -95,10 +95,15 @@ compatibility promises. Validate the actual installation when building/testing. 
 are strict and flat; backend configuration does not belong inside bootstrap.modules. The declaration
 is enforced (`.strict()`): a module contributes `id`, `name`, `icon`, optionally
 `sidebarLabel`/`description`/`order`, and for `type: react` a `directory` plus `entry` and optional
-`styles`. A duplicate id, or one colliding with a reserved host identity, is refused at config load,
-and the host derives each module's route as `/modules/<id>`.
+`styles`. A duplicate id, or one colliding with a reserved host identity, is refused at config load.
+The module PAGE is mounted by the SPA at `/board/modules/<id>`, while the bare `/modules/<id>`
+prefix serves only the bundles and the descriptor's advertised `route`/`entryUrl` — opening the
+bare page renders the SPA 404 (0255, verified live with Chromium and `GET /api/board/modules`).
 
-Proposed checkout declarations (enable each only after its assets exist):
+Shipped checkout declarations (`.spur/config.yaml`): each module is declared `enabled: false`
+because the host validates every `directory` at server start and `apps/cli/dist/board` is a
+gitignored build tree — build first (`bun scripts/build-board.ts`), then flip `enabled` to `true`
+(the host default) to show the modules:
 
 ```yaml
 bootstrap:
@@ -106,22 +111,25 @@ bootstrap:
     - id: kk-collect
       name: Collect
       icon: "📥"
+      enabled: false
       type: react
-      directory: apps/board/dist/collect
+      directory: apps/cli/dist/board/collect
       entry: index.js
       styles: [index.css]
     - id: kk-daily-ai-voice2
       name: Daily AI Voice
       icon: "🎙️"
+      enabled: false
       type: react
-      directory: apps/board/dist/daily-voice
+      directory: apps/cli/dist/board/daily-voice
       entry: index.js
       styles: [index.css]
     - id: kk-itc
       name: IT Content
       icon: "✍️"
+      enabled: false
       type: react
-      directory: apps/board/dist/itc
+      directory: apps/cli/dist/board/itc
       entry: index.js
       styles: [index.css]
 ```
@@ -130,7 +138,7 @@ Installed users point directory at their installed package's shipped `dist/board
 resolve absolute installation paths during setup and document portability/restart requirements.
 Do not rely on the current author's home directory or edit files under node_modules at runtime.
 
-Proposed command: `kk board serve --board-origin <exact-http-loopback-origin> [--port <n>]`.
+Shipped command: `kk board serve --board-origin <exact-http-loopback-origin> [--port <n>]`.
 Bind 127.0.0.1, default port 4340; reject non-loopback origins/invalid ports and fail clearly on
 collision. The foreground process stops on termination and has no scheduler or automatic daemon.
 Frontend defaults to http://127.0.0.1:4340; a validated `kkApi` query parameter permits the chosen
@@ -176,11 +184,11 @@ contexts, raw SQLite reads, CLI spawns on each browser refresh, or raw trace pay
 | The contribution ABI is `apiVersion: 1`, the entry exports `webModule`, and the component renders inside the host's own React tree without `createRoot` (R1, R14) | `@gobing-ai/spur` declaration-only export `./board` (`board/index.d.ts`), listed in the installed `package.json` `exports` | Read `node_modules/@gobing-ai/spur/board/index.d.ts:21,24,27,38` in the installed 0.4.2: `readonly apiVersion: 1`, `component: ComponentType`, `mounted … must not call createRoot`, `export declare const webModule` | HIGH |
 | The host advertises the facade specifiers `react`, `react/jsx-runtime`, `react/jsx-dev-runtime` (plus `react-dom`, `react-dom/client`, `react-router`, `react-router/dom`) at React 19.2.1, ReactDOM 19.2.1, React Router 7.11.0 (R14, section 3 build) | Installed `web/board-runtime.json` (`manifestVersion` 1, `contributionApiVersion` 1, `imports`) | Read `node_modules/@gobing-ai/spur/web/board-runtime.json:4-11`; all seven `web/_astro/board-facade-*.js` files the manifest names exist on disk (7/7) | HIGH |
 | `bootstrap.modules` is the supported declaration surface: a discriminated `react`\|`iframe` union, `.strict()`, `id` matching `^[a-z][a-z0-9-]*$`, `name`, `icon`, optional `sidebarLabel`/`description`/`order`, and `type: react` requiring `directory` + `entry` with optional `styles` (R1, section 4) | Installed runtime config schema: `bootstrapSectionSchema` and `boardModuleDeclarationSchema` in the shipped bundle | Read the emitted zod shapes in installed `spur.js` (search `boardModuleDeclarationSchema =`); the shipped `schemas/spur-config.schema.json` `bootstrap` block lists only logging/telemetry/database/scheduler, so declaration validation is runtime-only, not schema-level | HIGH |
-| A declared module's route is `/modules/<id>`; a duplicate id or one colliding with a reserved host identity is refused at config load (R1, R14) | Installed `BOARD_MODULE_ROUTE_PREFIX = "/modules/"` with `validateBoardModuleDeclarations`, and `reservedModules` in `web/board-runtime.json` | Read both in installed `@gobing-ai/spur` 0.4.2; `kk-collect`, `kk-daily-ai-voice2` and `kk-itc` match the id pattern and collide with no reserved id (`observability, history, plans, designs, features, tasks, projects, settings`) | HIGH |
+| The module PAGE route is `/board/modules/<id>` (the SPA mounts `.kk-board` there), while the ASSET route and the descriptor-advertised `route`/`entryUrl` use the bare `/modules/<id>` prefix; a duplicate id or one colliding with a reserved host identity is refused at config load (R1, R14) | Installed `BOARD_MODULE_ROUTE_PREFIX = "/modules/"` with `validateBoardModuleDeclarations`, `reservedModules` in `web/board-runtime.json`, plus the SPA router | Read both in installed `@gobing-ai/spur` 0.4.2; 0255 confirmed live with real Chromium and `GET /api/board/modules` (bare page → SPA 404, `/board/modules/<id>` mounts); `kk-collect`, `kk-daily-ai-voice2` and `kk-itc` match the id pattern and collide with no reserved id (`observability, history, plans, designs, features, tasks, projects, settings`) | HIGH |
 | Settings → Workflows is the real route `/board/settings/workflows`, its tab set is `general`\|`agents`\|`workflows`, and its definition view already renders `rawYaml` plus a Mermaid diagram (R9, R15) | Installed Board web bundle `web/_astro/BoardApp.*.js` (`selectTab` composing `/board/settings/${id}`; the tab array) | Read the route composition and tab array; the `/project/workflows` payload carries `rawYaml` + `mermaidDiagram` | HIGH |
 | The runs API is `/api/runs` accepting `workflow, limit, cursor, status, since`, plus `/api/runs/:runId`, `/api/runs/:runId/progress` and `/api/runs/by-wbs/:wbs`; `/api/project` answers `{name, path}` (R2, R3, R7, R12) | Installed `spur.js` route registrations | Read the four `app.get` handlers; `/api/project` returns `{ name: basename(cwd), path: normalizeProjectPath(cwd) }`; `RunStoreBadCursorError` and a malformed `since` answer 400 with named codes | HIGH |
 | `/api/runs/:runId/progress` answers 404 `RUN_NOT_FOUND` instead of a diagnostics payload as soon as the projection carries an `orphan-row` diagnostic, so a DAG run can lose its entire progress projection and the R8 fallback must read `/api/runs/:runId` action rows (R8) | Installed `spur.js` progress handler guard | Read the guard (`projection.diagnostics.some(d => d.code === "orphan-row")` → 404 with `code: "RUN_NOT_FOUND"`); the run-detail route has no equivalent guard — this corrects section 6's "returned … orphan-action-row diagnostics for DAG actions" | HIGH |
-| Module assets are served from the installed package's `web/` tree, so `directory` must resolve inside the installed package rather than a source checkout (R14, section 8) | Installed `package.json` `files` (`board`, `web`, `schemas`, `plugins`) plus the manifest asset URLs | `files` includes `board` and `web`; every facade path under `web/_astro/` resolves | MEDIUM — the serving path from an installed (packed) install is inferred from `files` + the manifest URLs, not exercised here; task 0255 exercises it |
+| Module assets are served from the installed package's `web/` tree, so `directory` must resolve inside the installed package rather than a source checkout (R14, section 8) | Installed `package.json` `files` (`board`, `web`, `schemas`, `plugins`) plus the manifest asset URLs | `files` includes `board` and `web`; every facade path under `web/_astro/` resolves; 0255 exercised the packed install end-to-end (`apps/board/tests/installed-board.test.ts` asserts the served bundles are byte-identical to the installed package files) | HIGH |
 
 ## 5. Run provenance and config truth
 
@@ -258,14 +266,14 @@ assets and reader without source checkout or sibling Spur sources. Verify build 
 lists and keep contribution declarations disabled until their build assets exist.
 
 Required execution gates: targeted tests plus repository lint, unit suite, workspace build and
-rule presets; do not edit GitHub workflows. Planning ends with validated tasks; no feature is
-implemented or marked shipped by this document.
+rule presets; do not edit GitHub workflows. Planning ended with validated tasks; the feature
+shipped 2026-10-12 (0252–0255).
 
 ## 9. Implement-ready contract (2026-10-11 audit)
 
 This section freezes the cross-task seam for 0252 → 0253/0254 → 0255. The earlier sections describe
-behavior; the concrete names and precedence below govern implementation. These APIs are proposed,
-not shipped. No changes to the installed Spur package or sibling Spur checkout are part of G8.
+behavior; the concrete names and precedence below govern implementation. These APIs shipped
+2026-10-12. No changes to the installed Spur package or sibling Spur checkout are part of G8.
 
 ### Files, build and public commands
 
