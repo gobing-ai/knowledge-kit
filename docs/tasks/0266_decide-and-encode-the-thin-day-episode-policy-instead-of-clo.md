@@ -4,7 +4,7 @@ name: Decide and encode the thin-day episode policy instead of closing the day s
 status: todo
 template: issue
 created_at: 2026-10-12T21:45:46.907Z
-updated_at: "2026-10-12T21:58:58.177Z"
+updated_at: "2026-10-13T02:47:00.852Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -19,6 +19,12 @@ ac_altitude: task-local
 Measured on 2026-10-12 after the label fix: `kk store extract --topic ai-news --window 24h` returned 3 items, and 4 with the importance-only backfill — every one of the day's other candidates failed a hard dimension (`kk-item-quality >= 2` on stub-length bodies, `kk-item-category` allowlist). The operator override `episode_min_minutes=8` was needed to publish anything that day.
 
 The open question is a product decision, not a bug: on a genuinely thin day, is the right answer (a) a shorter episode, (b) a wider extract window (96h reaches 7 items, at the cost of 3-4 day old, never-published backlog), or (c) no episode — and in case (c) what the operator sees and can act on.
+
+**Refine corrections (2026-10-12)**
+
+- R3 "make the outcome observable in run-report" → confirmed gap, and narrower than stated: `kk daily run-report` already writes `no-content`, but when the floor gate empties the candidates it reports `content QC admitted zero of the pooled items` (`apps/cli/src/commands/daily.ts:413-417`) — it never reads the floor-refusal artifact `21-plan/<date>_04_quality-control-content_floor-refusal.json` (`plugins/kk/scripts/daily-stages.ts:251-263`), so the estimate, floor and counts are lost from the report → R3 keeps its scope, re-pointed at that artifact.
+- AC2 "no run can pass the floor and then fail `daily-episode-duration`" → not achievable as worded: the floor is a heuristic estimate (`SPEAK_CHAR_EXPANSION = 1.4`, calibrated on two runs, `daily-stages.ts:221`) while the duration gate measures the rendered MP3 and `failWith(1)`s (`daily-stages.ts:478-483`), aborting the run before run-report/ledger. Agreement can only be bounded (estimate margin) or the post-spend refusal routed to run-report like a no-content close → AC2 must be restated once the policy decision (Q&A D1) is made.
+- Live workflow: the 04:30 job runs `kk-daily-ai-voice2.yaml` (`episode_min_minutes: "15"`, `episode_max_minutes: "25"`, `qc_min_episode_items: "8"`, lines 70-83); the floor gate sits in `daily-qc-content`, the measured gate in node `duration` (line 537).
 
 ### Requirements
 
@@ -36,6 +42,15 @@ The open question is a product decision, not a bug: on a genuinely thin day, is 
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Q&A entry — 2026-10-13T02:47:00.851Z
+
+- **D1 (OPEN — operator decision, blocks Design/Plan).** On a day whose kept set estimates below `episode_min_minutes` (15), what ships?
+  - (a) **Short episode** — lower the floor to a "short-episode" threshold (e.g. 8 min, the 2026-10-12 manual override) and keep 15 as the target, not the gate. Cost: a thinner product some days; the duration gate's minimum moves with it.
+  - (b) **Wider window fallback** — re-extract with a wider `--window` (96h reached 7 items on 2026-10-12) before giving up. Cost: 3–4-day-old items in a "daily" show; one extra extract per thin day.
+  - (c) **No episode (status quo)** — keep 15 as a hard floor; only fix R3 observability and the post-spend abort. Cost: silent product days continue, but they are now explained.
+  - Refiner recommendation: **(c) + R3**, with (a) as the follow-up if thin days recur weekly — it is the only option that needs no new product judgment and fixes the "operator learns nothing" half today. Not closed under `--auto`: this is a product policy, not an evidence question.
+- D2 (deferred to D1) — Restate AC2: estimate margin vs routing a post-spend `daily-episode-duration` refusal into run-report/ledger.
 
 ### Design
 
