@@ -20,11 +20,22 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProgram } from '../../src/cli';
+import { resolveWorksDir } from '../../src/commands/daily';
 import { main } from '../../src/main';
 import { captureOutput } from '../capture';
 
@@ -41,6 +52,34 @@ afterAll(() => {
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
     delete process.env.KK_WORKS_DIR;
     delete process.env.KK_PLUGIN_PATH;
+});
+
+/**
+ * 0267 R3 regression guard: this file owns the suite's only unpinned reaches of the daily-prepare
+ * composition, whose fallback root is the operator's real `~/.config/kk/works`. Every test must
+ * pin its works root (`KK_WORKS_DIR` / temp `KK_CONFIG` / `--work-dir`); one that forgets composes
+ * a `kk-daily-ai-voice2` child here and fails this assertion — a bare workflow directory survives
+ * even a test that cleans up its date child. A concurrent REAL `kk` run by the operator can also
+ * trip it; that collision is the price of watching the live path.
+ */
+const WORKS_ROOT = join(homedir(), '.config/kk/works');
+type WorksEntry = { name: string; mtimeMs: number };
+function worksSnapshot(): WorksEntry[] {
+    if (!existsSync(WORKS_ROOT)) return [];
+    return readdirSync(WORKS_ROOT)
+        .sort()
+        .map((name) => ({ name, mtimeMs: statSync(join(WORKS_ROOT, name)).mtimeMs }));
+}
+let worksBefore: WorksEntry[] = [];
+beforeAll(() => {
+    worksBefore = worksSnapshot();
+});
+afterAll(() => {
+    const polluted = worksSnapshot().filter((after) => {
+        const before = worksBefore.find((entry) => entry.name === after.name);
+        return before === undefined || before.mtimeMs !== after.mtimeMs;
+    });
+    expect(polluted).toEqual([]);
 });
 
 /**
@@ -461,34 +500,37 @@ describe('kk daily publish-classify', () => {
 
 describe('kk daily works-dir resolution and report edges', () => {
     it('resolves works_dir from KK_CONFIG, expanding ~ and $HOME prefixes', async () => {
-        // Bun's homedir() reads the passwd entry and ignores $HOME, so expansion lands in the real
-        // home — assert against homedir() and clean up the composed dirs.
+        // 0267 R1: `~`/`$HOME` expand against homedir(), so a real prepare would compose under the
+        // operator's home — expansion is asserted against the read-only resolver instead, and the
+        // command run is pinned with `--work-dir` so nothing composes outside the temp dir.
         const dir = tempDir();
         const prevConfig = process.env.KK_CONFIG;
         const prevWorks = process.env.KK_WORKS_DIR;
         delete process.env.KK_WORKS_DIR;
         const config = join(dir, 'kk.yaml');
-        writeFileSync(config, `works_dir: ~/works-from-config\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
         process.env.KK_CONFIG = config;
         try {
-            const tilde = await inCwd(dir, () =>
-                run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']),
-            );
-            expect(tilde.code).toBe(0);
-            expect(JSON.parse(tilde.out).workDir).toBe(
-                join(homedir(), 'works-from-config/kk-daily-ai-voice2/20261007'),
-            );
+            writeFileSync(config, `works_dir: ~/works-from-config\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
+            expect(resolveWorksDir()).toBe(join(homedir(), 'works-from-config'));
             writeFileSync(config, `works_dir: $HOME/works-home-prefix\nstore:\n  db_path: ${join(dir, 'kk.db')}\n`);
-            const dollar = await inCwd(dir, () =>
-                run(['daily', 'prepare', '--workflow', 'kk-daily-ai-voice2', '--run-date', '2026-10-07']),
+            expect(resolveWorksDir()).toBe(join(homedir(), 'works-home-prefix'));
+            // The command still parses the config-carried works_dir end to end; composition is
+            // pinned into the temp dir.
+            const result = await inCwd(dir, () =>
+                run([
+                    'daily',
+                    'prepare',
+                    '--workflow',
+                    'kk-daily-ai-voice2',
+                    '--run-date',
+                    '2026-10-07',
+                    '--work-dir',
+                    join(dir, 'w'),
+                ]),
             );
-            expect(dollar.code).toBe(0);
-            expect(JSON.parse(dollar.out).workDir).toBe(
-                join(homedir(), 'works-home-prefix/kk-daily-ai-voice2/20261007'),
-            );
+            expect(result.code).toBe(0);
+            expect(JSON.parse(result.out).workDir).toBe(join(dir, 'w'));
         } finally {
-            rmSync(join(homedir(), 'works-from-config'), { recursive: true, force: true });
-            rmSync(join(homedir(), 'works-home-prefix'), { recursive: true, force: true });
             if (prevConfig === undefined) delete process.env.KK_CONFIG;
             else process.env.KK_CONFIG = prevConfig;
             if (prevWorks === undefined) delete process.env.KK_WORKS_DIR;
@@ -512,6 +554,10 @@ describe('kk daily works-dir resolution and report edges', () => {
         // operator's store entirely.
         process.chdir(dir);
         try {
+            // 0267 R1: the compiled default composes under the operator's real home, so the
+            // fallback is asserted against the read-only resolver; the run is pinned with
+            // `--work-dir` and writes nothing outside `dir`.
+            expect(resolveWorksDir()).toBe(join(homedir(), '.config/kk/works'));
             const result = await run([
                 'daily',
                 'prepare',
@@ -519,14 +565,13 @@ describe('kk daily works-dir resolution and report edges', () => {
                 'kk-daily-ai-voice2',
                 '--run-date',
                 '2026-10-07',
+                '--work-dir',
+                join(dir, 'w'),
             ]);
             expect(result.code).toBe(0);
-            expect(JSON.parse(result.out).workDir).toBe(
-                join(homedir(), '.config/kk/works/kk-daily-ai-voice2/20261007'),
-            );
+            expect(JSON.parse(result.out).workDir).toBe(join(dir, 'w'));
         } finally {
             process.chdir(prevCwd);
-            rmSync(join(homedir(), '.config/kk/works/kk-daily-ai-voice2/20261007'), { recursive: true, force: true });
             if (prevConfig === undefined) delete process.env.KK_CONFIG;
             else process.env.KK_CONFIG = prevConfig;
             if (prevWorks === undefined) delete process.env.KK_WORKS_DIR;
