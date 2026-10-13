@@ -30,11 +30,22 @@ keeps its existing name — that is a workflow stem, not an installable agent ca
 
 ## Schedule
 
-`spur` **has no scheduler**, so kk ships templates and `kk schedule render` prints the artifact for
-the platform — **installing it is an operator action** (kk never writes a crontab or a
+`spur serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily
+`kk-daily-ai-voice` tick) are enqueued by the job worker that lives inside the server, so the server
+itself is what must be kept alive. kk ships the templates and `kk schedule render` prints the
+artifact for the platform — **installing it is an operator action** (kk never writes a crontab or a
 `LaunchAgents` plist):
 
 ```bash
+# kk-serve: keep the spur server — and therefore the scheduler that fires the daily pipeline —
+# running whenever you are logged in. kk-serve is launchd-only (cron cannot restart a dead
+# server): `--platform cron` exits 1 instead of printing a line that cannot do the job.
+mkdir -p "$PWD/.works/spur-serve"
+kk schedule render kk-serve --platform launchd --repo "$PWD" \
+  > ~/Library/LaunchAgents/ai.gobing.spur-serve.plist
+launchctl bootout gui/$(id -u)/ai.gobing.spur-serve 2>/dev/null || :
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.gobing.spur-serve.plist
+
 # launchd (macOS): every 6 h at 04:00/10:00/16:00/22:00 local (StartCalendarInterval), one shared log
 # 1. the log directory must exist — launchd opens StandardOutPath but never creates its parent
 mkdir -p "$PWD/.works/kk-collect"
@@ -73,3 +84,10 @@ overlap are **one** collection: the first state takes `kk store lock acquire --n
 tick that finds the claim inside its TTL exits 0 (`skipped`) without collecting. Before relying on
 the schedule, check the store is reachable from the scheduled checkout (`kk store migrate`), and
 `tail -f "$PWD/.works/kk-collect/launchd.log"` after the first launch.
+
+The `kk-serve` plist keeps the same `Label` (`ai.gobing.spur-serve`) as the hand-installed one, so
+re-rendering replaces it in place instead of starting a second server on port 3003. It carries the
+same PATH + `TYPESAFE_API_KEY` block, plus `RunAtLoad`, `KeepAlive` and `ThrottleInterval` 10 — its
+`spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open` stdout/stderr goes to
+`$PWD/.works/spur-serve/serve.log`, and the scheduler's registration line lands in
+`$PWD/.spur/logs/spur.log` (never in `serve.log`).

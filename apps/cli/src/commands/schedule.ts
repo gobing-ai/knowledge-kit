@@ -22,9 +22,13 @@ const CHECKOUT_ROOT = resolve(import.meta.dir, '../../../..');
  *
  * A schedule is a rendered artifact the operator installs (`launchctl bootstrap` / `crontab`);
  * kk never installs one itself, so the only side effect of `render` is the text it prints.
+ * The platform map is `Partial` because not every schedule has every platform: `kk-serve` is
+ * launchd-only — cron has no keepalive semantics, so a cron render is refused by name rather
+ * than rendered into a line that cannot do the job.
  */
-const SCHEDULE_TEMPLATES: Record<string, Record<SchedulePlatform, string>> = {
+const SCHEDULE_TEMPLATES: Record<string, Partial<Record<SchedulePlatform, string>>> = {
     'kk-collect': { launchd: 'launchd.plist.tmpl', cron: 'cron.tmpl' },
+    'kk-serve': { launchd: 'kk-serve.launchd.plist.tmpl' },
 };
 
 /** Options accepted by `kk schedule render`. */
@@ -90,9 +94,10 @@ async function readTemplate(fs: FileSystem, repo: string, file: string): Promise
  * `kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` — print the schedule
  * artifact for the named workflow, with the checkout it runs from bound as `{{repo}}`.
  *
- * The rendered text is the whole contract: `spur` has no scheduler, so the operator installs
- * it (README §Schedule). An unknown schedule or platform fails loud — a typo must never render
- * a partial schedule, and nothing is ever written or installed.
+ * The rendered text is the whole contract: kk never installs it, the operator does (README
+ * §Schedule). An unknown schedule or platform fails loud — a typo must never render a partial
+ * schedule — as does a known schedule on a platform it has no template for (`kk-serve` on cron).
+ * Nothing is ever written or installed.
  */
 async function renderAction(schedule: string, options: RenderOptions): Promise<void> {
     try {
@@ -103,10 +108,16 @@ async function renderAction(schedule: string, options: RenderOptions): Promise<v
         if (options.platform !== 'launchd' && options.platform !== 'cron') {
             throw new Error(`unknown platform '${options.platform}' (expected launchd|cron)`);
         }
+        const template = templates[options.platform];
+        if (template === undefined) {
+            throw new Error(
+                `schedule '${schedule}' has no ${options.platform} template (expected ${Object.keys(templates).join('|')})`,
+            );
+        }
         const repo = resolve(options.repo);
-        const template = await readTemplate(createNodeFileSystem(), repo, templates[options.platform]);
+        const rendered = await readTemplate(createNodeFileSystem(), repo, template);
         consoleOutput.write(
-            template
+            rendered
                 .replaceAll(REPO_PLACEHOLDER, repo)
                 .replaceAll(HOME_PLACEHOLDER, homedir())
                 .replaceAll(TYPESAFE_API_KEY_PLACEHOLDER, xmlEscape(process.env.TYPESAFE_API_KEY ?? '')),

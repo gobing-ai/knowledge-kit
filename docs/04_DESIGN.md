@@ -886,12 +886,15 @@ future ones — gets authoritative timing and token figures without kk-owned tim
 ### 1.11 `schedule` — shipped (task 0208)
 
 `kk schedule render <schedule> --platform launchd|cron [--repo <dir>]` prints the scheduling
-artifact for a shipped workflow from `plugins/kk/schedules/{launchd.plist.tmpl,cron.tmpl}`, with
-`{{repo}}` bound to the `--repo` checkout (default: cwd) and `{{home}}` to the operator's home.
-**Installing it is an operator action** —
-`spur` has no scheduler and kk never writes a crontab or a `LaunchAgents` plist, so the command's
-only side effect is the text it prints (`plugins/kk/README.md` §Schedule documents the two
+artifact for a shipped schedule from `plugins/kk/schedules/`, with `{{repo}}` bound to the `--repo`
+checkout (default: cwd) and `{{home}}` to the operator's home.
+**Installing it is an operator action** — kk never writes a crontab or a `LaunchAgents` plist, so the
+command's only side effect is the text it prints (`plugins/kk/README.md` §Schedule documents the
 install lines).
+
+`spur serve` **hosts the scheduler**: the `.spur/config.yaml` `bootstrap.scheduler` jobs (the daily
+`kk-daily-ai-voice` tick) are enqueued by the job worker that lives inside the server, so the server
+itself is what must be kept alive (2026-10-12). `kk-serve` is that keepalive (task 0265).
 
 Both artifacts also bind `TYPESAFE_API_KEY` from the environment `render` runs in (2026-10-12).
 The scheduled workflow labels its items through `kk store label`, which consults the `typesafe`
@@ -903,10 +906,16 @@ empty pool and closes as no-content. An unset or empty value renders as the empt
 spur reads as "not set", so a keyless render still produces a valid artifact; in the plist the
 value is XML-escaped (`&`/`<`/`>`), because one raw `&` makes `launchctl bootstrap` refuse the file.
 
-| Platform | Rendered artifact |
-| ---------- | ------------------ |
-| `launchd` | plist for `ai.gobing.kk-collect`: `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
-| `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
+| Schedule | Platform | Rendered artifact |
+| ---------- | ---------- | ------------------ |
+| `kk-collect` | `launchd` | plist for `ai.gobing.kk-collect` (`launchd.plist.tmpl`): `StartCalendarInterval` 04:00/10:00/16:00/22:00 local (6 h; sleep coalesces missed fires to one run at wake), `ProgramArguments` = `spur workflow run plugins/kk/workflows/kk-collect.yaml`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/kk-collect/launchd.log` |
+| `kk-collect` | `cron` | `0 4,10,16,22 * * * cd <repo> && TYPESAFE_API_KEY='<key>' spur workflow run plugins/kk/workflows/kk-collect.yaml >> <repo>/.works/kk-collect/launchd.log 2>&1` |
+| `kk-serve` | `launchd` | plist for `ai.gobing.spur-serve` (`kk-serve.launchd.plist.tmpl`): `RunAtLoad` + `KeepAlive` true, `ThrottleInterval` 10, `ProgramArguments` = `spur serve --cwd <repo> --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` = `--repo`, `EnvironmentVariables` = `PATH` + `TYPESAFE_API_KEY`, stdout+stderr = `<repo>/.works/spur-serve/serve.log` |
+
+`kk-serve` is **launchd only**: cron has no keepalive semantics, so `--platform cron` for it exits 1
+with `schedule 'kk-serve' has no cron template (expected launchd)` and prints nothing (task 0265 R3);
+`kk-collect` keeps both platforms. `kk-serve` freezes host/port as template constants and keeps the
+hand plist's `Label`, so re-rendering replaces the installed agent in place.
 
 Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to the running
 package's copy, so a checkout without the templates still renders. An unknown schedule or platform

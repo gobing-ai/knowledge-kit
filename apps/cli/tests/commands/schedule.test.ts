@@ -16,10 +16,19 @@
  * 5. the cron render must carry the six-hourly expression (hours 4,10,16,22) plus the same
  *    program and log path;
  * 6. rendering must never install anything (no launchctl/crontab write): the command's
- *    only side effect is stdout.
+ *    only side effect is stdout;
+ * 7. `kk-serve` (task 0265) is launchd-only: `--platform cron` exits 1 naming the missing
+ *    template — cron cannot keep a process alive — while kk-collect's cron render is unchanged;
+ * 8. the kk-serve launchd render carries R2's keepalive dict (Label `ai.gobing.spur-serve`, an
+ *    absolute `Program`, `spur serve --cwd {{repo}} --host 127.0.0.1 --port 3003 --no-open`,
+ *    `RunAtLoad`/`KeepAlive` true, `ThrottleInterval` 10, both streams at
+ *    `.works/spur-serve/serve.log`, PATH + TYPESAFE_API_KEY);
+ * 9. an XML-special credential is escaped so the artifact still parses, and an unset key renders
+ *    the empty string.
  */
 
 import { describe, expect, it } from 'bun:test';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { createProgram } from '../../src/cli';
 import { main } from '../../src/main';
@@ -53,6 +62,37 @@ function plistStringValue(plist: string, key: string): string {
 function plistArrayIntegers(plist: string, key: string): number[] {
     const block = plist.split(`<key>${key}</key>`)[1]?.split('</array>')[0] ?? '';
     return [...block.matchAll(/<integer>([\s\S]*?)<\/integer>/g)].map((match) => Number(match[1]));
+}
+
+/** The boolean payload following a plist `<key>`, or undefined when it is not `<true/>`/`<false/>`. */
+function plistBooleanValue(plist: string, key: string): boolean | undefined {
+    const next = plist.split(`<key>${key}</key>`)[1]?.trimStart() ?? '';
+    if (next.startsWith('<true')) return true;
+    if (next.startsWith('<false')) return false;
+    return undefined;
+}
+
+/** The `<integer>` payload following a plist `<key>`. */
+function plistIntegerValue(plist: string, key: string): number | undefined {
+    const raw = plist.split(`<key>${key}</key>`)[1]?.match(/<integer>([\s\S]*?)<\/integer>/)?.[1];
+    return raw === undefined ? undefined : Number(raw);
+}
+
+/**
+ * AC2's "still parses" half. Bun and Node ship no XML parser and the repo has no plist
+ * dependency, so assert the two properties an unescaped environment value breaks: every `&`
+ * starts an entity, and the tag nesting balances (comments carry prose, so strip them first).
+ */
+function expectWellFormedPlist(plist: string): void {
+    // XML comments are not an entity context, so they are dropped before both checks.
+    const xml = plist.replaceAll(/<!--[\s\S]*?-->/g, '');
+    expect(xml).not.toMatch(/&(?!(?:amp|lt|gt|quot|apos);)/);
+    const open: string[] = [];
+    for (const [, close, name, rest] of xml.matchAll(/<(\/?)([A-Za-z_][\w.:-]*)([^>]*)>/g)) {
+        if (close === '/') expect(open.pop()).toBe(name);
+        else if (!(rest ?? '').endsWith('/')) open.push(name ?? '');
+    }
+    expect(open).toEqual([]);
 }
 
 describe('registerScheduleCommand', () => {
@@ -118,6 +158,77 @@ describe('kk schedule render', () => {
         expect(line).toContain('mkdir -p .works/kk-collect');
         expect(line).toContain('PATH=');
         expect(result.out).not.toContain('{{');
+    });
+
+    it('AC1/AC2 — the kk-serve launchd render is the supervised-server keepalive R2 freezes', async () => {
+        const result = await run(['schedule', 'render', 'kk-serve', '--platform', 'launchd', '--repo', REPO]);
+
+        expect(result.code).toBe(0);
+        expect(result.err).toBe('');
+        const plist = result.out;
+        expect(plistStringValue(plist, 'Label')).toBe('ai.gobing.spur-serve');
+        // Absolute `Program` for launchd's own lookup; ProgramArguments stays the frozen argv.
+        expect(plistStringValue(plist, 'Program')).toBe(`${homedir()}/.bun/bin/spur`);
+        expect(plistArrayValues(plist, 'ProgramArguments')).toEqual([
+            'spur',
+            'serve',
+            '--cwd',
+            REPO,
+            '--host',
+            '127.0.0.1',
+            '--port',
+            '3003',
+            '--no-open',
+        ]);
+        expect(plistStringValue(plist, 'WorkingDirectory')).toBe(REPO);
+        expect(plistStringValue(plist, 'StandardOutPath')).toBe(`${REPO}/.works/spur-serve/serve.log`);
+        expect(plistStringValue(plist, 'StandardErrorPath')).toBe(`${REPO}/.works/spur-serve/serve.log`);
+        // The supervision contract: up at login, restarted on death, no restart storm.
+        expect(plistBooleanValue(plist, 'RunAtLoad')).toBe(true);
+        expect(plistBooleanValue(plist, 'KeepAlive')).toBe(true);
+        expect(plistIntegerValue(plist, 'ThrottleInterval')).toBe(10);
+        // PATH is what the scheduler's `/bin/sh -c` jobs need (bare spur/kk/jq/bun).
+        expect(plistStringValue(plist, 'PATH')).toContain(`${homedir()}/.bun/bin`);
+        expect(plist).toContain('<key>TYPESAFE_API_KEY</key>');
+        // D2: the hand plist's TYPESAFE_BASE_URL is deliberately not part of the shipped template.
+        expect(plist).not.toContain('<key>TYPESAFE_BASE_URL</key>');
+        expect(plist).not.toContain('api.typesafe.ai');
+        expect(plist).not.toContain('{{');
+        expectWellFormedPlist(plist);
+    });
+
+    it('AC2 — an XML-special credential is escaped, and an unset key renders an empty string', async () => {
+        const previous = process.env.TYPESAFE_API_KEY;
+        try {
+            process.env.TYPESAFE_API_KEY = 'apikey_a&b<c>d';
+            const escaped = await run(['schedule', 'render', 'kk-serve', '--platform', 'launchd', '--repo', REPO]);
+            expect(escaped.code).toBe(0);
+            expect(plistStringValue(escaped.out, 'TYPESAFE_API_KEY')).toBe('apikey_a&amp;b&lt;c&gt;d');
+            expect(escaped.out).not.toContain('a&b<c>d');
+            expectWellFormedPlist(escaped.out);
+
+            delete process.env.TYPESAFE_API_KEY;
+            const unset = await run(['schedule', 'render', 'kk-serve', '--platform', 'launchd', '--repo', REPO]);
+            expect(unset.code).toBe(0);
+            expect(unset.err).toBe('');
+            expect(unset.out).toMatch(/<key>TYPESAFE_API_KEY<\/key>\s*<string><\/string>/);
+            expectWellFormedPlist(unset.out);
+        } finally {
+            if (previous === undefined) delete process.env.TYPESAFE_API_KEY;
+            else process.env.TYPESAFE_API_KEY = previous;
+        }
+    });
+
+    it('AC3 — kk-serve has no cron template (cron cannot keep a process alive) and kk-collect is unchanged', async () => {
+        const serve = await run(['schedule', 'render', 'kk-serve', '--platform', 'cron', '--repo', REPO]);
+
+        expect(serve.code).toBe(1);
+        expect(serve.out).toBe('');
+        expect(serve.err).toContain('kk.schedule.render.failed');
+        expect(serve.err).toContain("schedule 'kk-serve' has no cron template (expected launchd)");
+
+        const collect = await run(['schedule', 'render', 'kk-collect', '--platform', 'cron', '--repo', REPO]);
+        expect(collect.code).toBe(0);
     });
 
     it('R6 — an unknown platform exits 1 with kk.schedule.render.failed and no stdout', async () => {
