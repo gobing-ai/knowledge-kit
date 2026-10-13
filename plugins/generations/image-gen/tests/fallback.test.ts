@@ -200,19 +200,17 @@ describe('D6 runtime fallback (0166)', () => {
         const zai = stub('zai', { model: 'glm-image', onCall: record('zai') });
         writeFileSync(IN, JSON.stringify([coverDoc({ provider: 'minimax', fallback: ['google', 'zai'] })]));
 
-        await processGeneratorIO(IN, OUT, {
-            ...optionsWith({ minimax: mini.provider, google: goog.provider, zai: zai.provider }, 'minimax'),
-            sleep: () => Promise.resolve(), // 0269: google's quota failure now retries — keep this order test instant
-        });
+        await processGeneratorIO(
+            IN,
+            OUT,
+            optionsWith({ minimax: mini.provider, google: goog.provider, zai: zai.provider }, 'minimax'),
+        );
 
-        // 0269 R1/R2: google's quota failure burns its 2 same-provider retries before the advance.
-        expect(calls).toEqual(['minimax', 'google', 'google', 'google', 'zai']);
+        expect(calls).toEqual(['minimax', 'google', 'zai']);
         const metadata = readOut().metadata;
         expect((metadata.images as Array<Record<string, unknown>>)[0]?.provider).toBe('zai');
         expect(metadata.attempts).toEqual([
             { image: 1, provider: 'minimax', model: 'image-01', errorClass: 'auth', message: AUTH },
-            { image: 1, provider: 'google', model: 'google-default-model', errorClass: 'quota', message: QUOTA },
-            { image: 1, provider: 'google', model: 'google-default-model', errorClass: 'quota', message: QUOTA },
             { image: 1, provider: 'google', model: 'google-default-model', errorClass: 'quota', message: QUOTA },
         ]);
     });
@@ -238,15 +236,10 @@ describe('D6 runtime fallback (0166)', () => {
         writeFileSync(IN, JSON.stringify([coverDoc({ provider: 'minimax', fallback: ['google'] })]));
 
         await expect(
-            processGeneratorIO(IN, OUT, {
-                ...optionsWith({ minimax: mini.provider, google: goog.provider }, 'minimax'),
-                sleep: () => Promise.resolve(), // 0269: google's quota failure retries before the budget runs out
-            }),
-        ).rejects.toThrow(
-            `image-gen: all providers failed for image 1: minimax (auth), google (quota), google (quota), google (quota); ${QUOTA}`,
-        );
+            processGeneratorIO(IN, OUT, optionsWith({ minimax: mini.provider, google: goog.provider }, 'minimax')),
+        ).rejects.toThrow(`image-gen: all providers failed for image 1: minimax (auth), google (quota); ${QUOTA}`);
         expect(mini.requests).toHaveLength(1);
-        expect(goog.requests).toHaveLength(3); // 1 attempt + the 2 same-provider retries (0269 R2)
+        expect(goog.requests).toHaveLength(1);
         expect(existsSync(OUT)).toBe(false);
     });
 

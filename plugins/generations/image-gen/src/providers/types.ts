@@ -86,7 +86,7 @@ export interface ImageProvider {
  * later without entering the registry import cycle.
  */
 export type { ProviderErrorClass } from './errors';
-export { classifyProviderError, isFallbackEligible, isTransientRetry } from './errors';
+export { classifyProviderError, isFallbackEligible } from './errors';
 
 /** Injection seam for tests — mirrors `VoiceboxClientOptions.fetch` (voice-gen). */
 /**
