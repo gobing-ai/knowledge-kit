@@ -1,0 +1,12 @@
+title: "VoxCPM/Gemini comparison fixture — Chinese"
+language: "zh"
+default_profile: "robin-news"
+segments:
+  - text: "今天是十月十一日，欢迎收听每日人工智能简报。"
+    speed: 1
+    seed: 42
+    gap_ms: 500
+  - text: "这项研究测试了三种模型，准确率达到百分之九十二点五。接下来，我们看看它的实际表现。"
+    speed: 1
+    seed: 42
+    gap_ms: 0

@@ -225,6 +225,17 @@ voice2 "voice1 untouched" guard now checks behaviour rather than bytes.
 
 - Current-tree recheck (2026-10-11, HEAD 701c598b): no WIP tasks; main has an unrelated task 0252 edit. The only other worktree is knowledge-kit-runall-g8-4173 (G8 board/workflow work), with package.json/bun.lock/CLI packaging edits; coordinate lockfile and packaging-test integration, preserve them. The prior 0248 worktree is gone. ensurePublishMp3 and joined segment metadata are already committed in main, not an uncommitted prerequisite.
 - Current seams: plugins/kk/scripts/daily-stages.ts (ensurePublishMp3, computePlans, joinedSegments); plugins/generations/voice-gen/src/qc.ts (VoiceQualityReport); plugins/generations/voice-gen/src/concat.ts (parseWav). Recheck artifacts: .spur/run/g14-refine-ready-20261011-recheck/.
+### API/library claim sources and confidence
+
+| Claim | Source | Local verification | Confidence |
+| --- | --- | --- | --- |
+| `ensurePublishMp3` is committed and repairs a missing derived MP3 from valid speech | plugins/kk/scripts/daily-stages.ts:539 | Read current source and its call site after render/cache/join | HIGH |
+| The MP3 request convention is `MP3_TRUTHY` = `1/true/yes/on` | plugins/kk/scripts/daily-stages.ts:529 | Read current source | HIGH |
+| `VoiceQualityReport` names the aggregation fields `passed`, `overallScore`, `totalDuration`, `segmentAudits`, `criticalIssues` | plugins/generations/voice-gen/src/qc.ts:20 | Read the interface and its producer | HIGH |
+| `parseWav` is the existing WAV validation seam (mono PCM16, sample rate) | plugins/generations/voice-gen/src/concat.ts:14 | Read current source | HIGH |
+| `dailyGenerate`, `dailyIntro` and `dailyPublishPrep` are the stage entry points this task wires | plugins/kk/scripts/daily-stages.ts:680 | Read current source; `dailyIntro` at plugins/kk/scripts/daily-stages.ts:1123 and `dailyPublishPrep` at plugins/kk/scripts/daily-stages.ts:1307 | HIGH |
+| The final joined Content must carry the ordered `metadata.segments` timeline that the current join rebuilds from section sidecars | plugins/kk/scripts/daily-stages.ts:680 | Read the current join; the `sectionHashes` field this task adds has no upstream API, it is this task's own contract | HIGH |
+| VoxCPM never probes Gemini or substitutes another voice on failure | docs/design/voxcpm-daily-voice-driver.md:94 | Read the frozen design clause; enforced by 0256's adapter | HIGH |
 
 ### History
 

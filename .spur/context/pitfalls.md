@@ -37,3 +37,20 @@
 - Engine PIDs killed via `kill` leave orphaned `kk stage` bun processes holding the voicebox single-job slot (0224). Kill the stage child PIDs too, then `spur workflow clean --json`.
 - Foreground `timeout=3000` killed the engine mid-run once (orphan e9ad943d) — always launch long workflows detached (nohup + disown) and poll.
 - Gemini TTS probe passes then the first real segment 429s on the weekly quota (~21h horizon) — probe is not admission proof (0223).
+
+## 2026-10-13 — the full gate is load-sensitive (task 0274)
+
+- `bun test apps` (and the gate's `apps packages plugins scripts` set) fails intermittently on an
+  unchanged tree, and the failing set changes between runs: measured 1 fail vs 3 fail on identical
+  commands. `bun test apps/cli/tests` alone is green, so the trigger needs the board tests running
+  concurrently. Reproducer: `bun test --dots --timeout 20000 --path-ignore-patterns 'vendors/**' apps`.
+- The recurring one is `apps/cli/tests/commands/stage.test.ts` AC4: `EISDIR reading file:
+  node_modules/.bun/@gobing-ai+ts-utils@<v>/…/ts-utils/dist/index.js`. The file exists outside the
+  run, so expect a concurrent writer into the shared module store, not a broken install.
+- Do NOT "fix" it by wrapping the build in `/tmp/kk-board-shared-build.lock` or by retrying on
+  `EISDIR` — both were tried on 2026-10-13 and were inert (the retry never fired: the error is a
+  test-scope loader/coverage read, not a `Bun.build` throw). Find the writer first.
+- `apps/cli/tests/fanin.test.ts` `--source-timeout-override …` is the same class as the fanout
+  timing pair hardened by `fefd9808`: it can fail only under full-suite load.
+- Before blaming your own change for a red gate, run the failing file alone. If it passes alone,
+  you are looking at this class, not at a regression.

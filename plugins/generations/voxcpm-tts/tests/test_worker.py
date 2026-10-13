@@ -105,3 +105,59 @@ def test_isolate_protocol_stdout_keeps_fd1_writes_off_the_ndjson_channel() -> No
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, check=False)
     assert result.stdout == b'{"ok": true}\n'  # protocol channel only
     assert b"NATIVE-FD1-WRITE" in result.stderr  # a native fd-1 write lands on stderr
+
+
+def _run_main(monkeypatch: pytest.MonkeyPatch, payloads: list[dict], handler) -> list[dict]:
+    """Drive `main` over NDJSON requests with a fake backend; return the emitted responses."""
+    stdin = io.StringIO("".join(json.dumps(payload) + "\n" for payload in payloads))
+    stdout = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", stdin)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(worker, "_handle", handler)
+    assert worker.main([], environ={}) == 0
+    return [json.loads(line) for line in stdout.getvalue().splitlines()]
+
+
+def test_main_answers_a_successful_health_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression (task 0258): the success path never called `_respond`, so the adapter's
+    # pending request was never resolved and every invocation died on its deadline.
+    model = {"path": "/cache/models--openbmb--VoxCPM2/snapshots/abc", "revision": "abc", "package": "unknown"}
+
+    def handler(state: dict, env: dict, request: dict) -> dict:
+        return {"ok": True, "sample_rate": 48_000, "model": model}
+
+    lines = _run_main(monkeypatch, [{"id": 7, "op": "health"}], handler)
+
+    assert lines == [{"id": 7, "ok": True, "sample_rate": 48_000, "model": model}]
+
+
+def test_main_answers_a_successful_render_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {"ok": True, "duration": 1.25, "path": "/scratch/seg-001.wav"}
+
+    def handler(state: dict, env: dict, request: dict) -> dict:
+        assert request["op"] == "render"
+        return payload
+
+    lines = _run_main(monkeypatch, [{"id": 2, "op": "render", "text": "x"}], handler)
+
+    assert lines == [{"id": 2, **payload}]
+
+
+def test_main_still_reports_failures_and_one_line_per_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+
+    def handler(state: dict, env: dict, request: dict) -> dict:
+        calls["n"] += 1
+        if request["op"] == "boom":
+            raise worker.WorkerError("nope")
+        return {"ok": True, "duration": 0.5, "path": f"/scratch/{calls['n']}.wav"}
+
+    lines = _run_main(
+        monkeypatch,
+        [{"id": 1, "op": "boom"}, {"id": 2, "op": "render"}, {"id": 3, "op": "render"}],
+        handler,
+    )
+
+    assert len(lines) == 3  # exactly one response per accepted request, in order
+    assert lines[0] == {"id": 1, "ok": False, "error": "nope"}
+    assert [line["id"] for line in lines] == [1, 2, 3]

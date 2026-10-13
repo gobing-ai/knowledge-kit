@@ -339,8 +339,13 @@ def main(
             payload = _handle(state, env, request)
         except WorkerError as err:
             _respond(stdout, request.get("id"), {"ok": False, "error": str(err)})
+            continue
         except Exception as err:  # noqa: BLE001 - surface any backend failure actionably
             _respond(stdout, request.get("id"), {"ok": False, "error": f"{type(err).__name__}: {err}"})
+            continue
+        # The success path MUST answer too: the adapter resolves a request by its id, so a
+        # silent success left every health/render waiting out its deadline (task 0258).
+        _respond(stdout, request.get("id"), payload)
     return 0
 
 

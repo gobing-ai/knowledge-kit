@@ -25,6 +25,8 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const logFile = process.env.KK_SHIM_LOG;
 const failAt = process.env.KK_SHIM_FAIL_AT ? parseInt(process.env.KK_SHIM_FAIL_AT, 10) : -1;
+// 20261012: fail EVERY call from this index on — a persistent failure, where FAIL_AT fails one.
+const failFrom = process.env.KK_SHIM_FAIL_FROM ? parseInt(process.env.KK_SHIM_FAIL_FROM, 10) : -1;
 const callIndex = process.env.KK_SHIM_CALL_INDEX_FILE ? parseInt(await Bun.file(process.env.KK_SHIM_CALL_INDEX_FILE).text().catch(() => '0'), 10) : 0;
 
 if (process.env.KK_SHIM_CALL_INDEX_FILE) {
@@ -47,7 +49,7 @@ if (logFile) {
 // Simulating small work
 await Bun.sleep(15);
 
-if (failAt >= 0 && callIndex === failAt) {
+if ((failAt >= 0 && callIndex === failAt) || (failFrom >= 0 && callIndex >= failFrom)) {
     if (logFile) {
         appendFileSync(logFile, JSON.stringify({ event: 'fail', index: callIndex, time: Date.now() }) + '\\n');
     }
@@ -275,7 +277,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             const startCalls = logs.filter((l) => l.event === 'start');
             expect(startCalls.length).toBe(8);
         });
-    });
+    }, 30_000);
 
     it('AC2 — complete run reuses joined speech (0 calls); deleting one section re-synthesizes only that section', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -305,7 +307,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             expect(startCalls3.length).toBe(1);
             expect(startCalls3[0].outPath).toContain('03-item.json');
         });
-    });
+    }, 30_000);
 
     it('AC3 — joined sample count matches section samples + gap_ms silences; daily-intro and daily-episode-duration succeed', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -375,7 +377,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             const startVoice1 = logsVoice1.filter((l) => l.event === 'start');
             expect(startVoice1.length).toBe(1);
         });
-    });
+    }, 30_000);
 
     it('AC4 — concurrency 1 never has overlapping calls; concurrency 2 fails naming section_concurrency', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -405,7 +407,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
                 }
             }
         });
-    });
+    }, 30_000);
 
     it('AC5b — the estimate is calibrated to the measured driver rate (production-length scripts pass)', () => {
         // Regression: the shipped style-sidecar figures (gemini 3.3, voicebox 6.3 字/秒) made the gate
@@ -432,7 +434,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             expect(over.stderr + over.stdout).toMatch(/exceeds 20 min/);
             expect(existsSync(logFile)).toBe(false);
         });
-    });
+    }, 30_000);
 
     it('AC5c — a widened `episode_max_minutes` raises the pre-spend ceiling', () => {
         // The workflow passes its `episode_max_minutes` to the stage, so the estimate and the measured
@@ -456,7 +458,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             expect(over.stderr + over.stdout).toMatch(/exceeds 25 min/);
             expect(existsSync(logFile)).toBe(false);
         });
-    });
+    }, 30_000);
 
     it('refuses a non-numeric `episode_max_minutes` before any synthesis instead of defaulting to 20', () => {
         // A typo'd workflow var must not silently fall back to the 20-minute default while the
@@ -468,7 +470,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             expect(bad.stderr + bad.stdout).toMatch(/invalid episode_max_minutes: 2O/);
             expect(existsSync(logFile)).toBe(false);
         });
-    });
+    }, 30_000);
 
     it('AC5 — shortened section re-synthesizes only changed section; over-20-min estimate fails naming 3 longest sections', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -512,17 +514,48 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             // Must name 3 longest sections
             expect(runOver.stderr + runOver.stdout).toMatch(/01-item/);
         });
-    });
+    }, 30_000);
 
-    it('AC6 — 4th call failure stops, does not switch driver, retains sections 00-02, next run finishes remaining', () => {
+    it('AC6 — a section that fails once is retried and the episode still completes (0269-shape)', () => {
+        // 20261012 hardening: one failed section used to cost the whole episode, which is the one
+        // artefact nothing can publish without. A transient driver failure (a 429 once the quota
+        // window drains, a network blip) now spends one extra request on that section instead.
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupSixItemFixture(dir, date, 6);
-
-            // Fail at call index 3 (0-indexed, so 4th call)
             const runFail = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile, {
                 KK_SHIM_FAIL_AT: '3',
             });
+            expect(runFail.status, runFail.stderr).toBe(0);
+            expect(runFail.stdout).toContain('retrying it once');
+            const secDir = join(dir, '30-audio', 'sections', date);
+            // Every section rendered, including the one that failed first time and the later ones
+            // the old behaviour never reached.
+            for (const stem of [
+                '00-opening',
+                '01-item',
+                '02-item',
+                '03-item',
+                '04-item',
+                '05-item',
+                '06-item',
+                '07-closing',
+            ]) {
+                expect(existsSync(join(secDir, `${stem}.wav`)), `${stem} rendered`).toBe(true);
+            }
+        });
+    }, 30_000);
+
+    it('AC6b — a section that keeps failing stops the run, retains sections 00-02 and does not switch driver', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+
+            // Fail at call index 3 AND every call after it: the bounded retry must not become an
+            // unbounded one, and a driver switch mid-episode would mix two voices.
+            const runFail = runStage(['daily-generate', dir, date, '', '', 'voicebox', '1'], binDir, logFile, {
+                KK_SHIM_FAIL_FROM: '3',
+            });
             expect(runFail.status).not.toBe(0);
+            expect(runFail.stderr).toContain('section synthesis failed for 03-item');
 
             // Assert 00, 01, 02 exist
             const secDir = join(dir, '30-audio', 'sections', date);
@@ -546,7 +579,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             expect(starts.length).toBe(5);
             expect(existsSync(join(secDir, '07-closing.wav'))).toBe(true);
         });
-    });
+    }, 30_000);
 
     it('gemini quota probe runs once per generate path and a failure falls the whole run back to voicebox', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -599,7 +632,7 @@ describe('0237 — voice2 segmented episode speech synthesis', () => {
             expect(starts[0]?.args).toContain('gemini-tts');
             expect(starts[1]?.args).toContain('voice-gen');
         });
-    });
+    }, 30_000);
 });
 
 describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 first publishing tick)', () => {
@@ -619,7 +652,7 @@ describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 f
                 .metadata;
             expect(meta.mp3Path).toBe(mp3Path);
         });
-    });
+    }, 30_000);
 
     it('the sectioned join carries metadata.segments so show-notes offsets are real', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -636,7 +669,7 @@ describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 f
             expect(segments).toHaveLength(8);
             expect(segments.every((s) => typeof s.duration === 'number')).toBe(true);
         });
-    });
+    }, 30_000);
 
     it('daily-generate leaves the WAV-only content untouched when transcode_mp3 is off', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -651,7 +684,7 @@ describe('publish MP3 for a driver without native MP3 output (0171 R2 / voice2 f
             ).metadata;
             expect(meta.mp3Path).toBeUndefined();
         });
-    });
+    }, 30_000);
 });
 
 describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audio reuse', () => {
@@ -682,7 +715,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             ).metadata;
             expect(meta.generator).toBe('kk:voxcpm-tts');
         });
-    });
+    }, 30_000);
 
     it('AC1/R2 — a matching whole-document cache reuses without a probe; a missing MP3 is repaired with zero generator calls', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -712,7 +745,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(existsSync(logFile)).toBe(false); // zero generator calls
             expect(existsSync(mp3Path)).toBe(true);
         });
-    });
+    }, 30_000);
 
     it('AC3 — foreign, legacy and corrupt whole-document caches regenerate', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -756,7 +789,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
                 qc: { passed: true },
             });
         });
-    });
+    }, 30_000);
 
     it('AC2/R4 — 48 kHz sections join at 48 kHz with native sample counts and gaps', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -790,7 +823,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(final.metadata.segments).toHaveLength(8);
             expect(existsSync(final.metadata.mp3Path as string)).toBe(true);
         });
-    });
+    }, 30_000);
 
     it('AC3 — a stale or foreign joined final is rejoint from cached sections with no model calls', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -822,7 +855,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(existsSync(logFile)).toBe(false);
             expect(readFinal().metadata.generator).toBe('kk:voice-gen');
         });
-    });
+    }, 30_000);
 
     it('AC3 — matching valid sections with only the joined MP3 missing transcode once with zero generator calls', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -843,7 +876,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(existsSync(logFile)).toBe(false); // zero generator calls
             expect(existsSync(mp3Path)).toBe(true);
         });
-    });
+    }, 30_000);
 
     it('AC2/AC3 — a fresh join rebuilds the ordered timeline and leaks no previous-run metadata', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -886,7 +919,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(existsSync(final.metadata.mp3Path as string)).toBe(true);
             expect((final.metadata.sectionHashes as string[]).length).toBe(8);
         });
-    });
+    }, 30_000);
 
     it('AC2 — daily-intro merges the joined output and daily-episode-duration reads the merged length', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
@@ -939,7 +972,7 @@ describe('0257 — VoxCPM wiring: driver-aware whole-document and sectioned audi
             expect(refusal.measuredMinutes).toBeLessThan(15);
             expect(dur.stderr + dur.stdout).toContain('below the 15');
         });
-    });
+    }, 30_000);
 });
 
 describe('0266 — post-spend duration refusal closes the run as no-content', () => {

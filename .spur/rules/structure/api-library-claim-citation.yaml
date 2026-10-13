@@ -80,6 +80,10 @@ rules:
           - "--require-block=docs/tasks/0253_inspect-daily-voice-dag-runs-and-multimedia-results-in-spur-.md"
           - "--require-block=docs/tasks/0254_inspect-it-content-authoring-runs-and-target-results-in-spur.md"
           - "--require-block=docs/tasks/0255_verify-three-workflow-modules-from-an-installed-package-and-.md"
+          - "--require-block=docs/design/voxcpm-daily-voice-driver.md"
+          - "--require-block=docs/tasks/0256_add-standalone-voxcpm-generator-using-the-shared-voice-pipel.md"
+          - "--require-block=docs/tasks/0257_wire-voxcpm-into-both-daily-workflows-with-driver-aware-audi.md"
+          - "--require-block=docs/tasks/0258_compare-voxcpm-and-gemini-daily-audio-with-recorded-quality-.md"
         message: "exit {code}: a document declared in the claim registry carries no API/library claim block, or its rows do not cite and earn their level — add the cited claim table, or drop the document from the registry in .spur/rules/structure/api-library-claim-citation.yaml"
     include:
       - "docs/**/*.md"

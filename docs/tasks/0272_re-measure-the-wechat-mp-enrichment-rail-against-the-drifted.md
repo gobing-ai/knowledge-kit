@@ -4,7 +4,7 @@ name: Re-measure the WeChat MP enrichment rail against the drifted console
 status: todo
 template: issue
 created_at: 2026-10-13T03:22:54.165Z
-updated_at: "2026-10-13T03:23:03.032Z"
+updated_at: "2026-10-13T15:25:37.170Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -37,6 +37,30 @@ The 2026-10-10 operator walk that was supposed to automate this does not reprodu
 - **Cover moved.** The open cover panel offers 修改 (`.js_cover_preview_new`), 换一张 (`.js_chooseCoverWrap`) and 从正文选择 (`.js_cover_opr`), while `从图片库选择` now lives in a media dropdown (`.js_img_dropdown_menu` → `.tpl_dropdown_menu_item.js_img_from_local`). `a.js_imagedialog` still exists in the DOM (3 hits) but is not offered by the open panel, which is what the readiness check times out on. The library path also depends on the audio step: the episode cover is uploaded there as the audio material's cover, so a failed audio insert leaves the library without the intended image.
 
 The draft still saves (`ok: true`, `publishStatus: draft`) and every failure is a loud warning, so nothing false-successes — the cost is that the operator completes 5-7 fields by hand in the draft box every day.
+
+Measured follow-up (2026-10-12, live).** The 原创 dialog's real contract, read from the live DOM:
+
+- `声明类型` offers `文字原创` / `漫画原创 字数<300字，且图片≥4张` / `无需声明`, plus `赞赏`, `作者`, `赞赏账户`, `类别`, `白名单` (快捷转载) and the agreement checkbox `我已阅读并同意《微信公众平台原创声明及相关功能使用协议》`.
+- The rail ticks nothing: `:text("文字原创")` resolves (it selects the radio — verified `weui-desktop-form__radio js_original` checked) but the protocol agreement stays unchecked, so 确定 leaves the dialog open and `dialogsClosed()` reports `原创声明: dialog did not close`. **Selecting the agreement by its label is what lets 确定 close the dialog** (verified: `dialogs open: 0`).
+- The declaration still does **not** persist. After 文字原创 + agreement + 确定 + `保存为草稿` + reload, the row still reads `未声明`. The account's own state explains why: the 赞赏 rows read `无法开启赞赏，因为还没有赞赏账户授权给本…`, and the rail's pre-2026-10-10 warning recorded the rule verbatim — `原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置`. The dialog's `作者` field is a search-select over that account's 赞赏账户 list.
+- Therefore 原创, and everything the panel gates behind it (`赞赏` reads `声明原创后才可开启`), is blocked on an **account prerequisite**: authorise/create the 赞赏账户. No selector change can complete it, and the rail should report it as an operator action rather than as a click timeout (R3).
+
+What remains purely mechanical and is not gated by 原创: the 封面 panel and the 音频 insert — the cover's `从图片库选择` path needs the audio step to have uploaded the episode cover as that material's cover, so the two are ordered together.
+
+Measured follow-up (2026-10-12, live): the console states the 赞赏 prerequisite and its own remedy, so R3 has an exact operator action to report instead of a click timeout —
+
+```
+无法开启赞赏，因为还没有赞赏账户授权给本公众号。如果要取得授权，请到赞赏账户小程序-赞赏账户设置-可收款公众号中添加本公众号。如果要创建赞赏账户，你可以发送赞赏账户邀请。
+```
+
+Same read: the article's 原创 row reported `原创 文字原创 · 作者: 冰原奔狼 · 已开启快捷转载` with `编辑声明 / 编辑白名单 / 撤销声明` operations while its switch still read `未声明`, so a declaration pass leaves the author and 快捷转载 applied without the declaration itself registering — the read-back must assert the switch state, not the row's summary text. With no 赞赏账户 there is nothing for the dialog's `作者` search-select to resolve, which is why the declaration cannot complete.
+
+Second live pass (2026-10-13 morning, after the first fully-green daily run):
+
+- **The audio dialog is measured now.** The toolbar's `音频` entry is a DROPDOWN: `.jsInsertIcon.audio` opens it and only then does the item `.tpl_dropdown_menu_item.js_insertaudio` reach the real dialog. That dialog is `插入音频` with tabs `从素材库选择` / `从视频号选择`, a `搜索音频` field, and buttons **`上传音频`**, 下一页, **`插入`**, 取消. The material library already lists past episodes (`每日AI乱炖 · 2026-10-12 16分钟`, 10-11, 10-10, 10-08, 10-07, 10-06, 10-04 …), so the dedupe path can insert without uploading. The rail JS-clicks `li.js_insertaudio` directly and then waits for `.audio_dialog`; the observed failure is the *click* on `上传音频` (found but not clickable within 8 s), which is why the step times out while the control demonstrably exists.
+- **The account prerequisite is still open.** The 2026-10-13 draft reads 原创 `未声明` and 赞赏 `不开启 无法开启赞赏，因为还没有赞赏账户授权给本公众号 …`, so 原创 cannot register yet and 赞赏 stays gated. Today's run stopped warning about 原创 (the dialog closed) but the declaration still did not stick — the read-back must assert the switch, as recorded above.
+- **A forced re-run of `daily-publish-wechat` hangs, and the hang is not the session.** Removing the cached result and re-running the stage twice (15 min, then 4.5 min) produced no result file and no output; `kk plugin check wechatmp-pub` verifies the session headlessly in 15 s, no lock file exists and no browser is left on the profile after the kill. The same stage completed in ~1.5 min inside this morning's workflow run, so the difference is worth finding before the rail is judged: it needs its own session with the account authorised.
+- The forced re-run **deleted** `31-publish/20261013_20_publish-wechat_result.json` (the documented "redo by delete") and could not regenerate it. The run's own record is intact — `31-publish/20261013_17_publish_completeness.json` still reads `wechat done draft`, the ledger row and the run report are written, and the draft itself exists (`appmsgid=100000971`) — but a future re-run of `daily-publish-completeness` would now see the channel as missing until the stage succeeds again.
 
 ### Requirements
 

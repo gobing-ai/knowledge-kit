@@ -68,7 +68,7 @@ function shell(command: string, args: string[], cwd: string): string {
     const result = spawnSync(command, args, {
         cwd,
         encoding: 'utf-8',
-        env: { ...process.env, NODE_ENV: 'production' },
+        env: childEnv(),
         maxBuffer: 64 * 1024 * 1024,
     });
     if (result.status !== 0) {
@@ -145,6 +145,22 @@ function freePort(): number {
 }
 
 /**
+ * Child environment for every spawned CLI/server in this fixture.
+ *
+ * A nested `spur workflow run` is refused when `SPUR_WORKFLOW_RUN_ACTIVE` is inherited (the guard
+ * that stops a pipeline from forking another pipeline). This file deliberately drives the CLI in a
+ * throwaway project, so it must not inherit the guard from whatever pipeline is running the test
+ * suite — a full `spur workflow run feature-verification.yaml` gate run failed exactly that way
+ * (2026-10-13). Same treatment as `apps/cli/tests/kk-collect.test.ts`.
+ */
+function childEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production' };
+    delete env.SPUR_WORKFLOW_RUN_ACTIVE;
+    delete env.SPUR_EXPECTED_DEFINITION_DIGEST;
+    return env;
+}
+
+/**
  * Spawn a long-running server with its stdout+stderr captured to a readable log file — never
  * discarded. A server that exits before it listens is therefore diagnosable from the failure
  * message instead of a bare "Unable to connect".
@@ -152,7 +168,7 @@ function freePort(): number {
 function spawnServer(name: string, label: string, args: string[], cwd: string): (typeof servers)[number] {
     const logFile = join(realTempDir(`kk-installed-${name}-`), 'server.log');
     const fd = openSync(logFile, 'a');
-    const child = Bun.spawn({ cmd: args, cwd, stdout: fd, stderr: fd, env: { ...process.env } });
+    const child = Bun.spawn({ cmd: args, cwd, stdout: fd, stderr: fd, env: childEnv() });
     children.push(child);
     const handle = { name, label, logFile, child };
     servers.push(handle);

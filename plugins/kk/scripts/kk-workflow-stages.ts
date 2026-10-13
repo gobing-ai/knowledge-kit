@@ -1280,10 +1280,24 @@ function publishCompleteness(
                 detail: 'en/ja scaffolded, never synced',
             });
         } else if (syncResult.ok === true) {
+            // A filled marker only proves the locale was SCAFFOLDED. The workflow's `translate` agent is
+            // what publishes it (its prompt flips `draft: true` → `draft: false`), so a run whose
+            // translation failed used to report `locales: done` while the site kept an unpublished
+            // scaffold — the one channel whose loss nothing in the run's artifacts named. Read the draft
+            // the marker points at: still `draft: true` means it was never translated.
+            const untranslated = ['en', 'ja'].filter((locale) => {
+                const marker = readFileSync(at(`20_translate-localize_${locale}-post-path.txt`), 'utf-8').trim();
+                if (!isFile(marker)) return true;
+                const head = readFileSync(marker, 'utf-8').split('---')[1] ?? '';
+                return /^draft:\s*true\s*$/m.test(head);
+            });
             rows.push({
                 channel: 'locales',
-                state: 'done',
-                detail: 'en/ja drafts scaffolded',
+                state: untranslated.length === 0 ? 'done' : 'failed',
+                detail:
+                    untranslated.length === 0
+                        ? 'en/ja drafts scaffolded and translated'
+                        : `${untranslated.join(', ')} draft is still a scaffold (draft: true) — not translated, so it stays unpublished`,
             });
         } else {
             rows.push({

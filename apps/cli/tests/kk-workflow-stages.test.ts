@@ -597,6 +597,19 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             );
             return publish;
         };
+        /**
+         * A locale whose marker points at a REAL draft, because completeness reads that draft's
+         * `draft:` flag: a scaffold is `draft: true` until the workflow's `translate` agent publishes
+         * it (`draft: false`), which is the only signal that separates a translated locale from one
+         * the agent never got to.
+         */
+        const localeDraft = (publish: string, locale: string, draft: boolean): void => {
+            const dir = join(publish, `locale-${locale}`);
+            mkdirSync(dir, { recursive: true });
+            const draftPath = join(dir, 'index.md');
+            writeFileSync(draftPath, `---\ntitle: t\ndraft: ${draft}\n---\n\nbody\n`);
+            writeFileSync(join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`), draftPath);
+        };
         const completenessOf = (
             publish: string,
         ): { missing: string[]; rows: { channel: string; state: string; detail: string }[] } =>
@@ -635,12 +648,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         it('records done, a named failure and the CMS skip marker', () => {
             withTempDir((dir) => {
                 const publish = seeded(dir);
-                for (const locale of ['en', 'ja']) {
-                    writeFileSync(
-                        join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
-                        `/sd/content/posts/articles/${locale}/x/index.md`,
-                    );
-                }
+                for (const locale of ['en', 'ja']) localeDraft(publish, locale, false);
                 writeFileSync(
                     join(publish, `${stamp}_24_translate-sync_sync-result.json`),
                     JSON.stringify({ ok: true, target: 'surfdash' }),
@@ -674,12 +682,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         it('reports nothing missing when the tail ran through end to end', () => {
             withTempDir((dir) => {
                 const publish = seeded(dir);
-                for (const locale of ['en', 'ja']) {
-                    writeFileSync(
-                        join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
-                        `/sd/content/posts/articles/${locale}/x/index.md`,
-                    );
-                }
+                for (const locale of ['en', 'ja']) localeDraft(publish, locale, false);
                 writeFileSync(
                     join(publish, `${stamp}_24_translate-sync_sync-result.json`),
                     JSON.stringify({ ok: true, target: 'surfdash' }),
@@ -703,15 +706,31 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             });
         });
 
+        it('reports a locale the translate agent never published, not a scaffolded one (20261012)', () => {
+            // The marker is written by the SCAFFOLD step, so it cannot witness the translation. The
+            // workflow tolerates a failed `translate` agent (the channel is documented as independent),
+            // which makes this the only signal that a locale was lost: the draft's own `draft:` flag.
+            withTempDir((dir) => {
+                const publish = seeded(dir);
+                localeDraft(publish, 'en', false);
+                localeDraft(publish, 'ja', true); // scaffolded and never translated
+                writeFileSync(
+                    join(publish, `${stamp}_24_translate-sync_sync-result.json`),
+                    JSON.stringify({ ok: true, target: 'surfdash' }),
+                );
+                const res = run(['daily-publish-completeness', dir, stamp]);
+                expect(res.status, res.stderr).toBe(0);
+                const row = completenessOf(publish).rows.find((entry) => entry.channel === 'locales');
+                expect(row?.state).toBe('failed');
+                expect(row?.detail).toContain('ja draft is still a scaffold');
+                expect(completenessOf(publish).missing).toContain('locales');
+            });
+        });
+
         it('locales requires ok sync result (0220 AC1)', () => {
             withTempDir((dir) => {
                 const publish = seeded(dir);
-                for (const locale of ['en', 'ja']) {
-                    writeFileSync(
-                        join(publish, `${stamp}_20_translate-localize_${locale}-post-path.txt`),
-                        `/sd/content/posts/articles/${locale}/x/index.md`,
-                    );
-                }
+                for (const locale of ['en', 'ja']) localeDraft(publish, locale, false);
                 // Scaffolded but no sync result -> not-run with 'never synced'
                 let res = run(['daily-publish-completeness', dir, stamp]);
                 expect(res.status).toBe(0);
@@ -1617,8 +1636,10 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
             expect(result.status).toBe(7);
             expect(result.stderr).toContain('xhs render: card 01 failed');
             expect(result.stderr).toContain('re-run daily-xhs-render to resume');
-            // 0251 AC2: no overflow sentence in the fake's stderr, so there is no retry — one call.
-            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(1);
+            // 0269: no overflow sentence in the fake's stderr, so the failure is the provider's — it gets
+            // one same-envelope retry. This fake fails EVERY call, so the retry fails too and the series
+            // stops here with exactly two calls (never an unbounded loop).
+            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(2);
             expect(() => readFileSync(join(dir, '25-xhs', 'cards.json'))).toThrow();
             expect(() => readFileSync(join(dir, '25-xhs', 'content.json'))).toThrow();
         });
@@ -1636,6 +1657,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         record: string,
         failStderr: string,
         exitCode: number,
+        failCalls = 1,
     ): Record<string, string> {
         return fakeKk(
             dir,
@@ -1646,7 +1668,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                 'const at = (name) => argv[argv.indexOf(name) + 1];',
                 `const prior = fs.readFileSync(${JSON.stringify(record)}, 'utf8').trim().split('\\n').filter((line) => line.includes(at('--in')));`,
                 `fs.copyFileSync(at('--in'), ${JSON.stringify(record)} + '.' + prior.length + '.json');`,
-                `if (prior.length === 1) { process.stderr.write(${JSON.stringify(failStderr)} + '\\n'); process.exit(${exitCode}); }`,
+                `if (prior.length <= ${failCalls}) { process.stderr.write(${JSON.stringify(failStderr)} + '\\n'); process.exit(${exitCode}); }`,
                 'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
                 'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
                 'fs.writeFileSync(artifact, "png");',
@@ -1781,17 +1803,41 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
-    it('daily-xhs-render does not retry a card whose failure is not a points overflow (0251 AC2)', () => {
+    it('daily-xhs-render retries a non-overflow failure once and recovers the card (0269)', () => {
+        // 0269: the observed loss was a provider flake AFTER a rewrite — card 02 overflowed, was made
+        // to fit, and the second call then failed with only a vendor-fallback warning; the same saved
+        // envelope rendered first try by hand. A failure the composer's overflow sentence does not
+        // explain is the provider's, so it gets one same-envelope retry instead of ending the series.
         withTempDir((dir) => {
             writeXhsPlan(dir);
             const record = join(dir, 'kk-argv.jsonl');
             const env = fakeXhsKkFailFirst(dir, record, 'image-gen failed: provider timeout', 3);
             const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('retrying the same envelope once');
+            // Two calls for the FIRST card: the failure and its one retry. Counted per card, because the
+            // later cards are rendered too once the retry succeeds. The envelope is byte-identical
+            // between the two — a rewrite would have gone through the overflow branch instead.
+            const calls = readFileSync(record, 'utf-8').trim().split('\n');
+            expect(calls.filter((line) => line.includes('card-01.in.json'))).toHaveLength(2);
+            expect(readFileSync(`${record}.1.json`, 'utf-8')).toBe(readFileSync(`${record}.2.json`, 'utf-8'));
+            expect(existsSync(join(dir, '25-xhs', 'cards.json'))).toBe(true);
+            expect(existsSync(join(dir, '25-xhs', 'content.json'))).toBe(true);
+        });
+    });
+
+    it('daily-xhs-render still stops the series when the same non-overflow failure persists (0251 R2, bounded)', () => {
+        withTempDir((dir) => {
+            writeXhsPlan(dir);
+            const record = join(dir, 'kk-argv.jsonl');
+            // Every call for this envelope fails: the bounded retry must not become an unbounded one.
+            const env = fakeXhsKkFailFirst(dir, record, 'image-gen failed: provider timeout', 3, 99);
+            const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''], env);
             expect(result.status).toBe(3);
             expect(result.stderr).toContain('xhs render: card 01 failed');
             expect(result.stderr).toContain('re-run daily-xhs-render');
-            // One provider call: a non-overflow failure stops the series, earlier cards kept.
-            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(1);
+            // One call plus exactly one retry: a permanent failure costs a single extra illustration.
+            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(2);
             expect(() => readFileSync(join(dir, '25-xhs', 'cards.json'))).toThrow();
         });
     });

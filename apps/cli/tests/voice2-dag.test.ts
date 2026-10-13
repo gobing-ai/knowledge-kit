@@ -546,8 +546,11 @@ describe('kk-daily-ai-voice2 — the DAG definition (R1–R8)', () => {
         );
         expect(dag.nodes.find((node) => node.id === 'run-report')?.dependsOn).toContain('mark-published');
         expect(dependentsOf(dag, 'ledger')).toEqual([]);
+        // The tail cannot write its OWN section (the trace is still `running` there), so it runs the
+        // verb that can act: a backfill of every finished run the ledger is missing. `kk ledger append`
+        // here made every green run record a false `ledger | failed` (20261012).
         expect(String(dag.nodes.find((node) => node.id === 'ledger')?.action?.options?.command)).toContain(
-            'kk ledger append --workflow kk-daily-ai-voice2',
+            'kk ledger sync --workflow kk-daily-ai-voice2',
         );
         // run-report sits between them, so the ledger's Result cell can carry `no-content`.
         expect(dag.nodes.find((node) => node.id === 'ledger')?.dependsOn).toContain('run-report');
@@ -705,6 +708,36 @@ describe('kk-daily-safety — judge verdict confidence routing (AC6)', () => {
         expect(transitions.some((t) => t.from === 'revise' && t.to === 'review')).toBe(true);
         // The revise transition is bounded by the gate's budget var, which the DAG forwards.
         expect(safety.vars.safety_max_revise).toBe('2');
+    });
+
+    it('every agent step tolerates its own failure so the gate, not the step, owns fail-closed (0270)', () => {
+        type SafetyAction = { kind?: string; onError?: string; options?: Record<string, unknown> };
+        const states = (
+            Bun.YAML.parse(readFileSync(SAFETY, 'utf-8')) as { states: { id: string; onEnter?: SafetyAction[] }[] }
+        ).states;
+        const agentSteps = states.flatMap((state) =>
+            (state.onEnter ?? [])
+                .filter((action) => action.kind === 'agent.run')
+                .map((action) => ({ state: state.id, onError: action.onError })),
+        );
+        // Non-vacuous: review, judge and revise each run one.
+        expect(agentSteps.map((step) => step.state).sort()).toEqual(['judge', 'review', 'revise']);
+        // 0270: an untolerated agent failure aborts the machine at that node, so `daily-safety-gate`
+        // never runs and the nested run ends `-> review` having written no status (2026-10-12 — an out
+        // of balance executor plus a refusing failover model took the whole daily DAG down that way).
+        // The gate is what writes `safety_status` and routes to a declared terminal, so every agent
+        // step must hand its failure to it instead of claiming the machine.
+        for (const step of agentSteps)
+            expect(step.onError, `${step.state} must tolerate its agent failing`).toBe('continue');
+        // …and the gate really does follow the agent step in the SAME state (verified engine behaviour:
+        // a later onEnter action still runs after a tolerated failure), so tolerating it cannot skip it.
+        for (const id of ['review', 'judge']) {
+            const actions = states.find((state) => state.id === id)?.onEnter ?? [];
+            const agentAt = actions.findIndex((action) => action.kind === 'agent.run');
+            const commandAt = actions.findIndex((action) => action.kind === 'shell');
+            expect(agentAt, `${id} has no agent.run step`).toBeGreaterThanOrEqual(0);
+            if (id === 'judge') expect(commandAt, 'the gate must follow the judge agent').toBeGreaterThan(agentAt);
+        }
     });
 
     it.each([
@@ -961,14 +994,14 @@ describe('kk-daily-ai-voice2 — empty pool ends the run as no-content (AC3)', (
         expect(called(outcome, 'store mark-published')).toBe(false);
         // run-report and ledger list `extract` in dependsOn, so they still ran.
         expect(called(outcome, 'daily run-report')).toBe(true);
-        expect(called(outcome, 'ledger append')).toBe(true);
+        expect(called(outcome, 'ledger sync')).toBe(true);
         const summary = readFileSync(join(outcome.workDir, 'run-report.summary.txt'), 'utf-8');
         expect(summary).toContain('no-content');
         expect(readFileSync(join(outcome.workDir, '20261007_19_run-report_report.md'), 'utf-8')).toContain(
             'no content',
         );
         // The ledger is the final call of the run.
-        expect(outcome.log[outcome.log.length - 1]).toContain('ledger append');
+        expect(outcome.log[outcome.log.length - 1]).toContain('ledger sync');
         const trace = Bun.spawnSync(['spur', 'workflow', 'trace', outcome.runId, '--json'], { cwd: REPO });
         saveArtifact(`${outcome.runId}-trace.json`, trace.stdout.toString());
         saveArtifact(`${outcome.runId}-calls.log`, outcome.log.join('\n'));
@@ -1005,13 +1038,13 @@ describe('kk-daily-ai-voice2 — independent branches run concurrently and fan i
         // 0228 R6b: a dry run (publish_enabled=false) must NOT promote its rows — the guard refuses,
         // so they stay `selected` and still exclude the next day.
         expect(called(outcome, 'store mark-published')).toBe(false);
-        expect(called(outcome, 'ledger append')).toBe(true);
+        expect(called(outcome, 'ledger sync')).toBe(true);
         // Ordering: extract → plan → qc-content → … → run-report → ledger.
         const order = outcome.log.map((line) => line.split(' ').slice(0, 3).join(' '));
         const index = (needle: string): number => order.findIndex((line) => line.includes(needle));
         expect(index('store extract')).toBeLessThan(index('stage daily-plan'));
         expect(index('stage daily-plan')).toBeLessThan(index('stage daily-qc-content'));
-        expect(index('daily run-report')).toBeLessThan(index('ledger append'));
+        expect(index('daily run-report')).toBeLessThan(index('ledger sync'));
         saveArtifact(`${outcome.runId}-calls.log`, outcome.log.join('\n'));
     }, 120_000);
 });

@@ -1041,10 +1041,25 @@ export function dailyGenerate(args: string[]): void {
             };
             writeJsonText(secDocIn, [doc]);
             try {
-                const status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                // 0269-shaped hardening (20261012): one retry for a failed section. The design already
+                // bounds the episode's risk with the pre-flight quota probe and the per-section cache,
+                // but a failure that arrives MID-render (a 429 once the window drains, a network blip)
+                // still cost the whole episode — the one step nothing can publish without. The retry is
+                // cheap and bounded: the successful sections are cache hits, so at most one extra
+                // request per failed section is issued, and a persistent failure still fails loud.
+                let status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
                     env: { VOICE_GEN_MP3: transcodeMp3 },
                     soft: true,
                 });
+                if (status !== 0) {
+                    console.log(
+                        `generate: section ${plan.def.stem} synthesis failed (exit ${status}) — retrying it once`,
+                    );
+                    status = kk(voiceExecutorArgs(voiceGenerator, secDocIn, plan.jsonPath, pluginsPath), {
+                        env: { VOICE_GEN_MP3: transcodeMp3 },
+                        soft: true,
+                    });
+                }
                 if (status !== 0) {
                     failWith(status, `generate: section synthesis failed for ${plan.def.stem}`);
                 }
@@ -2542,12 +2557,30 @@ export function dailyXhsRender(args: string[]): void {
                 const resumeLine = (status: number): string =>
                     `xhs render: card ${card.index} failed (image-gen exit ${status}); cards before it are kept — re-run daily-xhs-render to resume from card ${card.index}`;
                 let result = kkCaptured(imageGenArgs, { soft: true });
+                // 0269: a failure the composer's overflow sentence does NOT explain is retried once with
+                // the SAME envelope, because the observed cause of those is the provider, not the input:
+                // on 2026-10-12 card 02 was rewritten for a points[3] overflow and the second call then
+                // failed with only a vendor-fallback warning (minimax flaked); re-running that exact
+                // saved envelope by hand rendered on the first try. 0251 R2 read "not an overflow ⇒ do not
+                // retry" as fail-fast, which is what lost the whole series that day (and every day since
+                // 10-08). The budget stays bounded: overflow rewrites keep their 3, a provider failure
+                // gets exactly 1, so a permanently broken card costs one extra illustration and not four.
+                let transientRetryUsed = false;
                 for (let attempt = 0; result.status !== 0 && attempt < XHS_OVERFLOW_ATTEMPTS; attempt += 1) {
-                    // 0251 R1 (+ the block-level rule 2): only a points[n] safe-area overflow is
-                    // rewritable. The envelope is rewritten in the same shape and image-gen is called
-                    // again; a failure that no rewrite addresses takes the resume line immediately.
+                    // 0251 R1 (+ the block-level rule 2): a points[n] safe-area overflow is rewritable —
+                    // shorten the named points, then drop the trailing one. The envelope is rewritten in
+                    // the same shape and image-gen is called again.
                     const named = xhsOverflowPoints(result.stderr, card);
-                    if (named === null || !reduceOverflowingPoints(card.points, named)) break;
+                    if (named === null) {
+                        if (transientRetryUsed) break;
+                        transientRetryUsed = true;
+                        console.log(
+                            `xhs render: card ${card.index} failed without a safe-area overflow — retrying the same envelope once (exit ${result.status})`,
+                        );
+                        result = kkCaptured(imageGenArgs, { soft: true });
+                        continue;
+                    }
+                    if (!reduceOverflowingPoints(card.points, named)) break;
                     (imageGen.vars as Record<string, unknown>).points = card.points.join('\n');
                     sted('write', envPath, () =>
                         writeJsonText(envPath, [

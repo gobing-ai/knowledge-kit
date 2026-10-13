@@ -1,0 +1,12 @@
+title: "VoxCPM/Gemini comparison fixture — mixed Chinese-English"
+language: "zh"
+default_profile: "robin-news"
+segments:
+  - text: "今天的关键词是 OpenAI、GitHub 和 VoxCPM。"
+    speed: 1
+    seed: 42
+    gap_ms: 500
+  - text: "这次 API 更新把响应时间从二百毫秒降低到一百二十毫秒。Please check the release notes before upgrading."
+    speed: 1
+    seed: 42
+    gap_ms: 0
