@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G14"
 name: "VoxCPM voice driver for both daily AI voice workflows"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-12T00:05:13.508Z"
-updated_at: "2026-10-13T15:30:55.225Z"
+updated_at: "2026-10-13T18:57:16.279Z"
 ---
 
 # G14: VoxCPM voice driver for both daily AI voice workflows
@@ -112,4 +112,5 @@ Feature: VoxCPM voice driver for both daily AI voice workflows
 
 - 2026-10-12T07:51:32.821Z backlog → active (system)
 - 2026-10-13T15:30:55.225Z active → verifying (system)
+- 2026-10-13T18:57:16.279Z verifying → done (system)
 
