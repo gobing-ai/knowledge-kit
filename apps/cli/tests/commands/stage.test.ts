@@ -185,12 +185,26 @@ describe('kk stage resolver — installed vs checkout identity (0178)', () => {
             writeFileSync(join(root, 'apps/cli', STAGES_REL), `${checkArgs}process.exit(18);\n`);
             mkdirSync(join(unrelatedCwd, 'plugins/kk/scripts'), { recursive: true });
             writeFileSync(join(unrelatedCwd, STAGES_REL), 'process.exit(98);\n');
-            const built = await Bun.build({
-                entrypoints: [join(import.meta.dir, '../../src/index.ts')],
-                target: 'bun',
-                outdir: join(root, 'apps/cli/dist'),
-            });
-            expect(built.success).toBe(true);
+            // WHY a child process (harness fix 2026-10-13): once a full workspace typecheck has run in
+            // this checkout AND the whole suite is loaded with coverage, the in-process bundler resolves
+            // a workspace dependency to a directory and throws
+            // `EISDIR reading file: .../.bun/@gobing-ai+ts-utils@0.5.24/.../dist/index.js`. Reproduced
+            // 3/3 in exactly that configuration and green in every other one; the cited path stayed a
+            // regular file throughout a 0.1s-interval watch, so it is a bundler-state defect, not an fs
+            // condition. The identical build in a fresh child process is unaffected. Assertions below
+            // are unchanged — this swaps where the build runs, not what is asserted.
+            const buildScript = [
+                'void (async () => {',
+                '  const r = await Bun.build({',
+                `    entrypoints: [${JSON.stringify(join(import.meta.dir, '../../src/index.ts'))}],`,
+                "    target: 'bun',",
+                `    outdir: ${JSON.stringify(join(root, 'apps/cli/dist'))},`,
+                '  });',
+                '  if (!r.success) process.exit(1);',
+                '})();',
+            ].join('\n');
+            const built = spawnSync(process.execPath, ['-e', buildScript], { encoding: 'utf8' });
+            expect(built.status).toBe(0);
             const entry = join(root, 'apps/cli/dist/index.js');
             const run = () =>
                 spawnSync(process.execPath, [entry, 'stage', 'fixture', '--future-flag'], {
