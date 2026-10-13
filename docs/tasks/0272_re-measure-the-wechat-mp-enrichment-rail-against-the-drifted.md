@@ -4,7 +4,7 @@ name: Re-measure the WeChat MP enrichment rail against the drifted console
 status: todo
 template: issue
 created_at: 2026-10-13T03:22:54.165Z
-updated_at: "2026-10-13T03:23:03.032Z"
+updated_at: "2026-10-13T04:22:29.046Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -37,6 +37,23 @@ The 2026-10-10 operator walk that was supposed to automate this does not reprodu
 - **Cover moved.** The open cover panel offers 修改 (`.js_cover_preview_new`), 换一张 (`.js_chooseCoverWrap`) and 从正文选择 (`.js_cover_opr`), while `从图片库选择` now lives in a media dropdown (`.js_img_dropdown_menu` → `.tpl_dropdown_menu_item.js_img_from_local`). `a.js_imagedialog` still exists in the DOM (3 hits) but is not offered by the open panel, which is what the readiness check times out on. The library path also depends on the audio step: the episode cover is uploaded there as the audio material's cover, so a failed audio insert leaves the library without the intended image.
 
 The draft still saves (`ok: true`, `publishStatus: draft`) and every failure is a loud warning, so nothing false-successes — the cost is that the operator completes 5-7 fields by hand in the draft box every day.
+
+Measured follow-up (2026-10-12, live).** The 原创 dialog's real contract, read from the live DOM:
+
+- `声明类型` offers `文字原创` / `漫画原创 字数<300字，且图片≥4张` / `无需声明`, plus `赞赏`, `作者`, `赞赏账户`, `类别`, `白名单` (快捷转载) and the agreement checkbox `我已阅读并同意《微信公众平台原创声明及相关功能使用协议》`.
+- The rail ticks nothing: `:text("文字原创")` resolves (it selects the radio — verified `weui-desktop-form__radio js_original` checked) but the protocol agreement stays unchecked, so 确定 leaves the dialog open and `dialogsClosed()` reports `原创声明: dialog did not close`. **Selecting the agreement by its label is what lets 确定 close the dialog** (verified: `dialogs open: 0`).
+- The declaration still does **not** persist. After 文字原创 + agreement + 确定 + `保存为草稿` + reload, the row still reads `未声明`. The account's own state explains why: the 赞赏 rows read `无法开启赞赏，因为还没有赞赏账户授权给本…`, and the rail's pre-2026-10-10 warning recorded the rule verbatim — `原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置`. The dialog's `作者` field is a search-select over that account's 赞赏账户 list.
+- Therefore 原创, and everything the panel gates behind it (`赞赏` reads `声明原创后才可开启`), is blocked on an **account prerequisite**: authorise/create the 赞赏账户. No selector change can complete it, and the rail should report it as an operator action rather than as a click timeout (R3).
+
+What remains purely mechanical and is not gated by 原创: the 封面 panel and the 音频 insert — the cover's `从图片库选择` path needs the audio step to have uploaded the episode cover as that material's cover, so the two are ordered together.
+
+Measured follow-up (2026-10-12, live): the console states the 赞赏 prerequisite and its own remedy, so R3 has an exact operator action to report instead of a click timeout —
+
+```
+无法开启赞赏，因为还没有赞赏账户授权给本公众号。如果要取得授权，请到赞赏账户小程序-赞赏账户设置-可收款公众号中添加本公众号。如果要创建赞赏账户，你可以发送赞赏账户邀请。
+```
+
+Same read: the article's 原创 row reported `原创 文字原创 · 作者: 冰原奔狼 · 已开启快捷转载` with `编辑声明 / 编辑白名单 / 撤销声明` operations while its switch still read `未声明`, so a declaration pass leaves the author and 快捷转载 applied without the declaration itself registering — the read-back must assert the switch state, not the row's summary text. With no 赞赏账户 there is nothing for the dialog's `作者` search-select to resolve, which is why the declaration cannot complete.
 
 ### Requirements
 
