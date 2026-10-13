@@ -38,6 +38,7 @@ const EXAMPLE = 'plugins/kk/workflows/judge-gated-publish-example.yaml';
 const COLLECT = 'plugins/kk/workflows/kk-collect.yaml';
 const SKILL = 'plugins/kk/skills/content-judge/SKILL.md';
 const SKILL_REFERENCE = 'plugins/kk/skills/content-judge/references/workflow-integration.md';
+const SAFETY_SKILL = 'plugins/kk/skills/content-safety/SKILL.md';
 const LABEL_EMITTER = 'apps/cli/src/commands/store.ts';
 
 /**
@@ -574,24 +575,9 @@ describe('every judge-verdict producer declares the confidence contract', () => 
         expect(snippet).toBe(CONFIDENCE_JQ_FILTER);
     });
 
-    /** Every `agent.run` step whose `expectFile` is a verdict artifact, across all workflows. */
-    const verdictProducers = (): { rel: string; state: string; input: string }[] => {
-        const found: { rel: string; state: string; input: string }[] = [];
-        for (const name of readdirSync(WORKFLOWS).filter((entry) => entry.endsWith('.yaml'))) {
-            const rel = `plugins/kk/workflows/${name}`;
-            const parsed = Bun.YAML.parse(readFileSync(join(REPO, rel), 'utf-8')) as {
-                states?: { id?: string; onEnter?: { kind?: string; options?: Record<string, unknown> }[] }[];
-            };
-            for (const state of parsed.states ?? []) {
-                for (const action of state.onEnter ?? []) {
-                    if (action.kind !== 'agent.run') continue;
-                    if (!/verdict/i.test(String(action.options?.expectFile ?? ''))) continue;
-                    found.push({ rel, state: state.id ?? '?', input: String(action.options?.input ?? '') });
-                }
-            }
-        }
-        return found;
-    };
+    /** Every `agent.run` step whose `expectFile` is a judge verdict artifact, across all workflows. */
+    const verdictProducers = (): { rel: string; state: string; input: string }[] =>
+        confidenceArtifactProducers(/verdict/i);
 
     it('every agent.run that writes a verdict names the skill that declares the enum', () => {
         const producers = verdictProducers();
@@ -601,6 +587,95 @@ describe('every judge-verdict producer declares the confidence contract', () => 
         expect(offenders).toEqual([]);
         // Non-vacuous: the daily safety judge, the itc judge and the example each write one.
         expect(producers.length).toBeGreaterThanOrEqual(3);
+    });
+});
+
+/**
+ * Every `agent.run` step whose `expectFile` is a confidence-bearing artifact, selected by artifact
+ * name. The two families are written by different skills against different contracts — a judge
+ * `verdict` (`kk:content-judge`) and the content-safety `report` (`kk:content-safety`) — but both
+ * carry a `HIGH | MEDIUM | LOW` level their consumer refuses to guess, so both need the same
+ * anti-drift net. A scanner fixed on `/verdict/i` never matches `_09_safety-review_report.json`,
+ * which is how the report half stayed unverified while its gate enforced it.
+ */
+function confidenceArtifactProducers(
+    artifact: RegExp,
+): { rel: string; state: string; input: string; expectFile: string }[] {
+    const found: { rel: string; state: string; input: string; expectFile: string }[] = [];
+    for (const name of readdirSync(WORKFLOWS).filter((entry) => entry.endsWith('.yaml'))) {
+        const rel = `plugins/kk/workflows/${name}`;
+        const parsed = Bun.YAML.parse(readFileSync(join(REPO, rel), 'utf-8')) as {
+            states?: { id?: string; onEnter?: { kind?: string; options?: Record<string, unknown> }[] }[];
+        };
+        for (const state of parsed.states ?? []) {
+            for (const action of state.onEnter ?? []) {
+                if (action.kind !== 'agent.run') continue;
+                const expectFile = String(action.options?.expectFile ?? '');
+                if (!artifact.test(expectFile)) continue;
+                found.push({ rel, state: state.id ?? '?', input: String(action.options?.input ?? ''), expectFile });
+            }
+        }
+    }
+    return found;
+}
+
+/**
+ * The report-level half of the same enum (20261007 amendment, ADR-033 R5 / task 0189 R10).
+ *
+ * `daily-safety-gate` blocks a disposition-contract report whose own `confidence` is missing or
+ * outside the enum; that stage half is covered in `kk-workflow-stages.test.ts`. The other end of
+ * the seam was unverified: the skill must keep emitting the level, and the step that writes the
+ * report must be told to. `verdict-confidence` above selects `expectFile` on /verdict/i, which never
+ * matches `_09_safety-review_report.json`, so the report producer sat outside the scan entirely —
+ * while both machines' review prompts enumerated the report's fields (`platforms[]` entries with
+ * `decision`, plus `escalate`) and omitted the one field the gate hard-requires.
+ */
+describe('every content-safety report producer declares the confidence contract', () => {
+    const skill = readFileSync(join(REPO, SAFETY_SKILL), 'utf-8');
+    const reports = confidenceArtifactProducers(/report/i);
+    /** The producers the live daily job runs: the nested machine, not voice1's frozen original. */
+    const liveReports = reports.filter((p) => p.rel.endsWith('kk-daily-safety.yaml'));
+
+    it('the content-safety skill states the report confidence enum and when it is required', () => {
+        const enumLine = /"confidence"\s*:\s*"HIGH\s*\|\s*MEDIUM\s*\|\s*LOW"/.test(skill);
+        // The enum alone is not enough: a disposition-contract report needs the level while a
+        // legacy report stays exempt, so an emitter that cannot read WHEN it applies drops it on
+        // every run and the gate blocks every run.
+        const required = /must\*\* carry a valid `confidence`/.test(skill);
+        const ok = enumLine && required;
+        expect(
+            record(
+                'producer:content-safety-report-enum',
+                ok,
+                `enum line=${enumLine}, states when it is required=${required}`,
+            ),
+        ).toBe(true);
+        expect(ok).toBe(true);
+    });
+
+    it('every agent.run that writes a safety report names the skill that declares the enum', () => {
+        // Repo-wide on purpose: a NEW report producer that skipped the skill would be another
+        // emitter the gate's enum can outlive.
+        const offenders = reports.filter((p) => !/kk:content-safety/.test(p.input)).map((p) => `${p.rel}:${p.state}`);
+        const detail = `${reports.length} report producers, unnamed contract: ${offenders.join(', ') || 'none'}`;
+        expect(record('producer:report-steps-name-the-skill', offenders.length === 0, detail)).toBe(true);
+        expect(offenders).toEqual([]);
+        // Non-vacuous: the nested machine and voice1's original each write one.
+        expect(reports.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('every live report producer is told the report carries a HIGH|MEDIUM|LOW confidence', () => {
+        // Scoped to the nested machine because voice1's original is frozen byte-identical by voice2's
+        // R1 (only comments and `description:` scalars may change — apps/cli/tests/voice2-dag.test.ts),
+        // so its prompt cannot carry a correction; the nested machine is what the daily job runs.
+        // Naming the skill is not enough on its own: the prompt is the emitter's instruction and it
+        // enumerates the report's shape, so a shape that omits the gate-required field teaches the
+        // emitter to omit it. The judge prompt below it is the precedent — it states its level.
+        const offenders = liveReports.filter((p) => !/confidence/.test(p.input)).map((p) => `${p.rel}:${p.state}`);
+        const detail = `${liveReports.length} live report producers, silent on the level: ${offenders.join(', ') || 'none'}`;
+        expect(record('producer:report-steps-state-the-confidence-rule', offenders.length === 0, detail)).toBe(true);
+        expect(offenders).toEqual([]);
+        expect(liveReports.length).toBeGreaterThanOrEqual(1);
     });
 });
 
