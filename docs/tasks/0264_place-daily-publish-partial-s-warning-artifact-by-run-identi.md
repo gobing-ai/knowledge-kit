@@ -4,12 +4,13 @@ name: Place daily-publish-partial's warning artifact by run identity, not by pro
 status: todo
 template: feature-impl
 created_at: 2026-10-12T20:56:07.634Z
-updated_at: "2026-10-12T21:56:57.654Z"
+updated_at: "2026-10-13T20:57:08.837Z"
 feature_id: G1
 
 priority: P2
 ac_altitude: task-local
 estimate_hours: 1
+ac_numbering: task-local
 ---
 
 ## 0264. Place daily-publish-partial's warning artifact by run identity, not by process cwd
@@ -27,19 +28,43 @@ Nothing parses the file — the writer, the workflow state (`.spur/workflows/kk-
 - Unlisted second asserting test: `apps/cli/tests/commands/daily.test.ts:338` expects `join(dir, '.spur/run/publish-partial-20261007.txt')` with cwd = `dir` = `--work-dir` → it keeps passing under the workDir convention unchanged; its `inCwd` comment (`:47-51`) names this stage's cwd write and gets a one-line update.
 - Sibling scan: no other `plugins/kk/scripts` or `apps/cli/src` code writes a cwd-relative `.spur/run/` path (`rg "['\"\`]\.spur/run"`), so the fix is local to this stage.
 
+**Refine corrections (2026-10-13).**
+
+- The issue is still present in the current tree: `dailyPublishPartial` computes its result under
+  `workDir` but still calls `mkdirSync('.spur/run')` and `writeFileSync('.spur/run/...')` at
+  `plugins/kk/scripts/kk-workflow-stages.ts:1351-1355`, so those writes resolve against the process
+  cwd. `timed(workDir, ...)` records timing only; it does not change cwd.
+- The production callers were re-traced: `plugins/kk/workflows/kk-daily-ai-voice.yaml:538` and
+  `apps/cli/src/commands/daily.ts:329` pass the effective work directory, so the marker belongs
+  beside that run. No workflow or command contract needs a new argument.
+- The stage test at `apps/cli/tests/kk-workflow-stages.test.ts:2328-2348` still reads the marker from
+  the repository cwd and therefore encodes the bug. The `daily.test.ts` fold-tail case runs with cwd
+  equal to `workDir`, so it verifies the desired path only accidentally and cannot catch the split.
+
 ### Requirements
 
-- [ ] R1. Write the artifact at `join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`)` (mkdir its directory the same way), with a one-line comment stating that the marker lives with the run's `workDir`, not the process cwd. No cwd-relative write remains in the stage.
-- [ ] R2. Preserve the artifact's name, body and advisory semantics: the stage still warns on stderr with `WARNING: partial publish — failed targets: <list>`, still exits 0, and the body is byte-identical (still names `kk executor fan-out --retry-from`).
-- [ ] R3. Rewrite the existing stage test so it runs the stage with a cwd outside the repository and the `workDir`, and asserts the artifact at `<workDir>/.spur/run/` and no `.spur/` in the process cwd.
-
-Out of scope: adding a new stage argument or execution-root resolver; changing the workflow YAMLs (both copies) or `daily.ts`; the behaviour for an empty `workDir` (`join('', …)` stays cwd-relative exactly like the result path at `:1328`; the workflow and `daily.ts` always pass a `work_dir`); the `.spur/runs/<workflow>/work-dir.txt` anchor in `daily.ts`.
+- [ ] R1. When `workDir` is non-empty, write the marker at `join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`)`, creating that directory through the existing `sted` wrapper; add one short why comment that the marker belongs to the run's `workDir`, not the process cwd, and preserve the current cwd-relative fallback only for an explicitly empty `workDir`.
+- [ ] R2. Preserve the marker filename, one-line body, stderr warning, and zero exit status; the body must continue to name `kk executor fan-out --retry-from`.
+- [ ] R3. Replace the stage regression so it runs with a temporary process cwd distinct from `workDir`, asserts the marker under `workDir/.spur/run`, and asserts that the temporary process cwd receives no `.spur` directory.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Invoking the stage with cwd set to a non-repository directory creates no `.spur/` in that cwd and writes the artifact at `<workDir>/.spur/run/publish-partial-<runDate>.txt`. (req: R1, R3)
-- [ ] AC2 — The warning body is unchanged, including the `--retry-from` pointer, and the stage still exits 0. (req: R2)
-- [ ] AC3 — The rewritten test fails against the pre-change stage and passes after it (falsification, no `.skip`, no relaxed assertion). (req: R3)
+```gherkin
+Scenario: AC1 — a supplied work directory owns the partial-publish marker (req: R1, R3)
+  Given a partial result under `<workDir>/31-publish` and an empty temporary process cwd
+  When `daily-publish-partial <workDir> <runDate>` runs
+  Then `<workDir>/.spur/run/publish-partial-<runDate>.txt` exists and the process cwd has no `.spur` directory
+
+Scenario: AC2 — partial-publish output remains compatible (req: R2)
+  Given one published target and one failed target
+  When the stage runs
+  Then it exits 0, warns with `failed targets: <target>`, and writes the unchanged body including `--retry-from`
+
+Scenario: AC3 — the regression distinguishes the two roots (req: R3)
+  Given the current stage implementation before the path fix
+  When the rewritten test runs with distinct cwd and `workDir`
+  Then it fails because the marker is written under cwd, and it passes after the path fix without relaxed assertions
+```
 
 ### Q&A
 
@@ -55,33 +80,50 @@ Out of scope: adding a new stage argument or execution-root resolver; changing t
 
 ### Design
 
-**Decision (frozen): the marker lives under the run's `workDir`** — `join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`)`.
+Use the run directory already supplied to the stage. In `dailyPublishPartial`, compute one
+`const marker = join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`)`; pass `dirname(marker)`
+to the existing `sted('mkdir', ...)` call and `marker` to the existing `sted('write', ...)` call. Keep
+the `result` path, `timed(workDir, ...)`, warning text, marker body, and exit behavior unchanged.
 
-**WHY.** The stage's argv is `<workDir> <runDate>` only (`kk-daily-ai-voice.yaml:538`, `daily.ts:329`). An "explicit execution root" would need a new argument threaded through both workflow copies, `daily.ts` and their tests — a wider, cross-file contract change for an advisory note. Under `workDir` the evidence stays with the episode it describes (beside `31-publish/…`) and is collected with the rest of the run's artifacts. `daily.test.ts:338` already expects exactly this path because it sets cwd = workDir.
+Rewrite the existing stage test in place because it currently asserts the cwd-relative bug. Extend its
+local `run` helper with one optional `cwd` argument and invoke it with a second temporary directory;
+this avoids duplicating the runner setup and does not alter existing callers. Keep the daily command
+fold-tail assertion and update only its comment: it runs with cwd equal to `workDir`, so it is a
+compatibility check, not the root-separation regression. No YAML, CLI argument, environment variable,
+or execution-root resolver is needed.
 
-**WHERE.**
-- `plugins/kk/scripts/kk-workflow-stages.ts` `dailyPublishPartial` (`:1326-1345`): compute `const marker = join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`);` once; `sted('mkdir', dirname(marker), () => mkdirSync(dirname(marker), { recursive: true }))`; `sted('write', marker, () => writeFileSync(marker, <unchanged body>))`. Add the one-line WHY comment. `join` and `dirname` are already imported (`:58`). No new API, no new helper.
-- `apps/cli/tests/kk-workflow-stages.test.ts:2282-2302`: rewrite in place — create a second temp dir as the process cwd, spawn the runner with `cwd` set to it (extend `run` with an optional `cwd` option, or call `spawnSync` directly in this test; prefer the smaller diff), assert `readFileSync(join(dir, '.spur/run', …))` contains `failed targets: podcast-pub` and `--retry-from`, and `existsSync(join(cwdDir, '.spur'))` is false. Drop the `rmSync` of the cwd-relative path (the temp dirs own cleanup).
-- `apps/cli/tests/commands/daily.test.ts:47-51`: update the comment — the stage no longer writes cwd-relative; `inCwd` is still needed for the `.spur/runs/<workflow>/work-dir.txt` anchor.
-
-**Anti-patterns.** Do not resolve the root via `process.cwd()`, `git rev-parse` or `import.meta.dir`; do not add an env var or CLI flag; do not change the body text or exit code; do not edit the workflow YAMLs (their "write a .spur/run marker" description stays accurate); do not keep the old test's cwd-relative read alongside the new one.
-
-**Dependencies / handoffs.** None. Concurrency: the working tree currently has unrelated uncommitted edits (`apps/cli/src/commands/schedule.ts`, `plugins/kk/schedules/*`, `docs/04_DESIGN.md`, …) — none touch these three files; stage only the files above.
-
-**Budget.** ~1 h.
+Out of scope: adding a stage argument or environment variable; changing either workflow YAML or
+`daily.ts`; changing the marker body, warning, or exit status; and changing the existing behavior when
+the caller explicitly supplies an empty `workDir`.
 
 ### Plan
 
-- [ ] R3 (red first): rewrite `kk-workflow-stages.test.ts:2282` per Design; run `bun test apps/cli/tests/kk-workflow-stages.test.ts -t 'daily-publish-partial'` against the unchanged stage and record the failure (artifact absent under workDir / `.spur` created in the cwd dir). Judge by pass/fail counts — a single-file run exits 1 on coverage.
-- [ ] R1: change the marker path in `dailyPublishPartial` to `<workDir>/.spur/run/…`, with the one-line comment.
-- [ ] R2: confirm the body string is byte-identical (diff shows only path lines changed); rerun the targeted test → pass.
-- [ ] Run `bun test apps/cli/tests/commands/daily.test.ts` (the fold-tail partial case at `:315` must still pass) and update its `inCwd` comment.
-- [ ] Verify no litter: `git status --short apps/cli` shows no `.spur/run/`.
-- [ ] Gate: `bun run lint` and `bun run test`; record outputs in `## Testing`. Commit as `fix(kk): place the publish-partial marker under the run's work dir`.
+1. Rewrite `apps/cli/tests/kk-workflow-stages.test.ts`'s existing partial-publish case first. Give it
+   a separate temporary process cwd, run the stage through the helper's new optional cwd parameter,
+   and assert the marker is absent from cwd and present under `workDir`; run the test against the
+   unchanged stage to capture the red failure.
+2. Change only `dailyPublishPartial`'s marker paths to the `workDir`-anchored `marker` variable and
+   retain the `sted` and `timed` wrappers. Do not change the marker body, warning, result path, or
+   workflow arguments.
+3. Update the explanatory `inCwd` comment in `apps/cli/tests/commands/daily.test.ts`; rerun the stage
+   regression and the fold-tail partial case.
+4. Run `bun run lint`, the relevant test files, and then the project gate; inspect git status for an
+   unintended `.spur/run` artifact before handoff.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Implementation map (fixed scope).** Anchors: `plugins/kk/scripts/kk-workflow-stages.ts:1351`,
+`apps/cli/tests/kk-workflow-stages.test.ts:46`, `apps/cli/tests/kk-workflow-stages.test.ts:2328`,
+and `apps/cli/tests/commands/daily.test.ts:87`.
+
+- `plugins/kk/scripts/kk-workflow-stages.ts`: derive the marker path from the non-empty `workDir`,
+  use `dirname(marker)` for directory creation, and use `marker` for the unchanged write body. The
+  existing empty-argument fallback and all `timed`/`sted` diagnostics stay intact.
+- `apps/cli/tests/kk-workflow-stages.test.ts`: add only an optional cwd to the test runner helper and
+  rewrite the existing partial-publish test to separate process cwd from `workDir`; assert both the
+  positive marker location and the absence of cwd litter.
+- `apps/cli/tests/commands/daily.test.ts`: correct the comment that explains why `inCwd` remains in
+  the fold-tail test. The test and production command surface otherwise stay unchanged.
 
 ### Testing
 

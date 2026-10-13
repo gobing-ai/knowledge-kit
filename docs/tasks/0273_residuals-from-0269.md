@@ -1,11 +1,12 @@
 ---
 schema_version: 1
 name: Residuals from 0269
-status: backlog
+status: cancelled
 template: standard
 created_at: 2026-10-13T18:26:56.638Z
-updated_at: "2026-10-13T18:26:56.924Z"
+updated_at: "2026-10-13T20:57:11.127Z"
 
+feature_id: G11
 ---
 
 ## 0273. Residuals from 0269
@@ -32,7 +33,7 @@ Source task: 0269 (feature G11) — deferred residuals filed by residual-scan se
 
 ### Design
 
-<!-- Chosen approach, key tradeoffs, invariants, and impacted surfaces. Keep snippets short. -->
+Cancelled during the 2026-10-13 refinement audit. The proposed plugin-level retry residual no longer exists in the current tree; the valid bounded retry assurance is recorded in task 0269. No implementation or separate solution remains for 0273.
 
 ### Plan
 
@@ -55,3 +56,6 @@ Source task: 0269 (feature G11) — deferred residuals filed by residual-scan se
 <!-- Links to features, docs, ADRs, related tasks, or external references. -->
 
 ### History
+
+- 2026-10-13T20:56:55.220Z backlog → cancelled (system)
+

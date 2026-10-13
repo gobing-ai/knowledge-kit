@@ -1,75 +1,85 @@
 ---
 schema_version: 1
 name: Make the full spur-check suite deterministic under load (module-store race and timing flakes)
-status: backlog
+status: todo
 template: standard
 created_at: 2026-10-13T18:57:36.022Z
-updated_at: "2026-10-13T18:58:01.617Z"
+updated_at: "2026-10-13T20:56:37.704Z"
 
+ac_altitude: task-local
+ac_numbering: task-local
+feature_id: B6
+priority: P2
+estimate_hours: 2
 ---
 
 ## 0274. Make the full spur-check suite deterministic under load (module-store race and timing flakes)
 
 ### Background
 
-The full `bun run spur-check` suite fails intermittently on load, and the failing set changes between
-identical runs. Measured on 2026-10-13 while verifying G14 (all runs: `bun test --dots --timeout 20000
---path-ignore-patterns 'vendors/**' apps`, same tree, no source change between them):
+The remaining issue is load-sensitive **fanin test design**, not a demonstrated mutation of the module store. Current `apps/cli/tests/fanin.test.ts` checks concurrency against a 1500ms total elapsed ceiling, and the override case requires an unrelated fast subprocess to finish within a 1000ms global budget. Both depend on host startup/scheduling latency. The override test also lacks a non-overridden slow sibling, so its title's “without touching siblings” claim is not fully asserted.
 
-| Run | Result | Failing tests |
-| --- | --- | --- |
-| `bun run spur-check` (pipeline, before the two fixes below) | 2 fail | `decision-catalog.test.ts` decisions.paths (real, fixed in `e0aec4c9`), `installed-board.test.ts` setup under the nested-run guard (real, fixed in `e0aec4c9`) |
-| `bun run spur-check` (after the fixes) | 1 fail | `stage.test.ts` AC4 — `EISDIR reading file: node_modules/.bun/@gobing-ai+ts-utils@0.5.24/…/ts-utils/dist/index.js` |
-| `bun test apps` | 1 fail | same AC4 EISDIR |
-| `bun test apps` (stage.test.ts reverted to HEAD) | **3 fail** | same AC4 EISDIR **plus** `fanin.test.ts` `--source-timeout-override extends ONE source past the global leash…` and one more |
-| `bun test apps/cli/tests` | 0 fail (766) | — |
-| `bun test apps/cli/tests/commands/stage.test.ts` | 0 fail (9) | — |
-| final `feature-verification.yaml` gate | 0 fail (2743) | — |
+**Refine corrections (2026-10-13)**
 
-Three independent suspects, one coherent class (host-load sensitivity):
+- “A writer mutates node_modules/.bun” → no writer was established; commit `741a0cb5` moved stage AC4 bundling into a child process after observing the dependency path remain a regular file → drop the writer hunt, locking and read-retry solutions.
+- “Stage AC4 still uses in-process Bun.build” → current `stage.test.ts:188` builds in a fresh child → remove this completed repair from requirements.
+- “Fanout concurrency needs hardening” → current fanout tests assert overlapping/disjoint process intervals → retain those tests unchanged as precedent.
+- “Environment inheritance is a remaining defect” → installed-board `childEnv()` already removes the nested workflow guard → remove it from remaining scope.
+- “Five green full runs prove determinism” → finite repetitions cannot establish that claim and the current Bun baseline changed to 1.4.3 → use behavior assertions plus the normal full gate, rather than a mandatory five-run ritual.
+- “Pitfalls recording is missing” → `.spur/context/pitfalls.md:41` already has the entry, but repeats the unproved writer diagnosis → correct that entry instead of adding another.
 
-1. **Module-store read race (the recurring one).** `apps/cli/tests/commands/stage.test.ts` AC4 bundles
-   the real CLI entry with `Bun.build`, so resolution walks the shared `node_modules/.bun` store.
-   Under the full suite a writer mutates that path and the reader gets `EISDIR` on
-   `…/@gobing-ai+ts-utils@0.5.24/…/ts-utils/dist/index.js`. The file exists (327 B) outside the run.
-   Already tried and NOT sufficient: taking the shared cross-process build lock
-   (`/tmp/kk-board-shared-build.lock`, the one `installed-board.test.ts` and
-   `scripts/tests/board-package.test.ts` use around `bun pm pack`) around the build, and a bounded
-   retry on `EISDIR` (the retry never fired — the error is not thrown by `Bun.build` itself, it
-   surfaces as a test-scope loader/coverage read). Both experiments were reverted rather than landed.
-   The writer is still unidentified; the prime suspect remains an unlocked `bun pm pack`/`bun run
-   build` from a sibling test file touching the workspace trees.
-2. **Timing assertions under load.** `apps/cli/tests/fanin.test.ts` `--source-timeout-override …`
-   (2680 ms) and `apps/cli/tests/fanout.test.ts` concurrency budgets both failed once under a full
-   gate run and passed in isolation. Main already hardened the fanout pair (`fefd9808`); the fanin
-   override case looks like the same class and has not been hardened.
-3. **Environment inheritance (fixed).** `apps/board/tests/installed-board.test.ts` spawned its
-   fixture CLI with `{...process.env}`, so a pipeline-run suite handed it
-   `SPUR_WORKFLOW_RUN_ACTIVE=1` and every nested `spur workflow run` was refused (the whole file died
-   in `setup()`). `childEnv()` now drops the run guard for its children.
+Audit at `a5e05542`, Bun 1.4.3. Targeted command `bun test --dots --timeout 20000 apps/cli/tests/fanin.test.ts apps/cli/tests/commands/stage.test.ts`: 41 pass, 0 fail; exit 1 is partial-run coverage, not an assertion failure. Log: `/tmp/kk-refine-0274-tests.log`. Historical full-suite incidents remain reports; they do not prove a current Bun 1.4.3 module-store race.
 
-**Why this matters:** any task or feature whose gate runs the full suite can fail for reasons
-unrelated to its change, and the failure set differs run to run — which makes a red gate
-uninformative and a green one partly luck. `feature-verification.yaml` for G14 needed two attempts
-for exactly this reason.
+Feature B6 owns the remaining fan-in behavior tests. AC altitude is task-local because these are regression/test-quality criteria, not new B6 ship scenarios.
 
-**Repro:** `bun test --dots --timeout 20000 --path-ignore-patterns 'vendors/**' apps` (repeat; expect
-the AC4 `EISDIR` most runs), versus `bun test apps/cli/tests` (green) — the trigger needs the board
-tests running concurrently.
+
+Ready evidence: `spur task check 0274 --as todo --json` and `spur feature check B6 --json` pass with zero findings. A scratch `bun -e` assertion verified scoped `spyOn(invoke, "spawnPluginEntryAsync")` captures `timeoutMs` and restores on Bun 1.4.3. Requirements, design, plan, AC, decisions, dependencies and premises pass the ready audit; backlog promoted to todo. Implementation and full-gate verification remain future task work.
 
 ### Requirements
 
-- [ ] R1. `bun test apps` (and the full `apps packages plugins scripts` set the gate runs) passes repeatedly on one unchanged tree — at least three consecutive green runs — with the board tests running concurrently with the CLI tests, which is the condition that reproduces the AC4 failure today.
-- [ ] R2. Identify the writer that mutates `node_modules/.bun/**` during the suite (or prove none exists and the read itself is at fault), and remove the race at its source rather than retrying the reader; record which test file/step owns the write.
-- [ ] R3. Harden the load-sensitive timing assertions the same way main already hardened the fanout pair (`fefd9808`) — at minimum `apps/cli/tests/fanin.test.ts` `--source-timeout-override extends ONE source past the global leash without touching siblings` — so a busy host cannot fail them.
-- [ ] R4. Record the residual flake class in `.spur/context/pitfalls.md` with the repro command, so a red gate on an unrelated change is diagnosed in one read instead of re-investigated.
+- [ ] R1. Fan-in concurrency regression verifies that all source dispatches begin before any held source completes, without a narrow total-wall-clock ceiling; declaration-order output and provenance remain asserted.
+- [ ] R2. Timeout precedence regression observes the exact `timeoutMs` passed to `spawnPluginEntryAsync` for the overridden source and at least two non-overridden siblings; explicitly prove override > global > default and that an override cannot leak to siblings. Include a timed-out non-overridden sibling with surviving documents and correctly attributed `sourceErrors`.
+- [ ] R3. Retain real subprocess integration coverage for successful ingestion and actual timeout termination. Remove redundant narrow startup-sensitive assertions from the policy tests; do not weaken the real timeout behavior or alter production budgets.
+- [ ] R4. Correct the existing task-0274 pitfalls entry to distinguish the child-build workaround already shipped from the remaining timing-test hazards; record the actual repro/verification command and limitations.
+
+Scope: `apps/cli/tests/fanin.test.ts` and the existing `.spur/context/pitfalls.md` entry. Existing stage/fanout/installed-board tests are validation inputs, not repair targets. No production/API changes, dependencies, suite-wide timeout increase, retries, skipped tests or module-store mutation/locking mechanism.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Three consecutive `bun test apps` runs are green on one unchanged tree. (req: R1)
-- [ ] AC2 — The AC4 `EISDIR reading file: …/@gobing-ai+ts-utils@<v>/…/dist/index.js` failure no longer reproduces in 5 consecutive full-set runs, and the fix names the writer (a test file/step, or an explicit statement that no writer exists and the reader is at fault). (req: R1, R2)
-- [ ] AC3 — The fanin `--source-timeout-override` case passes under a full-set run (not only in isolation), with the assertion still proving the override extends exactly one source. (req: R3)
-- [ ] AC4 — `.spur/context/pitfalls.md` carries the repro and the class description. (req: R4)
+```gherkin
+Scenario: AC1 — Fan-in dispatch overlaps without an elapsed-time ceiling (req: R1)
+  Given two fixture ingestion sources whose spawn results are held by test-controlled promises
+  When runFanin starts
+  Then both spawn calls are observed before either result is released
+  And releasing results in reverse order still writes declaration-order documents and provenance
+
+Scenario: AC2 — Per-source override does not alter sibling budgets (req: R2)
+  Given one overridden source and two siblings with a global timeout
+  When runFanin dispatches them through a scoped spawn spy
+  Then the overridden call receives its override and both siblings receive the global value
+  And one simulated timed-out sibling contributes only its own sourceErrors entry
+  And the overridden source and successful sibling remain in the merged documents
+
+Scenario: AC3 — Default timeout and tightening precedence remain exact (req: R2)
+  Given sources without a global timeout and one lower per-source override
+  When runFanin dispatches them
+  Then the ordinary source receives the existing 30-minute default
+  And only the overridden source receives the lower budget
+
+Scenario: AC4 — Real subprocess behavior remains covered (req: R3)
+  Given the existing real-ingestion and stuck-source integration fixtures
+  When the focused fan-in tests and normal full test command run
+  Then real output ingestion and actual timeout termination pass
+  And no test is skipped and no production timeout is changed
+
+Scenario: AC5 — Flake guidance describes the current tree (req: R4)
+  Given the existing task-0274 pitfalls entry
+  When its guidance is updated
+  Then it names the shipped child-build workaround and remaining timing-test hazards
+  And it does not claim an unidentified filesystem writer is established
+```
+
+AC1–AC4: `apps/cli/tests/fanin.test.ts`, production `runFanin` with the spy installed only at the existing async spawn boundary for policy tests; retain real-spawn tests for the behavior mocked there. AC5: inspect the existing pitfalls entry. Full verification: `bun run lint`, `bun run test`, `bun run build`; a partial test run's coverage exit must be reported separately from assertion failures.
 
 ### Q&A
 
@@ -77,44 +87,34 @@ tests running concurrently.
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-13T20:53:59.132Z
+
+- Closed 2026-10-13: B6 is the owner after removal of the already-fixed build and environment issues; task-local regression altitude and numbering are deliberate.
+- Closed: use Bun's existing `spyOn` and controlled promises at `spawnPluginEntryAsync`, not a new production injection API. Assert timeout arguments directly; that test does not claim to verify process killing.
+- Closed: real-process timeout/invocation tests retain responsibility for termination and artifact ingestion. A green isolated run does not prove a full-suite flake is eliminated.
+- Closed: no mandatory multi-run benchmark campaign, unidentified-writer search, reader retry or extra lock remains in this task.
+
 ### Design
 
-**WHAT.** Remove the load-sensitivity from the full-suite gate. No production code changes: the
-flakes are all in test infrastructure.
+**What/why/where.** Correct fan-in policy tests at `apps/cli/tests/fanin.test.ts` so the assertions distinguish dispatch policy from OS latency. No new production API or dependency. `runFanin` imports `spawnPluginEntryAsync` from `apps/cli/src/invoke.ts`; `collectSourceDocs` passes `pluginName`, `outPath` and `timeoutMs` and still validates the produced output. Reuse this existing boundary.
 
-**WHY.** A red gate must mean the change is wrong. Today the same tree yields 0, 1 or 3 failures
-depending on scheduling (evidence in Background), so a red gate costs an investigation and a green
-one carries luck. G14's feature-verification needed two attempts for this reason.
+1. Install a scoped `spyOn` on the invoke module's `spawnPluginEntryAsync` export only within policy cases. Use real temporary plugin manifests/entry placeholders and inputs so discovery and validation remain exercised. The fake captures each call and its budget, writes valid `Doc[]` to that call's `outPath` for successes, and returns the real `PluginEntrySpawnResult` shape. For a timeout return `{exitCode: 1, stdout: '', stderr: '', timedOut: true}`. Always restore the spy and temporary paths in `finally`; do not use persistent `mock.module` replacement that could poison other files.
+2. For concurrency, return held promises from the fake and signal a promise when both calls have arrived. Start `runFanin` without awaiting it; await both arrivals, release the second result then the first, then await the run. Assert call count before release and output/provenance order after release. The normal per-test watchdog catches a serial-dispatch regression; no 1500ms speed assertion is needed. Clean up/release outstanding promises even on assertion failure.
+3. For override precedence, capture the exact map `{pluginName: timeoutMs}`. Test a global budget with one larger override, one ordinary success and one ordinary timeout; then no global with a smaller override and one default source (30 * 60 * 1000). Assert expected budgets, surviving docs and sourceErrors plugin/message. This fails if the override is removed, ignored, applied globally or the default changes unintentionally.
+4. Keep real process ingestion and stuck-source timeout cases. The existing `--source-timeout` stuck fixture remains the actual kill check; policy tests must not pretend a mocked timeout verifies termination. Remove the redundant real-sleep override case after replacing its policy assertions. Keep generous real timeout watchdogs bounded and read any new failure rather than silently raising suite defaults.
+5. Amend the existing pitfalls entry in place; it already exists and is gitignored. Preserve useful repro commands and distinguish old Bun observations from the current baseline.
 
-**WHERE.** `apps/cli/tests/commands/stage.test.ts` (AC4 bundling reads the shared module store),
-`apps/cli/tests/fanin.test.ts` (`--source-timeout-override` timing), and whichever test file owns the
-write into `node_modules/.bun/**` — to be identified, not guessed.
+Anti-patterns: no production refactor to facilitate mocks, no global mock contamination, no retries or skipped assertions, no returning documents directly in place of output-file validation. No process concurrency changes. No new CLI/doc surface, so no numbered design-doc edit is required.
 
-**Already tried and rejected (do not repeat without new evidence).** Wrapping the AC4 `Bun.build` in
-the shared cross-process lock `/tmp/kk-board-shared-build.lock`, and a bounded retry on `EISDIR`.
-Neither changed the outcome: the failure persists, and the retry never fired because the `EISDIR` is
-not thrown by `Bun.build` itself but surfaces as a test-scope loader/coverage read. Both experiments
-were reverted; the diff is not in the tree.
-
-**Approach.** Find the writer first (a watcher over the `ts-utils` path during a full run, correlated
-with the file start order; or run the board and CLI sets together and bisect by directory), then
-either order the writer against the reader with the existing shared lock — if it IS a
-`bun pm pack`/`bun run build` path — or stop the reader from touching the shared store at all.
-Retrying the reader is explicitly not the fix.
-
-**Anti-patterns.** Do not relax the AC4 assertions, do not skip the case, do not add a global test
-timeout bump to hide the timing flakes, and do not land a mechanism that cannot be shown to change
-the outcome (both rejected experiments above looked plausible and were inert).
-
-**Budget.** ~2 h, `mutationPolicy: tests`.
+Dependencies: none. No upstream output contract changes or dependent work required. Other listed tasks target different modules; 0248 owns production fanout deadlines and must not be folded here. Only main worktree exists; 0268 was wip during audit and does not own fan-in tests. Versions: package/lock pins Bun 1.4.3, Biome 2.5.15; use project scripts.
 
 ### Plan
 
-- [ ] R2: reproduce with a watcher on `node_modules/.bun/@gobing-ai+ts-utils@*/…/dist/index.js` during `bun test apps`, and name the writer (or prove there is none).
-- [ ] R1/R2: apply the fix at the writer (shared lock) or by removing the reader's dependence on the shared store; re-run the full set 5×.
-- [ ] R3: harden the fanin `--source-timeout-override` case the way `fefd9808` hardened fanout (assert the property, not the host's jitter), then confirm it under a full-set run.
-- [ ] R1: three consecutive green `bun test apps` runs on one unchanged tree; record the runs in `## Testing`.
-- [ ] R4: write the repro + class into `.spur/context/pitfalls.md`; close out.
+- [ ] 1. Confirm the existing async spawn import can be scoped with Bun `spyOn`; add the controlled-result test setup locally with unconditional restore/cleanup. (R1, R2)
+- [ ] 2. Replace the narrow concurrency stopwatch assertion with held-results dispatch/order/provenance assertions. (R1)
+- [ ] 3. Replace the startup-sensitive override case with exact per-source budget mapping, timeout attribution and default/tightening tests; retain genuine real-spawn kill/invocation cases. (R2, R3)
+- [ ] 4. Correct the already-existing pitfalls entry and its unproved writer diagnosis. (R4)
+- [ ] 5. Run focused fan-in tests; record assertions separately from partial-run coverage exit. Run `bun run lint`, `bun run test`, `bun run build` and scoped task/rule checks; retain all failure details and fix regressions in scope. Confirm only intentional changes. (R1–R4)
 
 ### Solution
 
@@ -130,6 +130,15 @@ the outcome (both rejected experiments above looked plausible and were inert).
 
 ### References
 
-<!-- Links to features, docs, ADRs, related tasks, or external references. -->
+- Feature: `docs/features/B6_sequential-fan-in-fan-out-steps.md`.
+- `apps/cli/src/fanin.ts:311` — async spawn boundary; `apps/cli/src/fanin.ts:384` — timeout precedence.
+- `apps/cli/tests/fanin.test.ts:426` — remaining elapsed ceiling; `:566` — startup-sensitive override case.
+- `apps/cli/tests/commands/stage.test.ts:188`; commit `741a0cb5` — shipped child-process build workaround.
+- `apps/cli/tests/fanout.test.ts:1342` — behavior/interval concurrency precedent.
+- `.spur/context/pitfalls.md:41` — existing entry to correct during implementation.
+- Task 0248 owns production fanout repair; no dependency or scope transfer.
 
 ### History
+
+- 2026-10-13T20:54:23.040Z backlog → todo (system)
+

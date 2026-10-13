@@ -4,103 +4,137 @@ name: Re-measure the WeChat MP enrichment rail against the drifted console
 status: todo
 template: issue
 created_at: 2026-10-13T03:22:54.165Z
-updated_at: "2026-10-13T15:25:37.170Z"
+updated_at: "2026-10-13T21:00:25.630Z"
 feature_id: G11
 
 ac_altitude: task-local
+ac_numbering: task-local
+priority: P1
+estimate_hours: 8
 ---
 
 ## 0272. Re-measure the WeChat MP enrichment rail against the drifted console
 
 ### Background
 
-Every daily MP draft since at least 2026-10-11 lands with the title, body and 合集 only. The enrichment rail (`plugins/publishings/wechatmp-pub/src/enrich.ts`, plus the cover and audio steps in `flow.ts`) reports the same 7 warnings on every run:
+The WeChat MP enrichment rail was measured against the live editor on 2026-10-12. The retained headless measurement report is `.spur/run/wechat-drift-task/bg.md:13-23`; it records the draft id, observed/candidate row and control selectors, account text, absent layout control, moved audio entry, moved cover picker, and the draft-save outcome. It does not contain a complete declaration/agreement or upload-form DOM capture, so those are explicit measurement deliverables before selector constants are frozen. The daily draft still saves, but several enrichment actions use selectors or entry points from an older console build. The owning seams are `plugins/publishings/wechatmp-pub/src/enrich.ts`, `plugins/publishings/wechatmp-pub/src/flow.ts`, and the `metadata.wechatmp` construction in `plugins/kk/scripts/daily-stages.ts`.
 
-```
-原创声明: dialog did not close — check the draft
-赞赏: click: Timeout 8000ms exceeded ... waiting for '.weui-desktop-dialog:visible button:has-text("确认"'
-原文链接: no URL field in the 原文链接 dialog
-创作来源: 未生效，请手动设置
-音频: click: Timeout 8000ms exceeded ... waiting for 'text=上传音频, button:has-text("上传音频")'
-一键排版: clicked, but no 匹配目标格式 option appeared
-cover: 从图片库选择 was not offered by the open cover panel
-```
+The report records two separate live outcomes: the original row remained 未声明 after its dialog attempt, and the reward row reported no authorised 赞赏账户. It does not establish that the account message caused the original result or capture the declaration/agreement controls, so the repair must measure those controls and report each observed state independently. Committed value/identity read-back and real-DOM regression coverage are the residual owned by task 0260 after this selector repair.
 
-The 2026-10-10 operator walk that was supposed to automate this does not reproduce mechanically. Measured live on 2026-10-12 (headless, the now-valid session, draft `appmsgid=100000963`), the console serves a different shape than the rail expects:
+Current-tree audit (2026-10-13): dialog cleanup was added in `flow.ts`, so a failed cover/audio modal is now best-effort dismissed before save. The settings selectors, audio entry path, cover library path, layout absence behavior, unavailable URL capability warning, and audio-before-cover ordering still need the concrete changes below. Existing offline tests use the old fake DOM and must not be treated as committed-state proof; task 0260 owns the real DOM/value verification after this task.
 
-- **Row entry points.** The rail's first-choice selectors are stale: `.setting-group__switch.js_can_reward` and `.allow_click_opr.js_url_checkbox` match **0** elements. Present instead: the 原创 row is `.setting-group__switch.js_original_apply.js_edit_ori` (text `未声明`), and there are **two** 赞赏 rows — `js_reward_open` and `js_reward_allow_click` (both carry a checkbox) — plus `js_gongyi_open`, `js_pay_open-tips`, `js_interaction`, `js_danmu_allow_click`.
-- **The chain is gated by 原创.** The 赞赏 row reads `声明原创后才可开启`, so a failed 原创 declaration starves 赞赏/付费 and every step ordered after it. The 原创 dialog exists and its confirm is `button.weui-desktop-btn.weui-desktop-btn_primary` with text **确定**; the rail's `:text("文字原创")` declaration control did not resolve, so it clicked 确定 alone and the dialog stayed open (platform validation) — the rail's own `dialogsClosed()` check caught it.
-- **赞赏 has an account prerequisite.** After a valid session the row reads `无法开启赞赏，因为还没有赞赏账户`: no 赞赏账户 exists on this account, so 赞赏 is not achievable by any selector. This is operator-owned.
-- **原文链接 is gone as a settings row.** The 17 rows now served are 封面和摘要, 封面, 视频号, 位置, 在认领的位置页展示, 原创, 赞赏, 付费, 赞赏, 公益捐赠, 付费, 原创, 赞赏, 留言, 弹幕, 链接, 文章设置. `链接` (`btm-card-link__switch`, `支持添加内容链接、小程序、小店商品`) is a different feature. The rail's `原文链接` step needs a new decision: find the replacement path or drop the field from `metadata.wechatmp`.
-- **一键排版 / 匹配目标格式 is absent** from this build: 0 matches for either label, so the layout step cannot do anything but warn.
-- **Audio moved.** The editor's toolbar item is `.tpl_dropdown_menu_item.js_insertaudio` (音频) and the empty-slot control is `.audio_cover_empty.js_replace_media` (`添加音频`); the rail waits for `text=上传音频`.
-- **Cover moved.** The open cover panel offers 修改 (`.js_cover_preview_new`), 换一张 (`.js_chooseCoverWrap`) and 从正文选择 (`.js_cover_opr`), while `从图片库选择` now lives in a media dropdown (`.js_img_dropdown_menu` → `.tpl_dropdown_menu_item.js_img_from_local`). `a.js_imagedialog` still exists in the DOM (3 hits) but is not offered by the open panel, which is what the readiness check times out on. The library path also depends on the audio step: the episode cover is uploaded there as the audio material's cover, so a failed audio insert leaves the library without the intended image.
+**Refine corrections (2026-10-13)**
 
-The draft still saves (`ok: true`, `publishStatus: draft`) and every failure is a loud warning, so nothing false-successes — the cost is that the operator completes 5-7 fields by hand in the draft box every day.
+- Keep the live selector drift, account prerequisite, missing layout control, cover/audio dependency, and non-blocking save findings; the headless report records them at `.spur/run/wechat-drift-task/bg.md:13-23`, and they remain present in the current source.
+- Drop the forced re-run hang and deleted-result-file claim from the implementation scope. The evidence has no reproducible current-code cause, while the normal stage run and plugin check complete; this task should not invent a timeout or cache repair around it.
+- Keep the existing `originalUrl` metadata contract and plugin consumer for builds/callers that expose the field. On this build, adapt the absent-row path to one explicit unavailable-capability warning and do not map the unrelated `链接` row or emit a generic click timeout. No evidence proves the product field is retired globally.
 
-Measured follow-up (2026-10-12, live).** The 原创 dialog's real contract, read from the live DOM:
-
-- `声明类型` offers `文字原创` / `漫画原创 字数<300字，且图片≥4张` / `无需声明`, plus `赞赏`, `作者`, `赞赏账户`, `类别`, `白名单` (快捷转载) and the agreement checkbox `我已阅读并同意《微信公众平台原创声明及相关功能使用协议》`.
-- The rail ticks nothing: `:text("文字原创")` resolves (it selects the radio — verified `weui-desktop-form__radio js_original` checked) but the protocol agreement stays unchecked, so 确定 leaves the dialog open and `dialogsClosed()` reports `原创声明: dialog did not close`. **Selecting the agreement by its label is what lets 确定 close the dialog** (verified: `dialogs open: 0`).
-- The declaration still does **not** persist. After 文字原创 + agreement + 确定 + `保存为草稿` + reload, the row still reads `未声明`. The account's own state explains why: the 赞赏 rows read `无法开启赞赏，因为还没有赞赏账户授权给本…`, and the rail's pre-2026-10-10 warning recorded the rule verbatim — `原创声明: 未生效 - 作者须为赞赏账户(搜索选择)，请手动设置`. The dialog's `作者` field is a search-select over that account's 赞赏账户 list.
-- Therefore 原创, and everything the panel gates behind it (`赞赏` reads `声明原创后才可开启`), is blocked on an **account prerequisite**: authorise/create the 赞赏账户. No selector change can complete it, and the rail should report it as an operator action rather than as a click timeout (R3).
-
-What remains purely mechanical and is not gated by 原创: the 封面 panel and the 音频 insert — the cover's `从图片库选择` path needs the audio step to have uploaded the episode cover as that material's cover, so the two are ordered together.
-
-Measured follow-up (2026-10-12, live): the console states the 赞赏 prerequisite and its own remedy, so R3 has an exact operator action to report instead of a click timeout —
-
-```
-无法开启赞赏，因为还没有赞赏账户授权给本公众号。如果要取得授权，请到赞赏账户小程序-赞赏账户设置-可收款公众号中添加本公众号。如果要创建赞赏账户，你可以发送赞赏账户邀请。
-```
-
-Same read: the article's 原创 row reported `原创 文字原创 · 作者: 冰原奔狼 · 已开启快捷转载` with `编辑声明 / 编辑白名单 / 撤销声明` operations while its switch still read `未声明`, so a declaration pass leaves the author and 快捷转载 applied without the declaration itself registering — the read-back must assert the switch state, not the row's summary text. With no 赞赏账户 there is nothing for the dialog's `作者` search-select to resolve, which is why the declaration cannot complete.
-
-Second live pass (2026-10-13 morning, after the first fully-green daily run):
-
-- **The audio dialog is measured now.** The toolbar's `音频` entry is a DROPDOWN: `.jsInsertIcon.audio` opens it and only then does the item `.tpl_dropdown_menu_item.js_insertaudio` reach the real dialog. That dialog is `插入音频` with tabs `从素材库选择` / `从视频号选择`, a `搜索音频` field, and buttons **`上传音频`**, 下一页, **`插入`**, 取消. The material library already lists past episodes (`每日AI乱炖 · 2026-10-12 16分钟`, 10-11, 10-10, 10-08, 10-07, 10-06, 10-04 …), so the dedupe path can insert without uploading. The rail JS-clicks `li.js_insertaudio` directly and then waits for `.audio_dialog`; the observed failure is the *click* on `上传音频` (found but not clickable within 8 s), which is why the step times out while the control demonstrably exists.
-- **The account prerequisite is still open.** The 2026-10-13 draft reads 原创 `未声明` and 赞赏 `不开启 无法开启赞赏，因为还没有赞赏账户授权给本公众号 …`, so 原创 cannot register yet and 赞赏 stays gated. Today's run stopped warning about 原创 (the dialog closed) but the declaration still did not stick — the read-back must assert the switch, as recorded above.
-- **A forced re-run of `daily-publish-wechat` hangs, and the hang is not the session.** Removing the cached result and re-running the stage twice (15 min, then 4.5 min) produced no result file and no output; `kk plugin check wechatmp-pub` verifies the session headlessly in 15 s, no lock file exists and no browser is left on the profile after the kill. The same stage completed in ~1.5 min inside this morning's workflow run, so the difference is worth finding before the rail is judged: it needs its own session with the account authorised.
-- The forced re-run **deleted** `31-publish/20261013_20_publish-wechat_result.json` (the documented "redo by delete") and could not regenerate it. The run's own record is intact — `31-publish/20261013_17_publish_completeness.json` still reads `wechat done draft`, the ledger row and the run report are written, and the draft itself exists (`appmsgid=100000971`) — but a future re-run of `daily-publish-completeness` would now see the channel as missing until the stage succeeds again.
+The task is the measured WeChat enrichment/cover/audio selector and daily-adapter repair. An authenticated browser/profile is required to complete the missing control map; if the profile is busy or browser bridge is unavailable, execution remains blocked and no synthetic selector is accepted. Task 0260 consumes this work for committed identity/value probes and real-DOM regression coverage; this task does not claim that evidence. It does not change the publish contract, account provisioning, or the safety workflow.
 
 ### Requirements
 
-- [ ] R1. Re-measure each enrichment step against the live console and update its selectors, keeping the rail's commit-verified shape (open row → act in dialog → confirm → re-read the DOM; a step that does not stick stays a loud warning).
-- [ ] R2. Treat the 原创 declaration as the gate it is: make it either succeed (declaration control + confirm + closed-dialog verification) or fail the whole dependent group early, so 赞赏/付费 are not attempted against a state that cannot accept them.
-- [ ] R3. Make the account prerequisites explicit and separate from selector failures: when the console states `无法开启赞赏，因为还没有赞赏账户`, report that as an operator action (create the 赞赏账户) rather than as a step failure the next run will retry.
-- [ ] R4. Decide the fate of the 原文链接 step for a build that has no such row — find the replacement path or remove `originalUrl` from the stage's `metadata.wechatmp` — and record the decision, because the field is currently produced by the daily stage and silently dropped.
-- [ ] R5. Make the layout step (一键排版 / 匹配目标格式) detect its own absence and skip without a warning, or remove the step if the build no longer offers it; a permanent warning on every run trains the operator to ignore warnings.
-- [ ] R6. Fix the cover path against the measured panel (换一张 → 图片库 dropdown → 从图片库选择, or 从正文选择) and keep the audio dependency explicit: the library entry the cover wants is the audio material's cover, so the cover step must not silently degrade when the audio step failed.
-- [ ] R7. Fix the audio insert against the measured entry points (`js_insertaudio` / `添加音频`), including the upload sub-flow (file → cover → title → platform-rules acknowledgement → 保存 → 插入).
-- [ ] R8. Keep the whole rail non-blocking: the draft still saves, and a failed enrichment never fails the run (`onError: continue` stays).
-- [ ] R9. Prove the fix end to end on a real draft: a fresh daily run whose `enrichWarnings` is empty for the fields the account supports, recorded with the draft id and a read-back of each field.
+- [ ] R1. Each retained enrichment step validates the observed/candidate selector map in `.spur/run/wechat-drift-task/bg.md:13-23` against the target editor, performs its action, and returns an explicit capability or action outcome; task 0260 performs the committed DOM value/identity read-back after this selector repair.
+- [ ] R2. Original declaration selects the measured declaration and agreement controls before confirming. If the dialog or row does not commit, the rail reports an original warning; it does not infer a reward dependency from that outcome or present a closed dialog as success.
+- [ ] R3. Reward detects the no-authorised-account message and reports the operator action once without retrying it as a selector failure. Only an explicit current DOM message such as 声明原创后才可开启 may suppress a dependent reward attempt; the account message alone does not change original handling.
+- [ ] R4. The existing `metadata.wechatmp.originalUrl` request and plugin consumer remain available for callers/builds that expose 原文链接. When this build has no 原文链接 row, the plugin emits one explicit unavailable-capability warning and never maps the unrelated live `链接` row or retries a generic click timeout.
+- [ ] R5. Layout probes for the current 一键排版 control. When the build has no such control, the step skips without a warning; when the control exists, it selects 匹配目标格式 and reports an application failure if the option or confirmation is missing.
+- [ ] R6. Cover uses the measured panel and library dropdown selectors. A library cover is attempted only after the requested audio material is present; if that dependency is unavailable, the rail emits a specific warning and never silently selects an arbitrary existing library image.
+- [ ] R7. Audio opens the toolbar dropdown before selecting `.tpl_dropdown_menu_item.js_insertaudio`, retains same-title dedupe, and completes the measured upload sequence (audio, cover, title, agreement, save, insert, read-back).
+- [ ] R8. Every enrichment failure remains fail-soft: leaked dialogs are dismissed, the draft save is attempted, and the publish result keeps its existing success/error contract.
+- [ ] R9. The implementation records a selector/control map for the declaration/agreement, reward, URL capability, audio upload, cover picker and layout controls, with evidence paths and any live mismatch. Selector fixtures cover supported and unsupported account outcomes, absent layout, originalUrl capability absence, and modal cleanup. Task 0260 supplies the real-Chromium committed-state/value regression and live draft read-back after this task's map is applied; queued booleans are not evidence of committed state.
+
+Out of scope: committed cover/audio/settings identity/value probes and real-DOM regressions owned by 0260, provisioning a 赞赏账户, inventing a replacement for the absent 原文链接 row, changing the unrelated `链接` feature, retiring the shared `originalUrl` contract, repairing the un-reproduced forced-rerun hang, or changing publish/safety orchestration.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — A fresh draft run reports no `enrichWarnings` for 原创, cover, 创作来源, audio and 排版 (or, for 排版, no warning because the step knows the control is absent). (req: R1, R5, R6, R7, R9)
-- [ ] AC2 — With no 赞赏账户 on the account, the 赞赏 outcome names the operator action instead of a click timeout, and the run does not retry it. (req: R3)
-- [ ] AC3 — A failed 原创 declaration does not produce a downstream cascade of indistinguishable click timeouts. (req: R2)
-- [ ] AC4 — `metadata.wechatmp.originalUrl` is either carried into the draft or no longer produced, with the decision recorded. (req: R4)
-- [ ] AC5 — The draft still saves and the run still exits 0 when every enrichment step fails. (req: R8)
+```gherkin
+Scenario: AC1 — the measured original controls are driven and outcome is surfaced (req: R1, R2, R9)
+  Given the authenticated target editor exposes declaration and agreement controls captured by the measurement deliverable
+  When the original row is processed
+  Then the measured controls are used, a non-committed row is reported as an original warning, and task 0260 can read the committed state in its real-DOM follow-up
+
+Scenario: AC2 — an account prerequisite is actionable and bounded (req: R2, R3, R9)
+  Given the console reports that no 赞赏账户 is authorised
+  When original/reward enrichment runs
+  Then the reward result names the account-authorisation action, does not claim reward success from a closed dialog, and does not retry the same unavailable state; original retains its own observed outcome
+
+Scenario: AC3 — an unavailable URL capability is explicit (req: R4, R9)
+  Given a surfdash result contains a URL
+  When the daily WeChat metadata is built
+  Then `metadata.wechatmp.originalUrl` remains available to the plugin contract, an editor with no 原文链接 row yields one unavailable-capability warning, and the live `链接` setting is not changed
+
+Scenario: AC4 — a build without layout support is quiet (req: R5)
+  Given neither the 一键排版 control nor its target option exists
+  When an article is composed
+  Then the layout step skips without an enrichment warning and the draft continues to save
+
+Scenario: AC5 — audio and library cover use their measured dependency (req: R6, R7)
+  Given the audio toolbar dropdown and measured upload/library controls exist
+  When an article requests a library cover
+  Then audio is deduplicated or uploaded and inserted before the cover picker attempts the library path; if audio cannot be inserted, no arbitrary library item is selected and the warning identifies the dependency
+
+Scenario: AC6 — all retained failures remain fail-soft (req: R8, R9)
+  Given every enrichment action fails or leaves a modal open
+  When the article flow finishes
+  Then dialogs are dismissed, the draft save is attempted, and the result reports warnings without turning the enrichment failure into a publish-stage failure
+
+Scenario: AC7 — the selector handoff has retained measurement evidence (req: R1, R9)
+  Given `.spur/run/wechat-drift-task/bg.md:13-23` records the headless draft id and observed/candidate selector map
+  When the missing declaration/agreement and upload-form controls are measured before task 0260's identity/value follow-up
+  Then every changed row/control has an evidence path and candidate status, and no queued fake return value is accepted as committed-state proof
+```
 
 ### Q&A
 
-<!-- Clarifications and triage decisions. Keep empty if none. -->
+#### Closed decision — account prerequisite
+The console's no-authorised-赞赏账户 message is an operator prerequisite for reward. The rail should surface it once and stop retrying that unavailable reward state; the message does not prove why the original row failed, so original keeps an independent outcome.
+
+#### Closed decision — absent URL row
+The live `链接` row is a different feature, so it is not a replacement for 原文链接. Keep the shared `originalUrl` request/consumer contract and emit an explicit unavailable-capability warning on this build; do not retire the field globally without a product decision.
+
+#### Closed decision — audio/cover order
+The library cover is the audio material's cover. Run audio before the library cover picker and refuse an arbitrary library fallback when audio did not become available. Body cover remains an explicit alternative.
+
+#### Closed decision — live evidence boundary
+`.spur/run/wechat-drift-task/bg.md:13-23` is the retained headless measurement report that supplies the observed/candidate selector map and draft id. It does not replace task 0260's real-DOM committed-state/value proof; declaration/agreement and upload-form internals remain measurement deliverables. The historical forced-rerun hang is unverified and is excluded rather than converted into a speculative timeout fix.
 
 ### Design
 
-<!-- Fix approach and tradeoffs. Keep this short unless the issue changes architecture. -->
+Update the measured selector tables and flow seams only. Treat `.spur/run/wechat-drift-task/bg.md:13-23` as the retained headless candidate report: validate each candidate against the target build, measure the missing declaration/agreement and upload-form controls, then freeze the resulting map in code with evidence paths in fixture comments. Task 0260 then owns real-Chromium committed identity/value probes and DOM regressions; this task's recording fakes prove call ordering and warning plumbing only.
+
+1. In `enrich.ts`, validate and then replace the stale original/reward row candidates with the `js_original_apply.js_edit_ori`, `js_reward_open`/`js_reward_allow_click` shapes reported by the headless walk. Measure/freeze the declaration and agreement controls before selecting them, detect the account-prerequisite text, and return an explicit original/reward outcome. Suppress a dependent reward attempt only when the current DOM explicitly says `声明原创后才可开启`; do not infer that dependency from the missing-account message. Preserve collection and claim-source behavior. Keep the `originalUrl` branch as a capability request, but make an absent row return one explicit unsupported-build warning rather than a generic timeout.
+2. In `daily-stages.ts`, preserve the existing `originalUrl` metadata production until a product decision retires the field; do not map the unrelated `链接` row. The daily adapter's selector/state repair is limited to passing the existing contract and actionable capability result.
+3. In `flow.ts`, make layout absence a quiet no-op. Add the candidate cover panel/dropdown selectors and keep the existing warning-and-dismiss behavior. Make `enrichArticleDraft` expose whether requested audio is ready, call it before a library cover, and have `setCover` refuse an unready library dependency with a specific warning. The body source remains explicit and does not depend on audio.
+4. Measure the audio toolbar's `.jsInsertIcon.audio` menu and `.tpl_dropdown_menu_item.js_insertaudio` entry and then freeze the validated map; keep the existing dedupe/upload/insert/read-back logic and scoped file inputs. Measure the upload form's file inputs, agreement and save controls before relying on them. Keep `closeOpenDialogs`/`dismissOpenDialog` on every failure path before save.
+5. Update orchestration fixtures in `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts` for the candidate selectors and add cases for account prerequisite, independent original/reward outcomes, explicit URL capability warning, absent layout, audio-before-library-cover, dependency refusal, and modal cleanup. Do not call queued return values committed-state proof; task 0260's real-DOM suite and attended draft run supply identity/value evidence.
+
+Do not change the publish result schema, account state, unrelated `链接` setting, or daily workflow error policy.
 
 ### Plan
 
-<!-- Ordered debugging/fix checklist. Fill before moving to todo/wip. -->
+1. Reconcile the candidate selector/control map in `.spur/run/wechat-drift-task/bg.md:13-23` with the current editor build; capture the missing declaration/agreement and upload-form DOM controls and retain the evidence paths. Then locate each selector/entry-point use in `enrich.ts`, `flow.ts`, `daily-stages.ts`, and the existing plugin tests.
+2. Implement original/reward prerequisite handling with independent outcomes and an explicit unavailable-build warning for the absent URL row; preserve the `originalUrl` metadata contract and update collection/claim-source tests only where the new row shape requires it.
+3. Implement quiet layout absence, measured cover picker candidates, and the explicit audio-before-library-cover dependency. Ensure every failure closes its modal before the save path.
+4. Implement the two-step audio toolbar entry and retain the upload agreement/save/insert verification.
+5. Update and extend the offline orchestration tests for supported selectors, account-blocked reward, independent original outcome, unavailable URL capability, absent layout, cover/audio dependency, and fail-soft save. Run `bun test plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts` and the relevant daily-stage test; do not treat queued booleans as DOM proof.
+6. Hand the validated selector map and fixtures to task 0260, which runs the real Chromium DOM/value regression and attended draft read-back after the repair. Record the candidate map, measurement artifacts and any live mismatch against `.spur/run/wechat-drift-task/bg.md`.
+7. Run the scoped Spur task/feature checks and review the diff. Do not broaden this task to the unverified forced-rerun hang.
 
 ### Root Cause
 
-<!-- Verified underlying cause with file:line evidence. Fill once reproduced/isolated. -->
+The failures have two verified causes and one account outcome. The editor build drifted from the selector table and moved audio/cover controls behind new menus; the retained headless report records observed candidates and the absent URL/layout controls, while declaration/agreement and upload-form details remain to be captured. The account reports no authorised 赞赏账户, which blocks reward on that account; it does not prove why the original row remained uncommitted. A later modal-cleanup change addressed one consequence (save being covered), but it did not repair stale entry points or distinguish capability outcomes from selector failures. The forced-rerun hang is not isolated and is excluded from the root cause.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+No implementation is claimed yet. The implementable solution is:
+
+- `.spur/run/wechat-drift-task/bg.md:13-23` supplies the retained headless observed/candidate selector map and draft-save outcome; it is the measurement input, while task 0260 owns the subsequent real-DOM/value proof.
+- `plugins/publishings/wechatmp-pub/src/enrich.ts:26-185`: validated original/reward row selectors, newly measured declaration/agreement controls, independent prerequisite outcomes, explicit unsupported-build warning for an absent URL row, and post-confirm handoff for 0260's value probes; keep the `originalUrl` contract.
+- `plugins/kk/scripts/daily-stages.ts:1512-1527`: preserve the existing `metadata.wechatmp.originalUrl` request until a product decision retires it; do not map the unrelated `链接` row.
+- `plugins/publishings/wechatmp-pub/src/flow.ts:578-716,1214-1245`: quiet layout absence; measured cover selectors and explicit audio readiness; audio toolbar menu entry before the existing upload/dedupe flow; modal cleanup retained on all warning paths.
+- `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1099-1237`: selector/orchestration fixtures and regression assertions for supported fields, independent account/original outcomes, URL capability warning, absent layout, audio/cover dependency, and fail-soft save. Real DOM/value evidence remains task 0260's handoff.
+
+The solution deliberately leaves account provisioning, committed identity/value probes, the unrelated `链接` setting, and the unverified forced-rerun hang outside this task. The task is spec-ready with a named measurement deliverable; task 0260 must consume the validated map, distinguish account-blocked warnings from unsupported selector failures, and read the saved draft back before the channel repair is considered live-verified.
 
 ### Testing
 
@@ -112,6 +146,13 @@ Second live pass (2026-10-13 morning, after the first fully-green daily run):
 
 ### References
 
-<!-- Links to failing logs, related issues, tasks, docs, or external references. -->
+Evidence and ownership:
+
+- `.spur/run/wechat-drift-task/bg.md:13-23` — retained **headless measurement report** for draft `appmsgid=100000963`; records observed/candidate row/control selectors, account messages, absent layout/URL controls, moved audio/cover entry points, and `ok: true` draft-save result. It does not prove committed values or include the complete declaration/upload-form internals.
+- `.spur/run/wechat-drift-task/req.md:1-9` and `ac.md:1-5` — original drift campaign requirements and acceptance targets; used as source context, not as committed-state proof.
+- `docs/design/wechatmp-ui-discovery.md:1-23,5.2-5.3` — historical 2026-10-06 discovery baseline for the editor, draft signal, cover/layout and audio behavior; later drift is recorded in the retained headless report.
+- `.spur/run/discovery/wechatmp-probe-editor-文章.json:171-186` — retained DOM probe showing the earlier editor's original switch controls; useful for comparison, not a substitute for the 2026-10-12 walk.
+- `.spur/run/refine-0260/live/20261013-audit.md:3-11` — 0260's live-readiness audit; no new attended walk was possible, so 0260 owns the real-DOM committed identity/value follow-up after this selector repair.
+- External execution prerequisite — an authenticated WeChat profile and browser bridge must be free; the measurement deliverable is the validated selector/control map (including declaration/agreement and upload-form controls), handed from 0272 to 0260 with evidence paths and observed committed values.
 
 ### History
