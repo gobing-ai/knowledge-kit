@@ -178,6 +178,12 @@ describe('kk-items decision catalog registration (R2)', () => {
         const config = Bun.YAML.parse(readFileSync(CONFIG_PATH, 'utf-8')) as {
             decisions?: { paths?: string[] };
         };
-        expect(config.decisions?.paths).toEqual(['plugins/kk/decisions']);
+        // The list IS the whole search path, so the project catalog must come first and must be
+        // present. Later entries are environment-supplied catalogs (the installed package's shared
+        // `task-triage` / `failure-class` / `review-failure-class` decides are appended here) and
+        // their absolute paths are machine-specific — pinning the exact list made this test fail
+        // the moment the shared layer was registered (main, 2026-10-13).
+        expect(config.decisions?.paths?.[0]).toBe('plugins/kk/decisions');
+        expect(config.decisions?.paths).toContain('plugins/kk/decisions');
     });
 });
