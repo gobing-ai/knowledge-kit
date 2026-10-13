@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G1"
 name: "kk-daily-ai-voice"
-status: active
+status: verifying
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:24.450Z"
-updated_at: "2026-10-13T21:51:14.473Z"
+updated_at: "2026-10-13T22:11:20.914Z"
 ---
 
 # G1: kk-daily-ai-voice
@@ -38,7 +38,7 @@ Feature: kk-daily-ai-voice
 | WBS | Task | Status |
 | --- | ---- | ------ |
 | 0222 | Retire kk-daily-ai-voice.yaml after voice2 cutover stabilizes | cancelled |
-| 0264 | Place daily-publish-partial's warning artifact by run identity, not by process cwd | testing |
+| 0264 | Place daily-publish-partial's warning artifact by run identity, not by process cwd | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -48,4 +48,5 @@ Historical features shipped before G existed keep their IDs (cited by ADRs, desi
 ## History
 
 - 2026-10-13T21:51:14.473Z backlog → active (system)
+- 2026-10-13T22:11:20.914Z active → verifying (system)
 
