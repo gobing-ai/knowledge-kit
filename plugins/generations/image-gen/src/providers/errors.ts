@@ -89,3 +89,13 @@ export function classifyProviderError(err: unknown): ProviderErrorClass {
 export function isFallbackEligible(cls: ProviderErrorClass): boolean {
     return cls !== 'policy';
 }
+
+/**
+ * 0269 R1: the classes a same-provider retry may act on. `transient` (HTTP 408/5xx,
+ * timeout/abort, network wording) and `quota` (429/rate-limit heals with a short wait; billing
+ * burns at most one bounded retry — task 0269 Q&A D2) are retried; `auth` (credentials do not
+ * heal), `policy` (the prompt will not change), and `unknown` (a blind retry burns spend) never.
+ */
+export function isTransientRetry(cls: ProviderErrorClass): boolean {
+    return cls === 'transient' || cls === 'quota';
+}

@@ -24,6 +24,7 @@ import {
     type ImageRequest,
     type ImageResult,
     isFallbackEligible,
+    isTransientRetry,
     PROVIDERS,
     resolveFallbackOrder,
     selectProvider,
@@ -44,6 +45,13 @@ const EMPTY_CONTENT: Content = {
 
 /** Compiled budget cap (R6). Precedence: spec.maxImages → KK_IMAGE_MAX_IMAGES → this. */
 export const DEFAULT_MAX_IMAGES = 4;
+
+/**
+ * 0269 R2: same-provider retry policy for transient/quota failures — fixed, no knob (task Q&A D3:
+ * the `ImageJobSpec` envelope is frozen and no caller needs to tune the added latency).
+ */
+const TRANSIENT_RETRY_MAX = 2;
+const TRANSIENT_RETRY_BACKOFF_MS: readonly [firstRetry: number, secondRetry: number] = [1000, 2000];
 
 /** Resolve the provider instance for a spec; tests inject a stub here — no network. */
 export type ProviderResolver = (spec: ImageJobSpec) => ImageProvider;
@@ -202,6 +210,11 @@ export async function processGeneratorIO(
          * surfaces only when a compose-format job is actually requested.
          */
         composer?: CardComposer;
+        /**
+         * 0269: injectable backoff wait between same-provider transient retries. Tests record the
+         * requested ms without waiting; the default sleeps for real (1s, then 2s).
+         */
+        sleep?: (ms: number) => Promise<void>;
     } = {},
 ): Promise<void> {
     const fs = createNodeFileSystem();
@@ -320,6 +333,7 @@ export async function processGeneratorIO(
 
         // Selection must succeed (or fail loud naming the provider) even when nothing is spent.
         const resolveProvider: ProviderResolver = options.providerResolver ?? defaultProviderResolver;
+        const sleep = options.sleep ?? Bun.sleep;
         const primary = resolveProvider(spec);
 
         // D6 (0166): the fallback order is resolved once, before the dry-run branch, so a typo'd
@@ -395,6 +409,7 @@ export async function processGeneratorIO(
             prompt: string,
         ): Promise<{ result: ImageResult; sizeRequest: 'exact' | 'aspect' }> => {
             const start = attempts.length; // this image's failed attempts begin here (R5 summarises the slice)
+            let retries = 0; // 0269 R2: same-provider retries already spent on this image at `at`
             for (;;) {
                 const name = order[at];
                 if (name === undefined) {
@@ -425,11 +440,20 @@ export async function processGeneratorIO(
                     const result = await provider.generate(request);
                     return { result, sizeRequest: exact ? 'exact' : 'aspect' };
                 } catch (err: unknown) {
+                    const cls = classifyProviderError(err);
+                    const message = err instanceof Error ? err.message : String(err);
+                    // 0269 R1/R2: a transient/quota blip is retried on the same provider (1s,
+                    // then 2s backoff) before any strict rethrow or fallback move; auth, policy,
+                    // and unknown never are. Budget spent → exactly today's paths below.
+                    if (isTransientRetry(cls) && retries < TRANSIENT_RETRY_MAX) {
+                        attempts.push({ image, provider: provider.name, model, errorClass: cls, message });
+                        retries += 1;
+                        await sleep(retries === 1 ? TRANSIENT_RETRY_BACKOFF_MS[0] : TRANSIENT_RETRY_BACKOFF_MS[1]);
+                        continue; // same provider, same `at`
+                    }
                     if (spec.fallback === undefined) {
                         throw err; // D6 R1: strict mode propagates the original error, unwrapped.
                     }
-                    const cls = classifyProviderError(err);
-                    const message = err instanceof Error ? err.message : String(err);
                     if (!isFallbackEligible(cls)) {
                         // D6 R4: a rejected prompt is never re-asked to a second vendor.
                         throw new Error(
@@ -448,6 +472,7 @@ export async function processGeneratorIO(
                     }
                     echoError(`WARN image-gen: ${provider.name} failed (${cls}): ${message}; falling back to ${next}`);
                     at += 1;
+                    retries = 0; // 0269 R2: the retry budget is per provider per image
                 }
             }
         };

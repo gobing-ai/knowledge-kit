@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ProviderErrorClass } from '../src/providers/errors';
-import { classifyProviderError, isFallbackEligible } from '../src/providers/errors';
+import { classifyProviderError, isFallbackEligible, isTransientRetry } from '../src/providers/errors';
 
 /**
  * Task 0164 — fixtures copy the real adapter throw strings (see `rg "throw new Error" src/providers`),
@@ -66,6 +66,17 @@ describe('classification precedence (first matching row wins)', () => {
 
     test('transient matches a 408 status with no keyword', () => {
         expect(classifyProviderError(new Error('Replicate poll error (408): upstream stalled'))).toBe('transient');
+    });
+});
+
+describe('isTransientRetry', () => {
+    test('0269 R1: transient and quota are retried on the same provider; auth, policy, unknown never', () => {
+        for (const cls of ['transient', 'quota'] as const) {
+            expect(isTransientRetry(cls)).toBe(true);
+        }
+        for (const cls of ['auth', 'policy', 'unknown'] as const) {
+            expect(isTransientRetry(cls)).toBe(false);
+        }
     });
 });
 
