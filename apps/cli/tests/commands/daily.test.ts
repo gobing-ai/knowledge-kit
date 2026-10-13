@@ -84,10 +84,13 @@ afterAll(() => {
 
 /**
  * Run `fn` with the process cwd inside `dir`. `kk daily prepare` writes its anchor to the
- * cwd-relative `.spur/runs/<workflow>/work-dir.txt` and `daily-publish-partial` writes
- * `.spur/run/<marker>.txt`, so a test that asserted them from the repo root wrote — and then
- * DELETED — the real files; on 2026-10-12 that clobbered a live run's anchor mid-session. The
- * corrupt-config test below already chdirs for the same isolation reason.
+ * cwd-relative `.spur/runs/<workflow>/work-dir.txt`, so a test that asserted it from the repo root
+ * wrote — and then DELETED — the real file; on 2026-10-12 that clobbered a live run's anchor
+ * mid-session. The corrupt-config test below already chdirs for the same isolation reason.
+ *
+ * `daily-publish-partial` writes its marker under the supplied `workDir` (task 0264), so the
+ * fold-tail case below — whose cwd equals `--work-dir` — is a compatibility check, not the
+ * root-separation regression; that lives in `kk-workflow-stages.test.ts`.
  */
 async function inCwd<T>(dir: string, fn: () => Promise<T>): Promise<T> {
     const previous = process.cwd();
@@ -489,6 +492,7 @@ describe('kk daily publish-classify', () => {
         );
         expect(result.code).toBe(0);
         expect(JSON.parse(result.out).status).toBe('partial');
+        // cwd == --work-dir here, so this asserts the workDir convention, not cwd separation.
         const markerPath = join(dir, '.spur/run/publish-partial-20261007.txt');
         expect(existsSync(markerPath)).toBe(true);
         const marker = readFileSync(markerPath, 'utf-8');

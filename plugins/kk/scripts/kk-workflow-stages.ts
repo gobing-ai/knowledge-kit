@@ -1341,6 +1341,12 @@ function publishCompleteness(
 function dailyPublishPartial(args: string[]): void {
     const [workDir = '', runDate = ''] = args;
     const result = join(workDir, '31-publish', `${runDate}_17_publish_result.json`);
+    // The marker describes this run, so it belongs under that run's workDir — a cwd-relative path
+    // litters whatever tree the caller stood in and hides the note from the episode it describes.
+    const marker =
+        workDir === ''
+            ? join('.spur', 'run', `publish-partial-${runDate}.txt`)
+            : join(workDir, '.spur', 'run', `publish-partial-${runDate}.txt`);
     timed(workDir, 'publish-partial', () => {
         const failed = targetsOf(result)
             .filter((entry) => entry.ok !== true || entry.status !== 'published')
@@ -1348,10 +1354,10 @@ function dailyPublishPartial(args: string[]): void {
             .join(',');
         const list = failed === '' ? '(unparsed)' : failed;
         console.error(`WARNING: partial publish — failed targets: ${list}`);
-        sted('mkdir', '.spur/run', () => mkdirSync('.spur/run', { recursive: true }));
-        sted('write', `.spur/run/publish-partial-${runDate}.txt`, () =>
+        sted('mkdir', dirname(marker), () => mkdirSync(dirname(marker), { recursive: true }));
+        sted('write', marker, () =>
             writeFileSync(
-                `.spur/run/publish-partial-${runDate}.txt`,
+                marker,
                 `${runDate} partial publish: failed targets: ${list} (result.json preserved for kk executor fan-out --retry-from)\n`,
             ),
         );
