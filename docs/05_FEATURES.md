@@ -45,6 +45,7 @@ sync: [T4]
 | **A** | Project foundation | ✅ done | 0 | Monorepo substrate + tooling; close-out task `0013` verified (gates PASS) |
 | A1 | Feature tree restructure | ✅ done | 0 | tree+docs applied; tasks `0006`–`0009` **done**; map `docs/plans/feature-tree-restructure-map.md` |
 | A2 | kk product CLI surface | ✅ done | 2 | tasks `0049`–`0051` done; operator binary `kk` (package `@gobing-ai/knowledge-kit` unchanged); register-per-command tree; `bin.kk` + `knowledge-kit` alias + `prepack`; ADR-010; spec `docs/design/kk-cli-surface.md` |
+| A22 | Strict CLI noun/verb operations and named browser bots | ⏳ backlog | 2 | Tasks `0275`–`0278` ready; runtime implementation pending; ADR-037/038; [design](design/kk-noun-verb-bots.md) |
 | A21 | Two-layer CLI nouns (executor + plugin) | ✅ done | 2 | task `0052` done; `kk executor run\|fan-in\|fan-out` + `kk plugin status`; hidden aliases; `add` retired; ADR-011; dogfood `docs/dogfood/2026-08-12-A21-two-layer-cli-dogfood.md` |
 | A3 | ts-libs logging foundation | ✅ done | 2 | tasks `0065`–`0067` done+verified; shared catalog (`@gobing-ai/ts-*` `^0.4.35`) + ts-utils output seam (`apps/cli/src/output.ts`) + ts-infra diagnostics; `@gobing-ai/utils` retired; output-boundaries rule RED→GREEN; satellite `docs/design/ts-libs-logging-foundation.md` |
 | **B** | Plugin platform | ✅ done | 1 | skill-first seam (ADR-006 amdt 2026-07-24); B1–B7 done (B7 = multi-root discovery, task `0053`); task `0028` verified; kk-judge moved under **F** as F1 |

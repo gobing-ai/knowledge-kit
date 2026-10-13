@@ -5,7 +5,7 @@ owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
 version: 1.37.0
 created_at: 2026-05-28
-updated_at: 2026-10-12
+updated_at: 2026-10-13
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1332,3 +1332,29 @@ output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk bo
 **Why.** The existing adapter seam preserves one VoiceScript/QC/audio implementation while VoxCPM inference requires its native Python stack.
 
 **Detail:** [VoxCPM daily voice driver](design/voxcpm-daily-voice-driver.md); feature G14. This decision does not assert improved audio quality or validated hardware performance.
+
+
+## ADR-037: Every canonical kk operation has one noun and one verb
+
+> **Status:** Accepted (design — A22; not implemented) · **Date:** 2026-10-13 · **Amends:** ADR-011 R1/R4 and its stage amendment.
+
+**Decision.** Every visible executable product operation has exactly two command words: `kk <noun> <verb> [data arguments/options]`. Noun groups have no default action. Framework help and global flags are excluded. Keep existing valid nouns and hyphenated verbs; make `stage run` and top-level `lock acquire|release` canonical. Every shipped spelling remains a hidden compatibility route sharing the action implementation and output/exit contract; no alias sunset is implied by this change. Alias diagnostics never contaminate machine output.
+
+**Why.** The full registered tree has 27 visible executable leaves; only stage's root action and the two nested store lock operations violate this rule. Domain-wide renames would create churn without improving conformance.
+
+**Detail:** feature A22; `docs/design/kk-noun-verb-bots.md`. Historical ADR-011 noun inventories describe their shipping dates, not an eternal two-noun limit.
+
+## ADR-038: Named bots manage local browser sessions through the publish harness
+
+> **Status:** Accepted (design — A22; not implemented) · **Date:** 2026-10-13 · **Complements:** ADR-027/029/032.
+
+**Decision.** `kk bot list|login|logout|open` manages named persistent Chromium profiles under `~/.config/kk/browser-profiles`. Reuse the existing publish-harness browser launcher; retain site readiness, special state capture/restoration and browser interaction in each channel plugin. A bot is neither a new plugin kind nor an agent. Unknown URLs require explicit operator confirmation; site-verified and operator-confirmed evidence remain distinct. Logout removes local credentials only. Existing plugin status/check/login contracts remain supported.
+
+**Why.** Shared local session operations need one operator surface, while site readiness and session portability require channel knowledge. Folder existence, cookies and page loads are insufficient proof of a working login.
+
+**Detail:** feature A22; `docs/design/kk-noun-verb-bots.md`. The optional browser-session descriptor extends the existing plugin check-script seam; API-only plugins remain independent of browser loading.
+
+
+### Amendment — 2026-10-13 (ADR-038 ready-depth refinement)
+
+The optional browserSession descriptor carries profileName and an optional homeUrl: publication-scoped Substack cannot declare one fixed editor URL. Saved plugin identity, declared profile name, then literal-origin matching select an adapter. Generic bots remain operator-confirmed; known adapters preserve plugin-owned canonical navigation (including fixed non-secret editor-version queries). Shared leases use scoped parent/child ownership across the existing check-script process boundary. No Xiaoyuzhou publisher connector exists in the current tree; generic URL login does not add one. Detail: the A22 satellite and task Design sections.
