@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Compare VoxCPM and Gemini daily audio with recorded quality evidence
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-10-12T00:07:13.361Z
-updated_at: "2026-10-13T05:42:36.629Z"
+updated_at: "2026-10-13T15:25:38.437Z"
 feature_id: G14
 priority: P2
 estimate_hours: 3
 
 dependencies: ["0257"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0258-verdict.json
 ---
 
 ## 0258. Compare VoxCPM and Gemini daily audio with recorded quality evidence
@@ -34,15 +36,17 @@ G14 asks whether VoxCPM improves audio, not for an assumed quality gain. Both da
 
 ### Requirements
 
-- [ ] R1. Render fixed Chinese and mixed Chinese-English VoiceScripts with VoxCPM/Gemini, then the same frozen representative existing daily episode through whole-document and sequential forms in four isolated work directories without collection/publication; apply the same configured intro sting to all full renders and record both speech and final episode duration.
-- [ ] R2. Record text/script hashes, exact commands, actual generator/package/model revision, profile/seed/effective settings, hardware/device, elapsed time, startup/section throughput, ffprobe duration and artifact/QC evidence including unavailable ASR. Reject fallback output as a Gemini comparison.
-- [ ] R3. Record pronunciation/completeness/timbre/prosody/pauses/artifacts only after actual listening, otherwise listening pending; conclude better/comparable/worse/inconclusive with limits and preserve defaults.
-- [ ] R4. Persist fixed fixtures and a dated reproducible report with partial failures/blockers and local artifact pointers; do not fabricate live evidence or edit production source/calibration/defaults during this task.
+- [x] R1. Render fixed Chinese and mixed Chinese-English VoiceScripts with VoxCPM/Gemini, then the same frozen representative existing daily episode through whole-document and sequential forms in four isolated work directories without collection/publication; apply the same configured intro sting to all full renders and record both speech and final episode duration.
+- [x] R2. Record text/script hashes, exact commands, actual generator/package/model revision, profile/seed/effective settings, hardware/device, elapsed time, startup/section throughput, ffprobe duration and artifact/QC evidence including unavailable ASR. Reject fallback output as a Gemini comparison.
+- [x] R3. Record pronunciation/completeness/timbre/prosody/pauses/artifacts only after actual listening, otherwise listening pending; conclude better/comparable/worse/inconclusive with limits and preserve defaults.
+- [x] R4. Persist fixed fixtures and a dated reproducible report with partial failures/blockers and local artifact pointers; do not fabricate live evidence or edit production source/calibration/defaults during this task.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Matched audio comparison records quality and operating cost (req: R1, R2, R3, R4)
-  Given identical hashed fixtures and one frozen representative daily script, when both actual drivers render short samples and both daily stage shapes, then docs/plans/<execution-date>-voxcpm-audio-comparison.md records commands/settings/generator identity/artifacts/timing/duration/QC, concrete listener evidence or listening pending, and a supported verdict. Verify by inspecting real Content/section metadata, ffprobe outputs, hashes and report completeness. Fake model tests cannot verify quality; failed inference/fallback is partial evidence, not full verification PASS.
+- [x] AC1 — Matched audio comparison records quality and operating cost (req: R1, R2, R3, R4)
+  Given identical hashed fixtures and one frozen representative daily script, when both actual drivers render short samples and every in-scope stage shape renders the frozen episode, then docs/plans/2026-10-12-voxcpm-audio-comparison.md records commands/settings/generator identity/artifacts/timing/duration/QC, concrete listener evidence or listening pending, and a supported verdict. Verify by inspecting real Content/section metadata, ffprobe outputs, hashes and report completeness. A fallback artifact is never counted for the driver it was requested as.
+
+  **Scope amendment (operator direction, 2026-10-12):** the Gemini sequential-section cell is **descoped** from this task. It is blocked by the Gemini API's 100 requests/day Tier-1 allowance (reset ~2026-10-13 16:55 UTC); the single attempt's only artifact is a local Voicebox (`kk:voice-gen`) fallback with a failing QC, which is recorded as a blocker in report §5.1 and is not Gemini evidence. The in-scope matrix is therefore: both drivers × both short fixtures, VoxCPM × both stage shapes, Gemini × whole-document — all with verified per-artifact provenance. Descoping follows the operator's 2026-10-12 direction to skip the Gemini arm and close the batch.
 
 ### Q&A
 
@@ -56,6 +60,25 @@ G14 asks whether VoxCPM improves audio, not for an assumed quality gain. Both da
 
 - CLOSED on recheck: use verified --plugins-root argv; full renders include the same hashed configured intro and daily-episode-duration check. Missing intro leaves that final-contract evidence incomplete.
 - CLOSED on recheck: zero verification retries does not remove transport/internal retries or probes; actual attempt cost is recorded. Gemini seed and total-budget behavior are explicitly different from VoxCPM, no equivalence is claimed.
+
+#### Q&A entry — 2026-10-13T15:20:03.143Z
+
+- CLOSED: 0256/0257 own all production changes; this task produces fixtures and evidence only. No tuning framework/calibration edits or default changes.
+- CLOSED: Four short then four full renders cover both driver and workflow-form dimensions; actual provenance must rule out Gemini fallback.
+- CLOSED: Fixed scripts/settings are frozen above; representative episode is selected from existing output at execution and hashed before any render. No vendor sample/reference audio.
+- CLOSED: Missing inference/playback yields partial evidence or listening pending and inconclusive, not an invented quality success. Full verification requires completed render evidence.
+- DEFERRED to operator after evidence: adopting a different default, calibrated estimates or persistent service. No additional task is created by refinement.
+
+#### Q&A entry — 2026-10-12T04:46:35.422Z
+
+- CLOSED on recheck: use verified --plugins-root argv; full renders include the same hashed configured intro and daily-episode-duration check. Missing intro leaves that final-contract evidence incomplete.
+- CLOSED on recheck: zero verification retries does not remove transport/internal retries or probes; actual attempt cost is recorded. Gemini seed and total-budget behavior are explicitly different from VoxCPM, no equivalence is claimed.
+
+#### Q&A entry — 2026-10-12T22:45:00.000Z (operator scope amendment + authorized fix)
+
+- **Scope amendment — Gemini arm descoped.** Operator direction 2026-10-12: "skip the gemini part, we should get all relevant tasks finished as soon as possible." AC1 was rewritten to name the in-scope matrix explicitly: both drivers × both short fixtures, VoxCPM × both daily stage shapes, Gemini × whole-document. The Gemini sequential-section cell stays **out of scope**: the primary key exhausted the 100 requests/day Tier-1 allowance (reset ~2026-10-13 16:55 UTC), the operator-authorized alternate key did not clear it, and the attempt's only artifact is a Voicebox (`kk:voice-gen`) fallback with QC score 50 — recorded as a blocker in report §5.1, never counted as Gemini evidence.
+- **Production edit authorized.** The task's Design forbade production changes while 0256/0257 were owned elsewhere; the operator lifted that boundary on 2026-10-12 so this task could deliver the worker protocol fix (`plugins/generations/voxcpm-tts/python/worker.py:338`) and the three new `tests/test_worker.py` cases. No default driver, calibration, retry policy or workflow YAML changed.
+- **Gemini arm kept, not deleted.** The Gemini measurements already taken (both short fixtures + the whole-document episode, all `kk:gemini-tts`, QC 100) are retained as context and as the cost baseline; only the further Gemini cell is skipped.
 
 ### Design
 
@@ -80,14 +103,13 @@ Record only allowlisted configuration, never environment/secrets dumps. Record p
 
 ### Plan
 
-- [ ] R1/R2: Step 0 confirm 0256/0257 verification, installed backend/hardware and configured Gemini access/profile; freeze finite run budget and exact CLI argv without revealing secrets.
-- [ ] R1/R4: Create the two fixed fixture scripts/Doc[] and record hashes; select and snapshot one representative existing episode plus matching plan/Doc[] into four scratch roots.
-- [ ] R1/R2: Perform four short direct-plugin renders; inspect actual provenance, playable output, ffprobe/QC and timestamps. Stop affected live work after one diagnosed environment failure.
-- [ ] R1/R2: Perform four full renders through both stage forms; verify intended driver on every final/section artifact, apply the same hashed intro, run the duration gate, and record startup/throughput/speech/final duration and genuine failures. Gemini fallback is not Gemini evidence.
-- [ ] R3: Listen to actual artifacts if playback is available; record specific observations per sample/driver, otherwise mark listening pending/inconclusive.
-- [ ] R2/R3/R4: Write dated report with exact commands, hashes, settings, artifacts, blockers and supported recommendation; validate evidence pointers/report completeness and relevant fixture/rule checks. Do not modify calibration/defaults or claim full verification on incomplete live renders.
-
-- [ ] R1/R2: Freeze supported effective controls, intro asset and current --plugins-root argv before spending; distinguish scheduled renders from actual requests/retries/probes, and report ineffective Gemini seed and inter-segment versus hard invocation budget semantics.
+- [x] R1/R2: Step 0 confirm 0256/0257 verification, installed backend/hardware and configured Gemini access/profile; freeze finite run budget and exact CLI argv without revealing secrets.
+- [x] R1/R4: Create the two fixed fixture scripts/Doc[] and record hashes; select and snapshot one representative existing episode plus matching plan/Doc[] into four scratch roots.
+- [x] R1/R2: Perform four short direct-plugin renders; inspect actual provenance, playable output, ffprobe/QC and timestamps. Stop affected live work after one diagnosed environment failure.
+- [x] R1/R2: Perform the full renders through both stage forms; verify intended driver on every final/section artifact, apply the same hashed intro, run the duration gate, and record startup/throughput/speech/final duration and genuine failures. Gemini fallback is not Gemini evidence. **Three of four cells are genuine** (VoxCPM whole-document, VoxCPM sequential, Gemini whole-document — all `episode-duration ok` with verified `metadata.generator`); **the Gemini sequential cell is descoped by operator direction 2026-10-12** (Q&A): the Gemini daily allowance was exhausted and that cell's only artifact is a `kk:voice-gen` Voicebox fallback with failing QC, recorded as a blocker in the report §5.1 and never counted as Gemini.
+- [x] R3: Listen to actual artifacts if playback is available; record specific observations per sample/driver, otherwise mark listening pending/inconclusive. (No playback path exists in the execution environment — listening is recorded as pending and the comparison as inconclusive.)
+- [x] R2/R3/R4: Write dated report with exact commands, hashes, settings, artifacts, blockers and supported recommendation; validate evidence pointers/report completeness and relevant fixture/rule checks. Do not modify calibration/defaults or claim full verification on incomplete live renders.
+- [x] R1/R2: Freeze supported effective controls, intro asset and current --plugins-root argv before spending; distinguish scheduled renders from actual requests/retries/probes, and report ineffective Gemini seed and inter-segment versus hard invocation budget semantics.
 
 ### Solution
 
@@ -97,7 +119,7 @@ Deliverables: one production fix (operator-authorized scope lift, 2026-10-12), t
 | --- | --- | --- |
 | Success-path NDJSON response in the worker loop | `plugins/generations/voxcpm-tts/python/worker.py:338` | `main()` answered only on error paths, so every valid `health`/`render` was silent and the adapter's `pending` map never resolved (measured: `worker startup timed out after 60000ms`; a 10-minute hang at the 600 s default). The fix emits `_respond(stdout, request.get("id"), payload)` after `_handle` succeeds and adds `continue` to both error branches so the loop answers exactly once per accepted request. |
 | Regression tests for the success path | `plugins/generations/voxcpm-tts/tests/test_worker.py:109` | Three cases: health success shape, render success shape, and one-response-per-request ordering with an error interleaved. `pytest` → 12 passed (9 before); `bun test plugins/generations/voxcpm-tts/tests` → 36 pass / 0 fail. The missing case is what let the silent-success defect ship with 0256. |
-| Frozen short-comparison fixtures | `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml:1`, `comparison-mixed.yaml:1` | The Design's frozen VoiceScripts as hashable inputs (`354c5c40…` 406 B, `709db465…` 407 B); both pass `plugins/kk/scripts/validate-voicescript.ts`. |
+| Frozen short-comparison fixtures | `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml:1`, `plugins/generations/voxcpm-tts/tests/fixtures/comparison-mixed.yaml:1` | The Design's frozen VoiceScripts as hashable inputs (`354c5c40…` 406 B, `709db465…` 407 B); both pass `plugins/kk/scripts/validate-voicescript.ts`. |
 | Dated evidence report | `docs/plans/2026-10-12-voxcpm-audio-comparison.md:1` | Complete 4×2 short matrix, 3 of 4 full-episode cells with verified per-artifact provenance, the quota-blocked fourth cell recorded as a Voicebox fallback (never renamed as Gemini), the QC/duration-gate risk it exposed, and the one-command resume path. |
 | Scratch render evidence (untracked) | `.spur/run/0258-voxcpm-comparison/` | Four isolated work roots (script + wrapped Docs + plan sidecar per cell), raw render logs, short-render artifacts, and `logs/key-provenance.txt` for the authorized key probe. |
 
@@ -107,7 +129,22 @@ Deliverables: one production fix (operator-authorized scope lift, 2026-10-12), t
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | In-scope matrix complete with verified per-artifact provenance (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:66`). Short: VoxCPM zh 11.86 s / mixed 12.82 s at 48 000 Hz (`kk:voxcpm-tts`), Gemini zh 13.06 s / mixed 15.26 s at 24 000 Hz (`kk:gemini-tts`) — inputs frozen at `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml:1` (`354c5c40…`) and `plugins/generations/voxcpm-tts/tests/fixtures/comparison-mixed.yaml:1` (`709db465…`). Full episode (frozen script `712cbf0e…`, 41 segments, wrapped Docs `dee6f197…`, four isolated roots): VoxCPM whole 966.11 s → final 974.93 s, VoxCPM sequential 947.24 s → 956.05 s, Gemini whole 994.60 s → 1003.42 s, each `episode-duration ok` with the same hashed intro sting (`fe46031c…`). The Gemini sequential cell is descoped by operator direction (Q&A entry 2026-10-12) and its Voicebox fallback is recorded as a blocker at `docs/plans/2026-10-12-voxcpm-audio-comparison.md:130`, never counted as Gemini. |
+| R2 | MET | Hashes, exact argv, package/model/device, timings, ffprobe and QC recorded (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:99` backend table, `:150` Gemini arm, `:66` run ids); the fallback was rejected as a Gemini comparison per the requirement. |
+| R3 | MET | `docs/plans/2026-10-12-voxcpm-audio-comparison.md:196` records listening as pending, asserts no pronunciation/timbre/prosody claim, concludes **inconclusive** with explicit limits, and the recommendation keeps the current default (no default/calibration change). |
+| R4 | MET | Fixtures persisted in-tree; the dated report carries commands, partial failures, blockers and local artifact pointers (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:1`); no evidence was fabricated. The one production edit (`plugins/generations/voxcpm-tts/python/worker.py:338`) is the operator-authorized protocol fix, covered by three new tests. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R8 — Matched audio comparison records quality and operating cost | MET | command | `bun apps/cli/src/index.ts stage daily-generate .spur/run/0258-voxcpm-comparison/work-roots/voxcpm-whole 20261010 "$PWD/plugins" true voxcpm` → exit 0, `ffprobe` 48 000 Hz mono 974.93 s final, `metadata.generator == kk:voxcpm-tts`, QC 100; the same with `1 20` → 956.05 s, `kk:voxcpm-tts`; the Gemini whole-document cell → 1003.42 s, `kk:gemini-tts`, QC 100; both short fixtures per driver → 48/24 kHz, all `metadata.generator` verified on the artifact. Recorded at `docs/plans/2026-10-12-voxcpm-audio-comparison.md:118` and `:150`. The Gemini sequential cell is descoped by operator direction and its fallback blocker is recorded rather than counted. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
@@ -116,7 +153,9 @@ Deliverables: one production fix (operator-authorized scope lift, 2026-10-12), t
 **Scope:** `plugins/generations/voxcpm-tts/python/worker.py` (success-path response) · `plugins/generations/voxcpm-tts/tests/test_worker.py` (3 new cases) · `plugins/generations/voxcpm-tts/tests/fixtures/comparison-{zh,mixed}.yaml` (new) · `docs/plans/2026-10-12-voxcpm-audio-comparison.md` (new) · `## Solution` on this task file
 **Dimensions:** functional, correctness, security, efficiency, usability, architecture
 **Verdict:** PASS
-**Confidence:** HIGH — every claim is a command run in this tree: the worker suite (12 passed), the plugin suite (36 pass / 0 fail), `bun run spur-check` (PASS, `.spur/run/0258-test-gate.log`), and the eight live renders whose per-artifact provenance (§5 of the report) was read from the artifacts themselves, not from a log line.
+**Confidence:** HIGH
+
+The level is HIGH because every claim is a command run in this tree: the worker suite (12 passed), the plugin suite (36 pass / 0 fail), `bun run spur-check` (PASS, `.spur/run/0258-test-gate.log`), and the eight live renders whose per-artifact provenance (report §5) was read from the artifacts themselves, not from a log line.
 
 ##### Findings (ranked)
 
@@ -140,7 +179,7 @@ Deliverables: one production fix (operator-authorized scope lift, 2026-10-12), t
 
 | Req | Status | Evidence |
 |-----|--------|----------|
-| R1 | PARTIAL | 4/4 short renders with verified provenance and 3/4 full-episode cells genuine (report §4/§5); the Gemini sequential cell has no Gemini artifact (quota 429 + Voicebox fallback) |
+| R1 | MET | In-scope matrix complete with verified per-artifact provenance (report §4/§5). AC1's scope was amended by operator direction on 2026-10-12 (Q&A): the Gemini sequential cell is descoped, its Voicebox fallback recorded as a blocker and never counted as Gemini |
 | R2 | MET | Hashes, exact argv, package/model revision, device, timings, ffprobe and QC recorded (report §4–§6); the fallback was rejected as Gemini evidence instead of renamed (report §5.1) |
 | R3 | MET | Listening recorded as pending, quality not asserted, verdict `inconclusive` with limits and no default change (report §7/§8) |
 | R4 | MET | Fixtures in-tree, dated report with blockers and artifact pointers, no fabricated evidence (report §1/§5.1/§10); the single production edit is the operator-authorized protocol fix, tested |
@@ -171,4 +210,6 @@ Deliverables: one production fix (operator-authorized scope lift, 2026-10-12), t
 ### History
 
 - 2026-10-12T22:31:08.621Z todo → wip (system)
+- 2026-10-13T15:24:57.975Z wip → testing (system)
+- 2026-10-13T15:25:38.429Z testing → done (system)
 
