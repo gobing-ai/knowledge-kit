@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G11"
 name: "kk-daily-ai-voice2: DAG daily workflow from the store, cut-over"
-status: verifying
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:37.329Z"
-updated_at: "2026-10-10T17:45:36.465Z"
+updated_at: "2026-10-13T03:30:16.280Z"
 ---
 
 # G11: kk-daily-ai-voice2: DAG daily workflow from the store, cut-over
@@ -125,4 +125,5 @@ Scenario: R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW
 
 - 2026-10-10T04:00:46.732Z backlog → active (system)
 - 2026-10-10T17:45:36.465Z active → verifying (system)
+- 2026-10-13T03:30:16.280Z verifying → active (system)
 
