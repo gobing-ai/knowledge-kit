@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Fix the VoxCPM worker success-path response and cover it with a regression test
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-10-12T23:09:53.539Z
-updated_at: "2026-10-12T23:10:46.433Z"
+updated_at: "2026-10-13T05:43:04.297Z"
 feature_id: G14
 
 ---
@@ -41,6 +41,12 @@ Related: 0258 (evidence, blocked by this), 0256/0257 (owner of the worker).
 ### Q&A
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Q&A entry — 2026-10-13T05:43:04.094Z
+
+#### Q&A entry — 2026-10-12
+
+- **Closed: delivered by 0258's run, not by this task.** The operator lifted the 0256/0257 ownership boundary on 2026-10-12 so task 0258 could carry the fix and finish its comparison. 0258 delivered exactly this task's scope: the success-path `_respond` (`plugins/generations/voxcpm-tts/python/worker.py:338`) and the three new `tests/test_worker.py` cases (health success, render success, one-response-per-request ordering), then proved it end to end — `pytest` 12 passed, `bun test plugins/generations/voxcpm-tts/tests` 36 pass / 0 fail, and two real 41-segment episode renders through the driver (48 kHz, QC 100). This task is therefore cancelled as discharged, not abandoned.
 
 ### Design
 
@@ -85,3 +91,6 @@ Verified by 0258's Step-0 diagnosis: `main()` (`plugins/generations/voxcpm-tts/p
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-10-13T05:43:04.297Z todo → cancelled (system)
+
