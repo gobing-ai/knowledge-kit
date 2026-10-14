@@ -40,8 +40,10 @@ async function withBuildLock<T>(fn: () => T | Promise<T>): Promise<T> {
         try {
             fd = openSync(lock, 'wx');
         } catch {
+            // Reclaim a crashed holder's lock after a grace that stays BELOW the 300s waiter deadline, else a
+            // SIGKILLed holder's lock is never reclaimed. A real pack/build holds it for seconds.
             try {
-                if (Date.now() - statSync(lock).mtimeMs > 600_000) rmSync(lock, { force: true });
+                if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { force: true });
             } catch {
                 // the lock vanished between attempts — just retry
             }
