@@ -457,6 +457,23 @@ describe('kk-daily-ai-voice workflow (0074)', () => {
         }
     });
 
+    it('0257 AC1 — an unknown vdriver fails loud before any synthesis instead of falling back', () => {
+        const workDir = mkdtempSync(join(tmpdir(), 'kk-daily-vdriver-'));
+        try {
+            const res = Bun.spawnSync(
+                ['bun', stagesAbs, 'daily-generate', workDir, '20261010', join(workDir, 'plugins'), 'true', 'voxcmp'],
+                { stdout: 'pipe', stderr: 'pipe' },
+            );
+            expect(res.exitCode).toBe(1);
+            const stderr = res.stderr.toString();
+            expect(stderr).toContain("unknown vdriver 'voxcmp'");
+            expect(stderr).toContain('expected one of: ominivoice, voicebox, gemini, voxcpm');
+            expect(existsSync(join(workDir, '30-audio'))).toBe(false);
+        } finally {
+            rmSync(workDir, { recursive: true, force: true });
+        }
+    });
+
     it('R5 — executes all plugin commands and creates pipeline artifacts', () => {
         if (!Bun.which('spur', { PATH: process.env.PATH })) {
             // Fail loud: a silent return made a green suite indistinguishable from a skipped run.

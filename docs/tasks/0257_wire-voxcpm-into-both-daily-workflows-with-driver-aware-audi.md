@@ -4,7 +4,7 @@ name: Wire VoxCPM into both daily workflows with driver-aware audio reuse
 status: done
 template: feature-impl
 created_at: 2026-10-12T00:07:13.360Z
-updated_at: "2026-10-12T17:23:23.608Z"
+updated_at: "2026-10-14T03:15:29.169Z"
 feature_id: G14
 priority: P2
 estimate_hours: 4
@@ -156,25 +156,29 @@ rejoins the cached sections without any model call.
 is retained and a 48 kHz join test added. The voice1 YAML diff is comments/`description` only, so the
 voice2 "voice1 untouched" guard now checks behaviour rather than bytes.
 
+#### Verify follow-up — 2026-10-13
+
+The review advisory noted AC1's "unknown-driver … remain covered in `kk-daily-ai-voice-workflow.test.ts`" clause had no test. Added `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:460-475`: `daily-generate` with `vdriver=voxcmp` exits 1, names the expected drivers, and writes no `30-audio`. Proven against a mutant (`VOICE_DRIVERS[vdriver] ?? 'gemini-tts'` at `plugins/kk/scripts/daily-stages.ts:749`), which fails the test; source unchanged. File: 18 pass / 0 fail.
+
 ### Testing
 
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: MEDIUM
+- Confidence: HIGH
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `voxcpm: 'voxcpm-tts'` added once to the shared `VOICE_DRIVERS` selector at `plugins/kk/scripts/daily-stages.ts:696`, reached by both the whole-document path and the sectioned path; the Gemini quota probe stays gated on `vdriver === 'gemini'` at `plugins/kk/scripts/daily-stages.ts:724`. Re-ran this turn: `apps/cli/tests/daily-generate-sections.test.ts:647` (8 pass) and `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:476` (17 pass). |
-| R2 | MET | Requested-generator cache is checked before the quota probe at `plugins/kk/scripts/daily-stages.ts:715` and the resolved fallback cache after it at `plugins/kk/scripts/daily-stages.ts:734`; `wholeDocCache` gates on generator identity + passing QC + a playable WAV at `plugins/kk/scripts/daily-stages.ts:609`; section reuse requires matching generator/QC/WAV at `plugins/kk/scripts/daily-stages.ts:921`. Re-ran this turn: `apps/cli/tests/daily-generate-sections.test.ts:664` and `apps/cli/tests/daily-generate-sections.test.ts:694` pass. |
-| R3 | MET | Frozen join identity `metadata.sectionHashes` at `plugins/kk/scripts/daily-stages.ts:628`; a stale/foreign final rejoins the cached sections with no model calls at `plugins/kk/scripts/daily-stages.ts:947`; the ordered `metadata.segments` timeline is rebuilt from current sidecars at `plugins/kk/scripts/daily-stages.ts:1071`; the Content envelope is rebuilt with the old `mp3Path`/`introMerged` cleared at `plugins/kk/scripts/daily-stages.ts:1081`; `qc`/`sectionHashes` are recorded only after the join and requested MP3 at `plugins/kk/scripts/daily-stages.ts:1104`. Re-ran this turn: `apps/cli/tests/daily-generate-sections.test.ts:738`, `apps/cli/tests/daily-generate-sections.test.ts:772`, `apps/cli/tests/daily-generate-sections.test.ts:825`, `apps/cli/tests/daily-generate-sections.test.ts:866` pass. |
-| R4 | MET | Both workflow definitions document the opt-in alias (`plugins/kk/workflows/kk-daily-ai-voice.yaml:25`, `plugins/kk/workflows/kk-daily-ai-voice.yaml:405`, `plugins/kk/workflows/kk-daily-ai-voice2.yaml:26`, `plugins/kk/workflows/kk-daily-ai-voice2.yaml:497`); operator/design docs updated (`docs/design/kk-daily-ai-voice.md:5`, `docs/04_DESIGN.md:1119`, `docs/04_DESIGN.md:1215`, `docs/design/workflow-board-modules.md:301`); the spoken-rate estimate is labelled PROVISIONAL at `plugins/kk/scripts/daily-stages.ts:868`. 48 kHz native-rate join covered by `apps/cli/tests/daily-generate-sections.test.ts:738` (pass this turn). |
+| R1 | MET | `voxcpm: 'voxcpm-tts'` added once to the shared `VOICE_DRIVERS` selector at `plugins/kk/scripts/daily-stages.ts:743-747`, reached by both the whole-document path and the sectioned path; the Gemini quota probe stays gated on `vdriver === 'gemini'` at `plugins/kk/scripts/daily-stages.ts:775`. Re-ran this turn: `apps/cli/tests/daily-generate-sections.test.ts:703` (file 26 pass / 0 fail this session) and `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:493` (18 pass). |
+| R2 | MET | Requested-generator cache is checked before the quota probe at `plugins/kk/scripts/daily-stages.ts:766` and the resolved fallback cache after it at `plugins/kk/scripts/daily-stages.ts:785`; `wholeDocCache` gates on generator identity + passing QC + a playable WAV at `plugins/kk/scripts/daily-stages.ts:660`; section reuse requires matching generator/QC/WAV at `plugins/kk/scripts/daily-stages.ts:961-977`. Re-ran this turn: `apps/cli/tests/daily-generate-sections.test.ts:720` and `apps/cli/tests/daily-generate-sections.test.ts:750` pass. |
+| R3 | MET | Frozen join identity `metadata.sectionHashes` at `plugins/kk/scripts/daily-stages.ts:674-684`; a stale/foreign final rejoins the cached sections with no model calls at `plugins/kk/scripts/daily-stages.ts:992-995`; the ordered `metadata.segments` timeline is rebuilt from current sidecars at `plugins/kk/scripts/daily-stages.ts:1132-1140`; the Content envelope is rebuilt with the old `mp3Path`/`introMerged` cleared at `plugins/kk/scripts/daily-stages.ts:1145-1150`; `qc`/`sectionHashes` are recorded only after the join and requested MP3 at `plugins/kk/scripts/daily-stages.ts:1169-1171`. Re-ran this turn: `apps/cli/tests/daily-generate-sections.test.ts:794`, `apps/cli/tests/daily-generate-sections.test.ts:828`, `apps/cli/tests/daily-generate-sections.test.ts:881`, `apps/cli/tests/daily-generate-sections.test.ts:924` pass. |
+| R4 | MET | Both workflow definitions document the opt-in alias (`plugins/kk/workflows/kk-daily-ai-voice.yaml:25`, `plugins/kk/workflows/kk-daily-ai-voice.yaml:405`, `plugins/kk/workflows/kk-daily-ai-voice2.yaml:26`, `plugins/kk/workflows/kk-daily-ai-voice2.yaml:538`); operator/design docs updated (`docs/design/kk-daily-ai-voice.md:5`, `docs/04_DESIGN.md:1350-1351`, `docs/04_DESIGN.md:1377-1397`, `docs/design/workflow-board-modules.md:309`); the spoken-rate estimate is labelled PROVISIONAL at `plugins/kk/scripts/daily-stages.ts:919`. 48 kHz native-rate join covered by `apps/cli/tests/daily-generate-sections.test.ts:794` (pass this turn). |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Daily voice1 selects VoxCPM explicitly (req: R1, R4) | MET | test | Whole-document vdriver=voxcpm renders voxcpm-tts with no Gemini probe: `apps/cli/tests/daily-generate-sections.test.ts:647`; workflow `voxcpm` row over the real engine: `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:476`. Both pass this turn. |
-| AC2 — Daily voice2 selects VoxCPM for sequential sections (req: R1, R3, R4) | MET | test | 48 kHz sections join at 48 kHz with native sample counts and gaps: `apps/cli/tests/daily-generate-sections.test.ts:738`; ordered timeline rebuilt: `apps/cli/tests/daily-generate-sections.test.ts:825`; daily-intro merges the joined output and the duration gate reads the merged length: `apps/cli/tests/daily-generate-sections.test.ts:866`. All pass this turn. |
-| AC3 — Audio caches distinguish the selected driver (req: R2, R4) | MET | test | Matching cache reuses with zero generator calls: `apps/cli/tests/daily-generate-sections.test.ts:664`; foreign/legacy/corrupt caches regenerate: `apps/cli/tests/daily-generate-sections.test.ts:694`; stale/foreign joined final rejoins cached sections: `apps/cli/tests/daily-generate-sections.test.ts:772`; matching valid sections missing only the MP3 transcode with zero generator calls: `apps/cli/tests/daily-generate-sections.test.ts:804`. All pass this turn. |
+| AC1 — Daily voice1 selects VoxCPM explicitly (req: R1, R4) | MET | test | Whole-document vdriver=voxcpm renders voxcpm-tts with no Gemini probe: `apps/cli/tests/daily-generate-sections.test.ts:703`; workflow `voxcpm` row over the real engine: `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:493`; the unknown-driver clause is now covered by `apps/cli/tests/kk-daily-ai-voice-workflow.test.ts:460-475` (exit 1, names the expected drivers, writes no `30-audio`; a mutant that falls back to `gemini-tts` fails it). All pass this turn. |
+| AC2 — Daily voice2 selects VoxCPM for sequential sections (req: R1, R3, R4) | MET | test | 48 kHz sections join at 48 kHz with native sample counts and gaps: `apps/cli/tests/daily-generate-sections.test.ts:794`; ordered timeline rebuilt: `apps/cli/tests/daily-generate-sections.test.ts:881`; daily-intro merges the joined output and the duration gate reads the merged length: `apps/cli/tests/daily-generate-sections.test.ts:924`. All pass this turn. |
+| AC3 — Audio caches distinguish the selected driver (req: R2, R4) | MET | test | Matching cache reuses with zero generator calls: `apps/cli/tests/daily-generate-sections.test.ts:720`; foreign/legacy/corrupt caches regenerate: `apps/cli/tests/daily-generate-sections.test.ts:750`; stale/foreign joined final rejoins cached sections: `apps/cli/tests/daily-generate-sections.test.ts:828`; matching valid sections missing only the MP3 transcode with zero generator calls: `apps/cli/tests/daily-generate-sections.test.ts:860`. All pass this turn. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
