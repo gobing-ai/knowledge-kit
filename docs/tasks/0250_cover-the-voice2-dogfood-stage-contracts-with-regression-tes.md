@@ -4,7 +4,7 @@ name: Cover the voice2 dogfood stage contracts with regression tests
 status: done
 template: feature-impl
 created_at: 2026-10-10T15:28:47.200Z
-updated_at: "2026-10-10T23:39:06.244Z"
+updated_at: "2026-10-14T01:48:36.677Z"
 feature_id: G11
 
 priority: P2
@@ -125,17 +125,17 @@ Rationale: each requirement sits in the suite whose harness already drives that 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2245` (describe at `apps/cli/tests/kk-workflow-stages.test.ts:2223`) locks the contract at `plugins/kk/scripts/daily-stages.ts:965` (5th arg `true` → deferDocs), `plugins/kk/scripts/daily-stages.ts:968` (`plan cached:` log) and `plugins/kk/scripts/daily-stages.ts:979` (return before writing plan.json); `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
-| R2 | MET | `plugins/kk/tests/kk-workflow-stages.test.ts:277` (near-duplicate dropped, stderr `qc: dropped` + id) and `plugins/kk/tests/kk-workflow-stages.test.ts:292` (bytes unchanged across two runs) lock `plugins/kk/scripts/daily-stages.ts:132` (cached early return), `plugins/kk/scripts/daily-stages.ts:193` (dedup on cache path), `plugins/kk/scripts/daily-stages.ts:194` (no-drop no-write) and `plugins/kk/scripts/daily-stages.ts:202` (stderr line); `bun test plugins/kk/tests/kk-workflow-stages.test.ts` 55 pass / 0 fail / 220 expect() calls (this run). |
-| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2790` (over-budget → block YAML not starting with `{`, validator exit 0, spoken chars <= 7683) and `apps/cli/tests/kk-workflow-stages.test.ts:2818` (under-budget bytes unchanged) lock `plugins/kk/scripts/daily-stages.ts:1676` (budget), `plugins/kk/scripts/daily-stages.ts:1638` (rate) and `plugins/kk/scripts/daily-stages.ts:1713` (block-YAML rewrite); the `{` failure mode is `plugins/kk/scripts/validate-voicescript.ts:280`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
-| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2321` (excluded id dropped via `-shownotes` sibling passed as `podcast-pub --in`) and `apps/cli/tests/kk-workflow-stages.test.ts:2336` (missing script plan keeps original path) lock `plugins/kk/scripts/daily-stages.ts:1827`, `plugins/kk/scripts/daily-stages.ts:1863` and `plugins/kk/scripts/daily-stages.ts:1868`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
+| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2607` (describe at `apps/cli/tests/kk-workflow-stages.test.ts:2585`) locks `deferPlanDocs` at `plugins/kk/scripts/daily-stages.ts:1301-1315` (5th arg `true` → content only, `plan cached:` log, return before plan.json); green in the full suite this run |
+| R2 | MET | `plugins/kk/tests/kk-workflow-stages.test.ts:277` (near-duplicate dropped, stderr names id) and `plugins/kk/tests/kk-workflow-stages.test.ts:292` (bytes unchanged across two runs) lock the cached-candidates title dedup at `plugins/kk/scripts/daily-stages.ts:193-206` (no-drop early return `plugins/kk/scripts/daily-stages.ts:198`, `qc: dropped` stderr `plugins/kk/scripts/daily-stages.ts:206`); green in the full suite this run |
+| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:3152` (over-budget → block YAML, checker exit 0, under budget) and `apps/cli/tests/kk-workflow-stages.test.ts:3180` (under-budget bytes unchanged) lock `fitVoicescriptToBudget` at `plugins/kk/scripts/daily-stages.ts:2012-2075` and `voicescriptToBlockYaml` at `plugins/kk/scripts/daily-stages.ts:1955`; the `{` JSON branch is `plugins/kk/scripts/validate-voicescript.ts:280`; green in the full suite this run |
+| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2683` (script-plan excluded id dropped via the `-shownotes` sibling) and `apps/cli/tests/kk-workflow-stages.test.ts:2698` (missing script plan keeps the original path) lock `plugins/kk/scripts/daily-stages.ts:2185-2199` (script-plan `excluded` read) and `plugins/kk/scripts/daily-stages.ts:2222` (sibling path); green in the full suite this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — deferred plan does not write plan.json (req: R1) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2245` asserts all three legs (deferred: content yes / plan.json no; rerun: `plan cached:`, still no plan.json; four args: non-empty array); `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
-| AC2 — cached candidates lose a near-duplicate title (req: R2) | MET | test | `plugins/kk/tests/kk-workflow-stages.test.ts:277` and `plugins/kk/tests/kk-workflow-stages.test.ts:292`; `bun test plugins/kk/tests/kk-workflow-stages.test.ts` 55 pass / 0 fail / 220 expect() calls (this run). |
-| AC3 — over-budget script is block YAML under the budget (req: R3) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2790` and `apps/cli/tests/kk-workflow-stages.test.ts:2818`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
-| AC4 — show notes drop script-plan exclusions (req: R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2321` and `apps/cli/tests/kk-workflow-stages.test.ts:2336`; `bun test apps/cli/tests/kk-workflow-stages.test.ts` 111 pass / 0 fail / 562 expect() calls (this run). |
+| AC1 — deferred plan does not write plan.json (req: R1) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2607` asserts the deferred, cached-rerun and four-arg legs; green this run |
+| AC2 — cached candidates lose a near-duplicate title (req: R2) | MET | test | `plugins/kk/tests/kk-workflow-stages.test.ts:277` and `plugins/kk/tests/kk-workflow-stages.test.ts:292`; green this run |
+| AC3 — over-budget script is block YAML under the budget (req: R3) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:3152` and `apps/cli/tests/kk-workflow-stages.test.ts:3180`; green this run |
+| AC4 — show notes drop script-plan exclusions (req: R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:2683` and `apps/cli/tests/kk-workflow-stages.test.ts:2698`; green this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

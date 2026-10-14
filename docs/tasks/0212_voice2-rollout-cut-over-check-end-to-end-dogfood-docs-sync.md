@@ -4,7 +4,7 @@ name: "voice2 rollout: cut-over check, end-to-end dogfood, docs sync"
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.077Z
-updated_at: "2026-10-11T00:16:48.792Z"
+updated_at: "2026-10-14T01:48:36.172Z"
 feature_id: G11
 priority: P2
 tags:
@@ -114,20 +114,20 @@ Each entry cites the first changed line per file (`file:line`).
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: MEDIUM
+- Confidence: HIGH
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | parseLedger at `apps/cli/src/ledger.ts:379`, cutoverCheck at `apps/cli/src/ledger.ts:463`, verb doc at `apps/cli/src/commands/ledger.ts:226`, tests at `apps/cli/tests/cutover.test.ts:87`; bun test cutover.test.ts + commands/ledger.test.ts 18 pass / 0 fail / 47 expect (2026-10-10 re-run); real binary kk ledger cutover-check --candidate kk-daily-ai-voice2 --baseline kk-daily-ai-voice --runs 5 printed ready=false streak=1 required=5 with reasons, exit 0 |
-| R2 | MET | Fresh 2026-10-10 dogfood chain (gitignored .works, cited by command): kk-collect ledger.md line 102 run 2bcd251e done 15m15s and line 120 run 587e715e done 8m47s fill the store; voice2 ledger.md line 242 run dfcdba24 done 1h47m38s with publish_enabled defaulting to false (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:59`), no publish nodes ran; work_dir 20261010 holds 22-article article.md, 24-script voicescript.yaml, 30-audio generate_content.wav (63MB) and 23-cover cover.png. Both ledgers render per-step Duration and Tokens in/out columns; nonzero cost.exact tokens render on voice2 ledger.md line 164 (run 77ed2dd4, 1231038/20934). Caveat: the 10-10 runs report 0/0 or unknown tokens (resumed steps, xhs-write unknown) |
-| R3 | MET | `docs/00_ADR.md:1200` ADR-031 heading, `docs/00_ADR.md:1202` Status Accepted; implemented (tasks 0211–0212); `docs/03_ARCHITECTURE.md:114` DAG workflows shipped 2026-10-08; `docs/04_DESIGN.md:1182` voice2 row shipped; `docs/05_FEATURES.md:95` G11 done |
-| R4 | MET | Follow-up retire task 0222 exists under feature G1 (spur task show 0222 --json: feature_id G1, status cancelled) |
+| R1 | MET | `parseLedger` at `apps/cli/src/ledger.ts:379`, `cutoverCheck` at `apps/cli/src/ledger.ts:463`, verb at `apps/cli/src/commands/ledger.ts:226` and `apps/cli/src/commands/ledger.ts:298`; tests `apps/cli/tests/cutover.test.ts:87` + `apps/cli/tests/cutover.test.ts:126` green in the full suite this run; real binary `kk ledger cutover-check --candidate kk-daily-ai-voice2 --baseline kk-daily-ai-voice --runs 5` printed ready=false streak=3 required=5 with reasons, exit 0 (re-run 2026-10-13) |
+| R2 | MET | Re-read this run (gitignored .works): kk-collect ledger.md runs 2bcd251e (line 102) and 587e715e (line 120) done; voice2 ledger.md run dfcdba24 done 1h47m38s (line 242) with `publish_enabled` default false (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:63`); work_dir 20261010 holds the 63 MB generate_content.wav and the cover png; nonzero cost.exact tokens on voice2 ledger.md line 164 (run 77ed2dd4, 1231038/20934) |
+| R3 | MET | `docs/00_ADR.md:1210-1212` ADR-031 Accepted; implemented (tasks 0211–0212); `docs/03_ARCHITECTURE.md:127` DAG workflows shipped 2026-10-08; `docs/04_DESIGN.md:1448` voice2 row shipped (G11 by 0211–0212); `docs/05_FEATURES.md:98` G11 row records 0211/0212 done (feature since re-opened as active for the 0265–0272 follow-ups) |
+| R4 | MET | Follow-up retire task 0222 exists under feature G1 (`spur task show 0222 --json`: feature_id G1, status cancelled) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R6 — Cut-over criterion is defined and measurable | MET | test | `apps/cli/tests/cutover.test.ts:87` parseLedger/cutoverCheck suite 18 pass / 0 fail with commands/ledger.test.ts; real-binary cutover-check exit 0 printing ready/streak/required/reasons |
-| R7 — End-to-end dogfood produces an episode from a collect-filled store | MET | command | grep -n of kk-collect ledger.md shows runs 2bcd251e (line 102) and 587e715e (line 120) done; grep -n of voice2 ledger.md shows run dfcdba24 done (line 242); ls of work_dir 20261010 lists article, voicescript, 63MB wav and cover png; publish off per `plugins/kk/workflows/kk-daily-ai-voice2.yaml:59` |
-| R8 — Architecture docs record the DAG workflow decision | MET | command | sed -n of `docs/00_ADR.md:1202`, `docs/03_ARCHITECTURE.md:114`, `docs/04_DESIGN.md:1182`, `docs/05_FEATURES.md:95` each shows the shipped/done marker |
+| R6 — Cut-over criterion is defined and measurable | MET | test | `apps/cli/tests/cutover.test.ts:87-126` parseLedger/cutoverCheck suites green this run; real-binary cutover-check exit 0 printing ready/streak/required/reasons |
+| R7 — End-to-end dogfood produces an episode from a collect-filled store | MET | command | grep -n of kk-collect ledger.md shows runs 2bcd251e (line 102) and 587e715e (line 120) done; voice2 ledger.md shows run dfcdba24 done (line 242); ls of work_dir 20261010 lists the 63 MB wav and cover png; publish off per `plugins/kk/workflows/kk-daily-ai-voice2.yaml:63` |
+| R8 — Architecture docs record the DAG workflow decision | MET | command | sed -n of `docs/00_ADR.md:1212`, `docs/03_ARCHITECTURE.md:127`, `docs/04_DESIGN.md:1448` each shows the shipped/implemented marker |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

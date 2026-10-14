@@ -4,7 +4,7 @@ name: "kk-daily-ai-voice2: every agent.run node exits 0 without writing its expe
 status: done
 template: issue
 created_at: 2026-10-09T17:05:14.052Z
-updated_at: "2026-10-10T06:02:30.300Z"
+updated_at: "2026-10-14T01:48:36.425Z"
 feature_id: G11
 
 priority: P1
@@ -249,24 +249,24 @@ retry rung ≥ primary rung + 2 (it failed against `coder`). Design doc:
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: MEDIUM
+- Confidence: HIGH
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Diagnosis recorded in Root Cause and kept: no node prompt or `expectFile` was rewritten; the retry reuses the primary's prompt via the YAML anchor `&plan-translate-input` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:223` referenced at `:251`. |
-| R2 | MET | `agent_retry: "inline"` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:65`; `plan-translate` `onError: continue` at `:217`; `plan-translate-retry` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:233-253` (dependsOn `:238`, guard `! test -s` `:245`, `role: reviewer` `:249`, `agent: ${vars.agent_retry}` `:250`, no onError); `article-write` `onError: continue` `:268` and `article-write-retry` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:285-305`. Test `apps/cli/tests/voice2-dag.test.ts:824` asserts `role: reviewer` at a rung ≥ primary + 2 (failed against `coder` before the change, 38 pass after), shared input/expectFile, no onError. |
-| R3 | MET | Edges: `article-write` dependsOn `[qc-content, plan-translate, plan-translate-retry]` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:257`; `article` at `:314`; `cover-brief` at `:331`; `script-write` `[script-style, plan-translate, plan-translate-retry]` at `:394`. Test `apps/cli/tests/voice2-dag.test.ts:788` (start order) and validate exit 0. |
-| R4 | MET | Contract failure stays loud and the partial sidecar is preserved by spur — asserted, not re-implemented: `apps/cli/tests/voice2-dag.test.ts:751` (both attempts no-op → failed, both sidecars exist) and `:731` (primary sidecar kept on recovery). |
-| R5 | MET | `cover-brief` `onError: continue` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:343`, `script-write` at `:405`, `xhs-write` at `:600` — no retry siblings; `translate` at `:674` has no `expectFile`. |
-| R6 | MET | Harness: `apps/cli/tests/voice2-dag.test.ts:720` AC1–AC4 against real `agent.run` dispatch (6 pass this run). Live: run `ac5-live-16` reached done in 18 transitions (local gitignored evidence `.works/kk-0237-0238-evidence`). Residual from live runs fixed: `dailyArticle` unwraps a Content-envelope plan at `plugins/kk/scripts/daily-stages.ts:215-224`, pinned by `apps/cli/tests/kk-workflow-stages.test.ts:760`. |
+| R1 | MET | Diagnosis recorded in Root Cause and kept: no node prompt or `expectFile` was rewritten; the retry reuses the primary's prompt via the YAML anchor `&plan-translate-input` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:271` referenced at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:299` |
+| R2 | MET | `agent_retry: "inline"` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:69`; `plan-translate` `onError: continue` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:265`; `plan-translate-retry` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:281-301` (dependsOn primary, `! test -s` guard, `role: reviewer`, `agent: ${vars.agent_retry}`, no onError); `article-write` `onError: continue` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:316` and `article-write-retry` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:333-353`; tier/input/expectFile/no-onError asserted at `apps/cli/tests/voice2-dag.test.ts:925-955` (retry role reviewer, two rungs above scribe per 0238 P2) |
+| R3 | MET | Edges: `article-write` dependsOn `[qc-content, plan-translate, plan-translate-retry]` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:305`; `article` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:362`; `cover-brief` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:379`; `script-write` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:442`; start order asserted at `apps/cli/tests/voice2-dag.test.ts:889-923` |
+| R4 | MET | Loud contract failure and preserved sidecars asserted, not re-implemented: `apps/cli/tests/voice2-dag.test.ts:852-867` (both attempts no-op → failed, both sidecars exist) and `apps/cli/tests/voice2-dag.test.ts:832-850` (primary sidecar kept on recovery) |
+| R5 | MET | `cover-brief` `onError: continue` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:391`, `script-write` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:453`, `xhs-write` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:659` — no retry siblings; `translate` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:737-765`) has no `expectFile` |
+| R6 | MET | Harness AC1–AC4 at `apps/cli/tests/voice2-dag.test.ts:821-975` against real `agent.run` dispatch, green in the full suite this run; live run `ac5-live-16` evidence present under gitignored `.works/kk-0237-0238-evidence`; live-run residual fixed: `dailyArticle` unwraps a Content-envelope plan at `plugins/kk/scripts/daily-stages.ts:300-316`, pinned by `apps/cli/tests/kk-workflow-stages.test.ts:872` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `apps/cli/tests/voice2-dag.test.ts:731` — primary no-ops, retry writes the plan, run reaches done. |
-| AC2 | MET | test | `apps/cli/tests/voice2-dag.test.ts:751` — both no-op → run failed at the retry; both partial sidecars exist. |
-| AC3 | MET | test | `apps/cli/tests/voice2-dag.test.ts:768` — successful primary → retry skipped; `article-write`, `cover-brief`, `script-write` still run. |
-| AC4 | MET | test | `apps/cli/tests/voice2-dag.test.ts:788` — every plan reader's trace start follows both producers' settle; `spur workflow validate plugins/kk/workflows/kk-daily-ai-voice2.yaml` exit 0 this run. |
-| AC5 | MET | command | Live dry run `ac5-live-16` (`publish_enabled=false`) reached done in 18 transitions with every declared expectFile present; generate content duration 1008.215 s; seven section sidecar hashes re-derived this run and matched (local gitignored evidence `.works/kk-0237-0238-evidence`). |
+| AC1 | MET | test | `apps/cli/tests/voice2-dag.test.ts:832` — primary no-ops, retry writes the plan, run reaches done |
+| AC2 | MET | test | `apps/cli/tests/voice2-dag.test.ts:852` — both no-op → run failed at the retry; both partial sidecars exist |
+| AC3 | MET | test | `apps/cli/tests/voice2-dag.test.ts:869` — successful primary → retry skipped; downstream readers still run |
+| AC4 | MET | test | `apps/cli/tests/voice2-dag.test.ts:889` — every plan reader starts after both producers settle |
+| AC5 | MET | command | Live dry run `ac5-live-16` (`publish_enabled=false`) reached done in 18 transitions; evidence retained under gitignored `.works/kk-0237-0238-evidence` (0238-verdict.json, voicescript) and re-listed this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

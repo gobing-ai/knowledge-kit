@@ -4,7 +4,7 @@ name: Make a failed safety reviewer reach the gate instead of aborting the neste
 status: done
 template: issue
 created_at: 2026-10-12T23:05:01.855Z
-updated_at: "2026-10-13T22:15:32.996Z"
+updated_at: "2026-10-14T01:48:38.192Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -118,7 +118,7 @@ No workflow-engine or production safety-schema change is needed. The remaining h
 |-------------|--------|----------|
 | R1 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:61` review onError: continue; edge → judge pinned by `plugins/kk/tests/safety-reviewer-failure.test.ts:102-114`. |
 | R2 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:80,90`; accept guard + unconditional block fallback asserted at `plugins/kk/tests/safety-reviewer-failure.test.ts:140-149`. |
-| R3 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:107`; shells default-fail (`:127-137`); parent `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484` fail-fast (`:152-162`). |
+| R3 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:107`; shells default-fail (`plugins/kk/tests/safety-reviewer-failure.test.ts:127-137`); parent `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484` fail-fast (`plugins/kk/tests/safety-reviewer-failure.test.ts:152-162`). |
 | R4 | MET | `plugins/kk/tests/safety-reviewer-failure.test.ts` parses shipped YAML; this run 17 pass / 0 fail / 125 expect. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |

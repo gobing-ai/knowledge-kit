@@ -4,7 +4,7 @@ name: kk-daily-ai-voice2 DAG workflow with safety sub-workflow and plugin-owned 
 status: done
 template: feature-impl
 created_at: 2026-10-07T03:58:06.076Z
-updated_at: "2026-10-08T03:47:43.074Z"
+updated_at: "2026-10-14T01:48:35.910Z"
 feature_id: G11
 priority: P1
 tags:
@@ -127,23 +127,23 @@ Codemod lessons (applied in /tmp/stages-apply3.ts): export-prefix must land on t
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:2` `kind: dag`; validate passes; `apps/cli/tests/voice2-dag.test.ts:298` shape, `:425` voice YAML byte-identical. |
-| R2 | MET | Head chain prepare → read-work-dir/read-run-date (`file.read.into-var`, `kk-daily-ai-voice2.yaml:102,111`) → extract (`:122`); no setVars/into-var after extract; asserted `voice2-dag.test.ts:298`. |
-| R3 | MET | Action kinds: 48 shell / 6 agent.run / 2 file.read.into-var; shell commands are `kk …` or the `spur workflow run` safety node (`kk-daily-ai-voice2.yaml:351-354`); no `bun -e`/`jq`; asserted `voice2-dag.test.ts:318`. |
-| R4 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:4` `kind: state-machine`, bounded by `safety_max_revise` (`:33`); voice2 safety node `kk-daily-ai-voice2.yaml:351`; review `pause: true` `:363`; asserted `voice2-dag.test.ts:414,470,496`. |
-| R5 | MET | Fan-out condition `kk store pool-count … --min 1` (`kk-daily-ai-voice2.yaml:140`); run-report/ledger depend on extract (`:624,642`); `voice2-dag.test.ts:336` + empty-pool E2E `:551` + `:650`. |
-| R6 | MET | `publish-classify` dependsOn all five leaves with `dependencyPolicy: all` (`kk-daily-ai-voice2.yaml:587-588`), publish_enabled condition `:592`; asserted `voice2-dag.test.ts:374`, `:671`. |
-| R7 | MET | 24 `daily-*` bodies in `plugins/kk/scripts/daily-stages.ts` (on main), lazily loaded by the `kk stage` dispatcher `plugins/kk/scripts/kk-workflow-stages.ts:136-141`; stage tests green in `kk-workflow-stages.test.ts`. |
-| R8 | MET | `mark-used` dependsOn publish-classify (`kk-daily-ai-voice2.yaml:605`), `ledger` final (`:642`); asserted `voice2-dag.test.ts:400`. |
+| R1 | MET | `plugins/kk/workflows/kk-daily-ai-voice2.yaml:2` `kind: dag`; shape asserted at `apps/cli/tests/voice2-dag.test.ts:398-420`; voice1 guard at `apps/cli/tests/voice2-dag.test.ts:642-656` (byte-identity relaxed to behavioural identity by 0257, docs-only edits) |
+| R2 | MET | Head chain `prepare` / `read-work-dir` / `read-run-date` / `extract` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:106-189`; single-node waves, only two `file.read.into-var` readers, no collect/ingest/label asserted at `apps/cli/tests/voice2-dag.test.ts:398-420` (`--exclude-used` later removed by 0228 R6c, asserted at `apps/cli/tests/voice2-dag.test.ts:415-416`) |
+| R3 | MET | One action per node, only kk / agent.run / file.read.into-var / the safety `spur workflow run`, asserted at `apps/cli/tests/voice2-dag.test.ts:440-456`; safety shell at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484-505` |
+| R4 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:4` `kind: state-machine` bounded by `safety_max_revise` (`plugins/kk/workflows/kk-daily-safety.yaml:33`); voice2 `safety` node `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484-505`, `review` pause node `plugins/kk/workflows/kk-daily-ai-voice2.yaml:506-512`; asserted at `apps/cli/tests/voice2-dag.test.ts:559-568` and `apps/cli/tests/voice2-dag.test.ts:704-711` |
+| R5 | MET | Fan-out guard `kk store pool-count … pool.json --min 1` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:200`; `run-report` dependsOn `extract` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:822`; asserted at `apps/cli/tests/voice2-dag.test.ts:458-495` and empty-pool run at `apps/cli/tests/voice2-dag.test.ts:978-1010` |
+| R6 | MET | `publish-classify` fans in every publish leaf with `dependencyPolicy: all` and the `publish_enabled` skip at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:776-794`; asserted at `apps/cli/tests/voice2-dag.test.ts:497-521` |
+| R7 | MET | `daily-*` stage bodies live in `plugins/kk/scripts/daily-stages.ts`, lazily loaded by `loadDailyStages` at `plugins/kk/scripts/kk-workflow-stages.ts:134-146`; stage tests green in the full suite this run |
+| R8 | MET | `mark-used` renamed `mark-published` by 0228 R2/R6b, still after `publish-classify` (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:796-815`); `ledger` is the final node (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:833`); asserted at `apps/cli/tests/voice2-dag.test.ts:538-556` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R1 — kk-daily-ai-voice2 is a DAG that starts from the store | MET | test | `apps/cli/tests/voice2-dag.test.ts:298` |
-| R2 — Independent branches of the daily DAG run concurrently and fan in | MET | test | `apps/cli/tests/voice2-dag.test.ts:586` (real spur DAG run, overlap + fan-in ordering) |
-| R3 — Empty pool ends the daily DAG as no-content, not failed | MET | test | `apps/cli/tests/voice2-dag.test.ts:551` |
-| R4 — Every DAG node is a single kk command with plugin-owned logic | MET | test | `apps/cli/tests/voice2-dag.test.ts:318` + `plugins/kk/scripts/daily-stages.ts` |
-| R5 — The safety revise loop runs as a nested state-machine sub-workflow | MET | test | `apps/cli/tests/voice2-dag.test.ts:414,470` |
-| R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level | MET | test | `apps/cli/tests/voice2-dag.test.ts:437-539` + `plugins/kk/tests/verdict-confidence.test.ts:183` |
+| R1 — kk-daily-ai-voice2 is a DAG that starts from the store | MET | test | `apps/cli/tests/voice2-dag.test.ts:398-420` |
+| R2 — Independent branches of the daily DAG run concurrently and fan in | MET | test | `apps/cli/tests/voice2-dag.test.ts:1012-1050` (real spur DAG run, overlap + fan-in ordering) |
+| R3 — Empty pool ends the daily DAG as no-content, not failed | MET | test | `apps/cli/tests/voice2-dag.test.ts:977-1010` |
+| R4 — Every DAG node is a single kk command with plugin-owned logic | MET | test | `apps/cli/tests/voice2-dag.test.ts:440-456` |
+| R5 — The safety revise loop runs as a nested state-machine sub-workflow | MET | test | `apps/cli/tests/voice2-dag.test.ts:559-568` + `apps/cli/tests/voice2-dag.test.ts:704-711` |
+| R9 — Safety sub-workflow judge verdicts carry a HIGH, MEDIUM, or LOW confidence level | MET | test | `apps/cli/tests/voice2-dag.test.ts:658-819` + `plugins/kk/tests/verdict-confidence.test.ts:642-670` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

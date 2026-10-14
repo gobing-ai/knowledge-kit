@@ -4,7 +4,7 @@ name: Render the Spur server keepalive as a schedule artifact, not a hand-writte
 status: done
 template: issue
 created_at: 2026-10-12T21:45:46.473Z
-updated_at: "2026-10-13T15:23:21.407Z"
+updated_at: "2026-10-14T01:48:37.178Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -133,7 +133,7 @@ No rendered plist committed or left inside the repo; render outputs live in `/tm
 | R1 | MET | `apps/cli/src/commands/schedule.ts:29-31` — `SCHEDULE_TEMPLATES` widened to `Record<string, Partial<Record<SchedulePlatform, string>>>` with `'kk-serve': { launchd: 'kk-serve.launchd.plist.tmpl' }` (launchd-only, no cron key); `plugins/kk/schedules/kk-serve.launchd.plist.tmpl:1` — new template bound with the `{{repo}}`/`{{home}}`/`{{typesafe_api_key}}` placeholders |
 | R2 | MET | `plugins/kk/schedules/kk-serve.launchd.plist.tmpl:26-77` — `Label` `ai.gobing.spur-serve`, absolute `Program` `{{home}}/.bun/bin/spur`, argv `spur serve --cwd {{repo}} --host 127.0.0.1 --port 3003 --no-open`, `WorkingDirectory` `{{repo}}`, stdout+stderr `{{repo}}/.works/spur-serve/serve.log`, `RunAtLoad`/`KeepAlive` true, `ThrottleInterval` 10; fresh render this run: `plutil -lint` OK and PlistBuddy prints `Program` `/Users/robin/.bun/bin/spur`, `RunAtLoad`/`KeepAlive` true, `ThrottleInterval` 10 — launchd requires an absolute `Program` (a relative `ProgramArguments[0]` resolves via `_PATH_STDPATH` before the job environment exists; `KeepAlive` true keeps the job alive unconditionally; `ThrottleInterval` is seconds) per `man launchd.plist` on this host and https://keith.github.io/xcode-man-pages/launchd.plist.5.html |
 | R3 | MET | `apps/cli/src/commands/schedule.ts:112-116` — `renderAction` throws `schedule 'kk-serve' has no cron template (expected launchd)` when the platform has no template; fresh this run: `bun apps/cli/src/index.ts schedule render kk-serve --platform cron` -> exit 1, 0 stdout bytes, stderr `kk.schedule.render.failed: schedule 'kk-serve' has no cron template (expected launchd)`; `kk-collect --platform cron` -> exit 0 (unchanged) |
-| R4 | MET | `plugins/kk/README.md:33-47` — §Schedule replaces "spur has no scheduler" with "spur serve hosts the scheduler … the server itself is what must be kept alive" and adds `mkdir -p "$PWD/.works/spur-serve"` + the kk-serve install lines; `plugins/kk/README.md:88-93` — Label stays `ai.gobing.spur-serve` (D3) + serve.log vs spur.log destinations; `docs/04_DESIGN.md:895-919` — §1.11 same stale-claim replacement, `kk-serve` artifact row, and the "launchd only" rule |
+| R4 | MET | `plugins/kk/README.md:33-47` — §Schedule replaces "spur has no scheduler" with "spur serve hosts the scheduler … the server itself is what must be kept alive" and adds `mkdir -p "$PWD/.works/spur-serve"` + the kk-serve install lines; `plugins/kk/README.md:88-93` — Label stays `ai.gobing.spur-serve` (D3) + serve.log vs spur.log destinations; `docs/04_DESIGN.md:896-919` — §1.11 same stale-claim replacement, `kk-serve` artifact row, and the "launchd only" rule |
 | R5 | MET | Host state re-read this run: `launchctl print gui/501/ai.gobing.spur-serve` -> `state = running`, `program = /Users/robin/.bun/bin/spur`, working dir `/Users/robin/xprojects/knowledge-kit`, env PATH + TYPESAFE_API_KEY (no TYPESAFE_BASE_URL); `grep 'Scheduler entries registered' /Users/robin/xprojects/knowledge-kit/.spur/logs/spur.log` -> latest hit `2026-10-13T03:47:21.218Z` (jobs:5) stamped after the `2026-10-13T03:47:01.522Z` SIGTERM shutdown (bootout); previous hit `2026-10-12T21:42:14.174Z` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |

@@ -4,7 +4,7 @@ name: Retry a transient image-gen failure instead of losing the whole XHS card s
 status: done
 template: issue
 created_at: 2026-10-12T23:05:01.141Z
-updated_at: "2026-10-13T21:57:26.785Z"
+updated_at: "2026-10-14T01:48:37.942Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -124,20 +124,20 @@ This is the corrected disposition of 0273: its obsolete plugin-level solution is
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` recovery + persistent-failure cases assert one unchanged-envelope retry and the bounded stop; suite result this run: 4 pass / 0 fail |
+| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1808-1829` recovery and `:1831-1845` persistent-failure cases assert one unchanged-envelope retry and the bounded stop; `-t daily-xhs-render` run this session: 20 pass / 0 fail |
 | R2 | MET | `plugins/kk/scripts/daily-stages.ts:2424` shared `XHS_OVERFLOW_ATTEMPTS = 3`; per-card `transientRetryUsed` guard re-read at `plugins/kk/scripts/daily-stages.ts:2568-2576` |
-| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` — rewrite branch separate: shortened `points[1]`, preserved `points[0]`, retry reuses rewritten envelope byte-for-byte |
-| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` — child-invocation seam observed via argv record + per-call input snapshots; exact call counts asserted |
-| R5 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` — both cards flake once, 2 invocations each, per-card snapshot byte-identity, cards + content packaged |
-| R6 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` (3 calls: rewrite + provider-failure retry) and `:1931-1995` (cap exhaustion: exactly 4 calls, sentinel denies 5th, resume path, no content) |
+| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1937` — rewrite branch separate: shortened `points[1]`, preserved `points[0]`, retry reuses rewritten envelope byte-for-byte |
+| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1847-1884` — child-invocation seam observed via argv record + per-call input snapshots; exact call counts asserted |
+| R5 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1847-1884` — both cards flake once, 2 invocations each, per-card snapshot byte-identity, cards + content packaged |
+| R6 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1937` (3 calls: rewrite + provider-failure retry) and `:1939-1989` (cap exhaustion: exactly 4 calls, sentinel denies 5th, resume path, no content) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| Scenario: AC1 — a non-overflow card failure recovers with one unchanged-envelope retry (req: R1, R2, R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` |
-| Scenario: AC2 — a persistent non-overflow failure is bounded and resumable (req: R2, R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` |
-| Scenario: AC3 — overflow handling keeps its existing bounded rewrite contract (req: R3, R6) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` |
-| Scenario: AC4 — the same-envelope budget resets for each card (req: R2, R4, R5) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` (falsifier: guard-hoist mutation red, reverted) |
-| Scenario: AC5 — mixed overflow and provider failure share the loop cap (req: R2, R3, R6) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` + `:1931-1995` |
+| Scenario: AC1 — a non-overflow card failure recovers with one unchanged-envelope retry (req: R1, R2, R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1808-1829` |
+| Scenario: AC2 — a persistent non-overflow failure is bounded and resumable (req: R2, R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1831-1845` |
+| Scenario: AC3 — overflow handling keeps its existing bounded rewrite contract (req: R3, R6) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1937` |
+| Scenario: AC4 — the same-envelope budget resets for each card (req: R2, R4, R5) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1847-1884` (falsifier: guard-hoist mutation red, reverted) |
+| Scenario: AC5 — mixed overflow and provider failure share the loop cap (req: R2, R3, R6) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1937` + `:1939-1989` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

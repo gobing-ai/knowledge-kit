@@ -4,7 +4,7 @@ name: Decide and encode the thin-day episode policy instead of closing the day s
 status: done
 template: issue
 created_at: 2026-10-12T21:45:46.907Z
-updated_at: "2026-10-13T17:14:43.324Z"
+updated_at: "2026-10-14T02:44:19.477Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -112,6 +112,8 @@ Implementation change map (thin-day policy (c), Q&A D1, 2026-10-13). Tests were 
 - `plugins/kk/tests/kk-workflow-stages.test.ts:732` — standing 4-argument duration test updated to the 0266 contract: under-floor now asserts exit 0 and the refusal artifact fields `measuredMinutes`/`minMinutes` (8.3 / 15); over-max, missing-duration and invalid-bounds pins unchanged.
 - `plugins/kk/tests/verdict-confidence.test.ts` (unmodified) — collateral confidence-contract verification over this task's workflow edit: 61 pass / 0 fail (exit 0), every HIGH/MEDIUM/LOW routing case of the live guards intact against the edited `kk-daily-ai-voice2.yaml`; the three new node conditions are pool-count + enable-flag tests only, so no new confidence-aware verdict consumer was introduced.
 
+**2026-10-13 re-verify fix (residual advisory → closed).** The duration-refusal idempotency guard keyed only on the refusal artifact, so a kill between the refusal write and the candidates-empty write left non-empty candidates that a rerun never emptied — the pool-gated publish fan would then package a sub-floor episode. `plugins/kk/scripts/daily-stages.ts:501-513` now reads the candidates before the guard and, when the refusal exists but docs remain, finishes the emptying (refusal artifact untouched). Regression test written first and seen red: `apps/cli/tests/daily-generate-sections.test.ts:1017` (restores the pre-refusal candidates after the first run; asserts the rerun empties them and leaves the refusal byte-identical). The pre-spend floor gate needs no change — it has no early return and re-refuses from the candidates on rerun. Design doc `docs/design/kk-collect-and-daily-voice2.md:248` notes the repair.
+
 ### Testing
 
 **Pipeline verify results**
@@ -124,13 +126,13 @@ Implementation change map (thin-day policy (c), Q&A D1, 2026-10-13). Tests were 
 | R1 | MET | `docs/design/kk-collect-and-daily-voice2.md:248` — dated 2026-10-13 thin-day policy recorded: episode_min_minutes 15 is the hard line between short episode and no episode; a shorter threshold is a documented follow-up only if thin days recur weekly; wider-window backfill rejected |
 | R2 | MET | `plugins/kk/scripts/daily-stages.ts:497-531` — under-floor branch writes the duration-refusal artifact (measuredMinutes, estimatedMinutes, minMinutes, keptCount, candidateChars), empties the candidates file, exits 0; over-max still fails loud at `plugins/kk/scripts/daily-stages.ts:529`; shared estimate helper `plugins/kk/scripts/daily-stages.ts:229`; duration passes vdriver at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:562`; publish fan pool-gated `plugins/kk/workflows/kk-daily-ai-voice2.yaml:577,618,674`; guard predicate `apps/cli/src/commands/store.ts:1433` |
 | R3 | MET | `apps/cli/src/commands/daily.ts:402-441` — noContentReason reads the duration-refusal artifact first, then the floor refusal, then the two fallback lines; call site `apps/cli/src/commands/daily.ts:456`; the reason lands in the report body, run-report.summary.txt and the stdout reason field |
-| R4 | MET | `apps/cli/tests/daily-generate-sections.test.ts:945-993` — 0266 describe (under-floor close exit 0 + refusal fields + emptied candidates; idempotent rerun; over-max still exit 1) — plus `apps/cli/tests/commands/daily.test.ts:217-321` and `apps/cli/tests/voice2-dag.test.ts:607`; all pass this run; the assertions demand an exit-0 refusal artifact the pre-change failWith(1) code could not produce |
+| R4 | MET | `apps/cli/tests/daily-generate-sections.test.ts:978-1026` — 0266 describe (under-floor close exit 0 + refusal fields + emptied candidates; idempotent rerun; over-max still exit 1) — plus `apps/cli/tests/commands/daily.test.ts:259-372` and `apps/cli/tests/voice2-dag.test.ts:610-633`; all pass this run; the assertions demand an exit-0 refusal artifact the pre-change failWith(1) code could not produce |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — A day whose kept set cannot reach the floor follows the recorded policy end to end, with the run-report naming the reason and the counts. (req: R1, R2, R3) | MET | command | real CLI `kk daily run-report` over a fixture with the floor-refusal artifact present -> exit 0, noContent:true, summary `no-content: a 3-item pool estimated 9.4 min of speech, below the 15 min floor — pre-spend refusal (pool 3, kept 3)`; code `apps/cli/src/commands/daily.ts:402-441` |
 | AC2 — When `daily-episode-duration` refuses an episode that passed the pre-spend floor (measured minutes < `episode_min_minutes`), the run does not abort: the stage writes `30-audio/<run_date>_11_generate_content_duration-refusal.json` (fields: `measuredMinutes`, `estimatedMinutes`, `minMinutes`, `keptCount`, `candidateChars`), empties the candidates file, and exits 0; the publish subtree is skipped (`publish-prep`, `show-notes` and `xhs-render` pool-gated on the candidates file, mirroring the QC-zero guards); and `kk daily run-report` closes the run as `no-content` with a `run-report.summary.txt` line naming the measured vs estimated minutes, the floor, and the pool/kept counts (the ledger's Result cell). (req: R2) | MET | command | real CLI `kk stage daily-episode-duration` on a throwaway fixture -> exit 0, refusal artifact measuredMinutes 8.5, estimatedMinutes 0.4, minMinutes 15, keptCount 2, candidateChars 54, candidates emptied; idempotent rerun unchanged; over-max exit 1 no artifact; code `plugins/kk/scripts/daily-stages.ts:497-531` |
-| AC3 — The regression test fails against the pre-change code. (req: R4) | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:945-993` 0266 describe passes this run; its exit-0 + refusal-artifact assertions cannot pass against the pre-change under-floor failWith(1) branch shown in the diff |
+| AC3 — The regression test fails against the pre-change code. (req: R4) | MET | test | `apps/cli/tests/daily-generate-sections.test.ts:978-1026` 0266 describe passes this run; its exit-0 + refusal-artifact assertions cannot pass against the pre-change under-floor failWith(1) branch shown in the diff |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

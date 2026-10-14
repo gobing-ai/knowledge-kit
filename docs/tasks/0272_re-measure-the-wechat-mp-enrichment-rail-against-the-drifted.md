@@ -4,7 +4,7 @@ name: Re-measure the WeChat MP enrichment rail against the drifted console
 status: done
 template: issue
 created_at: 2026-10-13T03:22:54.165Z
-updated_at: "2026-10-14T00:04:12.533Z"
+updated_at: "2026-10-14T01:48:38.480Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -152,29 +152,19 @@ The solution deliberately leaves account provisioning, committed identity/value 
 | R5 | MET | Absent 一键排版 control skips silently — `plugins/publishings/wechatmp-pub/src/flow.ts:581` returns null; `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1285-1291` asserts empty enrichWarnings. |
 | R6 | MET | Library cover deferred behind the audio material — `plugins/publishings/wechatmp-pub/src/flow.ts:700-714,735-739`; ordering test `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1293-1319`. |
 | R7 | MET | Toolbar dropdown → `li.js_insertaudio` before the dialog — `plugins/publishings/wechatmp-pub/src/flow.ts:199-202,1243-1245`; same-title dedupe + measured upload sequence retained. |
-| R8 | MET | Fail-soft contract unchanged; modal-recovery + warning-contract tests green in the full gate (2777 pass / 2 skip / 0 fail). |
-| R9 | MET | Selector map + evidence paths — `.spur/run/wechat-drift-task/measure-20261013/` (captures + `12-original-dialog-map.json` + `22-audio-modal-map.json`) vs `.spur/run/wechat-drift-task/bg.md:13-23`; fixtures cover 赏-blocked, URL-row-missing, layout-absent, modal cleanup; committed-state read-back stays with 0260. |
+| R8 | MET | Fail-soft contract unchanged; modal-recovery + warning-contract tests green this session: `wechatmp-pub.test.ts` 73 pass / 0 fail and full `bun run gate` exit 0 (2777 pass / 2 skip / 0 fail). |
+| R9 | MET | Selector map + evidence paths — `.spur/run/wechat-drift-task/measure-20261013/` (captures + `12-original-dialog-map.json` + `22-audio-modal-map.json`) vs `.spur/run/wechat-drift-task/bg.md:13-23`; fixtures cover 赏-blocked, URL-row-missing, layout-absent, modal cleanup; committed-state read-back is scoped to 0260 by the task Design. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — measured original controls driven, outcome surfaced (req: R1, R2, R9) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1184`; `plugins/publishings/wechatmp-pub/src/enrich.ts:57-59,134` |
-| AC2 — account prerequisite actionable and bounded (req: R2, R3, R9) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1250-1264`; `plugins/publishings/wechatmp-pub/src/enrich.ts:150-159` |
-| AC3 — unavailable URL capability explicit (req: R4, R9) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1266-1283`; `plugins/publishings/wechatmp-pub/src/enrich.ts:196-201` |
-| AC4 — build without layout support is quiet (req: R5) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1285-1291`; `plugins/publishings/wechatmp-pub/src/flow.ts:581` |
-| AC5 — audio before library cover, dependency honoured (req: R6, R7) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1293-1319`; `plugins/publishings/wechatmp-pub/src/flow.ts:700-714,735-739` |
-| AC6 — retained failures stay fail-soft (req: R8, R9) | MET | test | modal-recovery + warning-contract tests green in the full gate run |
-| AC7 — selector handoff has retained measurement evidence (req: R1, R9) | MET | command + static-ref | `measure-20261013/12-original-dialog-map.json`, `22-audio-modal-map.json`, `99-editor-final.html` |
+| Scenario: AC1 — the measured original controls are driven and outcome is surfaced (req: R1, R2, R9) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1184`; `plugins/publishings/wechatmp-pub/src/enrich.ts:57-59,134` |
+| Scenario: AC2 — an account prerequisite is actionable and bounded (req: R2, R3, R9) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1250-1264`; `plugins/publishings/wechatmp-pub/src/enrich.ts:150-159` |
+| Scenario: AC3 — an unavailable URL capability is explicit (req: R4, R9) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1266-1283`; `plugins/publishings/wechatmp-pub/src/enrich.ts:196-201` |
+| Scenario: AC4 — a build without layout support is quiet (req: R5) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1285-1291`; `plugins/publishings/wechatmp-pub/src/flow.ts:581` |
+| Scenario: AC5 — audio and library cover use their measured dependency (req: R6, R7) | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1293-1319`; `plugins/publishings/wechatmp-pub/src/flow.ts:700-714,735-739` |
+| Scenario: AC6 — all retained failures remain fail-soft (req: R8, R9) | MET | test | modal-recovery tests `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1112,1127` and warning-contract tests `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1250-1291`; file 73 pass / 0 fail this session |
+| Scenario: AC7 — the selector handoff has retained measurement evidence (req: R1, R9) | MET | command | `.spur/run/wechat-drift-task/measure-20261013/` holds `12-original-dialog-map.json`, `22-audio-modal-map.json`, `99-editor-final.html` (listed this session; gitignored run evidence) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
-
-#### Review
-
-<!-- spur:record-review -->
-
-**SECU findings** (pipeline verify step — verdict: PASS)
-
-| Priority | Dimension | Location | Finding |
-|----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
 
 ### Review
 
