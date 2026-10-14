@@ -76,7 +76,7 @@ states:
           # IS the lock contract, and the guard below reads it back:
           # `{"acquired":true}` or `{"skipped":"locked","holder":<run>}` (R1).
           command: >-
-            kk store lock acquire --name collect --run "${vars.__runId}" --ttl 21600000 > "${vars.work_dir}/lock.json"
+            kk lock acquire --name collect --run "${vars.__runId}" --ttl 21600000 > "${vars.work_dir}/lock.json"
 
   - id: collect
     description: >-
@@ -173,7 +173,7 @@ states:
       - kind: shell
         options:
           command: >-
-            kk store lock release --name collect --run "${vars.__runId}"
+            kk lock release --name collect --run "${vars.__runId}"
 
   - id: release-failed
     description: >-
@@ -184,7 +184,7 @@ states:
         onError: continue
         options:
           command: >-
-            kk store lock release --name collect --run "${vars.__runId}"
+            kk lock release --name collect --run "${vars.__runId}"
 
   - id: done
     description: "Terminal — collection stored; the daily workflow reads it back through `kk store extract`"
