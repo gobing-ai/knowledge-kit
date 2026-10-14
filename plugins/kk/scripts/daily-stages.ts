@@ -495,14 +495,21 @@ export function dailyEpisodeDuration(args: string[]): void {
     const shown = minutes.toFixed(1);
     if (minutes < minMinutes) {
         const refusal = join(workDir, '30-audio', `${runDate}_11_generate_content_duration-refusal.json`);
-        // Idempotency first: a rerun must not recompute an estimate from the already-emptied candidates.
-        if (isFile(refusal)) {
-            console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
-            return;
-        }
         const candidates = join(workDir, '21-plan', `${runDate}_04_quality-control-content_candidates.json`);
         const content = readJson(candidates);
         const docs = Array.isArray(metadataOf(content).docs) ? (metadataOf(content).docs as unknown[]) : [];
+        // Idempotency first: a rerun must not recompute an estimate from the already-emptied candidates.
+        // A kill between the two writes below leaves the refusal beside non-empty candidates, which would
+        // let the pool-gated publish fan package a sub-floor episode — so finish the emptying here.
+        if (isFile(refusal)) {
+            if (content !== null && docs.length > 0) {
+                sted('write', candidates, () =>
+                    writeJsonText(candidates, { ...content, metadata: { ...metadataOf(content), docs: [] } }),
+                );
+            }
+            console.log(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
+            return;
+        }
         const estimated = estimateSpokenMinutes(docs, vdriver);
         const measuredMinutes = Math.round(minutes * 10) / 10;
         sted('write', refusal, () =>

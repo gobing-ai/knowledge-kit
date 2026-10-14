@@ -1014,6 +1014,25 @@ describe('0266 — post-spend duration refusal closes the run as no-content', ()
         });
     });
 
+    it('AC2 — a rerun after a kill between the refusal and the candidates write still empties the candidates', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupDurationFixture(dir, date, 510);
+            const candidatesBefore = readFileSync(candidatesPath(dir, date), 'utf-8');
+            const first = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(first.status, first.stderr).toBe(0);
+            const refusalBefore = readFileSync(refusalPath(dir, date), 'utf-8');
+            // Simulate the crash window: the refusal landed, the candidates write did not.
+            writeFileSync(candidatesPath(dir, date), candidatesBefore);
+            const second = runStage(['daily-episode-duration', dir, date, '15', '25', 'voicebox'], binDir, logFile);
+            expect(second.status, second.stderr).toBe(0);
+            expect(readFileSync(refusalPath(dir, date), 'utf-8')).toBe(refusalBefore);
+            const kept = JSON.parse(readFileSync(candidatesPath(dir, date), 'utf-8')) as {
+                metadata: { docs: unknown[] };
+            };
+            expect(kept.metadata.docs).toEqual([]);
+        });
+    });
+
     it('AC2 — an over-max episode still fails loud and writes no refusal artifact', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupDurationFixture(dir, date, 26 * 60); // 26 min — above the 25-min ceiling
