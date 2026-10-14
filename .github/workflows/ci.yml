@@ -55,9 +55,11 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install Playwright chromium
-        # The Board acceptance tests launch chromium. Runner images ship a browser cache that
-        # drifts across image rollouts (2026-10-14: the 1.55.0 headless-shell build vanished
-        # between two green runs), so download the pinned build instead of trusting the image.
+        # The Board acceptance tests launch chromium. Run bunx from apps/board so it resolves
+        # the workspace's pinned playwright (1.55.0 → build 1187): from the repo root bunx
+        # finds no playwright binary and auto-installs playwright@latest, whose build (1248)
+        # does not match what the test launches (measured 2026-10-14, run 38634148889).
+        working-directory: apps/board
         run: bunx playwright install chromium
 
       - name: Lint
