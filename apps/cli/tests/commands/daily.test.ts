@@ -80,6 +80,9 @@ afterAll(() => {
         return before === undefined || before.mtimeMs !== after.mtimeMs;
     });
     expect(polluted).toEqual([]);
+    // The delta above is blind to a stray left by an earlier run (one reappeared on 2026-10-13).
+    // Operator runs resolve to the configured works_dir, never here, so its mere presence is pollution.
+    expect(existsSync(join(WORKS_ROOT, 'kk-daily-ai-voice2'))).toBe(false);
 });
 
 /**

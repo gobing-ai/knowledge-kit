@@ -4,7 +4,7 @@ name: Stop the test suite from composing workspaces under the operator's home
 status: done
 template: issue
 created_at: 2026-10-12T21:45:47.258Z
-updated_at: "2026-10-13T17:45:44.043Z"
+updated_at: "2026-10-14T02:44:19.764Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -79,19 +79,21 @@ Evidence (all run 2026-10-13 in this tree):
 - Public-surface probes (throwaway root /tmp/0267-probe-NJWJ, `bun apps/cli/src/index.ts daily prepare --workflow kk-daily-ai-voice2 --run-date 2026-10-13`): (1) `KK_WORKS_DIR=<tmp>/works` → `{"workDir":"…/works/kk-daily-ai-voice2/20261013",…}` exit 0; (2) `KK_CONFIG=<tmp>/kk.yaml` with `works_dir: <tmp>/works-from-config` → workDir under `…/works-from-config/kk-daily-ai-voice2/20261013` exit 0; (3) both set → env wins (workDir under `…/works/…`). Operator home unchanged after all three.
 - R4: the stray dir was empty and removed with `rmdir` (10:17 and again 10:24 after the AC2 demo); it stayed absent after every subsequent run listed above. The full-suite confirmation (`bun run test` leaves nothing new under `$HOME/.config/kk/works`) belongs to the pipeline gate; the batch driver's before/after listing captures it.
 
+**2026-10-13 re-verify fix (P3 → closed).** An empty `~/.config/kk/works/kk-daily-ai-voice2` reappeared (born 11:02, after fix 92d72250) and the snapshot-delta guard could not see it, because it compares before/after. `apps/cli/tests/commands/daily.test.ts:83-85` adds an absolute assertion that the directory does not exist (operator runs resolve to the configured `works_dir`, never this root). Seen red with the stray recreated (21 pass / 1 fail), green after the non-recursive `rmdir` (21 pass / 0 fail); the works root now lists only `kk-itc`.
+
 ### Testing
 
 **Pipeline verify results**
 
 - Verdict: PASS (from verdict artifact)
-- Confidence: MEDIUM
+- Confidence: HIGH
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | Both unpinned tests isolated: `~`/`$HOME` expansion now asserted read-only via `resolveWorksDir` (`apps/cli/tests/commands/daily.test.ts:514,516`) and both command runs pinned with `--work-dir` (`apps/cli/tests/commands/daily.test.ts:527,568`). Census re-checked this turn: every other `daily prepare` reach pins `KK_WORKS_DIR`/config `works_dir`/`--work-dir` to a temp dir (`apps/cli/tests/store-selections.test.ts:759`, `apps/cli/tests/board/itc.test.ts:509`, `apps/cli/tests/board/daily-voice.test.ts:615`). |
 | R2 | MET | Production resolver untouched: `git diff` touches only `apps/cli/tests/commands/daily.test.ts` and the task doc (zero production files); `resolveWorksDir` still reads `KK_WORKS_DIR` → config `works_dir` → `~/.config/kk/works` at `apps/cli/src/commands/daily.ts:110-123` (re-read this turn). |
 | R3 | MET | File-level guard `apps/cli/tests/commands/daily.test.ts:65-82` snapshots `~/.config/kk/works` (names + mtimes) beforeAll/afterAll and asserts no entry created or touched. Green side re-run this turn: `bun test apps/cli/tests/commands/daily.test.ts` → 21 pass / 0 fail, `$HOME/.config/kk/works` left as only `kk-itc`. Red side (isolation removed) recorded in the authored Review, not re-run this turn: removing the `--work-dir` pin makes the guard's afterAll fail naming `kk-daily-ai-voice2` (1 pass / 1 fail). |
-| R4 | MET | Stray `~/.config/kk/works/kk-daily-ai-voice2` absent (live recursive listing this turn: only `kk-itc` and its children); removal + post-run absence recorded in the task Solution §R4. |
+| R4 | MET | An empty `~/.config/kk/works/kk-daily-ai-voice2` had reappeared (born 11:02, mtime 13:00 on 2026-10-13 — after fix 92d72250 at 10:45, during batch-branch merge runs); its mtime stayed unchanged through this session's full `bun run gate` (2777 pass / 0 fail, exit 0), so current code does not create it. Removed with non-recursive `rmdir`; re-ran `apps/cli/tests/commands/daily.test.ts` + store-selections + board daily-voice/itc (74 pass / 0 fail) and the works root lists only `kk-itc`. Guard `apps/cli/tests/commands/daily.test.ts:65-82` is delta-based, so it cannot flag a pre-existing stray. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
