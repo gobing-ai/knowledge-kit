@@ -33,12 +33,25 @@ jobs:
       - name: Install spur
         # The kk workflow integration tests drive the real engine (`spur workflow run`),
         # and refuse to skip silently when the binary is missing. Pinned so a spur release
-        # cannot silently redefine the engine under test. 0.4.0 accepts `kind: dag`
-        # (kk-daily-ai-voice2). 0.3.95 only accepts transition-flow, so those runs come
-        # back with status unknown. 0.4.0 still accepts `onError: continue` on onEnter.
+        # cannot silently redefine the engine under test. 0.4.4 accepts `kind: dag`
+        # (kk-daily-ai-voice2) and still accepts `onError: continue` on onEnter.
+        # 0.3.95 only accepts transition-flow, so those runs come back with status unknown.
         run: |
-          bun install --global @gobing-ai/spur@0.4.0
+          bun install --global @gobing-ai/spur@0.4.4
           echo "$(bun pm bin -g)" >> "$GITHUB_PATH"
+
+      - name: Provision the home-level @gobing-ai tree the Board suite resolves against
+        # The installed-Board suite drives spur by importing `@gobing-ai/spur` from the
+        # node_modules walk-up before falling back to PATH, and spur probes its sibling
+        # @gobing-ai packages at runtime relative to where its entry executes from.
+        # Developer machines satisfy this via home-level global installs
+        # (~/node_modules/@gobing-ai/*); an isolated global bun install cannot, and the
+        # suite's run-history reads then 404. Mirror the proven sibling set at $HOME so
+        # resolution and sibling probing behave like the verified environment.
+        run: |
+          test -f "$HOME/package.json" || echo '{"name":"runner-home","private":true}' > "$HOME/package.json"
+          cd "$HOME"
+          bun add @gobing-ai/spur@0.4.4 @gobing-ai/knowledge-kit@0.0.35 @gobing-ai/superskill@0.3.37 @gobing-ai/ts-ai-runner@0.5.24 @gobing-ai/ts-db@0.5.24 @gobing-ai/ts-infra@0.5.21 @gobing-ai/ts-runtime@0.5.21 @gobing-ai/ts-utils@0.5.21
 
       # Build first so cross-package type imports resolve during typecheck.
       # A clean CI checkout has no prebuilt dist/.
