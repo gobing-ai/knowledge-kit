@@ -527,8 +527,8 @@ describe('runFanin source-runner mode (--source)', () => {
             const pluginsRoot = join(root, 'plugins');
             writeFixtureIngestionPlugin(pluginsRoot, 'fanin-fast', { docId: 'fast1' });
             writeFixtureIngestionPlugin(pluginsRoot, 'fanin-stuck', { sleepMs: 10_000 });
-            // Leash 1000ms: comfortably above a bun child's cold-start (~250-350ms) so the
-            // fast sibling always finishes, yet far below the 10s stuck source.
+            // Leash 3000ms: a bun child cold-starts in ~250-350ms idle, but a 1000ms leash still cut the
+            // fast sibling under full-gate load (2026-10-13); 3000ms stays far below the 10s stuck source.
             const outFile = join(root, 'merged.json');
             const inFast = join(root, 'fast-in.json');
             const inStuck = join(root, 'stuck-in.json');
@@ -543,7 +543,7 @@ describe('runFanin source-runner mode (--source)', () => {
                     '--source',
                     `fanin-stuck:${inStuck}`,
                     '--source-timeout',
-                    '1000',
+                    '3000',
                     '--out',
                     outFile,
                 ]),
@@ -551,30 +551,31 @@ describe('runFanin source-runner mode (--source)', () => {
             const elapsed = Date.now() - started;
 
             expect(code).toBe(0);
-            // The 10s source was cut at ~1000ms; the run did not wait for it.
-            expect(elapsed).toBeLessThan(5000);
+            // The 10s source was cut at ~3000ms; the run did not wait for it.
+            expect(elapsed).toBeLessThan(8000);
             const outData = JSON.parse(await Bun.file(outFile).text());
             expect(outData.map((d: { id: string }) => d.id)).toEqual(['fast1']);
             const errors = outData[0].metadata.sourceErrors;
             expect(errors).toHaveLength(1);
             expect(errors[0].plugin).toBe('fanin-stuck');
-            expect(errors[0].error).toContain('timed out after 1000ms');
-            expect(errors[0].durationMs).toBeLessThan(5000);
+            expect(errors[0].error).toContain('timed out after 3000ms');
+            expect(errors[0].durationMs).toBeLessThan(8000);
         });
-    });
+    }, 20_000);
 
     it('--source-timeout-override extends ONE source past the global leash without touching siblings', async () => {
         await withTempDir(async (root) => {
             const pluginsRoot = join(root, 'plugins');
             writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-fast', { docId: 'fast1' });
-            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-medium', { sleepMs: 1500, docId: 'medium1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-medium', { sleepMs: 4500, docId: 'medium1' });
             const outFile = join(root, 'merged.json');
             const inFast = join(root, 'fast-in.json');
             const inMedium = join(root, 'medium-in.json');
             writeFileSync(inFast, '[]');
             writeFileSync(inMedium, '[]');
 
-            // Global leash 1000ms would cut the 1500ms source; its personal override (20s) saves it.
+            // Global leash 3000ms would cut the 4500ms source; its personal override (20s) saves it. 3000ms, not
+            // 1000ms, so the sleepless sibling survives cold-start under full-gate load.
             const code = await withPluginPath(pluginsRoot, () =>
                 runFanin([
                     '--source',
@@ -582,7 +583,7 @@ describe('runFanin source-runner mode (--source)', () => {
                     '--source',
                     `fanin-ovr-medium:${inMedium}`,
                     '--source-timeout',
-                    '1000',
+                    '3000',
                     '--source-timeout-override',
                     'fanin-ovr-medium:20000',
                     '--out',
@@ -595,7 +596,7 @@ describe('runFanin source-runner mode (--source)', () => {
             expect(outData.map((d: { id: string }) => d.id)).toEqual(['fast1', 'medium1']);
             expect(outData[0].metadata.sourceErrors).toBeUndefined();
         });
-    });
+    }, 20_000);
 
     it('--source-timeout-override tightens ONE source below the default without a global flag', async () => {
         await withTempDir(async (root) => {

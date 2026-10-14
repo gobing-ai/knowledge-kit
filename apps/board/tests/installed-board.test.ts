@@ -118,9 +118,11 @@ async function withBuildLock<T>(fn: () => T | Promise<T>): Promise<T> {
         try {
             fd = openSync(lock, 'wx');
         } catch {
-            // A crashed holder leaves a stale lock; reclaim it only after a long grace period.
+            // A crashed holder leaves a stale lock; reclaim it after a grace period that stays BELOW the
+            // 300s waiter deadline, else a SIGKILLed holder's lock is never reclaimed by any waiter. A real
+            // pack/build holds the lock for seconds, so 120s never cuts a live holder.
             try {
-                if (Date.now() - statSync(lock).mtimeMs > 600_000) rmSync(lock, { force: true });
+                if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { force: true });
             } catch {
                 // the lock vanished between attempts — just retry
             }
@@ -559,10 +561,22 @@ describe('run selection and deep links (AC2)', () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
         await waitForRunOption('r-b');
-        await page.locator('.kk-board-tabs button', { hasText: 'Execution progress' }).click();
-        await page.waitForTimeout(200);
-        expect(new URL(page.url()).searchParams.get('tab')).toBe('progress');
-        expect(new URL(page.url()).searchParams.get('run')).toBe('r-b');
+        // AC2 "across all four tabs": visit every tab, ending on progress for the reload below.
+        for (const [tab, label] of [
+            ['summary', 'Summary'],
+            ['config', 'Workflow Config Summary'],
+            ['results', 'Results'],
+            ['progress', 'Execution progress'],
+        ] as const) {
+            await page.locator('.kk-board-tabs').getByRole('button', { name: label, exact: true }).click();
+            await page.waitForTimeout(200);
+            expect(new URL(page.url()).searchParams.get('tab'), tab).toBe(tab);
+            expect(new URL(page.url()).searchParams.get('run'), tab).toBe('r-b');
+            expect(await page.locator('.kk-board-run-selector select').inputValue(), tab).toBe('r-b');
+            expect((await page.locator('.kk-board-tabs button[aria-current="page"]').textContent())?.trim()).toBe(
+                label,
+            );
+        }
         await page.reload({ waitUntil: 'domcontentloaded' });
         await waitForRunOption('r-b');
         expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
