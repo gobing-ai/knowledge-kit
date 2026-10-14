@@ -21,6 +21,7 @@ import {
     findAttachedSelector,
     findSelector,
     followNewPage,
+    modalState,
     tryFindSelector,
     type WechatPage,
     waitForVisible,
@@ -74,17 +75,6 @@ const LAYOUT_TARGET = ['div[role="menuitem"]:has-text("匹配目标格式")', 'l
 const COVER_PANEL_OPEN = ['a.js_selectCoverFromContent', '.js_cover_btn_area', 'text=换一张', 'text=修改'];
 const COVER_FROM_CONTENT = ['a.js_selectCoverFromContent', 'text=从正文选择'];
 const COVER_FROM_LIBRARY = ['a.js_imagedialog', 'text=从图片库选择'];
-/**
- * The library picker's item list — the same `not <img>-based` widget as the body-source panel, so
- * these stay candidate shapes. The newest upload sorts first (operator walk 2026-10-10: the just-uploaded
- * audio cover is the default selection, `默认第一个`), so the first item is the intended one.
- */
-const COVER_LIBRARY_ITEM = [
-    'div.weui-desktop-img-picker__item',
-    'div[class*="img_picker" i] li',
-    'div[class*="imgList" i] li',
-    'div[class*="cover" i] li',
-];
 /** The library picker is two-stage: pick the image, then 下一步, then the dialog's 确认. */
 const COVER_LIBRARY_NEXT = ['button:has-text("下一步")'];
 /**
@@ -92,7 +82,6 @@ const COVER_LIBRARY_NEXT = ['button:has-text("下一步")'];
  * confirm selectors below are candidate shapes and **not** re-measured (§6 still lists the widget as
  * to do). A miss is recorded as a warning, never as a false cover claim.
  */
-const COVER_ITEM = COVER_LIBRARY_ITEM;
 const COVER_CONFIRM = ['button:has-text("确定")', 'button:has-text("确认")', 'button:has-text("完成")'];
 
 /** The controls that close whatever modal the cover step left open, most specific first. */
@@ -124,33 +113,30 @@ async function dismissOpenDialog(page: WechatPage): Promise<void> {
     await page.waitForTimeout?.(400);
 }
 
-/** The close controls a console modal exposes, most specific first (the audio picker shows no 取消). */
+/** The close controls a console modal exposes, most specific first (the audio picker shows no 取消).
+ *  `.weui-desktop-dialog__close-btn` is the 0272-captured audio-dialog variant the bare `__close`
+ *  probe missed. */
 const DIALOG_CLOSE = [
     '.weui-desktop-dialog__wrp .weui-desktop-dialog__close',
     '.weui-desktop-dialog__close',
+    '.weui-desktop-dialog__close-btn',
     '.weui-desktop-dialog__wrp button:has-text("取消")',
     'button:has-text("取消")',
 ];
-
-/** True while any console modal is still laid out — the signal both the wrp and the inner dialog expose. */
-async function anyDialogOpen(page: WechatPage): Promise<boolean> {
-    const raw = await page
-        .evaluate(
-            `[...document.querySelectorAll('.weui-desktop-dialog__wrp, .weui-desktop-dialog')].some((d) => d.offsetWidth)`,
-        )
-        .catch(() => false);
-    return raw === true;
-}
 
 /**
  * Close every open console modal before a submit click. Measured 2026-10-12: the 插入音频 dialog
  * (`weui-desktop-dialog__wrp align_edge audio_dialog js_audio_music_dialog`) stayed open after its
  * own 上传音频 click timed out, its footer covered `保存为草稿` for 30 s, and the run saved no draft
  * at all. A failed enrichment is a warning by contract, never a gate — so nothing may outlive it.
+ *
+ * Returns `'residual'` when a dialog is still open — or its state is UNREADABLE — after all passes:
+ * an unknown overlay must never read as cleaned up (task 0260 R3/AC5).
  */
-async function closeOpenDialogs(page: WechatPage): Promise<void> {
+async function closeOpenDialogs(page: WechatPage): Promise<'closed' | 'residual'> {
     for (let pass = 0; pass < 3; pass += 1) {
-        if (!(await anyDialogOpen(page))) return;
+        const state = await modalState(page);
+        if (state === 'closed') return 'closed';
         for (const selector of DIALOG_CLOSE) {
             const control = await tryFindSelector(page, [selector], 1_500);
             if (control === undefined) continue;
@@ -164,6 +150,7 @@ async function closeOpenDialogs(page: WechatPage): Promise<void> {
         await page.press?.('Escape');
         await page.waitForTimeout?.(400);
     }
+    return (await modalState(page)) === 'closed' ? 'closed' : 'residual';
 }
 
 /** 视频's media modal (§5.2): tabs 素材库/视频号动态/视频链接 + 本地上传 + 确定/取消. */
@@ -620,19 +607,43 @@ async function fillOptional(
     }
 }
 
+/** Local path basename — the only piece of a requested file a remote asset could ever expose. */
+function baseName(path: string): string {
+    return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** The identities `setCover` can accept for a candidate: the requested article image and/or the
+ *  upload binding actually observed going into the audio form. Either is optional; at least one
+ *  must produce a UNIQUE exposed match before anything is clicked (task 0260 R1). */
+interface CoverIdentity {
+    /** `coverPath(input)` — the article's first body image, requested as the cover. */
+    requested?: string;
+    /** The cover file the audio upload just bound into the form/library (when audio ran). */
+    binding?: string;
+}
+
 /**
- * 封面 (§5.2): there is no cover file input. `从图片库选择` picks the episode cover, which the daily
- * flow has already uploaded as the audio material's cover; `从正文选择` picks the first body image,
- * which is what the platform's 默认首图为封面 fallback would use anyway. Best-effort and recorded: a
- * miss is a warning naming the step, never a false claim that the cover landed.
+ * 封面 (§5.2): there is no cover file input. `从图片库选择` picks the episode cover, `从正文选择`
+ * the first body image. A candidate is identified ONLY by an exposed exact filename (`title` /
+ * `data-name` / its own filename text) uniquely equal to one of the requested identities; a miss or
+ * an ambiguity warns WITHOUT clicking first/newest. After the confirm, the committed preview under
+ * `#js_cover_area` is read back: the empty state (`add_cover` icon still visible) or an unreadable
+ * preview is a named warning, never a success claim (task 0260 R1).
  */
 async function setCover(
     page: WechatPage,
     source: 'library' | 'body',
     deps: Pick<ModeRunDeps, 'stepTimeoutMs'>,
+    identity: CoverIdentity,
 ): Promise<string | null> {
     const picker = source === 'library' ? COVER_FROM_LIBRARY : COVER_FROM_CONTENT;
     const what = source === 'library' ? '从图片库选择' : '从正文选择';
+    const wanted = [
+        ...(identity.requested ? [baseName(identity.requested)] : []),
+        ...(identity.binding ? [baseName(identity.binding)] : []),
+    ]
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0);
     // A cover miss is a warning, never a gate — so the panel must not outlive the step that opened
     // it (see {@link dismissOpenDialog} for what its footer blocked on 2026-10-12).
     const warn = async (message: string): Promise<string> => {
@@ -649,16 +660,79 @@ async function setCover(
         const pick = await tryFindSelector(page, picker, Math.min(deps.stepTimeoutMs, 8_000));
         if (pick === undefined) return await warn(`cover: ${what} was not offered by the open cover panel`);
         await clickSelector(page, pick, deps.stepTimeoutMs);
-        const item = await tryFindSelector(page, COVER_ITEM, Math.min(deps.stepTimeoutMs, 8_000));
-        if (item === undefined)
-            return await warn(`cover: ${what} listed no image to choose (its list is not <img>-based, §5.2)`);
-        await clickSelector(page, item, deps.stepTimeoutMs);
+        if (wanted.length === 0)
+            return await warn(`cover: no requested cover file identity to match against — ${what} not driven`);
+        // Identify before clicking: the item list is not <img>-based (§5.2) and never sorted the way
+        // a first-item assumption needs, so the only honest pick is an exposed unique exact name.
+        const IDENTIFY = `(() => {
+            const wanted = ${JSON.stringify(wanted)};
+            const rows = [...document.querySelectorAll('.weui-desktop-img-picker__item, div[class*="img_picker" i] li, div[class*="imgList" i] li, div[class*="cover" i] li')]
+                .filter((row) => row.offsetWidth > 0);
+            const nameOf = (row) => {
+                const el = row.querySelector('[title], [data-name], [data-file_name]') ?? row;
+                const attrs = [el.getAttribute?.('title'), el.getAttribute?.('data-name'), el.getAttribute?.('data-file_name')];
+                const text = [...row.querySelectorAll('[class*="name" i], [class*="title" i]')].map((n) => n.textContent ?? '');
+                return [...attrs, ...text].map((v) => (v ?? '').trim()).find((v) => v.length > 0) ?? '';
+            };
+            const hits = rows.filter((row) => wanted.some((w) => nameOf(row) === w));
+            if (hits.length === 0) return 'missing';
+            if (hits.length > 1) return 'ambiguous';
+            const row = hits[0];
+            row.querySelector('input[type=checkbox], [role=checkbox]')?.click();
+            row.click();
+            const checked = row.querySelector('input[type=checkbox], [role=checkbox]');
+            const src = row.querySelector('img')?.src ?? (row.querySelector('[style*="background-image"]')?.style.backgroundImage.match(/url("?([^")]+)"?)/)?.[1] ?? '');
+            return JSON.stringify({ picked: true, src });
+        })()`;
+        const rawIdentify = String(await page.evaluate(IDENTIFY));
+        if (rawIdentify === 'missing')
+            return await warn(`cover: ${what} 未标出与请求文件同名的素材，未选择（不按首图猜测）`);
+        if (rawIdentify === 'ambiguous') return await warn(`cover: ${what} 匹配到多个同名素材，身份不唯一，未选择`);
+        let selected: { picked?: boolean; src?: string } = {};
+        try {
+            selected = JSON.parse(rawIdentify) as { picked?: boolean; src?: string };
+        } catch {
+            return await warn('cover: 素材身份探测返回未知结果，未选择');
+        }
         // The library picker stages the choice: 下一步 advances it, then the dialog confirms.
         const next = await tryFindSelector(page, COVER_LIBRARY_NEXT, Math.min(deps.stepTimeoutMs, 4_000));
         if (next !== undefined) await clickSelector(page, next, deps.stepTimeoutMs);
         const confirm = await tryFindSelector(page, COVER_CONFIRM, Math.min(deps.stepTimeoutMs, 8_000));
         if (confirm === undefined) return await warn('cover: the choice panel offered no confirm control');
         await clickSelector(page, confirm, deps.stepTimeoutMs);
+        // Committed readback (observed capture: the preview lives under #js_cover_area; the empty
+        // state keeps the `add_cover` icon visible). Poll briefly — the preview renders late.
+        const READBACK = `(() => {
+            const area = document.querySelector('#js_cover_area');
+            if (!area) return 'noarea';
+            if (area.querySelector('.icon20_common.add_cover') && area.querySelector('.icon20_common.add_cover').offsetWidth > 0) return 'empty';
+            const preview = area.querySelector('.js_cover_preview_new');
+            if (!preview || preview.offsetWidth === 0) return 'nopreview';
+            const src = preview.querySelector('img')?.src ??
+                (preview.querySelector('[style*="background-image"]')?.style.backgroundImage.match(/url("?([^")]+)"?)/)?.[1] ?? '') ||
+                (preview.querySelector('input[type=hidden]')?.value ?? '');
+            return src ? src : 'unknown';
+        })()`;
+        let committed = '';
+        for (let read = 0; read < 5 && committed === ''; read += 1) {
+            const raw = String(await page.evaluate(READBACK).catch(() => 'error'));
+            if (raw !== '' && raw !== 'nopreview' && raw !== 'noarea') {
+                committed = raw;
+                break;
+            }
+            await page.waitForTimeout?.(600);
+        }
+        if (committed === 'empty') return await warn('cover: 确认后面板仍显示未设置封面，提交未生效');
+        if (committed === '' || committed === 'noarea' || committed === 'error')
+            return await warn('cover: 已确认但无法读取已提交封面，请手动核对');
+        // Identity comparison: both sides are remote asset references from the same widget. Only an
+        // exact match proves the requested asset committed; an unreadable/edited preview warns
+        // rather than inventing equivalence (local paths are never compared to asset URLs).
+        const selectedSrc = (selected.src ?? '').trim();
+        if (selectedSrc === '' || (committed !== selectedSrc && !committed.includes(selectedSrc)))
+            return await warn(
+                `cover: 已提交封面的素材身份与所选不一致（selected=${selectedSrc || '未读到'} committed=${committed.slice(0, 80)}）`,
+            );
         return null;
     } catch (error) {
         return await warn(`cover: ${error instanceof Error ? error.message : String(error)}`);
@@ -693,22 +767,44 @@ function audioBlockOf(content: Content): { title: string; audioPath: string; cov
 }
 
 /** 文章's `metadata.wechatmp` enrichment rail, plus its opt-in audio embed (2026-09-29, ADR-026). */
-async function enrichArticleDraft(page: WechatPage, content: Content): Promise<string[]> {
+async function enrichArticleDraft(
+    page: WechatPage,
+    content: Content,
+): Promise<{ enrichWarnings: string[]; coverWarnings: string[] }> {
     const enrichMeta = content.metadata?.wechatmp;
-    if (enrichMeta === undefined || typeof enrichMeta !== 'object' || Array.isArray(enrichMeta)) return [];
+    if (enrichMeta === undefined || typeof enrichMeta !== 'object' || Array.isArray(enrichMeta))
+        return { enrichWarnings: [], coverWarnings: [] };
     const meta = enrichMeta as Record<string, unknown>;
-    const warnings = await enrichArticle(page, meta);
+    const enrichWarnings = await enrichArticle(page, meta);
     const audio = audioBlockOf(content);
+    let audioFailed = false;
     if (audio !== null) {
         const audioWarning = await insertAudioMaterial(page, audio);
-        if (audioWarning !== '') warnings.push(audioWarning);
+        if (audioWarning !== '') {
+            enrichWarnings.push(audioWarning);
+            audioFailed = true;
+        }
     }
-    // Deferred library cover (task 0272): the audio upload just put the episode cover in the 图片库.
-    if (audio !== null && coverSourceOf(content) === 'library') {
-        const cover = await setCover(page, 'library', { stepTimeoutMs: 8_000 });
-        if (cover !== null) warnings.push(cover);
+    // Deferred library cover (task 0272): the audio upload just put the episode cover in the 图片库 —
+    // but ONLY a committed upload guarantees that (task 0260 R1: a failed/uncertain audio upload
+    // leaves the library without the requested cover, so the dependent picker must not run).
+    const coverWarnings: string[] = [];
+    if (coverSourceOf(content) === 'library' && audio !== null) {
+        if (audioFailed) {
+            coverWarnings.push('cover: 音频上传未成功，图片库不保证已有请求封面，已跳过图片库封面');
+        } else {
+            const cover = await setCover(
+                page,
+                'library',
+                { stepTimeoutMs: 8_000 },
+                // The upload binding is the image the audio form just bound (the episode cover
+                // file); `coverPath(input)` is the article's own first body image, not this.
+                { binding: audio.coverPath === '' ? undefined : audio.coverPath },
+            );
+            if (cover !== null) coverWarnings.push(cover);
+        }
     }
-    return warnings;
+    return { enrichWarnings, coverWarnings };
 }
 
 /** Compose 文章 (createType 0): body images, title, body + 一键排版, 摘要, 作者, cover, settings. */
@@ -730,15 +826,20 @@ async function composeArticle(
     ]) {
         if (warning !== null) warnings.push(warning);
     }
-    // The 图片库 only holds the episode cover AFTER the audio material uploaded (task 0272): when
-    // the audio block runs, defer the library cover into the enrich phase, after insertAudioMaterial.
     const coverSource = coverSourceOf(deps.content);
     const audioRuns = audioBlockOf(deps.content) !== null;
     if (!(coverSource === 'library' && audioRuns)) {
-        const cover = await setCover(page, coverSource, deps);
+        const cover = await setCover(page, coverSource, deps, {
+            // Requested identity = the article's first body image (the 默认首图为封面 semantics of
+            // modes.coverPath). No audio ran, so the library binding is unknown — only an exposed
+            // exact filename can match.
+            requested: input.images[0],
+        });
         if (cover !== null) warnings.push(cover);
     }
-    return { warnings, titlePath, enrichWarnings: await enrichArticleDraft(page, deps.content) };
+    const { enrichWarnings, coverWarnings } = await enrichArticleDraft(page, deps.content);
+    warnings.push(...coverWarnings);
+    return { warnings, titlePath, enrichWarnings };
 }
 
 /** Compose 贴图 (createType 8): ≥1 image is the message; title and body are 选填. */
@@ -884,11 +985,20 @@ async function saveDraft(
     let control: string | null = null;
     let signal: string | null = null;
     let attempts = 0;
+    let residuals = 0;
+    const residualDialogs: string[] = [];
     let stampAfter: string | null = deps.draftBaseline.stamp;
     while (signal === null && attempts < deps.submitAttempts) {
         attempts += 1;
         await sleep(deps.submitSettleMs);
-        await closeOpenDialogs(entry.editor);
+        if ((await closeOpenDialogs(entry.editor)) !== 'closed') {
+            residuals += 1;
+            residualDialogs.push(await openDialogInventory(entry.editor).catch(() => 'unreadable'));
+            // Refuse to click through an unresolved overlay (0260 R3/AC5): the click would land on
+            // the dialog footer again, not 保存为草稿. Retry the cleanup on the next attempt.
+            if (attempts < deps.submitAttempts) continue;
+            break;
+        }
         control = await findSelector(entry.editor, SAVE_DRAFT, '保存为草稿 control', deps.stepTimeoutMs);
         await clickSelector(entry.editor, control, deps.stepTimeoutMs);
         // The editor lives in its own tab, so re-read the console entry page — and ENTER the 草稿箱
@@ -911,6 +1021,10 @@ async function saveDraft(
     }
 
     if (signal === null || control === null) {
+        if (control === null)
+            return fail(
+                `draft confirmation: a residual modal refused cleanup after ${attempts} attempt(s), ${residuals} refused cleanup(s) (${residualDialogs.join(' | ') || 'no inventory'}) — '保存为草稿' was not clicked through an unresolved overlay (inventory: ${await openDialogInventory(entry.editor).catch(() => 'unreadable')})`,
+            );
         return fail(
             `draft confirmation: '${SAVE_DRAFT[0]}' was clicked ${attempts}× but no fresh 草稿箱 row for '${title}' (its ${DRAFT_STAMP} stamp) was observed within ${deps.draftTimeoutMs}ms (before=${deps.draftBaseline.stamp ?? 'none'}, after=${stampAfter ?? 'none'}, page=${deps.entry.url()}, frames=${await describeFrames(deps.entry, 5)})`,
         );
@@ -927,6 +1041,13 @@ async function saveDraft(
             draftStampBefore: deps.draftBaseline.stamp,
             draftStampAfter: signal,
             titlePath: composed.titlePath,
+            ...(residuals > 0
+                ? {
+                      warnings: [
+                          `保存前清理了 ${residuals} 个残留弹层（${residualDialogs.join(' | ')}），草稿仍保存成功`,
+                      ],
+                  }
+                : {}),
             ...(composed.warnings.length > 0 ? { warnings: composed.warnings } : {}),
             ...(composed.enrichWarnings.length > 0 ? { enrichWarnings: composed.enrichWarnings } : {}),
         },
@@ -1130,12 +1251,14 @@ function escapeHtml(text: string): string {
 /**
  * Audio at the article top (operator request 2026-09-29; upload path added 2026-10-10).
  *
- * Reuses a same-title 素材库 material when one exists; otherwise UPLOADS it. The operator's measured
- * upload shape: 音频 menu → 上传音频 → pick the audio file → 上传封面 → pick the cover → type the title
- * → tick 我已阅读并同意《公众平台音频上传服务规则》 → 保存 → the material list reopens → select the
- * default (first) row → 插入. 插入 places it at the caret, so the caret is put at the body start first.
+ * Reuses a same-title 素材库 material when one exists (UNIQUE exposed-title match, identity
+ * captured); otherwise UPLOADS it. The operator's measured upload shape: 音频 menu → 上传音频 → pick
+ * the audio file → 上传封面 → pick the cover → type the title → tick 我已阅读并同意《公众平台音频上传服务规则》
+ * → 保存 → the material list reopens → select the row whose exposed title matches uniquely → 插入.
+ * 插入 places it at the caret, so the caret is put at the body start first.
  *
- * Fail-soft — every non-committed outcome returns a warning string, `''` means placed at the top.
+ * Fail-soft — every non-committed outcome returns a warning string; `''` means the inserted node is
+ * the body's first content AND carries the selected material's identity (task 0260 R2).
  */
 export async function insertAudioMaterial(
     page: WechatPage,
@@ -1152,15 +1275,28 @@ export async function insertAudioMaterial(
             sel?.removeAllRanges();
             sel?.addRange(r);
         })()`;
-    const DEDUPE = `(() => {
-            const want = ${JSON.stringify(title)}.replace(/\\s+/g, '');
-            const hit = [...document.querySelectorAll('label.frm_checkbox_label.audio_item')]
-                .find((l) => (l.textContent ?? '').replace(/\\s+/g, '').includes(want));
-            if (!hit) return 'missing';
+    /** Trim + collapse whitespace/NBSP — MP titles carry `&nbsp;` entities (0272 capture). */
+    const norm = (value: unknown): string =>
+        typeof value === 'string' ? value.replace(/[\s\u00a0]+/g, ' ').trim() : '';
+    /** Unique exposed-title match; ticks only an unticked row and captures its stable identity
+     *  (data-mediaid/data-id, else the thumb's media URL) for the body readback. Never first-item. */
+    const MATCH = `(() => {
+            const norm = (v) => (v ?? '').replace(/[\\s\\u00a0]+/g, ' ').trim();
+            const want = ${JSON.stringify(norm(title))};
+            const rows = [...document.querySelectorAll('label.frm_checkbox_label.audio_item')]
+                .filter((l) => l.offsetWidth > 0);
+            const hits = rows.filter((l) => norm((l.querySelector('.audio_title') ?? l).textContent) === want);
+            if (hits.length === 0) return 'missing';
+            if (hits.length > 1) return 'ambiguous';
+            const hit = hits[0];
             const cb = (hit.closest('li') ?? hit.parentElement)?.querySelector('input[type=checkbox]');
             if (!cb) return 'nobox';
-            cb.click();
-            return 'checked';
+            if (!cb.checked) cb.click();
+            const wrp = hit.closest('.audio_item_wrp') ?? hit.parentElement;
+            const thumb = wrp?.querySelector('.audio_item_thumb');
+            const identity = wrp?.getAttribute('data-mediaid') ?? wrp?.getAttribute('data-id') ??
+                (thumb ? (thumb.style.backgroundImage.match(/url\\("?([^")]+)"?\\)/)?.[1] ?? '') : '');
+            return JSON.stringify({ state: 'checked', identity });
         })()`;
     /** Tick the service-rules acknowledgement, found by its own label text rather than a class. */
     const AGREE = `(() => {
@@ -1172,15 +1308,6 @@ export async function insertAudioMaterial(
             if (!cb) return 'no-box';
             if (!cb.checked) cb.click();
             return cb.checked ? 'checked' : 'unchecked';
-        })()`;
-    /** Select the material the upload just created — the operator's 默认第一个. */
-    const SELECT_FIRST = `(() => {
-            const row = document.querySelector('label.frm_checkbox_label.audio_item');
-            if (!row) return 'norow';
-            const cb = (row.closest('li') ?? row.parentElement)?.querySelector('input[type=checkbox]');
-            if (!cb) return 'nobox';
-            if (!cb.checked) cb.click();
-            return 'checked';
         })()`;
     const INSERT = `(() => {
             const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '插入' && b.offsetWidth > 0);
@@ -1194,18 +1321,23 @@ export async function insertAudioMaterial(
         })()`;
     const VERIFY = `(() => {
             const pm = [...document.querySelectorAll('.ProseMirror')].find((e) => !(e.getAttribute('data-placeholder') ?? '').includes('标题'));
-            if (!pm) return 'noeditor';
-            const node = pm.querySelector('mpvoice, [class*="audio"]');
-            if (!node) return 'absent';
+            if (!pm) return JSON.stringify({ state: 'noeditor' });
             const first = pm.firstElementChild;
-            return first && (first === node || first.contains(node)) ? 'top' : 'notop';
+            if (!first) return JSON.stringify({ state: 'absent' });
+            const node = first.matches('mpvoice, [data-mediaid]') ? first : first.querySelector('mpvoice, [data-mediaid]');
+            if (!node) return JSON.stringify({ state: 'absent' });
+            const identity = node.getAttribute('data-mediaid') ?? node.getAttribute('data-appid') ??
+                node.getAttribute('data-src') ?? node.getAttribute('src') ?? '';
+            return JSON.stringify({ state: 'top', identity });
         })()`;
 
     /** Upload the audio + its cover, acknowledge the rules, and 保存. Returns a warning or null. */
     const upload = async (): Promise<string | null> => {
         const uploadControl = await trySelectors(page, UPLOAD_AUDIO);
         if (!uploadControl.found) return '音频: 上传音频 control not found in the audio dialog';
-        await clickSelector(page, UPLOAD_AUDIO.join(', '), 8_000);
+        // Click the winner, never a joined union: `text=…, css…` mixes selector engines and
+        // Playwright parses the whole string as CSS — zero matches (DOM fixture 0260).
+        await clickSelector(page, uploadControl.selector ?? UPLOAD_AUDIO[0] ?? 'text=上传音频', 8_000);
         const audioInput = await trySelectors(page, AUDIO_UPLOAD_INPUT);
         if (!audioInput.found) return '音频: no audio file input appeared';
         await uploadFile(asPlaywrightPage(page), audioInput.selector ?? AUDIO_UPLOAD_INPUT.join(', '), audioPath, {
@@ -1214,7 +1346,7 @@ export async function insertAudioMaterial(
         // The form requires a cover before it will save.
         const coverControl = await trySelectors(page, UPLOAD_COVER);
         if (coverControl.found) {
-            await clickSelector(page, UPLOAD_COVER.join(', '), 8_000);
+            await clickSelector(page, coverControl.selector ?? UPLOAD_COVER[0] ?? 'text=上传封面', 8_000);
             const coverInput = await trySelectors(page, AUDIO_COVER_INPUT);
             if (coverInput.found)
                 await uploadFile(
@@ -1236,6 +1368,23 @@ export async function insertAudioMaterial(
         return null;
     };
 
+    /** One MATCH read; a throwing probe stays 'error' (unknown, never treated as missing). */
+    const matchOnce = async (): Promise<string> => {
+        try {
+            return String(await page.evaluate(MATCH));
+        } catch {
+            return 'error';
+        }
+    };
+    /** Poll the picker while rows stream in; 'missing' keeps polling, JSON answers settle it. */
+    const awaitMatch = async (): Promise<string> => {
+        let match = await matchOnce();
+        for (let i = 0; match === 'missing' && i < AUDIO_ROW_RETRIES; i += 1) {
+            await page.waitForTimeout?.(AUDIO_ROW_SETTLE_MS);
+            match = await matchOnce();
+        }
+        return match;
+    };
     try {
         await page.evaluate(CARET);
         // Open the toolbar dropdown first (measured 2026-10-13): the menu item is hidden until its
@@ -1244,34 +1393,59 @@ export async function insertAudioMaterial(
         await page.waitForTimeout?.(300);
         await page.evaluate(`document.querySelector(${JSON.stringify(AUDIO_MENU)})?.click()`);
         await waitForVisible(page, AUDIO_DIALOG, AUDIO_DIALOG_TIMEOUT_MS);
-        // The 素材库 list loads async after the dialog opens — retry while rows stream in.
-        let dedupe = String(await page.evaluate(DEDUPE));
-        for (let i = 0; dedupe === 'missing' && i < AUDIO_ROW_RETRIES; i += 1) {
-            await page.waitForTimeout?.(AUDIO_ROW_SETTLE_MS);
-            dedupe = String(await page.evaluate(DEDUPE));
-        }
-        if (dedupe !== 'checked') {
-            // No reusable material: upload one, which reopens the list with it selected-by-default.
+        let match = await awaitMatch();
+        if (match === 'missing') {
+            // No reusable material: upload one, then POLL until the new row actually exists — never
+            // assume the upload auto-selected a default row (task 0260 AC2).
             const uploadWarning = await upload();
             if (uploadWarning !== null) {
                 await page.evaluate(CANCEL);
                 return uploadWarning;
             }
             await waitForVisible(page, AUDIO_DIALOG, AUDIO_DIALOG_TIMEOUT_MS);
-            const selected = String(await page.evaluate(SELECT_FIRST));
-            if (selected !== 'checked') {
+            match = await awaitMatch();
+            if (match === 'missing') {
                 await page.evaluate(CANCEL);
-                return `音频: 上传后未找到素材行 (${selected})`;
+                return `音频: 保存后素材列表未出现「${title}」，未插入音频`;
             }
+            if (match === 'error') {
+                await page.evaluate(CANCEL);
+                return '音频: 保存后素材匹配探测失败，未插入音频';
+            }
+        } else if (match === 'error') {
+            await page.evaluate(CANCEL);
+            return '音频: 素材匹配探测失败，未插入音频';
+        }
+        // Parse the match; anything but a unique ticked row stays a warning (never first-item).
+        let identity = '';
+        try {
+            const parsed = JSON.parse(match) as { state?: string; identity?: string };
+            if (parsed.state !== 'checked') {
+                await page.evaluate(CANCEL);
+                return `音频: 素材「${title}」${parsed.state === 'ambiguous' ? '列表匹配到多个同名条目，身份不唯一' : parsed.state === 'nobox' ? '行没有勾选框' : '未选中'}，未插入音频`;
+            }
+            identity = parsed.identity ?? '';
+        } catch {
+            await page.evaluate(CANCEL);
+            return '音频: 素材匹配探测返回未知结果，未插入音频';
         }
         if ((await page.evaluate(INSERT)) !== true) {
             await page.evaluate(CANCEL);
             return '音频: 插入按钮未找到，请手动插入';
         }
         await page.waitForTimeout?.(2_000);
-        const state = String(await page.evaluate(VERIFY));
-        if (state === 'absent' || state === 'noeditor') return '音频: 插入未生效，请手动检查';
-        if (state === 'notop') return '音频: 已插入但未在文首，请手动调整位置';
+        let verdict: { state?: string; identity?: string };
+        try {
+            verdict = JSON.parse(String(await page.evaluate(VERIFY))) as { state?: string; identity?: string };
+        } catch {
+            return '音频: 已插入但无法读取正文状态，请手动检查';
+        }
+        if (verdict.state === 'absent' || verdict.state === 'noeditor') return '音频: 插入未生效，请手动检查';
+        if (verdict.state !== 'top') return '音频: 已插入但未在文首，请手动调整位置';
+        // Identity readback (0260 R2): success requires the selected identity to reappear on the
+        // inserted node; an unreadable identity is an unverifiable warning, never a silent pass.
+        if (identity === '' || (verdict.identity ?? '') === '' || verdict.identity !== identity)
+            return `音频: 已插入文首但无法核对素材身份（selected=${identity || '未读到'} node=${(verdict.identity ?? '').slice(0, 60) || '未读到'}），请手动核对`;
         return '';
     } catch (error) {
         return `音频: ${error instanceof Error ? error.message.slice(0, 120) : '自动插入失败'}，请手动插入`;

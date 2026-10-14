@@ -201,9 +201,17 @@ function makeConsole(initial: ConsoleState) {
     let pastedHtml = '';
     let pickerOpen = false;
     let coverPanelOpen = false;
+    // The mass-send confirm dialog appears once the 发表 control is clicked, until confirmed.
+    let publishConfirmPending = false;
     let dialogOpen = initial.dialogOpen === true;
     let layoutOpen = false;
     let uploads: string[] = [];
+    // 0260: the settings rail's committed state (a confirmed dialog commits its setting), the
+    // pending dialog kind, the chosen 创作来源 label, and the committed cover asset src.
+    const enriched = { original: false, reward: false, claim: false, claimText: '' };
+    let pendingDialog: 'original' | 'reward' | 'claim' | 'url' | 'collection' | null = null;
+    let chosenClaim = '';
+    let coverCommittedSrc = '';
 
     const entryAttached = (selector: string): boolean => {
         const label = menuItemLabel(selector);
@@ -245,7 +253,7 @@ function makeConsole(initial: ConsoleState) {
         if (isPodcastUpload(selector) || isPodcastInsert(selector)) return state.mode === '播客';
         if (isConfirm(selector)) {
             if (state.mode === '视频') return pickerOpen;
-            if (coverPanelOpen) return true;
+            if (coverPanelOpen || publishConfirmPending) return true;
             return state.publish === 'refused';
         }
         // The settings/choice dialogs the enrichment rail and the cover panel open.
@@ -284,6 +292,8 @@ function makeConsole(initial: ConsoleState) {
                         isVisible: async () => attached(selector) && !isFileInput(selector),
                         fill: async (text) => {
                             log.push({ op: 'fill', args: [selector, text] });
+                            // 0260: the 原文链接 field's value is the committed-URL readback.
+                            if (selector.includes('input[type="url"]')) mirrorValue = text;
                         },
                         click: async () => {
                             log.push({ op: 'click', args: [selector] });
@@ -325,6 +335,23 @@ function makeConsole(initial: ConsoleState) {
                     return true;
                 }
                 if (expression.includes('a[href*="token="]')) return state.tokenLink ?? '';
+                // 0260 identity probes: the cover panel's filename identify + committed readback,
+                // and the audio picker's unique-title match + post-insert verification.
+                if (expression.includes('weui-desktop-img-picker__item')) {
+                    const wanted = JSON.parse(/const wanted = (\[[^\]]*\])/.exec(expression)?.[1] ?? '[]') as string[];
+                    coverCommittedSrc = `https://mmbiz.qpic.cn/${wanted[0] ?? ''}`;
+                    return JSON.stringify({ picked: wanted.length === 1, src: coverCommittedSrc });
+                }
+                if (expression.includes('#js_cover_area')) return coverCommittedSrc;
+                if (expression.includes('frm_checkbox_label.audio_item'))
+                    return JSON.stringify({ state: 'checked', identity: 'media-audio-1' });
+                if (expression.includes("state: 'noeditor'"))
+                    return JSON.stringify({ state: 'top', identity: 'media-audio-1' });
+                // 0260 committed-value probes: a confirmed settings dialog leaves the setting committed.
+                if (expression.includes('#js_original, .js_ori_setting_checkbox')) return enriched.original;
+                if (expression.includes('#js_reward_setting_area')) return enriched.reward;
+                if (expression.includes('#js_claim_source_area'))
+                    return { enabled: enriched.claim, text: enriched.claim ? chosenClaim : '' };
                 // 0272 measured audio-dialog probes: dedupe (missing → upload), the post-upload
                 // default row, the service-rules acknowledgement, and the 插入 button.
                 if (expression.includes("return 'norow'")) return 'checked';
@@ -347,7 +374,24 @@ function makeConsole(initial: ConsoleState) {
             if (selector.includes('__close') || selector.includes('取消')) {
                 // A closeable modal goes away; `dialogCloseable: false` models the picker that leaked.
                 if (state.dialogCloseable !== false) dialogOpen = false;
+                pendingDialog = null;
                 return;
+            }
+            if (isSettingsRow(selector)) {
+                pendingDialog = selector.includes('js_edit_ori')
+                    ? 'original'
+                    : selector.includes('js_reward')
+                      ? 'reward'
+                      : selector.includes('js_claim_source')
+                        ? 'claim'
+                        : selector.includes('js_url_checkbox')
+                          ? 'url'
+                          : 'collection';
+                dialogOpen = true;
+                return;
+            }
+            if (pendingDialog === 'claim' && selector.includes(':text(')) {
+                chosenClaim = /:text\("([^"]+)"\)/.exec(selector)?.[1] ?? chosenClaim;
             }
             if (menuItemLabel(selector) !== undefined) {
                 if (state.opensNewTab) openEditor();
@@ -379,8 +423,26 @@ function makeConsole(initial: ConsoleState) {
                 state.mediaSatisfied = uploads.length >= 2;
                 return;
             }
+            if (isPublishControl(selector)) {
+                publishConfirmPending = true;
+                return;
+            }
             if (isConfirm(selector)) {
                 if (state.mode === '视频' && pickerOpen) state.mediaSatisfied = uploads.length > 0;
+                if (pendingDialog === 'original') enriched.original = true;
+                if (pendingDialog === 'reward') enriched.reward = true;
+                if (pendingDialog === 'claim') {
+                    enriched.claim = true;
+                    enriched.claimText = chosenClaim;
+                }
+                // Only a settings dialog's 确定 closes the console dialog; the cover library's
+                // generic 确定 must leave the leaked-dialog state (dialogOpen) untouched.
+                if (pendingDialog !== null) {
+                    pendingDialog = null;
+                    dialogOpen = false;
+                }
+                coverPanelOpen = false;
+                publishConfirmPending = false;
                 return;
             }
         }
@@ -1045,31 +1107,50 @@ describe('wechatmp-pub measured traps (discovery §1, §5.1, §5.2)', () => {
 interface RecordingOpts {
     /** Selector fragment whose click rejects — the step retry + warning path. */
     failOn?: string;
+    /** 0260: selector fragment(s) that render no row control (openRow exhausts and throws). */
+    missingOn?: string | string[];
     /** 0272: model the 赏-blocked account (the dialog renders 前往开通). Default: functional. */
     rewardBlocked?: boolean;
+    /** 0260: the committed value a locator input readback returns (原文链接 committed URL). */
+    inputValue?: string | ((selector: string) => string);
+    /** 0260: selector fragment(s) whose locator input readback REJECTS (production wrappers can). */
+    inputValueFailsOn?: string | string[];
 }
 
 /** A seam-shaped recording page for the enrichment unit tests. */
 function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: RecordingOpts = {}): WechatPage {
     const broken = (selector: string) => opts.failOn !== undefined && selector.includes(opts.failOn);
+    const missing = (selector: string) =>
+        (Array.isArray(opts.missingOn) ? opts.missingOn : [opts.missingOn ?? '']).some(
+            (fragment) => fragment !== '' && selector.includes(fragment),
+        );
+    const readbackBroken = (selector: string) =>
+        (Array.isArray(opts.inputValueFailsOn) ? opts.inputValueFailsOn : [opts.inputValueFailsOn ?? '']).some(
+            (fragment) => fragment !== '' && selector.includes(fragment),
+        );
     return {
         goto: async () => undefined,
         url: () => editorUrlFor(0),
         locator: (selector) => ({
             // 0272: the 赏-blocked prerequisite only renders on blocked accounts; default fake = functional.
+            // 0260: missingOn models an account whose settings row is entirely absent.
             count: async () =>
                 selector.includes('前往开通') || selector.includes('无法开启')
                     ? opts.rewardBlocked === true
                         ? 1
                         : 0
-                    : 1,
+                    : missing(selector)
+                      ? 0
+                      : 1,
             first: () => ({
                 count: async () =>
                     selector.includes('前往开通') || selector.includes('无法开启')
                         ? opts.rewardBlocked === true
                             ? 1
                             : 0
-                        : 1,
+                        : missing(selector)
+                          ? 0
+                          : 1,
                 isVisible: async () => true,
                 fill: async (text) => {
                     if (broken(selector)) throw new Error('detached row');
@@ -1086,7 +1167,10 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
                     ops.push(`wait ${selector}`);
                 },
                 textContent: async () => '',
-                inputValue: async () => '',
+                inputValue: async () => {
+                    if (readbackBroken(selector)) throw new Error('committed readback refused');
+                    return typeof opts.inputValue === 'function' ? opts.inputValue(selector) : (opts.inputValue ?? '');
+                },
             }),
         }),
         setInputFiles: async (selector) => {
@@ -1130,9 +1214,9 @@ describe('wechatmp-pub modal recovery before the draft save (2026-10-12)', () =>
         const result = await makeTransport(console).publish({ content: ARTICLE });
 
         expect(result.ok).toBe(false);
-        expect(result.error).toContain('Timeout 30000ms exceeded');
-        // The inventory is what made 2026-10-12's empty 草稿箱 diagnosable at all.
-        expect(result.error).toContain('open dialogs at submit');
+        // 0260 R3/AC5: the save click is refused through an unresolved overlay — the failure names
+        // the residual modal and carries the same inventory that made 2026-10-12 diagnosable.
+        expect(result.error).toContain('residual modal refused cleanup');
         expect(result.error).toContain('插入音频');
     });
 });
@@ -1195,28 +1279,44 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('a 原创 dialog that does not commit becomes a warning, not a false success', async () => {
         const ops: string[] = [];
-        const warnings = await enrichArticle(recordingPage(ops, [false]), {
+        // pre-read, post-read, the residual probe after the failed step, and the rail's closing sweep.
+        const warnings = await enrichArticle(recordingPage(ops, [false, false, false, false]), {
             original: true,
             author: '冰原奔狼',
         });
-        expect(warnings).toEqual(['原创声明: dialog did not close — check the draft']);
+        expect(warnings).toEqual(['原创声明: 原创声明未生效，请手动设置']);
         expect(ops).toContain('click button:has-text("取消")');
     });
 
     test('a 原创 dialog that commits leaves no warning', async () => {
         const ops: string[] = [];
-        const warnings = await enrichArticle(recordingPage(ops, [true]), { original: true, author: '冰原奔狼' });
+        // pre-read true → the row is never opened; post-read true; the closing sweep probes `closed`.
+        const warnings = await enrichArticle(recordingPage(ops, [true, true, false]), {
+            original: true,
+            author: '冰原奔狼',
+        });
         expect(warnings).toEqual([]);
+        // Committed settings are never re-opened (and never toggled off).
+        expect(ops.some((op) => op.includes('js_edit_ori'))).toBe(false);
     });
 
     test('原文链接 fills the surfdash URL, and 赞赏 takes its account from 作者 when empty', async () => {
         const ops: string[] = [];
-        // reward account empty → fill from 作者; the 赞赏 dialog closes; then 原文链接 commits.
-        const warnings = await enrichArticle(recordingPage(ops, [true, true, true]), {
-            reward: true,
-            author: '冰原奔狼',
-            originalUrl: 'https://surfing.salty.vip/zh/posts/20261010-ai-ai',
-        });
+        // reward pre-read uncommitted → open + fill; reward post-read committed; then the 赞赏 and
+        // 原文链接 residual probes and the closing sweep all read `closed`; the committed URL readback
+        // comes from the locator (`opts.inputValue`), not evaluate.
+        const warnings = await enrichArticle(
+            recordingPage(ops, [false, true, false, false, false], {
+                // Only the 原文链接 dialog's URL field carries the committed value; the 赞赏账户 stays empty.
+                inputValue: (selector) =>
+                    selector.includes('input[type="url"]') ? 'https://surfing.salty.vip/zh/posts/20261010-ai-ai' : '',
+            }),
+            {
+                reward: true,
+                author: '冰原奔狼',
+                originalUrl: 'https://surfing.salty.vip/zh/posts/20261010-ai-ai',
+            },
+        );
         expect(warnings).toEqual([]);
         expect(ops).toContain('click .setting-group__switch.js_reward_open');
         expect(ops).toContain('click .allow_click_opr.js_url_checkbox');
@@ -1227,15 +1327,96 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('a creation-source choice that does not stick becomes a warning', async () => {
         const ops: string[] = [];
-        const warnings = await enrichArticle(recordingPage(ops, [false]), { claimSource: '个人观点，仅供参考' });
+        const warnings = await enrichArticle(recordingPage(ops, [false, false, false, false]), {
+            claimSource: '个人观点，仅供参考',
+        });
         expect(warnings).toEqual(['创作来源: 未生效，请手动设置']);
+    });
+
+    test('0260: a reward row that dies mid-step still ends as 赞赏未生效 after the refusal sweep', async () => {
+        const ops: string[] = [];
+        // pre-read uncommitted; the retry sweep, the fail sweep, the residual probe and the closing
+        // sweep all read `closed`; the step warning is the sliced locator error.
+        const warnings = await enrichArticle(
+            recordingPage(ops, [false, false, false, false, false], { failOn: 'js_reward_open' }),
+            { reward: true, author: '冰原奔狼' },
+        );
+        expect(warnings).toContain('赞赏: 赞赏未生效，请手动设置');
+        // The row click was broken by failOn (it throws before recording), but both retry sweeps ran.
+        expect(warnings.some((w) => w.startsWith('赞赏:') && w.includes('detached row'))).toBe(true);
+    });
+
+    test('0260: an absent 合集 row exhausts openRow and warns once instead of crashing', async () => {
+        const ops: string[] = [];
+        const warnings = await enrichArticle(
+            recordingPage(ops, [false, false, false, false], {
+                missingOn: ['js_article_tags_label', 'text=合集'],
+            }),
+            { collection: '每日AI资讯' },
+        );
+        expect(warnings).toEqual([
+            '合集: no 合集 row control among [.allow_click_opr.js_article_tags_label | text=合集]',
+        ]);
+    });
+
+    test('0260: committed probes that throw degrade to unobservable — steps run, warnings fire, never success', async () => {
+        const ops: string[] = [];
+        const base = recordingPage(ops, [], {});
+        const page: WechatPage = {
+            ...base,
+            evaluate: (expression: string) =>
+                expression.includes('#js_original') ||
+                expression.includes('#js_reward_setting_area') ||
+                expression.includes('#js_claim_source_area')
+                    ? Promise.reject(new Error('probe window gone'))
+                    : base.evaluate(expression),
+        };
+        // The scripted residual queue is empty: every modalState probe reads `undefined` = unknown,
+        // which must surface as the unknown-overlay warning, never as a cleaned-up success.
+        const warnings = await enrichArticle(page, {
+            original: true,
+            reward: true,
+            author: '冰原奔狼',
+            claimSource: '个人观点，仅供参考',
+        });
+        // An unobservable residual is warned once per step; the residual contract then suppresses
+        // the per-setting 未生效 warning (unknown ≠ clean, but already surfaced).
+        expect(warnings).toEqual([
+            '原创声明: dialog state unknown after cleanup — a residual overlay may block later steps',
+            '赞赏: dialog state unknown after cleanup — a residual overlay may block later steps',
+            '创作来源: dialog state unknown after cleanup — a residual overlay may block later steps',
+        ]);
+    });
+
+    test('0260: committed readbacks that reject degrade to warnings, never a claimed success', async () => {
+        const ops: string[] = [];
+        // The 赞赏账户 readback rejecting falls back to "empty" (author fills); the 原文链接 readback
+        // rejecting degrades to null and the mismatch warning — neither claims success silently.
+        const warnings = await enrichArticle(
+            recordingPage(ops, [false, true, false, false, false], {
+                inputValueFailsOn: ['赞赏', 'input[type="url"]'],
+            }),
+            {
+                reward: true,
+                author: '冰原奔狼',
+                originalUrl: 'https://surfing.salty.vip/zh/posts/20261010-ai-ai',
+            },
+        );
+        expect(warnings).toEqual(['原文链接: 已提交但未读取到已保存的链接，请核对']);
+        // The reward account was still filled from 作者 despite the rejected readback.
+        expect(ops.some((op) => op.startsWith('fill ') && op.includes('冰原奔狼'))).toBe(true);
     });
 
     test('insertAudioMaterial reuses the same-title 素材库 material and verifies placement at the top', async () => {
         const ops: string[] = [];
         const warning = await insertAudioMaterial(
-            // caret, dedupe, agree, select-first, insert, verify (the menu-open evaluates script no returns).
-            recordingPage(ops, [undefined, 'checked', true, 'top']),
+            // caret, match (JSON identity), insert, verify (the menu-open evaluates script no returns).
+            recordingPage(ops, [
+                undefined,
+                '{"state":"checked","identity":"media-1"}',
+                true,
+                '{"state":"top","identity":"media-1"}',
+            ]),
             AUDIO_INPUT,
         );
         expect(warning).toBe('');
@@ -1321,8 +1502,17 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
     test('insertAudioMaterial uploads the audio + cover when the 素材库 has no same-title material', async () => {
         const ops: string[] = [];
         const warning = await insertAudioMaterial(
-            // caret, 3× dedupe (the 素材库 rows stream in), agree, select-first, insert, verify.
-            recordingPage(ops, [undefined, 'missing', 'missing', 'missing', 'checked', 'checked', true, 'top']),
+            // caret, match missing ×3 (the 素材库 rows stream in), agree, post-upload match, insert, verify.
+            recordingPage(ops, [
+                undefined,
+                'missing',
+                'missing',
+                'missing',
+                'checked',
+                '{"state":"checked","identity":"media-1"}',
+                true,
+                '{"state":"top","identity":"media-1"}',
+            ]),
             AUDIO_INPUT,
         );
         expect(warning).toBe('');
@@ -1346,9 +1536,16 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('a step whose row keeps detaching is retried once, then warned and swept', async () => {
         const ops: string[] = [];
-        const warnings = await enrichArticle(recordingPage(ops, [true], { failOn: 'js_article_tags_label' }), {
-            collection: '每日AI资讯',
-        });
+        const warnings = await enrichArticle(
+            recordingPage(
+                ops,
+                // sweep 1's two probes (open → close-btn pass → closed), the residual probe, and the
+                // closing sweep.
+                [true, false, false, false],
+                { failOn: 'js_article_tags_label' },
+            ),
+            { collection: '每日AI资讯' },
+        );
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toContain('合集');
         expect(warnings[0]).toContain('detached row');
@@ -1358,7 +1555,12 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('a step whose row detaches once succeeds on its retry without a warning', async () => {
         const ops: string[] = [];
-        const page = recordingPage(ops, [true]);
+        const page = recordingPage(ops, [
+            /* retry sweep probes */ true,
+            false,
+            /* residual probe */ false,
+            /* closing sweep */ false,
+        ]);
         let firstTagsClick = true;
         const flaky: WechatPage = {
             ...page,
@@ -1390,10 +1592,25 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('insertAudioMaterial warns for each non-committed insert outcome it can meet', async () => {
         const cases: Array<[unknown[], string]> = [
-            [[undefined, 'checked', false], '插入按钮未找到'],
-            [[undefined, 'checked', true, 'absent'], '插入未生效'],
-            [[undefined, 'checked', true, 'notop'], '未在文首'],
-            [[undefined, 'checked', true, 'noeditor'], '插入未生效'],
+            [[undefined, '{"state":"checked","identity":"media-1"}', false], '插入按钮未找到'],
+            [
+                [
+                    undefined,
+                    '{"state":"checked","identity":"media-1"}',
+                    true,
+                    '{"state":"absent","identity":"media-1"}',
+                ],
+                '插入未生效',
+            ],
+            [
+                [undefined, '{"state":"checked","identity":"media-1"}', true, '{"state":"noeditor","identity":null}'],
+                '插入未生效',
+            ],
+            // 0260: a placed node whose identity cannot be tied to the requested material is a warning.
+            [
+                [undefined, '{"state":"checked","identity":"media-1"}', true, '{"state":"top","identity":"other"}'],
+                '无法核对素材身份',
+            ],
         ];
         for (const [returns, expected] of cases) {
             const ops: string[] = [];

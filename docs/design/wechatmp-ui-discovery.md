@@ -23,6 +23,22 @@
 > individually re-probed on this pass, so `wechatmp-pub`'s selectors for them are candidate shapes
 > resolved by visible label text; the flow reports each by name when one misses.
 
+> **Fifth pass — committed-state repair (task 0260, measured 2026-10-13, evidence `.spur/run/wechat-drift-task/measure-20261013/*.json`, repaired 2026-10-14).**
+> The 文章 rail now reads the REQUESTED committed editor state before AND after each settings step
+> (runtime DOM properties only, never HTML attributes): 原创 = `#js_original`/`.js_ori_setting_checkbox`
+> checked, 赞赏 = `#js_reward_setting_area .js_reward_setting_checkbox` checked, 创作来源 =
+> `#js_claim_source_area` checkbox checked + `.js_claim_source_selected` text equal to the requested
+> stance; only the exact committed value establishes success — missing, throwing or unverifiable
+> probes are named warnings (`…未生效，请手动设置`), never truthy defaults. An unclosable dialog yields
+> per-step residual diagnostics and the 保存为草稿 click refuses through any unresolved overlay
+> (inventory named in the failure). Audio reuse is identity-checked (exact whitespace/NBSP-normalized
+> title → data-mediaid/thumb identity); prefix or duplicate titles are refused, never first-item;
+> an upload only succeeds after the saved row appears AND the body node verifies at top. Real-Chromium
+> fixture regressions (`tests/fixtures/wechatmp-dom-runner.ts` + `tests/wechatmp-dom.test.ts`) execute
+> the production expressions against synthetic DOM built from these shapes — they caught one real
+> defect: a mixed-engine selector union (`text=上传音频, button:has-text(…)`), which Playwright parses
+> as pure CSS and matches nothing; the upload/cover clicks now click the `trySelectors` winner.
+
 Method: the plugins' own Chromium (Playwright 1.55 build) on the real profile dir
 `~/.config/kk/browser-profiles/wechatmp`, headed, driven by `.spur/run/discovery/wechatmp-walk.ts`.
 Operator attended and scanned the login QR in-window (the stored session had expired).

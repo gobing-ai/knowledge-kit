@@ -68,6 +68,22 @@ export interface OpenedConsole {
 
 export type OpenConsole = (profileDir: string) => Promise<OpenedConsole>;
 
+/**
+ * Modal state measured from the live DOM. A throwing or non-boolean probe is `unknown` — never
+ * `closed` (task 0260 R3: an unreadable overlay must not be treated as cleaned up, or a later step
+ * clicks through a footer it cannot see).
+ */
+export async function modalState(page: WechatPage): Promise<'closed' | 'open' | 'unknown'> {
+    try {
+        const raw = await page.evaluate(
+            `[...document.querySelectorAll('.weui-desktop-dialog__wrp, .weui-desktop-dialog')].some((d) => d.offsetWidth)`,
+        );
+        return raw === true ? 'open' : raw === false ? 'closed' : 'unknown';
+    } catch {
+        return 'unknown';
+    }
+}
+
 /** A selector with an ATTACHED match (hidden inputs included), or `undefined` at the deadline. */
 async function tryFindAttachedSelector(
     page: WechatPage,
