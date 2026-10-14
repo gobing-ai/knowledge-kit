@@ -4,7 +4,7 @@ name: Re-measure the WeChat MP enrichment rail against the drifted console
 status: done
 template: issue
 created_at: 2026-10-13T03:22:54.165Z
-updated_at: "2026-10-14T01:48:38.480Z"
+updated_at: "2026-10-14T02:55:23.654Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -152,7 +152,7 @@ The solution deliberately leaves account provisioning, committed identity/value 
 | R5 | MET | Absent 一键排版 control skips silently — `plugins/publishings/wechatmp-pub/src/flow.ts:581` returns null; `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1285-1291` asserts empty enrichWarnings. |
 | R6 | MET | Library cover deferred behind the audio material — `plugins/publishings/wechatmp-pub/src/flow.ts:700-714,735-739`; ordering test `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1293-1319`. |
 | R7 | MET | Toolbar dropdown → `li.js_insertaudio` before the dialog — `plugins/publishings/wechatmp-pub/src/flow.ts:199-202,1243-1245`; same-title dedupe + measured upload sequence retained. |
-| R8 | MET | Fail-soft contract unchanged; modal-recovery + warning-contract tests green this session: `wechatmp-pub.test.ts` 73 pass / 0 fail and full `bun run gate` exit 0 (2777 pass / 2 skip / 0 fail). |
+| R8 | MET | Fail-soft contract unchanged; modal-recovery + warning-contract tests green this session: `wechatmp-pub.test.ts` 73 pass / 0 fail and full `bun run gate` exit 0 (2778 pass / 2 skip / 0 fail, `.spur/run/verify-g11-g14-gate.log`). |
 | R9 | MET | Selector map + evidence paths — `.spur/run/wechat-drift-task/measure-20261013/` (captures + `12-original-dialog-map.json` + `22-audio-modal-map.json`) vs `.spur/run/wechat-drift-task/bg.md:13-23`; fixtures cover 赏-blocked, URL-row-missing, layout-absent, modal cleanup; committed-state read-back is scoped to 0260 by the task Design. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |

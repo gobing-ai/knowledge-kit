@@ -4,7 +4,7 @@ name: Keep a voice2 XHS series when card point text overflows the safe area
 status: done
 template: feature-impl
 created_at: 2026-10-10T15:28:47.498Z
-updated_at: "2026-10-14T01:48:36.935Z"
+updated_at: "2026-10-14T02:55:12.696Z"
 feature_id: G11
 
 priority: P2
@@ -115,8 +115,8 @@ Rationale: the retry branches on stderr the inherit-stdio `kk()` cannot return, 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `xhsOverflowPoints` at `plugins/kk/scripts/daily-stages.ts:2405` parses `points[n]` overflow fields; `reduceOverflowingPoints` at `plugins/kk/scripts/daily-stages.ts:2434` shortens them; the capture-and-rewrite loop at `plugins/kk/scripts/daily-stages.ts:2569-2591` re-calls image-gen through `kkCaptured` (`plugins/kk/scripts/kk-workflow-stages.ts:578`); test `apps/cli/tests/kk-workflow-stages.test.ts:1682` (shorter points, package written) green in the full suite this run |
-| R2 | MET | A non-overflow failure still stops at that card, keeps earlier cards and prints the resume line (`plugins/kk/scripts/daily-stages.ts:2557-2558`, `plugins/kk/scripts/daily-stages.ts:2592`); tests `apps/cli/tests/kk-workflow-stages.test.ts:1632` (exit 7, card named, resume line) and `apps/cli/tests/kk-workflow-stages.test.ts:1831` (persistent failure stops) green this run. The "not retried" clause was superseded by sibling task 0269 R1 (one same-envelope retry, closed decision in 0269 Q&A; rationale at `plugins/kk/scripts/daily-stages.ts:2560-2567`) |
+| R1 | MET | `xhsOverflowPoints` at `plugins/kk/scripts/daily-stages.ts:2412` parses `points[n]` overflow fields; `reduceOverflowingPoints` at `plugins/kk/scripts/daily-stages.ts:2441` shortens them; the capture-and-rewrite loop at `plugins/kk/scripts/daily-stages.ts:2576-2598` re-calls image-gen through `kkCaptured` (`plugins/kk/scripts/kk-workflow-stages.ts:578`); test `apps/cli/tests/kk-workflow-stages.test.ts:1682` (shorter points, package written) green in the full suite this run |
+| R2 | MET | A non-overflow failure still stops at that card, keeps earlier cards and prints the resume line (`plugins/kk/scripts/daily-stages.ts:2564-2565`, `plugins/kk/scripts/daily-stages.ts:2599`); tests `apps/cli/tests/kk-workflow-stages.test.ts:1632` (exit 7, card named, resume line) and `apps/cli/tests/kk-workflow-stages.test.ts:1831` (persistent failure stops) green this run. The "not retried" clause was superseded by sibling task 0269 R1 (one same-envelope retry, closed decision in 0269 Q&A; rationale at `plugins/kk/scripts/daily-stages.ts:2567-2574`) |
 | R3 | MET | `git diff --quiet c0d19166 f7fb7554 -- plugins/kk/workflows/kk-daily-ai-voice2.yaml` exit 0 this run (workflow untouched by the 0251 landing); `xhs_live: "false"` at `plugins/kk/workflows/kk-daily-ai-voice2.yaml:48` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |

@@ -4,7 +4,7 @@ name: Retry a transient image-gen failure instead of losing the whole XHS card s
 status: done
 template: issue
 created_at: 2026-10-12T23:05:01.141Z
-updated_at: "2026-10-14T01:48:37.942Z"
+updated_at: "2026-10-14T02:55:21.254Z"
 feature_id: G11
 
 ac_altitude: task-local
@@ -125,7 +125,7 @@ This is the corrected disposition of 0273: its obsolete plugin-level solution is
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1808-1829` recovery and `:1831-1845` persistent-failure cases assert one unchanged-envelope retry and the bounded stop; `-t daily-xhs-render` run this session: 20 pass / 0 fail |
-| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2424` shared `XHS_OVERFLOW_ATTEMPTS = 3`; per-card `transientRetryUsed` guard re-read at `plugins/kk/scripts/daily-stages.ts:2568-2576` |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2431` shared `XHS_OVERFLOW_ATTEMPTS = 3`; per-card `transientRetryUsed` guard re-read at `plugins/kk/scripts/daily-stages.ts:2575-2583` |
 | R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1937` — rewrite branch separate: shortened `points[1]`, preserved `points[0]`, retry reuses rewritten envelope byte-for-byte |
 | R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1847-1884` — child-invocation seam observed via argv record + per-call input snapshots; exact call counts asserted |
 | R5 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1847-1884` — both cards flake once, 2 invocations each, per-card snapshot byte-identity, cards + content packaged |

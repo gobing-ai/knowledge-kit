@@ -4,7 +4,7 @@ name: Cover the voice2 dogfood stage contracts with regression tests
 status: done
 template: feature-impl
 created_at: 2026-10-10T15:28:47.200Z
-updated_at: "2026-10-14T01:48:36.677Z"
+updated_at: "2026-10-14T02:55:09.577Z"
 feature_id: G11
 
 priority: P2
@@ -125,10 +125,10 @@ Rationale: each requirement sits in the suite whose harness already drives that 
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2607` (describe at `apps/cli/tests/kk-workflow-stages.test.ts:2585`) locks `deferPlanDocs` at `plugins/kk/scripts/daily-stages.ts:1301-1315` (5th arg `true` → content only, `plan cached:` log, return before plan.json); green in the full suite this run |
+| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2607` (describe at `apps/cli/tests/kk-workflow-stages.test.ts:2585`) locks `deferPlanDocs` at `plugins/kk/scripts/daily-stages.ts:1308-1322` (5th arg `true` → content only, `plan cached:` log, return before plan.json); green in the full suite this run |
 | R2 | MET | `plugins/kk/tests/kk-workflow-stages.test.ts:277` (near-duplicate dropped, stderr names id) and `plugins/kk/tests/kk-workflow-stages.test.ts:292` (bytes unchanged across two runs) lock the cached-candidates title dedup at `plugins/kk/scripts/daily-stages.ts:193-206` (no-drop early return `plugins/kk/scripts/daily-stages.ts:198`, `qc: dropped` stderr `plugins/kk/scripts/daily-stages.ts:206`); green in the full suite this run |
-| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:3152` (over-budget → block YAML, checker exit 0, under budget) and `apps/cli/tests/kk-workflow-stages.test.ts:3180` (under-budget bytes unchanged) lock `fitVoicescriptToBudget` at `plugins/kk/scripts/daily-stages.ts:2012-2075` and `voicescriptToBlockYaml` at `plugins/kk/scripts/daily-stages.ts:1955`; the `{` JSON branch is `plugins/kk/scripts/validate-voicescript.ts:280`; green in the full suite this run |
-| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2683` (script-plan excluded id dropped via the `-shownotes` sibling) and `apps/cli/tests/kk-workflow-stages.test.ts:2698` (missing script plan keeps the original path) lock `plugins/kk/scripts/daily-stages.ts:2185-2199` (script-plan `excluded` read) and `plugins/kk/scripts/daily-stages.ts:2222` (sibling path); green in the full suite this run |
+| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:3152` (over-budget → block YAML, checker exit 0, under budget) and `apps/cli/tests/kk-workflow-stages.test.ts:3180` (under-budget bytes unchanged) lock `fitVoicescriptToBudget` at `plugins/kk/scripts/daily-stages.ts:2019-2082` and `voicescriptToBlockYaml` at `plugins/kk/scripts/daily-stages.ts:1962`; the `{` JSON branch is `plugins/kk/scripts/validate-voicescript.ts:280`; green in the full suite this run |
+| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:2683` (script-plan excluded id dropped via the `-shownotes` sibling) and `apps/cli/tests/kk-workflow-stages.test.ts:2698` (missing script plan keeps the original path) lock `plugins/kk/scripts/daily-stages.ts:2192-2206` (script-plan `excluded` read) and `plugins/kk/scripts/daily-stages.ts:2229` (sibling path); green in the full suite this run |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

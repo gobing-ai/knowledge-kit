@@ -4,7 +4,7 @@ name: Compare VoxCPM and Gemini daily audio with recorded quality evidence
 status: done
 template: feature-impl
 created_at: 2026-10-12T00:07:13.361Z
-updated_at: "2026-10-13T15:25:38.437Z"
+updated_at: "2026-10-14T02:54:39.422Z"
 feature_id: G14
 priority: P2
 estimate_hours: 3
@@ -137,13 +137,13 @@ Deliverables: one production fix (operator-authorized scope lift, 2026-10-12), t
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | In-scope matrix complete with verified per-artifact provenance (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:66`). Short: VoxCPM zh 11.86 s / mixed 12.82 s at 48 000 Hz (`kk:voxcpm-tts`), Gemini zh 13.06 s / mixed 15.26 s at 24 000 Hz (`kk:gemini-tts`) — inputs frozen at `plugins/generations/voxcpm-tts/tests/fixtures/comparison-zh.yaml:1` (`354c5c40…`) and `plugins/generations/voxcpm-tts/tests/fixtures/comparison-mixed.yaml:1` (`709db465…`). Full episode (frozen script `712cbf0e…`, 41 segments, wrapped Docs `dee6f197…`, four isolated roots): VoxCPM whole 966.11 s → final 974.93 s, VoxCPM sequential 947.24 s → 956.05 s, Gemini whole 994.60 s → 1003.42 s, each `episode-duration ok` with the same hashed intro sting (`fe46031c…`). The Gemini sequential cell is descoped by operator direction (Q&A entry 2026-10-12) and its Voicebox fallback is recorded as a blocker at `docs/plans/2026-10-12-voxcpm-audio-comparison.md:130`, never counted as Gemini. |
-| R2 | MET | Hashes, exact argv, package/model/device, timings, ffprobe and QC recorded (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:99` backend table, `:150` Gemini arm, `:66` run ids); the fallback was rejected as a Gemini comparison per the requirement. |
-| R3 | MET | `docs/plans/2026-10-12-voxcpm-audio-comparison.md:196` records listening as pending, asserts no pronunciation/timbre/prosody claim, concludes **inconclusive** with explicit limits, and the recommendation keeps the current default (no default/calibration change). |
-| R4 | MET | Fixtures persisted in-tree; the dated report carries commands, partial failures, blockers and local artifact pointers (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:1`); no evidence was fabricated. The one production edit (`plugins/generations/voxcpm-tts/python/worker.py:338`) is the operator-authorized protocol fix, covered by three new tests. |
+| R2 | MET | Hashes, exact argv, package/model/device, timings, ffprobe and QC recorded (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:95-99` full-episode table, `docs/plans/2026-10-12-voxcpm-audio-comparison.md:133-146` backend table, `docs/plans/2026-10-12-voxcpm-audio-comparison.md:104-131` Gemini arm (§5.1), `docs/plans/2026-10-12-voxcpm-audio-comparison.md:64-86` run ids); the fallback was rejected as a Gemini comparison per the requirement. |
+| R3 | MET | `docs/plans/2026-10-12-voxcpm-audio-comparison.md:148-151` records listening as pending, asserts no pronunciation/timbre/prosody claim, concludes **inconclusive** with explicit limits, and the recommendation keeps the current default (no default/calibration change). |
+| R4 | MET | Fixtures persisted in-tree; the dated report carries commands, partial failures, blockers and local artifact pointers (`docs/plans/2026-10-12-voxcpm-audio-comparison.md:1`); no evidence was fabricated. The one production edit (`plugins/generations/voxcpm-tts/python/worker.py:346-348`) is the operator-authorized protocol fix (regression `plugins/generations/voxcpm-tts/tests/test_worker.py:121-145`), covered by three new tests. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R8 — Matched audio comparison records quality and operating cost | MET | command | `bun apps/cli/src/index.ts stage daily-generate .spur/run/0258-voxcpm-comparison/work-roots/voxcpm-whole 20261010 "$PWD/plugins" true voxcpm` → exit 0, `ffprobe` 48 000 Hz mono 974.93 s final, `metadata.generator == kk:voxcpm-tts`, QC 100; the same with `1 20` → 956.05 s, `kk:voxcpm-tts`; the Gemini whole-document cell → 1003.42 s, `kk:gemini-tts`, QC 100; both short fixtures per driver → 48/24 kHz, all `metadata.generator` verified on the artifact. Recorded at `docs/plans/2026-10-12-voxcpm-audio-comparison.md:118` and `:150`. The Gemini sequential cell is descoped by operator direction and its fallback blocker is recorded rather than counted. |
+| R8 — Matched audio comparison records quality and operating cost | MET | command | `bun apps/cli/src/index.ts stage daily-generate .spur/run/0258-voxcpm-comparison/work-roots/voxcpm-whole 20261010 "$PWD/plugins" true voxcpm` → exit 0, `ffprobe` 48 000 Hz mono 974.93 s final, `metadata.generator == kk:voxcpm-tts`, QC 100; the same with `1 20` → 956.05 s, `kk:voxcpm-tts`; the Gemini whole-document cell → 1003.42 s, `kk:gemini-tts`, QC 100; both short fixtures per driver → 48/24 kHz, all `metadata.generator` verified on the artifact. Recorded at `docs/plans/2026-10-12-voxcpm-audio-comparison.md:117-119` and the generator column of `docs/plans/2026-10-12-voxcpm-audio-comparison.md:95-99`. The Gemini sequential cell is descoped by operator direction and its fallback blocker is recorded rather than counted. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

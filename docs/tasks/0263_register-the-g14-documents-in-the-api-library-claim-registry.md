@@ -4,7 +4,7 @@ name: Register the G14 documents in the API/library claim registry and write the
 status: done
 template: feature-impl
 created_at: 2026-10-12T20:56:07.264Z
-updated_at: "2026-10-12T23:07:15.393Z"
+updated_at: "2026-10-14T02:55:26.164Z"
 feature_id: G14
 
 priority: P3
@@ -154,16 +154,16 @@ changed — the control was run in its effective form and the nuance is recorded
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `sh .spur/rules/structure/api-library-claim-citation.sh` with all 12 `--require-block` args → exit 0; the four new lines sit after the 0255 entry at `.spur/rules/structure/api-library-claim-citation.yaml:83` and the eight pre-existing entries are byte-unchanged. |
-| R2 | MET | Blocks written at `docs/design/voxcpm-daily-voice-driver.md:154`, `docs/tasks/0257_wire-voxcpm-into-both-daily-workflows-with-driver-aware-audi.md:228` and `docs/tasks/0258_compare-voxcpm-and-gemini-daily-audio-with-recorded-quality-.md:162`; 0256 keeps its pre-existing block at `docs/tasks/0256_add-standalone-voxcpm-generator-using-the-shared-voice-pipel.md:86`. Every `path:line` was re-read with `sed -n '<n>p'` in this tree before the write. |
-| R3 | MET | HIGH rows cite a URL or `path:line`; the two MEDIUM rows name their gap (`.spur/rules/structure/api-library-claim-citation.yaml:83` rows "lock contents beyond the pin are not audited" and "upstream Hub API not re-fetched for this document"). No block is empty (checker: no "no data row" finding). |
-| R4 | MET | Checker exit 0; control (a) exit 1, control (b) exit 1; `sh .spur/rules/structure/api-library-claim-citation.test.sh` → 18 passed / 0 failed; `bun run test-pre-check` → all 59 rules passed. |
+| R1 | MET | `sh .spur/rules/structure/api-library-claim-citation.sh` with all 12 `--require-block` args → exit 0; the four new lines sit after the 0255 entry at `.spur/rules/structure/api-library-claim-citation.yaml:83-86` and the eight pre-existing entries are byte-unchanged. |
+| R2 | MET | Blocks written at `docs/design/voxcpm-daily-voice-driver.md:154`, `docs/tasks/0257_wire-voxcpm-into-both-daily-workflows-with-driver-aware-audi.md:228` and `docs/tasks/0258_compare-voxcpm-and-gemini-daily-audio-with-recorded-quality-.md:198`; 0256 keeps its pre-existing block at `docs/tasks/0256_add-standalone-voxcpm-generator-using-the-shared-voice-pipel.md:86`. Every `path:line` was re-read with `sed -n '<n>p'` in this tree before the write. |
+| R3 | MET | HIGH rows cite a URL or `path:line`; the two MEDIUM rows name their gap (`docs/design/voxcpm-daily-voice-driver.md:161-162` rows "lock contents beyond the pin are not audited" and "upstream Hub API not re-fetched for this document"). No block is empty (checker: no "no data row" finding). |
+| R4 | MET | Checker exit 0; control (a) exit 1, control (b) exit 1; `sh .spur/rules/structure/api-library-claim-citation.test.sh` → 18 passed / 0 failed (re-run this session); `bun run test-pre-check` → all 59 rules passed. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 | MET | command | `grep -oE '\-\-require-block=[^"]+' .spur/rules/structure/api-library-claim-citation.yaml \| wc -w` → 12; `sh .spur/rules/structure/api-library-claim-citation.sh <all 12>` → exit 0, no findings. |
-| AC2 | MET | command | Control (a): `.spur/run/0263-falsification/design-no-block.md` declared via `--require-block` → exit 1 ("carries no `API/library claim sources and confidence` block"). Control (b): `.spur/run/0263-falsification/0258-no-citation.md`, HIGH row with **both** citation cells emptied → exit 1 ("HIGH claim cites no source"). Measured nuance: emptying only the Source cell while `Local verification` still carries `apps/cli/src/commands/executor.ts:47` exits 0, because the checker reads `cited = is_cite($3) \|\| is_cite($4)` (`.spur/rules/structure/api-library-claim-citation.sh:150`) — the row still cites an openable artifact, which is the arm's contract. The checker is out of this task's scope and was not modified; the rule's own 18 cases cover the same "no citation anywhere" defect and stay green. |
-| AC3 | MET | command | `bun run test-pre-check` → exit 0, "All 59 rules passed — no violations found" (`.spur/run/0263-gate.out`, full log `.spur/run/0263-test-gate.log`, status `.spur/run/0263-test-gate.status` = PASS). |
+| AC2 | MET | command | Control (a): `.spur/run/0263-falsification/design-no-block.md` declared via `--require-block` → exit 1 ("carries no `API/library claim sources and confidence` block"). Control (b): `.spur/run/0263-falsification/0258-no-citation.md`, HIGH row with **both** citation cells emptied → exit 1 ("HIGH claim cites no source"). Measured nuance: emptying only the Source cell while `Local verification` still carries `apps/cli/src/commands/executor.ts:47` exits 0, because the checker reads `cited = is_cite($3) \|\| is_cite($4)` (`.spur/rules/structure/api-library-claim-citation.sh:153`) — the row still cites an openable artifact, which is the arm's contract. The checker is out of this task's scope and was not modified; the rule's own 18 cases cover the same "no citation anywhere" defect and stay green. |
+| AC3 | MET | command | `bun run test-pre-check` → exit 0, "All 59 rules passed — no violations found" (re-observed in this session's `bun run gate`) (full log `.spur/run/verify-g11-g14-gate.log`, `exit=0`). |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
