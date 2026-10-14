@@ -45,6 +45,21 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Put kk on PATH
+        # The stage runner spawns bare `kk` for plugin executor runs and the surfdash patch
+        # tests drive the real executor; there is no global kk install on runners. The built
+        # dist/index.js carries the bun shebang, so a symlink resolves like a real binary.
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          ln -s "$PWD/apps/cli/dist/index.js" "$HOME/.local/bin/kk"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Playwright chromium
+        # The Board acceptance tests launch chromium. Runner images ship a browser cache that
+        # drifts across image rollouts (2026-10-14: the 1.55.0 headless-shell build vanished
+        # between two green runs), so download the pinned build instead of trusting the image.
+        run: bunx playwright install chromium
+
       - name: Lint
         run: bun run lint
 
