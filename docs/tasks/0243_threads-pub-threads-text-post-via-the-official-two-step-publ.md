@@ -4,7 +4,7 @@ name: threads-pub — Threads text post via the official two-step publishing API
 status: done
 template: feature-impl
 created_at: 2026-10-09T23:19:30.092Z
-updated_at: "2026-10-12T05:55:17.542Z"
+updated_at: "2026-10-14T05:04:05.166Z"
 feature_id: E94
 priority: P2
 tags:
@@ -155,7 +155,7 @@ Test layer: `plugins/publishings/threads-pub/tests/threads-pub.test.ts` stubs `g
 | R4 | MET | `plugins/publishings/threads-pub/src/index.ts:199-240` — step name, HTTP status only with a response, explicit "no HTTP response was received" otherwise, bounded Graph `error.message`, created container id on publish-step failure, decimal-id validation; `plugins/publishings/threads-pub/tests/threads-pub.test.ts:247-316` (4xx, 5xx, non-JSON, missing/non-string/non-decimal id, timeout, redaction of both token encodings) |
 | R5 | MET | `plugins/publishings/threads-pub/src/index.ts:59-92` — `options.driver`, `options.images` and `metadata.images` refused by name before a transport resolves; `plugins/publishings/threads-pub/tests/threads-pub.test.ts:319-408` (transport, `processPublishIO`, fake-mode non-bypass) |
 | R6 | MET | `plugins/publishings/threads-pub/src/index.ts:262-268` — `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` returns `FakeFileCliTransport`; `plugins/publishings/threads-pub/tests/threads-pub.test.ts:411-499` plus the `kk executor run` probe below |
-| R7 | MET | `docs/04_DESIGN.md:823` (`REQUEST_TIMEOUT_MS` row), `docs/04_DESIGN.md:930` (transport-verdict row), `docs/04_DESIGN.md:1004-1013` (`@gobing-ai/threads-pub` package section) |
+| R7 | MET | `docs/04_DESIGN.md:1014` (`REQUEST_TIMEOUT_MS` row), `docs/04_DESIGN.md:1121` (transport-verdict row), `docs/04_DESIGN.md:1196-1205` (`@gobing-ai/threads-pub` package section) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|

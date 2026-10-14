@@ -4,7 +4,7 @@ name: weibo-pub live operator dogfood — pin composer and article editor select
 status: done
 template: feature-impl
 created_at: 2026-10-09T23:19:30.104Z
-updated_at: "2026-10-12T21:46:34.515Z"
+updated_at: "2026-10-14T05:04:36.419Z"
 feature_id: E94
 priority: P3
 tags:
@@ -130,20 +130,6 @@ post-check rules green, and the live submit returning Weibo's own `errno 200001 
 - [x] R8. A **dedicated Weibo announcement content shape** for a new episode, plus the reusable way to hand it to the channel: the visible body carries the episode title plus a one-line hook **inside ~140 characters** (the feed's display budget — the platform allows 2000–5000, the feed truncates), followed by the episode **link** as plain text in the same body so Weibo autolinks it; `options.coverPath` / `metadata.coverImage` carries the cover artwork (R9). Record the shape as a concrete worked example derived from a real episode's Content and metadata (daily/ITC episode title, link, cover) together with the copyable `kk executor run weibo-pub --in <content.json> --out <result.json>` invocation and its env prerequisites, so any workflow can produce the announcement. Wiring the channel into daily/ITC stays a separate feature (E94 scope), so this is the documented handoff surface, not a new workflow step.
 - [x] R9. `post` validates **one** cover image and refuses an unsupported image by name: the accepted set is the composer's measured `accept` list (`.png .jpg .jpeg .webp .gif .bmp`) and Weibo's documented 5 MB `pic` bound; more than one image, a non-image path or an oversized file is refused before any browser opens. On the browser route the composer's image entry point is unreachable in a desktop automation context (measured 2026-10-12: no control rendered, the hidden input inert, `/api/upload*` 404), so an image post whose id cannot be identified is refused rather than posted text-only while claiming an image; the API route's `pic` upload is the documented path when an app exists. `article` keeps its cover rail.
 - [x] R10. **Reader-visible verification**: after a live announcement, the post is observable on the account's timeline/home feed, its id/URL is recorded, the embedded link resolves to the episode, and the cover renders (or the absence of a cover card is recorded as an observation, since previews are not guaranteed). The evidence goes into `docs/design/weibo-ui-discovery.md`, not the repository's committed scratch.
-
-#### Acceptance Criteria
-
-- [x] AC1 — weibo-pub saves a post or article draft by default from an observed signal (req: R2)
-- [x] AC2 — weibo-pub publishes live only when publishStatus is public (req: R3)
-
-Evidence: live run Result JSON + `docs/design/weibo-ui-discovery.md`; offline suite re-run green after constant changes.
-
-Given 0244/0245 are complete and an operator has a disposable verified account, when the draft leg and separately approved public post/article legs run, then fresh observed signals and cleanup records prove AC1/AC2. `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` must also retain stale-signal refusal and headless-only preflight regression cases after selector changes. Offline tests alone cannot verify live AC.
-- [x] AC3 — the silence is explained by measured evidence (post-click dialog state, composer before/after, toasts, account standing) and recorded in `docs/design/weibo-ui-discovery.md`, with no public write made before the diagnosis
-- [x] AC4 — the chosen publish route and its prerequisites are recorded, `m.weibo.cn`'s composer is measured either way, and the plugin's selectors/docs match the route
-- [x] AC5 — a dedicated announcement Content for a real episode validates offline: the visible hook is inside the ~140-character display budget, the episode link is present in the body, and the cover path is accepted
-- [x] AC6 — a `post` carrying exactly one cover image is accepted end-to-end in the offline suite (fresh-attachment signal observed, image part of the submitted content), while more than one image, a non-image path, or an oversized file is refused by name
-- [x] AC7 — the reusable invocation contract is documented with a copyable example, and a live announcement is verified reader-visibly with its URL, the resolving episode link and the cover observation recorded
 
 ### Acceptance Criteria
 
@@ -282,21 +268,21 @@ code path was at fault, and nothing was ever published from this account.
 | R2 | MET | the no-entitlement contingency ran: no 头条文章 editor is reachable, the leg stopped, and E94's R4 body was re-scoped with `spur feature update` (`docs/design/weibo-ui-discovery.md` §5) |
 | R3 | MET | live post published with `metadata.publishStatus: public`: `ok: true`, id `5353432296718677`; the article half is governed by R2 (`.spur/run/0246-live/result4.json`) |
 | R4 | MET | post selectors pinned from measurement and the mobile route adopted (`plugins/publishings/weibo-pub/src/index.ts:51`, `:69-100`) |
-| R5 | MET | the silence is explained with the site’s own evidence: account-specific `errno 200001` (`docs/design/weibo-ui-discovery.md` §4-pre) and the profile-lock preflight false negative, plus post-click diagnostics in the flow (`plugins/publishings/weibo-pub/src/index.ts:576-594`) |
+| R5 | MET | the silence is explained with the site’s own evidence: account-specific `errno 200001` (`docs/design/weibo-ui-discovery.md` §4-pre) and the profile-lock preflight false negative, plus post-click diagnostics in the flow (`plugins/publishings/weibo-pub/src/index.ts:578-596`) |
 | R6 | MET | the mobile composer is measured and adopted (`docs/design/weibo-ui-discovery.md` §2b) |
 | R7 | MET | the route decision and prerequisites are recorded (`docs/design/weibo-ui-discovery.md` §4b, `docs/04_DESIGN.md`) |
 | R8 | MET | the announcement contract and copyable invocation exist and were used verbatim for the successful post (`docs/design/weibo-ui-discovery.md` §4c) |
-| R9 | MET | the delivered contract: one-image validation with the measured accept set and the 5 MB bound, fail-closed refusal when an id cannot be read, the route limit measured (`.spur/run/0246-image-entry.json`) |
+| R9 | MET | the delivered contract: one-image validation with the measured accept set and the 5 MB bound, fail-closed refusal when an id cannot be read, the route limit measured: `plugins/publishings/weibo-pub/src/index.ts:104-116` (accept set + 5 MB), `plugins/publishings/weibo-pub/src/index.ts:213-251` (one-image validation), `plugins/publishings/weibo-pub/src/index.ts:479-487` (fail-closed when the pic id is unreadable), tests `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:512-533` and `:576-597`; the original image-entry run capture is no longer on disk, so this cites the code and tests |
 | R10 | MET | reader-visible verification performed on the live status page: hook rendered and the episode link was a live anchor (`.spur/run/0246-live/result4.json`, check output) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 — weibo-pub saves a post or article draft by default from an observed signal (req: R2) | MET | command | the live post published with `metadata.publishStatus: public` and returned `ok: true` (`.spur/run/0246-live/result4.json`); the article half is the entitlement-conditioned requirement the re-scoped feature R4 carries |
-| AC2 — weibo-pub publishes live only when publishStatus is public (req: R3) | MET | command | the successful run used `publishStatus: public`, and the refusal cases are covered by `bun test plugins/publishings/weibo-pub` (41 pass) |
+| AC2 — weibo-pub publishes live only when publishStatus is public (req: R3) | MET | command | the successful run used `publishStatus: public`, and the refusal cases are covered by `bun test plugins/publishings/weibo-pub` (42 pass, `.spur/run/verify-e94-lanes.log`) |
 | AC3 — the silence is explained by measured evidence (post-click dialog state, composer before/after, toasts, account standing) and recorded in `docs/design/weibo-ui-discovery.md`, with no public write made before the diagnosis | MET | command | the diagnosis is the site payload in `.spur/run/0246-live/result.json` and `docs/design/weibo-ui-discovery.md` §4-pre |
 | AC4 — the chosen publish route and its prerequisites are recorded, `m.weibo.cn`'s composer is measured either way, and the plugin's selectors/docs match the route | MET | command | the route was exercised end to end: `kk executor run weibo-pub` published through the mobile composer (`https://m.weibo.cn/detail/5353432296718677`), and the measurements are in `docs/design/weibo-ui-discovery.md` §2b/§4b |
-| AC5 — a dedicated announcement Content for a real episode validates offline: the visible hook is inside the ~140-character display budget, the episode link is present in the body, and the cover path is accepted | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` (41 pass) and the announcement shape that was actually posted |
-| AC6 — a `post` carrying exactly one cover image is accepted end-to-end in the offline suite (fresh-attachment signal observed, image part of the submitted content), while more than one image, a non-image path, or an oversized file is refused by name | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` image cases (41 pass) |
+| AC5 — a dedicated announcement Content for a real episode validates offline: the visible hook is inside the ~140-character display budget, the episode link is present in the body, and the cover path is accepted | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` (42 pass, `.spur/run/verify-e94-lanes.log`) and the announcement shape that was actually posted |
+| AC6 — a `post` carrying exactly one cover image is accepted end-to-end in the offline suite (fresh-attachment signal observed, image part of the submitted content), while more than one image, a non-image path, or an oversized file is refused by name | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` image cases (42 pass, `.spur/run/verify-e94-lanes.log`) |
 | AC7 — the reusable invocation contract is documented with a copyable example, and a live announcement is verified reader-visibly with its URL, the resolving episode link and the cover observation recorded | MET | command | the contract in `docs/design/weibo-ui-discovery.md` §4c plus the live post and its reader-visible check |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 

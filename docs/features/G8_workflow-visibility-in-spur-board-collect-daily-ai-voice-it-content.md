@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G8"
 name: "Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content"
-status: verifying
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-11T23:18:58.413Z"
-updated_at: "2026-10-13T22:18:10.026Z"
+updated_at: "2026-10-14T04:20:14.817Z"
 ---
 
 # G8: Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content
@@ -177,4 +177,5 @@ Feature: Workflow visibility in Spur Board
 
 - 2026-10-12T02:15:55.614Z backlog → active (system)
 - 2026-10-13T22:18:10.026Z active → verifying (system)
+- 2026-10-14T04:20:14.817Z verifying → done (system)
 

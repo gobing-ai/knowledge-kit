@@ -4,7 +4,7 @@ name: Register threads and weibo wherever publish channels are enumerated
 status: done
 template: feature-impl
 created_at: 2026-10-09T23:19:30.103Z
-updated_at: "2026-10-12T06:57:19.613Z"
+updated_at: "2026-10-14T05:04:12.292Z"
 feature_id: E94
 priority: P2
 tags:
@@ -140,22 +140,22 @@ Test layer: `apps/cli/tests/fanout.test.ts` (real plugin processes, fake transpo
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `packages/kk-core/tests/registry.test.ts:238` and `:242` (first inventory), `packages/kk-core/tests/registry.test.ts:607` and `:611` (second) — both channels asserted exactly; verified here, landed by 0243/0244 because the suites pin the shipped set |
+| R1 | MET | `packages/kk-core/tests/registry.test.ts:238` and `:243` (first inventory), `packages/kk-core/tests/registry.test.ts:608` and `:613` (second) — both channels asserted exactly; verified here, landed by 0243/0244 because the suites pin the shipped set |
 | R2 | MET | `apps/cli/tests/commands/plugin-check.test.ts:179` (`weibo-pub` in `CHANNELS`) and `apps/cli/tests/commands/plugin-check.test.ts:181` ("seven browser publish channels, no others"); `threads-pub` deliberately absent (no `check`) |
 | R3 | MET | `plugins/kk/skills/publish/SKILL.md:31-32` (threads + weibo channel rows), `plugins/kk/skills/publish/SKILL.md:27-30` (x article / juejin / infoq / substack corrected to their script-driver entries), `plugins/kk/skills/publish/SKILL.md:104-105` (env rows `THREADS_ACCESS_TOKEN`, `THREADS_USER_ID`, `WEIBO_PROFILE_DIR`) |
-| R4 | MET | `docs/03_ARCHITECTURE.md:65-66` (layout), `docs/03_ARCHITECTURE.md:433-434` (package table), `docs/03_ARCHITECTURE.md:457` (channel list) |
-| R5 | MET | `docs/04_DESIGN.md:24` (satellite index row: all seven channels), `docs/04_DESIGN.md:43` (satellite status `implemented; live verification pending 0246 (E94)`) |
+| R4 | MET | `docs/03_ARCHITECTURE.md:66-67` (layout), `docs/03_ARCHITECTURE.md:434-435` (package table), `docs/03_ARCHITECTURE.md:458` (channel list) |
+| R5 | MET | `docs/04_DESIGN.md:25` (satellite index row: all seven channels), `docs/04_DESIGN.md:44` (satellite status `implemented (E94)`, naming the open 0246 live evidence) |
 | R6 | MET | `apps/cli/tests/fanout.test.ts:1162-1255` — happy fan-out, per-plugin fake kind, unknown operation, agent driver, all through the real plugin entries under `KNOWLEDGE_KIT_PUBLISH_TRANSPORT=fake` |
-| R7 | MET | `scripts/bundle-plugins.test.ts:35` — `CHECK_DECLARING_PLUGINS` includes `weibo-pub`, and the staged manifests are inspected at `scripts/bundle-plugins.test.ts:321-340` (the declared check is rewritten to an existing `./dist/*.js`); `threads-pub` omitted (no declared check) |
+| R7 | MET | `scripts/bundle-plugins.test.ts:35` — `CHECK_DECLARING_PLUGINS` includes `weibo-pub`, and the staged manifests are inspected at `scripts/bundle-plugins.test.ts:331-350` (the declared check is rewritten to an existing `./dist/*.js`); `threads-pub` omitted (no declared check) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | R8 — both plugins refuse an unknown operation or driver by name before any transport | MET | test | `apps/cli/tests/fanout.test.ts:1211-1235` — `kk fanout` spawns both real plugins; `unsupported operation 'dm'` names each plugin's supported set. `apps/cli/tests/fanout.test.ts:1236-1255` — `options.driver: 'agent'` refused by both subprocesses |
 | R9 — both plugins run offline under the fake publish transport | MET | test | `apps/cli/tests/fanout.test.ts:1162-1180` — aggregate `ok: true`, `summary { total: 2, succeeded: 2, failed: 0, skipped: 0 }`, one entry per plugin name; `apps/cli/tests/fanout.test.ts:1182-1209` — each channel resolves its own fake kind (`fake-file-cli` / `fake-browser`) |
-| R10 — the new channels are listed wherever publish channels are enumerated | MET | test | machine-asserted lists: `packages/kk-core/tests/registry.test.ts:238,242,607,611`; `apps/cli/tests/commands/plugin-check.test.ts:179`; `plugins/kk/skills/publish/SKILL.md:31-32`; `docs/03_ARCHITECTURE.md:65-66,433-434,457`; `docs/04_DESIGN.md:24,43`; `docs/design/kk-plugin-check.md:3-4,60-61`; `docs/design/web-automation-engine.md:111`; `scripts/bundle-plugins.test.ts:35` |
+| R10 — the new channels are listed wherever publish channels are enumerated | MET | test | machine-asserted lists: `packages/kk-core/tests/registry.test.ts:238,243,608,613`; `apps/cli/tests/commands/plugin-check.test.ts:179`; `plugins/kk/skills/publish/SKILL.md:31-32`; `docs/03_ARCHITECTURE.md:66-67,434-435,458`; `docs/04_DESIGN.md:25,44`; `docs/design/kk-plugin-check.md:3-4,60-61`; `docs/design/web-automation-engine.md:111`; `scripts/bundle-plugins.test.ts:35` |
 | AC1 — both plugins refuse an unknown operation or driver by name before any transport (req: R6) | MET | test | `apps/cli/tests/fanout.test.ts:1211-1255` |
 | AC2 — both plugins run offline under the fake publish transport (req: R6) | MET | test | `apps/cli/tests/fanout.test.ts:1162-1209` |
-| AC3 — the new channels are listed wherever publish channels are enumerated (req: R1) (req: R2) (req: R3) (req: R4) (req: R5) | MET | test | machine-asserted enumerations: `packages/kk-core/tests/registry.test.ts:238,242,607,611`, `apps/cli/tests/commands/plugin-check.test.ts:179`, `scripts/bundle-plugins.test.ts:35`; prose surfaces (static): `plugins/kk/skills/publish/SKILL.md:31-32`, `docs/03_ARCHITECTURE.md:65-66,433-434,457`, `docs/04_DESIGN.md:24,43` |
+| AC3 — the new channels are listed wherever publish channels are enumerated (req: R1) (req: R2) (req: R3) (req: R4) (req: R5) | MET | test | machine-asserted enumerations: `packages/kk-core/tests/registry.test.ts:238,243,608,613`, `apps/cli/tests/commands/plugin-check.test.ts:179`, `scripts/bundle-plugins.test.ts:35`; prose surfaces (static): `plugins/kk/skills/publish/SKILL.md:31-32`, `docs/03_ARCHITECTURE.md:66-67,434-435,458`, `docs/04_DESIGN.md:25,44` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

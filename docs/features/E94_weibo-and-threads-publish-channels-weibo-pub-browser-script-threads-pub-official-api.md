@@ -2,11 +2,11 @@
 schema_version: 1
 id: "E94"
 name: "Weibo and Threads publish channels (weibo-pub browser script, threads-pub official API)"
-status: active
+status: done
 priority: P2
 tags: []
 created_at: "2026-10-09T23:15:23.509Z"
-updated_at: "2026-10-12T07:26:29.459Z"
+updated_at: "2026-10-14T05:19:57.356Z"
 ---
 
 # E94: Weibo and Threads publish channels (weibo-pub browser script, threads-pub official API)
@@ -147,4 +147,6 @@ Feature: Weibo and Threads publish channels (weibo-pub browser script, threads-p
 ## History
 
 - 2026-10-12T05:52:40.049Z backlog → active (system)
+- 2026-10-14T05:19:56.730Z active → verifying (system)
+- 2026-10-14T05:19:57.356Z verifying → done (system)
 
