@@ -78,4 +78,4 @@ See [workflow-board-modules.md](design/workflow-board-modules.md).
 
 ## Planned CLI/session follow-up (2026-10-13)
 
-A22 follows the shipped A21 surface: normalize stage/lock operations, add named bot lifecycle, preserve channel session behavior, then review and migrate compatible callers. Implementation is pending; session migration follows bot regression evidence.
+A22 follows the shipped A21 surface: normalize stage/lock operations, add named bot lifecycle, preserve channel session behavior, then review and migrate compatible callers. **Shipped and verified by tasks `0275`–`0278`** (2026-10-14): `kk stage run` + top-level `kk lock` with hidden compat routes, the generic `kk bot` lifecycle over staged transactions and shared leases, `browserSession` channel binding on the `open \| login --url` check-script protocol, and an evidence-based caller review that migrated only the behaviour-equivalent lock callers while retaining the publishing contexts, in-process session paths and API transports.
