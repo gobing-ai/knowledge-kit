@@ -44,6 +44,7 @@ function fakeHarness(fakes: Fakes): BotHarness {
     };
     return {
         BotError: FakeBotError,
+        readBotSavedMetadata: () => Promise.resolve(null),
         listBots: () => record('list', fakes.list?.() ?? Promise.resolve([])),
         loginBot: (name: string, url: string) =>
             record(`login:${name}:${url}`, fakes.login?.(name, url) ?? Promise.resolve({ name, defaultUrl: url })),

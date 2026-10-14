@@ -4,5 +4,9 @@
     "entry": "./src/index.ts",
     "check": "./src/profile-check.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Juejin (juejin.cn): article drafts through the bytemd editor via script browser transport (ts-browser-automation)"
+    "description": "Publish plugin for Juejin (juejin.cn): article drafts through the bytemd editor via script browser transport (ts-browser-automation)",
+    "browserSession": {
+        "profileName": "juejin",
+        "homeUrl": "https://juejin.cn/editor/drafts/new?v=2"
+    }
 }

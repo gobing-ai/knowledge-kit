@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KK_CAPABILITY_COLLECTION, kindForCollection, PLUGIN_COLLECTION_KINDS, type PluginKind } from './kinds';
-import { PluginManifestSchema, type PluginOperation } from './manifest';
+import { type BrowserSessionDescriptor, PluginManifestSchema, type PluginOperation } from './manifest';
 
 /** Where a discovered plugin was found (ADR-012 R3). */
 export type PluginOrigin = 'builtin' | 'project' | 'user' | 'path';
@@ -22,6 +22,8 @@ export interface PluginRecord {
     description?: string;
     /** Declared auxiliary operations (0110 I3), if the manifest declares any. */
     operations?: Record<string, PluginOperation>;
+    /** Declared browser session (0277 R1): publish plugins with a probe entry only. */
+    browserSession?: BrowserSessionDescriptor;
 }
 
 /** Diagnostic emitted during discovery when a plugin fails checks or clashes. */
@@ -402,6 +404,7 @@ function consumeManifest(
         version: manifest.version,
         description: manifest.description,
         ...(manifest.operations !== undefined ? { operations: manifest.operations } : {}),
+        ...(manifest.browserSession !== undefined ? { browserSession: manifest.browserSession } : {}),
     });
 }
 

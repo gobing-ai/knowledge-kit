@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { lstat, realpath } from './bot-fs';
+import { DEFAULT_BOT_TRANSACTION_ROOT, findLeftoverTransaction } from './bot-transaction';
 import { acquireProfileLease } from './profile-lease';
 
 /**
@@ -82,8 +83,12 @@ export function normalizeBotDefaultUrl(input: string): string {
     return `${url.origin}${url.pathname}`;
 }
 
-/** `true` when `value` is already an http(s) origin+pathname (no query/fragment/userinfo). */
-function isStoredDefaultUrl(value: string): boolean {
+/**
+ * `true` when `value` is an http(s) URL the metadata contract may store: origin+pathname always;
+ * a query is allowed only for adapter-owned metadata, where it is a plugin-fixed non-secret
+ * navigation parameter (Juejin's canonical `?v=2`), never operator input. Fragments/userinfo never.
+ */
+function isStoredDefaultUrl(value: string, allowQuery: boolean): boolean {
     let url: URL;
     try {
         url = new URL(value);
@@ -92,8 +97,10 @@ function isStoredDefaultUrl(value: string): boolean {
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
     if (url.username !== '' || url.password !== '') return false;
-    if (url.search !== '' || url.hash !== '') return false;
-    return `${url.origin}${url.pathname}` === value;
+    if (url.hash !== '') return false;
+    if (!allowQuery && url.search !== '') return false;
+    const stored = `${url.origin}${url.pathname}${allowQuery ? url.search : ''}`;
+    return stored === value;
 }
 
 /**
@@ -111,23 +118,33 @@ export function parseBotMetadata(raw: unknown, source = 'bot metadata'): BotMeta
             `${source}: unsupported schemaVersion ${JSON.stringify(record.schemaVersion)}`,
         );
     }
-    if (typeof record.defaultUrl !== 'string' || !isStoredDefaultUrl(record.defaultUrl)) {
-        throw new BotError('persistence', `${source}: defaultUrl must be an http(s) origin+pathname`);
-    }
     const evidence = record.authenticationEvidence;
     if (evidence !== 'operator-confirmed' && evidence !== 'site-verified') {
         throw new BotError('persistence', `${source}: authenticationEvidence must be operator-confirmed|site-verified`);
+    }
+    let pluginName: string | undefined;
+    if (record.pluginName !== undefined) {
+        if (typeof record.pluginName !== 'string' || record.pluginName.length === 0) {
+            throw new BotError('persistence', `${source}: pluginName must be a non-empty string`);
+        }
+        pluginName = record.pluginName;
+    }
+    // Adapter-owned metadata may carry the plugin's fixed navigation query; generic stays strict.
+    const allowQuery = pluginName !== undefined;
+    if (typeof record.defaultUrl !== 'string' || !isStoredDefaultUrl(record.defaultUrl, allowQuery)) {
+        throw new BotError(
+            'persistence',
+            `${source}: defaultUrl must be an http(s) origin+pathname` +
+                (allowQuery ? ' with at most a plugin-fixed query' : ''),
+        );
     }
     const metadata: BotMetadata = {
         schemaVersion: BOT_SCHEMA_VERSION,
         defaultUrl: record.defaultUrl,
         authenticationEvidence: evidence,
     };
-    if (record.pluginName !== undefined) {
-        if (typeof record.pluginName !== 'string' || record.pluginName.length === 0) {
-            throw new BotError('persistence', `${source}: pluginName must be a non-empty string`);
-        }
-        metadata.pluginName = record.pluginName;
+    if (pluginName !== undefined) {
+        metadata.pluginName = pluginName;
     }
     return metadata;
 }
@@ -286,6 +303,8 @@ export interface LogoutBotOptions {
     root?: string;
     /** Lease root; default {@link import('./profile-lease').DEFAULT_BOT_LEASE_ROOT}. */
     leaseRoot?: string;
+    /** Transaction root; default {@link DEFAULT_BOT_TRANSACTION_ROOT}. Injected in tests/probes. */
+    transactionRoot?: string;
     /** Injected FileSystem for deletion. */
     fileSystem?: FileSystem;
 }
@@ -302,6 +321,20 @@ export async function logoutBot(name: string, options: LogoutBotOptions = {}): P
     const fileSystem = options.fileSystem ?? createNodeFileSystem();
     const profileDir = resolveBotProfileDir(name, { root: options.root });
     if (lstat(profileDir) === null) {
+        // A leftover transaction `backup/` may still hold this bot's previous credentials; reporting
+        // an honest idempotent absence requires that state to be resolved first (transaction
+        // contract: inspect and remove manually, delete nothing here).
+        const leftover = await findLeftoverTransaction(
+            fileSystem,
+            name,
+            options.transactionRoot ?? DEFAULT_BOT_TRANSACTION_ROOT,
+        );
+        if (leftover !== null) {
+            throw new BotError(
+                'persistence',
+                `bot '${name}' has no profile at ${profileDir}, but an incomplete transaction still holds its previous state at ${leftover} — inspect that directory and remove it manually before logging out; nothing was deleted`,
+            );
+        }
         return { name, removed: false, message: `bot '${name}' has no local profile — nothing to remove` };
     }
     const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });

@@ -1,12 +1,17 @@
 import { afterAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
 import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
-import { type BrowserLauncher, BrowserProfileMissingError, LoginTimeoutError } from '@gobing-ai/ts-browser-automation';
+import {
+    type BrowserLauncher,
+    BrowserProfileMissingError,
+    LoginTimeoutError,
+    type ProfileLaunchRequest,
+} from '@gobing-ai/ts-browser-automation';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import { type AutomationGuard, CAP_WINDOW_MS, createAutomationGuard } from '../src/automation-guard';
@@ -1532,6 +1537,49 @@ describe('xhs-pub profile-check CLI (0177)', () => {
         }
     });
 
+    test('login in bot mode emits the canonical defaultUrl verdict as the LAST stdout line (0277 R3)', async () => {
+        // `kk bot login` persists a default URL ONLY from this line; without it a completed console
+        // sign-in is discarded ("exited 0 but returned no usable defaultUrl verdict").
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const profileDir = '/tmp/kk-xhs-login-bot';
+            const code = await profileCheckMain(
+                ['login', '--profile', profileDir, '--url', 'https://creator.xiaohongshu.com/publish/publish?op=1'],
+                fakeLauncher(consoleContext(true)),
+            );
+            expect(code).toBe(0);
+            const lines = out.text().trim().split('\n');
+            expect(JSON.parse(lines[lines.length - 1] ?? '')).toEqual({
+                status: 'verified',
+                profileDir: resolve(profileDir),
+                defaultUrl: 'https://creator.xiaohongshu.com/publish/publish',
+            });
+            // The operator's URL — with its query — must never become the persisted default.
+            expect(out.text()).not.toContain('op=1');
+        } finally {
+            restore();
+        }
+    });
+
+    test('login without --url keeps the operator-mode output (no verdict line, 0277 R3)', async () => {
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const code = await profileCheckMain(
+                ['login', '--profile', '/tmp/kk-xhs-login-op', '--timeout', '50'],
+                fakeLauncher(consoleContext(true)),
+            );
+            expect(code).toBe(0);
+            expect(out.text()).toContain('login verified');
+            expect(out.text()).not.toContain('defaultUrl');
+        } finally {
+            restore();
+        }
+    });
+
     test('login: exit 1 on timeout', async () => {
         const out = createBufferTarget();
         const err = createBufferTarget();
@@ -2504,5 +2552,85 @@ describe('xhs-pub mode entry and signal scoping (0199 evidence)', () => {
         const result = await t.publish({ content: cardContent() });
         expect(result.ok).toBe(true);
         expect(result.metadata?.draftSignal).toBe('toast:保存成功');
+    });
+});
+
+describe('xhs-pub profile-check `open` verb (0277, operator-interactive)', () => {
+    test('open without --profile is a usage error: exit 2, no browser', async () => {
+        const opened: ProfileLaunchRequest[] = [];
+        const launcher = fakeLauncher(consoleContext(true), opened);
+        const out = createBufferTarget();
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out, stderr: err });
+        try {
+            const code = await profileCheckMain(['open'], launcher);
+            expect(code).toBe(2);
+            expect(err.text()).toContain('--profile');
+            expect(opened).toHaveLength(0);
+        } finally {
+            restore();
+        }
+    });
+
+    test('open refuses a missing profile with a verdict and opens no browser (no fabrication)', async () => {
+        const opened: unknown[] = [];
+        const launcher: BrowserLauncher = {
+            launch: async () => {
+                opened.push(1);
+                throw new Error('no browser may open for a missing profile');
+            },
+        };
+        const out = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out });
+        try {
+            const code = await profileCheckMain(['open', '--profile', '/tmp/kk-xhs-open-absent'], launcher);
+            expect(code).toBe(1);
+            expect(opened).toHaveLength(0);
+            const lines = out.text().trim().split('\n');
+            const verdict = JSON.parse(lines[lines.length - 1] ?? '') as { status: string; detail: string };
+            expect(verdict.status).toBe('refused');
+            expect(verdict.detail).toContain('no profile at');
+        } finally {
+            restore();
+        }
+    });
+
+    test('open navigates the supplied --url headed and records no automation-guard visit', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-xhs-open-'));
+        const profileDir = join(dir, 'profile');
+        const statePath = join(dir, 'guard-state.json');
+        const { mkdirSync } = await import('node:fs');
+        mkdirSync(profileDir, { recursive: true });
+        const gotos: string[] = [];
+        const requests: ProfileLaunchRequest[] = [];
+        const openContext = {
+            pages: () => [{ goto: async (url: string) => void gotos.push(url) }],
+            once: (event: string, listener: () => void) => {
+                if (event === 'close') listener();
+            },
+        };
+        const launcher = fakeLauncher(openContext, requests);
+        const guard = createAutomationGuard({ statePath, now: () => new Date('2026-09-28T10:00:00Z') });
+        const out = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stdout: out });
+        try {
+            const code = await profileCheckMain(
+                ['open', '--profile', profileDir, '--url', 'https://creator.xiaohongshu.com/publish/publish'],
+                launcher,
+                guard,
+            );
+            expect(code).toBe(0);
+            expect(requests).toEqual([{ profileDir, headless: false }]);
+            expect(gotos).toEqual(['https://creator.xiaohongshu.com/publish/publish']);
+            const lines = out.text().trim().split('\n');
+            const verdict = JSON.parse(lines[lines.length - 1] ?? '') as { status: string; detail: string };
+            expect(verdict.status).toBe('verified');
+            expect(verdict.detail).toContain('closed by the operator');
+            // ADR-025: an open is neither a publish nor a check visit, so no guard state is written.
+            expect(existsSync(statePath)).toBe(false);
+        } finally {
+            restore();
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

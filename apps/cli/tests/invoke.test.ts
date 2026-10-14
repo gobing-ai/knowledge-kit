@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectionForKind, type PluginKind } from '@gobing-ai/kk-core';
-import { pluginEnvFromConfig, probeVerdict, runInvoke, spawnPluginEntryAsync } from '../src/invoke';
+import { pluginEnvFromConfig, probeVerdict, runInvoke, spawnPluginEntryAsync, spawnPluginSession } from '../src/invoke';
 import { captureOutput, silenceOutput } from './capture';
 
 function pluginDirOf(root: string, kind: PluginKind, name: string): string {
@@ -921,6 +921,106 @@ describe('probeVerdict (ADR-032 probe contract)', () => {
         expect(probeVerdict(2, '{"status":"error"}\npage text with a token')).toEqual({
             status: 'error',
             detail: 'probe exit 2 (malformed probe output)',
+        });
+    });
+});
+
+describe('spawnPluginSession (0277 R3)', () => {
+    it('forwards the subcommand argv (--profile/--url) and captures the piped verdict stdout', async () => {
+        await withTempDir(async (root) => {
+            const entry = join(root, 'probe.ts');
+            writeFileSync(
+                entry,
+                `
+                const args = process.argv.slice(2);
+                console.log(JSON.stringify({ argv: args, leasePath: process.env.KK_BOT_LEASE_PATH ?? '' }));
+                process.exit(0);
+                `,
+            );
+            const result = await spawnPluginSession({
+                entryPath: entry,
+                cwd: root,
+                subcommand: 'open',
+                profileDir: '/tmp/kk-session-profile',
+                url: 'https://juejin.example.com/editor/drafts/new?v=2',
+                extraEnv: {},
+                pluginKind: 'publish',
+                pluginName: 'juejin-pub',
+            });
+            expect(result.exitCode).toBe(0);
+            const verdict = JSON.parse(result.stdout) as { argv: string[] };
+            expect(verdict.argv).toEqual([
+                'open',
+                '--profile',
+                '/tmp/kk-session-profile',
+                '--url',
+                'https://juejin.example.com/editor/drafts/new?v=2',
+            ]);
+        });
+    });
+
+    it('layers the scoped lease env over process.env, with extraEnv winning', async () => {
+        await withTempDir(async (root) => {
+            const entry = join(root, 'probe.ts');
+            writeFileSync(
+                entry,
+                `
+                console.log(JSON.stringify({
+                    leasePath: process.env.KK_BOT_LEASE_PATH ?? '',
+                    leaseToken: process.env.KK_BOT_LEASE_TOKEN ?? '',
+                    base: process.env.KK_SESSION_BASE ?? '',
+                }));
+                `,
+            );
+            const result = await spawnPluginSession({
+                entryPath: entry,
+                cwd: root,
+                subcommand: 'login',
+                profileDir: '/tmp/kk-session-profile',
+                extraEnv: {
+                    KK_BOT_LEASE_PATH: '/leases/from-parent',
+                    KK_BOT_LEASE_TOKEN: 'tok',
+                    KK_SESSION_BASE: 'yes',
+                },
+                pluginKind: 'publish',
+                pluginName: 'xhs-pub',
+            });
+            expect(result.exitCode).toBe(0);
+            const verdict = JSON.parse(result.stdout) as { leasePath: string; leaseToken: string; base: string };
+            expect(verdict.leasePath).toBe('/leases/from-parent');
+            expect(verdict.leaseToken).toBe('tok');
+            expect(verdict.base).toBe('yes');
+        });
+    });
+
+    it('propagates the child exit code, and a spawn failure surfaces as exit 2', async () => {
+        await withTempDir(async (root) => {
+            const entry = join(root, 'probe.ts');
+            writeFileSync(entry, 'process.exit(1);');
+            const refused = await spawnPluginSession({
+                entryPath: entry,
+                cwd: root,
+                subcommand: 'login',
+                profileDir: '/tmp/kk-session-profile',
+                extraEnv: {},
+                pluginKind: 'publish',
+                pluginName: 'weibo-pub',
+            });
+            expect(refused.exitCode).toBe(1);
+
+            // A nonexistent cwd makes Bun.spawn itself throw (distinct from a child that starts
+            // and exits nonzero): the session surface maps that to usage-shaped exit 2.
+            const missing = await spawnPluginSession({
+                entryPath: entry,
+                cwd: join(root, 'no-such-cwd'),
+                subcommand: 'login',
+                profileDir: '/tmp/kk-session-profile',
+                extraEnv: {},
+                pluginKind: 'publish',
+                pluginName: 'weibo-pub',
+            });
+            expect(missing.exitCode).toBe(2);
+            expect(missing.stdout).toBe('');
         });
     });
 });

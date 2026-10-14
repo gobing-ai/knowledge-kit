@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -685,5 +686,85 @@ describe('task 0205 R2 — declared mode refuses unknown operations pre-browser'
         const mode = resolveOperation({ operation: 'note' });
         expect(mode.error).toContain("unsupported operation 'note' for substack");
         expect(mode.error).toContain('post');
+    });
+});
+
+describe('substack-pub profile-check bot mode (0277)', () => {
+    test('`login --url` derives the publication from the URL origin and reports the canonical editor URL', async () => {
+        delete process.env.SUBSTACK_PUBLICATION_URL;
+        const fake = makeFakeLauncher({ page: {} });
+        const lines: string[] = [];
+        const code = await profileCheckMain(
+            ['login', '--url', 'https://mysite.substack.com/inbox', '--profile', '~/from-flag'],
+            {
+                launcher: fake.launcher,
+                stdout: (line) => lines.push(line),
+            },
+        );
+
+        expect(code).toBe(0);
+        const verdict = JSON.parse(lines.at(-1) ?? '') as { status: string; defaultUrl?: string; profileDir?: string };
+        expect(verdict.status).toBe('verified');
+        // The verdict's defaultUrl is the plugin-owned canonical editor URL of the derived
+        // publication — never the operator-supplied navigation URL with its /inbox path.
+        expect(verdict.defaultUrl).toBe('https://mysite.substack.com/publish/post');
+        expect(verdict.profileDir).toBe(join(homedir(), 'from-flag'));
+        expect(fake.calls).toContain('goto:https://mysite.substack.com/inbox');
+    });
+
+    test('a non-https bot --url is a usage error that opens no browser', async () => {
+        delete process.env.SUBSTACK_PUBLICATION_URL;
+        const fake = makeFakeLauncher({ page: {} });
+        const lines: string[] = [];
+        const code = await profileCheckMain(
+            ['login', '--url', 'http://mysite.substack.com/', '--profile', '/tmp/kk-substack-x'],
+            {
+                launcher: fake.launcher,
+                stdout: (line) => lines.push(line),
+            },
+        );
+
+        expect(code).toBe(2);
+        expect(fake.requests).toEqual([]);
+        const verdict = JSON.parse(lines.at(-1) ?? '') as { status: string };
+        expect(verdict.status).toBe('error');
+    });
+
+    test('`open --profile --url` navigates headed and resolves when the operator closes the browser', async () => {
+        delete process.env.SUBSTACK_PUBLICATION_URL;
+        mkdirSync('/tmp/kk-substack-open', { recursive: true });
+        const gotos: string[] = [];
+        const requests: ProfileLaunchRequest[] = [];
+        const launcher: BrowserLauncher = {
+            async launch(request) {
+                requests.push(request);
+                return {
+                    pages: () => [
+                        {
+                            goto: async (url: string) => {
+                                gotos.push(url);
+                            },
+                        },
+                    ],
+                    newPage: async () => ({}),
+                    once: (event: string, listener: () => void) => {
+                        if (event === 'close') listener();
+                    },
+                } as unknown as BrowserContext;
+            },
+        };
+        const lines: string[] = [];
+        const code = await profileCheckMain(
+            ['open', '--profile', '/tmp/kk-substack-open', '--url', 'https://mysite.substack.com/publish'],
+            { launcher, stdout: (line) => lines.push(line) },
+        );
+
+        expect(code).toBe(0);
+        expect(requests).toEqual([{ profileDir: '/tmp/kk-substack-open', headless: false }]);
+        expect(gotos).toEqual(['https://mysite.substack.com/publish']);
+        // The open verb reports through the shared human line — the bot parent reads only the
+        // exit code (unlike bot-mode login, whose last stdout line is the verdict JSON).
+        expect(lines.at(-1)).toContain('profile open closed: /tmp/kk-substack-open');
+        rmSync('/tmp/kk-substack-open', { recursive: true, force: true });
     });
 });

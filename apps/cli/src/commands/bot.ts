@@ -1,4 +1,6 @@
+import { discoverAllPlugins } from '@gobing-ai/kk-core';
 import { type Command, CommanderError } from 'commander';
+import { bindAdapterSession, selectBotAdapter } from '../bot-adapter';
 import { consoleOutput } from '../output';
 
 /**
@@ -76,8 +78,16 @@ async function botListAction(load: () => Promise<BotHarness>): Promise<void> {
  * carry a grant, so it never reaches stdout/stderr.
  */
 async function botLoginAction(load: () => Promise<BotHarness>, url: string, options: { save: string }): Promise<void> {
-    await runBotAction(load, async ({ loginBot }) => {
-        const result = await loginBot(options.save, url);
+    await runBotAction(load, async (harness) => {
+        // 0277 R2: bind a known adapter when the bot/URL matches a declared descriptor; an
+        // ambiguous or unavailable saved adapter is refused instead of silently going generic.
+        const selection = selectBotAdapter(discoverAllPlugins().plugins, { botName: options.save, url });
+        if (selection.error !== undefined) {
+            throw new harness.BotError('persistence', selection.error);
+        }
+        const result = await harness.loginBot(options.save, url, {
+            ...(selection.adapter !== null ? { adapter: bindAdapterSession(selection.adapter) } : {}),
+        });
         consoleOutput.write(`${result.name}\tsaved`);
     });
 }
@@ -96,8 +106,26 @@ async function botOpenAction(
     name: string,
     options: { login?: boolean },
 ): Promise<void> {
-    await runBotAction(load, async ({ openBot }) => {
-        const result = await openBot(name, { login: options.login === true });
+    await runBotAction(load, async (harness) => {
+        // 0277 R2: bind the adapter from the saved pluginName, the bot name's declared profileName,
+        // or (with a saved default URL) a unique descriptor homeUrl origin. A metadata-free fixed
+        // profile opens through its adapter's declared homeUrl; a publication-scoped adapter
+        // (Substack) gets login guidance from the harness instead.
+        const saved = await harness.readBotSavedMetadata(name);
+        const selection = selectBotAdapter(discoverAllPlugins().plugins, {
+            botName: name,
+            url: saved?.defaultUrl,
+            ...(saved?.pluginName !== undefined ? { savedPluginName: saved.pluginName } : {}),
+        });
+        if (selection.error !== undefined) {
+            throw new harness.BotError('persistence', selection.error);
+        }
+        const descriptorHomeUrl = selection.adapter?.record.browserSession?.homeUrl;
+        const result = await harness.openBot(name, {
+            login: options.login === true,
+            ...(selection.adapter !== null ? { adapter: bindAdapterSession(selection.adapter) } : {}),
+            ...(saved === null && descriptorHomeUrl !== undefined ? { defaultUrl: descriptorHomeUrl } : {}),
+        });
         consoleOutput.write(`${result.name}\tclosed`);
     });
 }

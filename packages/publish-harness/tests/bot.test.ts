@@ -330,3 +330,45 @@ describe('bot logout (0276)', () => {
         expect(existsSync(join(elsewhere, 'Cookies'))).toBe(true);
     });
 });
+
+describe('bot logout vs leftover transaction (0277 P3)', () => {
+    let root: string;
+    let leaseRoot: string;
+    let transactionRoot: string;
+    const fileSystem = createNodeFileSystem();
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-bot-logout-leftover-'));
+        leaseRoot = join(root, 'leases');
+        transactionRoot = join(root, 'transactions');
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    test('an absent profile with a leftover transaction is refused by name; nothing is deleted', async () => {
+        // A dead invocation left its transaction (with the promoted-back backup) on disk.
+        const leftover = join(transactionRoot, 'ghost-0f2c9e14-1111-4222-8333-444455556666');
+        mkdirSync(join(leftover, 'backup'), { recursive: true });
+        writeFileSync(join(leftover, 'backup', 'Cookies'), 'previous-credentials');
+
+        let caught: unknown;
+        try {
+            await logoutBot('ghost', { root, leaseRoot, transactionRoot, fileSystem });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('persistence');
+        const message = (caught as BotError).message;
+        expect(message).toContain('has no profile at');
+        expect(message).toContain(leftover);
+        expect(message).toContain('inspect that directory and remove it manually');
+        // The honesty contract deletes nothing.
+        expect(existsSync(join(leftover, 'backup', 'Cookies'))).toBe(true);
+    });
+
+    test('an absent bot with no leftover transaction stays an idempotent success', async () => {
+        const result = await logoutBot('ghost', { root, leaseRoot, transactionRoot, fileSystem });
+        expect(result.removed).toBe(false);
+    });
+});

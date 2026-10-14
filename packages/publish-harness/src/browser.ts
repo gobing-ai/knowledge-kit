@@ -109,6 +109,8 @@ export interface ProfileCliDeps {
 }
 
 const DEFAULT_LOGIN_TIMEOUT_MS = 180_000;
+/** Bounded `open` navigation: a failed/slow goto must not wedge the operator's window forever. */
+const DEFAULT_OPEN_NAV_TIMEOUT_MS = 30_000;
 /**
  * A session check is a bounded read-only probe, not an interactive login: it uses the
  * `xhs-pub` preflight scale (30s per pass), never the login wait.
@@ -367,14 +369,69 @@ export async function checkChannelSession(
     return { status: 'refused', profileDir: opts.profileDir, detail: lastDetail };
 }
 
+/** Options for the `open` bot-session verb. */
+export interface ChannelOpenRequest {
+    /** Explicit existing profile directory (the bot's final or staged profile). */
+    profileDir: string;
+    /** URL to navigate; the session stays open until the operator closes the window. */
+    url: string;
+}
+
 /**
- * `login|check [--profile <dir>] [--timeout <ms>] [--headed]` for one channel. `--headed` (0216)
- * checks headed only, skipping the headless pass.
+ * Restore the profile headed, navigate `url`, and resolve once the operator closes the context.
+ * No readiness predicate runs — open is operator-interactive by contract — and a missing profile
+ * is refused instead of silently created (an unauthenticated fresh profile would fake a session).
+ * A failed navigation is reported and the window stays up: the operator sees the error page.
+ */
+export async function openChannelSession(
+    config: ChannelBrowserConfig,
+    request: ChannelOpenRequest,
+    deps: ProfileCliDeps = {},
+    stdout: (line: string) => void = echo,
+): Promise<number> {
+    if (lstat(request.profileDir) === null) {
+        stdout(
+            `${config.channel} profile open failed: no profile at ${request.profileDir} — run the login command first`,
+        );
+        return 1;
+    }
+    let context: BrowserContext;
+    try {
+        context = await (deps.launcher ?? kkBrowserLauncher).launch({
+            profileDir: request.profileDir,
+            headless: false,
+        });
+    } catch (error) {
+        stdout(`${config.channel} profile open failed: ${errorMessage(error)}`);
+        return 1;
+    }
+    const page = context.pages()[0] ?? (await context.newPage());
+    try {
+        await page.goto(request.url, { waitUntil: 'commit', timeout: DEFAULT_OPEN_NAV_TIMEOUT_MS });
+    } catch (error) {
+        stdout(`${config.channel} profile open navigation failed: ${errorMessage(error)}`);
+    }
+    await new Promise<void>((resolveClose) => {
+        context.once('close', () => resolveClose());
+    });
+    stdout(`${config.channel} profile open closed: ${request.profileDir}`);
+    return 0;
+}
+
+/**
+ * `login|check|open [--profile <dir>] [--url <url>] [--timeout <ms>] [--headed]` for one channel.
+ * `--headed` (0216) checks headed only, skipping the headless pass.
  *
  * `login` opens the headed browser and returns only once the site readiness predicate passes;
- * `check` runs {@link checkChannelSession}. Exit codes: 0 verified, 1 refused, 2 usage error.
- * Output goes through the injected `stdout` (one line per message), so the CLI is testable and
- * this module holds no `console.*`; the default writer is the ts-utils `echo` seam.
+ * `check` runs {@link checkChannelSession}. `open` (0277) is the bot session verb: it restores the
+ * profile headed, navigates `--url`, and stays until the operator closes the window — it never
+ * asserts authentication and it never creates a fresh profile. `--url` on `login` (0277) replaces
+ * the configured home page as the navigation target while the config predicate stays the evidence;
+ * a login invoked WITH `--url` (bot mode) appends a `{status, profileDir, defaultUrl}` JSON verdict
+ * as the LAST stdout line so the bot parent can persist the plugin-owned canonical URL. Exit codes:
+ * 0 verified/closed, 1 refused, 2 usage error. Output goes through the injected `stdout` (one line
+ * per message), so the CLI is testable and this module holds no `console.*`; the default writer is
+ * the ts-utils `echo` seam.
  */
 export async function runProfileCli(
     config: ChannelBrowserConfig,
@@ -386,12 +443,15 @@ export async function runProfileCli(
         ((line: string) => {
             echo(line);
         });
-    const usage = `usage: ${config.channel} profile-check [login|check] [--profile <dir>] [--timeout <ms>] [--headed]`;
+    const usage =
+        `usage: ${config.channel} profile-check [login|check|open] ` +
+        '[--profile <dir>] [--url <url>] [--timeout <ms>] [--headed]';
 
     let command: string;
     let profileDir: string;
     let timeoutMs: number | undefined;
     let headed = false;
+    let url: string | undefined;
     try {
         const { positionals, values } = parseArgs({
             args: argv,
@@ -400,12 +460,17 @@ export async function runProfileCli(
                 profile: { type: 'string' },
                 timeout: { type: 'string' },
                 headed: { type: 'boolean' },
+                url: { type: 'string' },
             },
         });
         command = positionals[0] ?? 'check';
         headed = values.headed === true;
-        if (command !== 'login' && command !== 'check') {
+        url = values.url;
+        if (command !== 'login' && command !== 'check' && command !== 'open') {
             throw new Error(`unknown command '${command}'`);
+        }
+        if (command === 'open' && (values.profile === undefined || url === undefined)) {
+            throw new Error('open requires an explicit --profile <dir> and --url <url>');
         }
         if (values.timeout !== undefined) {
             timeoutMs = Number(values.timeout);
@@ -420,16 +485,25 @@ export async function runProfileCli(
         return 2;
     }
 
+    if (command === 'open') {
+        return openChannelSession(config, { profileDir, url: url ?? '' }, deps, stdout);
+    }
+
     if (command === 'login') {
         try {
             await loginWithProfile({
                 profileDir,
-                url: config.homeUrl,
+                url: url ?? config.homeUrl,
                 isAuthenticated: config.isAuthenticated,
                 timeoutMs: timeoutMs ?? config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS,
                 launcher: deps.launcher ?? kkBrowserLauncher,
             });
             stdout(`${config.channel} profile login verified: ${profileDir}`);
+            // Bot mode (--url given by the `kk bot` parent): the canonical, plugin-owned default URL
+            // is the configured home page — never the supplied URL, whose query must not persist.
+            if (url !== undefined) {
+                stdout(JSON.stringify({ status: 'verified', profileDir, defaultUrl: config.homeUrl }));
+            }
             return 0;
         } catch (error) {
             stdout(`${config.channel} profile login failed: ${errorMessage(error)}`);
@@ -767,6 +841,30 @@ export async function resolveSelector(
 /** Confirmation deadline for a generic login (design §Bot command contract: 180000 ms). */
 export const DEFAULT_BOT_LOGIN_TIMEOUT_MS = 180_000;
 
+/** One known-plugin session run the adapter seam must perform (0277 R3). */
+export interface BotAdapterRunRequest {
+    /** `login` runs the plugin's site login transaction; `open` restores and navigates only. */
+    mode: 'login' | 'open';
+    /** Profile directory the plugin child drives (the transaction stage dir on login). */
+    profileDir: string;
+    /** Session URL: the supplied login URL, or the saved/declared canonical default. */
+    url: string;
+    /** Scoped lease env (`KK_BOT_LEASE_PATH`/`KK_BOT_LEASE_TOKEN`) the child inherits. */
+    env: Record<string, string>;
+}
+
+/**
+ * Caller-provided spawn seam for known-plugin bot sessions (0277 R2/R3): the harness owns
+ * transactions, leases and metadata; the CLI owns the child process, so this module never
+ * imports site code and the CLI never reimplements the transaction contract.
+ */
+export interface BotAdapterSession {
+    /** Plugin (adapter) that owns the site-specific login/open routines. */
+    pluginName: string;
+    /** Spawn the plugin's profile-check child; resolve its exit code and piped stdout. */
+    run(request: BotAdapterRunRequest): Promise<{ exitCode: number; stdout: string }>;
+}
+
 /** Options shared by {@link loginBot} and {@link openBot}; every field defaults to production. */
 export interface BotSessionOptions {
     /** Profile root; default `~/.config/kk/browser-profiles`. */
@@ -785,6 +883,8 @@ export interface BotSessionOptions {
     timeoutMs?: number;
     /** Adapter that saved this bot (0277); omitted for a generic operator-confirmed session. */
     pluginName?: string;
+    /** Known-plugin adapter seam (0277); when set, login/open spawn the plugin's session child. */
+    adapter?: BotAdapterSession;
 }
 
 /** Outcome of a successful {@link loginBot}. */
@@ -800,6 +900,8 @@ export interface LoginBotResult {
 export interface OpenBotOptions extends BotSessionOptions {
     /** Reauthenticate through the same login transaction before reopening the saved page. */
     login?: boolean;
+    /** URL to open when the profile carries no metadata (0277 legacy fixed-profile route). */
+    defaultUrl?: string;
 }
 
 /** Outcome of a {@link openBot} session that ran until the context closed. */
@@ -838,6 +940,14 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
             fileSystem,
         });
         await transaction.copyExistingProfile();
+        if (options.adapter !== undefined) {
+            return await runAdapterLogin(name, navigationUrl, {
+                adapter: options.adapter,
+                transaction,
+                lease,
+                fileSystem,
+            });
+        }
         const launcher =
             options.launcher ??
             createKkBrowserLauncher(
@@ -885,6 +995,97 @@ export async function loginBot(name: string, url: string, options: BotSessionOpt
 }
 
 /**
+ * Known-plugin login (0277 R3): the plugin child runs the site login inside the transaction's
+ * staged profile under the delegated lease. A child exit 0 means its readiness predicate passed,
+ * special state was persisted and the child closed its own context — so the parent promotes
+ * without a confirmation prompt and records `site-verified` evidence with the plugin-owned
+ * canonical `defaultUrl` from the child's verdict line. Child usage failures map to
+ * `BotError('usage')` (CLI exit 2); every other nonzero outcome is operational (exit 1).
+ */
+async function runAdapterLogin(
+    name: string,
+    url: string,
+    ctx: {
+        adapter: BotAdapterSession;
+        transaction: BotTransaction;
+        lease: ProfileLease;
+        fileSystem: FileSystem;
+    },
+): Promise<LoginBotResult> {
+    const { adapter, transaction, lease, fileSystem } = ctx;
+    const child = await adapter.run({
+        mode: 'login',
+        profileDir: transaction.stageDir,
+        url,
+        env: await lease.delegatedEnv(transaction.stageDir),
+    });
+    if (child.exitCode === 2) {
+        throw new BotError(
+            'usage',
+            `session adapter '${adapter.pluginName}' reported a usage error (exit 2) — nothing was saved`,
+        );
+    }
+    if (child.exitCode !== 0) {
+        throw new BotError(
+            'browser',
+            `session adapter '${adapter.pluginName}' login failed: child exit ${child.exitCode} — nothing was saved`,
+        );
+    }
+    const defaultUrl = parseAdapterVerdict(child.stdout);
+    if (defaultUrl === null) {
+        throw new BotError(
+            'browser',
+            `session adapter '${adapter.pluginName}' exited 0 but returned no usable defaultUrl verdict — nothing was saved`,
+        );
+    }
+    await writeBotMetadata(fileSystem, join(transaction.stageDir, BOT_METADATA_FILE), {
+        schemaVersion: BOT_SCHEMA_VERSION,
+        defaultUrl,
+        authenticationEvidence: 'site-verified',
+        pluginName: adapter.pluginName,
+    });
+    // The child closed its staged context before exiting 0 (protocol contract); nothing to flush.
+    await transaction.commit(async () => {});
+    return {
+        name,
+        defaultUrl,
+        message: `saved a site-verified local session for bot '${name}' via ${adapter.pluginName} at ${defaultUrl}`,
+    };
+}
+
+/**
+ * Parse the bot-mode login verdict: the LAST non-empty stdout line must be JSON naming the
+ * plugin-owned canonical default URL. http(s) and credential-free are enforced here; the query
+ * is kept because it is plugin-fixed code, not operator input (fragments are dropped).
+ */
+function parseAdapterVerdict(stdout: string): string | null {
+    const last = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '')
+        .at(-1);
+    if (last === undefined) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(last);
+    } catch {
+        return null;
+    }
+    const record = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : undefined;
+    if (record?.status !== 'verified' || typeof record.defaultUrl !== 'string') return null;
+    let url: URL;
+    try {
+        url = new URL(record.defaultUrl);
+    } catch {
+        return null;
+    }
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username !== '' || url.password !== '') {
+        return null;
+    }
+    return `${url.origin}${url.pathname}${url.search}`;
+}
+
+/**
  * Open bot `name`'s saved page headed and stay until the context closes (task 0276, design §Bot
  * command contract). `--login` runs the same safe login transaction first and then REOPENS the
  * saved page for interaction: the upstream login helper closes its context on verification, so
@@ -897,17 +1098,52 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
     const profileDir = resolveBotProfileDir(name, { root: options.root });
     const metadataPath = join(profileDir, BOT_METADATA_FILE);
     const saved = await readBotMetadata(fileSystem, metadataPath);
-    if (saved === null && options.login === true) {
+    if (saved === null && options.login === true && options.defaultUrl === undefined) {
         throw missingBotProfile(name, lstat(profileDir) !== null);
     }
-    if (options.login === true && saved !== null) {
-        await loginBot(name, saved.defaultUrl, options);
+    if (options.login === true) {
+        const reloginUrl = saved !== null ? saved.defaultUrl : options.defaultUrl;
+        if (reloginUrl !== undefined) {
+            await loginBot(name, reloginUrl, options);
+        }
     }
     const metadata = await readBotMetadata(fileSystem, metadataPath);
-    if (metadata === null) {
+    // 0277: a metadata-free fixed profile opens through its unique adapter's declared homeUrl,
+    // passed by the CLI as `defaultUrl`; a publication-scoped adapter gets login guidance there.
+    const openUrl = metadata !== null ? metadata.defaultUrl : options.defaultUrl;
+    if (openUrl === undefined) {
         throw missingBotProfile(name, lstat(profileDir) !== null);
     }
     const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    if (options.adapter !== undefined) {
+        try {
+            const child = await options.adapter.run({
+                mode: 'open',
+                profileDir,
+                url: openUrl,
+                env: await lease.delegatedEnv(profileDir),
+            });
+            if (child.exitCode === 2) {
+                throw new BotError(
+                    'usage',
+                    `session adapter '${options.adapter.pluginName}' reported a usage error (exit 2)`,
+                );
+            }
+            if (child.exitCode !== 0) {
+                throw new BotError(
+                    'browser',
+                    `session adapter '${options.adapter.pluginName}' open failed: child exit ${child.exitCode}`,
+                );
+            }
+            return {
+                name,
+                defaultUrl: openUrl,
+                message: `closed the local session for bot '${name}' — the saved profile is unchanged`,
+            };
+        } finally {
+            await lease.release();
+        }
+    }
     let context: BrowserContext | undefined;
     try {
         const launcher =
@@ -923,11 +1159,11 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
             context?.once('close', () => resolveClose());
         });
         const page = await openBotPage(context);
-        await navigateBot(page, metadata.defaultUrl);
+        await navigateBot(page, openUrl);
         await closed;
         return {
             name,
-            defaultUrl: metadata.defaultUrl,
+            defaultUrl: openUrl,
             message: `closed the local session for bot '${name}' — the saved profile is unchanged`,
         };
     } catch (error) {
@@ -936,6 +1172,20 @@ export async function openBot(name: string, options: OpenBotOptions = {}): Promi
     } finally {
         await lease.release();
     }
+}
+
+/**
+ * Saved metadata for one bot, or `null` when the profile is absent or legacy (no `bot.json`).
+ * CLI-side adapter resolution needs the persisted `pluginName` and the legacy signal without
+ * duplicating the metadata file contract; corrupt metadata still fails `persistence`.
+ */
+export async function readBotSavedMetadata(
+    name: string,
+    options: { root?: string; fileSystem?: FileSystem } = {},
+): Promise<BotMetadata | null> {
+    const profileDir = resolveBotProfileDir(name, { root: options.root });
+    if (lstat(profileDir) === null) return null;
+    return readBotMetadata(options.fileSystem ?? createNodeFileSystem(), join(profileDir, BOT_METADATA_FILE));
 }
 
 /** Actionable guidance for a bot that has no saved generic session to reopen. */

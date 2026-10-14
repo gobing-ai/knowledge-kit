@@ -120,7 +120,9 @@ function pluginEntryCmd(opts: PluginEntrySpawnOptions): string[] {
 
 /** Build the spawn env: operator-config env under `process.env`, anchored at the kk invocation root. */
 function pluginEntryEnv(
-    opts: Pick<PluginEntrySpawnOptions, 'pluginKind' | 'pluginName'>,
+    opts: Pick<PluginEntrySpawnOptions, 'pluginKind' | 'pluginName'> & {
+        extraEnv?: Record<string, string>;
+    },
 ): Record<string, string | undefined> {
     const fromConfig =
         opts.pluginKind !== undefined && opts.pluginName !== undefined
@@ -132,6 +134,9 @@ function pluginEntryEnv(
     return {
         ...fromConfig,
         ...process.env,
+        // Scoped lease delegation (0276/0277) wins over process.env: the parent holds the
+        // live lease object, so its env view is authoritative for the child.
+        ...(opts.extraEnv ?? {}),
         KNOWLEDGE_KIT_PROJECT_ROOT: process.env.KNOWLEDGE_KIT_PROJECT_ROOT ?? process.cwd(),
     };
 }
@@ -142,12 +147,18 @@ export interface PluginProbeSpawnOptions {
     entryPath: string;
     /** Working directory for the spawned process (the plugin package dir). */
     cwd: string;
-    /** Probe subcommand: `check` (readiness) or `login` (interactive). */
-    subcommand: 'check' | 'login';
+    /** Probe subcommand: `check` (readiness), `login` (interactive) or `open` (bot session, 0277). */
+    subcommand: 'check' | 'login' | 'open';
     /** Forward `--headed` to the probe (check only). */
     headed?: boolean;
     /** Forward `--timeout <ms>` to the probe and enforce it on the spawn (check only). */
     timeoutMs?: number;
+    /** Explicit profile dir forwarded as `--profile` (bot sessions); an explicit flag beats plugin env tiers. */
+    profileDir?: string;
+    /** Session URL forwarded as `--url` (bot sessions; login navigation target, mandatory for `open`). */
+    url?: string;
+    /** Extra child env entries (scoped lease delegation) layered over `process.env` — the parent holds the truth. */
+    extraEnv?: Record<string, string>;
     /** When set with `pluginName`, merge `plugins.<collection>.<name>.env` from KK_CONFIG. */
     pluginKind?: PluginKind;
     /** Plugin manifest name used to look up operator-config env. */
@@ -156,13 +167,13 @@ export interface PluginProbeSpawnOptions {
 
 /** Build the probe command: bun executes `.ts`/`.js` probes; anything else must be directly executable. */
 function pluginProbeCmd(opts: PluginProbeSpawnOptions): string[] {
-    const flags =
-        opts.subcommand === 'check'
-            ? [
-                  ...(opts.headed ? ['--headed'] : []),
-                  ...(opts.timeoutMs !== undefined ? ['--timeout', String(opts.timeoutMs)] : []),
-              ]
-            : [];
+    const flags = [
+        ...(opts.subcommand === 'check' && opts.headed ? ['--headed'] : []),
+        ...(opts.subcommand === 'check' && opts.timeoutMs !== undefined ? ['--timeout', String(opts.timeoutMs)] : []),
+        // Legacy `check|login` argv is preserved: without a bot session the flags below stay unset.
+        ...(opts.profileDir !== undefined ? ['--profile', opts.profileDir] : []),
+        ...(opts.url !== undefined ? ['--url', opts.url] : []),
+    ];
     return opts.entryPath.endsWith('.ts') || opts.entryPath.endsWith('.js')
         ? [process.execPath, opts.entryPath, opts.subcommand, ...flags]
         : [opts.entryPath, opts.subcommand, ...flags];
@@ -206,6 +217,41 @@ export function spawnPluginLogin(opts: PluginProbeSpawnOptions): number {
         stderr: 'inherit',
     });
     return proc.exitCode ?? 1;
+}
+
+/** Outcome of an interactive bot-session spawn: exit code plus the piped stdout (verdict channel). */
+export interface PluginSessionSpawnResult {
+    exitCode: number;
+    stdout: string;
+}
+
+/**
+ * Spawn a plugin's interactive bot-session command (`login`/`open`, 0277) and await its exit.
+ * stdin and stderr are inherited so the operator interacts and sees site diagnostics; stdout is
+ * piped because it carries the machine verdict (canonical `defaultUrl` on a successful login),
+ * which the parent must parse. Spawn failures surface as exit 2 (usage-shaped), never success.
+ */
+export async function spawnPluginSession(opts: PluginProbeSpawnOptions): Promise<PluginSessionSpawnResult> {
+    const started = (): Bun.Subprocess<'inherit', 'pipe', 'inherit'> | null => {
+        try {
+            return Bun.spawn(pluginProbeCmd(opts), {
+                cwd: opts.cwd,
+                env: pluginEntryEnv(opts),
+                stdin: 'inherit',
+                stdout: 'pipe',
+                stderr: 'inherit',
+            });
+        } catch {
+            return null;
+        }
+    };
+    const proc = started();
+    if (proc === null) {
+        return { exitCode: 2, stdout: '' };
+    }
+    const stdout = await new Response(proc.stdout).text();
+    await proc.exited;
+    return { exitCode: proc.exitCode ?? 1, stdout: stdout.trim() };
 }
 
 /** Verdict derived from a probe spawn outcome; raw probe output never survives. */

@@ -165,3 +165,127 @@ describe('wechatmp-pub profile-check CLI (0216, ADR-032 probe contract)', () => 
         }
     });
 });
+
+describe('wechatmp-pub profile-check `open` verb (0277)', () => {
+    test('open without explicit --profile/--url is a usage error: exit 2, no browser', async () => {
+        const opened: unknown[] = [];
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(async () => {
+            opened.push(1);
+            return fakeContext(consoleHomePage()) as never;
+        });
+        try {
+            expect((await run(['open'])).code).toBe(2);
+            expect((await run(['open', '--profile', profileDir])).code).toBe(2);
+            expect((await run(['open', '--url', 'https://mp.weixin.qq.com/'])).code).toBe(2);
+            expect(opened).toHaveLength(0);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('open without a saved session state refuses: exit 1, context cleaned up, nothing fabricated', async () => {
+        await mkdir(profileDir, { recursive: true });
+        // Earlier tests in this file leave a captured state behind; this refusal needs it absent.
+        await rm(join(profileDir, 'storage-state.json'), { force: true });
+        const closed: string[] = [];
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
+            async () => fakeContext(consoleHomePage(), closed) as never,
+        );
+        try {
+            const { code, out } = await run(['open', '--profile', profileDir, '--url', 'https://mp.weixin.qq.com/']);
+            expect(code).toBe(1);
+            expect(closed).toEqual(['closed']);
+            const lines = out.trim().split('\n');
+            const verdict = JSON.parse(lines[lines.length - 1] ?? '') as { status: string; detail: string };
+            expect(verdict.status).toBe('refused');
+            expect(verdict.detail).toContain('storage-state.json');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('open restores the durable state, navigates the supplied --url, and waits for the operator', async () => {
+        await mkdir(profileDir, { recursive: true });
+        await writeFile(
+            join(profileDir, 'storage-state.json'),
+            JSON.stringify({ cookies: [{ name: 'slave_sid', value: 'SECRET-VALUE' }], origins: [] }),
+        );
+        const gotos: string[] = [];
+        const closed: string[] = [];
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(async () => {
+            const context = {
+                pages: () => [{ goto: async (url: string) => void gotos.push(url) }],
+                once: (event: string, listener: () => void) => {
+                    if (event === 'close') listener();
+                },
+                addCookies: async () => {},
+                close: async () => void closed.push('closed'),
+            };
+            return context as never;
+        });
+        try {
+            const { code, out } = await run([
+                'open',
+                '--profile',
+                profileDir,
+                '--url',
+                'https://mp.weixin.qq.com/cgi-bin/app?t=manage/index',
+            ]);
+            expect(code).toBe(0);
+            expect(gotos).toEqual(['https://mp.weixin.qq.com/cgi-bin/app?t=manage/index']);
+            const lines = out.trim().split('\n');
+            const verdict = JSON.parse(lines[lines.length - 1] ?? '') as { status: string; detail: string };
+            expect(verdict.status).toBe('verified');
+            expect(verdict.detail).toContain('closed by the operator');
+            expect(out).not.toContain('SECRET-VALUE');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});
+
+describe('wechatmp-pub profile-check login verdict (0277 R3)', () => {
+    const loginProfileDir = join(tmpRoot, 'login-profile');
+
+    test('login in bot mode emits the canonical defaultUrl verdict as the LAST stdout line', async () => {
+        // `kk bot login` persists a default URL ONLY from this line; without it a completed QR
+        // sign-in is discarded ("exited 0 but returned no usable defaultUrl verdict").
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
+            async () => fakeContext(consoleHomePage()) as never,
+        );
+        try {
+            const { code, out } = await run([
+                'login',
+                '--profile',
+                loginProfileDir,
+                '--url',
+                'https://mp.weixin.qq.com/cgi-bin/app?t=manage/index&operator=1',
+            ]);
+            expect(code).toBe(0);
+            const lines = out.trim().split('\n');
+            expect(JSON.parse(lines[lines.length - 1] ?? '')).toEqual({
+                status: 'verified',
+                profileDir: loginProfileDir,
+                defaultUrl: 'https://mp.weixin.qq.com/',
+            });
+            // The operator's URL — with its query — must never become the persisted default.
+            expect(out).not.toContain('operator=1');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('login without --url keeps the operator-mode output (no verdict line)', async () => {
+        const spy = spyOn(tsBrowserAutomation, 'openPersistentBrowser').mockImplementation(
+            async () => fakeContext(consoleHomePage()) as never,
+        );
+        try {
+            const { code, out } = await run(['login', '--profile', loginProfileDir, '--timeout', '50']);
+            expect(code).toBe(0);
+            expect(out).toContain('login verified');
+            expect(out).not.toContain('defaultUrl');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});

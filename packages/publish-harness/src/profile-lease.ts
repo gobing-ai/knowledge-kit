@@ -232,9 +232,31 @@ async function writeOwner(fileSystem: FileSystem, leaseDir: string, owner: Lease
 async function busyGuidance(fileSystem: FileSystem, leaseDir: string): Promise<string> {
     const owner = await readOwner(fileSystem, leaseDir);
     if (owner === null) {
+        // An owner-less directory still carrying holder records is dead-child residue (a parent
+        // released after its children died mid-transaction), not an acquire that never finished —
+        // name the difference so the operator knows what to confirm before removing anything.
+        const residue = await holderResidue(fileSystem, leaseDir);
+        if (residue !== null) {
+            return (
+                `browser lease ${leaseDir} has no owner but ${residue} child holder record(s) remain — ` +
+                'a previous parent released after its children stopped; confirm no kk browser still uses this ' +
+                `profile, then remove ${leaseDir} manually`
+            );
+        }
         return `browser lease ${leaseDir} already exists with no owner record — a previous run may have crashed mid-acquire; confirm no kk browser still uses this profile, then remove ${leaseDir} manually`;
     }
     return `browser lease ${leaseDir} is held by pid ${owner.pid} (logical ${owner.logicalPath}) — confirm that process and any browser for this profile have stopped; stale ownership is never auto-removed`;
+}
+
+/** Count dead-child holder records, or null when the directory carries none. */
+async function holderResidue(fileSystem: FileSystem, leaseDir: string): Promise<number | null> {
+    try {
+        const entries = await fileSystem.readDir(leaseDir);
+        const holders = entries.filter((name) => name.startsWith(HOLDER_PREFIX) && name.endsWith('.json'));
+        return holders.length > 0 ? holders.length : null;
+    } catch {
+        return null;
+    }
 }
 
 async function liveChildHolders(fileSystem: FileSystem, leaseDir: string): Promise<number[]> {

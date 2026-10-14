@@ -449,3 +449,169 @@ describe('bot session lifecycle (0276)', () => {
         expect(listIfPresent(leaseRoot)).toEqual([]);
     });
 });
+
+describe('known-plugin adapter sessions (0277 R2/R3)', () => {
+    let root: string;
+    let profileRoot: string;
+    let profileDir: string;
+    let leaseRoot: string;
+    let transactionRoot: string;
+    const fileSystem = createNodeFileSystem();
+
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-bot-adapter-'));
+        profileRoot = join(root, 'profiles');
+        profileDir = join(profileRoot, 'juejin');
+        leaseRoot = join(root, 'leases');
+        transactionRoot = join(root, 'transactions');
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    const deps = () => ({ root: profileRoot, leaseRoot, transactionRoot, fileSystem });
+    const listIfPresent = (dir: string): string[] => (existsSync(dir) ? readdirSync(dir) : []);
+
+    /** Adapter fake recording the run request and replaying a scripted child outcome. */
+    function makeAdapter(outcome: { exitCode: number; stdout: string } = { exitCode: 0, stdout: '' }) {
+        const requests: Array<{ mode: string; profileDir: string; url: string; env: Record<string, string> }> = [];
+        return {
+            requests,
+            adapter: {
+                pluginName: 'juejin-pub',
+                run: async (request: {
+                    mode: string;
+                    profileDir: string;
+                    url: string;
+                    env: Record<string, string>;
+                }) => {
+                    requests.push(request);
+                    return outcome;
+                },
+            },
+        };
+    }
+
+    test('adapter login promotes without a prompt, keeping the plugin-fixed query (Juejin ?v=2)', async () => {
+        const { adapter, requests } = makeAdapter({
+            exitCode: 0,
+            stdout:
+                'juejin profile login verified\n' +
+                JSON.stringify({
+                    status: 'verified',
+                    profileDir: '/stage',
+                    defaultUrl: 'https://juejin.example.com/editor/drafts/new?v=2',
+                }),
+        });
+        const result = await loginBot('juejin', 'https://juejin.example.com/editor/drafts/new?token=SEKRET', {
+            ...deps(),
+            adapter,
+        });
+
+        // The child ran inside the transaction's staged profile under the delegated lease.
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.mode).toBe('login');
+        expect(requests[0]?.profileDir.startsWith(transactionRoot)).toBe(true);
+        expect(requests[0]?.env.KK_BOT_LEASE_PATH).toContain('lease');
+        expect(requests[0]?.env.KK_BOT_LEASE_TOKEN).not.toBe('');
+        // The persisted defaultUrl is the plugin-owned canonical URL — its ?v=2 is code, kept;
+        // the operator-supplied token query never reaches disk.
+        expect(result.defaultUrl).toBe('https://juejin.example.com/editor/drafts/new?v=2');
+        const stored = JSON.parse(readFileSync(join(profileDir, 'bot.json'), 'utf8')) as Record<string, unknown>;
+        expect(stored).toMatchObject({
+            defaultUrl: 'https://juejin.example.com/editor/drafts/new?v=2',
+            authenticationEvidence: 'site-verified',
+            pluginName: 'juejin-pub',
+        });
+        expect(readFileSync(join(profileDir, 'bot.json'), 'utf8')).not.toContain('SEKRET');
+        expect(result.message).toContain('site-verified');
+        // Success consumed the transaction and released the lease.
+        expect(listIfPresent(transactionRoot)).toEqual([]);
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('adapter child failures save nothing: exit 2 is usage, others are operational', async () => {
+        const usage = makeAdapter({ exitCode: 2, stdout: 'usage: ...' });
+        let caught: unknown;
+        try {
+            await loginBot('juejin', 'https://juejin.example.com/', { ...deps(), adapter: usage.adapter });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('usage');
+        expect(existsSync(profileDir)).toBe(false);
+        expect(listIfPresent(transactionRoot)).toEqual([]);
+
+        const failed = makeAdapter({ exitCode: 1, stdout: '' });
+        caught = undefined;
+        try {
+            await loginBot('juejin', 'https://juejin.example.com/', { ...deps(), adapter: failed.adapter });
+        } catch (error) {
+            caught = error;
+        }
+        expect((caught as BotError).code).toBe('browser');
+
+        // Exit 0 without a parseable verdict is refused too — nothing half-saved.
+        const mute = makeAdapter({ exitCode: 0, stdout: 'no verdict here' });
+        caught = undefined;
+        try {
+            await loginBot('juejin', 'https://juejin.example.com/', { ...deps(), adapter: mute.adapter });
+        } catch (error) {
+            caught = error;
+        }
+        expect((caught as BotError).code).toBe('browser');
+        expect(existsSync(profileDir)).toBe(false);
+    });
+
+    test('open through the adapter reuses the saved default and releases the lease on failure', async () => {
+        mkdirSync(profileDir, { recursive: true });
+        writeFileSync(
+            join(profileDir, 'bot.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                defaultUrl: 'https://juejin.example.com/editor/drafts/new?v=2',
+                authenticationEvidence: 'site-verified',
+                pluginName: 'juejin-pub',
+            }),
+        );
+        const { adapter, requests } = makeAdapter({ exitCode: 0, stdout: '' });
+        const result = await openBot('juejin', { ...deps(), adapter });
+        expect(result.defaultUrl).toBe('https://juejin.example.com/editor/drafts/new?v=2');
+        expect(requests[0]?.mode).toBe('open');
+        expect(requests[0]?.profileDir).toBe(profileDir);
+        expect(requests[0]?.env.KK_BOT_LEASE_PATH).toContain('lease');
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+
+        // A failing child still releases the lease (finally), and exit 2 maps to usage.
+        const refuser = makeAdapter({ exitCode: 2, stdout: '' });
+        let caught: unknown;
+        try {
+            await openBot('juejin', { ...deps(), adapter: refuser.adapter });
+        } catch (error) {
+            caught = error;
+        }
+        expect((caught as BotError).code).toBe('usage');
+        expect(listIfPresent(leaseRoot)).toEqual([]);
+    });
+
+    test('generic metadata may not smuggle a query: only adapter-owned defaultUrls keep one', async () => {
+        mkdirSync(profileDir, { recursive: true });
+        writeFileSync(
+            join(profileDir, 'bot.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                defaultUrl: 'https://alice.example.com/home?token=SEKRET',
+                authenticationEvidence: 'operator-confirmed',
+            }),
+        );
+        let caught: unknown;
+        try {
+            await openBot('juejin', { ...deps() });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('persistence');
+    });
+});

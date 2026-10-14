@@ -638,3 +638,77 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
         });
     });
 });
+
+describe('browserSession records (0277 R1)', () => {
+    it('propagates a valid browserSession onto the resolved PluginRecord', () => {
+        withTempDir((root) => {
+            const dir = writePlugin(root, 'publish', 'juejin-pub', { entry: './src/index.ts' });
+            writeFileSync(
+                join(dir, 'plugin.json'),
+                JSON.stringify({
+                    name: 'juejin-pub',
+                    kind: 'publish',
+                    entry: './src/index.ts',
+                    check: './src/profile-check.ts',
+                    browserSession: { profileName: 'juejin', homeUrl: 'https://juejin.cn/editor/drafts/new?v=2' },
+                }),
+            );
+
+            const res = discoverPlugins(root);
+            expect(res.diagnostics).toHaveLength(0);
+            const record = getByName(res, 'juejin-pub');
+            expect(record?.browserSession).toEqual({
+                profileName: 'juejin',
+                homeUrl: 'https://juejin.cn/editor/drafts/new?v=2',
+            });
+        });
+    });
+
+    it('reports an invalid descriptor as malformed and drops the plugin', () => {
+        withTempDir((root) => {
+            const dir = writePlugin(root, 'publish', 'bad-session', { entry: './src/index.ts' });
+            writeFileSync(
+                join(dir, 'plugin.json'),
+                JSON.stringify({
+                    name: 'bad-session',
+                    kind: 'publish',
+                    entry: './src/index.ts',
+                    check: './src/profile-check.ts',
+                    browserSession: { profileName: 'not safe' },
+                }),
+            );
+
+            const res = discoverPlugins(root);
+            expect(res.plugins).toHaveLength(0);
+            expect(res.diagnostics.map((d) => d.code)).toEqual(['malformed']);
+        });
+    });
+
+    it('preserves the discovery shadowing contract for descriptor plugins', () => {
+        withTempDir((root) => {
+            for (const rootPath of [join(root, 'a'), join(root, 'b')]) {
+                const dir = writePlugin(rootPath, 'publish', 'weibo-pub', { entry: './src/index.ts' });
+                writeFileSync(
+                    join(dir, 'plugin.json'),
+                    JSON.stringify({
+                        name: 'weibo-pub',
+                        kind: 'publish',
+                        entry: './src/index.ts',
+                        check: './src/profile-check.ts',
+                        browserSession: { profileName: 'weibo', homeUrl: 'https://weibo.com' },
+                    }),
+                );
+            }
+
+            const merged = discoverAllPlugins({
+                packagePluginsRoot: join(root, 'a'),
+                homeDir: join(root, 'home'),
+                cwd: join(root, 'cwd'),
+                env: { KK_PLUGIN_PATH: join(root, 'b') },
+            });
+            expect(merged.plugins).toHaveLength(1);
+            expect(merged.plugins[0]?.browserSession).toEqual({ profileName: 'weibo', homeUrl: 'https://weibo.com' });
+            expect(merged.diagnostics.some((d) => d.code === 'shadowed')).toBe(true);
+        });
+    });
+});

@@ -4,5 +4,9 @@
     "entry": "./src/index.ts",
     "check": "./src/profile-check.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for the WeChat MP console via ts-browser-automation: draft-box first (ADR-022), headed publish behind a session preflight"
+    "description": "Publish plugin for the WeChat MP console via ts-browser-automation: draft-box first (ADR-022), headed publish behind a session preflight",
+    "browserSession": {
+        "profileName": "wechatmp",
+        "homeUrl": "https://mp.weixin.qq.com/"
+    }
 }

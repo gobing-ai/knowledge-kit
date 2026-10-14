@@ -102,3 +102,54 @@ describe('profile lease (0276)', () => {
         expect(outcomes.filter((o) => o === 'busy')).toHaveLength(1);
     });
 });
+
+describe('dead-child residue guidance (0276 P3)', () => {
+    let root: string;
+    let leaseRoot: string;
+    let profileDir: string;
+
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-lease-residue-'));
+        leaseRoot = join(root, 'leases');
+        profileDir = join(root, 'profiles', 'alice');
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    test('an owner-less lease with holder records names the residue and keeps confirm-before-remove', async () => {
+        const lease = await acquireProfileLease(profileDir, { leaseRoot });
+        const leaseDir = join(leaseRoot, lease.id);
+        // Simulate the dead-child shape: the parent released (owner record gone) while children
+        // mid-transaction left their holder records behind.
+        await lease.release();
+        mkdirSync(leaseDir, { recursive: true });
+        writeFileSync(join(leaseDir, 'holder-abc.json'), '{}');
+        writeFileSync(join(leaseDir, 'holder-def.json'), '{}');
+
+        let caught: unknown;
+        try {
+            await acquireProfileLease(profileDir, { leaseRoot });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        const message = (caught as BotError).message;
+        expect(message).toContain('no owner but 2 child holder record(s) remain');
+        expect(message).toContain('a previous parent released after its children stopped');
+        expect(message).toContain(leaseDir);
+        rmSync(leaseDir, { recursive: true, force: true });
+    });
+
+    test('an owner-less lease with no holder records keeps the crashed-acquire wording', async () => {
+        const lease = await acquireProfileLease(profileDir, { leaseRoot });
+        const leaseDir = join(leaseRoot, lease.id);
+        await lease.release();
+        mkdirSync(leaseDir, { recursive: true });
+
+        await expect(acquireProfileLease(profileDir, { leaseRoot })).rejects.toThrow(
+            /already exists with no owner record/,
+        );
+        rmSync(leaseDir, { recursive: true, force: true });
+    });
+});

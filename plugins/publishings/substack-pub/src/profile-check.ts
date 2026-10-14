@@ -11,7 +11,10 @@
  * The publication is publication-scoped, so it comes from `--publication <url>` or
  * `SUBSTACK_PUBLICATION_URL`; `--publication` is stripped before `runProfileCli` parses the rest
  * (the shared CLI rejects a flag it does not know), and a missing or non-https value is a usage
- * error that opens no browser.
+ * error that opens no browser. In bot mode (0277) the parent supplies `--url <session-url>` and
+ * the publication root is derived from that URL's origin, so a saved publication session reopens
+ * without the env tier; the readiness config (and the login verdict's canonical editor URL) come
+ * from `channelConfig(publication)`.
  *
  * Operator dogfood (plan step 6, handed to 0193): run `profile-check.ts login`, then `check`, on
  * the same profile, and re-measure the editor URL, the selectors and the draft signal.
@@ -21,7 +24,32 @@ import { echo } from '@gobing-ai/ts-utils';
 import { channelConfig, resolvePublicationUrl } from './index';
 
 const PUBLICATION_FLAG = '--publication';
-const USAGE = 'usage: substack profile-check [login|check] [--publication <url>] [--profile <dir>] [--timeout <ms>]';
+const URL_FLAG = '--url';
+const USAGE =
+    'usage: substack profile-check [login|check|open] [--publication <url>] [--url <url>] [--profile <dir>] [--timeout <ms>]';
+
+/**
+ * Value of `--url <url>` / `--url=<url>` when the bot parent supplies the session target (0277);
+ * the flag itself stays in `rest` because the shared `runProfileCli` owns it. `undefined` means
+ * operator mode (publication from the flag/env tiers as before).
+ */
+export function botSessionUrl(argv: readonly string[]): string | undefined {
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index] ?? '';
+        if (arg === URL_FLAG) return argv[index + 1];
+        if (arg.startsWith(`${URL_FLAG}=`)) return arg.slice(URL_FLAG.length + 1);
+    }
+    return undefined;
+}
+
+/** Origin of an http(s) URL, or `undefined` when it does not parse (then the usual refusal fires). */
+function urlOrigin(value: string): string | undefined {
+    try {
+        return new URL(value).origin;
+    } catch {
+        return undefined;
+    }
+}
 
 /**
  * Splits `--publication <url>` / `--publication=<url>` out of the operator argv; `rest` keeps the
@@ -60,7 +88,12 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2), deps: Pr
             echo(line);
         });
     const { publicationUrl, rest } = splitPublicationFlag(argv);
-    const publication = resolvePublicationUrl(publicationUrl);
+    // Bot mode (0277): `--url` names the session target and implies the publication origin — the
+    // operator's publication flag/env tiers stay for plain `login`/`check`.
+    const sessionUrl = botSessionUrl(argv);
+    const publication = resolvePublicationUrl(
+        publicationUrl ?? (sessionUrl !== undefined ? urlOrigin(sessionUrl) : undefined),
+    );
     if ('error' in publication) {
         stdout(`substack profile-check: ${publication.error} — ${USAGE}`);
         // Last line is the ADR-032 verdict so `kk plugin check` can name the missing variable.

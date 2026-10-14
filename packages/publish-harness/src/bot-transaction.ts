@@ -191,30 +191,48 @@ export async function beginBotTransaction(options: BeginBotTransactionOptions): 
     };
 }
 
+/**
+ * Locate an on-disk transaction for `name` (by journal or directory-name attribution).
+ * Returns its directory, or `null` when the transaction root carries no entry for the bot.
+ * Shared by begin (refusal) and logout (0277: a leftover `backup/` may still hold the bot's
+ * previous credentials, so an "absent" report would be dishonest).
+ */
+export async function findLeftoverTransaction(
+    fileSystem: FileSystem,
+    name: string,
+    transactionRoot: string,
+): Promise<string | null> {
+    if (!(await fileSystem.exists(transactionRoot))) return null;
+    let entries: string[];
+    try {
+        entries = await fileSystem.readDir(transactionRoot);
+    } catch {
+        return null;
+    }
+    for (const entry of entries) {
+        const dir = join(transactionRoot, entry);
+        const journal = await readJournal(fileSystem, dir);
+        if (journal?.name === name || nameFromTransactionDir(entry) === name) {
+            return dir;
+        }
+    }
+    return null;
+}
+
 /** Refuse a new transaction while a prior one for `name` is still on disk; delete nothing. */
 async function assertNoLeftoverTransaction(
     fileSystem: FileSystem,
     transactionRoot: string,
     name: string,
 ): Promise<void> {
-    if (!(await fileSystem.exists(transactionRoot))) return;
-    let entries: string[];
-    try {
-        entries = await fileSystem.readDir(transactionRoot);
-    } catch {
-        return;
-    }
-    for (const entry of entries) {
-        const dir = join(transactionRoot, entry);
-        const journal = await readJournal(fileSystem, dir);
-        if (journal?.name === name || nameFromTransactionDir(entry) === name) {
-            const phase = journal?.phase ?? 'unknown';
-            throw new BotError(
-                'persistence',
-                `an incomplete bot transaction for '${name}' is present at ${dir} (phase ${phase}) — inspect it and remove that directory manually before retrying; nothing was deleted`,
-            );
-        }
-    }
+    const dir = await findLeftoverTransaction(fileSystem, name, transactionRoot);
+    if (dir === null) return;
+    const journal = await readJournal(fileSystem, dir);
+    const phase = journal?.phase ?? 'unknown';
+    throw new BotError(
+        'persistence',
+        `an incomplete bot transaction for '${name}' is present at ${dir} (phase ${phase}) — inspect it and remove that directory manually before retrying; nothing was deleted`,
+    );
 }
 
 async function writeJournal(fileSystem: FileSystem, dir: string, journal: TransactionJournal): Promise<void> {

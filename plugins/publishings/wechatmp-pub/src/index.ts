@@ -126,8 +126,29 @@ export async function openWechatLogin(opts: { profileDir: string; timeoutMs?: nu
     }
 }
 
-/** Launch, inject the saved login cookies, and land on the console. Caller owns closing the context. */
-async function openWithState(profileDir: string, headless: boolean): Promise<{ page: Page; context: BrowserContext }> {
+/**
+ * Bot-mode open (0277): restore the durable storage state, land on the console (or `url`), and
+ * resolve once the operator closes the browser — no auth assertion, the `check` verb owns that.
+ */
+export async function openWechatSession(
+    profileDir: string,
+    opts: { headless?: boolean; url?: string } = {},
+): Promise<void> {
+    const { context } = await openWithState(profileDir, opts.headless ?? false, opts.url ?? CONSOLE_URL);
+    // Structural cast (this plugin's tsconfig resolves a playwright build whose context event map
+    // omits 'close'); the runtime context always emits it.
+    const closable = context as unknown as { once(event: 'close', listener: () => void): unknown };
+    await new Promise<void>((resolveClose) => {
+        closable.once('close', resolveClose);
+    });
+}
+
+/** Launch, inject the saved login cookies, and land on the console (or `url`). Caller owns closing the context. */
+async function openWithState(
+    profileDir: string,
+    headless: boolean,
+    url: string = CONSOLE_URL,
+): Promise<{ page: Page; context: BrowserContext }> {
     const context = await openPersistentBrowser({ profileDir, headless, launcher: kkBrowserLauncher });
     try {
         const stateFile = storageStatePath(profileDir);
@@ -164,7 +185,7 @@ async function openWithState(profileDir: string, headless: boolean): Promise<{ p
                 )
                 .catch(() => undefined);
         }
-        await page.goto(CONSOLE_URL);
+        await page.goto(url);
         return { page, context };
     } catch (error: unknown) {
         await context.close();
