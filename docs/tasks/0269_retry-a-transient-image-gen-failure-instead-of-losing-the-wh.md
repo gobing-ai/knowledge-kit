@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Retry a transient image-gen failure instead of losing the whole XHS card series
-status: todo
+status: done
 template: issue
 created_at: 2026-10-12T23:05:01.141Z
-updated_at: "2026-10-13T21:01:04.152Z"
+updated_at: "2026-10-13T21:57:26.785Z"
 feature_id: G11
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 1
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0269-verdict.json
 ---
 
 ## 0269. Retry a transient image-gen failure instead of losing the whole XHS card series
@@ -30,12 +32,12 @@ Scope is the stage-level XHS card retry and its regression tests. Provider class
 
 ### Requirements
 
-- [ ] R1. When image-gen fails for an XHS card without a recognized `points[n]` safe-area overflow and the shared `XHS_OVERFLOW_ATTEMPTS` loop still has budget, `daily-xhs-render` retries that same card once with the unchanged input envelope before stopping.
-- [ ] R2. The same-envelope retry is per card and bounded by the shared `XHS_OVERFLOW_ATTEMPTS` retry budget: overflow rewrites and the non-overflow retry consume the same loop budget, a successful retry lets the series continue, and no retry occurs after the shared cap is exhausted.
-- [ ] R3. The existing overflow rewrite behavior remains separate: recognized in-range `points[n]` overflows still use the bounded shortening/drop path, and non-`points[n]` or malformed overflow messages are treated as non-overflow failures.
-- [ ] R4. Regression tests observe the child invocation seam and assert the retry count, unchanged envelope for the non-overflow retry, successful package output, and persistent-failure stop behavior.
-- [ ] R5. The retry guard is initialized per card: when two different cards each fail once without an overflow marker, each card receives exactly one unchanged-envelope retry and both cards are packaged.
-- [ ] R6. A mixed overflow/non-overflow sequence obeys the same shared cap and precedence: recognized point rewrites retain their existing behavior, and a later non-overflow failure receives a same-envelope retry only while a loop attempt remains.
+- [x] R1. When image-gen fails for an XHS card without a recognized `points[n]` safe-area overflow and the shared `XHS_OVERFLOW_ATTEMPTS` loop still has budget, `daily-xhs-render` retries that same card once with the unchanged input envelope before stopping.
+- [x] R2. The same-envelope retry is per card and bounded by the shared `XHS_OVERFLOW_ATTEMPTS` retry budget: overflow rewrites and the non-overflow retry consume the same loop budget, a successful retry lets the series continue, and no retry occurs after the shared cap is exhausted.
+- [x] R3. The existing overflow rewrite behavior remains separate: recognized in-range `points[n]` overflows still use the bounded shortening/drop path, and non-`points[n]` or malformed overflow messages are treated as non-overflow failures.
+- [x] R4. Regression tests observe the child invocation seam and assert the retry count, unchanged envelope for the non-overflow retry, successful package output, and persistent-failure stop behavior.
+- [x] R5. The retry guard is initialized per card: when two different cards each fail once without an overflow marker, each card receives exactly one unchanged-envelope retry and both cards are packaged.
+- [x] R6. A mixed overflow/non-overflow sequence obeys the same shared cap and precedence: recognized point rewrites retain their existing behavior, and a later non-overflow failure receives a same-envelope retry only while a loop attempt remains.
 
 Out of scope: provider-level retries in `plugins/generations/image-gen`, provider error classification changes, new workflow flags, and live Xiaohongshu publishing.
 
@@ -115,14 +117,69 @@ This is the corrected disposition of 0273: its obsolete plugin-level solution is
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` recovery + persistent-failure cases assert one unchanged-envelope retry and the bounded stop; suite result this run: 4 pass / 0 fail |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2424` shared `XHS_OVERFLOW_ATTEMPTS = 3`; per-card `transientRetryUsed` guard re-read at `plugins/kk/scripts/daily-stages.ts:2568-2576` |
+| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` — rewrite branch separate: shortened `points[1]`, preserved `points[0]`, retry reuses rewritten envelope byte-for-byte |
+| R4 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` — child-invocation seam observed via argv record + per-call input snapshots; exact call counts asserted |
+| R5 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` — both cards flake once, 2 invocations each, per-card snapshot byte-identity, cards + content packaged |
+| R6 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` (3 calls: rewrite + provider-failure retry) and `:1931-1995` (cap exhaustion: exactly 4 calls, sentinel denies 5th, resume path, no content) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — a non-overflow card failure recovers with one unchanged-envelope retry (req: R1, R2, R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` |
+| Scenario: AC2 — a persistent non-overflow failure is bounded and resumable (req: R2, R4) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` |
+| Scenario: AC3 — overflow handling keeps its existing bounded rewrite contract (req: R3, R6) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` |
+| Scenario: AC4 — the same-envelope budget resets for each card (req: R2, R4, R5) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` (falsifier: guard-hoist mutation red, reverted) |
+| Scenario: AC5 — mixed overflow and provider failure share the loop cap (req: R2, R3, R6) | MET | test | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` + `:1931-1995` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**2026-10-13 review (run b8059a06, dev-runall-0269-0270-0272-43ce, profile=auto)**
+
+Confidence: HIGH
+
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P4 | architecture | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1995` | The three new 0269 cases repeat the fake-kk script scaffolding; consistent with the file's existing per-case house pattern — no action. |
+
+Functional traceability (requirements → evidence, re-read this run):
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1806-1847` — pre-existing recovery + persistent-failure cases assert one unchanged-envelope retry and the bounded stop (4/4 suite pass this run: 4 pass, 0 fail, 25 expect) |
+| R2 | MET | `plugins/kk/scripts/daily-stages.ts:2424` — shared `XHS_OVERFLOW_ATTEMPTS = 3`; per-card `transientRetryUsed` guard ~2568-2576 (audit + falsifier: hoisting the guard outside the card loop turned the R5 case red, then reverted byte-identical) |
+| R3 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` — overflow rewrite branch kept separate: `readPoints(.2)` differs from `.1`, `points[0]` preserved, provider retry reuses the rewritten envelope byte-for-byte |
+| R4 | MET | tests observe the child invocation seam (`fakeKk` shim records argv, snapshots `--in` per call): retry counts asserted with exact `toHaveLength` bounds; package output + resume-path stop asserted |
+| R5 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1849-1884` — both cards flake once; per-card 2 invocations; per-card snapshot byte-identity; `cards.json` + `content.json` packaged |
+| R6 | MET | `apps/cli/tests/kk-workflow-stages.test.ts:1886-1929` (mixed: 3 calls, "retrying the same envelope once") and `:1931-1995` (exhaustion: 4 truncatable points, cap 3 ⇒ exactly 4 calls, sentinel denies a 5th, status 1 + resume message, no `content.json`) |
+
+SECUA review of the diff (tests-only, +157/−2): Security — no secrets, no untrusted input handling added. Efficiency/Usability — no production surface change. Correctness — call-count sentinels are exact (`toHaveLength(3)` / `(4)`); snapshot suffix strips `.in.json` before naming per-card captures. Architecture — tests observe the established child-process seam; no new modules or coupling. No open P1–P3 findings.
+
+Verdict basis: full quality gate PASS at digest `sha256:2c53bc5cbab0b3db462d3243524b14fc10f929f0edd3e542ac1abc1a4dfe18d3` (proof bracket held at review entry); AC1–AC5 map to the four 0269 tests, all passing this run.
 
 ### References
 
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-10-13T21:32:35.195Z todo → wip (system)
+- 2026-10-13T21:56:52.706Z wip → testing (system)
+- 2026-10-13T21:57:26.685Z testing → done (system)
+
+### Notes
+
+**2026-10-13 inline-full run (dev-runall-0269-0270-0272-43ce)**
+
+- Implemented host-inline. Audit + falsifier confirmed the production seam in `plugins/kk/scripts/daily-stages.ts` already satisfies AC1–AC4 (`XHS_OVERFLOW_ATTEMPTS = 3`, per-card `transientRetryUsed`, shared loop cap).
+- Delta = three regression tests in `apps/cli/tests/kk-workflow-stages.test.ts`: (R5) per-card same-envelope retry budget, both cards flake once and recover — falsifies a guard hoisted outside the card loop; (R6a) mixed sequence points-overflow rewrite then provider failure inside the one shared cap, per-snapshot envelope byte-identity; (R6b) cap exhaustion by rewrites stops through the resume path with no extra call (sentinel denies a fifth invocation).
+- Production file untouched; `git diff --stat` = tests only (+135).
+

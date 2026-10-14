@@ -197,6 +197,9 @@ const PODCAST_INSERT = ['div.weui-desktop-dialog button:has-text("插入")', 'bu
 
 /** 音频 material dialog: the toolbar menu opens it, then the 素材库 list or the upload form. */
 const AUDIO_MENU = 'li.js_insertaudio';
+/** The toolbar dropdown that reveals the 音频 menu item (measured 2026-10-13): the item lives in a
+ *  `display:none` menu under `#audio_music_plugin_btn` until that trigger is clicked. */
+const AUDIO_TOOLBAR_TRIGGER = '#audio_music_plugin_btn';
 const AUDIO_DIALOG = '.audio_dialog';
 /** The 素材库 rows stream in after the dialog opens, so the dedupe probe retries while they load. */
 const AUDIO_DIALOG_TIMEOUT_MS = 15_000;
@@ -576,12 +579,10 @@ async function insertBody(page: WechatPage, deps: ModeRunDeps): Promise<void> {
  * label (the 2026-10-05 dogfood reading) still gets the bare control click, and says so.
  */
 async function applyLayout(page: WechatPage, deps: ModeRunDeps): Promise<string | null> {
-    let control: string;
-    try {
-        control = await findSelector(page, LAYOUT_CONTROL, '一键排版 control', deps.stepTimeoutMs);
-    } catch (error) {
-        return `一键排版: ${error instanceof Error ? error.message : String(error)}`;
-    }
+    // Measured 2026-10-13: the current editor build exposes no 一键排版 control at all. An absent
+    // control is the platform's layout — silently skip; only a found-but-failing control warns.
+    const control = await tryFindSelector(page, LAYOUT_CONTROL, Math.min(deps.stepTimeoutMs, 5_000));
+    if (control === undefined) return null;
     try {
         await clickSelector(page, control, deps.stepTimeoutMs);
     } catch (error) {
@@ -625,7 +626,11 @@ async function fillOptional(
  * which is what the platform's 默认首图为封面 fallback would use anyway. Best-effort and recorded: a
  * miss is a warning naming the step, never a false claim that the cover landed.
  */
-async function setCover(page: WechatPage, source: 'library' | 'body', deps: ModeRunDeps): Promise<string | null> {
+async function setCover(
+    page: WechatPage,
+    source: 'library' | 'body',
+    deps: Pick<ModeRunDeps, 'stepTimeoutMs'>,
+): Promise<string | null> {
     const picker = source === 'library' ? COVER_FROM_LIBRARY : COVER_FROM_CONTENT;
     const what = source === 'library' ? '从图片库选择' : '从正文选择';
     // A cover miss is a warning, never a gate — so the panel must not outlive the step that opened
@@ -667,27 +672,41 @@ function coverSourceOf(content: Content): 'library' | 'body' {
     return (meta as Record<string, unknown>).coverSource === 'body' ? 'body' : 'library';
 }
 
+/** The audio-embed block of `metadata.wechatmp`, or null when this run embeds no audio. Shared by
+ *  the cover step (the library only holds the episode cover once audio uploaded — task 0272). */
+function audioBlockOf(content: Content): { title: string; audioPath: string; coverPath: string } | null {
+    const meta = content.metadata?.wechatmp;
+    if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) return null;
+    const m = meta as Record<string, unknown>;
+    if (
+        typeof m.audioTitle !== 'string' ||
+        m.audioTitle.trim() === '' ||
+        typeof m.audioPath !== 'string' ||
+        m.audioPath === ''
+    )
+        return null;
+    return {
+        title: m.audioTitle.trim(),
+        audioPath: m.audioPath,
+        coverPath: typeof m.audioCoverPath === 'string' ? m.audioCoverPath : '',
+    };
+}
+
 /** 文章's `metadata.wechatmp` enrichment rail, plus its opt-in audio embed (2026-09-29, ADR-026). */
 async function enrichArticleDraft(page: WechatPage, content: Content): Promise<string[]> {
     const enrichMeta = content.metadata?.wechatmp;
     if (enrichMeta === undefined || typeof enrichMeta !== 'object' || Array.isArray(enrichMeta)) return [];
     const meta = enrichMeta as Record<string, unknown>;
     const warnings = await enrichArticle(page, meta);
-    const audioTitle = meta.audioTitle;
-    const audioPath = meta.audioPath;
-    const audioCoverPath = meta.audioCoverPath;
-    if (
-        typeof audioTitle === 'string' &&
-        audioTitle.trim() !== '' &&
-        typeof audioPath === 'string' &&
-        audioPath !== ''
-    ) {
-        const audioWarning = await insertAudioMaterial(page, {
-            title: audioTitle.trim(),
-            audioPath,
-            coverPath: typeof audioCoverPath === 'string' ? audioCoverPath : '',
-        });
+    const audio = audioBlockOf(content);
+    if (audio !== null) {
+        const audioWarning = await insertAudioMaterial(page, audio);
         if (audioWarning !== '') warnings.push(audioWarning);
+    }
+    // Deferred library cover (task 0272): the audio upload just put the episode cover in the 图片库.
+    if (audio !== null && coverSourceOf(content) === 'library') {
+        const cover = await setCover(page, 'library', { stepTimeoutMs: 8_000 });
+        if (cover !== null) warnings.push(cover);
     }
     return warnings;
 }
@@ -711,8 +730,14 @@ async function composeArticle(
     ]) {
         if (warning !== null) warnings.push(warning);
     }
-    const cover = await setCover(page, coverSourceOf(deps.content), deps);
-    if (cover !== null) warnings.push(cover);
+    // The 图片库 only holds the episode cover AFTER the audio material uploaded (task 0272): when
+    // the audio block runs, defer the library cover into the enrich phase, after insertAudioMaterial.
+    const coverSource = coverSourceOf(deps.content);
+    const audioRuns = audioBlockOf(deps.content) !== null;
+    if (!(coverSource === 'library' && audioRuns)) {
+        const cover = await setCover(page, coverSource, deps);
+        if (cover !== null) warnings.push(cover);
+    }
     return { warnings, titlePath, enrichWarnings: await enrichArticleDraft(page, deps.content) };
 }
 
@@ -1213,6 +1238,10 @@ export async function insertAudioMaterial(
 
     try {
         await page.evaluate(CARET);
+        // Open the toolbar dropdown first (measured 2026-10-13): the menu item is hidden until its
+        // trigger is clicked, so the old direct `js_insertaudio` click timed out.
+        await page.evaluate(`document.querySelector(${JSON.stringify(AUDIO_TOOLBAR_TRIGGER)})?.click()`);
+        await page.waitForTimeout?.(300);
         await page.evaluate(`document.querySelector(${JSON.stringify(AUDIO_MENU)})?.click()`);
         await waitForVisible(page, AUDIO_DIALOG, AUDIO_DIALOG_TIMEOUT_MS);
         // The 素材库 list loads async after the dialog opens — retry while rows stream in.

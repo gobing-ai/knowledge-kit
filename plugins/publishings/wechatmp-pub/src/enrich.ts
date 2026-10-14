@@ -1,5 +1,5 @@
 import { trySelectors } from '@gobing-ai/publish-harness';
-import { clickSelector, fillSelector, type WechatPage, waitForVisible } from './page';
+import { clickSelector, fillSelector, tryFindSelector, type WechatPage, waitForVisible } from './page';
 
 /**
  * The 文章 operation's `metadata.wechatmp` enrichment rail (2026-09-29, ADR-026).
@@ -23,8 +23,22 @@ const CONFIRM = `${DIALOG} button:has-text("确认"), ${DIALOG} button:has-text(
  * an action inside it, then 确定. The row's own label is listed alongside its `>` expander because both
  * dispatch the same handler; the first selector that resolves wins.
  */
-const ROW_ORIGINAL = ['.setting-group__switch.js_edit_ori', '.js_edit_ori', 'text=原创'];
-const ROW_REWARD = ['.setting-group__switch.js_can_reward', '.js_can_reward', 'text=赞赏'];
+const ROW_ORIGINAL = [
+    '.setting-group__switch.js_original_apply.js_edit_ori',
+    '.setting-group__switch.js_edit_ori',
+    '.js_edit_ori',
+    'text=原创',
+];
+// Measured 2026-10-13: the 赞-tipped rows are `.js_reward_open` / `.js_reward_allow_click` — the
+// old `.setting-group__switch.js_can_reward` no longer resolves. The 原创 dialog's own 赞赏
+// switch (`js_reward_switch`) must never be clicked by this row list (R3, drift task 0272).
+const ROW_REWARD = [
+    '.setting-group__switch.js_reward_open',
+    '.js_reward_open',
+    '.js_reward_allow_click',
+    '.setting-group__switch.js_can_reward',
+    'text=赞赏',
+];
 const ROW_COLLECTION = ['.allow_click_opr.js_article_tags_label', 'text=合集'];
 const ROW_URL = ['.allow_click_opr.js_url_checkbox', 'text=原文链接'];
 const ROW_CLAIM = ['#js_claim_source_area .frm_checkbox_label', 'text=创作来源'];
@@ -38,8 +52,11 @@ const REWARD_ACCOUNT = [
 ];
 /** The 原文链接 dialog's URL field. */
 const URL_INPUT = [`${DIALOG} input[type="url"]`, `${DIALOG} input[placeholder*="链接"]`, `${DIALOG} input.frm_input`];
-/** The 原创 dialog's declaration choice; the dialog validates on 确定 alone for this account. */
-const ORIGINAL_DECLARATION = `${DIALOG} :text("文字原创")`;
+/** The 原创 dialog's declaration radio (measured 2026-10-13): the platform requires an explicit
+ *  declaration type + the agreement check before 确定. `无需声明` is the undo choice, never a target. */
+const ORIGINAL_DECLARATION = `${DIALOG} label:has(.js_original_type_radio):has-text("文字原创")`;
+/** The 原创 agreement checkbox (measured 2026-10-13); absent on some account states — then 确定 speaks. */
+const ORIGINAL_AGREEMENT = `${DIALOG} .original_agreement`;
 /** The 合集 picker's options load after the dialog opens (the pre-ADR-029 settle, kept). */
 const COLLECTION_SETTLE_MS = 1_200;
 /** The settings panel re-renders after a dialog confirm and can briefly detach rows. */
@@ -115,9 +132,13 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
     if (on('original')) {
         await step('原创声明', async () => {
             await openRow(ROW_ORIGINAL, '原创声明');
-            // The declaration radio only exists on some builds; 确定 alone is the documented action.
-            const declaration = await trySelectors(page, [ORIGINAL_DECLARATION]).catch(() => ({ found: false }));
-            if (declaration.found) await clickSelector(page, ORIGINAL_DECLARATION, 5_000);
+            // Measured 2026-10-13: pick the 文字原创 radio, check the agreement when it renders, then
+            // 确定. The plain-text probe the old rail used could hit the dialog heading instead.
+            await clickSelector(page, ORIGINAL_DECLARATION, 5_000);
+            const agreement = await trySelectors(page, [ORIGINAL_AGREEMENT]).catch(() => ({ found: false }));
+            if (agreement.found) {
+                await clickSelector(page, ORIGINAL_AGREEMENT, 3_000);
+            }
             await clickSelector(page, DIALOG_CONFIRM, 8_000);
         });
         if (!(await dialogsClosed())) warnings.push('原创声明: dialog did not close — check the draft');
@@ -126,6 +147,16 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
     if (on('reward')) {
         await step('赞赏', async () => {
             await openRow(ROW_REWARD, '赞赏');
+            // Measured 2026-10-13: without a 赏账户 the dialog renders the 前往开通 link + a
+            // 无法开启-style prerequisite line instead of the account field — an operator action
+            // (开通赞赏), never a selector failure. The label 赏账户 alone is NOT the marker: it
+            // also renders on functional accounts.
+            const blocked = await tryFindSelector(
+                page,
+                [`${DIALOG} :has-text("前往开通")`, `${DIALOG} :has-text("无法开启")`],
+                1_500,
+            );
+            if (blocked !== undefined) throw new Error('需要赞赏账户（运营者先在平台开通），已跳过自动填写');
             // 赞赏账户 defaults from 作者; fill it only when the platform left it empty.
             const author = str('author');
             if (author !== '') {
@@ -159,14 +190,22 @@ export async function enrichArticle(page: WechatPage, meta: Record<string, unkno
 
     const originalUrl = str('originalUrl');
     if (originalUrl !== '') {
-        await step('原文链接', async () => {
-            await openRow(ROW_URL, '原文链接');
-            const field = await trySelectors(page, URL_INPUT);
-            if (!field.found) throw new Error('no URL field in the 原文链接 dialog');
-            await fillSelector(page, field.selector ?? URL_INPUT.join(', '), originalUrl);
-            await clickSelector(page, DIALOG_CONFIRM, 8_000);
-        });
-        if (!(await dialogsClosed())) warnings.push('原文链接: dialog did not close — check the draft');
+        // Measured 2026-10-13: some accounts no longer render the 原文链接 row at all. That is an
+        // unavailable capability — report it once, never fall back to the composer's unrelated
+        // `链接` row (`btm-card-link__switch`).
+        const urlRow = await tryFindSelector(page, ROW_URL, 2_000);
+        if (urlRow === undefined) {
+            warnings.push('原文链接: 行不存在（当前公众号不支持），请手动处理或移除 originalUrl');
+        } else {
+            await step('原文链接', async () => {
+                await openRow(ROW_URL, '原文链接');
+                const field = await trySelectors(page, URL_INPUT);
+                if (!field.found) throw new Error('no URL field in the 原文链接 dialog');
+                await fillSelector(page, field.selector ?? URL_INPUT.join(', '), originalUrl);
+                await clickSelector(page, DIALOG_CONFIRM, 8_000);
+            });
+            if (!(await dialogsClosed())) warnings.push('原文链接: dialog did not close — check the draft');
+        }
     }
 
     // 创作来源 is the operator's chosen stance (`个人观点，仅供参考` for this column), not a fixed

@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Make a failed safety reviewer reach the gate instead of aborting the nested run
-status: todo
+status: done
 template: issue
 created_at: 2026-10-12T23:05:01.855Z
-updated_at: "2026-10-13T20:57:06.845Z"
+updated_at: "2026-10-13T22:15:32.996Z"
 feature_id: G11
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 1
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0270-verdict.json
 ---
 
 ## 0270. Make a failed safety reviewer reach the gate instead of aborting the nested run
@@ -30,10 +32,10 @@ The task remains scoped to authored workflow policy and its regression tests; no
 
 ### Requirements
 
-- [ ] R1. A failure of the `review` agent action continues through the same state transition so `daily-safety-gate` can classify a missing or malformed review report as `block`.
-- [ ] R2. A failure of the `judge` agent action continues to the gate shell in the same `judge` state; an absent or invalid verdict cannot take the `clean` edge and must reach the declared `block` terminal.
-- [ ] R3. The `revise` agent remains failure-tolerant, while the deterministic prep/gate shells keep their default failure policy and the parent voice2 `safety` node remains fail-fast on a non-zero nested result.
-- [ ] R4. Regression tests parse the shipped YAML and observe the reviewer `expectFile` paths, `onError` policies, gate ordering, declaration-order fallback, and parent fail-fast boundary.
+- [x] R1. A failure of the `review` agent action continues through the same state transition so `daily-safety-gate` can classify a missing or malformed review report as `block`.
+- [x] R2. A failure of the `judge` agent action continues to the gate shell in the same `judge` state; an absent or invalid verdict cannot take the `clean` edge and must reach the declared `block` terminal.
+- [x] R3. The `revise` agent remains failure-tolerant, while the deterministic prep/gate shells keep their default failure policy and the parent voice2 `safety` node remains fail-fast on a non-zero nested result.
+- [x] R4. Regression tests parse the shipped YAML and observe the reviewer `expectFile` paths, `onError` policies, gate ordering, declaration-order fallback, and parent fail-fast boundary.
 
 Out of scope: changing the workflow engine's action semantics, making a missing safety artifact publishable, adding retries to reviewer agents, or changing the safety verdict schema.
 
@@ -107,14 +109,70 @@ No workflow-engine or production safety-schema change is needed. The remaining h
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:61` review onError: continue; edge → judge pinned by `plugins/kk/tests/safety-reviewer-failure.test.ts:102-114`. |
+| R2 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:80,90`; accept guard + unconditional block fallback asserted at `plugins/kk/tests/safety-reviewer-failure.test.ts:140-149`. |
+| R3 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:107`; shells default-fail (`:127-137`); parent `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484` fail-fast (`:152-162`). |
+| R4 | MET | `plugins/kk/tests/safety-reviewer-failure.test.ts` parses shipped YAML; this run 17 pass / 0 fail / 125 expect. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — a failed review reaches the fail-closed gate (req: R1, R4) | MET | test | `plugins/kk/tests/safety-reviewer-failure.test.ts:102-114`; `plugins/kk/workflows/kk-daily-safety.yaml:61,71` |
+| AC2 — a failed judge reaches the gate and cannot be admitted (req: R2, R4) | MET | test | `plugins/kk/tests/safety-reviewer-failure.test.ts:117-125,140-149`; `plugins/kk/workflows/kk-daily-safety.yaml:80,90` |
+| AC3 — safety failure still stops publication (req: R3, R4) | MET | test | `plugins/kk/tests/safety-reviewer-failure.test.ts:152-162`; `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484` |
+| AC4 — deterministic shell failures are not swallowed (req: R3, R4) | MET | test | `plugins/kk/tests/safety-reviewer-failure.test.ts:127-137` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+**2026-10-13 review (run cbd3e58b, dev-runall-0269-0270-0272-43ce, profile=auto)**
+
+Confidence: HIGH
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:61` — `review` action `onError: continue`; expectFile pin `:71`; single outbound edge → `judge` (no action-abort path). |
+| R2 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:80` — `judge` `onError: continue`, gate shell same state, expectFile `:90`; accept guard confidence-aware and `judge → block` fallback unconditional (`plugins/kk/tests/safety-reviewer-failure.test.ts:140-149`). |
+| R3 | MET | `plugins/kk/workflows/kk-daily-safety.yaml:107` — `revise` survivable; deterministic shells keep default fail (`plugins/kk/tests/safety-reviewer-failure.test.ts:127-137`); parent voice2 `safety` node has no `onError` and shells the nested machine (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:484`, `:500` + test `:152-162`). |
+| R4 | MET | `plugins/kk/tests/safety-reviewer-failure.test.ts` (325 lines) parses the shipped YAML: reviewer expectFile paths, onError policies, gate ordering, declaration-order fallback, parent fail-fast — focused run this review: 17 pass / 0 fail / 125 expect. |
+
+| AC | Status | Evidence Type | Evidence |
+| --- | --- | --- | --- |
+| AC1 — a failed review reaches the fail-closed gate (req: R1, R4) | MET | test + authored YAML | `plugins/kk/tests/safety-reviewer-failure.test.ts:102-114`; `plugins/kk/workflows/kk-daily-safety.yaml:61,71` |
+| AC2 — a failed judge reaches the gate and cannot be admitted (req: R2, R4) | MET | test + authored YAML | `plugins/kk/tests/safety-reviewer-failure.test.ts:117-125,140-149`; `plugins/kk/workflows/kk-daily-safety.yaml:80,90` |
+| AC3 — safety failure still stops publication (req: R3, R4) | MET | test + authored YAML | `plugins/kk/tests/safety-reviewer-failure.test.ts:152-162`; `plugins/kk/workflows/kk-daily-ai-voice2.yaml:484` |
+| AC4 — deterministic shell failures are not swallowed (req: R3, R4) | MET | test + authored YAML | `plugins/kk/tests/safety-reviewer-failure.test.ts:127-137`; `kk-daily-safety.yaml` prep/gate shells carry no override |
+
+| Priority | Dimension | Location | Finding |
+| --- | --- | --- | --- |
+| P4 | tests | `plugins/kk/tests/safety-reviewer-failure.test.ts:102-162` | Test-internal AC labels drift from the task's gherkin numbering (file uses AC1/AC2/AC4/AC6, task declares AC1–AC4); assertion coverage itself is complete — no action. |
+
+SECUA review of the seam (authored workflow policy + tests; task diff this run is corpus-only — the seam pre-dates the batch and is pinned by tests): Security — fail-closed semantics preserved, no fail-open path introduced. Correctness — policy limited to the three agent actions; parent boundary intact. Architecture — engine semantics untouched; the gate remains the sole classifier of missing artifacts. No open P1–P3 findings; no P4 advisory.
+
+Verdict basis: full quality gate PASS at digest `sha256:ad068cb71b3c70037160b37c1117096ffa36fcc7d0921bed0d3d87b1b3d4e268` (proof bracket held at review entry).
 
 ### References
 
 <!-- Links to failing logs, related issues, tasks, docs, or external references. -->
 
 ### History
+
+- 2026-10-13T21:59:49.923Z todo → wip (system)
+- 2026-10-13T22:14:06.856Z wip → testing (system)
+- 2026-10-13T22:15:32.990Z testing → done (system)
+
+### Notes
+
+**2026-10-13 audit (run cbd3e58b, dev-runall batch)** — pre-implemented task; no production delta needed.
+
+- R1/AC1: `plugins/kk/workflows/kk-daily-safety.yaml:61` — `review` agent action carries `onError: continue`; expectFile pin at `:71` (`_09_safety-review_report.json`); single outbound edge → `judge`.
+- R2/AC2: `:80` — `judge` carries `onError: continue`; expectFile pin at `:90`; gate shell follows in the same state; accept guard confidence-aware, judge→block fallback unconditional.
+- R3/AC3/AC4: `:107` — `revise` tolerates failure; deterministic prep/gate shells keep default fail policy (no override); parent voice2 `safety` node (`plugins/kk/workflows/kk-daily-ai-voice2.yaml:484`) has no `onError` and shells the nested machine via `spur workflow run` → fail-fast boundary.
+- R4: `plugins/kk/tests/safety-reviewer-failure.test.ts` (325 lines) parses the shipped YAML and pins all of the above; focused run this audit: 17 pass / 0 fail / 125 expect.
+

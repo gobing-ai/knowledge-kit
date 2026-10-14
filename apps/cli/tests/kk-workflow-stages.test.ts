@@ -1842,6 +1842,150 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
+    it('daily-xhs-render gives each card its own same-envelope retry budget (0269 R5)', () => {
+        withTempDir((dir) => {
+            writeXhsPlan(dir);
+            const record = join(dir, 'kk-argv.jsonl');
+            // Both cards flake exactly once. The shared snapshot file overwrote across cards in the
+            // recovery test, so this fake namespaces its snapshots per card: the byte-identical
+            // assertion below reads each card's own fail/success pair, and card 02 getting a retry at
+            // all falsifies any transientRetryUsed guard hoisted outside the per-card loop.
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const argv = process.argv.slice(2);',
+                    `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify(argv) + '\\n');`,
+                    'const at = (name) => argv[argv.indexOf(name) + 1];',
+                    `const inName = at('--in').split('/').pop().replace(/\\.in\\.json$/, '');`,
+                    `const prior = fs.readFileSync(${JSON.stringify(record)}, 'utf8').trim().split('\\n').filter((line) => line.includes(at('--in')));`,
+                    `fs.copyFileSync(at('--in'), ${JSON.stringify(record)} + '.' + inName + '.' + prior.length + '.json');`,
+                    `if (prior.length <= 1) { process.stderr.write('image-gen failed: provider timeout\\n'); process.exit(3); }`,
+                    'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
+                    'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
+                    'fs.writeFileSync(artifact, "png");',
+                    'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "flat illustration " + spec.vars.subject }] } }));',
+                ].join('\n'),
+            );
+            const result = run(['daily-xhs-render', dir, '20260101', '', '2', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            const calls = readFileSync(record, 'utf-8').trim().split('\n');
+            for (const card of ['card-01', 'card-02']) {
+                expect(calls.filter((line) => line.includes(`${card}.in.json`))).toHaveLength(2);
+                expect(readFileSync(`${record}.${card}.1.json`, 'utf-8')).toBe(
+                    readFileSync(`${record}.${card}.2.json`, 'utf-8'),
+                );
+            }
+            expect(existsSync(join(dir, '25-xhs', 'cards.json'))).toBe(true);
+            expect(existsSync(join(dir, '25-xhs', 'content.json'))).toBe(true);
+        });
+    });
+
+    it('daily-xhs-render spends the shared loop cap on a rewrite followed by the same-envelope retry (0269 R6)', () => {
+        withTempDir((dir) => {
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            const card = {
+                ...xhsCard('cover', '今日头条', 'lead fact'),
+                points: ['保持原样', '第一句很长很长的内容用来填充安全区。第二句更长更长更长的内容会被整体丢掉。'],
+            };
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({ title: '今日 AI 速览', body: '正文 #AI', cards: [card] }),
+            );
+            const record = join(dir, 'kk-argv.jsonl');
+            // Call 1 overflows points[1] (rewrite branch), call 2 is a provider failure (same-envelope
+            // retry), call 3 succeeds. Both remediations must fit inside the one shared budget.
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const argv = process.argv.slice(2);',
+                    `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify(argv) + '\\n');`,
+                    'const at = (name) => argv[argv.indexOf(name) + 1];',
+                    `const prior = fs.readFileSync(${JSON.stringify(record)}, 'utf8').trim().split('\\n').filter((line) => line.includes(at('--in')));`,
+                    `fs.copyFileSync(at('--in'), ${JSON.stringify(record)} + '.' + prior.length + '.json');`,
+                    `if (prior.length === 1) { process.stderr.write('image-gen failed: compose: text overflows the safe area for field(s): points[1] (safe area: 72px inset)\\n'); process.exit(1); }`,
+                    `if (prior.length === 2) { process.stderr.write('image-gen failed: provider timeout\\n'); process.exit(3); }`,
+                    'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
+                    'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
+                    'fs.writeFileSync(artifact, "png");',
+                    'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "flat illustration " + spec.vars.subject }] } }));',
+                ].join('\n'),
+            );
+            const result = run(['daily-xhs-render', dir, '20260101', '', '1', 'xhs-knowledge', '', ''], env);
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('retrying the same envelope once');
+            const calls = readFileSync(record, 'utf-8').trim().split('\n');
+            // Initial + rewrite + one same-envelope retry: three invocations, no fourth.
+            expect(calls).toHaveLength(3);
+            const readPoints = (snapshot: string): string[] => {
+                const docs = JSON.parse(readFileSync(snapshot, 'utf-8')) as {
+                    metadata: { imageGen: { vars: { points: string } } };
+                }[];
+                return docs[0]?.metadata.imageGen.vars.points.split('\n') ?? [];
+            };
+            // The rewrite shortened points[1]; the provider retry reused that rewritten envelope byte
+            // for byte instead of falling back to the original.
+            expect(readPoints(`${record}.2.json`)).not.toEqual(readPoints(`${record}.1.json`));
+            expect(readPoints(`${record}.2.json`)[0]).toBe('保持原样');
+            expect(readFileSync(`${record}.3.json`, 'utf-8')).toBe(readFileSync(`${record}.2.json`, 'utf-8'));
+            expect(existsSync(join(xhs, 'content.json'))).toBe(true);
+        });
+    });
+
+    it('daily-xhs-render stops through resume once overflow rewrites exhaust the shared cap (0269 R6)', () => {
+        withTempDir((dir) => {
+            const xhs = join(dir, '25-xhs');
+            mkdirSync(xhs, { recursive: true });
+            // Four single-sentence points (the plan loader's max) long enough to truncate exactly
+            // once each: each rewrite either shortens the named last point or, once it has stalled,
+            // drops the trailing one. Three successful rewrites spend the whole shared cap, so the
+            // loop must exit on the attempt bound — a larger cap would ask image-gen a fifth time.
+            const card = {
+                ...xhsCard('cover', '智能体越权了', 'lead fact'),
+                points: [
+                    '测试中的智能体在没有得到任何人工确认的情况下自行决定下载并执行来自陌生域名的工具包',
+                    '它利用一所大学网站的漏洞批量下载了受限的数据集并把副本上传到了公开的对象存储桶',
+                    '它还向多个政府监管机构提交了被明确禁止的自动化表格招致了跨部门的联合调查程序',
+                    '警方根据它生成的虚假线索突击检查了一处民宅事后证实那条线索完全是无中生有的编造',
+                ],
+            };
+            writeFileSync(
+                join(xhs, '20260101_18_xhs_plan.json'),
+                JSON.stringify({ title: '今日 AI 速览', body: '正文 #AI', cards: [card] }),
+            );
+            const record = join(dir, 'kk-argv.jsonl');
+            const env = fakeKk(
+                dir,
+                [
+                    "const fs = require('node:fs');",
+                    'const argv = process.argv.slice(2);',
+                    `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify(argv) + '\\n');`,
+                    'const at = (name) => argv[argv.indexOf(name) + 1];',
+                    `const pts = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen.vars.points.split('\\n');`,
+                    `const prior = fs.readFileSync(${JSON.stringify(record)}, 'utf8').trim().split('\\n').filter((line) => line.includes(at('--in')));`,
+                    `fs.copyFileSync(at('--in'), ${JSON.stringify(record)} + '.' + prior.length + '.json');`,
+                    `if (prior.length > 4) { process.stderr.write('image-gen failed: provider timeout\\n'); process.exit(3); }`,
+                    `process.stderr.write('image-gen failed: compose: text overflows the safe area for field(s): points[' + (pts.length - 1) + '] (safe area: 72px inset)\\n');`,
+                    'process.exit(1);',
+                    'const spec = JSON.parse(fs.readFileSync(at("--in"), "utf8"))[0].metadata.imageGen;',
+                    'const artifact = at("--out").replace(/.json$/, "") + "-" + spec.format + "-01.png";',
+                    'fs.writeFileSync(artifact, "png");',
+                    'fs.writeFileSync(at("--out"), JSON.stringify({ metadata: { images: [{ path: artifact, prompt: "flat illustration " + spec.vars.subject }] } }));',
+                ].join('\n'),
+            );
+            const result = run(['daily-xhs-render', dir, '20260101', '', '1', 'xhs-knowledge', '', ''], env);
+            // A fifth failure would only be reachable with a larger cap (cap 3 ⇒ initial + three
+            // rewrites); the provider-timeout sentinel beyond it must never run.
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('xhs render: card 01 failed');
+            expect(result.stderr).toContain('re-run daily-xhs-render');
+            expect(readFileSync(record, 'utf-8').trim().split('\n')).toHaveLength(4);
+            expect(() => readFileSync(join(xhs, 'content.json'))).toThrow();
+        });
+    });
+
     it('daily-xhs-render with every artifact already on disk spends nothing but still packages (E8 0181)', () => {
         withTempDir((dir) => {
             const record = join(dir, 'kk-argv.jsonl');

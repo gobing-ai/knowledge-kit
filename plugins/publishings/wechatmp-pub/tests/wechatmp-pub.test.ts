@@ -72,6 +72,12 @@ function mediaContent(metadata: Record<string, unknown>, over: Partial<Content> 
 // ---------------------------------------------------------------------------
 
 interface ConsoleState {
+    /** 0272: the 原文链接 settings row is absent (unavailable capability). */
+    urlRowMissing?: boolean;
+    /** 0272: the 赏 dialog shows the 前往开通 prerequisite instead of the account field. */
+    rewardBlocked?: boolean;
+    /** 0272: the editor exposes no 一键排版 control (measured 2026-10-13). */
+    layoutMissing?: boolean;
     /** The entry page's URL; `token-in-url` decides whether the token comes from there or a link. */
     entryUrl: string;
     /** What the page-side console-link scan returns (the token's second recorded source). */
@@ -144,7 +150,8 @@ const isBodyBlock = (selector: string) => selector.includes('.ProseMirror') && !
 const isDigest = (selector: string) => selector.includes('js_description');
 const isAuthor = (selector: string) => selector.includes('input#author') || selector.includes('js_author');
 const isFileInput = (selector: string) => selector.includes('file') && selector.includes('type="file"');
-const isModalScoped = (selector: string) => selector.includes('weui-desktop-dialog');
+const isModalScoped = (selector: string) =>
+    selector.includes('weui-desktop-dialog') || selector.includes('.audio_dialog');
 const isImageInput = (selector: string) => isFileInput(selector) && selector.includes('image/');
 const isVideoInput = (selector: string) => isFileInput(selector) && selector.includes('accept*="video"');
 const isAudioInput = (selector: string) => isFileInput(selector) && selector.includes('audio');
@@ -161,6 +168,8 @@ const isCoverFromLibrary = (selector: string) =>
  */
 const isSettingsRow = (selector: string) =>
     selector.includes('js_edit_ori') ||
+    selector.includes('js_reward_open') ||
+    selector.includes('js_reward_allow_click') ||
     selector.includes('js_can_reward') ||
     selector.includes('js_article_tags_label') ||
     selector.includes('js_url_checkbox') ||
@@ -213,11 +222,21 @@ function makeConsole(initial: ConsoleState) {
         if (refusal !== undefined) return state.publish === 'refused';
         if (isTitleBlock(selector) || isMirror(selector) || isDigest(selector) || isAuthor(selector)) return true;
         if (isBodyBlock(selector)) return true;
-        if (isImageInput(selector)) return !isModalScoped(selector) || (state.mode === '播客' && pickerOpen);
+        if (isImageInput(selector))
+            return !isModalScoped(selector) || state.mode === '文章' || (state.mode === '播客' && pickerOpen);
         if (isVideoInput(selector)) return state.mode === '视频' && pickerOpen;
-        if (isAudioInput(selector)) return state.mode === '播客' && pickerOpen;
+        // 0272 measured: the 文章 audio dialog carries its own file inputs; only 播客 gates behind the picker.
+        if (isAudioInput(selector)) return state.mode === '播客' ? pickerOpen : isModalScoped(selector);
+        // The dialog's own form controls (upload buttons + title field) live in the same modal.
+        if (selector.includes('上传音频') || selector.includes('上传封面'))
+            return state.mode === '文章' || state.mode === '播客';
         if (isSaveBar(selector)) return state.mode === '文章' || state.mode === '贴图' || state.mediaSatisfied;
-        if (isLayoutControl(selector) || isLayoutTarget(selector)) return state.mode === '文章';
+        if (isLayoutControl(selector) || isLayoutTarget(selector))
+            return state.mode === '文章' && state.layoutMissing !== true;
+        // 0272 measured 2026-10-13: the 原文链接 row is absent on some accounts, and a 赏-blocked
+        // dialog carries the 前往开通 prerequisite instead of the account field.
+        if (selector.includes('js_url_checkbox') && state.urlRowMissing === true) return false;
+        if (selector.includes('前往开通') || selector.includes('无法开启')) return state.rewardBlocked === true;
         if (isSettingsRow(selector)) return state.mode === '文章';
         if (isCoverOpener(selector) || isCoverFromContent(selector)) return true;
         if (isCoverFromLibrary(selector)) return state.coverLibraryMissing !== true;
@@ -306,6 +325,12 @@ function makeConsole(initial: ConsoleState) {
                     return true;
                 }
                 if (expression.includes('a[href*="token="]')) return state.tokenLink ?? '';
+                // 0272 measured audio-dialog probes: dedupe (missing → upload), the post-upload
+                // default row, the service-rules acknowledgement, and the 插入 button.
+                if (expression.includes("return 'norow'")) return 'checked';
+                if (expression.includes("return 'missing'")) return 'missing';
+                if (expression.includes('我已阅读并同意')) return 'checked';
+                if (expression.includes('插入')) return true;
                 // The modal probes `saveDraft` and the submit-failure inventory added on 2026-10-12.
                 if (expression.includes('weui-desktop-dialog__wrp, .weui-desktop-dialog')) return dialogOpen;
                 if (expression.includes('weui-desktop-dialog, .weui-desktop-dialog__wrp')) {
@@ -1020,6 +1045,8 @@ describe('wechatmp-pub measured traps (discovery §1, §5.1, §5.2)', () => {
 interface RecordingOpts {
     /** Selector fragment whose click rejects — the step retry + warning path. */
     failOn?: string;
+    /** 0272: model the 赏-blocked account (the dialog renders 前往开通). Default: functional. */
+    rewardBlocked?: boolean;
 }
 
 /** A seam-shaped recording page for the enrichment unit tests. */
@@ -1029,9 +1056,20 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
         goto: async () => undefined,
         url: () => editorUrlFor(0),
         locator: (selector) => ({
-            count: async () => 1,
+            // 0272: the 赏-blocked prerequisite only renders on blocked accounts; default fake = functional.
+            count: async () =>
+                selector.includes('前往开通') || selector.includes('无法开启')
+                    ? opts.rewardBlocked === true
+                        ? 1
+                        : 0
+                    : 1,
             first: () => ({
-                count: async () => 1,
+                count: async () =>
+                    selector.includes('前往开通') || selector.includes('无法开启')
+                        ? opts.rewardBlocked === true
+                            ? 1
+                            : 0
+                        : 1,
                 isVisible: async () => true,
                 fill: async (text) => {
                     if (broken(selector)) throw new Error('detached row');
@@ -1055,8 +1093,11 @@ function recordingPage(ops: string[], evalReturns: unknown[] = [], opts: Recordi
             ops.push(`files ${selector}`);
         },
         evaluate: async (expression) => {
-            ops.push(expression.includes('js_insertaudio') ? 'open-audio-menu' : 'eval');
-            return evalReturns.shift();
+            // The audio menu-opening evaluates are click actions, not probes: they never consume a
+            // scripted return (0272 added the toolbar-trigger click to the same action pair).
+            const isMenuOpen = expression.includes('js_insertaudio') || expression.includes('audio_music_plugin_btn');
+            ops.push(isMenuOpen ? 'open-audio-menu' : 'eval');
+            return isMenuOpen ? undefined : evalReturns.shift();
         },
         waitForTimeout: async () => {
             ops.push('pause');
@@ -1136,15 +1177,18 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(result.metadata?.enrichWarnings).toBeUndefined();
 
         const clicks = selectorsOf(console.calls.editor, 'click');
-        expect(clicks).toContain('.setting-group__switch.js_edit_ori');
+        expect(clicks).toContain('.setting-group__switch.js_original_apply.js_edit_ori');
         expect(clicks).toContain('.allow_click_opr.js_article_tags_label');
         expect(clicks).toContain('#js_claim_source_area .frm_checkbox_label');
         expect(clicks.some((selector) => selector.includes('文字原创'))).toBe(true);
+        // 0272 measured: the declaration radio and the agreement checkbox are both clicked.
+        expect(clicks.some((selector) => selector.includes('js_original_type_radio'))).toBe(true);
+        expect(clicks.some((selector) => selector.includes('original_agreement'))).toBe(true);
         expect(clicks.some((selector) => selector.includes('每日AI资讯'))).toBe(true);
         // 创作来源 is the operator's own stance, not the platform's AI-generation label.
         expect(clicks.some((selector) => selector.includes('个人观点，仅供参考'))).toBe(true);
         // 赞赏 opens alongside 原创 now (operator walk 2026-10-10).
-        expect(clicks).toContain('.setting-group__switch.js_can_reward');
+        expect(clicks).toContain('.setting-group__switch.js_reward_open');
         const fills = console.calls.editor.filter((call) => call.op === 'fill').map((call) => String(call.args[1]));
         expect(fills).toContain('每日AI资讯');
     });
@@ -1174,7 +1218,7 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
             originalUrl: 'https://surfing.salty.vip/zh/posts/20261010-ai-ai',
         });
         expect(warnings).toEqual([]);
-        expect(ops).toContain('click .setting-group__switch.js_can_reward');
+        expect(ops).toContain('click .setting-group__switch.js_reward_open');
         expect(ops).toContain('click .allow_click_opr.js_url_checkbox');
         // The 赞赏账户 defaults from 作者; the URL lands in the 原文链接 dialog's field.
         expect(ops.some((op) => op.startsWith('fill ') && op.includes('冰原奔狼'))).toBe(true);
@@ -1190,31 +1234,95 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
     test('insertAudioMaterial reuses the same-title 素材库 material and verifies placement at the top', async () => {
         const ops: string[] = [];
         const warning = await insertAudioMaterial(
-            recordingPage(ops, [undefined, undefined, 'checked', true, 'top']),
+            // caret, dedupe, agree, select-first, insert, verify (the menu-open evaluates script no returns).
+            recordingPage(ops, [undefined, 'checked', true, 'top']),
             AUDIO_INPUT,
         );
         expect(warning).toBe('');
         expect(ops).toContain('open-audio-menu');
-        expect(ops.filter((op) => op === 'pause')).toHaveLength(1);
-        // A reused material uploads nothing.
+        // Two settles: the toolbar trigger's dropdown, then the picker dialog.
+        expect(ops.filter((op) => op === 'pause')).toHaveLength(2);
+        // A reused material uploads nothing; the toolbar trigger + menu item open the picker.
         expect(ops.some((op) => op.startsWith('files '))).toBe(false);
+        expect(ops.filter((op) => op === 'open-audio-menu')).toHaveLength(2); // toolbar trigger + menu item
+    });
+
+    test('0272 measured: a 赏-blocked account warns instead of stalling the rail', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ rewardBlocked: true }));
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: { ...ARTICLE.metadata, wechatmp: { coverPath: bodyImage, reward: true } },
+            },
+        });
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('需要赞赏账户')]);
+        // No 赏-account fill attempt; the rail still finished (the rest of the metadata is unset).
+        const fills = console.calls.editor.filter((call) => call.op === 'fill').map((call) => String(call.args[0]));
+        expect(fills.some((selector) => selector.includes('js_reward_'))).toBe(false);
+    });
+
+    test('0272 measured: a missing 原文链接 row degrades to a warning, never the composer link row', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ urlRowMissing: true }));
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: {
+                    ...ARTICLE.metadata,
+                    wechatmp: { coverPath: bodyImage, originalUrl: 'https://example.com/post' },
+                },
+            },
+        });
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.enrichWarnings).toEqual([expect.stringContaining('原文链接: 行不存在')]);
+        const clicks = selectorsOf(console.calls.editor, 'click');
+        expect(clicks.some((selector) => selector.includes('js_url_checkbox'))).toBe(false);
+        expect(clicks.some((selector) => selector.includes('btm-card-link__switch'))).toBe(false);
+    });
+
+    test('0272 measured: an absent 一键排版 control is skipped silently', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState({ layoutMissing: true }));
+        const result = await makeTransport(console).publish({ content: ARTICLE });
+        expect(result.ok, result.error).toBe(true);
+        expect(result.metadata?.enrichWarnings).toBeUndefined();
+    });
+
+    test('0272 measured: the library cover waits for the audio material (deferred cover)', async () => {
+        await seedMedia();
+        const console = makeConsole(happyState());
+        const result = await makeTransport(console).publish({
+            content: {
+                ...ARTICLE,
+                metadata: {
+                    ...ARTICLE.metadata,
+                    wechatmp: {
+                        coverPath: bodyImage,
+                        coverSource: 'library',
+                        audioPath: '/tmp/episode.mp3',
+                        audioTitle: '每日AI乱炖 #1',
+                        audioCoverPath: '/tmp/episode-cover.png',
+                    },
+                },
+            },
+        });
+        expect(result.ok, result.error).toBe(true);
+        // AC5 (req R6): the audio material's upload attempt runs before the cover picker's
+        // library path — the deferred cover only picks from the 图片库 after the audio block.
+        const ops = console.calls.editor;
+        const audioIdx = ops.findIndex((call) => String(call.args[0]).includes('js_insertaudio'));
+        const firstLibraryPick = ops.findIndex((call) => String(call.args[0]).includes('js_imagedialog'));
+        expect(audioIdx).toBeGreaterThan(-1);
+        expect(firstLibraryPick).toBeGreaterThan(audioIdx);
     });
 
     test('insertAudioMaterial uploads the audio + cover when the 素材库 has no same-title material', async () => {
         const ops: string[] = [];
         const warning = await insertAudioMaterial(
-            // caret, menu, 3× dedupe (the 素材库 rows stream in), agree, select-first, insert, verify.
-            recordingPage(ops, [
-                undefined,
-                undefined,
-                'missing',
-                'missing',
-                'missing',
-                'checked',
-                'checked',
-                true,
-                'top',
-            ]),
+            // caret, 3× dedupe (the 素材库 rows stream in), agree, select-first, insert, verify.
+            recordingPage(ops, [undefined, 'missing', 'missing', 'missing', 'checked', 'checked', true, 'top']),
             AUDIO_INPUT,
         );
         expect(warning).toBe('');
@@ -1223,13 +1331,13 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(uploads).toHaveLength(2);
         expect(uploads[0]).toContain('audio');
         expect(uploads[1]).toContain('image/');
-        expect(ops.filter((op) => op === 'open-audio-menu')).toHaveLength(1);
+        expect(ops.filter((op) => op === 'open-audio-menu')).toHaveLength(2); // toolbar trigger + menu item
     });
 
     test('insertAudioMaterial reports an unticked service-rules box instead of silently saving', async () => {
         const ops: string[] = [];
         const warning = await insertAudioMaterial(
-            recordingPage(ops, [undefined, undefined, 'missing', 'missing', 'missing', 'no-label']),
+            recordingPage(ops, [undefined, 'missing', 'missing', 'missing', 'no-label']),
             AUDIO_INPUT,
         );
         expect(warning).toContain('服务规则勾选失败');
@@ -1282,10 +1390,10 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 
     test('insertAudioMaterial warns for each non-committed insert outcome it can meet', async () => {
         const cases: Array<[unknown[], string]> = [
-            [[undefined, undefined, 'checked', false], '插入按钮未找到'],
-            [[undefined, undefined, 'checked', true, 'absent'], '插入未生效'],
-            [[undefined, undefined, 'checked', true, 'notop'], '未在文首'],
-            [[undefined, undefined, 'checked', true, 'noeditor'], '插入未生效'],
+            [[undefined, 'checked', false], '插入按钮未找到'],
+            [[undefined, 'checked', true, 'absent'], '插入未生效'],
+            [[undefined, 'checked', true, 'notop'], '未在文首'],
+            [[undefined, 'checked', true, 'noeditor'], '插入未生效'],
         ];
         for (const [returns, expected] of cases) {
             const ops: string[] = [];

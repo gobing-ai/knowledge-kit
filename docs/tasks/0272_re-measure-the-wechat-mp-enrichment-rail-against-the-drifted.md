@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Re-measure the WeChat MP enrichment rail against the drifted console
-status: todo
+status: done
 template: issue
 created_at: 2026-10-13T03:22:54.165Z
-updated_at: "2026-10-13T21:00:25.630Z"
+updated_at: "2026-10-14T00:04:12.533Z"
 feature_id: G11
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0272-verdict.json
 ---
 
 ## 0272. Re-measure the WeChat MP enrichment rail against the drifted console
@@ -33,17 +35,15 @@ The task is the measured WeChat enrichment/cover/audio selector and daily-adapte
 
 ### Requirements
 
-- [ ] R1. Each retained enrichment step validates the observed/candidate selector map in `.spur/run/wechat-drift-task/bg.md:13-23` against the target editor, performs its action, and returns an explicit capability or action outcome; task 0260 performs the committed DOM value/identity read-back after this selector repair.
-- [ ] R2. Original declaration selects the measured declaration and agreement controls before confirming. If the dialog or row does not commit, the rail reports an original warning; it does not infer a reward dependency from that outcome or present a closed dialog as success.
-- [ ] R3. Reward detects the no-authorised-account message and reports the operator action once without retrying it as a selector failure. Only an explicit current DOM message such as 声明原创后才可开启 may suppress a dependent reward attempt; the account message alone does not change original handling.
-- [ ] R4. The existing `metadata.wechatmp.originalUrl` request and plugin consumer remain available for callers/builds that expose 原文链接. When this build has no 原文链接 row, the plugin emits one explicit unavailable-capability warning and never maps the unrelated live `链接` row or retries a generic click timeout.
-- [ ] R5. Layout probes for the current 一键排版 control. When the build has no such control, the step skips without a warning; when the control exists, it selects 匹配目标格式 and reports an application failure if the option or confirmation is missing.
-- [ ] R6. Cover uses the measured panel and library dropdown selectors. A library cover is attempted only after the requested audio material is present; if that dependency is unavailable, the rail emits a specific warning and never silently selects an arbitrary existing library image.
-- [ ] R7. Audio opens the toolbar dropdown before selecting `.tpl_dropdown_menu_item.js_insertaudio`, retains same-title dedupe, and completes the measured upload sequence (audio, cover, title, agreement, save, insert, read-back).
-- [ ] R8. Every enrichment failure remains fail-soft: leaked dialogs are dismissed, the draft save is attempted, and the publish result keeps its existing success/error contract.
-- [ ] R9. The implementation records a selector/control map for the declaration/agreement, reward, URL capability, audio upload, cover picker and layout controls, with evidence paths and any live mismatch. Selector fixtures cover supported and unsupported account outcomes, absent layout, originalUrl capability absence, and modal cleanup. Task 0260 supplies the real-Chromium committed-state/value regression and live draft read-back after this task's map is applied; queued booleans are not evidence of committed state.
-
-Out of scope: committed cover/audio/settings identity/value probes and real-DOM regressions owned by 0260, provisioning a 赞赏账户, inventing a replacement for the absent 原文链接 row, changing the unrelated `链接` feature, retiring the shared `originalUrl` contract, repairing the un-reproduced forced-rerun hang, or changing publish/safety orchestration.
+- [x] R1. Each retained enrichment step validates the observed/candidate selector map in `.spur/run/wechat-drift-task/bg.md:13-23` against the target editor, performs its action, and returns an explicit capability or action outcome; task 0260 performs the committed DOM value/identity read-back after this selector repair.
+- [x] R2. Original declaration selects the measured declaration and agreement controls before confirming. If the dialog or row does not commit, the rail reports an original warning; it does not infer a reward dependency from that outcome or present a closed dialog as success.
+- [x] R3. Reward detects the no-authorised-account message and reports the operator action once without retrying it as a selector failure. Only an explicit current DOM message such as 声明原创后才可开启 may suppress a dependent reward attempt; the account message alone does not change original handling.
+- [x] R4. The existing `metadata.wechatmp.originalUrl` request and plugin consumer remain available for callers/builds that expose 原文链接. When this build has no 原文链接 row, the plugin emits one explicit unavailable-capability warning and never maps the unrelated live `链接` row or retries a generic click timeout.
+- [x] R5. Layout probes for the current 一键排版 control. When the build has no such control, the step skips without a warning; when the control exists, it selects 匹配目标格式 and reports an application failure if the option or confirmation is missing.
+- [x] R6. Cover uses the measured panel and library dropdown selectors. A library cover is attempted only after the requested audio material is present; if that dependency is unavailable, the rail emits a specific warning and never silently selects an arbitrary existing library image.
+- [x] R7. Audio opens the toolbar dropdown before selecting `.tpl_dropdown_menu_item.js_insertaudio`, retains same-title dedupe, and completes the measured upload sequence (audio, cover, title, agreement, save, insert, read-back).
+- [x] R8. Every enrichment failure remains fail-soft: leaked dialogs are dismissed, the draft save is attempted, and the publish result keeps its existing success/error contract.
+- [x] R9. The implementation records a selector/control map for the declaration/agreement, reward, URL capability, audio upload, cover picker and layout controls, with evidence paths and any live mismatch. Selector fixtures cover supported and unsupported account outcomes, absent layout, originalUrl capability absence, and modal cleanup. Task 0260 supplies the real-Chromium committed-state/value regression and live draft read-back after this task's map is applied; queued booleans are not evidence of committed state.
 
 ### Acceptance Criteria
 
@@ -138,11 +138,53 @@ The solution deliberately leaves account provisioning, committed identity/value 
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Measured candidate maps per retained row — `plugins/publishings/wechatmp-pub/src/enrich.ts:26-43`; probe-then-act before any click (`plugins/publishings/wechatmp-pub/src/enrich.ts:134,149,196`); explicit outcome per step (`plugins/publishings/wechatmp-pub/src/enrich.ts:159,198`). |
+| R2 | MET | 原创 drives the measured declaration radio + agreement checkbox — `plugins/publishings/wechatmp-pub/src/enrich.ts:57-59,134`; non-commit stays an original warning (`plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1184`). |
+| R3 | MET | 赏-blocked dialog → one named operator action, no retry — `plugins/publishings/wechatmp-pub/src/enrich.ts:150-159`; `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1250-1264` asserts exactly one warning. |
+| R4 | MET | `metadata.wechatmp.originalUrl` intact; missing 原文链接 row → one explicit warning, `链接` row never opened — `plugins/publishings/wechatmp-pub/src/enrich.ts:196-201`; `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1266-1283`. |
+| R5 | MET | Absent 一键排版 control skips silently — `plugins/publishings/wechatmp-pub/src/flow.ts:581` returns null; `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1285-1291` asserts empty enrichWarnings. |
+| R6 | MET | Library cover deferred behind the audio material — `plugins/publishings/wechatmp-pub/src/flow.ts:700-714,735-739`; ordering test `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1293-1319`. |
+| R7 | MET | Toolbar dropdown → `li.js_insertaudio` before the dialog — `plugins/publishings/wechatmp-pub/src/flow.ts:199-202,1243-1245`; same-title dedupe + measured upload sequence retained. |
+| R8 | MET | Fail-soft contract unchanged; modal-recovery + warning-contract tests green in the full gate (2777 pass / 2 skip / 0 fail). |
+| R9 | MET | Selector map + evidence paths — `.spur/run/wechat-drift-task/measure-20261013/` (captures + `12-original-dialog-map.json` + `22-audio-modal-map.json`) vs `.spur/run/wechat-drift-task/bg.md:13-23`; fixtures cover 赏-blocked, URL-row-missing, layout-absent, modal cleanup; committed-state read-back stays with 0260. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — measured original controls driven, outcome surfaced (req: R1, R2, R9) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1184`; `plugins/publishings/wechatmp-pub/src/enrich.ts:57-59,134` |
+| AC2 — account prerequisite actionable and bounded (req: R2, R3, R9) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1250-1264`; `plugins/publishings/wechatmp-pub/src/enrich.ts:150-159` |
+| AC3 — unavailable URL capability explicit (req: R4, R9) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1266-1283`; `plugins/publishings/wechatmp-pub/src/enrich.ts:196-201` |
+| AC4 — build without layout support is quiet (req: R5) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1285-1291`; `plugins/publishings/wechatmp-pub/src/flow.ts:581` |
+| AC5 — audio before library cover, dependency honoured (req: R6, R7) | MET | test + static-ref | `plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts:1293-1319`; `plugins/publishings/wechatmp-pub/src/flow.ts:700-714,735-739` |
+| AC6 — retained failures stay fail-soft (req: R8, R9) | MET | test | modal-recovery + warning-contract tests green in the full gate run |
+| AC7 — selector handoff has retained measurement evidence (req: R1, R9) | MET | command + static-ref | `measure-20261013/12-original-dialog-map.json`, `22-audio-modal-map.json`, `99-editor-final.html` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+#### Review
+
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -156,3 +198,7 @@ Evidence and ownership:
 - External execution prerequisite — an authenticated WeChat profile and browser bridge must be free; the measurement deliverable is the validated selector/control map (including declaration/agreement and upload-form controls), handed from 0272 to 0260 with evidence paths and observed committed values.
 
 ### History
+
+- 2026-10-14T00:00:10.582Z todo → testing (system)
+- 2026-10-14T00:04:12.517Z testing → done (system)
+
