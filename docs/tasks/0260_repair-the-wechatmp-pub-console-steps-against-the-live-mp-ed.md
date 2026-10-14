@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Repair the wechatmp-pub console steps against the live MP editor
-status: todo
+status: blocked
 template: standard
 created_at: 2026-10-12T02:23:38.506Z
-updated_at: "2026-10-14T18:14:21.640Z"
+updated_at: "2026-10-14T20:58:37.642Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -91,9 +91,9 @@ Offline audit evidence: `.spur/run/refine-0260/audit-20261014/probe.ts` and `obs
 
 ### Requirements
 
-- [ ] R1. In both existing `coverSource` modes, select only an unambiguously identified requested cover and verify the committed editor cover against the selected asset identity. Failed, missing, ambiguous or unverifiable selection emits `metadata.warnings`; no newest/first-item assumption is success. When audio is requested for a library cover, audio failure prevents that dependent picker attempt. An open picker is closed or explicitly diagnosed.
-- [ ] R2. With valid audio metadata, reuse one exact normalized-title material or upload the requested MP3/cover/title through the active form using attached file inputs, acknowledgement and bounded completion polling. Select the uploaded material by unique identity, never first-row order. Verify the inserted material identity and body-start position. Only a positive recognized verification result returns success; missing, ambiguous, unknown or throwing probes emit `metadata.enrichWarnings`.
-- [ ] R3. Verify requested original/reward enabled state, exact originalUrl and exact creation-source value against committed editor state. Read before acting and before a single bounded retry; an already-satisfied setting is not toggled off. Known account/capability refusals warn once without retry. Close and verify each step's dialogs on every exit; unknown cleanup state is a named warning, and a residual overlay stops dependent enrichment. Preserve existing author/合集 behavior and the final honest save guard.
+- [x] R1. In both existing `coverSource` modes, select only an unambiguously identified requested cover and verify the committed editor cover against the selected asset identity. Failed, missing, ambiguous or unverifiable selection emits `metadata.warnings`; no newest/first-item assumption is success. When audio is requested for a library cover, audio failure prevents that dependent picker attempt. An open picker is closed or explicitly diagnosed.
+- [x] R2. With valid audio metadata, reuse one exact normalized-title material or upload the requested MP3/cover/title through the active form using attached file inputs, acknowledgement and bounded completion polling. Select the uploaded material by unique identity, never first-row order. Verify the inserted material identity and body-start position. Only a positive recognized verification result returns success; missing, ambiguous, unknown or throwing probes emit `metadata.enrichWarnings`.
+- [x] R3. Verify requested original/reward enabled state, exact originalUrl and exact creation-source value against committed editor state. Read before acting and before a single bounded retry; an already-satisfied setting is not toggled off. Known account/capability refusals warn once without retry. Close and verify each step's dialogs on every exit; unknown cleanup state is a named warning, and a residual overlay stops dependent enrichment. Preserve existing author/合集 behavior and the final honest save guard.
 - [ ] R4. Preserve the fresh title-keyed 草稿箱 save contract, draft default, and explicit public-publish boundary. Optional enrichment failure may still yield draft success with named warnings. Full live verification requires one fresh attended draft saved once and reopened by identity, with supported cover/title/body/audio/settings readbacks and no cover/title/body completeness notice; unavailable account capabilities remain explicit warnings and never count as a verified value.
 
 Scope: existing 文章 rail, its direct callers, regression fixtures and touched channel documentation. No new CLI flags, public metadata fields, plugin operations, dependencies or exported API. Private helper signatures may carry expected/observed identities. Keep `originalUrl` for supported callers/builds; an absent row is channel-specific unsupported and never maps to `链接`. Do not redo 0272's ordering, layout-absence or entry-selector repair, provision an account, change other operations, or repeat a public publish. A failed enrichment and a blocked/unknown save are distinct outcomes.
@@ -275,36 +275,106 @@ Existing 0280/G11/INDEX edits in this tree are unrelated authorized work and mus
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Implemented the committed-state repair across `src/` + real-Chromium DOM regressions (branch `sp/run-0260-930a0594`):
+
+- **R1 cover identity** — `setCover` (`plugins/publishings/wechatmp-pub/src/flow.ts:633`) accepts the requested article image and/or the audio-material binding as `CoverIdentity` (`plugins/publishings/wechatmp-pub/src/flow.ts:615`), matches candidates by file basename identity, warns (`cover: no requested cover file identity to match against…`) instead of driving blind (`plugins/publishings/wechatmp-pub/src/flow.ts:664`), and the dependent 图片库 pick runs only after audio succeeds (`plugins/publishings/wechatmp-pub/src/flow.ts:796`, `plugins/publishings/wechatmp-pub/src/flow.ts:832`); failed/ambiguous selection emits warnings, never a newest/first-item claim.
+- **R2 audio identity** — exact whitespace/NBSP-normalized title match reuses the ticked material; prefix/duplicate titles are refused (`plugins/publishings/wechatmp-pub/src/flow.ts:1283` MATCH, `plugins/publishings/wechatmp-pub/src/flow.ts:1370` awaitMatch); upload path (`plugins/publishings/wechatmp-pub/src/flow.ts:1335`) fills the dialog-scoped audio/cover inputs, title, acknowledgement, then requires the saved row to appear AND the body node to verify (`plugins/publishings/wechatmp-pub/src/flow.ts:1322` VERIFY, mediaid/thumb identity) before reporting success; unverifiable placement → named warning, never silent success.
+- **R3 settings verified against committed state** — every settings step probes the REQUESTED committed editor state before and after (runtime DOM properties only, `plugins/publishings/wechatmp-pub/src/enrich.ts:103` claim / `plugins/publishings/wechatmp-pub/src/enrich.ts:219` original / `plugins/publishings/wechatmp-pub/src/enrich.ts:307` 原文链接): `#js_original` checked, `#js_reward_setting_area .js_reward_setting_checkbox`, `#js_claim_source_area` checkbox + `.js_claim_source_selected` text; only the exact committed value establishes success; missing/throwing probes → named `…未生效，请手动设置` warnings; 原文链接 row-absent → one capability warning (contract kept). Author/合集 behavior and the honest save guard preserved.
+- **R4 save contract + modal rails** — `modalState()` (`plugins/publishings/wechatmp-pub/src/page.ts:76`) distinguishes known-dialog/no-dialog/unknown-overlay; unknown overlay never counts as cleaned up (`plugins/publishings/wechatmp-pub/src/enrich.ts:135` sweep, `plugins/publishings/wechatmp-pub/src/enrich.ts:362` final sweep); the `保存为草稿` click refuses through any unresolved overlay with a named dialog inventory; per-step residuals on the unclosable path; enrichment stays fail-soft without inferring success; draft default and the public-publish boundary untouched.
+- **Real-Chromium fixtures** (plan step 2) — `tests/fixtures/wechatmp-dom-runner.ts` spawns the production `enrichArticle`/`insertAudioMaterial` through `wrapPlaywrightPage` against synthetic DOM built from the 2026-10-13 measured shapes, offline, 10 scenarios; all assertions in `tests/wechatmp-dom.test.ts`. The fixtures caught a real production defect: the upload/cover clicks used a mixed-engine selector union (`text=上传音频, button:has-text(…)`), which Playwright parses as pure CSS and matches nothing — fixed by clicking the `trySelectors` winner (`plugins/publishings/wechatmp-pub/src/flow.ts:1340`, `plugins/publishings/wechatmp-pub/src/flow.ts:1349`).
+- **Docs sync** (plan step 8) — `docs/design/wechatmp-ui-discovery.md` fifth-pass blockquote (committed-state shapes, residual/audio contracts, fixture runner, union-click defect); `docs/04_DESIGN.md` WeChat section already carries the 0260 read-back contract from the refine sync.
+
+Verification: full gate `bun run spur-check` GREEN — 2932 tests / 162 files (incl. the 10 DOM scenarios), 0 fail; Biome + typecheck clean; coverage thresholds hold (enrich.ts 96.67% funcs / 100% lines).
+
+Three-dimensional review of the 6-file diff vs R1–R4 and AC1–AC7.
+
+**Functional traceability**
+- R1 ✓ identity-matched cover: `setCover` identity binding exercised through the audio-exact/upload scenarios' `coverPath` leg; cover picker gated on audio success (fake-console caller tests + `audio-upload-scoped-inputs`).
+- R2 ✓ audio identity contract (`audio-exact-reuse`, `audio-prefix-warn`, `audio-duplicate-warn`, `audio-upload-scoped-inputs`, `audio-verify-unknown`).
+- R3 ✓ committed-value contract (`settings-committed-skip`, `settings-fail-named-warning`, `reward-native-readback`); originalUrl row-absent warning covered by fake-console tests.
+- R4 ✓ save refusal through unresolved overlay (`unclosable-overlay`), draft contract intact (`closable-failure-releases` shows enrichment failure → fail-soft, no publish-boundary change); no success inferred from unverified states (AC2−: `insertedMediaId:null`, `audioResult:''`).
+- **AC6 (live attended regression on the real MP console) NOT RUN** — requires the real profile + QR sign-in + the 08:00 attended run (operator precondition, per the task's Q&A 2026-10-13). Recorded INCOMPLETE with re-verify condition below.
+
+**SECUA / quality findings (all P3)**
+- `AUDIO_TITLE_INPUT` fill still falls back to a joined selector list when the probe misses; the list is all-CSS so the union is valid, but it is the last join-style fallback (watch on future selector lists).
+- The DOM runner's scenario coverage is config-driven; new console features need a new WIRE branch per feature — acceptable fixture cost, noted for future drift tasks.
+- The DOM suite adds ~58s to the full gate — accepted for the anti-drift value (it caught the union-click defect on its first run).
+
+**Architecture** — production/fixture boundary holds: the runner executes the shipped expressions (no selector logic duplicated in tests), `page.ts` wrap extended in place, no new abstractions; enrich/flow responsibility split unchanged.
+
+**Residual (open)** — AC6 live gate: re-verify during the next attended daily run (draft-only); P1–P3 remain open until then per plan step 7.
+
+| Priority | Finding | Evidence | Disposition |
+| --- | --- | --- | --- |
+| P1 | none | — | — |
+| P2 | AC6 (live attended save/reopen) unexecuted — requires real profile + operator QR + one fresh attended draft; unattainable from the unattended runner | `.spur/run/0260-verify-answer.txt` AC6 row (manual-review); task Q&A 2026-10-12/13 | Residual: P1–P3 stay open; re-verify at the next attended daily run (draft-only) |
+| P3 | `AUDIO_TITLE_INPUT` fill falls back to a joined selector list when the probe misses; the list is all-CSS so the union is valid, but it is the last join-style fallback | `plugins/publishings/wechatmp-pub/src/flow.ts:1362` (fillSelector fallback) | Watch on future selector lists; no behavior risk today |
+| P3 | DOM runner needs a WIRE branch per new console feature | tests/fixtures/wechatmp-dom-runner.ts | Accepted fixture cost; the suite caught the union-click defect on its first run |
+| P3 | DOM suite adds ~58s to the full gate | `bun run spur-check` 2026-10-14: 425s tests total | Accepted for anti-drift value |
 
 ### Testing
 
-Specification audit on 2026-10-14; no implementation PASS is claimed:
+**Pipeline verify results**
 
-- `NODE_ENV=test bun test plugins/publishings/wechatmp-pub/tests/wechatmp-pub.test.ts`: **73 pass, 0 fail**, 1296 assertions. Exit **1** is from per-file coverage of imported modules in this single-file run, not test failures. Coverage policy was unchanged. These recording-page tests do not prove DOM or live values.
-- `bun .spur/run/refine-0260/audit-20261014/probe.ts`: exit **0**. In fresh network-blocked Chromium, current production expressions accept original-unchecked with dialogs closed (`true`), wrong selected claim (`true`), unrelated top audio (`top`), and prefix-only material title (`checked`). Hidden-file visibility probe returns `found:false`; existing attachment helper finds it. Native `querySelector` with the reward expression's `:visible` syntax throws `SyntaxError`.
-- Audit source/result: `.spur/run/refine-0260/audit-20261014/{probe.ts,observations.json}` (gitignored). The defect descriptions and implementation contract are retained above so scratch retention is not required to understand the work.
-- `spur task show 0272 --json`: done; `.spur/memory/evidence/0272-verdict.json` is present. Its PASS and partial map are not accepted as proof of 0260's committed identity/value behavior.
-- Environment probes: Bun 1.4.3; installed Playwright 1.55.0 and Chromium executable present; one worktree, no WIP tasks; active daily MP executor remains occupied. No live browser/profile was opened, no draft was saved and no publish occurred during refinement.
-- Full lint/build/test and live AC6 are implementation completion checks, not run for this corpus-only refinement.
+- Verdict: PARTIAL (from verdict artifact)
+- Confidence: MEDIUM
 
-Readiness checklist (2026-10-14):
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Cover identity binding and matching by basename in `plugins/publishings/wechatmp-pub/src/flow.ts:615` and `plugins/publishings/wechatmp-pub/src/flow.ts:633`; no-identity warn at `plugins/publishings/wechatmp-pub/src/flow.ts:664`; library pick gated on audio success at `plugins/publishings/wechatmp-pub/src/flow.ts:796` and `plugins/publishings/wechatmp-pub/src/flow.ts:832`; both coverSource modes exercised by fake-console caller tests (tests/wechatmp-pub.test.ts). |
+| R2 | MET | Exact normalized-title reuse and duplicate/prefix refusal via `plugins/publishings/wechatmp-pub/src/flow.ts:1283` and `plugins/publishings/wechatmp-pub/src/flow.ts:1370`; upload fills dialog-scoped inputs at `plugins/publishings/wechatmp-pub/src/flow.ts:1335`; positive-only success via body VERIFY at `plugins/publishings/wechatmp-pub/src/flow.ts:1322`; real-Chromium proof: tests/wechatmp-dom.test.ts `audio-upload-scoped-inputs` (uploads audio-input+cover-input, media-7 ticked, verified), `audio-exact-reuse`, `audio-prefix-warn`, `audio-duplicate-warn`, `audio-verify-unknown`. |
+| R3 | MET | Committed-state probes at `plugins/publishings/wechatmp-pub/src/enrich.ts:103`, `plugins/publishings/wechatmp-pub/src/enrich.ts:219`, `plugins/publishings/wechatmp-pub/src/enrich.ts:307`; only exact committed value is success; missing probes warn `…未生效，请手动设置`; 原文链接 row-absent warns once; real-Chromium proof: `settings-committed-skip`, `settings-fail-named-warning`, `reward-native-readback`. |
+| R4 | PARTIAL | Draft-default and publish boundary untouched; save refuses through unresolved overlay with named inventory (`unclosable-overlay`, `plugins/publishings/wechatmp-pub/src/enrich.ts:135`, `plugins/publishings/wechatmp-pub/src/page.ts:76`, final sweep `plugins/publishings/wechatmp-pub/src/enrich.ts:362`); fail-soft enrichment keeps draft success with warnings (`closable-failure-releases`, AC7 fake-console tests). The live attended draft save/reopen readback (AC6) remains unexecuted per the attended precondition above. |
 
-| id | pass | evidence |
-| --- | --- | --- |
-| requirements | true | R1–R4 define observable cover/audio/value/cleanup/save outcomes with explicit non-goals. |
-| design | true | No new public API; exact matching, identity propagation, strict success, unsupported fallback and cleanup algorithms frozen against named seams. |
-| plan | true | Eight ordered steps map to R-items, DOM regressions and the final live gate. |
-| ac | true | AC1–AC7 bind R1–R4; strict target-todo check has no findings; task-local regression altitude retained. |
-| decisions | true | Existing feature E92 retained; 0272 completion accepted without claiming absent map evidence; missing live identities have an explicit warning contract. |
-| dependencies | true | Dependency 0272 is done; its remaining live-only capture limits are documented, with no circular dependency or duplicate ordering repair. |
-| premises | true | Source/caller audit, current 73-test baseline, isolated Chromium assertions, partial capture inspection and concurrency/environment probes recorded above. |
-
-Scoped finalization: `spur task check 0260 --as todo --strict --json`, `spur task check 0260 --precheck --json` and `spur feature check E92 --json` pass without findings. Status stays `todo`; missing priority/estimate filled as P1 / 12 hours. These checks establish specification readiness, not implementation or live acceptance.
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Requested episode cover is committed in each existing source mode (req: R1) | MET | test | Cover identity binding and basename matching (`plugins/publishings/wechatmp-pub/src/flow.ts:615`, `plugins/publishings/wechatmp-pub/src/flow.ts:633`, `plugins/publishings/wechatmp-pub/src/flow.ts:664`); library pick gated on audio success (`plugins/publishings/wechatmp-pub/src/flow.ts:796`, `plugins/publishings/wechatmp-pub/src/flow.ts:832`); both coverSource modes exercised by fake-console caller tests in tests/wechatmp-pub.test.ts. |
+| AC2 — Audio upload accepts hidden inputs and inserts the intended material (req: R2) | MET | test | tests/wechatmp-dom.test.ts `audio-upload-scoped-inputs` (real Chromium): uploads=[audio-input, cover-input], inserted material verified by data-mediaid + body-node identity (`plugins/publishings/wechatmp-pub/src/flow.ts:1322`). |
+| AC3 — Existing audio material is reused without another upload (req: R2) | MET | test | `audio-exact-reuse` reuses media-9 with zero uploads; prefix/duplicate titles refused (`audio-prefix-warn`, `audio-duplicate-warn`; `plugins/publishings/wechatmp-pub/src/flow.ts:1283`). |
+| AC4 — Settings success requires committed requested values (req: R3) | MET | test | `settings-committed-skip`, `settings-fail-named-warning` (named warning, uncommitted, swept), `reward-native-readback`; probes `plugins/publishings/wechatmp-pub/src/enrich.ts:103`, `plugins/publishings/wechatmp-pub/src/enrich.ts:219`, `plugins/publishings/wechatmp-pub/src/enrich.ts:307`. |
+| AC5 — Failed enrichment releases its dialogs before subsequent work (req: R1, R2, R3) | MET | test | `unclosable-overlay` (save refused through residual overlay with named inventory; unknown never treated as cleaned, `plugins/publishings/wechatmp-pub/src/enrich.ts:135`, `plugins/publishings/wechatmp-pub/src/page.ts:76`) and `closable-failure-releases` (failed step releases; dependent claim commits; final sweep `plugins/publishings/wechatmp-pub/src/enrich.ts:362`). |
+| AC6 — Full daily draft survives save and reopen (req: R4) | PARTIAL | manual-review | Not executed: attended precondition (real profile + operator QR + fresh attended draft). Incomplete by design (task step 7); re-verify at the next attended daily run (draft-only). |
+| AC7 — Optional enrichment failure preserves the draft contract (req: R4) | MET | test | Every enrichment failure exit keeps the draft attempt with named warnings (`plugins/publishings/wechatmp-pub/src/enrich.ts:130` returns warnings; publish boundary `plugins/publishings/wechatmp-pub/src/flow.ts:1066` unchanged); fake-console tests assert draft success with warnings. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+Implemented the committed-state repair across `src/` + real-Chromium DOM regressions (branch `sp/run-0260-930a0594`):
+
+- **R1 cover identity** — `setCover` (`plugins/publishings/wechatmp-pub/src/flow.ts:633`) accepts the requested article image and/or the audio-material binding as `CoverIdentity` (`plugins/publishings/wechatmp-pub/src/flow.ts:615`), matches candidates by file basename identity, warns (`cover: no requested cover file identity to match against…`) instead of driving blind (`plugins/publishings/wechatmp-pub/src/flow.ts:664`), and the dependent 图片库 pick runs only after audio succeeds (`plugins/publishings/wechatmp-pub/src/flow.ts:796`, `plugins/publishings/wechatmp-pub/src/flow.ts:832`); failed/ambiguous selection emits warnings, never a newest/first-item claim.
+- **R2 audio identity** — exact whitespace/NBSP-normalized title match reuses the ticked material; prefix/duplicate titles are refused (`plugins/publishings/wechatmp-pub/src/flow.ts:1283` MATCH, `plugins/publishings/wechatmp-pub/src/flow.ts:1370` awaitMatch); upload path (`plugins/publishings/wechatmp-pub/src/flow.ts:1335`) fills the dialog-scoped audio/cover inputs, title, acknowledgement, then requires the saved row to appear AND the body node to verify (`plugins/publishings/wechatmp-pub/src/flow.ts:1322` VERIFY, mediaid/thumb identity) before reporting success; unverifiable placement → named warning, never silent success.
+- **R3 settings verified against committed state** — every settings step probes the REQUESTED committed editor state before and after (runtime DOM properties only, `plugins/publishings/wechatmp-pub/src/enrich.ts:103` claim / `plugins/publishings/wechatmp-pub/src/enrich.ts:219` original / `plugins/publishings/wechatmp-pub/src/enrich.ts:307` 原文链接): `#js_original` checked, `#js_reward_setting_area .js_reward_setting_checkbox`, `#js_claim_source_area` checkbox + `.js_claim_source_selected` text; only the exact committed value establishes success; missing/throwing probes → named `…未生效，请手动设置` warnings; 原文链接 row-absent → one capability warning (contract kept). Author/合集 behavior and the honest save guard preserved.
+- **R4 save contract + modal rails** — `modalState()` (`plugins/publishings/wechatmp-pub/src/page.ts:76`) distinguishes known-dialog/no-dialog/unknown-overlay; unknown overlay never counts as cleaned up (`plugins/publishings/wechatmp-pub/src/enrich.ts:135` sweep, `plugins/publishings/wechatmp-pub/src/enrich.ts:362` final sweep); the `保存为草稿` click refuses through any unresolved overlay with a named dialog inventory; per-step residuals on the unclosable path; enrichment stays fail-soft without inferring success; draft default and the public-publish boundary untouched.
+- **Real-Chromium fixtures** (plan step 2) — `tests/fixtures/wechatmp-dom-runner.ts` spawns the production `enrichArticle`/`insertAudioMaterial` through `wrapPlaywrightPage` against synthetic DOM built from the 2026-10-13 measured shapes, offline, 10 scenarios; all assertions in `tests/wechatmp-dom.test.ts`. The fixtures caught a real production defect: the upload/cover clicks used a mixed-engine selector union (`text=上传音频, button:has-text(…)`), which Playwright parses as pure CSS and matches nothing — fixed by clicking the `trySelectors` winner (`plugins/publishings/wechatmp-pub/src/flow.ts:1340`, `plugins/publishings/wechatmp-pub/src/flow.ts:1349`).
+- **Docs sync** (plan step 8) — `docs/design/wechatmp-ui-discovery.md` fifth-pass blockquote (committed-state shapes, residual/audio contracts, fixture runner, union-click defect); `docs/04_DESIGN.md` WeChat section already carries the 0260 read-back contract from the refine sync.
+
+Verification: full gate `bun run spur-check` GREEN — 2932 tests / 162 files (incl. the 10 DOM scenarios), 0 fail; Biome + typecheck clean; coverage thresholds hold (enrich.ts 96.67% funcs / 100% lines).
+
+Three-dimensional review of the 6-file diff vs R1–R4 and AC1–AC7.
+
+**Functional traceability**
+- R1 ✓ identity-matched cover: `setCover` identity binding exercised through the audio-exact/upload scenarios' `coverPath` leg; cover picker gated on audio success (fake-console caller tests + `audio-upload-scoped-inputs`).
+- R2 ✓ audio identity contract (`audio-exact-reuse`, `audio-prefix-warn`, `audio-duplicate-warn`, `audio-upload-scoped-inputs`, `audio-verify-unknown`).
+- R3 ✓ committed-value contract (`settings-committed-skip`, `settings-fail-named-warning`, `reward-native-readback`); originalUrl row-absent warning covered by fake-console tests.
+- R4 ✓ save refusal through unresolved overlay (`unclosable-overlay`), draft contract intact (`closable-failure-releases` shows enrichment failure → fail-soft, no publish-boundary change); no success inferred from unverified states (AC2−: `insertedMediaId:null`, `audioResult:''`).
+- **AC6 (live attended regression on the real MP console) NOT RUN** — requires the real profile + QR sign-in + the 08:00 attended run (operator precondition, per the task's Q&A 2026-10-13). Recorded INCOMPLETE with re-verify condition below.
+
+**SECUA / quality findings (all P3)**
+- `AUDIO_TITLE_INPUT` fill still falls back to a joined selector list when the probe misses; the list is all-CSS so the union is valid, but it is the last join-style fallback (watch on future selector lists).
+- The DOM runner's scenario coverage is config-driven; new console features need a new WIRE branch per feature — acceptable fixture cost, noted for future drift tasks.
+- The DOM suite adds ~58s to the full gate — accepted for the anti-drift value (it caught the union-click defect on its first run).
+
+**Architecture** — production/fixture boundary holds: the runner executes the shipped expressions (no selector logic duplicated in tests), `page.ts` wrap extended in place, no new abstractions; enrich/flow responsibility split unchanged.
+
+**Residual (open)** — AC6 live gate: re-verify during the next attended daily run (draft-only); P1–P3 remain open until then per plan step 7.
+
+| Priority | Finding | Evidence | Disposition |
+| --- | --- | --- | --- |
+| P1 | none | — | — |
+| P2 | AC6 (live attended save/reopen) unexecuted — requires real profile + operator QR + one fresh attended draft; unattainable from the unattended runner | `.spur/run/0260-verify-answer.txt` AC6 row (manual-review); task Q&A 2026-10-12/13 | Residual: P1–P3 stay open; re-verify at the next attended daily run (draft-only) |
+| P3 | `AUDIO_TITLE_INPUT` fill falls back to a joined selector list when the probe misses; the list is all-CSS so the union is valid, but it is the last join-style fallback | `plugins/publishings/wechatmp-pub/src/flow.ts:1362` (fillSelector fallback) | Watch on future selector lists; no behavior risk today |
+| P3 | DOM runner needs a WIRE branch per new console feature | tests/fixtures/wechatmp-dom-runner.ts | Accepted fixture cost; the suite caught the union-click defect on its first run |
+| P3 | DOM suite adds ~58s to the full gate | `bun run spur-check` 2026-10-14: 425s tests total | Accepted for anti-drift value |
 
 ### References
 
@@ -323,4 +393,7 @@ Scoped finalization: `spur task check 0260 --as todo --strict --json`, `spur tas
 ### History
 
 - 2026-10-12T21:42:40.483Z backlog → todo (system)
+- 2026-10-14T20:50:04.618Z todo → wip (system)
+- 2026-10-14T20:56:18.909Z wip → testing (system)
+- 2026-10-14T20:58:37.642Z testing → blocked (system)
 
