@@ -369,3 +369,30 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
 - 2026-10-13 · 0272 — plugin packages here run from `src/` (no build step), so worktree edits take effect immediately — but a test run from the WRONG cwd (`bun test` outside the worktree) imports the main checkout and gives a false green; always `cd` into the worktree first.
 - 2026-10-13 · 0269 — per-card same-envelope retry belongs INSIDE the per-card loop: a `transientRetryUsed` guard hoisted outside it starves later cards; the regression test asserts each card's own fail/success pair.
 - 2026-10-13 · runall — `inline-run-setup --close` refuses a run with zero action rows (NO_ACTION_ROWS); emit `--action` traces per hop DURING the run (after close there is no backfill). `task update <wbs> done` needs `task run-link <wbs> --run-id <id>` from THIS tree first, and `--as done` check anchors require project-root-relative `path:line` citations (bare `enrich.ts:150` fails L4).
+## A22 batch (0275–0278), 2026-10-14
+
+- **Gate receipts need `proofDigest`.** `quality-gate.mjs run` only writes `.spur/run/<wbs>-check-receipt.json`
+  when `proofDigest` is set; the pipeline captures it at gate entry via `proof.fingerprint`
+  (`taskSpecPath` + `featureSpecPath` folded in). The digest's git-tree half excludes only `docs/tasks*`
+  and `docs/features*`, so editing `docs/04_DESIGN.md`, `docs/reviews/**` or source invalidates a receipt
+  and forces a fresh full gate (~5.5 min here).
+- **Cheap digest capture.** Write a dummy `.spur/run/<wbs>-check-receipt.json` (`{}`), run the gate in
+  `status` mode with a wrong `proofDigest`, and read the recomputed digest out of the
+  `check.reuse-refused — supplied X != current Y` line; delete the dummy immediately. Avoids a second
+  full gate just to stamp a receipt.
+- **`status` mode is also the receipt liveness check** — `{"reuse":true,"reason":"ok"}` against the current
+  tree is the evidence that a PASS receipt still binds.
+- **Inline pipeline runs need an explicit provenance link.** `spur task update <wbs> done` fails the
+  `testing → done` guard with "No pipeline run recorded" even when the inline run, its 6 action rows and
+  its summary exist; `spur task run-link <wbs> --source <label>` records the audited link and the guard
+  then evaluates the real check.
+- **Flip the Plan checkboxes too.** The done guard's `L3.unchecked-checklist` counts *every* `- [ ]` in the
+  file, including `### Plan` steps — not just Requirements.
+- **Anchor rules bite twice.** `path:line` citations must be repo-root-relative *and* name the row's subject
+  on the cited line; markdown heading lines do not satisfy the subject match (cite the prose/code line, or
+  drop the `:line` and cite the path alone).
+- **Feature lifecycle is hop-based.** `active → verifying → done`; a direct `spur feature update A22 done`
+  is denied. `spur feature sync <id>` derives and applies the legal hop (and runs the feature-level
+  verification, ~5.5 min).
+- **`apps/cli/plugins/` is a gitignored build-staging copy of `plugins/`** (created by the CLI build). Any
+  `rg` inventory over `apps/cli` double-counts plugins unless `-g '!apps/cli/plugins/**'` is added.

@@ -142,3 +142,24 @@
 - **[MEDIUM] Concurrent load is the variance driver.** 518.6 s at load 8.4 vs >2400 s at load 32, one
   uncontrolled observation each; the quiet-machine baseline (300–480 s) comes from the 12:40–14:30
   successful ticks.
+## A22 batch (0275–0278), 2026-10-14
+
+- **Do not diagnose an executor-shaped test failure as a code regression before checking the executor
+  table.** `resolveExecutor` refuses a bare agent name that matches a *disabled* executor profile
+  (`agent.executors.<name>.disabled`) **before** PATH resolution, so a test that stubs an agent as
+  `claude` fails the moment a quota guard disables that profile globally. Reproduce on the clean base tree
+  (stash the task's diff) to separate environment from regression — that stashed run is what proved task
+  0277 was innocent.
+- **Provider availability changes mid-batch.** In one session `claude` (quota guard), `openai` (OAuth
+  `invalid_grant`), `opencode` (no subscription), `zai` (5-hour cap), `zai-cn` (plan expired) and
+  `openai-codex` (usage limit) all became unusable. Check `~/.config/spur/config.yaml` disabled entries,
+  `~/.config/spur/agent-usage.json` (`resetsAt`) and the model registry before burning dispatches; a
+  rejected subagent model returns the valid choices, and models-store ids are not all routable
+  (OpenRouter 404s on store-only slugs).
+- **`rg` no-match exits 1** and a compound `echo … && rg …` chain whose last command exits nonzero is
+  reported by the subagent harness as a *mutating tool failure*; repeats escalate to an "attention"
+  event. Append `|| true` to audit sweeps and keep them short.
+- **`inline-run-setup.mjs --file` wants the workflow DEFINITION** (`task-pipeline.yaml`), never the task
+  markdown — passing a task file dies with `Source contains multiple documents`.
+- **`.gitignore` anchors ignore rules at the repo root**, so `-g` exclusions in `rg` are more reliable than
+  assuming a gitignored path (e.g. `apps/cli/plugins/`) is skipped.
