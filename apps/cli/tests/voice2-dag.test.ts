@@ -215,7 +215,7 @@ function withKkShim<T>(binDir: string, fn: () => T): T {
  * 0238 AC1–AC4 — the fake executor the agent.run nodes dispatch.
  *
  * The engine resolves a canonical agent name straight to a binary on PATH (`resolveExecutor` →
- * `{ agent: name }`), so a same-named script is a real stand-in for `pi` / `claude`. Probed shape
+ * `{ agent: name }`), so a same-named script is a real stand-in for `pi` / `codex`. Probed shape
  * (2026-10-09): `pi --version` first (capability attestation), then
  * `pi -p "<input>" --session-dir … --model … --mode text`. A name listed in `noopAgents` answers 0
  * and writes NOTHING — the stochastic executor no-op 0238 exists for; every other name writes the
@@ -277,7 +277,7 @@ function runDag(
         sleepMs?: number;
         realRunReport?: boolean;
         vars?: Record<string, string>;
-        /** 0238: canonical agent names to install as PATH stubs (`pi`, `claude`). */
+        /** 0238: canonical agent names to install as PATH stubs (`pi`, `codex`). */
         agentStubs?: string[];
         /** 0238: the subset of `agentStubs` that answers 0 without writing its expectFile. */
         agentNoop?: string[];
@@ -826,7 +826,9 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         script_write_enabled: 'false',
         cover_enabled: 'false',
         agent: 'pi',
-        agent_retry: 'claude',
+        // `codex`, not `claude`: a name that matches a configured executor profile is refused by
+        // the engine while that profile is disabled (e.g. the quota guard), before PATH is consulted.
+        agent_retry: 'codex',
     };
 
     it('AC1 — a primary that exits 0 without its expectFile is recovered by the retry sibling', () => {
@@ -836,12 +838,12 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
             pool: POOL_FULL,
             candidates: CANDIDATES_FULL,
             vars: baseVars,
-            agentStubs: ['pi', 'claude'],
+            agentStubs: ['pi', 'codex'],
             agentNoop: ['pi'],
         });
         // The stub answers 0 with no tool call, exactly the observed executor no-op, so the retry
         // sibling is the only writer of the plan file.
-        expect(agentsCalled(outcome)).toEqual(['pi', 'claude']);
+        expect(agentsCalled(outcome)).toEqual(['pi', 'codex']);
         expect(outcome.status).toBe('done');
         expect(existsSync(join(outcome.workDir, '21-plan', '20261007_03_plan_plan.json'))).toBe(true);
         // The failing primary still preserved its contract-violation sidecar.
@@ -856,8 +858,8 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
             pool: POOL_FULL,
             candidates: CANDIDATES_FULL,
             vars: baseVars,
-            agentStubs: ['pi', 'claude'],
-            agentNoop: ['pi', 'claude'],
+            agentStubs: ['pi', 'codex'],
+            agentNoop: ['pi', 'codex'],
         });
         expect(outcome.status).toBe('failed');
         for (const nodeId of ['plan-translate', 'plan-translate-retry']) {
@@ -873,7 +875,7 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
             pool: POOL_FULL,
             candidates: CANDIDATES_FULL,
             vars: { ...baseVars, article_write_enabled: 'true', cover_enabled: 'true', script_write_enabled: 'true' },
-            agentStubs: ['pi', 'claude'],
+            agentStubs: ['pi', 'codex'],
             agentNoop: [],
         });
         expect(outcome.status).toBe('done');
@@ -893,7 +895,7 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
             pool: POOL_FULL,
             candidates: CANDIDATES_FULL,
             vars: { ...baseVars, article_write_enabled: 'true', cover_enabled: 'true', script_write_enabled: 'true' },
-            agentStubs: ['pi', 'claude'],
+            agentStubs: ['pi', 'codex'],
             agentNoop: [],
         });
         expect(outcome.status).toBe('done');
