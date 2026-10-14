@@ -1,5 +1,6 @@
-import { CommanderError } from 'commander';
+import { type Command, CommanderError } from 'commander';
 import { createProgram } from './cli';
+import { normalizeStageArgs } from './commands/stage';
 import { consoleOutput } from './output';
 
 /** Optional overrides for main()'s output writers (test capture / embedding). */
@@ -33,18 +34,16 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
         writeErr: options.stderr ?? ((text: string) => consoleOutput.error(text)),
     });
     // Subcommands copied _exitCallback/_outputConfiguration at creation, before the
-    // calls above; re-inherit so `kk help <cmd>` and subcommand help honor both
+    // calls above; re-inherit through every level so `kk help <cmd>`, nested groups
+    // (e.g. `plugins list`, `store lock acquire`) and their help/error paths honor both
     // (otherwise they fall through to process.exit and the default writers).
-    for (const cmd of program.commands) {
-        cmd.copyInheritedSettings(program);
-        // Nested groups (e.g. `plugins list`/`plugins doctor`) also copied the
-        // pre-seam settings at creation; re-inherit so their help honors the
-        // configured writers and the exitOverride seam instead of calling
-        // process.exit directly.
-        for (const sub of cmd.commands) {
-            sub.copyInheritedSettings(cmd);
+    const inheritSettings = (parent: Command): void => {
+        for (const child of parent.commands) {
+            child.copyInheritedSettings(parent);
+            inheritSettings(child);
         }
-    }
+    };
+    inheritSettings(program);
     try {
         // Bare invocation (no args at all): print help and exit 0. Commander 15
         // otherwise routes missing-subcommand to help({error:true}) → exit 1.
@@ -52,7 +51,9 @@ export async function main(argv: string[] = process.argv, options: MainOptions =
         if (userArgs.length === 0) {
             program.help();
         }
-        await program.parseAsync(argv);
+        // Legacy `kk stage <stage>` spelling → canonical `stage run <stage>` before Commander
+        // parses (A22 R2 / ADR-037): the stage name is data, not a command word.
+        await program.parseAsync(normalizeStageArgs(argv));
         return 0;
     } catch (err) {
         if (err instanceof CommanderError) {

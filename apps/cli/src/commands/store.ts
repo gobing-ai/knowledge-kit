@@ -30,9 +30,7 @@ import { type Command, CommanderError } from 'commander';
 import { resolveKkConfigPath, runInvoke } from '../invoke';
 import { consoleOutput } from '../output';
 import { readPluginJson } from '../plugin-output';
-
-/** Default lock TTL for `kk store lock acquire`: 2 h (20261006 collection took ~32 min). */
-const DEFAULT_LOCK_TTL_MS = 7_200_000;
+import { registerLockCommand } from './lock';
 
 /** `labels.maker` for a row the plugin's keyword heuristic produced (no model was consulted). */
 const HEURISTIC_MAKER = 'heuristic';
@@ -122,21 +120,6 @@ interface MigrateOptions {
     db?: string;
 }
 
-/** Options accepted by `kk store lock acquire`. */
-interface LockAcquireOptions {
-    name: string;
-    run: string;
-    ttl: string;
-    db?: string;
-}
-
-/** Options accepted by `kk store lock release`. */
-interface LockReleaseOptions {
-    name: string;
-    run: string;
-    db?: string;
-}
-
 /** Options accepted by `kk store ingest`. */
 interface IngestOptions {
     run: string;
@@ -162,15 +145,6 @@ function failLoud(code: string, error: unknown): never {
     throw new CommanderError(1, code, message);
 }
 
-/** Parse `--ttl <ms>`: a non-negative millisecond count, rejected loudly when it is not. */
-function parseTtl(raw: string): number {
-    const ttlMs = Number(raw);
-    if (!Number.isInteger(ttlMs) || ttlMs < 0) {
-        throw new Error(`--ttl must be a non-negative integer (milliseconds), got '${raw}'`);
-    }
-    return ttlMs;
-}
-
 /**
  * `kk store migrate [--db <path>]` — apply pending store migrations, print
  * `{ db, applied }`.
@@ -191,58 +165,6 @@ async function migrateAction(options: MigrateOptions): Promise<void> {
         // main() maps the CommanderError to the exit code but does not print it
         // (unlike commander's own errors), so the operator-facing line is written here.
         failLoud('kk.store.migrate.failed', error);
-    }
-}
-
-/**
- * `kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]` — take
- * the named single-flight lock, print `{"acquired":true}`, or `{"skipped":"locked",
- * "holder":<run>}` (exit 0) when another run holds a claim inside its TTL.
- *
- * Skipping is a normal outcome, not a failure: the scheduler's next tick retries. The
- * claim is re-entrant for the same `--run` and is stolen once `acquired_at + ttl`
- * passes, which is what covers a crashed holder (see `LocksDao.acquire`).
- */
-async function lockAcquireAction(options: LockAcquireOptions): Promise<void> {
-    try {
-        const ttlMs = parseTtl(options.ttl);
-        const dbPath = await resolveStorePath(resolveKkConfigPath(), options.db);
-        const store = await openStore({ path: dbPath });
-        try {
-            if (await store.locks.acquire(options.name, options.run, ttlMs)) {
-                consoleOutput.write(JSON.stringify({ acquired: true }));
-                return;
-            }
-            const holder = await store.locks.current(options.name);
-            consoleOutput.write(JSON.stringify({ skipped: 'locked', holder: holder?.ownerRun ?? null }));
-        } finally {
-            await store.close();
-        }
-    } catch (error) {
-        failLoud('kk.store.lock.failed', error);
-    }
-}
-
-/**
- * `kk store lock release --name <lock> --run <id> [--db <path>]` — free the lock iff this
- * run still owns it, print `{released}`.
- *
- * A run that lost the claim (stolen past its TTL) releases nothing — `released: false` is
- * the honest answer, and still exit 0: the workflow's release step must never fail a run
- * whose work is already stored.
- */
-async function lockReleaseAction(options: LockReleaseOptions): Promise<void> {
-    try {
-        const dbPath = await resolveStorePath(resolveKkConfigPath(), options.db);
-        const store = await openStore({ path: dbPath });
-        try {
-            const released = await store.locks.release(options.name, options.run);
-            consoleOutput.write(JSON.stringify({ released }));
-        } finally {
-            await store.close();
-        }
-    } catch (error) {
-        failLoud('kk.store.lock.failed', error);
     }
 }
 
@@ -1594,8 +1516,9 @@ async function backfillFactsAction(options: BackfillFactsOptions): Promise<void>
 /**
  * Register the `store` command group — the kk SQLite store surface.
  *
- * `migrate` brings the schema up; `lock` is the single-flight guard the scheduled
- * `kk-collect` tick takes before collecting; `ingest` is the write path that turns one run's
+ * `migrate` brings the schema up; the hidden legacy `lock` group is the single-flight guard the
+ * scheduled `kk-collect` tick takes before collecting (canonical spelling: `kk lock`); `ingest`
+ * is the write path that turns one run's
  * collected `Doc[]` into `items` rows (with the typed facts and the story key) plus its
  * `collect_runs` provenance; `backfill-facts` recomputes those facts and clusters stories causally;
  * `label` is the heuristic-first decision pass over the ids `ingest` filed; `extract` is the read
@@ -1611,22 +1534,9 @@ export function registerStoreCommand(program: Command): void {
         .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
         .action(migrateAction);
 
-    const lock = store.command('lock').description('Single-flight locks over the store');
-
-    lock.command('acquire')
-        .description('Take the named lock for this run; prints {acquired} or {skipped, holder} (exit 0 both ways)')
-        .requiredOption('--name <lock>', 'Lock name (e.g. collect)')
-        .requiredOption('--run <id>', 'Owning run id (re-entrant for the same id)')
-        .option('--ttl <ms>', 'Claim lifetime for a dead holder, in milliseconds', String(DEFAULT_LOCK_TTL_MS))
-        .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
-        .action(lockAcquireAction);
-
-    lock.command('release')
-        .description('Release the named lock iff this run still owns it; prints {released}')
-        .requiredOption('--name <lock>', 'Lock name (e.g. collect)')
-        .requiredOption('--run <id>', 'Owning run id')
-        .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')
-        .action(lockReleaseAction);
+    // Hidden legacy route (A22 R3 / ADR-037): the canonical `kk lock acquire|release` and this
+    // `kk store lock` spelling share one registrar and the one pair of SQLite engines.
+    registerLockCommand(store, true);
 
     store
         .command('ingest')

@@ -52,8 +52,17 @@ describe('registerStoreCommand', () => {
             'release',
         ]);
 
+        // 0275 R3: what was `kk store lock` is now the hidden legacy spelling of the top-level
+        // `kk lock` group — still registered with the identical verb/flag contract, just invisible.
         const lock = store?.commands.find((command) => command.name() === 'lock');
         expect(lock?.commands.map((command) => command.name())).toEqual(['acquire', 'release']);
+        expect(
+            store &&
+                program
+                    .createHelp()
+                    .visibleCommands(store)
+                    .map((command) => command.name()),
+        ).not.toContain('lock');
 
         const backfillFacts = store?.commands.find((command) => command.name() === 'backfill-facts');
         expect(backfillFacts?.options.map((option) => option.long)).toEqual(['--db']);
