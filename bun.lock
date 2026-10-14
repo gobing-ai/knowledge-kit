@@ -31,10 +31,12 @@
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/kk-store": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-infra": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
         "commander": "15.0.0",
+        "playwright": "catalog:",
       },
       "devDependencies": {
         "@gobing-ai/kk-board": "workspace:*",
@@ -74,11 +76,12 @@
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "1.4.3",
-        "playwright": "catalog:",
       },
     },
     "plugins/generations/content-gen": {

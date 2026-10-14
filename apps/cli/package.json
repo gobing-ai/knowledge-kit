@@ -39,7 +39,7 @@
     "scripts": {
         "start": "bun run src/index.ts",
         "dev": "bun run src/index.ts",
-        "build": "bun build src/index.ts --target=bun --outdir=dist",
+        "build": "bun build src/index.ts --target=bun --outdir=dist --external playwright",
         "build:bundle": "bun run build && bun run ../../scripts/bundle-plugins.ts && bun run ../../scripts/build-board.ts",
         "prepack": "bun run build:bundle",
         "test": "NODE_ENV=test bun test --coverage --coverage-dir=.coverage --reporter=dots",
@@ -48,10 +48,12 @@
     "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/kk-store": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-infra": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
-        "commander": "15.0.0"
+        "commander": "15.0.0",
+        "playwright": "catalog:"
     },
     "devDependencies": {
         "@gobing-ai/kk-board": "workspace:*",

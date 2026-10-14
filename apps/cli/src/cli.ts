@@ -1,8 +1,10 @@
 import { Command } from 'commander';
 import { registerBoardCommand } from './commands/board';
+import { registerBotCommand } from './commands/bot';
 import { registerDailyCommand } from './commands/daily';
 import { registerExecutorCommand } from './commands/executor';
 import { registerLedgerCommand } from './commands/ledger';
+import { registerLockCommand } from './commands/lock';
 import { registerPluginCommand } from './commands/plugin';
 import { registerScheduleCommand } from './commands/schedule';
 import { registerStageCommand } from './commands/stage';
@@ -24,9 +26,11 @@ export function createProgram(): Command {
         .option('-v, --verbose', 'enable verbose diagnostics');
 
     registerBoardCommand(program);
+    registerBotCommand(program);
     registerDailyCommand(program);
     registerExecutorCommand(program);
     registerLedgerCommand(program);
+    registerLockCommand(program);
     registerPluginCommand(program);
     registerScheduleCommand(program);
     registerStageCommand(program);

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { Command, CommanderError } from 'commander';
-import { registerStageCommand } from '../../src/commands/stage';
+import { normalizeStageArgs, registerStageCommand } from '../../src/commands/stage';
 import { resolveStagesScript, runStage } from '../../src/stage';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
@@ -107,11 +107,32 @@ describe('kk stage verb (0144)', () => {
         });
     });
 
-    it('registers a variadic `stage` command that maps non-zero exits to CommanderError', () => {
+    it('registers `stage` as an action-free group whose only visible verb is `run <args...>`', () => {
         const program = new Command();
         registerStageCommand(program);
         const cmd = program.commands.find((c) => c.name() === 'stage');
         expect(cmd).toBeDefined();
+        // A direct noun action is exactly what A22 R1 forbids on the visible group.
+        expect((cmd as unknown as { _actionHandler?: unknown })._actionHandler).toBeNull();
+        // `help` is Commander's built-in subcommand, not a product verb.
+        expect(
+            cmd
+                ?.createHelp()
+                .visibleCommands(cmd)
+                .map((c) => c.name())
+                .filter((name) => name !== 'help'),
+        ).toEqual(['run']);
+        const run = cmd?.commands.find((c) => c.name() === 'run');
+        expect(
+            run?.registeredArguments.map(
+                (a) => `${a.required ? '<' : '['}${a.name()}${a.variadic ? '...' : ''}${a.required ? '>' : ']'}`,
+            ),
+        ).toEqual(['<args...>']);
+    });
+
+    it('the `stage run` action maps non-zero exits to CommanderError and passes unknown flags through', () => {
+        const program = new Command();
+        registerStageCommand(program);
 
         withTempDir((dir) => {
             const argv1 = fakePkg(dir, 'process.exit(3);\n');
@@ -123,9 +144,11 @@ describe('kk stage verb (0144)', () => {
             process.chdir(dir); // cwd fallback must not mask the package tier
             try {
                 // from:'user' parses from index 0: argv[0] is the program/verb itself.
-                expect(() => program.parse(['stage', 'daily-prepare'], { from: 'user' })).toThrow(CommanderError);
+                expect(() => program.parse(['stage', 'run', 'daily-prepare'], { from: 'user' })).toThrow(
+                    CommanderError,
+                );
                 try {
-                    program.parse(['stage', 'daily-prepare'], { from: 'user' });
+                    program.parse(['stage', 'run', 'daily-prepare'], { from: 'user' });
                 } catch (err) {
                     expect((err as CommanderError).code).toBe('kk.stage.failed');
                     expect((err as CommanderError).exitCode).toBe(3);
@@ -133,13 +156,58 @@ describe('kk stage verb (0144)', () => {
                 // Unknown flags pass through to the runner as positional args.
                 writeFileSync(stages, 'if (process.argv[3] === "--future-flag") process.exit(0);\nprocess.exit(1);\n');
                 expect(() =>
-                    program.parse(['stage', 'daily-prepare', '--future-flag'], { from: 'user' }),
+                    program.parse(['stage', 'run', 'daily-prepare', '--future-flag'], { from: 'user' }),
                 ).not.toThrow();
             } finally {
                 process.argv[1] = prevArgv1;
                 process.chdir(prevCwd);
             }
         });
+    });
+});
+
+describe('normalizeStageArgs — legacy `kk stage <stage>` → canonical `stage run` (0275 R2)', () => {
+    const kk = (...args: string[]): string[] => ['node', '/abs/kk', ...args];
+
+    it('inserts `run` after `stage` and keeps the rest of argv byte-for-byte', () => {
+        expect(normalizeStageArgs(kk('stage', 'daily-prepare', 'a', 'b'))).toEqual(
+            kk('stage', 'run', 'daily-prepare', 'a', 'b'),
+        );
+    });
+
+    it('preserves `--` separators, unknown options and their order', () => {
+        expect(normalizeStageArgs(kk('stage', 'daily-run-report', '--future-flag', '--', 'x', '-v'))).toEqual(
+            kk('stage', 'run', 'daily-run-report', '--future-flag', '--', 'x', '-v'),
+        );
+    });
+
+    it('normalizes behind the root -v/--verbose globals', () => {
+        expect(normalizeStageArgs(kk('-v', 'stage', 'daily-prepare'))).toEqual(
+            kk('-v', 'stage', 'run', 'daily-prepare'),
+        );
+        expect(normalizeStageArgs(kk('--verbose', 'stage', 'daily-prepare'))).toEqual(
+            kk('--verbose', 'stage', 'run', 'daily-prepare'),
+        );
+    });
+
+    it('leaves canonical and non-stage invocations untouched', () => {
+        const untouched = [
+            [],
+            kk(),
+            kk('--version'),
+            kk('stage'),
+            kk('stage', 'run', 'daily-prepare'),
+            kk('stage', '--help'),
+            kk('stage', '-h'),
+            kk('--verbose', 'stage', '--help'),
+            kk('store', 'lock', 'acquire'),
+            kk('help', 'stage'),
+            // An unknown root option is Commander's error path, not a stage normalization.
+            kk('--nope', 'stage', 'daily-prepare'),
+        ];
+        for (const argv of untouched) {
+            expect(normalizeStageArgs(argv)).toEqual(argv);
+        }
     });
 });
 
@@ -198,6 +266,11 @@ describe('kk stage resolver — installed vs checkout identity (0178)', () => {
                 '  const r = await Bun.build({',
                 `    entrypoints: [${JSON.stringify(join(import.meta.dir, '../../src/index.ts'))}],`,
                 "    target: 'bun',",
+                // WHY external (0276): the lazy bot-harness import pulls `playwright` into the
+                // graph and playwright-core's own requires (chromium-bidi, electron) cannot be
+                // bundled; the production build passes `--external playwright` for the same
+                // reason, so the fixture build must match it or it exercises nothing real.
+                "    external: ['playwright'],",
                 `    outdir: ${JSON.stringify(join(root, 'apps/cli/dist'))},`,
                 '  });',
                 '  if (!r.success) process.exit(1);',

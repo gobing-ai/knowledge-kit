@@ -71,9 +71,14 @@ kk plugin status [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path
 kk plugin check [<name>…] [--kind <kind>] [--json] [--headed] [--timeout <ms>]
                  [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin login <name> [--plugins-root <dir>] [--plugins-path <dir> …]
+kk stage run <stage> [args…]
+kk lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
+kk lock release --name <lock> --run <id> [--db <path>]
+kk bot list
+kk bot login <url> --save <bot>
+kk bot logout <bot>
+kk bot open <bot> [--login]
 kk store migrate [--db <path>]
-kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]
-kk store lock release --name <lock> --run <id> [--db <path>]
 kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]
 kk store backfill-facts [--db <path>]
 kk store label --run <id> --new-ids <path> [--maker <name>] [--mode heuristic|decision] [--db <path>]
@@ -100,7 +105,9 @@ kk board serve --board-origin <origin> [--port <n>]
 | `plugin check` | Run each plugin's live readiness probe (`check` field, ADR-032; verdicts `verified`/`refused`/`error`/`unsupported`; §`plugin check`) | shipped (E93, 0215+0216) |
 | `plugin login <name>` | Run the probe in `login` mode with inherited stdio; propagates the probe exit code | shipped (E93, 0215+0216) |
 | `store migrate` | Apply pending `@gobing-ai/kk-store` migrations; prints `{db, applied}` (§1.9) | shipped (task 0206) |
-| `store lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9) | shipped (task 0208) |
+| `stage run <stage> [args…]` | Run one stage of the shared workflow stage runner with positional pass-through; the legacy `kk stage <stage>` spelling is normalized into this verb in `main()` before Commander parses (A22 R1/R2) | shipped (task 0275) |
+| `lock acquire\|release` | Single-flight lock over the store for the scheduled collector; prints `{acquired}` / `{skipped, holder}` / `{released}` (§1.9). Canonical spelling; `kk store lock …` remains a hidden compatibility route on the same engines | shipped (task 0208; lifted from `store lock` by 0275) |
+| `bot list\|login\|logout\|open` | Named local browser sessions over the fixed default profile root: tab-separated inventory, operator-confirmed login/save through a staged transaction, idempotent containment-checked logout behind the shared lease, headed reopen with optional re-login (§1.12) | shipped (task 0276) |
 | `store ingest` | Upsert one run's collected `Doc[]` into `items` + `collect_runs` (with per-plugin `source_counts` from `metadata.sources[].file`), write `--new-ids`; prints `{inserted, updated, unchanged}` (§1.9) | shipped (task 0208) |
 | `store backfill-facts` | Recompute the typed item facts and the causal `story_id` clustering for every item (idempotent); prints `{updated}` (§1.9) | shipped (task 0227) |
 | `store label` | Label the ids `ingest` filed — one raw observation per (decision, maker) through the kk decision catalog (the `LABEL_DECISIONS` table: the heuristic's five + the three judgment decisions the heuristic cannot signal), heuristic-first for those five; a china-politics keyword hit writes a maker `keyword` floor and the model is still consulted; `--replay` re-labels a historical pool under a `replay-<epoch>` run id. Prints `{verdict, confidence, labeled, model, fallback, consults, consultMs, refused}`, or `{replayed, consults, consultMs, run}` (§1.9) | shipped (task 0209; raw observations + replay 0226; judgment decisions + china-politics gate 0229; score positions + refusals 0240) |
@@ -115,10 +122,12 @@ kk board serve --board-origin <origin> [--port <n>]
 > **Surface status.** Rows marked *shipped* are live in `apps/cli` (transcribed from the code
 > registrations). The first-layer nouns are `executor` and `plugin` (ADR-011, feature **A21**),
 > extended by `stage` (§1.8, ADR-011 amendment 2026-09-18) and `store` (§1.9, task 0206) and
-`ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208); the
+`ledger` (§1.10, task 0207) and `schedule` (§1.11, task 0208) and `lock` (ADR-037, task 0275); the
 > engines shipped with **A2** / **B6** keep their flags and exit codes, only the
 > canonical paths changed. Hidden one-release aliases `invoke` / `fanin` / `fanout` / `plugins *`
-> still reach the same engines but are not listed in `kk --help`. §1.5/§1.6 are callable today. The
+> still reach the same engines but are not listed in `kk --help`; the same holds for the legacy
+> `store lock …` route (ADR-037, task 0275). Non-canonical names are hidden, never announced:
+> no deprecation text reaches stdout/stderr. §1.5/§1.6 are callable today. The
 > spec's `--dedupe` flag is deliberately deferred, not shipped — see §1.5.
 
 ### `executor run`
@@ -563,12 +572,18 @@ as before; a publish whose `Result` parses but carries `ok: false` fails the inv
 naming the same file (dev+ino identity, not path string — 0157 R1) is rejected pre-mutation (0110 I5); the exact `--out` path is unlinked
 before spawn, so success always reflects fresh output (delete-or-verify).
 
-### 1.8 `stage` — shipped (F8; task 0133)
+### 1.8 `stage` — shipped (F8; task 0133; canonical verb 0275)
 
-`kk stage <stage> [args…]` runs one stage of the shared workflow stage runner
+`kk stage run <stage> [args…]` runs one stage of the shared workflow stage runner
 (`plugins/kk/scripts/kk-workflow-stages.ts`) with positional pass-through, so workflow shell steps
 do not re-resolve the script path themselves. Unknown options are allowed and forwarded. The exit
-code is the stage's own; a non-zero code throws `CommanderError` (`kk.stage.failed`). It is a
+code is the stage's own; a non-zero code throws `CommanderError` (`kk.stage.failed`). The `stage`
+group carries no default action: `kk stage` alone prints usage, `kk stage run --help` is the verb
+help and `stage run` with no stage is a canonical usage error. The shipped `kk stage <stage> [args…]`
+spelling stays a compatibility route: `main()` normalizes it to `stage run …` before Commander parses
+(`normalizeStageArgs` in `apps/cli/src/commands/stage.ts`, A22 R2), preserving argv prefixes, the root
+`-v`/`--verbose` globals, `--` separators and the order of data/unknown options; no stage identifier
+is `run`, so the verb is reserved rather than ambiguous. It is a
 first-layer noun **in addition to** `executor` / `plugin` (ADR-011 amendment 2026-09-18). The runner
 is resolved by entry identity (task 0178): a **checkout entry** — the source marker
 `apps/cli/src/stage.ts` exists and the real package root is that checkout's `apps/cli` — always
@@ -596,16 +611,22 @@ shape. The schema is created from `defineTable(...).createTableSql`, so there is
 to drift — see §4 for the package surface and `.spur/rules/boundary/dao-boundary.yaml` for the
 ts-db/drizzle confinement rules.
 
-`kk store lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]` takes the named
+`kk lock acquire --name <lock> --run <id> [--ttl <ms>] [--db <path>]` takes the named
 single-flight lock through `LocksDao.acquire` and prints `{"acquired":true}`, or
 `{"skipped":"locked","holder":<run>}` — **both exit 0**: a skip is the scheduler's normal overlap
 answer, not a failure, and stdout is the lock contract the workflow's guard reads. The claim is
 re-entrant for the same `--run`, and a claim older than its recorded TTL is stolen, which is what
 covers a crashed holder. `--ttl` defaults to `7200000` (2 h: the observed 20261006 collection ran
 ~32 min); `kk-collect` pins `--ttl 21600000` so a run is never overtaken mid-collect.
-`kk store lock release --name <lock> --run <id>` frees the lock **iff** that run still owns it and
+`kk lock release --name <lock> --run <id>` frees the lock **iff** that run still owns it and
 prints `{released}` (`false` when the claim was already stolen or released). Failure exits 1 with
-`kk.store.lock.failed: <cause>`.
+`kk.store.lock.failed: <cause>` — the flag/default/JSON/exit contract is route-independent.
+
+Both verbs come from the single registrar `registerLockCommand(parent, hidden)` in
+`apps/cli/src/commands/lock.ts`: `kk lock` registers it visibly and the hidden legacy `kk store lock`
+group registers the same verbs over the same SQLite engines (A22 R3). `store lock …` keeps working —
+`kk-collect` still shells it — but it is not listed in `kk store --help` and never prints a
+deprecation line into machine output.
 
 `kk store ingest --run <id> --in <Doc[].json> --new-ids <path> [--db <path>]` is the collector's
 write path: it validates the input against `DocListSchema`, records the run's `collect_runs` row
@@ -922,6 +943,48 @@ Templates resolve from `--repo`'s own `plugins/kk/schedules/`, falling back to t
 package's copy, so a checkout without the templates still renders. An unknown schedule or platform
 exits 1 with `kk.schedule.render.failed: <cause>` and prints nothing — a typo must never emit a
 partial schedule.
+
+### 1.12 `bot` — shipped (A22; task 0276)
+
+Named local browser sessions over the fixed default profile root
+`~/.config/kk/browser-profiles` (derived from the OS home directory; no ambient env override
+redirects it — A22 R1). The lifecycle lives in `packages/publish-harness/src/{bot,bot-fs,bot-transaction,profile-lease}.ts`
+and the CLI registrar `apps/cli/src/commands/bot.ts`; the browser half of the harness is imported
+lazily inside the actions, so `--help`, `bot list` and `plugin status` never need installed browser
+binaries.
+
+```text
+kk bot list                        # one tab-separated `name<TAB>cached<TAB>defaultUrl|unknown` row per profile
+kk bot login <url> --save <bot>    # headed login; saves after operator confirmation (site evidence is 0277)
+kk bot logout <bot>                # deletes that bot's contained profile; prints `<name>\tremoved|absent`
+kk bot open <bot> [--login]        # reopens the saved page headed; prints `<name>\tclosed` on close
+```
+
+- `list` enumerates direct, non-symlink profile directories, including legacy directories listed
+  with `unknown`; an absent root is an empty success. It never inspects cookie databases or
+  launches a browser.
+- `login` validates the name (`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`) and URL (http/https only, no
+  embedded credentials, fragments stripped) before any filesystem or browser effect, works on an
+  isolated staging profile under `~/.config/kk/browser-transactions/<name>-<uuid>/stage` while
+  holding the shared lease, and promotes atomically via same-filesystem rename with a restorable
+  backup. Generic sessions persist only origin+pathname as `defaultUrl`; the supplied URL is
+  navigation input and is never echoed into failures or logs.
+- `logout` deletes only the owned, inactive, contained profile directory behind the shared lease
+  (`~/.config/kk/browser-leases/`); an absent bot is idempotent success; symlinked profiles are
+  refused, never followed.
+- `open` reuses the saved default URL and profile headed and stays until the context closes; it
+  never invents a session for a missing, legacy or corrupt profile; `--login` completes the same
+  login/save transaction and then reopens.
+- Exit contract: validation/usage failures print `kk.bot.failed: <detail>` to stderr and exit 2;
+  operational failures exit 1 with the same contract line (`BotError.code === 'usage'` maps to 2).
+  Profiles use owner-only 0700 directories and 0600 metadata (`bot.json`: schemaVersion,
+  defaultUrl, optional pluginName, authenticationEvidence).
+- Packaging: `playwright` is an explicit runtime dependency of `@gobing-ai/publish-harness`
+  (catalog pin) and is excluded from the CLI bundle (`--external playwright`), so the installed
+  CLI's help/list/status paths run without browser binaries.
+
+Channel descriptor integration and site-verified login evidence are task 0277; the caller/recipe
+migration review is task 0278.
 
 ## 2. Configuration keys
 

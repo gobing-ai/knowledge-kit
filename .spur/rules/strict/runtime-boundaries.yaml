@@ -163,3 +163,9 @@ rules:
             # browser profile that holds session cookies; the ts-runtime ensureDir seam
             # takes no mode. Mirrors ts-browser-automation's own sanctioned launcher exception.
             - "packages/publish-harness/src/profile-dir.ts"
+            # publish-harness bot/lease adapter (0276): exclusive owner-only mkdir, no-follow
+            # lstat, permission set and a symlink-refusing profile copy are primitives the
+            # ts-runtime FileSystem seam does not expose (it follows symlinks and cannot skip
+            # Chromium Singleton* artifacts). This ONE file holds them; ordinary text IO, path,
+            # copy and rename in bot.ts/profile-lease.ts still go through the seam.
+            - "packages/publish-harness/src/bot-fs.ts"

@@ -1,4 +1,5 @@
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { parseArgs } from 'node:util';
 import {
     type BrowserLauncher,
@@ -10,11 +11,37 @@ import {
     PlaywrightUnavailableError,
     withProfilePage,
 } from '@gobing-ai/ts-browser-automation';
-import { echo } from '@gobing-ai/ts-utils';
+import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import { echo, echoError } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Page } from 'playwright';
+import {
+    assertSafeBotName,
+    BOT_METADATA_FILE,
+    BOT_SCHEMA_VERSION,
+    BotError,
+    type BotMetadata,
+    normalizeBotDefaultUrl,
+    readBotMetadata,
+    resolveBotProfileDir,
+} from './bot';
+import { chmod, lstat } from './bot-fs';
+import { type BotTransaction, beginBotTransaction } from './bot-transaction';
 import { resolveBrowserProfileDir, trySelectors } from './index';
 import { ensureProfileDir } from './profile-dir';
+import {
+    acquireProfileLease,
+    canonicalize,
+    enterDelegatedLease,
+    KK_BOT_LEASE_PATH,
+    type ProfileLease,
+    verifyLeaseHeld,
+} from './profile-lease';
 
+// Named-bot foundation (task 0276): metadata/validation and the shared per-profile lease are
+// re-exported through the browser sub-path so the CLI gets one entry point.
+export * from './bot';
+export * from './bot-transaction';
+export * from './profile-lease';
 /** Upstream seam types re-exported so a channel plugin needs one import for its config and deps. */
 export type { BrowserLauncher, IsAuthenticatedPredicate };
 
@@ -108,51 +135,164 @@ const ATTACH_POLL_MS = 100;
  * adopted as-is, a headed launch creates a missing one owner-only (0o700), and a headless launch
  * never creates one.
  */
+/** Ownership a caller already holds for the context it is about to open (design §Shared ownership). */
+export interface KkLauncherOwnership {
+    /** Logical-profile lease the parent already holds; the launcher borrows it instead of reacquiring. */
+    lease: ProfileLease;
+    /** Exact physical profile path this context opens (a bot's staging or final directory). */
+    physicalProfileDir: string;
+}
+
+/** Lease seams for the launcher's own acquisition; production uses the defaults. */
+export interface KkLauncherLeaseOptions {
+    /** Lease root; default `~/.config/kk/browser-leases`. */
+    leaseRoot?: string;
+    /** Injected FileSystem for the lease records. */
+    fileSystem?: FileSystem;
+}
+
+/** Who owns the profile for one launch: borrowed, delegated or self-acquired. */
+interface LaunchOwnership {
+    /** Release on a failed launch; a borrowed parent lease is never released here. */
+    release(): Promise<void>;
+    /** Wire the release to context closure. */
+    attach(context: BrowserContext): void;
+}
+
+/**
+ * Build the harness browser launcher. `loadPlaywright` defaults to a dynamic `import('playwright')`
+ * so non-browser paths stay binary-free; `ownership` borrows/delegates an existing logical lease
+ * (bot open/login reuse), otherwise the launcher self-acquires one per launch.
+ */
 export function createKkBrowserLauncher(
     loadPlaywright: () => Promise<typeof import('playwright')> = () => import('playwright'),
+    ownership?: KkLauncherOwnership,
+    leaseOptions: KkLauncherLeaseOptions = {},
 ): BrowserLauncher {
     return {
         async launch(request): Promise<BrowserContext> {
             if (request.profileDir.trim() === '') throw new InvalidProfileDirError();
             const profileDir = resolve(request.profileDir);
-            await ensureProfileDir(profileDir, request.headless);
-            let playwright: typeof import('playwright');
-            try {
-                playwright = await loadPlaywright();
-            } catch (error) {
-                throw new PlaywrightUnavailableError(
-                    'The "playwright" dependency is not installed. Run `bunx playwright install chromium`.',
-                    { cause: error },
-                );
-            }
-            const channel = process.env.KK_BROWSER_CHANNEL?.trim() || 'chromium';
+            const claim = await claimLaunchOwnership(profileDir, ownership, leaseOptions);
             let context: BrowserContext;
             try {
-                context = await playwright.chromium.launchPersistentContext(profileDir, {
-                    headless: request.headless,
-                    channel,
-                    args: ['--disable-blink-features=AutomationControlled'],
-                    ignoreDefaultArgs: ['--enable-automation'],
-                });
+                context = await launchKkContext(loadPlaywright, profileDir, request.headless);
             } catch (error) {
-                const message = errorMessage(error);
-                if (/singleton|already in use|in use by another/i.test(message)) {
-                    throw new BrowserProfileBusyError(profileDir, error);
-                }
-                if (/playwright install|executable doesn't exist/i.test(message)) {
-                    throw new PlaywrightUnavailableError(
-                        `Browser channel '${channel}' is not installed. Run \`bunx playwright install chromium\` (or install Google Chrome for KK_BROWSER_CHANNEL=chrome).`,
-                        { cause: error },
-                    );
-                }
+                await claim.release();
                 throw error;
             }
-            await context.addInitScript(() => {
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            });
+            claim.attach(context);
             return context;
         },
     };
+}
+
+/**
+ * The one private launch implementation every ownership path shares (design §Shared ownership):
+ * adopt or create the profile dir owner-only, load Playwright lazily, launch the full Chromium
+ * channel with the stealth options, install the webdriver init script — and close the context
+ * again if that last step fails, so a failed launch never leaves a browser holding the profile.
+ */
+async function launchKkContext(
+    loadPlaywright: () => Promise<typeof import('playwright')>,
+    profileDir: string,
+    headless: boolean,
+): Promise<BrowserContext> {
+    await ensureProfileDir(profileDir, headless);
+    let playwright: typeof import('playwright');
+    try {
+        playwright = await loadPlaywright();
+    } catch (error) {
+        throw new PlaywrightUnavailableError(
+            'The "playwright" dependency is not installed. Run `bunx playwright install chromium`.',
+            { cause: error },
+        );
+    }
+    const channel = process.env.KK_BROWSER_CHANNEL?.trim() || 'chromium';
+    let context: BrowserContext;
+    try {
+        context = await playwright.chromium.launchPersistentContext(profileDir, {
+            headless,
+            channel,
+            args: ['--disable-blink-features=AutomationControlled'],
+            ignoreDefaultArgs: ['--enable-automation'],
+        });
+    } catch (error) {
+        const message = errorMessage(error);
+        if (/singleton|already in use|in use by another/i.test(message)) {
+            throw new BrowserProfileBusyError(profileDir, error);
+        }
+        if (/playwright install|executable doesn't exist/i.test(message)) {
+            throw new PlaywrightUnavailableError(
+                `Browser channel '${channel}' is not installed. Run \`bunx playwright install chromium\` (or install Google Chrome for KK_BROWSER_CHANNEL=chrome).`,
+                { cause: error },
+            );
+        }
+        throw error;
+    }
+    try {
+        await context.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        });
+    } catch (error) {
+        await context.close().catch(() => {});
+        throw error;
+    }
+    return context;
+}
+
+/**
+ * Resolve the lease claim for one launch (design §Lease module). Borrowed ownership validates the
+ * exact physical path and the still-live owner token and never releases the parent's lease; a
+ * scoped delegation in the environment records a child holder; otherwise the launcher acquires and
+ * owns the profile's lease. Every failure is a `busy` error rather than a second acquisition, and
+ * inherited environment is honored only when it carries a matching owner record — never as a
+ * blanket bypass.
+ */
+async function claimLaunchOwnership(
+    profileDir: string,
+    ownership: KkLauncherOwnership | undefined,
+    leaseOptions: KkLauncherLeaseOptions,
+): Promise<LaunchOwnership> {
+    const fileSystem = leaseOptions.fileSystem ?? createNodeFileSystem();
+    if (ownership !== undefined) {
+        if (canonicalize(profileDir) !== canonicalize(ownership.physicalProfileDir)) {
+            throw new BotError(
+                'busy',
+                `launcher ownership is bound to ${ownership.physicalProfileDir}, not ${profileDir} — refusing to launch`,
+            );
+        }
+        await verifyLeaseHeld(ownership.lease, { fileSystem });
+        // The parent releases after this context closes (design §Shared ownership).
+        return { release: async () => {}, attach: () => {} };
+    }
+    const delegatedPath = process.env[KK_BOT_LEASE_PATH];
+    if (delegatedPath !== undefined && delegatedPath !== '') {
+        const child = await enterDelegatedLease(process.env, profileDir, { fileSystem });
+        // The child drops only its own holder record; the parent keeps the lease either way.
+        return {
+            release: () => child.release(),
+            attach: (context) => attachOwnershipClose(context, () => child.release()),
+        };
+    }
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: leaseOptions.leaseRoot, fileSystem });
+    return {
+        release: () => lease.release(),
+        attach: (context) => attachOwnershipClose(context, () => lease.release()),
+    };
+}
+
+/**
+ * Release ownership when the context closes. A failed release is reported on stderr, never thrown:
+ * this runs inside an event handler where a rejection would be unhandled, and a stale marker must
+ * be visible because it refuses the next launch.
+ */
+function attachOwnershipClose(context: BrowserContext, release: () => Promise<void>): void {
+    context.once('close', () => {
+        void release().catch((error: unknown) => {
+            echoError(`browser lease release failed: ${errorMessage(error)}`);
+        });
+    });
 }
 
 /** The production launcher. `launch` never reads `this`, so it may be passed detached (xhs `defaultLauncher`). */
@@ -615,6 +755,281 @@ export async function resolveSelector(
         throw new Error(`${opts.label ?? 'selector'}: ${selectors.join(' | ')} not attached within ${timeoutMs}ms`);
     }
     return selector;
+}
+
+/**
+ * `kk bot` session lifecycle (task 0276, design §Bot command contract): the generic
+ * operator-confirmed login and the reopen-until-close path. These live beside the launcher
+ * because they are the browser-dependent half of the lifecycle — `./bot` stays importable with no
+ * browser module at all, so `kk bot list`/`--help` work without installed browser binaries.
+ */
+
+/** Confirmation deadline for a generic login (design §Bot command contract: 180000 ms). */
+export const DEFAULT_BOT_LOGIN_TIMEOUT_MS = 180_000;
+
+/** Options shared by {@link loginBot} and {@link openBot}; every field defaults to production. */
+export interface BotSessionOptions {
+    /** Profile root; default `~/.config/kk/browser-profiles`. */
+    root?: string;
+    /** Transaction root; default `~/.config/kk/browser-transactions`. */
+    transactionRoot?: string;
+    /** Lease root; default `~/.config/kk/browser-leases`. */
+    leaseRoot?: string;
+    /** Injected FileSystem for metadata and lease IO. */
+    fileSystem?: FileSystem;
+    /** Launcher override; the default borrows this invocation's profile lease. */
+    launcher?: BrowserLauncher;
+    /** Confirmation seam; the default reads an affirmative answer from the TTY. */
+    confirm?: (timeoutMs: number) => Promise<boolean>;
+    /** Confirmation deadline in ms; default {@link DEFAULT_BOT_LOGIN_TIMEOUT_MS}. */
+    timeoutMs?: number;
+    /** Adapter that saved this bot (0277); omitted for a generic operator-confirmed session. */
+    pluginName?: string;
+}
+
+/** Outcome of a successful {@link loginBot}. */
+export interface LoginBotResult {
+    name: string;
+    /** Persisted origin+pathname; query and fragment are never saved. */
+    defaultUrl: string;
+    /** Operator line: what was saved locally. */
+    message: string;
+}
+
+/** Options for {@link openBot}. */
+export interface OpenBotOptions extends BotSessionOptions {
+    /** Reauthenticate through the same login transaction before reopening the saved page. */
+    login?: boolean;
+}
+
+/** Outcome of a {@link openBot} session that ran until the context closed. */
+export interface OpenBotResult {
+    name: string;
+    /** Saved origin+pathname the session reopened. */
+    defaultUrl: string;
+    /** Operator line: what happened to the reopened page. */
+    message: string;
+}
+
+/**
+ * Generic headed login for bot `name` (task 0276, design §Bot command contract). The profile is
+ * staged in an owned transaction while this invocation holds the bot's logical lease, the supplied
+ * URL is opened headed, and the session is saved only after an explicit affirmative confirmation.
+ * The supplied URL is navigation input only: it is never logged, and the persisted `defaultUrl` is
+ * always origin+pathname (query/fragment can carry grants). Cancellation, an unconfirmable
+ * terminal, a timeout and a failed promotion all save nothing and leave any previous profile
+ * untouched (design §Transactions).
+ */
+export async function loginBot(name: string, url: string, options: BotSessionOptions = {}): Promise<LoginBotResult> {
+    assertSafeBotName(name);
+    const defaultUrl = normalizeBotDefaultUrl(url);
+    const navigationUrl = url.trim();
+    const fileSystem = options.fileSystem ?? createNodeFileSystem();
+    const profileDir = resolveBotProfileDir(name, { root: options.root });
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    let transaction: BotTransaction | undefined;
+    let context: BrowserContext | undefined;
+    let promoting = false;
+    try {
+        transaction = await beginBotTransaction({
+            name,
+            profileDir,
+            transactionRoot: options.transactionRoot,
+            fileSystem,
+        });
+        await transaction.copyExistingProfile();
+        const launcher =
+            options.launcher ??
+            createKkBrowserLauncher(
+                undefined,
+                { lease, physicalProfileDir: transaction.stageDir },
+                { leaseRoot: options.leaseRoot, fileSystem },
+            );
+        context = await launcher.launch({ profileDir: transaction.stageDir, headless: false });
+        const page = await openBotPage(context);
+        await navigateBot(page, navigationUrl);
+        const confirm = options.confirm ?? confirmBotLogin;
+        if (!(await confirm(options.timeoutMs ?? DEFAULT_BOT_LOGIN_TIMEOUT_MS))) {
+            throw new BotError(
+                'unconfirmed',
+                `login for bot '${name}' was not confirmed — nothing was saved and the previous profile is unchanged`,
+            );
+        }
+        await writeBotMetadata(fileSystem, join(transaction.stageDir, BOT_METADATA_FILE), {
+            schemaVersion: BOT_SCHEMA_VERSION,
+            defaultUrl,
+            authenticationEvidence: 'operator-confirmed',
+            ...(options.pluginName === undefined ? {} : { pluginName: options.pluginName }),
+        });
+        // Ordering (design §Transactions): close/flush the staged profile, then promote atomically.
+        promoting = true;
+        await transaction.commit(async () => {
+            await closeBotContext(context);
+        });
+        context = undefined;
+        return {
+            name,
+            defaultUrl,
+            message: `saved an operator-confirmed local session for bot '${name}' at ${defaultUrl}`,
+        };
+    } catch (error) {
+        await closeBotContext(context);
+        if (!promoting && transaction !== undefined) {
+            // Abort removes only this invocation's staging; a failed promotion owns its own evidence.
+            await transaction.abort().catch(() => {});
+        }
+        throw error;
+    } finally {
+        await lease.release();
+    }
+}
+
+/**
+ * Open bot `name`'s saved page headed and stay until the context closes (task 0276, design §Bot
+ * command contract). `--login` runs the same safe login transaction first and then REOPENS the
+ * saved page for interaction: the upstream login helper closes its context on verification, so
+ * returning straight after it would hand the operator a closed browser. A missing or corrupt
+ * profile/metadata returns actionable guidance — this never invents a fresh session.
+ */
+export async function openBot(name: string, options: OpenBotOptions = {}): Promise<OpenBotResult> {
+    assertSafeBotName(name);
+    const fileSystem = options.fileSystem ?? createNodeFileSystem();
+    const profileDir = resolveBotProfileDir(name, { root: options.root });
+    const metadataPath = join(profileDir, BOT_METADATA_FILE);
+    const saved = await readBotMetadata(fileSystem, metadataPath);
+    if (saved === null && options.login === true) {
+        throw missingBotProfile(name, lstat(profileDir) !== null);
+    }
+    if (options.login === true && saved !== null) {
+        await loginBot(name, saved.defaultUrl, options);
+    }
+    const metadata = await readBotMetadata(fileSystem, metadataPath);
+    if (metadata === null) {
+        throw missingBotProfile(name, lstat(profileDir) !== null);
+    }
+    const lease = await acquireProfileLease(profileDir, { leaseRoot: options.leaseRoot, fileSystem });
+    let context: BrowserContext | undefined;
+    try {
+        const launcher =
+            options.launcher ??
+            createKkBrowserLauncher(
+                undefined,
+                { lease, physicalProfileDir: profileDir },
+                { leaseRoot: options.leaseRoot, fileSystem },
+            );
+        context = await launcher.launch({ profileDir, headless: false });
+        // Attach the closure listener before navigating: the operator may close the window at once.
+        const closed = new Promise<void>((resolveClose) => {
+            context?.once('close', () => resolveClose());
+        });
+        const page = await openBotPage(context);
+        await navigateBot(page, metadata.defaultUrl);
+        await closed;
+        return {
+            name,
+            defaultUrl: metadata.defaultUrl,
+            message: `closed the local session for bot '${name}' — the saved profile is unchanged`,
+        };
+    } catch (error) {
+        await closeBotContext(context);
+        throw error;
+    } finally {
+        await lease.release();
+    }
+}
+
+/** Actionable guidance for a bot that has no saved generic session to reopen. */
+function missingBotProfile(name: string, profileExists: boolean): BotError {
+    const guidance = `run \`kk bot login <url> --save ${name}\` to save one`;
+    return profileExists
+        ? new BotError(
+              'persistence',
+              `bot '${name}' has no saved default page — ${guidance}; the existing profile was left untouched`,
+          )
+        : new BotError('not-found', `no local profile for bot '${name}' — ${guidance}`);
+}
+
+/** The page a persistent context opened with (upstream `openPage` shape). */
+async function openBotPage(context: BrowserContext): Promise<Page> {
+    return context.pages()[0] ?? (await context.newPage());
+}
+
+/** Navigate to the login page, redacting the URL from any failure: a supplied URL can carry a grant. */
+async function navigateBot(page: Page, url: string): Promise<void> {
+    try {
+        await page.goto(url);
+    } catch (error) {
+        throw new BotError('browser', `could not open the supplied login URL (${redactNavigationError(error, url)})`);
+    }
+}
+
+/** Playwright embeds the failed URL in its message, so strip the URL and its query/fragment. */
+function redactNavigationError(error: unknown, url: string): string {
+    let detail = error instanceof Error ? error.message : String(error);
+    detail = detail.split(url).join('<login-url>');
+    try {
+        const parsed = new URL(url);
+        for (const secret of [parsed.search, parsed.hash]) {
+            if (secret.length > 0) detail = detail.split(secret).join('');
+        }
+    } catch {
+        // The URL was already validated by normalizeBotDefaultUrl; nothing more to strip.
+    }
+    return detail;
+}
+
+/** Close a context this invocation owns, ignoring a failure that would mask the real error. */
+async function closeBotContext(context: BrowserContext | undefined): Promise<void> {
+    if (context === undefined) return;
+    await context.close().catch(() => {});
+}
+
+/** Write `bot.json` owner-only. Metadata records historical evidence, never current readiness. */
+async function writeBotMetadata(fileSystem: FileSystem, path: string, metadata: BotMetadata): Promise<void> {
+    await fileSystem.writeFile(path, `${JSON.stringify(metadata, null, 2)}\n`);
+    chmod(path, 0o600);
+}
+
+/**
+ * Explicit affirmative TTY confirmation for a generic login: an unknown site has no readiness
+ * predicate, so a typed `y`/`yes` is the only evidence this path records. A missing terminal, a
+ * closed stdin (Ctrl-D) and the deadline all refuse — an unconfirmed login is never saved. The
+ * prompt names no URL, because the supplied login URL can carry a query grant.
+ */
+async function confirmBotLogin(timeoutMs: number): Promise<boolean> {
+    if (process.stdin.isTTY !== true) {
+        throw new BotError(
+            'unconfirmed',
+            'no interactive terminal is available — a generic login needs an affirmative confirmation (site adapters are the non-interactive route)',
+        );
+    }
+    echo(
+        `Sign in to the opened browser window, then type y + Enter within ${Math.round(
+            timeoutMs / 1000,
+        )}s to save this bot session (anything else cancels).`,
+    );
+    return await new Promise<boolean>((resolve, reject) => {
+        const reader = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+        let settled = false;
+        const finish = (value: boolean): void => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const timer = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                reject(new BotError('unconfirmed', `no confirmation within ${timeoutMs}ms — nothing was saved`));
+            }
+            reader.close();
+        }, timeoutMs);
+        reader.once('line', (line) => {
+            finish(/^(y|yes)$/i.test(line.trim()));
+            reader.close();
+        });
+        reader.once('close', () => finish(false));
+    });
 }
 
 function errorMessage(error: unknown): string {

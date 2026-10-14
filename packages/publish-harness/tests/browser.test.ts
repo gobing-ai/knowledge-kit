@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { existsSync, rmSync } from 'node:fs';
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -14,6 +15,8 @@ import {
 import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Page } from 'playwright';
 import {
+    acquireProfileLease,
+    BotError,
     type ChannelBrowserConfig,
     checkChannelSession,
     createKkBrowserLauncher,
@@ -21,6 +24,8 @@ import {
     expectOutcome,
     fillCodeMirror,
     findShadowControl,
+    KK_BOT_LEASE_PATH,
+    KK_BOT_LEASE_TOKEN,
     markdownToHtml,
     pasteHtml,
     readScopedSignal,
@@ -633,6 +638,32 @@ describe('closed-shadow controls (ADR-029 rail)', () => {
     test('a platform without CDP yields no finder instead of guessed coordinates', async () => {
         expect(await createShadowFinder({}, {})).toBeUndefined();
     });
+
+    test('a CDP-capable context enables the domain and returns a bound finder', async () => {
+        const cdp = makeSession({ shadowLabel: '发布' });
+        const sent: string[] = [];
+        const context = {
+            async newCDPSession() {
+                return {
+                    async send(method: string) {
+                        sent.push(method);
+                        return await cdp.send(method);
+                    },
+                };
+            },
+        };
+
+        const finder = await createShadowFinder(context, {});
+        expect(sent).toEqual(['DOM.enable']);
+        expect(await finder?.(['发布', '暂存离开'])).toEqual({ label: '发布', x: 60, y: 40 });
+
+        const failing = {
+            async newCDPSession(): Promise<never> {
+                throw new Error('no devtools protocol');
+            },
+        };
+        expect(await createShadowFinder(failing, {})).toBeUndefined();
+    });
 });
 
 describe('markdownToHtml', () => {
@@ -653,46 +684,113 @@ describe('main entry isolation (R5)', () => {
     });
 });
 
-describe('createKkBrowserLauncher (0214)', () => {
+describe('createKkBrowserLauncher (0214, lease ownership 0276)', () => {
     let root: string;
+    let leaseRoot: string;
     const savedChannel = process.env.KK_BROWSER_CHANNEL;
+    const savedLeasePath = process.env.KK_BOT_LEASE_PATH;
+    const savedLeaseToken = process.env.KK_BOT_LEASE_TOKEN;
 
     beforeEach(async () => {
         root = await mkdtemp(join(tmpdir(), 'kk-launcher-'));
+        leaseRoot = join(root, 'leases');
         delete process.env.KK_BROWSER_CHANNEL;
+        delete process.env.KK_BOT_LEASE_PATH;
+        delete process.env.KK_BOT_LEASE_TOKEN;
     });
     afterEach(async () => {
         await rm(root, { recursive: true, force: true });
-        if (savedChannel === undefined) delete process.env.KK_BROWSER_CHANNEL;
-        else process.env.KK_BROWSER_CHANNEL = savedChannel;
+        restoreEnv('KK_BROWSER_CHANNEL', savedChannel);
+        restoreEnv('KK_BOT_LEASE_PATH', savedLeasePath);
+        restoreEnv('KK_BOT_LEASE_TOKEN', savedLeaseToken);
     });
 
-    /** Fake playwright recording the launch options; `fail` makes launchPersistentContext throw it. */
-    function fakePlaywright(fail?: Error) {
+    const restoreEnv = (key: string, value: string | undefined): void => {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+    };
+
+    /** Lease directories currently on disk under the injected lease root. */
+    const leaseDirs = async (): Promise<string[]> => (existsSync(leaseRoot) ? await readdir(leaseRoot) : []);
+
+    /**
+     * The launcher releases ownership from the context's `close` listener, so the release promise
+     * runs after `close()` resolves. Wait (bounded) for it instead of racing it.
+     */
+    const settle = async (probe: () => Promise<boolean>): Promise<void> => {
+        for (let i = 0; i < 200; i += 1) {
+            if (await probe()) return;
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+    };
+
+    /** Wait until no lease directory is left under the injected root. */
+    const settleLeases = async (): Promise<void> => {
+        await settle(async () => (await leaseDirs()).length === 0);
+    };
+
+    interface FakeContextHandle {
+        closeCount: () => number;
+    }
+
+    /**
+     * Fake playwright recording the launch options; `fail` makes `launchPersistentContext` throw it
+     * and `failInit` makes the webdriver init script throw. The returned context is minimal: exactly
+     * `addInitScript`, `once` and `close`, which is all the launcher's ownership cleanup uses.
+     */
+    function fakePlaywright(fail?: Error, failInit?: Error) {
         const launches: { dir: string; options: Record<string, unknown> }[] = [];
         const initScripts: unknown[] = [];
+        const handles: FakeContextHandle[] = [];
         const load = async () =>
             ({
                 chromium: {
                     async launchPersistentContext(dir: string, options: Record<string, unknown>) {
                         launches.push({ dir, options });
                         if (fail) throw fail;
-                        return {
-                            addInitScript: async (script: unknown) => {
+                        let closes = 0;
+                        const listeners: (() => void)[] = [];
+                        handles.push({ closeCount: () => closes });
+                        const context = {
+                            async addInitScript(script: unknown) {
+                                if (failInit) throw failInit;
                                 initScripts.push(script);
+                                // A real browser evaluates the script in the page; invoking it here
+                                // keeps the init-script arrow itself covered. Bun's own
+                                // `navigator.webdriver` is unconfigurable, which is a test-process
+                                // artifact, not a launcher failure.
+                                if (typeof script === 'function') {
+                                    try {
+                                        (script as () => void)();
+                                    } catch {
+                                        // ignore: the script is exercised, not asserted on
+                                    }
+                                }
+                            },
+                            once(_event: string, listener: () => void) {
+                                listeners.push(listener);
+                                return context;
+                            },
+                            async close() {
+                                closes += 1;
+                                for (const listener of listeners.splice(0)) listener();
                             },
                         };
+                        return context;
                     },
                 },
             }) as unknown as typeof import('playwright');
-        return { load, launches, initScripts };
+        return { load, launches, initScripts, handles };
     }
 
     test('defaults to the full Chromium channel with the stealth options and webdriver init script', async () => {
         const pw = fakePlaywright();
         const profileDir = join(root, 'p');
 
-        await createKkBrowserLauncher(pw.load).launch({ profileDir, headless: false });
+        const context = await createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({
+            profileDir,
+            headless: false,
+        });
 
         expect(pw.launches).toHaveLength(1);
         expect(pw.launches[0]?.dir).toBe(profileDir);
@@ -703,29 +801,41 @@ describe('createKkBrowserLauncher (0214)', () => {
             ignoreDefaultArgs: ['--enable-automation'],
         });
         expect(pw.initScripts).toHaveLength(1);
+        // The owned path holds the profile lease for exactly as long as the context is open.
+        expect(await leaseDirs()).toHaveLength(1);
+        await context.close();
+        await settleLeases();
+        expect(await leaseDirs()).toEqual([]);
     });
 
     test('KK_BROWSER_CHANNEL=chrome selects installed Google Chrome; blank falls back to chromium', async () => {
         const pw = fakePlaywright();
         await Bun.write(join(root, 'p', '.keep'), '');
+        const launcher = createKkBrowserLauncher(pw.load, undefined, { leaseRoot });
 
         process.env.KK_BROWSER_CHANNEL = 'chrome';
-        await createKkBrowserLauncher(pw.load).launch({ profileDir: join(root, 'p'), headless: true });
+        const chrome = await launcher.launch({ profileDir: join(root, 'p'), headless: true });
+        await chrome.close();
+        await settleLeases();
         process.env.KK_BROWSER_CHANNEL = '  ';
-        await createKkBrowserLauncher(pw.load).launch({ profileDir: join(root, 'p'), headless: true });
+        const chromium = await launcher.launch({ profileDir: join(root, 'p'), headless: true });
+        await chromium.close();
+        await settleLeases();
+        expect(await leaseDirs()).toEqual([]);
 
         expect(pw.launches.map((l) => l.options.channel)).toEqual(['chrome', 'chromium']);
     });
 
-    test('a missing profile is refused headless before any launch', async () => {
+    test('a missing profile is refused headless before any launch, and its lease is released', async () => {
         const pw = fakePlaywright();
         const profileDir = join(root, 'absent');
 
-        await expect(createKkBrowserLauncher(pw.load).launch({ profileDir, headless: true })).rejects.toBeInstanceOf(
-            BrowserProfileMissingError,
-        );
+        await expect(
+            createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({ profileDir, headless: true }),
+        ).rejects.toBeInstanceOf(BrowserProfileMissingError);
         expect(pw.launches).toHaveLength(0);
         expect(await stat(profileDir).catch(() => null)).toBeNull();
+        expect(await leaseDirs()).toEqual([]);
     });
 
     test('rejects a blank profile path', async () => {
@@ -737,7 +847,7 @@ describe('createKkBrowserLauncher (0214)', () => {
     test('maps busy-profile, missing-browser and missing-peer failures to typed errors', async () => {
         const profileDir = join(root, 'p');
         const launch = (load: () => Promise<typeof import('playwright')>) =>
-            createKkBrowserLauncher(load).launch({ profileDir, headless: false });
+            createKkBrowserLauncher(load, undefined, { leaseRoot }).launch({ profileDir, headless: false });
 
         await expect(
             launch(fakePlaywright(new Error('ProcessSingleton: profile already in use')).load),
@@ -752,5 +862,138 @@ describe('createKkBrowserLauncher (0214)', () => {
         ).rejects.toBeInstanceOf(PlaywrightUnavailableError);
         const other = new Error('boom');
         await expect(launch(fakePlaywright(other).load)).rejects.toBe(other);
+        // Every failed launch released the lease it took before the browser attempt.
+        expect(await leaseDirs()).toEqual([]);
+    });
+
+    test('a failed init script closes the context and releases the lease (close on errors)', async () => {
+        const pw = fakePlaywright(undefined, new Error('init script rejected'));
+        const profileDir = join(root, 'p');
+
+        await expect(
+            createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({ profileDir, headless: false }),
+        ).rejects.toThrow('init script rejected');
+        expect(pw.handles[0]?.closeCount()).toBe(1);
+        expect(await leaseDirs()).toEqual([]);
+    });
+
+    test('reports a release that fails at context closure without throwing from the handler', async () => {
+        const buffer = createBufferTarget();
+        const restoreTargets = setDefaultOutputTargets({ stdout: buffer, stderr: buffer });
+        try {
+            const pw = fakePlaywright();
+            const profileDir = join(root, 'p');
+            const context = await createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({
+                profileDir,
+                headless: false,
+            });
+            // Simulate a lease that another process tampered with: release then fails `busy`.
+            const id = (await leaseDirs())[0] ?? '';
+            rmSync(join(leaseRoot, id, 'owner.json'));
+
+            await expect(context.close()).resolves.toBeUndefined();
+            let reported = '';
+            for (let i = 0; i < 100 && !reported.includes('release failed'); i += 1) {
+                reported = buffer.text();
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            expect(reported).toContain('browser lease release failed');
+            expect(reported).not.toContain('owner.json');
+        } finally {
+            restoreTargets();
+        }
+    });
+
+    test('borrowed ownership validates the physical path and the live owner token, and never releases it', async () => {
+        const pw = fakePlaywright();
+        const logicalDir = join(root, 'bots', 'alice');
+        const stageDir = join(root, 'stage');
+        const lease = await acquireProfileLease(logicalDir, { leaseRoot });
+        const launcher = createKkBrowserLauncher(pw.load, { lease, physicalProfileDir: stageDir }, { leaseRoot });
+
+        const context = await launcher.launch({ profileDir: stageDir, headless: false });
+        await context.close();
+
+        // The parent still holds the lease after the context closed; only the parent releases it.
+        expect(await leaseDirs()).toEqual([lease.id]);
+        await expect(launcher.launch({ profileDir: join(root, 'elsewhere'), headless: false })).rejects.toThrow(
+            /bound to/,
+        );
+
+        await lease.release();
+        // A released (or foreign) lease is never borrowed as an unrestricted bypass.
+        let caught: unknown;
+        try {
+            await launcher.launch({ profileDir: stageDir, headless: false });
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(BotError);
+        expect((caught as BotError).code).toBe('busy');
+    });
+
+    test('a launch that fails after claiming never releases a borrowed parent lease, and drops a child holder', async () => {
+        const logicalDir = join(root, 'bots', 'alice');
+        const stageDir = join(root, 'stage');
+        const lease = await acquireProfileLease(logicalDir, { leaseRoot });
+
+        const borrowed = createKkBrowserLauncher(
+            fakePlaywright(new Error('boom')).load,
+            { lease, physicalProfileDir: stageDir },
+            { leaseRoot },
+        );
+        await expect(borrowed.launch({ profileDir: stageDir, headless: false })).rejects.toThrow('boom');
+        expect(await leaseDirs()).toEqual([lease.id]);
+
+        const env = await lease.delegatedEnv(stageDir);
+        process.env[KK_BOT_LEASE_PATH] = env[KK_BOT_LEASE_PATH] ?? '';
+        process.env[KK_BOT_LEASE_TOKEN] = env[KK_BOT_LEASE_TOKEN] ?? '';
+        const delegated = createKkBrowserLauncher(
+            async () => {
+                throw new Error('Cannot find package playwright');
+            },
+            undefined,
+            { leaseRoot },
+        );
+        await expect(delegated.launch({ profileDir: stageDir, headless: false })).rejects.toBeInstanceOf(
+            PlaywrightUnavailableError,
+        );
+        expect((await readdir(join(leaseRoot, lease.id))).filter((name) => name.startsWith('holder-'))).toEqual([]);
+        await lease.release();
+    });
+
+    test('delegated ownership records a child holder and drops only that holder on close', async () => {
+        const pw = fakePlaywright();
+        const logicalDir = join(root, 'bots', 'alice');
+        const stageDir = join(root, 'stage');
+        const lease = await acquireProfileLease(logicalDir, { leaseRoot });
+        const env = await lease.delegatedEnv(stageDir);
+        process.env[KK_BOT_LEASE_PATH] = env[KK_BOT_LEASE_PATH] ?? '';
+        process.env[KK_BOT_LEASE_TOKEN] = 'deadbeef';
+
+        // A wrong token is a busy refusal, never a second acquisition.
+        await expect(
+            createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({
+                profileDir: stageDir,
+                headless: false,
+            }),
+        ).rejects.toBeInstanceOf(BotError);
+        expect(await leaseDirs()).toEqual([lease.id]);
+
+        process.env[KK_BOT_LEASE_TOKEN] = env[KK_BOT_LEASE_TOKEN] ?? '';
+        const context = await createKkBrowserLauncher(pw.load, undefined, { leaseRoot }).launch({
+            profileDir: stageDir,
+            headless: false,
+        });
+        const holders = async (): Promise<string[]> =>
+            (await readdir(join(leaseRoot, lease.id))).filter((name) => name.startsWith('holder-'));
+        expect(await holders()).toHaveLength(1);
+
+        await context.close();
+        await settle(async () => (await holders()).length === 0);
+        expect(await holders()).toEqual([]);
+        // The child never releases the parent lease.
+        expect(await leaseDirs()).toEqual([lease.id]);
+        await lease.release();
     });
 });

@@ -9,7 +9,19 @@ updated_at: 2026-10-13
 
 # Strict CLI operations and named browser sessions
 
-This is the accepted design for A22, not a claim that commands have shipped. ADR-037/038 own the decisions. The review reads the registered source tree, its flags, hidden aliases, action handlers, callers and session implementations; root help alone is insufficient.
+This is the accepted design for A22, not a claim that commands have shipped. ADR-037/038 own the decisions.
+**Shipped so far:** task 0275 landed ADR-037's two normalization seams — canonical `kk stage run`
+(with `kk stage <stage>` normalized in `main()` before Commander parses) and the top-level
+`kk lock acquire|release` (with `kk store lock …` retained as a hidden route over the same
+registrar/engines). Task 0276 landed the generic bot lifecycle: `kk bot list|login|logout|open`
+over the fixed profile root, the shared per-profile lease with parent/child-scoped delegation, the
+staged login/save transaction with atomic promotion and crash-safe journal, idempotent
+containment-checked logout, and the packaging closure (the harness declares the playwright catalog
+dependency; the CLI build passes `--external playwright`; installed help/list/status need no
+browser binaries). Channel descriptor integration and site-verified evidence remain unshipped
+(task 0277), as does the caller/recipe migration review (task 0278). The review reads the
+registered source tree, its flags, hidden aliases, action handlers, callers and session
+implementations; root help alone is insufficient.
 
 ## Canonical command inventory
 

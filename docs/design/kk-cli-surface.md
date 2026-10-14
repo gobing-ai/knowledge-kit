@@ -84,11 +84,34 @@ kk executor run     <plugin> --in <path> --out <path> [--plugins-root <dir>] [--
 kk executor fan-in  --in <f>… --out <path> [--plugins-root <dir> | --plugins-path <dir> …]
 kk executor fan-out --content <path> --target <p>… --out <path> [--retry-from <path>] [--jobs <n>] [--serial] [--serial-target <plugin> …] [--target-timeout <ms>] [--plugins-root <dir>] [--plugins-path <dir> …]
 kk plugin status    [--kind <kind>] [--json] [--plugins-root <dir>] [--plugins-path <dir> …]
+kk stage run        <stage> [args…] [--unknown-flag …]
+kk lock acquire     --name <lock> --run <id> [--ttl <ms>] [--db <path>]
+kk lock release     --name <lock> --run <id> [--db <path>]
+kk bot list
+kk bot login        <url> --save <bot>
+kk bot logout       <bot>
+kk bot open         <bot> [--login]
 ```
 
 Hidden aliases (not listed in `kk --help`): `invoke` → `executor run`; `fanin` → `executor fan-in`;
 `fanout` → `executor fan-out`; `plugins` → `plugin`; `plugins list` / `plugins doctor` →
-`plugin status`.
+`plugin status`; `kk stage <stage> [args…]` → `kk stage run <stage> [args…]`; `kk store lock
+acquire|release` → `kk lock acquire|release`.
+
+**ADR-037 canonicalization (task 0275, shipped).** Every visible executable operation is exactly
+`kk <noun> <verb>`: `stage` gained its `run` verb and `lock acquire|release` lifted out of the
+`store` group, while both shipped spellings stay working compatibility routes (`kk stage <stage>`
+is normalized in `main()` before Commander parses; `kk store lock …` reuses the same registrar and
+engines). Noun groups have no default action — `kk stage` alone prints usage. No route prints
+deprecation text into stdout/stderr, so machine readers of `--json`/contract lines are unaffected.
+
+**Named browser bots (task 0276, shipped).** `kk bot` is a new visible noun over the fixed default
+profile root: `list` prints tab-separated `name / cached / saved-default-url-or-unknown` rows
+(symlink and stray entries excluded, absent root = empty success), `login <url> --save <name>` runs
+the staged operator-confirmed save transaction, `logout` is idempotent and containment-checked,
+and `open [--login]` reopens the saved page headed. Validation/usage failures exit 2, operational
+failures exit 1, both via `kk.bot.failed: <detail>` on stderr. The harness's browser half is
+imported lazily, and playwright stays out of the CLI bundle (`--external playwright`).
 
 `plugin status --json` shape:
 
