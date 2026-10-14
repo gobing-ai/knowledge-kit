@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Make the full spur-check suite deterministic under load (module-store race and timing flakes)
-status: todo
+status: done
 template: standard
 created_at: 2026-10-13T18:57:36.022Z
-updated_at: "2026-10-13T20:56:37.704Z"
+updated_at: "2026-10-14T05:44:28.804Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: B6
 priority: P2
 estimate_hours: 2
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0274-verdict.json
 ---
 
 ## 0274. Make the full spur-check suite deterministic under load (module-store race and timing flakes)
@@ -37,10 +39,10 @@ Ready evidence: `spur task check 0274 --as todo --json` and `spur feature check 
 
 ### Requirements
 
-- [ ] R1. Fan-in concurrency regression verifies that all source dispatches begin before any held source completes, without a narrow total-wall-clock ceiling; declaration-order output and provenance remain asserted.
-- [ ] R2. Timeout precedence regression observes the exact `timeoutMs` passed to `spawnPluginEntryAsync` for the overridden source and at least two non-overridden siblings; explicitly prove override > global > default and that an override cannot leak to siblings. Include a timed-out non-overridden sibling with surviving documents and correctly attributed `sourceErrors`.
-- [ ] R3. Retain real subprocess integration coverage for successful ingestion and actual timeout termination. Remove redundant narrow startup-sensitive assertions from the policy tests; do not weaken the real timeout behavior or alter production budgets.
-- [ ] R4. Correct the existing task-0274 pitfalls entry to distinguish the child-build workaround already shipped from the remaining timing-test hazards; record the actual repro/verification command and limitations.
+- [x] R1. Fan-in concurrency regression verifies that all source dispatches begin before any held source completes, without a narrow total-wall-clock ceiling; declaration-order output and provenance remain asserted.
+- [x] R2. Timeout precedence regression observes the exact `timeoutMs` passed to `spawnPluginEntryAsync` for the overridden source and at least two non-overridden siblings; explicitly prove override > global > default and that an override cannot leak to siblings. Include a timed-out non-overridden sibling with surviving documents and correctly attributed `sourceErrors`.
+- [x] R3. Retain real subprocess integration coverage for successful ingestion and actual timeout termination. Remove redundant narrow startup-sensitive assertions from the policy tests; do not weaken the real timeout behavior or alter production budgets.
+- [x] R4. Correct the existing task-0274 pitfalls entry to distinguish the child-build workaround already shipped from the remaining timing-test hazards; record the actual repro/verification command and limitations.
 
 Scope: `apps/cli/tests/fanin.test.ts` and the existing `.spur/context/pitfalls.md` entry. Existing stage/fanout/installed-board tests are validation inputs, not repair targets. No production/API changes, dependencies, suite-wide timeout increase, retries, skipped tests or module-store mutation/locking mechanism.
 
@@ -110,23 +112,111 @@ Dependencies: none. No upstream output contract changes or dependent work requir
 
 ### Plan
 
-- [ ] 1. Confirm the existing async spawn import can be scoped with Bun `spyOn`; add the controlled-result test setup locally with unconditional restore/cleanup. (R1, R2)
-- [ ] 2. Replace the narrow concurrency stopwatch assertion with held-results dispatch/order/provenance assertions. (R1)
-- [ ] 3. Replace the startup-sensitive override case with exact per-source budget mapping, timeout attribution and default/tightening tests; retain genuine real-spawn kill/invocation cases. (R2, R3)
-- [ ] 4. Correct the already-existing pitfalls entry and its unproved writer diagnosis. (R4)
-- [ ] 5. Run focused fan-in tests; record assertions separately from partial-run coverage exit. Run `bun run lint`, `bun run test`, `bun run build` and scoped task/rule checks; retain all failure details and fix regressions in scope. Confirm only intentional changes. (R1–R4)
+- [x] 1. Confirm the existing async spawn import can be scoped with Bun `spyOn`; add the controlled-result test setup locally with unconditional restore/cleanup. (R1, R2)
+- [x] 2. Replace the narrow concurrency stopwatch assertion with held-results dispatch/order/provenance assertions. (R1)
+- [x] 3. Replace the startup-sensitive override case with exact per-source budget mapping, timeout attribution and default/tightening tests; retain genuine real-spawn kill/invocation cases. (R2, R3)
+- [x] 4. Correct the already-existing pitfalls entry and its unproved writer diagnosis. (R4)
+- [x] 5. Run focused fan-in tests; record assertions separately from partial-run coverage exit. Run `bun run lint`, `bun run test`, `bun run build` and scoped task/rule checks; retain all failure details and fix regressions in scope. Confirm only intentional changes. (R1–R4)
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Scope held: tests plus the gitignored pitfalls entry only — no production, API, dependency or
+suite-timeout changes (the `spyOn` seam is the existing `spawnPluginEntryAsync` export boundary
+that `runFanin`'s `collectSourceDocs` already calls).
+
+| Anchor | Change | Rationale (AC) |
+| --- | --- | --- |
+| `apps/cli/tests/fanin.test.ts:321` | Added the policy-test fakes: `SpySpawnCall`, `FAKE_SPAWN_SUCCESS`/`FAKE_SPAWN_TIMEOUT` (the real `PluginEntrySpawnResult` shapes), idempotent `makeHeldSpawn`, `writeFakeSuccessDoc` | Controlled spawn results without touching production (AC1–AC3) |
+| `apps/cli/tests/fanin.test.ts:363` | Added `withSpawnSpy`: scoped `spyOn(invokeModule, 'spawnPluginEntryAsync')` with unconditional `mockRestore` in `finally`; real manifests/inputs stay so discovery, entry checks and output validation stay exercised | Deterministic dispatch/budget assertions, no `mock.module` contamination (AC2, AC3) |
+| `apps/cli/tests/fanin.test.ts:488` | Replaced the 1500ms elapsed-ceiling concurrency test with `R1 — dispatches every --source before any held result settles`: held promises gate on both arrivals, release in reverse order, then assert declaration-order output + provenance; no wall-clock ceiling | Concurrency is asserted by dispatch/settle policy, not host latency (AC1) |
+| `apps/cli/tests/fanin.test.ts:656` | Replaced the startup-sensitive real-sleep override case with `R2 — override reaches only its source`: exact `timeoutMs` map asserts override 9000 vs global 5000 on two siblings, simulated timed-out sibling yields one attributed `sourceErrors` entry and its echo, surviving docs stay merged | Override cannot leak to siblings; timeout attribution proven (AC2) |
+| `apps/cli/tests/fanin.test.ts:723` | Added `R2 — no global leash`: ordinary source receives the exact 30-minute default (`30 * 60 * 1000`), the lower 250ms override tightens only its own source and degrades alone | Default and tightening precedence asserted exactly (AC3) |
+| `apps/cli/tests/fanin.test.ts:615`, `:777` | Retained unchanged: the real-spawn stuck-source kill test (3000ms leash on a 10s sleep) and the real override-tightening kill test (300ms override on a 10s sleep) | Actual timeout termination and real ingestion stay covered by real processes (AC4) |
+| `.spur/context/pitfalls.md:41` | Corrected the existing task-0274 entry in place: drops the unproved "concurrent writer into the shared module store" claim, names the shipped child-build workaround (`741a0cb5`, current `stage.test.ts` shape), records the remaining timing-test hazard class, the actual verification command (`bun test --dots --timeout 20000 apps/cli/tests/fanin.test.ts apps/cli/tests/commands/stage.test.ts`: 42 pass, 0 fail, exit 0 on Bun 1.4.3) and its limitation (a green isolated run does not prove the full-suite flake is gone) | Flake guidance describes the current tree, no unidentified-writer claim (AC5) |
+
+Production `runFanin` (`apps/cli/src/fanin.ts:384` timeout precedence) is a validation input and is
+unchanged. The old narrow tests (`wall time ≈ slowest source`, `extends ONE source past the global
+leash`) were removed, not weakened elsewhere.
+
+**Implementation notes**
+
+- The per-test watchdog replaces the elapsed ceilings: a serial-dispatch regression in AC1 never
+  reaches the both-arrivals gate and fails on the test timeout instead of racing startup latency.
+- Policy tests complete in single-digit ms; the only real sleeps left in the file are the two
+  retained real-kill tests, unchanged.
+- Iteration checks run here (stage discipline: light changed-path matrix only — the full gate is
+  the pipeline's test hop): `bun test --dots --timeout 20000 apps/cli/tests/fanin.test.ts
+  apps/cli/tests/commands/stage.test.ts` → 42 pass, 0 fail, exit 0; adding
+  `apps/cli/tests/fanout.test.ts` → 94 pass, 0 fail; `biome check` clean on the changed file
+  (import-order safe fix applied); `tsc --noEmit` clean in `apps/cli`;
+  `spur rule run --preset recommended-pre-check` reports only two pre-existing workspace findings
+  (run-scoped citations from tasks 0243/0247/0252/0255 and old verdict artifacts — not this diff's
+  paths).
+- Plan items 1–5 executed in the reassigned scope above; the plan's full `bun run lint`/`test`/
+  `build` leg belongs to the pipeline test hop per stage discipline.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+- Confidence: HIGH
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `apps/cli/tests/fanin.test.ts:488-556` — held-promise fake gates on both arrivals, `expect(calls).toHaveLength(2)` before any release; reverse-order release still yields declaration-order output + provenance (`:550-553`); no elapsed-time ceiling remains in policy tests |
+| R2 | MET | `apps/cli/tests/fanin.test.ts:656-722` — exact budget map: override 9000 vs both siblings 5000 (`:702-704`), simulated timed-out sibling → one attributed `sourceErrors` (`:712-716`, contract `apps/cli/src/fanin.ts:319`); `:723-776` — no-global case: plain source 30*60*1000 (matches `apps/cli/src/fanin.ts:53`), tight override 250 only on its own source; override > global > default chain fully exercised |
+| R3 | MET | Real-spawn coverage retained unchanged: `apps/cli/tests/fanin.test.ts:615` (3000ms leash kills 10s-sleep source), `:777` (300ms tightening kill); 0 `.skip/.only/.todo`; `git diff 4eb197b9 -- apps/cli/src/ packages/ plugins/` empty — no production timeout changed |
+| R4 | MET | `.spur/context/pitfalls.md:42-59` — writer theory explicitly dropped, child-build workaround named (`741a0cb5`, current `stage.test.ts` shape), remaining timing-hazard class stated, actual command + exit-1-coverage caveat + finite-run limitation recorded |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — Fan-in dispatch overlaps without an elapsed-time ceiling (req: R1) | MET | test | `bun test --dots --timeout 20000 apps/cli/tests/fanin.test.ts` (focused run, 42 pass / 0 fail / exit 0); `apps/cli/tests/fanin.test.ts:488-556` — dispatch-before-settle, no elapsed-time ceiling |
+| Scenario: AC2 — Per-source override does not alter sibling budgets (req: R2) | MET | test | `apps/cli/tests/fanin.test.ts:656-722` — budget map 9000/5000/5000; solo degradation asserted |
+| Scenario: AC3 — Default timeout and tightening precedence remain exact (req: R2) | MET | test | `apps/cli/tests/fanin.test.ts:723-776` — exact-default + tightening-precedence assertions executed; static anchor `apps/cli/src/fanin.ts:53` (30*60*1000) |
+| Scenario: AC4 — Real subprocess behavior remains covered (req: R3) | MET | command | focused run 42 pass / 0 fail / exit 0 includes `apps/cli/tests/fanin.test.ts:615`, `:777` real-kill tests and stage child-build test; no production diff vs base |
+| Scenario: AC5 — Flake guidance describes the current tree (req: R4) [docs-only] | MET | manual-review | `.spur/context/pitfalls.md:42-59` contains no writer claim, names the shipped workaround and current verification command |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
+
+### Verify
+
+- PASS record 2026-10-14 (verify stage, Bun 1.4.3): focused `bun test --dots --timeout 20000 apps/cli/tests/fanin.test.ts apps/cli/tests/commands/stage.test.ts` → **42 pass / 0 fail, exit 0**; `bunx biome check apps/cli/tests/fanin.test.ts` clean. AC1–AC5 all MET (traceability in `## Review`); requirements R1–R4 ticked on AC evidence. Residual: finite runs cannot prove full-suite determinism — task-acknowledged, pitfalls limitation records it.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0274
+**Scope:** worktree diff at review time — `apps/cli/tests/fanin.test.ts`, `.spur/context/pitfalls.md` (task-0274 entry), `docs/tasks/0274_*.md` `## Solution` (base `4eb197b9`)
+**Dimensions:** functional, security, efficiency, correctness, usability, architecture
+**Verdict:** PASS
+**Confidence:** HIGH
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P4 (advisory) | correctness | Task 0274's rework exists only as uncommitted worktree modifications; branch commit `4eb197b9` holds only the interim hardening step (real-kill leash 1000→3000ms, elapsed ceiling <5000→<8000ms, explicit 20s watchdogs at `fanin.test.ts:654`). The verify hop must commit the worktree first so recorded citations match the reviewed state. | `apps/cli/tests/fanin.test.ts` (worktree vs `4eb197b9`) | ACCEPTED |
+| 2 | P4 (advisory) | correctness | The R1 held-promise test relies on bun:test's default per-test timeout as its serial-dispatch watchdog — unlike its siblings it declares no explicit `20_000`; a Bun default-timeout change would alter only the regression bound, not the assertion logic. | `apps/cli/tests/fanin.test.ts:488` | ACCEPTED |
+| 3 | P4 (advisory) | architecture | Policy tests depend on Bun redirecting `fanin.ts`'s direct named import (`apps/cli/src/fanin.ts:6` → `apps/cli/src/invoke.ts:371`) when `spyOn` replaces the namespace export — Bun-runtime-pinned behavior (1.4.3 per task), already acknowledged in the pitfalls entry's limitation note. | `apps/cli/tests/fanin.test.ts:363` | ACCEPTED |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | `apps/cli/tests/fanin.test.ts:488-556` — held-promise fake gates on both arrivals; `expect(calls).toHaveLength(2)` at `:533` fires before any release (`:536-537` reverse order); declaration-order output + provenance asserted at `:550-553`. No wall-clock ceiling remains in policy tests. Serial dispatch would deadlock the arrivals gate and hit the test watchdog. |
+| R2 | MET | `apps/cli/tests/fanin.test.ts:656-722` — exact budget map: override 9000 (`:702`), both non-overridden siblings 5000 (`:703-704`, which also proves global beats default); timed-out sibling yields one attributed `sourceErrors` entry (`:712-716`, message contract `apps/cli/src/fanin.ts:319`) and surviving docs stay merged (`:708`). `:723-776` — no global flag: ordinary source receives the exact 30-minute default (`:762`, matches `apps/cli/src/fanin.ts:53`), override 250 tightens only itself (`:763`). Chain override > global > default fully exercised. |
+| R3 | MET | Real-spawn coverage retained: stuck-source kill (3000ms leash on 10s sleep, real timeout termination + error text) at `apps/cli/tests/fanin.test.ts:615-654`; real tightening kill at `:777-814`; real ingestion suites unchanged. The redundant real-sleep override-extends case was removed, not weakened elsewhere. No production diff (worktree touches only tests, pitfalls, task doc). |
+| R4 | MET | `.spur/context/pitfalls.md:42-59` — writer claim dropped ("no concurrent writer … was ever established"), shipped child-build workaround named (commit `741a0cb5`, current `apps/cli/tests/commands/stage.test.ts` shape), remaining timing-hazard class stated, verification command + exit-1-coverage caveat recorded, and the limitation that a green isolated run cannot prove full-suite determinism. |
+
+##### Verification evidence (fresh, this review)
+
+- `bun test --dots --timeout 20000 apps/cli/tests/fanin.test.ts apps/cli/tests/commands/stage.test.ts` → **42 pass, 0 fail, exit 0** (8.76s), matching the Solution's recorded claim.
+- `bunx biome check apps/cli/tests/fanin.test.ts` → clean.
+- No `.skip`/`.only`/`.todo` introduced; no production, dependency, or suite-default changes in the diff.
+
+##### Residual risk
+
+Full-suite determinism is behaviorally asserted but not provable by finite runs — acknowledged by the task itself and recorded in the pitfalls limitation; the post-implement full gate (2780 pass / 2 pre-existing skip / 0 fail) stands as the available evidence and was not re-run per review scope.
+
+**Next:** commit the worktree diff before the verify hop so recorded citations match the reviewed state.
 
 ### References
 
@@ -141,4 +231,7 @@ Dependencies: none. No upstream output contract changes or dependent work requir
 ### History
 
 - 2026-10-13T20:54:23.040Z backlog → todo (system)
+- 2026-10-14T05:11:10.928Z todo → wip (system)
+- 2026-10-14T05:44:17.387Z wip → testing (system)
+- 2026-10-14T05:44:28.793Z testing → done (system)
 

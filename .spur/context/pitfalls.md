@@ -40,18 +40,21 @@
 
 ## 2026-10-13 — the full gate is load-sensitive (task 0274)
 
-- `bun test apps` (and the gate's `apps packages plugins scripts` set) fails intermittently on an
-  unchanged tree, and the failing set changes between runs: measured 1 fail vs 3 fail on identical
-  commands. `bun test apps/cli/tests` alone is green, so the trigger needs the board tests running
-  concurrently. Reproducer: `bun test --dots --timeout 20000 --path-ignore-patterns 'vendors/**' apps`.
-- The recurring one is `apps/cli/tests/commands/stage.test.ts` AC4: `EISDIR reading file:
-  node_modules/.bun/@gobing-ai+ts-utils@<v>/…/ts-utils/dist/index.js`. The file exists outside the
-  run, so expect a concurrent writer into the shared module store, not a broken install.
-- Do NOT "fix" it by wrapping the build in `/tmp/kk-board-shared-build.lock` or by retrying on
-  `EISDIR` — both were tried on 2026-10-13 and were inert (the retry never fired: the error is a
-  test-scope loader/coverage read, not a `Bun.build` throw). Find the writer first.
-- `apps/cli/tests/fanin.test.ts` `--source-timeout-override …` is the same class as the fanout
-  timing pair hardened by `fefd9808`: it can fail only under full-suite load.
+- The intermittent `bun test apps` red-on-unchanged-tree incidents were timing-test design, not a
+  proven module-store race: no concurrent writer into `node_modules/.bun` was ever established (the
+  ts-utils dependency path stayed a regular file), so do not cite the "shared-store writer" theory.
+- Shipped workaround (commit `741a0cb5`, current shape): stage AC4 no longer runs `Bun.build`
+  in-process — `apps/cli/tests/commands/stage.test.ts` builds in a fresh child. Do not re-add an
+  in-process `Bun.build` there.
+- Remaining hazard class: wall-clock assertions that only fail under full-suite load (the fanin
+  elapsed ceiling; an override test racing a fast sibling inside a tight global budget — same class
+  as the fanout pair `fefd9808` hardened). Task 0274 replaced the fanin policy cases with
+  dispatch/budget assertions at `spyOn(invoke, 'spawnPluginEntryAsync')` and kept the real-spawn
+  ingestion and stuck-source kill tests. Verify with `bun test --dots --timeout 20000
+  apps/cli/tests/fanin.test.ts apps/cli/tests/commands/stage.test.ts` (42 pass, 0 fail, exit 0 on
+  Bun 1.4.3 after the 0274 rework; a partial-run exit 1 is coverage, not an assertion failure).
+  Limitation: a green isolated run does not prove a full-suite flake is eliminated — behavior
+  assertions plus the normal full gate, not repeated-run rituals, are the evidence.
 - Before blaming your own change for a red gate, run the failing file alone. If it passes alone,
   you are looking at this class, not at a regression.
 

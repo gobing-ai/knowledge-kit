@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Doc } from '@gobing-ai/kk-core';
 import { mergeDocLists, runFanin } from '../src/fanin';
+import type { PluginEntryAsyncSpawnOptions, PluginEntrySpawnResult } from '../src/invoke';
+import * as invokeModule from '../src/invoke';
 import { captureOutput } from './capture';
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -315,6 +317,65 @@ async function withoutPluginPath<T>(fn: () => Promise<T>): Promise<T> {
     }
 }
 
+/** One captured `spawnPluginEntryAsync` call in the policy tests: the budget-assertion surface. */
+interface SpySpawnCall {
+    pluginName?: string;
+    timeoutMs?: number;
+}
+
+/** A spawn promise held by the test so it controls settle order (dispatch-policy tests). */
+interface HeldSpawn {
+    promise: Promise<PluginEntrySpawnResult>;
+    release: (result: PluginEntrySpawnResult) => void;
+}
+
+/** Success shape a fake spawn returns after writing its output file. */
+const FAKE_SPAWN_SUCCESS: PluginEntrySpawnResult = { exitCode: 0, stdout: '', stderr: '' };
+
+/** The exact timed-out `PluginEntrySpawnResult` production's async spawn returns on a leash hit. */
+const FAKE_SPAWN_TIMEOUT: PluginEntrySpawnResult = { exitCode: 1, stdout: '', stderr: '', timedOut: true };
+
+/** Create one held spawn promise; `release` resolves it and is idempotent. */
+function makeHeldSpawn(): HeldSpawn {
+    let release!: (result: PluginEntrySpawnResult) => void;
+    const promise = new Promise<PluginEntrySpawnResult>((resolve) => {
+        release = resolve;
+    });
+    return { promise, release };
+}
+
+/** Write a valid `Doc[]` output file for a faked successful spawn (collectSourceDocs validates it). */
+function writeFakeSuccessDoc(opts: PluginEntryAsyncSpawnOptions): void {
+    writeFileSync(
+        opts.outPath,
+        JSON.stringify([{ id: opts.pluginName ?? 'unknown', body: `fake doc from ${opts.pluginName}` }]),
+    );
+}
+
+/**
+ * Run `fn` with a scoped `spyOn` on the invoke module's `spawnPluginEntryAsync` export — the
+ * exact boundary `runFanin`'s `collectSourceDocs` already calls. Real manifests and inputs stay
+ * in place so discovery, entry checks and output validation remain exercised; only the OS spawn
+ * is faked. The spy is always restored — no persistent `mock.module` replacement that could
+ * poison other files. This asserts dispatch policy only: the real-spawn tests keep the actual
+ * process-kill and ingestion coverage.
+ */
+async function withSpawnSpy<T>(
+    respond: (opts: PluginEntryAsyncSpawnOptions) => PluginEntrySpawnResult | Promise<PluginEntrySpawnResult>,
+    fn: (calls: SpySpawnCall[]) => Promise<T>,
+): Promise<T> {
+    const calls: SpySpawnCall[] = [];
+    const spy = spyOn(invokeModule, 'spawnPluginEntryAsync').mockImplementation(async (opts) => {
+        calls.push({ pluginName: opts.pluginName, timeoutMs: opts.timeoutMs });
+        return respond(opts);
+    });
+    try {
+        return await fn(calls);
+    } finally {
+        spy.mockRestore();
+    }
+}
+
 describe('runFanin source-runner mode (--source)', () => {
     // Source failures echo via echoError intentionally; capture ts-utils stderr
     // (instead of monkey-patching a logger) and keep the dots reporter clean.
@@ -424,11 +485,11 @@ describe('runFanin source-runner mode (--source)', () => {
         });
     });
 
-    it('R1 — spawns --source plugins concurrently (wall time ≈ slowest source, not the sum)', async () => {
+    it('R1 — dispatches every --source before any held result settles; merge stays declaration-order', async () => {
         await withTempDir(async (root) => {
             const pluginsRoot = join(root, 'plugins');
-            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-slow-a', { sleepMs: 500, docId: 'a1' });
-            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-slow-b', { sleepMs: 500, docId: 'b1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-hold-a', { docId: 'fanin-hold-a' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-hold-b', { docId: 'fanin-hold-b' });
             const outFile = join(root, 'merged.json');
             const inA = join(root, 'a-in.json');
             const inB = join(root, 'b-in.json');
@@ -436,31 +497,60 @@ describe('runFanin source-runner mode (--source)', () => {
             writeFileSync(inB, '[]');
 
             await withPluginPath(pluginsRoot, async () => {
-                const started = Date.now();
-                const code = await runFanin([
-                    '--source',
-                    `fanin-slow-a:${inA}`,
-                    '--source',
-                    `fanin-slow-b:${inB}`,
-                    '--out',
-                    outFile,
-                ]);
-                const elapsed = Date.now() - started;
+                const calls: SpySpawnCall[] = [];
+                const heldByPlugin = new Map<string, HeldSpawn>();
+                let releaseGate!: () => void;
+                const bothArrived = new Promise<void>((resolve) => {
+                    releaseGate = resolve;
+                });
 
-                expect(code).toBe(0);
-                // Sequential would be ≥ 1200ms (2× 500ms sleeps + 2 process startups); concurrent
-                // ≈ slowest source. The 1500ms ceiling (P3a) leaves headroom for parallel-CI load
-                // while still failing a sequential runner.
-                expect(elapsed).toBeLessThan(1500);
-                expect(elapsed).toBeGreaterThanOrEqual(500);
+                const spy = spyOn(invokeModule, 'spawnPluginEntryAsync').mockImplementation((opts) => {
+                    calls.push({ pluginName: opts.pluginName, timeoutMs: opts.timeoutMs });
+                    // A successful fake still writes its output file: collectSourceDocs validates it.
+                    writeFakeSuccessDoc(opts);
+                    const hold = makeHeldSpawn();
+                    heldByPlugin.set(opts.pluginName ?? 'unknown', hold);
+                    if (heldByPlugin.size === 2) {
+                        releaseGate();
+                    }
+                    return hold.promise;
+                });
+                try {
+                    // Start the run without awaiting it: both spawn results are held by this test.
+                    const run = runFanin([
+                        '--source',
+                        `fanin-hold-a:${inA}`,
+                        '--source',
+                        `fanin-hold-b:${inB}`,
+                        '--out',
+                        outFile,
+                    ]);
+
+                    await bothArrived;
+                    // Both dispatches are observed before either result is released — no elapsed-time
+                    // ceiling. A serial-dispatch regression never gets here; the per-test watchdog
+                    // fails the held run instead of racing host startup latency.
+                    expect(calls).toHaveLength(2);
+
+                    // Release in reverse declaration order; merge order must not follow settle order.
+                    heldByPlugin.get('fanin-hold-b')?.release(FAKE_SPAWN_SUCCESS);
+                    heldByPlugin.get('fanin-hold-a')?.release(FAKE_SPAWN_SUCCESS);
+
+                    expect(await run).toBe(0);
+                } finally {
+                    // Idempotent releases keep the run from hanging if an assertion above failed.
+                    for (const hold of heldByPlugin.values()) {
+                        hold.release(FAKE_SPAWN_SUCCESS);
+                    }
+                    spy.mockRestore();
+                }
+
+                const outData = JSON.parse(await Bun.file(outFile).text());
+                // Declaration-order output and provenance survive the reversed settle order.
+                expect(outData.map((d: { id: string }) => d.id)).toEqual(['fanin-hold-a', 'fanin-hold-b']);
+                expect(outData[0].metadata.sources).toEqual([{ file: 'fanin-hold-a' }]);
+                expect(outData[1].metadata.sources).toEqual([{ file: 'fanin-hold-b' }]);
             });
-
-            const outData = JSON.parse(await Bun.file(outFile).text());
-            // Merge order = --source declaration order (deterministic output).
-            expect(outData.map((d: { id: string }) => d.id)).toEqual(['a1', 'b1']);
-            // Provenance = plugin name in source-runner mode.
-            expect(outData[0].metadata.sources).toEqual([{ file: 'fanin-slow-a' }]);
-            expect(outData[1].metadata.sources).toEqual([{ file: 'fanin-slow-b' }]);
         });
     });
 
@@ -563,40 +653,126 @@ describe('runFanin source-runner mode (--source)', () => {
         });
     }, 20_000);
 
-    it('--source-timeout-override extends ONE source past the global leash without touching siblings', async () => {
+    it('R2 — override reaches only its source; siblings keep the global leash and one timeout degrades alone (policy)', async () => {
         await withTempDir(async (root) => {
             const pluginsRoot = join(root, 'plugins');
-            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-fast', { docId: 'fast1' });
-            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-ovr-medium', { sleepMs: 4500, docId: 'medium1' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-t-ovr', { docId: 'fanin-t-ovr' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-t-ok', { docId: 'fanin-t-ok' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-t-slow', { docId: 'fanin-t-slow' });
             const outFile = join(root, 'merged.json');
-            const inFast = join(root, 'fast-in.json');
-            const inMedium = join(root, 'medium-in.json');
-            writeFileSync(inFast, '[]');
-            writeFileSync(inMedium, '[]');
+            const inOvr = join(root, 'ovr-in.json');
+            const inOk = join(root, 'ok-in.json');
+            const inSlow = join(root, 'slow-in.json');
+            writeFileSync(inOvr, '[]');
+            writeFileSync(inOk, '[]');
+            writeFileSync(inSlow, '[]');
 
-            // Global leash 3000ms would cut the 4500ms source; its personal override (20s) saves it. 3000ms, not
-            // 1000ms, so the sleepless sibling survives cold-start under full-gate load.
-            const code = await withPluginPath(pluginsRoot, () =>
-                runFanin([
-                    '--source',
-                    `fanin-ovr-fast:${inFast}`,
-                    '--source',
-                    `fanin-ovr-medium:${inMedium}`,
-                    '--source-timeout',
-                    '3000',
-                    '--source-timeout-override',
-                    'fanin-ovr-medium:20000',
-                    '--out',
-                    outFile,
-                ]),
+            await withPluginPath(pluginsRoot, () =>
+                withSpawnSpy(
+                    (opts) => {
+                        if (opts.pluginName === 'fanin-t-slow') {
+                            return FAKE_SPAWN_TIMEOUT;
+                        }
+                        writeFakeSuccessDoc(opts);
+                        return FAKE_SPAWN_SUCCESS;
+                    },
+                    async (calls) => {
+                        const code = await runFanin([
+                            '--source',
+                            `fanin-t-ovr:${inOvr}`,
+                            '--source',
+                            `fanin-t-ok:${inOk}`,
+                            '--source',
+                            `fanin-t-slow:${inSlow}`,
+                            '--source-timeout',
+                            '5000',
+                            '--source-timeout-override',
+                            'fanin-t-ovr:9000',
+                            '--out',
+                            outFile,
+                        ]);
+
+                        expect(code).toBe(0);
+                        // The exact timeoutMs handed to each spawn: the override reaches only its
+                        // own source; both siblings get the global value (override > global).
+                        expect(calls).toHaveLength(3);
+                        const budgetByPlugin = new Map<string | undefined, number | undefined>(
+                            calls.map((call) => [call.pluginName, call.timeoutMs]),
+                        );
+                        expect(budgetByPlugin.get('fanin-t-ovr')).toBe(9000);
+                        expect(budgetByPlugin.get('fanin-t-ok')).toBe(5000);
+                        expect(budgetByPlugin.get('fanin-t-slow')).toBe(5000);
+
+                        const outData = JSON.parse(await Bun.file(outFile).text());
+                        // The overridden source and the successful sibling survive; merge order holds.
+                        expect(outData.map((d: { id: string }) => d.id)).toEqual(['fanin-t-ovr', 'fanin-t-ok']);
+                        const errors = outData[0].metadata.sourceErrors;
+                        // The simulated timed-out sibling contributes only its own attributed entry.
+                        expect(errors).toHaveLength(1);
+                        expect(errors[0].plugin).toBe('fanin-t-slow');
+                        expect(errors[0].error).toContain('timed out after 5000ms');
+                        expect(typeof errors[0].durationMs).toBe('number');
+                        // Degradations still echo to the run output (never swallowed).
+                        expect(errLog()).toContain('fanin-t-slow');
+                    },
+                ),
             );
-
-            expect(code).toBe(0);
-            const outData = JSON.parse(await Bun.file(outFile).text());
-            expect(outData.map((d: { id: string }) => d.id)).toEqual(['fast1', 'medium1']);
-            expect(outData[0].metadata.sourceErrors).toBeUndefined();
         });
-    }, 20_000);
+    });
+
+    it('R2 — no global leash: the ordinary source keeps the 30-minute default and the override tightens only itself (policy)', async () => {
+        await withTempDir(async (root) => {
+            const pluginsRoot = join(root, 'plugins');
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-t-plain', { docId: 'fanin-t-plain' });
+            writeFixtureIngestionPlugin(pluginsRoot, 'fanin-t-tight', { docId: 'fanin-t-tight' });
+            const outFile = join(root, 'merged.json');
+            const inPlain = join(root, 'plain-in.json');
+            const inTight = join(root, 'tight-in.json');
+            writeFileSync(inPlain, '[]');
+            writeFileSync(inTight, '[]');
+
+            await withPluginPath(pluginsRoot, () =>
+                withSpawnSpy(
+                    (opts) => {
+                        if (opts.pluginName === 'fanin-t-tight') {
+                            return FAKE_SPAWN_TIMEOUT;
+                        }
+                        writeFakeSuccessDoc(opts);
+                        return FAKE_SPAWN_SUCCESS;
+                    },
+                    async (calls) => {
+                        const code = await runFanin([
+                            '--source',
+                            `fanin-t-plain:${inPlain}`,
+                            '--source',
+                            `fanin-t-tight:${inTight}`,
+                            '--source-timeout-override',
+                            'fanin-t-tight:250',
+                            '--out',
+                            outFile,
+                        ]);
+
+                        expect(code).toBe(0);
+                        expect(calls).toHaveLength(2);
+                        const budgetByPlugin = new Map<string | undefined, number | undefined>(
+                            calls.map((call) => [call.pluginName, call.timeoutMs]),
+                        );
+                        // fanin.ts DEFAULT_SOURCE_TIMEOUT_MS (kept module-private): the ordinary
+                        // source gets the existing 30-minute default, only the override tightens.
+                        expect(budgetByPlugin.get('fanin-t-plain')).toBe(30 * 60 * 1000);
+                        expect(budgetByPlugin.get('fanin-t-tight')).toBe(250);
+
+                        const outData = JSON.parse(await Bun.file(outFile).text());
+                        expect(outData.map((d: { id: string }) => d.id)).toEqual(['fanin-t-plain']);
+                        const errors = outData[0].metadata.sourceErrors;
+                        expect(errors).toHaveLength(1);
+                        expect(errors[0].plugin).toBe('fanin-t-tight');
+                        expect(errors[0].error).toContain('timed out after 250ms');
+                    },
+                ),
+            );
+        });
+    });
 
     it('--source-timeout-override tightens ONE source below the default without a global flag', async () => {
         await withTempDir(async (root) => {
