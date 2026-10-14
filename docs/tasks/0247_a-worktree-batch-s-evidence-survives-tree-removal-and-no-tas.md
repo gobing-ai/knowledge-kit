@@ -4,7 +4,7 @@ name: A worktree batch's evidence survives tree removal and no task cites a dead
 status: done
 template: feature-impl
 created_at: 2026-10-10T02:29:09.812Z
-updated_at: "2026-10-10T06:00:57.816Z"
+updated_at: "2026-10-14T05:53:50.391Z"
 feature_id: G7
 
 ac_altitude: task-local
@@ -171,7 +171,7 @@ Verdict: PASS
 | P4 (advisory) | Resolution is tree-relative and the durable target is itself gitignored, so no evidence-plane citation is resolvable in a fresh clone; the rule keeps the class visible but cannot make the plane durable. | `.spur/rules/structure/scratch-citation-existence.sh:169` | Recorded; tracking the durable plane is a follow-up beyond this task. |
 | P4 (advisory) | The 18-pair pre-rule backlog (`.spur/rules/structure/scratch-citation-existence.sh:50-70`) is debt and only shrinks when a task is touched. | same | Recorded; shrink-only policy stated in the header and the rule description. |
 | P4 (advisory) | The worktree delegate reports a refusal as `{"ok":false}` on stdout. **Corrected 2026-10-10 (post-review re-measurement):** it now **exits 1**, so the exit-0 observation that named this row no longer reproduces; what remains open is whether the driver's pre-removal guard consumes that status. Out of this repository's surface. | session note; task 0247 Q&A; `## Testing` (delegate exit-status correction) | Recorded for the `sp` plugin owner (out of scope per the task's Q&A). |
-| P4 (advisory) | Run 1 of this task was halted by the review-entry proof tripwire after the checker was patched post-capture; run 2 re-certified on a fresh digest from the same tree. | `.spur/memory/runs/8ca15833-cd9b-420d-8199-1101600d8623.md` | Recorded; the tripwire behaved as designed (stale certification refused, never reconciled). |
+| P4 (advisory) | Run 1 of this task was halted by the review-entry proof tripwire after the checker was patched post-capture; run 2 re-certified on a fresh digest from the same tree. | LOST — per-tree run record, gone by design (ADR-131 disposable plane); the tripwire contract re-attests itself on every pipeline run | Recorded; the tripwire behaved as designed (stale certification refused, never reconciled). |
 
 **Residual risk.** The AC1 evidence bullets are certified on executable evidence in this tree; the deferred attended measurement (`xhs-podcast-postfile.json`) stays OWED in task 0236 and is explicitly not claimed here (task 0247 R4). The rule's scope limits are documented rather than silent.
 

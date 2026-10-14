@@ -4,7 +4,7 @@ name: threads-pub — Threads text post via the official two-step publishing API
 status: done
 template: feature-impl
 created_at: 2026-10-09T23:19:30.092Z
-updated_at: "2026-10-12T05:55:17.542Z"
+updated_at: "2026-10-14T05:53:02.621Z"
 feature_id: E94
 priority: P2
 tags:
@@ -138,7 +138,7 @@ Test layer: `plugins/publishings/threads-pub/tests/threads-pub.test.ts` stubs `g
 #### Notes on the remediation hops
 
 - The registry expectation was updated here (not in 0245) because the suite asserts the shipped plugin inventory exactly; 0245 still owns the channel/enumeration surfaces (plugin-check list, `kk:publish` tables, `docs/03`).
-- A second remediation fixed a leak in this task's own test file: `spyOn(globalThis, 'fetch')` was never restored, and `bun test` runs every file in one process, so the next suite's `fetch` threw (surfdash-pub's 2 s `awaitArticleLive` budget expired). The file now keeps one live spy and restores it in `afterEach`; the paired run is 76 pass / 0 fail. Evidence: `.spur/memory/runs/0243-e94-0ee12e5a.md`.
+- A second remediation fixed a leak in this task's own test file: `spyOn(globalThis, 'fetch')` was never restored, and `bun test` runs every file in one process, so the next suite's `fetch` threw (surfdash-pub's 2 s `awaitArticleLive` budget expired). The file now keeps one live spy and restores it in `afterEach`; the paired run is 76 pass / 0 fail. Evidence: `plugins/publishings/threads-pub/tests/threads-pub.test.ts` (the single live spy restored in `afterEach`); the original run record was per-tree scratch, lost by design (ADR-131).
 
 ### Testing
 
