@@ -297,6 +297,7 @@ transitions:
 
   - from: script-review
     to: failed
+    terminalReason: failed-guard
     description: "VoiceScript rejected with revision budget exhausted -> fail"
     guard:
       kind: shell
@@ -339,6 +340,7 @@ transitions:
 
   - from: duration-check
     to: failed
+    terminalReason: failed-guard
     description: "Audio duration outside band with revision budget exhausted -> fail"
     guard:
       kind: shell

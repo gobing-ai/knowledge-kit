@@ -476,6 +476,7 @@ transitions:
 
   - from: draft-review
     to: failed
+    terminalReason: failed-guard
     description: "Draft rejected with revision budget exhausted -> fail"
     guard:
       kind: shell
@@ -557,6 +558,7 @@ transitions:
 
   - from: judge
     to: failed
+    terminalReason: failed-guard
     description: "Interactive mode, verdict FAIL or revise budget exhausted -> fail"
     guard:
       kind: shell
@@ -712,6 +714,7 @@ transitions:
 
   - from: report
     to: failed
+    terminalReason: failed-guard
     description: "Report outcome failed -> fail"
     guard:
       kind: shell
@@ -720,6 +723,7 @@ transitions:
 
   - from: judge
     to: failed
+    terminalReason: failed-guard
     description: "Catch-all: an out-of-contract verdict string fails the run instead of deadlocking the machine (0149 review P3); a PASS whose confidence is missing or outside HIGH/MEDIUM/LOW reads as `PASS!` and lands here"
     guard:
       kind: shell

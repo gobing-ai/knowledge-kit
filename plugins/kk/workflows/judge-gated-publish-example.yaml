@@ -91,6 +91,7 @@ transitions:
   # FAIL, out-of-contract verdict, or NEEDS_REVISION with no retries left -> failed.
   - from: judge
     to: failed
+    terminalReason: failed-guard
     description: "Judge verdict is FAIL, out-of-contract, or NEEDS_REVISION with retries exhausted -> block publish"
     guard:
       kind: shell
