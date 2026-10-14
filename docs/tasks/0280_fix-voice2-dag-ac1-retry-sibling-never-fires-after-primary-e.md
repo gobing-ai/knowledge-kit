@@ -1,63 +1,28 @@
 ---
 schema_version: 1
 name: "Fix voice2-dag AC1: retry sibling never fires after primary exit-0 without expectFile"
-status: todo
+status: cancelled
 template: issue
 created_at: 2026-10-14T06:15:17.989Z
-updated_at: "2026-10-14T17:28:45.998Z"
+updated_at: "2026-10-14T18:07:07.670Z"
 
+feature_id: G11
 ---
 
 ## 0280. Fix voice2-dag AC1: retry sibling never fires after primary exit-0 without expectFile
 
 ### Background
 
-Found while running 0279's quality gate (run dev-runall-0274-0279-3d2a). `apps/cli/tests/voice2-dag.test.ts:844`
-AC1 — a primary that exits 0 without its expectFile is recovered by the retry sibling — fails deterministically:
-only the `pi` primary is invoked, the `claude` retry sibling never fires (retry raced/dropped at ~1.5–1.9s, well
-inside the 180s budget).
+Filed after voice2 recovery AC1 failed during 0279's gate (run `dev-runall-0274-0279-3d2a`). The original report suspected a scheduler race because the primary ran but the retry binary did not. Task 0238 and this regression belong to feature G11 (voice2 DAG), not the completed F6 workflow feature.
 
-Reproduction envelope:
+**Update 2026-10-14 — root cause identified (A22 session review).** The task's earlier investigation recorded a global quota disable of the configured `claude` executor and the dispatch error `Executor 'claude' is disabled`. Commit `114d24adfd0c7575c3b1cfe1357db4126b3fd9b0` already changed the recovery fixtures to use a `codex` PATH stub. Historical quota timestamps and the original batch log are prior investigation evidence, not independently reproduced by this refinement.
 
-- Fails at worktree HEAD with both tasks' diffs — 5/5 runs (full suite, isolation ×3, filtered ×2).
-- Fails at the batch base commit `4eb197b9057427f7ac39e1e1b4d113efce491d20` in a fresh throwaway worktree
-  (bun install + single-test run) — pre-existing, not introduced by 0274/0279.
-- Contradiction: the identical tree ran the full suite green (2782 tests, 0 fail) at ~22:07 PDT the same
-  evening. No code or `~/.config/kk` change in between; suspected time- or environment-dependent race in the
-  agent.run recovery scheduling (0238 scope, feature F6 is done — re-parent as needed).
-- 0238's AC2–AC4 and every other voice2 test still pass in isolation.
+**Refine corrections (2026-10-14)**
 
-Scope note: filed by the dev-runall batch driver as an out-of-gate-scope follow-up; 0279's gate deviation is
-recorded in this batch run's per-tree run record (ADR-131 disposable plane; regenerated per run)`.
-
-**Update 2026-10-14 — root cause identified (A22 session review).** The failure is not a scheduling race and
-nothing about it is unexplained. The retry sibling is dispatched as `agent: ${vars.agent_retry}` = `claude`,
-and the globally configured executor profile `claude` was disabled by the quota guard at
-`2026-10-14T06:30:05Z` (entry `agent.executors.claude.disabled` = `{owner: quota, reason:
-"agent.quota.exhausted claude"}` in `~/.config/spur/config.yaml`; telemetry `~/.config/spur/agent-usage.json`
-→ `claude: exhausted`, resets `2026-10-15T01:00:00Z`). `resolveExecutor` refuses a disabled executor
-**before** any PATH lookup, so the retry node's dispatch dies ~1.5–1.9 s in — the exact interval observed —
-and the run's own stdout names it verbatim:
-
-    agent.run 'plan-translate-retry' (claude) dispatch failed: Executor 'claude' is disabled
-    (agent.executors.claude.disabled) — enable it or select another executor
-
-That single cause explains the whole envelope, including the observation recorded above as a contradiction:
-the suite was green at ~22:07 PDT because the disable had not been applied yet; it went red at 23:30 PDT and
-stayed red at every commit, including the batch base — the base-commit reproduction identified the *onset
-time*, not a pre-existing code defect. Reproduced on a clean tree (task 0277's diff stashed) to separate the
-environment from the change under test.
-
-Two mitigations have landed: `apps/cli/tests/voice2-dag.test.ts` now stubs the retry as `codex` — a canonical
-agent name with no executor profile, so no disable can pre-empt it (commit `114d24ad` on `main`) — and the
-`claude` profile has since been re-enabled (`disabled: false`) although the vendor window stays exhausted
-until 2026-10-15T01:00Z.
-
-Still open for this task: whether the engine *should* treat `agent: <name>` as a bare binary even when the
-same name exists as a disabled executor profile — the deprecation warning already promises bare binary names
-"keep working during the transition", so the pre-PATH refusal is arguably a contract gap in that transition.
-Decide that contract, and if the answer is "the test should not collide", this task reduces to the stub fix
-already applied.
+- Retry scheduling defect → current recovery AC1 dispatches `pi` then `codex` and produces the expected plan → remove the scheduler-race allegation; the fixture correction is already shipped.
+- Bare-binary compatibility gap → Spur's accepted executor-availability design explicitly guards named profiles before canonical-binary fallback and requires disabled pins to fail without fallback → remove the proposed contract change.
+- Wrong feature suggestion F6 → task 0238 is linked to active G11 → link 0280 to G11 and refresh its task roster.
+- No unresolved implementation issue remains → cancel 0280 rather than invent requirements or prepare duplicate work.
 
 ### Requirements
 
@@ -71,17 +36,34 @@ already applied.
 
 <!-- Clarifications and triage decisions. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-14T18:06:49.836Z
+
+- Closed: use existing feature G11 because it owns the voice2 DAG and task 0238's recovery siblings. No new feature is needed.
+- Closed: retain executor-first disabled-profile refusal; the accepted upstream contract already decides it.
+- Closed: cancel this task. The observed fixture failure is already addressed, and the proposed contract defect is invalid.
+
 ### Design
 
 <!-- Fix approach and tradeoffs. Keep this short unless the issue changes architecture. -->
 
 ### Plan
 
-<!-- Ordered debugging/fix checklist. Fill before moving to todo/wip. -->
+1. [x] Verify the existing fixture fix and accepted executor contract; no implementation remains.
+2. [x] Link to G11, cancel 0280, and refresh the feature task roster.
+3. [x] Complete scoped task/feature validation with no findings.
 
 ### Root Cause
 
-<!-- Verified underlying cause with file:line evidence. Fill once reproduced/isolated. -->
+The test selected `agent_retry: 'claude'`, colliding with an operator-configured executor profile disabled by the quota guard. Executor-first resolution rejected that profile before reaching the PATH stub. This was environment-dependent test dispatch, not dropped DAG scheduling.
+
+Verified current evidence:
+
+- `apps/cli/tests/voice2-dag.test.ts:829` explains profile precedence; `:831` selects `codex`; `:834`–`:852` observes actual primary/retry invocations and output artifacts.
+- Commit `114d24adfd0c7575c3b1cfe1357db4126b3fd9b0` contains the existing fixture fix.
+- Upstream `/Users/robin/xprojects/spur-new/docs/design/executor-availability.md:48`–`:57` requires profile guards before binary fallback and nonzero failure without fallback for explicit disabled pins (ADR-111).
+- Upstream `/Users/robin/xprojects/spur-new/packages/config/src/index.ts:687`–`:694` explicitly forbids falling through to a same-named bare binary; `packages/app/src/services/agent-service.ts:2299`–`:2308` enforces the dispatch guard.
+
+The compatibility promise does not override configured profile precedence or permit bypassing an intentional disable.
 
 ### Solution
 
@@ -89,7 +71,11 @@ already applied.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+Refinement verification on 2026-10-14:
+
+- `NODE_ENV=test bun test apps/cli/tests/voice2-dag.test.ts --test-name-pattern 'agent.run recovery siblings'`: **6 pass, 0 fail, 36 filtered out**, 57 assertions. Includes AC1–AC4 and the two structural recovery checks; AC1 observes `pi` then `codex`, completed run, and the recovered expected file.
+- Command exit was **1 due to per-file coverage thresholds** for the deliberately filtered suite; this is behavioral evidence, not a full-suite quality-gate PASS. Coverage policy was unchanged.
+- No production code changed. Full lint/build/test gates were not run for this cancelled-task corpus update.
 
 ### Review
 
@@ -97,6 +83,14 @@ already applied.
 
 ### References
 
-<!-- Links to failing logs, related issues, tasks, docs, or external references. -->
+- Feature G11: `docs/features/G11_kk-daily-ai-voice2-dag-daily-workflow-from-the-store-cut-over.md`.
+- Original recovery task: `docs/tasks/0238_kk-daily-ai-voice2-every-agent-run-node-exits-0-without-writ.md`.
+- Existing fix: commit `114d24adfd0c7575c3b1cfe1357db4126b3fd9b0`.
+- Regression coverage: `apps/cli/tests/voice2-dag.test.ts:821`.
+- Upstream contract: `/Users/robin/xprojects/spur-new/docs/design/executor-availability.md:48`, accepted under upstream ADR-111.
+- Upstream disabled-pin regression: `/Users/robin/xprojects/spur-new/packages/app/tests/services/agent-service.test.ts:4202` (inspected, not executed).
 
 ### History
+
+- 2026-10-14T18:06:53.175Z todo → cancelled (system)
+
