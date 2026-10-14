@@ -47,9 +47,11 @@ function run(
     args: string[],
     env: Record<string, string> = {},
     runnerPath: string = runner,
+    cwd?: string,
 ): { status: number; stdout: string; stderr: string } {
     const result = spawnSync('bun', [runnerPath, ...args], {
         encoding: 'utf-8',
+        cwd,
         env: { ...process.env, VOICEBOX_DEFAULT_PROFILE: 'tester', ...env },
     });
     return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
@@ -2469,25 +2471,30 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
         });
     });
 
-    it('daily-publish-partial names the failed targets and preserves the retry file', () => {
+    // The marker is the run's artifact, so it belongs under the run's workDir — a cwd-relative
+    // path both littered whatever tree the caller stood in and moved the note out of the episode.
+    it('daily-publish-partial names the failed targets and writes the retry file under workDir', () => {
         withTempDir((dir) => {
-            mkdirSync(join(dir, '31-publish'), { recursive: true });
-            const stamp = '20260101';
-            writeFileSync(
-                join(dir, `31-publish/${stamp}_17_publish_result.json`),
-                JSON.stringify({
-                    targets: [
-                        { target: 'surfdash-pub', ok: true, status: 'published' },
-                        { target: 'podcast-pub', ok: false, status: 'failed' },
-                    ],
-                }),
-            );
-            const result = run(['daily-publish-partial', dir, stamp]);
-            expect(result.status).toBe(0);
-            expect(result.stderr).toContain('failed targets: podcast-pub');
-            const retry = readFileSync(join('.spur/run', `publish-partial-${stamp}.txt`), 'utf-8');
-            expect(retry).toContain(`failed targets: podcast-pub`);
-            rmSync(join('.spur/run', `publish-partial-${stamp}.txt`), { force: true });
+            withTempDir((cwd) => {
+                mkdirSync(join(dir, '31-publish'), { recursive: true });
+                const stamp = '20260101';
+                writeFileSync(
+                    join(dir, `31-publish/${stamp}_17_publish_result.json`),
+                    JSON.stringify({
+                        targets: [
+                            { target: 'surfdash-pub', ok: true, status: 'published' },
+                            { target: 'podcast-pub', ok: false, status: 'failed' },
+                        ],
+                    }),
+                );
+                const result = run(['daily-publish-partial', dir, stamp], {}, runner, cwd);
+                expect(result.status).toBe(0);
+                expect(result.stderr).toContain('failed targets: podcast-pub');
+                const retry = readFileSync(join(dir, '.spur/run', `publish-partial-${stamp}.txt`), 'utf-8');
+                expect(retry).toContain('failed targets: podcast-pub');
+                expect(retry).toContain('--retry-from');
+                expect(existsSync(join(cwd, '.spur'))).toBe(false);
+            });
         });
     });
 

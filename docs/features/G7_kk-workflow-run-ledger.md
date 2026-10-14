@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G7"
 name: "kk workflow run ledger"
-status: verifying
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-07T04:52:26.497Z"
-updated_at: "2026-10-10T04:03:22.720Z"
+updated_at: "2026-10-13T22:42:38.093Z"
 ---
 
 # G7: kk workflow run ledger
@@ -48,4 +48,5 @@ New in 2026-10 (first child G71).
 
 - 2026-10-10T03:29:12.827Z backlog → active (system)
 - 2026-10-10T04:03:22.720Z active → verifying (system)
+- 2026-10-13T22:42:38.093Z verifying → active (system)
 

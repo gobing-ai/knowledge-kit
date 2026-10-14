@@ -266,3 +266,8 @@ Project context under `.spur/context/` (gitignored), via **`sp:indexed-context`*
 6. `token-ledger.jsonl` — auto; never hand-edit
 
 If `.spur/context/` is absent, continue; do not block.
+
+
+### Planned CLI/session follow-up
+
+A22 / ADR-037/038 specify canonical `stage run`, top-level `lock acquire|release`, and `bot list|login|logout|open`, retaining shipped spellings as hidden compatible routes. This is accepted design, not a shipped surface. See `docs/design/kk-noun-verb-bots.md`; keep site readiness and special authentication-state handling in channel plugins.

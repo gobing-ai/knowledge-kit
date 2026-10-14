@@ -5,7 +5,7 @@ owns: HOW — module boundaries, data flow, runtime model, invariants, rationale
 authority: derived
 version: 2.36.0
 created_at: 2026-07-22
-updated_at: 2026-10-12
+updated_at: 2026-10-13
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -547,3 +547,8 @@ legacy callers (ADR-009 amendment 2026-10-11).
 | A declared Board module's page is mounted at `/board/modules/<id>` — the host derives it from the declaration's `id` and its own constant `/modules/<id>` | installed `BOARD_MODULE_ROUTE_PREFIX` / `boardModuleRoute(id)` | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); the mounted path was measured live by `apps/board/tests/installed-board.test.ts` | HIGH |
 | The installed progress projection is state-oriented and a DAG run can lose it entirely (404 on an `orphan-row` diagnostic), so board progress reads run-detail action rows plus a digest-verified captured topology | installed bundle: `projectWorkflowProgress` and the progress route's guard | Read both in `node_modules/@gobing-ai/spur/spur.js` (0.4.2); the fallback is `apps/cli/src/board/reader.ts:354` | HIGH |
 | The reader is a KK-owned loopback process rather than a Board extension point, because the shipped Board loads browser contributions only and exposes no downstream server-route hook | the contribution contract and the served route table | Read `node_modules/@gobing-ai/spur/board/index.d.ts` and the `app.get` registrations in `spur.js` (0.4.2); no contribution-mounted route exists | MEDIUM — concluded from the contract and the route table, not from an attempted server injection |
+
+
+## Planned named browser-session boundary (A22)
+
+ADR-037/038 are accepted design only. CLI owns command parsing; publish-harness owns local profile lifecycle and shared launcher ownership; plugins keep site readiness and special state capture/restoration. An optional browserSession {profileName, homeUrl?} descriptor extends the existing manifest check-script seam, with publication-scoped URL resolution and scoped parent/child profile-lease ownership without importing publisher code into the CLI. The design and full canonical/alias map are in [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md). Existing plugin status/check/login contracts remain unchanged.

@@ -5,7 +5,7 @@ owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
 version: 3.19.0
 created_at: 2026-07-22
-updated_at: 2026-10-11
+updated_at: 2026-10-13
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.3
 sync: [T5]
@@ -74,3 +74,8 @@ package/browser acceptance. Tasks `0252`–`0254` are implemented; `0255` adds t
 Knowledge Kit install proof (three module routes + Settings → Workflows under the installed Board)
 and the operator setup/restart/shutdown steps.
 See [workflow-board-modules.md](design/workflow-board-modules.md).
+
+
+## Planned CLI/session follow-up (2026-10-13)
+
+A22 follows the shipped A21 surface: normalize stage/lock operations, add named bot lifecycle, preserve channel session behavior, then review and migrate compatible callers. Implementation is pending; session migration follows bot regression evidence.

@@ -2127,3 +2127,16 @@ Checks that produced no further delta: `docs/00_ADR.md` fan-out amendment versus
 - 2026-10-12 · 0263 — `commit-guard` treats every `.spur/**` path as bookkeeping and will never stage it, so a tracked rule file (`.spur/rules/**`) needs a targeted `git add -- <path>` — the guard's refusal reason ("unchanged since base") is misleading there.
 - 2026-10-12 · 0263 — the claim-citation checker accepts a citation in either the Source or the Local-verification column (`cited = is_cite($3) || is_cite($4)`), so "empty the Source cell" is not a falsification control: both citation cells must be emptied.
 
+## 2026-10-13 — Task 0264
+
+- **Pattern that worked:** When a stage writes a "run note", anchor it to the run's own `workDir` rather than the process cwd — the stage already receives the run directory, so the marker stays with the episode and cannot litter the caller's tree.
+- **Error hit and resolved:** A `--worktree` batch's first full-quality-gate run failed `spur run test-pre-check` with `no-dead-run-scoped-citation`, because `.spur/run` and `.spur/memory` are per-tree scratch planes: five done tasks cite artifacts that exist in the invoking tree but not in a freshly cut worktree. Staging those cited files into the worktree (the same `cp -n` evidence-staging step the batch starts with) fixed the gate without touching any corpus content; the worktree's `.spur/**` is outside the proof digest, so the captured digest did not move.
+- **Gotcha:** `bun test <file>` exits 1 on the per-file coverage threshold even when every executed test passes on a `--test-name-pattern`-filtered run. Judge a filtered run by its pass/fail counts and the exit code of the *full* suite, not by the filtered exit status.
+
+## 2026-10-13 — Task 0268
+
+- **Convention discovered:** The `decide` action's `task-triage` lane reads the diffstat and returns `fast` only for a low-confidence `low` value; a `standard` value (or an empty mode file) routes to `review`. The catalog backend can itself be degraded (`source: default`, `degraded: true`) — exactly the failure mode this task documents — so an empty mode file is a normal outcome, not an error.
+- **Pattern that worked:** A verification-only task rides the pipeline unchanged: `requireDiff: true` is satisfied by the `requireDiffAllowCleanCheck` admission, which accepts zero non-corpus changes when `spur task check <wbs>` passes. No bypass flag is needed and the task still gets a real gate, review, verify and record.
+- **Gotcha:** The residual `review-gate` reads the task file's `## Review` section, not any run artifact — a review answer file alone leaves `review-contract: review report carries no single valid **Confidence:** line` blocking and fails the review PASS edge closed.
+- **Convention discovered:** A verify answer's `| Req |` cells must hold the bare requirement id (`R1`); prose in that cell is rejected as `unknown requirement ID`, and the AC rows must repeat the scenario title verbatim including its `(req: …)` suffix.
+

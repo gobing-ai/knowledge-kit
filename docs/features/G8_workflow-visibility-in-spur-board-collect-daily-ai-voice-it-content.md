@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G8"
 name: "Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content"
-status: active
+status: verifying
 priority: P2
 tags: []
 created_at: "2026-10-11T23:18:58.413Z"
-updated_at: "2026-10-12T07:47:23.641Z"
+updated_at: "2026-10-13T22:18:10.026Z"
 ---
 
 # G8: Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content
@@ -152,7 +152,9 @@ Feature: Workflow visibility in Spur Board
 | 0252 | Inspect collection runs through a native Board module and local reader | done |
 | 0253 | Inspect daily voice DAG runs and multimedia results in Spur Board | done |
 | 0254 | Inspect IT Content authoring runs and target results in Spur Board | done |
-| 0255 | Verify three workflow modules from an installed package and harden operator setup | todo |
+| 0255 | Verify three workflow modules from an installed package and harden operator setup | done |
+| 0262 | Scope the verification-answer confidence rule to verification answers | cancelled |
+| 0268 | Surface a degraded decision-label pass at collect time, not as an empty pool later | done |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
@@ -174,4 +176,5 @@ Feature: Workflow visibility in Spur Board
 ## History
 
 - 2026-10-12T02:15:55.614Z backlog → active (system)
+- 2026-10-13T22:18:10.026Z active → verifying (system)
 
