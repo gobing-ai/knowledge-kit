@@ -4,7 +4,7 @@ name: "Fix voice2-dag AC1: retry sibling never fires after primary exit-0 withou
 status: todo
 template: issue
 created_at: 2026-10-14T06:15:17.989Z
-updated_at: "2026-10-14T06:39:47.759Z"
+updated_at: "2026-10-14T17:28:45.998Z"
 
 ---
 
@@ -29,6 +29,35 @@ Reproduction envelope:
 
 Scope note: filed by the dev-runall batch driver as an out-of-gate-scope follow-up; 0279's gate deviation is
 recorded in this batch run's per-tree run record (ADR-131 disposable plane; regenerated per run)`.
+
+**Update 2026-10-14 — root cause identified (A22 session review).** The failure is not a scheduling race and
+nothing about it is unexplained. The retry sibling is dispatched as `agent: ${vars.agent_retry}` = `claude`,
+and the globally configured executor profile `claude` was disabled by the quota guard at
+`2026-10-14T06:30:05Z` (entry `agent.executors.claude.disabled` = `{owner: quota, reason:
+"agent.quota.exhausted claude"}` in `~/.config/spur/config.yaml`; telemetry `~/.config/spur/agent-usage.json`
+→ `claude: exhausted`, resets `2026-10-15T01:00:00Z`). `resolveExecutor` refuses a disabled executor
+**before** any PATH lookup, so the retry node's dispatch dies ~1.5–1.9 s in — the exact interval observed —
+and the run's own stdout names it verbatim:
+
+    agent.run 'plan-translate-retry' (claude) dispatch failed: Executor 'claude' is disabled
+    (agent.executors.claude.disabled) — enable it or select another executor
+
+That single cause explains the whole envelope, including the observation recorded above as a contradiction:
+the suite was green at ~22:07 PDT because the disable had not been applied yet; it went red at 23:30 PDT and
+stayed red at every commit, including the batch base — the base-commit reproduction identified the *onset
+time*, not a pre-existing code defect. Reproduced on a clean tree (task 0277's diff stashed) to separate the
+environment from the change under test.
+
+Two mitigations have landed: `apps/cli/tests/voice2-dag.test.ts` now stubs the retry as `codex` — a canonical
+agent name with no executor profile, so no disable can pre-empt it (commit `114d24ad` on `main`) — and the
+`claude` profile has since been re-enabled (`disabled: false`) although the vendor window stays exhausted
+until 2026-10-15T01:00Z.
+
+Still open for this task: whether the engine *should* treat `agent: <name>` as a bare binary even when the
+same name exists as a disabled executor profile — the deprecation warning already promises bare binary names
+"keep working during the transition", so the pre-PATH refusal is arguably a contract gap in that transition.
+Decide that contract, and if the answer is "the test should not collide", this task reduces to the stub fix
+already applied.
 
 ### Requirements
 
