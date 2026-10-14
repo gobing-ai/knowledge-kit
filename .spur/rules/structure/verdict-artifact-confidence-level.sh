@@ -114,9 +114,13 @@ unparsable=0
 HAS_JQ=1
 command -v jq >/dev/null 2>&1 || HAS_JQ=0
 
-# Epoch seconds, BSD then GNU. An artifact whose mtime cannot be read is judged (fails closed).
+# Epoch seconds, GNU then BSD — order is load-bearing: GNU `stat -f` is filesystem mode and,
+# given the BSD format, exits nonzero while STILL printing the fs table to stdout, which the
+# command substitution then captures as the mtime (measured 2026-10-14 on CI: a 2020-mtime
+# artifact was judged instead of grandfathered). BSD `stat -c` is an error with empty stdout,
+# so it falls through cleanly. An artifact whose mtime cannot be read is judged (fails closed).
 mtime_of() {
-    stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
 }
 # Instant → epoch: ISO-8601 UTC first, then a bare date; an unparseable cutoff falls back to the
 # compiled default rather than judging history.
