@@ -2140,3 +2140,46 @@ Checks that produced no further delta: `docs/00_ADR.md` fan-out amendment versus
 - **Gotcha:** The residual `review-gate` reads the task file's `## Review` section, not any run artifact — a review answer file alone leaves `review-contract: review report carries no single valid **Confidence:** line` blocking and fails the review PASS edge closed.
 - **Convention discovered:** A verify answer's `| Req |` cells must hold the bare requirement id (`R1`); prose in that cell is rejected as `unknown requirement ID`, and the AC rows must repeat the scenario title verbatim including its `(req: …)` suffix.
 
+
+---
+
+## 2026-10-13 — 0274 — fan-in suite determinism under load
+
+- Elapsed-time ceilings are the wrong assertion in a parallel test suite: they encode machine speed, so
+  the full `spur-check` run goes red under load while the same file passes alone. Replace them with
+  held-promise gates (block the fake until every arrival is observed) and exact budget assertions on the
+  values the code computes.
+- `bun test <file>` exits 1 on **coverage**, not only on failures. A single-file run therefore cannot be
+  judged by its exit code; read the pass/fail counts, and use the full `bun run test` for the threshold
+  verdict.
+- A flake investigation that ends in "the theory was wrong" is still worth writing down: recording the
+  dropped writer-theory beside the shipped workaround stops the next session from re-deriving it.
+
+## 2026-10-13 — 0279 — dead run-scoped citations in `done` tasks
+
+- ADR-131 makes `.spur/run/` and `.spur/memory/` **per-tree disposable** planes. A `done` task must never
+  cite them: retarget to `.spur/memory/evidence/<wbs>-verdict.json` (durable plane), a repo-relative
+  `path:line` anchor, or mark the line `LOST`/`OWED` with the reason.
+- The `no-dead-run-scoped-citation` rule exempts a pointer only when `LOST`/`OWED` sits on the **same
+  line** as the token, or the file declares that exact path. A `LOST` on the next line of a wrapped
+  bullet does not exempt it — the token's own line is what counts, so a citation census that reads only
+  the first flagged line under-counts (observed: 2 reported vs 6 real).
+- The rule's in-scope token set is narrow: `.spur/run/<uuid>*`, any `.spur/memory/runs/*`, and the task's
+  own `<wbs>-check-receipt.json` / `<wbs>-verify-answer.txt`. Historical narrative mentioning the planes
+  is not a citation.
+- Corpus writes are CLI-gated (`spur task update --section --from-file`) and the gates are literal: an
+  empty staged body is refused (`[invalid-solution] Solution must contain at least one file:line
+  citation`), and `sh <path>:1` is parsed as a path beginning with `sh `, producing an
+  `L4.anchor-unresolved` **error**. Cite a script as a bare whole-file path, not through the interpreter.
+- Verify-answer lint, learned the hard way: a behaviour-bearing AC row typed `manual-review` is downgraded
+  to PARTIAL and drags the verdict with it; use `command` with the literal commands run (re-run them to
+  confirm the printed text), or tag the row id `[docs-only]`/`[non-behavior]` when it genuinely is.
+- The `testing → done` transition needs recorded provenance. An inline-driven task has no pipeline run
+  row, so register the real batch run first (`spur task run-link <wbs> --source dev-runall --run-id …`)
+  rather than reaching for `--provenance-bypass`.
+- The `commit-guard` needs a fingerprint taken **before** the work (WT-3b). A markerless worktree cannot
+  bootstrap it after the fact — a late `start` classifies the batch's own files as `foreign — dirty at
+  start`. In a single-writer worktree, explicit per-path `git add` (never `-A`/`.`) is the safe fallback.
+- Isolation test runs clobber `.coverage/`, so a post-check coverage rule fails spuriously after them;
+  re-run the full `bun run test` before believing a coverage finding.
+
