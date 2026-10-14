@@ -337,6 +337,20 @@ describe('weibo-pub refusals before any browser (R3, R5, R8)', () => {
         }
         expect(fake.requests).toHaveLength(0);
     });
+
+    test('an article cover outside .png/.jpg/.jpeg/.webp is refused pre-browser; a post still takes a gif', async () => {
+        const gif = join(TMP_DIR, 'cover.gif');
+        await writeFile(gif, 'gif');
+        const refused = makeFakeLauncher();
+        const article = await transport(refused).publish({ content, options: { coverPath: gif } });
+        expect(article.ok).toBe(false);
+        expect(article.error).toContain('.png, .jpg, .jpeg, .webp');
+        expect(refused.requests).toHaveLength(0);
+
+        const accepted = makeFakeLauncher({ apiSubmit: { id: '5001' }, picId: 'PIC123' });
+        const post = await transport(accepted, 'post').publish({ content: livePost, options: { coverPath: gif } });
+        expect(post.ok).toBe(true);
+    });
 });
 
 describe('weibo-pub session preflight (R6)', () => {

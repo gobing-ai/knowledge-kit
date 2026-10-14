@@ -4,7 +4,7 @@ name: weibo-pub — Weibo post and 头条文章 article script browser transport
 status: done
 template: feature-impl
 created_at: 2026-10-09T23:19:30.101Z
-updated_at: "2026-10-12T06:39:11.421Z"
+updated_at: "2026-10-14T05:04:08.834Z"
 feature_id: E94
 priority: P2
 tags:
@@ -147,6 +147,8 @@ Test layer: `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` with a copie
 - **The recovery command is never truncated** (found while fixing the suite): `fail()` bounds the message to one line, so the session refusal now puts `bun plugins/publishings/weibo-pub/src/profile-check.ts login` **before** the harness detail — the operator's next action must not be the part that gets cut.
 - **Read-back before any save/publish** (R4): a title or body the editor dropped is a refusal, not a saved draft with an empty article.
 
+**Verify follow-up (2026-10-13, E94 verifyall).** 0246 widened the shared `resolveCover` to the post composer's `.gif`/`.bmp` set, which also let an `article` cover with those extensions reach the browser — R2 requires a pre-browser refusal outside `.png|.jpg|.jpeg|.webp`. `resolveCover` now takes the operation and keeps `ARTICLE_COVER_EXTS` for `article` (`plugins/publishings/weibo-pub/src/index.ts:115-116`, `:237-240`); red-first test `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:341-353`. Stale pre-0246 post-flow text (发送 + fresh feed card, "provisional" selectors, "post images deferred") was re-synced in `docs/04_DESIGN.md:1213`, `:1218`, `:1236` and the `runPostFlow` doc comment.
+
 ### Testing
 
 **Pipeline verify results**
@@ -156,27 +158,27 @@ Test layer: `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts` with a copie
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/publishings/weibo-pub/plugin.json:1-8` (`kind: publish`, `check: ./src/profile-check.ts`), `plugins/publishings/weibo-pub/package.json:1-19`, `plugins/publishings/weibo-pub/tsconfig.json:1-4`, `plugins/publishings/weibo-pub/src/index.ts:1-706`, `plugins/publishings/weibo-pub/src/profile-check.ts:1-20`, `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:1-662` |
-| R2 | MET | `plugins/publishings/weibo-pub/src/index.ts:321-411` — title fill, `pasteHtml(markdownToHtml(body))`, optional cover with a fresh attachment signal, `保存草稿` by default; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:362-446` covers draft-url, fresh-toast, cover-upload and cover-refusal |
-| R3 | MET | `plugins/publishings/weibo-pub/src/index.ts:253-268` (post requires `public`, text-only cover refusal), `plugins/publishings/weibo-pub/src/index.ts:413-438` (composer → read-back → 发送 → fresh card); `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:282-306` and `:449-485` |
-| R4 | MET | `plugins/publishings/weibo-pub/src/index.ts:447-512` — read-back before any save/publish and the fresh-signal probes (toast snapshot, feed-card snapshot, draft URL, published article URL); `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:399-446` and `:464-476` cover the stale-toast, no-signal, existing-card and non-matching-card refusals |
-| R5 | MET | `plugins/publishings/weibo-pub/src/index.ts:250-256` — any other `publishStatus` refused pre-browser; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:272-280` |
-| R6 | MET | `plugins/publishings/weibo-pub/src/index.ts:271-284` — `checkChannelSession(WEIBO_CONFIG, { headedFallback: false })`, refusal leads with the login command; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:319-359` asserts one headless request and that `checkHeadedOnly` is never forwarded |
-| R7 | MET | `plugins/publishings/weibo-pub/src/profile-check.ts:1-20` over `runProfileCli`; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:488-560` covers precedence, exit codes 0/1/2 and the bare-entry usage smoke check |
-| R8 | MET | `plugins/publishings/weibo-pub/src/index.ts:127-158` — operation and `options.driver` refused by name before any transport exists; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:223-270` |
-| R9 | MET | `plugins/publishings/weibo-pub/src/index.ts:622-626` — `FakeBrowserTransport('script')` under the fake env; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:563-620` plus the CLI probe below |
-| R10 | MET | `docs/04_DESIGN.md:809` (profile-env row gains `weibo-pub` / `WEIBO_PROFILE_DIR`), `docs/04_DESIGN.md:931` (transport-verdict row), `docs/04_DESIGN.md:1016-1028` (`@gobing-ai/weibo-pub` package section) |
+| R1 | MET | `plugins/publishings/weibo-pub/plugin.json:1-8` (`kind: publish`, `check: ./src/profile-check.ts`), `plugins/publishings/weibo-pub/package.json:1-19`, `plugins/publishings/weibo-pub/tsconfig.json:1-4`, `plugins/publishings/weibo-pub/src/index.ts:1-868`, `plugins/publishings/weibo-pub/src/profile-check.ts:1-20`, `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:1-784` |
+| R2 | MET | `plugins/publishings/weibo-pub/src/index.ts:356-447` — title fill, `pasteHtml(markdownToHtml(body))`, optional cover with a fresh attachment signal (`:384-397`), readback, then `保存草稿` by default (`:409-427`); `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:399-495` covers draft-url, fresh-toast, cover-upload and cover-refusal; `plugins/publishings/weibo-pub/src/index.ts:237-240` keeps the article cover set at `.png |
+| R3 | MET | `plugins/publishings/weibo-pub/src/index.ts:298-305` (post requires `public` and non-empty text), `plugins/publishings/weibo-pub/src/index.ts:448-510` (mobile composer → readback → optional one image → submit through the page's mobile API; success only from the returned status id — the 0246 rewrite of the original 发送/feed-card path); `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:313-319` and `:498-510` |
+| R4 | MET | `plugins/publishings/weibo-pub/src/index.ts:399-438` — title/body read back before any save/publish control, and success only from a fresh signal (`probeDraft` / `probeFreshToast` / `probeArticleLive` at `:562-605`); post success requires an API-returned id (`plugins/publishings/weibo-pub/src/index.ts:517-530`); `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:436-450` (stale toast / no signal), `:463-469` (dropped title), `:534-574` (refused submit, account-state refusal, failed submit) |
+| R5 | MET | `plugins/publishings/weibo-pub/src/index.ts:294-297` — any other `publishStatus` refused pre-browser; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:303-311` |
+| R6 | MET | `plugins/publishings/weibo-pub/src/index.ts:313-325` — `checkChannelSession(WEIBO_CONFIG, { headedFallback: false })`, refusal leads with the login command; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:356-397` asserts one headless request and that `checkHeadedOnly` is never forwarded |
+| R7 | MET | `plugins/publishings/weibo-pub/src/profile-check.ts:1-20` over `runProfileCli`; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:608-678` covers precedence, exit codes 0/1/2, login and the bare-entry usage smoke check |
+| R8 | MET | `plugins/publishings/weibo-pub/src/index.ts:149-187` (`resolveOperation` / `resolveDriver`) and `plugins/publishings/weibo-pub/src/index.ts:284-293` — operation and `options.driver` refused by name before any transport exists; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:254-301` |
+| R9 | MET | `plugins/publishings/weibo-pub/src/index.ts:784-791` — `FakeBrowserTransport('script')` under the fake env; `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:680-771` |
+| R10 | MET | `docs/04_DESIGN.md:1000` (profile-env row gains `weibo-pub` / `WEIBO_PROFILE_DIR`), `docs/04_DESIGN.md:1122` (transport-verdict row), `docs/04_DESIGN.md:1207-1236` (`@gobing-ai/weibo-pub` package section; post-flow, selector and deferral text re-synced to the 0246 code in this verify) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R4 — weibo-pub saves a post or article draft by default from an observed signal | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:363-388` — the draft run clicks 保存草稿 and never the publish control, and success requires the fresh draft URL or the fresh toast; production `plugins/publishings/weibo-pub/src/index.ts:321-411` |
-| R5 — weibo-pub publishes live only when publishStatus is public | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:282-298` (post without `public` refused pre-browser), `:272-280` (unknown value refused), `:390-397` (publish control clicked only for `public`) |
-| R6 — weibo-pub refuses an unauthenticated session before any headed browser opens | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:320-359` — one headless request on a refusal, login command in the error, and the preflight stays headless with `checkHeadedOnly: true` |
-| R7 — weibo-pub ships a profile-check login and check entry | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:488-560` over `plugins/publishings/weibo-pub/src/profile-check.ts:1-20` |
-| AC1 — weibo-pub saves a post or article draft by default from an observed signal (req: R2) (req: R3) (req: R4) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:362-446` |
-| AC2 — weibo-pub publishes live only when publishStatus is public (req: R3) (req: R5) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:272-298` and `:390-397` |
-| AC3 — weibo-pub refuses an unauthenticated session before any headed browser opens (req: R6) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:319-359` |
-| AC4 — weibo-pub ships a profile-check login and check entry (req: R7) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:488-560` |
+| R4 — weibo-pub saves a post or article draft by default from an observed signal | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:400-418` — the draft run clicks 保存草稿 and never the publish control and reports the fresh draft URL; `:420-425` fresh toast; production `plugins/publishings/weibo-pub/src/index.ts:356-447` |
+| R5 — weibo-pub publishes live only when publishStatus is public | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:313-319` (post without `public` refused pre-browser), `:303-311` (unknown value refused), `:427-434` (publish control clicked only for `public`) |
+| R6 — weibo-pub refuses an unauthenticated session before any headed browser opens | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:356-397` — one headless request on a refusal, login command in the error, and the preflight stays headless with `checkHeadedOnly: true` |
+| R7 — weibo-pub ships a profile-check login and check entry | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:608-678` over `plugins/publishings/weibo-pub/src/profile-check.ts:1-20` |
+| AC1 — weibo-pub saves a post or article draft by default from an observed signal (req: R2) (req: R3) (req: R4) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:399-495` |
+| AC2 — weibo-pub publishes live only when publishStatus is public (req: R3) (req: R5) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:303-319`, `:427-434` and `:498-510` |
+| AC3 — weibo-pub refuses an unauthenticated session before any headed browser opens (req: R6) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:356-397` |
+| AC4 — weibo-pub ships a profile-check login and check entry (req: R7) | MET | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:608-678` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

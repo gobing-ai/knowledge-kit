@@ -112,6 +112,8 @@ const POST_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp
  * browser and API routes, so the stricter documented bound is the channel's bound.
  */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** The 头条文章 cover keeps the x-pub peer's narrower set (0244 R2); only `post` widened (0246 R9). */
+const ARTICLE_COVER_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
 /** Body excerpt length compared on readback and on the fresh-post signal. */
 const EXCERPT_CHARS = 30;
@@ -209,13 +211,15 @@ export const WEIBO_CONFIG: ChannelBrowserConfig = {
 };
 
 /**
- * Resolves and validates the optional cover: `options.coverPath` wins over
- * `metadata.coverImage`, and a given cover must be an absolute path to an existing
- * `.png|.jpg|.jpeg|.webp` file — a bad cover is refused before any browser opens (R2).
+ * Resolves and validates the optional image: `options.coverPath` wins over a single `options.images`
+ * entry and `metadata.coverImage`. It must be an absolute path to an existing file of the
+ * operation's accepted set (article `.png|.jpg|.jpeg|.webp`, post adds `.gif|.bmp`) within 5 MB —
+ * a bad image is refused before any browser opens (R2, R9).
  */
 async function resolveCover(
     options: Record<string, unknown> | undefined,
     content: Content,
+    operation: string,
 ): Promise<{ path: string } | { error: string } | undefined> {
     const list = options?.images;
     if (Array.isArray(list) && list.length > 1) {
@@ -230,11 +234,9 @@ async function resolveCover(
     if (!isAbsolute(raw)) {
         return { error: `image path must be an absolute path, got '${raw}'` };
     }
-    const ext = extname(raw).toLowerCase();
-    if (!POST_IMAGE_EXTS.has(ext)) {
-        return {
-            error: `image must be one of .png, .jpg, .jpeg, .webp, .gif, .bmp (Weibo's accepted set), got '${raw}'`,
-        };
+    const accepted = operation === 'article' ? ARTICLE_COVER_EXTS : POST_IMAGE_EXTS;
+    if (!accepted.has(extname(raw).toLowerCase())) {
+        return { error: `image must be one of ${[...accepted].join(', ')} (Weibo's accepted set), got '${raw}'` };
     }
     if (!(await createNodeFileSystem().exists(raw))) {
         return { error: `image file does not exist: '${raw}'` };
@@ -301,7 +303,7 @@ export class WeiboBrowserTransport implements PublishTransport {
         if (this.operation === 'post' && text.length === 0) {
             return fail('weibo post requires Content.body or Content.title');
         }
-        const cover = await resolveCover(payload.options, payload.content);
+        const cover = await resolveCover(payload.options, payload.content, this.operation);
         if (cover !== undefined && 'error' in cover) return fail(cover.error);
         // An episode announcement carries its cover: `post` accepts exactly one image (R9, 0246).
 
@@ -445,8 +447,8 @@ export class WeiboBrowserTransport implements PublishTransport {
     }
 
     /**
-     * The home-composer flow: fill → readback → `发送`, then require a **new** feed card whose text
-     * carries the submitted excerpt. Only reached for `publishStatus: public` (R3, R4).
+     * The mobile-composer flow: fill → readback → optional one image → submit through the page's own
+     * mobile API; success is the returned status id. Only reached for `publishStatus: public` (R3, R4).
      */
     private async runPostFlow(page: Page, text: string, profileDir: string, coverPath?: string): Promise<Result> {
         let picId = '';
