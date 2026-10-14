@@ -68,10 +68,23 @@ bootstrap:
       # keeps 00:00-06:59 quiet). `history daily` = import + analyze; analyze is
       # what refreshes the Board History rollups (token usage included) - import
       # alone never does. Split into explicit commands so a failing import never
-      # masks a skipped analyze. Checkpoint resume + the rollup-freshness
-      # short-circuit keep a no-op tick cheap (I81).
+      # masks a skipped analyze.
+      #
+      # 30-min cadence, not 10 (2026-10-13): the I81 "no-op tick is cheap"
+      # assumption no longer holds - analyze is history-wide and the importer commits a
+      # transaction per JSONL line, so on a loaded machine (load 32 from parallel agent
+      # batches) a tick measured 18 min import (1996 new messages) + >20 min analyze.
+      # At 10 min it ran back-to-back and every other tick was silently suppressed (the
+      # queue_jobs_history_refresh_active_unique index and/or the in-process duplicate guard —
+      # no event is emitted either way); at 30 min a long tick just defers the next one, and
+      # checkpoint resume self-heals the gap.
       - name: history-refresh
-        cron: "*/10 7-23 * * *"
+        cron: "*/30 7-23 * * *"
+        # 60 min: the 600s default killed every long tick (all 489 failures in this job's
+        # history are "timed out after 600000ms", 601-614s durations). Measured 2026-10-13:
+        # quiet chain 68-310s import + 60-1124s analyze; loaded chain 1080s import +
+        # ~1200s analyze, which still overran a first attempt at 2400000ms.
+        timeoutMs: 3600000
         command: spur --no-logo history import && spur --no-logo history analyze
 
       # 05:00 daily: full-corpus import (checkpoint resume self-heals gaps),
@@ -81,6 +94,9 @@ bootstrap:
       # Ends with database maintenance (PRAGMA optimize + wal_checkpoint).
       - name: history-daily-report
         cron: "3 5 * * *"
+        # 2h: every run since creation (33/33) died on the 600s default, because
+        # full-corpus import alone costs ~310s and the workflow adds agent stages.
+        timeoutMs: 7200000
         command: >-
           spur --no-logo history import --source all &&
           spur --no-logo workflow run config/workflows/history-anatomy.yaml --quiet &&

@@ -54,3 +54,88 @@
   timing pair hardened by `fefd9808`: it can fail only under full-suite load.
 - Before blaming your own change for a red gate, run the failing file alone. If it passes alone,
   you are looking at this class, not at a regression.
+
+## 2026-10-13 — `history-refresh` deadline kills (root cause; NOT a DB/CLI version skew)
+
+- **The schema-version mismatch theory is false.** `__spur_cli_migrations` holds all 54 migrations
+  through `0053_spur_cli_inbox_messages_read_at`, and `importer_schema@0.5.24` matches the installed
+  bundle's `HISTORY_IMPORT_SCHEMA_VERSION = "0.5.24"`. The 320 `History schema version mismatch`
+  failures are historical (2026-09-12…10-09) and already self-healed. `spur --version` printing 0.4.3
+  while the bundle carries 0.5.24 is a stale `version` in the published `package.json` — cosmetic.
+- **Every current failure is the 600 s default job budget exceeded.** In 489 failures the recorded
+  duration is 601–642 s and the error is always `timed out after 600000ms`. Measured 2026-10-13 on
+  this corpus: `history import` 68 s (no-op tick) → 310 s (backlog), `history analyze` 60 s with
+  `--since 1h` vs **1124 s** over all history. The history-wide part of analyze is what grows with
+  the corpus (3.4 M messages, 8.4 GiB DB), so a 10-min tick no longer fits a 600 s cap. Fix applied:
+  `cron: "*/30 7-23 * * *"` + `timeoutMs: 3600000` (raised from a first attempt at 2400000 after
+  the 16:30 tick overran it under load 32), and `history-daily-report` `timeoutMs: 7200000`
+  (all 33 of its runs had died inside the first stage).
+- **A tick longer than the cron period is not just slow** — the following tick is silently
+  suppressed (the `queue_jobs_history_refresh_active_unique` index and/or the in-process duplicate
+  guard; no event is emitted either way): 8 jobs ran for 12 ticks between 13:40 and 16:10. Cadence must exceed the measured chain, not the intended one.
+- **Scheduler jobs register at `spur serve` boot.** A `.spur/config.yaml` scheduler edit does
+  nothing until the server restarts; `Scheduler entries registered` in `.spur/logs/spur.log` is the
+  only proof it took effect.
+- **A per-source budget equal to the chain budget aborts the chain.** `--source-timeout` also
+  defaults to 600000, and on a source timeout `history import` throws
+  `remaining sources not started` — one slow source ends the run, it is not isolated.
+- **Do not run `history import` next to the scheduled tick.** Two overlapping imports collide in
+  `history_import_ledger` (its batch INSERT lacked `ON CONFLICT(record_hash) DO NOTHING`); the loser
+  drops the whole `pi` source (2967 MB) with `UNIQUE constraint failed` and exits 2. Patched in
+  `@gobing-ai/ts-llm-jsonl-importer` (`src/jsonl-importer-dao.ts` `ledgerInsertOp` + `insertLedger`)
+  plus two regression tests in `tests/jsonl-importer-dao.test.ts`.
+- **Retention has not run since 2026-09-07.** `runRetention` (queue_jobs 30 d, ledger 180 d,
+  rule_eval_runs 90 d, 7-day-gated VACUUM) is reachable only from `HistoryService.daily`, but both
+  cron chains call `history import` + `history analyze` explicitly, so `spur_retention_meta.compaction`
+  is frozen and `.spur/spur.db` (8.4 GiB, 4.3 M ledger rows) grows unbounded.
+- Open upstream defect: `history analyze` cost scales with total history because the rollup
+  derivations include full-corpus re-derivations (`recomputeRankedSteps` → `topStepsByTokens`
+  /`topStepsByDuration`/`topCacheWasteSteps` over `ALL_HISTORY`, spur `history-board-rollup.ts:2040`)
+  and the un-watermarked analyzer queries (`sessionWatermarks`, `sourceSummary`, `pairingSummary`,
+  `bySession`). `refreshHistoryRollups` also runs twice per tick (import tail + analyze tail).
+
+### Confidence verification (2026-10-13, same session)
+
+- **[HIGH] The schema-skew theory is dead, not merely unlikely.** `spur --no-logo self migrate --json`
+  → `{"ok":true,"applied":0}`: no pending migration. `__spur_cli_migrations` holds 79 rows through
+  `0053_spur_cli_inbox_messages_read_at`, and `importer_schema@0.5.24` equals the installed bundle's
+  `HISTORY_IMPORT_SCHEMA_VERSION` (`spur.js:44599`).
+- **[HIGH] Every Oct 12–13 failure is the job deadline.** All 489 `failed` rows' error text on those
+  days is `timed out after 600000ms`, durations 601–642 s; the 320 earlier `History schema version
+  mismatch` and 25 `spur: command not found` failures are Sept 12 – Oct 9 only.
+- **[HIGH] The measured stage costs.** Own timed runs: `history import` 68 s (no-op) / 310 s
+  (backlog) / ~1080 s (load 32); `history analyze` 60 s with `--since 1h` vs 1124 s over all history.
+- **[HIGH] The cost sits in analyze's history-wide portion** — the only difference between the 60 s
+  and 1124 s runs was the selector, and the source confirms un-watermarked queries plus
+  `recomputeRankedSteps` over `ALL_HISTORY` (`spur-new/packages/domain/src/analytics/history-board-rollup.ts:2040`).
+- **[LOW] WHICH query dominates is unresolved.** My own sqlite3 timings for `sessionWatermarks`
+  (10 s) and `sourceSummary` (1 s) are fast enough to contradict the naive blame on those two; no
+  per-query isolation was done. Do not patch these by guesswork.
+- **[HIGH] `refreshHistoryRollups` runs twice per tick**: `history-service.ts:1042` (inside `analyze`)
+  and `:1165` (tail of `importAll`); the import JSON reports 20–25 s per call.
+- **[HIGH] The importer commits one transaction per JSONL line**: `await options.db.batch(ops)` sits
+  inside the per-line loop (`ts-libs/packages/llm-jsonl-importer/src/importer.ts:637`).
+- **[MEDIUM] That per-line commit is what made the loaded import 18 min long.** Consistent with
+  ~2700 rows / ~1080 s ≈ 0.4 s per commit under load 32, but no commit/fsync counter was measured —
+  I/O contention from the parallel agent batches is an equally good explanation.
+- **[HIGH observable / MEDIUM mechanism] Ticks are dropped while one is in flight.** The 14:20, 14:50,
+  15:10, 15:30 and 15:50 ticks have no `queue_jobs` row while the preceding job was still running.
+  The partial unique index exists, and the in-process duplicate handler *should* emit a
+  `scheduler.job.executed` event — but **zero** such events carry `skipped`/`duplicate`/`exclusive`
+  text, so no log proves which suppression path fired. That gap is worth reporting upstream too.
+- **[HIGH] The ledger `ON CONFLICT` defect drops a whole source.** Reproduced live: `pi: failed`,
+  `source-failed: UNIQUE constraint failed: history_import_ledger.record_hash`, exit 2; the two
+  regression tests fail before the fix and pass after (23/23 in that file, 403/403 in the package).
+- **[HIGH] Row-purge retention is reachable only from `HistoryService.daily`** — `runRetention` has
+  exactly one call site, `history-service.ts:1236` inside `daily()` — and has not run since
+  2026-09-07 14:14 (`spur_retention_meta` holds only `compaction`). The weekly
+  `database-weekly-maintenance` VACUUM is a separate path and does still run.
+- **[HIGH] `history-daily-report` has never succeeded** (33/33 `failed`).
+- **[HIGH] The fix works**: the 17:30 tick is `completed` at 518.6 s, wrote its artifact at 17:38, and
+  advanced the rollup watermark to `2026-10-14T00:32:41Z`. Re-verified 19:49: **5 consecutive
+  completed ticks** (17:30→19:30, 333–519 s, ~9–14% of the 3600 s budget), 0 failures since.
+- **[LOW] The nightly job's new 2 h budget is sufficient** — it cannot be exercised before 05:03, and
+  its workflow stage has never executed from that job.
+- **[MEDIUM] Concurrent load is the variance driver.** 518.6 s at load 8.4 vs >2400 s at load 32, one
+  uncontrolled observation each; the quiet-machine baseline (300–480 s) comes from the 12:40–14:30
+  successful ticks.
