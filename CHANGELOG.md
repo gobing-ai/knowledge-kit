@@ -190,7 +190,15 @@ Verification (2026-10-14, sp-dev-changelog): HIGH
   (508e579e "…installed Spur 0.4.2"), both inside quoted subjects, checkable via `git show -s ca7fe0d0` /
   `git show -s 508e579e`. Every claim in this verification is a local git fact cited with the
   command that checks it; the audited artifact is the `## [0.0.36]` section of CHANGELOG.md.
-- Confidence: HIGH
+- The confidence level itself is earned and checked, not just declared: the contract — exactly one
+  whole-word `Confidence: HIGH|MEDIUM|LOW` line per block, HIGH requires at least one evidence citation —
+  is enforced by .spur/rules/structure/verification-confidence-level.sh:47,:76-98 (run by hand -> pass),
+  and every load-bearing claim in this block reconciles mechanically: coverage 162/162 verbatim subjects
+  (per-bullet `git show -s` string-equality), mapping re-derived from the subjects as feat 24, fix 32,
+  docs 64 + chore 22 + test 18 + refactor 1 + revert 1 = 162, and the HIGH citation floor is met (the
+  `CHANGELOG.md` dotted path above). Deliberately NOT claimed: HIGH covers this entry's provenance —
+  coverage, mapping, citation — not the truth of each commit message's own description; the bullets are
+  quoted subjects, not independently re-verified behavior claims.
 -->
 
 ## [0.0.35] - 2026-10-10
