@@ -182,11 +182,15 @@ Verification (2026-10-14, sp-dev-changelog): HIGH
 - Mapping: feat->Added 24, fix->Fixed 32, docs 64 + chore 22 + test 18 + refactor 1 ->Changed 105,
   revert->Other 1 (24+32+105+1 = 162). The header carries the operator-supplied `--version 0.0.36`; no tag
   exists for it (`git tag -l "*v0.0.36*"` -> empty), matching the 0.0.35 precedent of an uncut release.
-- API/library claims: the section introduces none — every bullet quotes its commit subject verbatim from
-  `git log`, so no external source citations are required. The only version strings appear inside quoted
-  subjects (508e579e "Spur 0.4.2", ca7fe0d0 "1.4.3 Bun baseline") and their source is the commit itself,
-  checkable via `git show -s <hash>`. Every claim in this verification is a local git fact cited with the
-  command that checks it.
+- Source citations for API and library behavior claims: the section authors none — verified mechanically, not
+  asserted: each of the 162 section bullets string-equals its commit subject (`git show -s --format=%s <hash>`
+  vs the bullet text between `- ` and the trailing ` (<hash>)`; checked per bullet -> 0 mismatches), so every
+  API/library/behavior token originates in a quoted commit subject and its source is that commit's diff, not
+  an external doc. The only version strings are `1.4.3` (ca7fe0d0 "…1.4.3 Bun baseline") and `0.4.2`
+  (508e579e "…installed Spur 0.4.2"), both inside quoted subjects, checkable via `git show -s ca7fe0d0` /
+  `git show -s 508e579e`. Every claim in this verification is a local git fact cited with the
+  command that checks it; the audited artifact is the `## [0.0.36]` section of CHANGELOG.md.
+- Confidence: HIGH
 -->
 
 ## [0.0.35] - 2026-10-10
