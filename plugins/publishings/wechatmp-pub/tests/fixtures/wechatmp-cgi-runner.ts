@@ -15,9 +15,10 @@ import type { Browser, BrowserContext, Route } from 'playwright';
 import { chromium } from 'playwright';
 import type { WechatCgiSession } from '../../src/cgi';
 import { uploadAndCropCover, uploadCoverImage, WechatCgiError } from '../../src/cgi';
+import { WechatCgiDraftError } from '../../src/cgi-draft';
 import type { WechatArticleMedia, WechatArticleMediaInput } from '../../src/cgi-media';
 import { prepareArticleMedia, WechatMediaError } from '../../src/cgi-media';
-import { wrapPlaywrightPage } from '../../src/page';
+import { type WechatPage, wrapPlaywrightPage } from '../../src/page';
 
 export const MP_ORIGIN = 'https://mp.weixin.qq.com';
 export const CONSOLE_PATH = '/kk-fixture/console';
@@ -34,6 +35,10 @@ export const ENDPOINTS = {
     cropimage: '/cgi-bin/cropimage',
     uploadimg2cdn: '/cgi-bin/uploadimg2cdn',
 } as const;
+
+/** Draft-create endpoints (task 0290): the operate_appmsg multipart POST and its list-ex readback. */
+export const CREATE_ENDPOINT = '/cgi-bin/operate_appmsg';
+export const APPMSG_ENDPOINT = '/cgi-bin/appmsg';
 
 /** Valid receipts whose FROZEN shapes the tests assert against; dims 1000x800 drive the crop math. */
 export const FILETRANSFER_RECEIPT = {
@@ -73,7 +78,7 @@ export interface ObservedRequest {
 }
 
 /** Queued endpoint answers; consumed FIFO, defaults refill behind any test-supplied overrides. */
-export type MockResponse = { json: unknown } | { status: number; body?: string } | { bytes: number };
+export type MockResponse = { json: unknown } | { status: number; body?: string } | { bytes: number } | { abort: true };
 
 export interface PrepareFacts {
     requests: ObservedRequest[];
@@ -103,7 +108,8 @@ function parseMultipart(buffer: Buffer, contentType: string): { fields: Record<s
         const name = /name="([^"]*)"/i.exec(headers)?.[1];
         if (name === undefined) continue;
         if (/filename="/i.test(headers)) fileFields.push(name);
-        else fields[name] = part.slice(headerEnd + 4, part.length - 2);
+        // latin1 keeps byte fidelity for the split; values re-decode as the UTF-8 the page sent.
+        else fields[name] = Buffer.from(part.slice(headerEnd + 4, part.length - 2), 'latin1').toString('utf8');
     }
     return { fields, fileFields };
 }
@@ -142,6 +148,10 @@ async function openConsoleFixture(browser: Browser, prepend: Record<string, Mock
     for (const [path, responses] of Object.entries(defaults)) {
         queues.set(path, [...(prepend[path] ?? []), ...responses]);
     }
+    // Extra endpoints (e.g. the draft create/list pair) get their queues too, defaults first.
+    for (const [path, responses] of Object.entries(prepend)) {
+        if (!queues.has(path)) queues.set(path, [...responses]);
+    }
     const observed: ObservedRequest[] = [];
     const context = await browser.newContext();
     context.setDefaultTimeout(20_000);
@@ -160,6 +170,10 @@ async function openConsoleFixture(browser: Browser, prepend: Record<string, Mock
             body: `fixture: no queued response for ${url.pathname}`,
         };
         observed.push(await observeRequest(route));
+        if ('abort' in spec) {
+            await route.abort();
+            return;
+        }
         if ('json' in spec) {
             await route.fulfill({ contentType: 'application/json', body: JSON.stringify(spec.json) });
         } else if ('bytes' in spec) {
@@ -187,6 +201,56 @@ export async function runPrepareScenario(
             return {
                 requests: fixture.observed,
                 reason: reasonOf(error),
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    } finally {
+        await fixture.close();
+    }
+}
+
+export interface CgiDraftFacts {
+    observed: ObservedRequest[];
+    /** What `run` returned — the extracted session or the created-draft handle. */
+    outcome?: unknown;
+    /** WechatCgiDraftError vocabulary, filled only when `run` threw one. */
+    code?: string;
+    stage?: string;
+    metadata?: Record<string, unknown>;
+    error?: string;
+}
+
+/**
+ * One task-0290 CGI run against the route-mocked console: navigates the real origin (optionally
+ * replacing the document for extraction fixtures), then hands the wrapped page to `run`. A thrown
+ * WechatCgiDraftError comes back as code/stage/metadata facts; anything else as an error string.
+ */
+export async function runCgiDraftScenario(
+    browser: Browser,
+    opts: {
+        create: MockResponse[];
+        list: MockResponse[];
+        url?: string;
+        document?: string;
+        run: (page: WechatPage) => Promise<unknown>;
+    },
+): Promise<CgiDraftFacts> {
+    const fixture = await openConsoleFixture(browser, {
+        [CREATE_ENDPOINT]: opts.create,
+        [APPMSG_ENDPOINT]: opts.list,
+    });
+    try {
+        const raw = await fixture.context.newPage();
+        await raw.goto(opts.url ?? CONSOLE_URL);
+        if (opts.document !== undefined) await raw.setContent(opts.document);
+        try {
+            return { observed: fixture.observed, outcome: await opts.run(wrapPlaywrightPage(raw)) };
+        } catch (error) {
+            return {
+                observed: fixture.observed,
+                code: error instanceof WechatCgiDraftError ? error.code : undefined,
+                stage: error instanceof WechatCgiDraftError ? error.stage : undefined,
+                metadata: error instanceof WechatCgiDraftError ? error.metadata : undefined,
                 error: error instanceof Error ? error.message : String(error),
             };
         }

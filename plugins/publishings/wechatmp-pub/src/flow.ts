@@ -3,6 +3,14 @@ import { ResultSchema } from '@gobing-ai/kk-core';
 import { trySelectors } from '@gobing-ai/publish-harness';
 import { expectOutcome, pasteHtml, readScopedSignal, uploadFile } from '@gobing-ai/publish-harness/browser';
 import type { Page } from 'playwright';
+import { readLocalImageBytes } from './cgi';
+import {
+    assertEligibleCgiDraft,
+    createWechatArticleDraft,
+    extractWechatCgiSession,
+    WechatCgiDraftError,
+} from './cgi-draft';
+import { prepareArticleMedia, type WechatArticleMedia } from './cgi-media';
 import { enrichArticle } from './enrich';
 import {
     artifactPaths,
@@ -1131,10 +1139,106 @@ async function openDialogInventory(page: WechatPage): Promise<string> {
 }
 
 /**
+ * The task 0290 CGI draft route: eligible plain 文章 drafts dispatch through the console page's own
+ * operate_appmsg subpath (./cgi-draft on the 0289 media pipeline) without ever entering the DOM
+ * editor. Ineligible content or an invalid required cover returns undefined BEFORE any dispatch, so
+ * the DOM flow keeps every advanced feature; once the route is taken it NEVER retries and NEVER
+ * falls back to DOM — an unverifiable create is an ambiguous submission, reported as ok:false only.
+ */
+async function runCgiDraft(input: ModeInput, deps: ModeRunDeps): Promise<Result | undefined> {
+    if (input.operation !== '文章') return undefined; // narrow the ModeInput union (runMode already gates this)
+    try {
+        assertEligibleCgiDraft(deps.content);
+    } catch (error) {
+        // Advanced metadata (e.g. metadata.wechatmp.*) is the DOM flow's input by design — a silent
+        // hand-back, no warning. Any other eligibility throw would be a library bug: fail loud.
+        if (error instanceof WechatCgiDraftError && error.code === 'ineligible') return undefined;
+        throw error;
+    }
+    const metadata = deps.content.metadata ?? {};
+    const bodyImages = input.images; // already resolved + validated by modes.resolveBodyImages pre-runMode
+    if (bodyImages.length === 0) return undefined;
+    // Cover parity: top-level coverPath wins, else the first body image (默认首图为封面).
+    const cover =
+        typeof metadata.coverPath === 'string' && metadata.coverPath.length > 0
+            ? metadata.coverPath
+            : (bodyImages[0] ?? '');
+    try {
+        await readLocalImageBytes(cover); // still local-only: validates readable, nonempty, ≤10 MiB, known mime
+    } catch {
+        return undefined;
+    }
+    // Plain-article body images ride the 0289 media pipeline (P2 fix: they are never silently
+    // dropped — the DOM path attaches these same files). localImages maps img src → local path;
+    // prepareArticleMedia reads + uploads each (src values are raw paths so they match keys).
+    const localImages: Record<string, string> = {};
+    for (const path of bodyImages) localImages[path] = path;
+    const imageBlock = bodyImages.map((path) => `<img src="${path}">`).join('');
+    try {
+        const session = await extractWechatCgiSession(deps.entry);
+        let media: WechatArticleMedia;
+        try {
+            media = await prepareArticleMedia(deps.entry, session, {
+                html: imageBlock + markdownToWechatHtml(bodyOf(deps.content)),
+                coverPath: cover,
+                localImages,
+            });
+        } catch (error) {
+            // 0289 media vocabulary failing inside this branch is dispatch-side (never retried, never
+            // DOM-fallback); report it in the branch's own shape with the pre-create stage.
+            if (error instanceof WechatCgiDraftError) throw error;
+            return ResultSchema.parse({
+                ok: false,
+                target: TARGET,
+                error: error instanceof Error ? error.message : String(error),
+                metadata: { operation: input.operation, publishStatus: deps.publishStatus, stage: 'media-preparation' },
+            });
+        }
+        const draft = await createWechatArticleDraft(deps.entry, session, deps.content, media);
+        return ResultSchema.parse({
+            ok: true,
+            target: TARGET,
+            // The verified draft id read back from the appmsg list receipt (Design R3).
+            id: draft.appMsgId,
+            // The canonical edit route: no token in it, so the URL is secret-free by construction.
+            url: `https://mp.weixin.qq.com${draft.editPath}`,
+            metadata: {
+                operation: input.operation,
+                publishStatus: deps.publishStatus,
+                stage: 'draft-created',
+                appMsgId: draft.appMsgId,
+                coverFileIds: [media.cover.wide.fileId, media.cover.square.fileId],
+                cdnMigratedImages: media.images.length,
+            },
+        });
+    } catch (error) {
+        // Only WechatCgiDraftError can reach this outer catch (media vocabulary is wrapped by the
+        // inner media-preparation catch above); anything else is a library bug — propagate loudly.
+        if (!(error instanceof WechatCgiDraftError)) throw error;
+        return ResultSchema.parse({
+            ok: false,
+            target: TARGET,
+            error: error.message,
+            metadata: {
+                operation: input.operation,
+                publishStatus: deps.publishStatus,
+                stage: error.stage,
+                ...(error.metadata.ambiguousSubmission === true ? { ambiguousSubmission: true } : {}),
+            },
+        });
+    }
+}
+
+/**
  * Run one validated operation end to end: enter its mode, compose the post, then take it to a draft
  * or — only on an explicit live request — publish it.
  */
 export async function runMode(input: ModeInput, deps: ModeRunDeps): Promise<Result> {
+    // The CGI draft branch runs BEFORE mode entry and consumes neither enterMode nor compose.
+    if (input.operation === '文章' && deps.publishStatus === 'draft') {
+        const cgi = await runCgiDraft(input, deps);
+        if (cgi !== undefined) return cgi;
+    }
     const entry = await enterMode(deps, input.operation);
     const composed = await compose(input, deps, entry);
     // 2026-10-12: a throw from the submit step drops every diagnostic the compose phase collected —

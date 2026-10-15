@@ -61,7 +61,7 @@ plugins/
     emdash-pub/       # @gobing-ai/emdash-pub — publish channel, file-cli (EmDash REST token) (E5)
     podcast-pub/      # @gobing-ai/podcast-pub — publish channel, file-cli (microfeed REST + presigned upload) (E6)
     medium-pub/       # @gobing-ai/medium-pub — publish channel, file-cli (Medium integration-token REST) (E7)
-    wechatmp-pub/     # @gobing-ai/wechatmp-pub — publish channel, browser/script (WeChat MP console) (E7, ADR-026)
+    wechatmp-pub/     # @gobing-ai/wechatmp-pub — publish channel, browser/script (WeChat MP console; eligible plain-article drafts may create via same-origin operate_appmsg — ADR-026 amd 2026-10-15) (E7, ADR-026)
     x-pub/            # @gobing-ai/x-pub — publish channel: post via tweets API, article via browser/script (E7, ADR-027)
     juejin-pub/       # @gobing-ai/juejin-pub — publish channel, browser/script (Juejin) (E7, ADR-027)
     infoq-pub/        # @gobing-ai/infoq-pub — publish channel, browser/script (InfoQ CN) (E7, ADR-027)

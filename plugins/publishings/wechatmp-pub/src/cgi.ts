@@ -72,6 +72,11 @@ export interface CropRect {
 export interface CoverPair {
     wide: WechatUploadedImage;
     square: WechatUploadedImage;
+    /**
+     * The actual crop_multi boxes in [wide 2.35:1, square 1:1] order — task 0290's operate_appmsg
+     * payload must carry these exact coordinates, never vendor hard-coded pixels.
+     */
+    crops: [CropRect, CropRect];
 }
 
 export type CgiImageInput = { path: string } | { bytes: Uint8Array; name: string };
@@ -476,5 +481,5 @@ export async function uploadAndCropCover(
         centerCropRect(uploaded.width, uploaded.height, SQUARE_COVER_ASPECT),
     ];
     const [wide, square] = await cropCoverMulti(page, session, uploaded.url, crops);
-    return { wide, square };
+    return { wide, square, crops };
 }

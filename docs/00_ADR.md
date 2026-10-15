@@ -1097,6 +1097,19 @@ default are the guard; if a warning ever arrives, port the 24h cap as a follow-u
 rail carries over unchanged: `wechat_live` stays a launch-time switch, so a scheduled run can
 never post live.
 
+**Amendment (2026-10-15): same-origin CGI subpath for eligible plain-article drafts.**
+Eligible plain `文章` draft runs (operation=`文章`, publishStatus=`draft`, plain title/body/digest/author
+metadata only) may create the draft through the authenticated browser's own same-origin
+`/cgi-bin/operate_appmsg` subpath, prepared by the 0289 media upload/crop pipeline. Session
+token/ticket extraction stays in-page (URL token first, then bounded known inline fields),
+credentials never leave the browser, and the created draft is read back (appMsgId + title) before
+`ok:true`. This is the console transport's own HTTP boundary, not a token-API transport: no
+AppID/secret dependency, drafts only (never mass-send), and the ADR-022 `wechat_live` rail is
+unchanged. Advanced article metadata, other modes and public operations stay on the DOM flow; an
+ambiguous create never retries or falls back to a second creation. Manual live verification
+remains a separate operator-run delivery check. Detail: `docs/03_ARCHITECTURE.md`,
+`docs/04_DESIGN.md` → `@gobing-ai/wechatmp-pub`.
+
 **Detail:** `docs/04_DESIGN.md` → `@gobing-ai/wechatmp-pub`; `docs/design/kk-daily-ai-voice.md`.
 
 ---
