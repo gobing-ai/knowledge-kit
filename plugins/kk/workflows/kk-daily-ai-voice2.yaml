@@ -258,7 +258,7 @@ nodes:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.plan_translate_enabled}" = "true"
-          && ! test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
+          && ! jq -e --argjson n "$(jq '.metadata.docs|length' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
     action:
       kind: agent.run
       # 0238 R2: a stochastic executor no-op must not end the run here — the retry sibling decides.
@@ -268,21 +268,28 @@ nodes:
         agent: ${vars.agent}
         # ADR-115 error tier: keep this prompt <= 1000 chars (0133 R3; 0138 R4a copy discipline).
         # The anchor is shared with plan-translate-retry so the two attempts cannot drift apart.
+        # 20261015 forensics: headless agy's terminal sandbox denies workspace writes for EVERY
+        # shell command (command() rules are promptless-but-sandboxed; unsandboxed() is dead), so
+        # the producer must deliver via the file-write tool; and the condition gate checks JSON
+        # validity (array, length == candidates docs, all objects) because a pi token-cap staged
+        # write once flowed 4/12 items downstream. Keep both when editing prompt or condition.
         input: &plan-translate-input |
-          Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json — metadata.docs (Doc[]) is the plan; don't edit it.
-          For needsTranslation items, adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — full coverage, not a summary: keep every fact, number, name, quote and hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× the source.
-          Titles read as a news event; keep product/model names verbatim, preserve body URLs, use 「」 not ASCII double quotes.
-          Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no duplicated labels or hedging (「读者宜另行核实」「仍待验证」) — merge their substance into prose or drop.
-          Keep other fields (id, sourceUri, mediaType, metadata) as-is; no comments or trailing commas.
-          Output strictly valid JSON — a same-length, same-order array — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
+          Read ${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json; metadata.docs (Doc[]) is the plan.
+          For needsTranslation items adapt "title", "body" and "metadata.brief" into spoken simplified Chinese — keep every fact, number, name, quote, hedge (口播全长改编，不摘要不省略), body ≈0.6–0.7× source.
+          Titles read as news; keep product/model names and body URLs verbatim, use 「」 not ASCII quotes.
+          Copy discipline: reader-facing news copy — no scaffold labels (「可做角度」「为什么现在值得注意」「社区讨论」「背景」「潜在影响」「影响」), no hedging labels (「读者宜另行核实」「仍待验证」) — merge or drop.
+          Keep id/sourceUri/mediaType/metadata as-is; no comments/trailing commas.
+          Deliver with your file-write tool (headless agy sandbox blocks shell writes); the file must end as ONE valid JSON array — no split markers/placeholders.
+          Output the JSON array — same length and order — to ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json.
         expectFile: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
         allowAppend: false
 
   - id: plan-translate-retry
     description: >-
-      Bounded recovery for plan-translate (0238 R2): runs only when the primary settled without its
-      expectFile, retries the same input on a different tier, and carries NO onError — a second miss
-      fails the run loudly instead of letting an untranslated plan flow downstream.
+      Bounded recovery for plan-translate (0238 R2): runs only when the primary settled without a
+      VALID expectFile (missing or contract-violating JSON), retries the same input on a different
+      tier, and carries NO onError — a second miss fails the run loudly instead of letting an
+      untranslated or truncated plan flow downstream.
     dependsOn: [plan-translate]
     condition:
       kind: shell
@@ -290,7 +297,7 @@ nodes:
         command: >-
           kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
           && test "${vars.plan_translate_enabled}" = "true"
-          && ! test -s "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
+          && ! jq -e --argjson n "$(jq '.metadata.docs|length' "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json"
     action:
       kind: agent.run
       options:
