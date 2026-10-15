@@ -87,6 +87,8 @@ export interface TraceListEntry {
     workflowName?: string;
     status?: string;
     startedAt?: string;
+    /** `--dry-run` launches record `done` with no steps; they are rehearsals, not executions. */
+    isDryRun?: boolean;
 }
 
 /** Options for {@link renderLedgerSection}. */
@@ -316,11 +318,15 @@ export function appendLedgerSection(existing: string | null, workflow: string, s
 /**
  * Run ids from a `spur workflow trace --workflow <name> --json` list that the ledger is
  * missing, oldest first (R6). Still-`running` runs are never listed — they have no
- * completed row and `spur workflow trace <id>` would refuse them (R7).
+ * completed row and `spur workflow trace <id>` would refuse them (R7). Dry runs are
+ * skipped too: a 2026-10-13 `--dry-run` pair came back as two empty ledger sections,
+ * which read as lost executions.
  */
 export function selectMissingRuns(entries: readonly TraceListEntry[], markdown: string): string[] {
     return entries
-        .filter((entry) => entry.status !== 'running' && !ledgerHasRun(markdown, entry.runId))
+        .filter(
+            (entry) => entry.status !== 'running' && entry.isDryRun !== true && !ledgerHasRun(markdown, entry.runId),
+        )
         .sort((left, right) => (left.startedAt ?? '').localeCompare(right.startedAt ?? ''))
         .map((entry) => entry.runId);
 }

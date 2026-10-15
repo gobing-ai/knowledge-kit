@@ -241,6 +241,10 @@ describe('ledger renderer', () => {
             { runId: FAILED_RUN, status: 'done', startedAt: '2026-10-07T02:00:00.000Z' },
             { runId: 'still-running', status: 'running', startedAt: '2026-10-07T01:00:00.000Z' },
             { runId: 'oldest', status: 'failed', startedAt: '2026-10-07T00:00:00.000Z' },
+            // 2026-10-13 regression: a --dry-run pair recorded `done` with no steps and
+            // came back as two empty ledger sections.
+            { runId: 'dry-a', status: 'done', startedAt: '2026-10-06T23:00:00.000Z', isDryRun: true },
+            { runId: 'dry-b', status: 'done', startedAt: '2026-10-06T23:00:02.000Z', isDryRun: true },
         ];
         expect(selectMissingRuns(entries, markdown)).toEqual(['oldest', 'newest']);
     });
