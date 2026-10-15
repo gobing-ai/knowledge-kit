@@ -3,6 +3,19 @@
  */
 
 export {
+    type ContentCountUnit,
+    type ContentValidationError,
+    type ContentValidationInput,
+    type ContentValidationResult,
+    countContentUnits,
+    countXiaohongshuTitleWeighted,
+    countXWeightedCharacters,
+    PLATFORM_CONTENT_LIMITS,
+    type PlatformLimitEntry,
+    type PlatformLimitsConfig,
+    validateContentLimits,
+} from './content-limits';
+export {
     collectionForKind,
     isPluginKind,
     type KindContract,
@@ -52,3 +65,8 @@ export {
     type TargetOutcome,
     TargetOutcomeSchema,
 } from './schemas';
+export {
+    splitThreadContent,
+    type ThreadSplitOptions,
+    type ThreadSplitResult,
+} from './thread-segmentation';
