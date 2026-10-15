@@ -3,15 +3,26 @@ name: Roadmap
 doc: 02_ROADMAP
 owns: WHEN — phases, current vs deferred, sequencing
 authority: derived
-version: 3.19.0
+version: 3.20.0
 created_at: 2026-07-22
-updated_at: 2026-10-13
+updated_at: 2026-10-14
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.3
 sync: [T5]
 ---
 
 # Roadmap
+
+## Smart SEO and GEO audit (G9, Phase 3 — planned)
+
+Goal: deliver a repeatable public-site audit and evidence-grounded action plan per [ADR-039 design](design/kk-smart-seo.md).
+
+- [ ] Bounded site collection and offline technical assessment.
+- [ ] Typed semantic judgments and optional performance/imported visibility evidence.
+- [ ] Workflow, validated narrative, one SEO skill and installed-package acceptance.
+- [ ] Same-change surface/status documentation as each delivery slice ships.
+
+**Exit:** G9 scenarios verified by task evidence, fixture workflow and installed-package acceptance; project quality checks pass. No live site mutation or paid provider parity.
 
 > Derived from `01_PRD` v3 (scope) and `00_ADR` (ADR-006 platform pivot; **ADR-007** the
 > ingest → create → publish repositioning). Edit when phase status changes. Feature IDs are the

@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.47.0
+version: 2.48.0
 created_at: 2026-07-22
-updated_at: 2026-10-13
+updated_at: 2026-10-14
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -20,6 +20,7 @@ sync: [T3]
 
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
+| [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | accepted design; not implemented (G9, ADR-039) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | accepted design; not implemented (A22, ADR-037/038) |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
 | [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all seven channels (E93, 0215+0216; E94 adds `weibo-pub`) |

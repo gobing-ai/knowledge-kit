@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.36.0
+version: 2.37.0
 created_at: 2026-07-22
-updated_at: 2026-10-13
+updated_at: 2026-10-14
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -14,6 +14,10 @@ sync: [T1]
 # Architecture — knowledge-kit
 
 > Derived. Decisions live in `00_ADR`; this file holds mechanism, boundaries, and data flow.
+
+## Smart SEO (accepted design — ADR-039; not yet built)
+
+G9 adds native KK audit stages, typed Spur decision catalogs and one `smart-seo` skill. Observed facts, assessments, semantic judgments and report claims remain separate run-bound artifacts; `spur workflow` owns sequencing and KK owns bounded deterministic work. The [design satellite](design/kk-smart-seo.md) owns collection limits, network policy, evidence contracts, fallback semantics and distribution. `vendors/jev-seo` remains reference-only.
 
 ## System shape
 

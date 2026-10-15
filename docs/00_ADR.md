@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.37.0
+version: 1.38.0
 created_at: 2026-05-28
-updated_at: 2026-10-13
+updated_at: 2026-10-14
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1358,3 +1358,15 @@ output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk bo
 ### Amendment — 2026-10-13 (ADR-038 ready-depth refinement)
 
 The optional browserSession descriptor carries profileName and an optional homeUrl: publication-scoped Substack cannot declare one fixed editor URL. Saved plugin identity, declared profile name, then literal-origin matching select an adapter. Generic bots remain operator-confirmed; known adapters preserve plugin-owned canonical navigation (including fixed non-secret editor-version queries). Shared leases use scoped parent/child ownership across the existing check-script process boundary. No Xiaoyuzhou publisher connector exists in the current tree; generic URL login does not add one. Detail: the A22 satellite and task Design sections.
+
+---
+
+## ADR-039: Smart SEO uses native KK audit stages and Spur semantic decisions
+
+**Status:** Accepted (design) · **Date:** 2026-10-14
+
+**Decision.** Deliver a read-only SEO/GEO audit workflow through native KK stages, typed `spur decision` catalogs and one fat `smart-seo` skill. Keep `vendors/jev-seo` reference-only; preserve observed facts, unknown assessments and model provenance separately. The first delivery produces JSON/Markdown and introduces no runtime, dependency or product plugin kind.
+
+**Why.** The reviewed vendor's evidence/judgment separation fits KK, while wrapping its Python pipeline would retain network/evidence defects and conflict with vendor isolation.
+
+**Detail:** [Smart SEO design](design/kk-smart-seo.md), feature G9; [vendor review](plans/2026-10-14-smart-seo-vendor-review.md).

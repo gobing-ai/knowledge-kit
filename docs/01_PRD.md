@@ -3,9 +3,9 @@ name: Product Requirements
 doc: 01_PRD
 owns: WHAT — product vision, users, scope (in / out / deferred)
 authority: authoritative-on-scope
-version: 3.15.0
+version: 3.16.0
 created_at: 2026-07-22
-updated_at: 2026-10-13
+updated_at: 2026-10-14
 derived_from: [00_ADR]
 edit_rules: 99 §6.2
 sync: [T6]
@@ -63,6 +63,7 @@ Technical content creation and published output are fragmented: turning ideas or
 
 | Area | Feature | Phase | Notes |
 | ------ | --------- | ------- | ------- |
+| SEO/GEO audit and action plan | **G9** | Phase 3 | Committed scope: read-only public-site audit, typed Spur judgments, one skill and JSON/Markdown evidence; optional performance/imported visibility. Paid collection, browser rendering, rich exports and site mutation deferred to separate intake; [design](design/kk-smart-seo.md). |
 | Project foundation | **A** | Phase 0/2 | Monorepo substrate; **A1** feature-tree restructure; **A2** `kk` product CLI surface (help/version/verbose, command tree, npm `bin.kk`) |
 | Plugin platform | **B** | Phase 1/2 | B1 registry, B2 contracts, B3 workflow, B4 CLI, **B5** E2E pipeline acceptance · Phase 2: **B6** sequential `kk executor fan-in`/`fan-out` · **A21** two-noun CLI (`executor` + `plugin`) · **B7** multi-root plugin auto-discovery (built-ins + user roots; ADR-012) |
 | Ingestion | **C** | Phase 1 | C1 design · **C2** Karakeep-local: rclone-synced folder → Docs |
