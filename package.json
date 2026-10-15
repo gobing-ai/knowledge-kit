@@ -41,7 +41,8 @@
         "drop-tags": "spur builder drop-tags knowledge-kit",
         "check": "bun run lint && bun run test",
         "check:full": "bun run lint && bun run test:full",
-        "load-history": "DATABASE_URL='.spur/spur.db' spur history import && DATABASE_URL='.spur/spur.db' spur history analyze"
+        "load-history": "DATABASE_URL='.spur/spur.db' spur history import && DATABASE_URL='.spur/spur.db' spur history analyze",
+        "tools:fresh": "bun scripts/check-tool-freshness.ts"
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.15",

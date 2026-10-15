@@ -32,12 +32,12 @@ jobs:
 
       - name: Install spur
         # The kk workflow integration tests drive the real engine (`spur workflow run`),
-        # and refuse to skip silently when the binary is missing. Pinned so a spur release
-        # cannot silently redefine the engine under test. 0.4.4 accepts `kind: dag`
-        # (kk-daily-ai-voice2) and still accepts `onError: continue` on onEnter.
-        # 0.3.95 only accepts transition-flow, so those runs come back with status unknown.
+        # and refuse to skip silently when the binary is missing. Policy (AGENTS.md):
+        # spur/superskill are never pinned — CI tracks @latest so the suite exercises
+        # the engine users actually run; a breaking upstream release fails here, loudly,
+        # instead of silently diverging from developer machines.
         run: |
-          bun install --global @gobing-ai/spur@0.4.4
+          bun install --global @gobing-ai/spur@latest
           echo "$(bun pm bin -g)" >> "$GITHUB_PATH"
 
       - name: Provision the home-level @gobing-ai tree the Board suite resolves against
@@ -51,7 +51,7 @@ jobs:
         run: |
           test -f "$HOME/package.json" || echo '{"name":"runner-home","private":true}' > "$HOME/package.json"
           cd "$HOME"
-          bun add @gobing-ai/spur@0.4.4 @gobing-ai/knowledge-kit@0.0.35 @gobing-ai/superskill@0.3.37 @gobing-ai/ts-ai-runner@0.5.24 @gobing-ai/ts-db@0.5.24 @gobing-ai/ts-infra@0.5.21 @gobing-ai/ts-runtime@0.5.21 @gobing-ai/ts-utils@0.5.21
+          bun add @gobing-ai/spur@latest @gobing-ai/knowledge-kit@latest @gobing-ai/superskill@latest @gobing-ai/ts-ai-runner@latest @gobing-ai/ts-db@latest @gobing-ai/ts-infra@latest @gobing-ai/ts-runtime@latest @gobing-ai/ts-utils@latest
 
       # Build first so cross-package type imports resolve during typecheck.
       # A clean CI checkout has no prebuilt dist/.

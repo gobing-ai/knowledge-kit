@@ -6,7 +6,7 @@ version: "1.2"
 name: knowledge-kit
 
 # ── Portable bootstrap (consumed by @gobing-ai/ts-infra runNodeApplication) ──
-# Scheduler jobs invoke the installed `spur` CLI (0.3.80) — this project has no
+# Scheduler jobs invoke the installed `spur` CLI (always the latest global install — never pin) — this project has no
 # repo-local spur source, so the global install is the canonical binary.
 bootstrap:
   # ── Board contribution modules (G8/0255) ──

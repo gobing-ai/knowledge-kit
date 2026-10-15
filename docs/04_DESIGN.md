@@ -430,7 +430,8 @@ operation is local-loopback and read-only; there is no remote or multi-user mode
 the type-only `@gobing-ai/spur/board` declaration; the installed host advertises `react`,
 `react/jsx-runtime` and `react/jsx-dev-runtime` as facade specifiers in `web/board-runtime.json`, and
 the build externalizes exactly the three (the production JSX runtime emits only the first two). These
-remain MEDIUM for a future host: the ABI is read from installed Spur 0.4.2 and exercised end-to-end by
+remain MEDIUM for a future host: the ABI is read from the installed Spur (kept at latest; the noted version is
+the observation date's) and exercised end-to-end by
 the installed-package test, but no forward-compatibility promise is made.
 
 ### `kk daily prepare` Board capture + the Daily AI Voice module (G8, task 0253)

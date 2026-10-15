@@ -79,7 +79,11 @@ docs/design/      # per-kind authoring specs (ingestion, generator, publish, fan
   pinned binary is used — not a system `biome` on PATH.
 - **Build orchestration:** Bun workspaces (Turborepo available where present).
 - **Tool versions:** pinned in `.prototools` via [proto](https://moonrepo.dev/proto). Run
-  `proto use` to install.
+  `proto use` to install. Exception: `spur` and `superskill` are never pinned — always run and record
+  "latest" (bare CLI, `@latest` installs); version numbers belong only in point-in-time evidence, not live
+  configs.
+- **Single global install:** keep exactly one `spur` on PATH (the bun-global one) — a second npm-global
+  copy shadows it and silently downgrades the engine.
 - **Git hooks:** Lefthook. **Conventional commits:** cocogitto (`cog`).
 
 Never introduce a new runtime, package manager, linter, or formatter.
@@ -180,6 +184,7 @@ bun run build           # all workspaces with a build script
 bun run dev             # workspace dev scripts
 bun run spur-check      # lint + pre-check + test (dots) + post-check
 bun run spur-check:full # lint + pre-check + test:full (detailed) + post-check
+bun run tools:fresh     # warn if installed spur/superskill is behind npm latest or PATH-shadowed
 ```
 
 CLI binary: `@gobing-ai/knowledge-kit` exposes `bin: { kk: "./dist/index.js", "knowledge-kit":
