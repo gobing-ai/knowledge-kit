@@ -82,12 +82,14 @@ export function countContentUnits(text: string, unit: ContentCountUnit): number 
     }
 }
 
+/** Per-platform limit entry: maximum count, counting unit, and overflow behavior. */
 export interface PlatformLimitEntry {
     readonly max: number;
     readonly unit: ContentCountUnit;
     readonly behavior?: 'split_thread' | 'truncate' | 'reject';
 }
 
+/** Frozen v5 schema of per-platform content limits (tags, title/body capability entries). */
 export interface PlatformLimitsConfig {
     readonly schemaVersion: number;
     readonly tagLimits: {
@@ -99,6 +101,7 @@ export interface PlatformLimitsConfig {
     readonly bodyCapabilities: Record<string, Record<string, PlatformLimitEntry | null>>;
 }
 
+/** The shipped frozen platform content limits table (`schemaVersion` 5). */
 export const PLATFORM_CONTENT_LIMITS: PlatformLimitsConfig = Object.freeze({
     schemaVersion: 5,
     tagLimits: Object.freeze({
@@ -176,6 +179,7 @@ export const PLATFORM_CONTENT_LIMITS: PlatformLimitsConfig = Object.freeze({
     }),
 });
 
+/** Content to validate against a platform's limits: platform id, content type and optional parts. */
 export interface ContentValidationInput {
     readonly platform: string;
     readonly contentType: 'dynamic' | 'imageText' | 'article' | 'shortVideo' | 'podcast';
@@ -184,6 +188,7 @@ export interface ContentValidationInput {
     readonly tags?: readonly string[];
 }
 
+/** One limit violation: field, applicable max, measured current size and by how much it was exceeded. */
 export interface ContentValidationError {
     readonly field: 'title' | 'body' | 'tags';
     readonly max: number;
@@ -192,6 +197,7 @@ export interface ContentValidationError {
     readonly unit?: ContentCountUnit;
 }
 
+/** Validation verdict: overall validity plus the list of field-level violations (empty when valid). */
 export interface ContentValidationResult {
     readonly valid: boolean;
     readonly errors: readonly ContentValidationError[];

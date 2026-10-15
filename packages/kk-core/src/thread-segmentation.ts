@@ -6,11 +6,13 @@
 
 import { type ContentCountUnit, countContentUnits } from './content-limits';
 
+/** Options for one thread split: maximum units per segment and the counting unit. */
 export interface ThreadSplitOptions {
     readonly maxUnits: number;
     readonly unit: ContentCountUnit;
 }
 
+/** Split outcome: ordered segments, whether concatenation reconstructed the original text, per-segment unit counts. */
 export interface ThreadSplitResult {
     readonly segments: readonly string[];
     readonly reconstructed: boolean;
