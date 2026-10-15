@@ -396,3 +396,18 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   verification, ~5.5 min).
 - **`apps/cli/plugins/` is a gitignored build-staging copy of `plugins/`** (created by the CLI build). Any
   `rg` inventory over `apps/cli` double-counts plugins unless `-g '!apps/cli/plugins/**'` is added.
+- **A voice-driver switch touches three gates, not one.** Adding/activating an `vdriver` value requires
+  (a) the board manifest allowlist in `apps/cli/src/board/manifest.ts` — `kk daily prepare` refuses any
+  `--setting vdriver=X` outside it and the engine only reports "prepare exited with 1" (0257 wired the
+  stage and the `VOICE_DRIVERS` map but not this list, so the 2026-10-15 voxcpm-first run died at the
+  first node), (b) `VOICE_DRIVERS` + `spokenCharRate` in `daily-stages.ts`, and (c) the workflow's
+  generate tier. Rebuild the CLI bundle and copy the script to the global package afterwards.
+- **Calibrate a new driver's spoken rate from a real render before trusting the fit.** Rate = spoken
+  chars / (joined duration − 8 s sting). voxcpm measured 5.19 字/秒 on 2026-10-15; borrowing voicebox's
+  5.6 budgeted 7,683 chars ≈ 24.6 min — 18 s inside the 25-min gate. Set the fit rate to the measurement
+  (5.2), which lands a full-budget script at ~22.9 min.
+- **Fallback tiers need an upstream-validity gate, not just a pool-count gate.** Each sibling checks the
+  content JSON for an existing render (`metadata.generator` ∈ the plugins that could have produced it,
+  with `qc.passed`), so a successful primary makes its siblings skip and a failed driver's artifact is
+  never relabeled or mixed into the episode. `intro` depends on every tier so the join waits for whoever
+  wins.

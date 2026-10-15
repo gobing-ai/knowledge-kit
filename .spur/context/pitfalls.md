@@ -177,3 +177,14 @@
   "single write exceeded the output cap" produced `[...4 items, "@@SPLIT-1@@"]` in the plan file —
   executor-side write policies don't enforce JSON shape, so only a condition-level validity gate
   catches contract-violating producer output (20261015 recovery run c71f8c8b, killed mid-flight).
+- **`dailyScript` caches on file existence** (`if (isFile(yamlOut))` → skip), and the budget fitter only
+  trims (it returns early when the script is under budget, never expands). Changing `vdriver` therefore
+  does not rewrite an existing `24-script/<date>_08_script_voicescript.yaml`, and a resume after a driver
+  or rate change silently reuses the old text — wipe the artifact when a genuine rebuild is required.
+- **Failed engine runs keep holding their store selections.** The next `kk daily prepare` then fails with
+  `kk.daily.prepare.unreleased-run` for every dead run (the engine only surfaces "exited with 1"), so the
+  workflow cannot start again until each one is freed with `kk store release --run <id>`.
+- **Stage scripts execute from the installed package, not the checkout.** `kk stage` loads
+  `plugins/kk/scripts/daily-stages.ts` relative to the running `kk` (the bun-global package under
+  `~/node_modules/@gobing-ai/knowledge-kit/`); editing only the repo copy leaves the live run on the old
+  code. Copy the file after every change.
