@@ -21,7 +21,7 @@ bootstrap:
     - id: kk-collect
       name: Collect
       icon: "📥"
-      enabled: false
+      enabled: true
       type: react
       directory: apps/cli/dist/board/collect
       entry: index.js
@@ -29,7 +29,7 @@ bootstrap:
     - id: kk-daily-ai-voice2
       name: Daily AI Voice
       icon: "🎙️"
-      enabled: false
+      enabled: true
       type: react
       directory: apps/cli/dist/board/daily-voice
       entry: index.js
@@ -37,7 +37,7 @@ bootstrap:
     - id: kk-itc
       name: IT Content
       icon: "✍️"
-      enabled: false
+      enabled: true
       type: react
       directory: apps/cli/dist/board/itc
       entry: index.js
