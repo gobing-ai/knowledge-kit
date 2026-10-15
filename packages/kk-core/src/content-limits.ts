@@ -82,12 +82,14 @@ export function countContentUnits(text: string, unit: ContentCountUnit): number 
     }
 }
 
+/** Limit entry configuration for a specific platform and content type. */
 export interface PlatformLimitEntry {
     readonly max: number;
     readonly unit: ContentCountUnit;
     readonly behavior?: 'split_thread' | 'truncate' | 'reject';
 }
 
+/** Complete configuration structure mapping platform content limits. */
 export interface PlatformLimitsConfig {
     readonly schemaVersion: number;
     readonly tagLimits: {
@@ -99,6 +101,7 @@ export interface PlatformLimitsConfig {
     readonly bodyCapabilities: Record<string, Record<string, PlatformLimitEntry | null>>;
 }
 
+/** Predefined platform content limits for titles, bodies, and tags across channels. */
 export const PLATFORM_CONTENT_LIMITS: PlatformLimitsConfig = Object.freeze({
     schemaVersion: 5,
     tagLimits: Object.freeze({
@@ -176,6 +179,7 @@ export const PLATFORM_CONTENT_LIMITS: PlatformLimitsConfig = Object.freeze({
     }),
 });
 
+/** Input payload for content limit validation. */
 export interface ContentValidationInput {
     readonly platform: string;
     readonly contentType: 'dynamic' | 'imageText' | 'article' | 'shortVideo' | 'podcast';
@@ -184,6 +188,7 @@ export interface ContentValidationInput {
     readonly tags?: readonly string[];
 }
 
+/** Represents a single content validation failure. */
 export interface ContentValidationError {
     readonly field: 'title' | 'body' | 'tags';
     readonly max: number;
@@ -192,6 +197,7 @@ export interface ContentValidationError {
     readonly unit?: ContentCountUnit;
 }
 
+/** Aggregate result of content limit validation. */
 export interface ContentValidationResult {
     readonly valid: boolean;
     readonly errors: readonly ContentValidationError[];

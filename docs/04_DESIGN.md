@@ -21,7 +21,7 @@ sync: [T3]
 | Satellite | Area | Status |
 | ----------- | ------ | -------- |
 | [kk-itc-refactor.md](design/kk-itc-refactor.md) | DAG/child authoring, config/workspaces, publication presets, recovery and SEO handoffs | accepted design; not implemented (G21, ADR-040) |
-| [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | accepted design; not implemented (G9, ADR-039) |
+| [kk-smart-seo.md](design/kk-smart-seo.md) | SEO/GEO audit workflow, decision catalogs, stages and one skill | partially shipped (G9, ADR-039; 0281 preflight + collection shipped) |
 | [kk-noun-verb-bots.md](design/kk-noun-verb-bots.md) | Strict noun/verb operations + named browser sessions | accepted design; not implemented (A22, ADR-037/038) |
 | [kk-cli-surface.md](design/kk-cli-surface.md) | Operator `kk` binary + two-noun tree | shipped (A2/A21) |
 | [kk-plugin-check.md](design/kk-plugin-check.md) | `kk plugin check` / `login` live readiness probe (ADR-032) | shipped verbs + all seven channels (E93, 0215+0216; E94 adds `weibo-pub`) |
@@ -595,6 +595,10 @@ gitignored artifact) is never loaded and editing the runner takes effect without
 **installed entry** keeps its own package-shipped runner regardless of cwd, and the module-anchored
 source fallback applies only to a genuine checkout whose package copy is missing. Runner and sidecar
 resolution, and the delegated stage names, are in §7.
+
+**Smart SEO stages (G9, task 0281):**
+- `kk stage run seo-preflight <work_dir> <options_file> [run_id] [require_decisions]`: validates options JSON (URL, scope, caps, timeouts), resolves/allocates workspace `.works/kk-smart-seo/<stamp>-<runId>` with create-new semantics (refusing overwrite of existing non-empty directories), records `.spur/run/<runId>-seo-work-dir.txt`, and atomically writes validated `options.json` and `manifest.json`.
+- `kk stage run seo-collect <work_dir>`: executes bounded public site collection: connection-pinned public HTTP(S) transport with peer address verification, RFC 9309 robots.txt group matching/crawl delay, bounded non-expanding XML sitemap discovery, streaming HTMLRewriter facts extraction, and atomic artifact emission (`crawl.json` and `evidence/pages/<subjectHash>.json`).
 
 ### 1.9 `store` — shipped (tasks 0206, 0208–0210)
 

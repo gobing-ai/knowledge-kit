@@ -6,11 +6,13 @@
 
 import { type ContentCountUnit, countContentUnits } from './content-limits';
 
+/** Options controlling thread segmentation thresholds and units. */
 export interface ThreadSplitOptions {
     readonly maxUnits: number;
     readonly unit: ContentCountUnit;
 }
 
+/** Result of splitting text into thread segments. */
 export interface ThreadSplitResult {
     readonly segments: readonly string[];
     readonly reconstructed: boolean;
