@@ -1000,9 +1000,14 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         const nodes = ['generate', 'generate-fallback', 'generate-fallback2'].map((id) => {
             const node = dag.nodes.find((candidate) => candidate.id === id);
             expect(node, `${id} is missing`).toBeDefined();
-            return node!;
+            if (!node) throw new Error(`${id} is missing`);
+            return node;
         });
-        expect(nodes[0]?.action?.options?.command).toContain('"${vars.vdriver}"');
+        // The primary reads vars.vdriver, so the default is a one-var switch; the fallbacks pin
+        // the remaining order.
+        const primary = nodes[0]?.action?.options?.command ?? '';
+        expect(primary).toContain('vars.vdriver');
+        expect(primary).not.toContain('"gemini"');
         expect(nodes[1]?.action?.options?.command).toContain('"gemini"');
         expect(nodes[2]?.action?.options?.command).toContain('"ominivoice"');
         expect(nodes[2]?.action?.options?.command).toContain('OMNIVOICE_SPEED=1.06');
