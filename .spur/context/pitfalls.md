@@ -163,3 +163,17 @@
   markdown — passing a task file dies with `Source contains multiple documents`.
 - **`.gitignore` anchors ignore rules at the repo root**, so `-g` exclusions in `rg` are more reliable than
   assuming a gitignored path (e.g. `apps/cli/plugins/`) is skipped.
+- **Headless agy can NEVER write the workspace via shell — only via file tools.** With
+  `enableTerminalSandbox: true` (set by agy's own v2 migration), `permissions.allow` `command(x)`
+  rules are promptless-but-SANDBOXED; legacy `unsandboxed(x)` rules are dead syntax (unmatched →
+  soft-deny "headless mode cannot prompt"). A producer that assembles output via
+  `python3`/`cp` passes all its checks then dies at the workspace write (EPERM /
+  SANDBOX_COMMAND_BLOCKED) and exits 0 with zero output — the 20261015 04:30 kk-daily-ai-voice
+  failure. /tmp writes are allowed; workspace writes are not. Settings-side fixes are exhausted;
+  prompt-side ("Deliver with your file-write tool") plus an engine-side JSON-validity condition
+  gate (array + length == candidates docs + all objects) is the durable shape — see
+  kk-daily-ai-voice2.yaml plan-translate (0238 R2 extended from existence to validity).
+- **`allowAppend: false` does not stop an executor's staged-write hack.** A pi token-cap
+  "single write exceeded the output cap" produced `[...4 items, "@@SPLIT-1@@"]` in the plan file —
+  executor-side write policies don't enforce JSON shape, so only a condition-level validity gate
+  catches contract-violating producer output (20261015 recovery run c71f8c8b, killed mid-flight).
