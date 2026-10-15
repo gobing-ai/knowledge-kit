@@ -244,6 +244,28 @@ describe('F613 R2 — validateScriptPlan rules', () => {
         });
     });
 
+    it('rejects an insight that restates the narration — 3 clauses copied verbatim from the body (redundant-insight)', () => {
+        const plan = twoDocPlan();
+        plan.items[1] = {
+            ...(plan.items[1] as ScriptPlan['items'][number]),
+            insight:
+                '电力基础设施成为算力竞争的瓶颈。新的人工智能数据中心正在推高区域电网的电力需求。电力基础设施成为算力竞争的瓶颈，这个矛盾短期很难缓解。',
+        };
+        const result = validateScriptPlan(plan, docs, style);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.errors).toContainEqual({ itemId: 'energy-doc-1', rule: 'redundant-insight' });
+    });
+
+    it('accepts up to two restated clauses; short keyword spans do not count as restatement', () => {
+        const plan = twoDocPlan();
+        plan.items[1] = {
+            ...(plan.items[1] as ScriptPlan['items'][number]),
+            insight:
+                '电力基础设施成为算力竞争的瓶颈。新的人工智能数据中心正在推高区域电网的电力需求。这说明模型再强，也受制于这份电力需求激增的现实。',
+        };
+        expect(validateScriptPlan(plan, docs, style).ok).toBe(true);
+    });
+
     it('rejects the same insight text on two items (duplicate-insight)', () => {
         const plan = twoDocPlan();
         const shared = plan.items[0]?.insight ?? '';

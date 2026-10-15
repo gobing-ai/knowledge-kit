@@ -104,9 +104,33 @@ export function parseStyleContract(markdown: string): StyleContract {
  * - `cap:<field>`: a field over its cap (`intro`/`outro` report `itemId: episode`)
  * - `banned:<phrase>`: a field containing a banned phrase
  * - `duplicate-insight`: the same insight text on two items in one episode
+ * - `redundant-insight`: the insight restates the narration — ≥ 3 of its clauses each share a
+ *   ≥ 14-char verbatim span with the item's spoken facts (lead + doc body). 20261014 episode: the
+ *   prompt told the planner to restate facts, so the listener heard near-identical wording twice
+ *   per item. One repeated number is tolerable; three copied clauses is a second narration.
  *
  * All-or-nothing by contract (Q&A): a partially valid plan is never partially applied.
  */
+/** Verbatim-span length (normalized) that counts a clause as restated, not as a fact mention. */
+const REDUNDANT_INSIGHT_SPAN = 14;
+/** A listener tolerates one restated clause; at this many the item reads as a second narration. */
+const REDUNDANT_INSIGHT_CLAUSE_LIMIT = 3;
+
+function redundantInsightClauses(insight: string, reference: string): number {
+    const ref = reference.replace(/[\s\p{P}\p{S}]+/gu, '');
+    let count = 0;
+    for (const clause of insight.split(/[。！？；，]/)) {
+        const norm = clause.replace(/[\s\p{P}\p{S}]+/gu, '');
+        if (norm.length < REDUNDANT_INSIGHT_SPAN) continue;
+        for (let i = 0; i + REDUNDANT_INSIGHT_SPAN <= norm.length; i++) {
+            if (ref.includes(norm.slice(i, i + REDUNDANT_INSIGHT_SPAN))) {
+                count++;
+                break;
+            }
+        }
+    }
+    return count;
+}
 export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContract): ScriptPlanValidation {
     const parsed = ScriptPlanSchema.safeParse(plan);
     if (!parsed.success) {
@@ -134,6 +158,14 @@ export function validateScriptPlan(plan: unknown, docs: Doc[], style: StyleContr
     for (const item of valid.items) {
         if (item.lead.length > style.caps.lead) errors.push({ itemId: item.id, rule: 'cap:lead' });
         if (item.insight.length > style.caps.insight) errors.push({ itemId: item.id, rule: 'cap:insight' });
+        const doc = docs.find((entry) => entry.id === item.id);
+        // unknown-id is already reported above; skip the redundancy check rather than double-report.
+        if (
+            doc !== undefined &&
+            redundantInsightClauses(item.insight, `${item.lead}${doc.body}`) >= REDUNDANT_INSIGHT_CLAUSE_LIMIT
+        ) {
+            errors.push({ itemId: item.id, rule: 'redundant-insight' });
+        }
     }
 
     const fields: { itemId: string; text: string }[] = [

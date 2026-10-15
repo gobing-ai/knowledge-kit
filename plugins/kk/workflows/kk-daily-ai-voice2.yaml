@@ -457,7 +457,7 @@ nodes:
         # ADR-115 error tier: keep this prompt <= 1000 chars.
         input: |
           Read ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json — a JSON array of docs; don't edit it. Also read the style contract ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_style.md and obey its char caps, duration budget and banned phrases.
-          For each doc write a `lead` (a spoken bridge, not containing the title) and an `insight` (grounded only in that doc's facts: keep its numbers and hedges（据报道）, add no new degree words).
+          For each doc write a `lead` (a spoken bridge, not containing the title) and an `insight` (a take, not a recap: the narration just read that doc's facts — never restate its facts, numbers or wording; give only your angle, judgment or what-to-watch, no new facts, keep hedges（据报道）, no new degree words).
           intro/outro hook only in-scope items; no greeting or sign-off — the builder adds both. 选题边界：政治/外交、贸易管制、军事、公共政策争议、社会公共事件条目绝不复述；读文章 22-article/*_06_article-write_body.md，其文末注记点名的 id 一并进 excluded，各配中文原因。
           Output only JSON {"version":1,"intro":"…","outro":"…","items":[{"id":"…","lead":"…","insight":"…"}],"excluded":[{"id":"…","reason":"…"}]} to ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json. Exactly one `items` entry per doc not in `excluded`.
         expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
