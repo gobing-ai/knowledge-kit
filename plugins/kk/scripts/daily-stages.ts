@@ -1991,7 +1991,10 @@ function voicescriptToBlockYaml(script: Record<string, unknown>): string {
 
 /** Measured driver rates from dailyGenerate. Unknown drivers (incl. voxcpm, provisionally) use the voicebox rate. */
 function spokenCharRate(vdriver: string): number {
-    return vdriver === 'gemini' ? 5.4 : 5.6;
+    // Recalibrated 2026-10-15: episode measured 7,395 spoken chars / 1,490.9 s across 12 sections
+    // (4.96 字/秒) — the effective gemini rate dropped ~8% below the 5.33-5.62 band calibrated
+    // 2026-10-04/07, which consumed the fit's 2-min margin and tripped the 25-min gate at 25.2 min.
+    return vdriver === 'gemini' ? 4.95 : 5.6;
 }
 
 /**
