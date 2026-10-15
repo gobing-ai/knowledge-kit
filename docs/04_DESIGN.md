@@ -1172,6 +1172,8 @@ only need the package root (`src/index.ts`) never load this module or
 | `uploadFile(page, selector, filePath, opts?)` | function | Attached `input[type=file]`; visibility is not required |
 | `expectOutcome(probe, { timeoutMs, label, pollMs? })` | function | `{ ok: true, evidence }` or `{ ok: false, error }`; success only from an observed browser signal (E91-D6) |
 | `markdownToHtml(markdown)` | function | `Bun.markdown.html` (E91-D4) — GFM tables, fenced code, task lists; no markdown dependency |
+| `injectBrowserAntiDetection(page, options?)` | function | Opt-in MAIN-world anti-detection hooks for one page (0288). With `shieldProfile`, intercepts only the exact `/shield/webprofile` path (query allowed) on `allowedOrigins` across `fetch`, `XMLHttpRequest` and `navigator.sendBeacon`, answering the synthetic `{code:0,success:true,msg:'ok',data:{st}}` JSON receipt with a native-like `toString`; unrelated calls pass through untouched. Idempotent per document (same-config reinstall is a no-op, conflicting options throw); defaults install nothing |
+| `queueBrowserFiles(page, files)` / `BrowserPendingFile` | function / type | Host-validated pending browser files (`{name, mimeType, base64}`; ≤20 files, ≤8 MiB decoded) queued onto the installed chooser hook; `input[type=file].click` with a valid one-shot batch assigns via `DataTransfer` and fires `input`+`change` instead of the native dialog; ineligible clicks keep native behavior (0288) |
 | `IsAuthenticatedPredicate`, `BrowserLauncher` | types | Re-exported from `@gobing-ai/ts-browser-automation` for the config and deps seams |
 
 Every helper failure throws an `Error` naming the selector (or the outcome label) and the timeout;

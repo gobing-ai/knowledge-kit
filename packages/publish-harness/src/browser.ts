@@ -41,6 +41,12 @@ import {
 // re-exported through the browser sub-path so the CLI gets one entry point.
 export * from './bot';
 export * from './bot-transaction';
+export {
+    type AntiDetectionOptions,
+    type BrowserPendingFile,
+    injectBrowserAntiDetection,
+    queueBrowserFiles,
+} from './browser-anti-detection';
 export * from './profile-lease';
 /** Upstream seam types re-exported so a channel plugin needs one import for its config and deps. */
 export type { BrowserLauncher, IsAuthenticatedPredicate };
