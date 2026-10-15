@@ -263,6 +263,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/cnblogs-pub": {
+      "name": "@gobing-ai/cnblogs-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/csdn-pub": {
       "name": "@gobing-ai/csdn-pub",
       "dependencies": {
@@ -502,6 +516,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.15", "", { "os": "win32", "cpu": "x64" }, "sha512-yAzh4UqEImV6Hcy0zjUqNfJAsUhoD64FBQCdTG8Md/Z2wQeVP/ZmJ3XRYAs1g8J9fjTFyl2fCtc5FB5til47+g=="],
 
     "@gobing-ai/aihot-ingest": ["@gobing-ai/aihot-ingest@workspace:plugins/ingestions/aihot-ingest"],
+
+    "@gobing-ai/cnblogs-pub": ["@gobing-ai/cnblogs-pub@workspace:plugins/publishings/cnblogs-pub"],
 
     "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/generations/content-gen"],
 
