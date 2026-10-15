@@ -220,15 +220,15 @@ export function registerExecutorCommand(program: Command): void {
     withRunOptions(
         program
             .command('invoke', { hidden: true })
-            .description('Alias for `executor run` (deprecated)')
+            .description('[deprecated] Alias for `executor run`')
             .argument('<plugin>', 'Name of the plugin to invoke'),
     ).action(runInvokeAction);
 
     withFaninOptions(
-        program.command('fanin', { hidden: true }).description('Alias for `executor fan-in` (deprecated)'),
+        program.command('fanin', { hidden: true }).description('[deprecated] Alias for `executor fan-in`'),
     ).action(runFaninAction);
 
     withFanoutOptions(
-        program.command('fanout', { hidden: true }).description('Alias for `executor fan-out` (deprecated)'),
+        program.command('fanout', { hidden: true }).description('[deprecated] Alias for `executor fan-out`'),
     ).action(runFanoutAction);
 }

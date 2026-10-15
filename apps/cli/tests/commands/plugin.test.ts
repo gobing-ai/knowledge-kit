@@ -46,6 +46,10 @@ describe('registerPluginCommand', () => {
             const cmd = group?.commands.find((c) => c.name() === name);
             expect(cmd).toBeDefined();
         }
+        expect(group?.commands.find((c) => c.name() === 'status')?.description()).not.toStartWith('[deprecated]');
+        for (const name of ['list', 'doctor']) {
+            expect(group?.commands.find((c) => c.name() === name)?.description()).toStartWith('[deprecated] ');
+        }
         // The group help lists status but never the hidden list/doctor aliases.
         const help = group?.helpInformation() ?? '';
         expect(help).toMatch(/^\s+status\s/m);
@@ -54,7 +58,11 @@ describe('registerPluginCommand', () => {
         // Hidden top-level `plugins` delegation command: same status verbs.
         const plugins = program.commands.find((c) => c.name() === 'plugins');
         expect(plugins).toBeDefined();
+        expect(plugins?.description()).toStartWith('[deprecated] ');
         expect(plugins?.commands.map((c) => c.name())).toEqual(['status', 'list', 'doctor']);
+        for (const name of ['status', 'list', 'doctor']) {
+            expect(plugins?.commands.find((c) => c.name() === name)?.description()).toStartWith('[deprecated] ');
+        }
         // The deprecated `plugins` path never renders as a visible first-layer command.
         expect(program.helpInformation()).not.toContain('plugin|plugins');
         expect(program.helpInformation()).not.toMatch(/^\s+plugins\s/m);

@@ -42,10 +42,13 @@ describe('registerExecutorCommand', () => {
         expect(group?.commands.find((c) => c.name() === 'fan-out')?.aliases()).toEqual(['fanout']);
 
         // Hidden one-release aliases exist but are not visible first-layer commands.
+        // Their help summary leads with [deprecated] so the alias is obvious.
         for (const name of ['invoke', 'fanin', 'fanout']) {
             const cmd = program.commands.find((c) => c.name() === name);
             expect(cmd).toBeDefined();
+            expect(cmd?.description()).toStartWith('[deprecated] ');
         }
+        expect(group?.commands.find((c) => c.name() === 'run')?.description()).not.toStartWith('[deprecated]');
         // The program help lists executor as a command but never the hidden aliases.
         const help = program.helpInformation();
         expect(help).toMatch(/^\s+executor\s/m);

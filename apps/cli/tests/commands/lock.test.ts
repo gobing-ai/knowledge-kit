@@ -52,7 +52,10 @@ describe('kk lock — canonical registrar and the hidden store lock route (A22 R
         expect(help.visibleCommands(program).map((c) => c.name())).toContain('lock');
 
         const lock = program.commands.find((c) => c.name() === 'lock');
+        expect(lock?.description()).not.toStartWith('[deprecated]');
         expect(lock?.commands.map((c) => c.name())).toEqual(['acquire', 'release']);
+        expect(lock?.commands.find((c) => c.name() === 'acquire')?.description()).not.toStartWith('[deprecated]');
+        expect(lock?.commands.find((c) => c.name() === 'release')?.description()).not.toStartWith('[deprecated]');
         expect(lock?.commands.find((c) => c.name() === 'acquire')?.options.map((o) => o.long)).toEqual([
             '--name',
             '--run',
@@ -64,6 +67,9 @@ describe('kk lock — canonical registrar and the hidden store lock route (A22 R
         expect(store).toBeDefined();
         const storeLock = store?.commands.find((c) => c.name() === 'lock');
         expect(storeLock).toBeDefined();
+        expect(storeLock?.description()).toStartWith('[deprecated] ');
+        expect(storeLock?.commands.find((c) => c.name() === 'acquire')?.description()).toStartWith('[deprecated] ');
+        expect(storeLock?.commands.find((c) => c.name() === 'release')?.description()).toStartWith('[deprecated] ');
         expect(store && help.visibleCommands(store).map((c) => c.name())).not.toContain('lock');
         // The hidden route still carries the identical flag contract.
         expect(storeLock?.commands.map((c) => c.name())).toEqual(['acquire', 'release']);

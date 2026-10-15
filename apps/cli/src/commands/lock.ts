@@ -103,10 +103,15 @@ async function lockReleaseAction(options: LockReleaseOptions): Promise<void> {
  * help without changing a flag, default, JSON line, exit code or DB effect.
  */
 export function registerLockCommand(parent: Command, hidden = false): void {
-    const lock = parent.command('lock', { hidden }).description('Single-flight locks over the store');
+    // The hidden `kk store lock` spelling is the legacy alias. Prefix only that
+    // route's help lines; canonical `kk lock` keeps the unmarked descriptions.
+    const legacy = hidden ? '[deprecated] ' : '';
+    const lock = parent.command('lock', { hidden }).description(`${legacy}Single-flight locks over the store`);
 
     lock.command('acquire')
-        .description('Take the named lock for this run; prints {acquired} or {skipped, holder} (exit 0 both ways)')
+        .description(
+            `${legacy}Take the named lock for this run; prints {acquired} or {skipped, holder} (exit 0 both ways)`,
+        )
         .requiredOption('--name <lock>', 'Lock name (e.g. collect)')
         .requiredOption('--run <id>', 'Owning run id (re-entrant for the same id)')
         .option('--ttl <ms>', 'Claim lifetime for a dead holder, in milliseconds', String(DEFAULT_LOCK_TTL_MS))
@@ -114,7 +119,7 @@ export function registerLockCommand(parent: Command, hidden = false): void {
         .action(lockAcquireAction);
 
     lock.command('release')
-        .description('Release the named lock iff this run still owns it; prints {released}')
+        .description(`${legacy}Release the named lock iff this run still owns it; prints {released}`)
         .requiredOption('--name <lock>', 'Lock name (e.g. collect)')
         .requiredOption('--run <id>', 'Owning run id')
         .option('--db <path>', 'Store database path (default: kk config store.db_path, else .works/kk.db)')

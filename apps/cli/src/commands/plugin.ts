@@ -365,14 +365,14 @@ export function registerPluginCommand(program: Command): void {
         .action(loginAction);
     // Hidden one-release aliases (ADR-011 R4): same engine, same JSON contract,
     // not listed in `kk --help` or `kk plugin --help`.
-    registerStatusVerb(plugin, 'list', 'Alias for `plugin status` (deprecated)', true);
-    registerStatusVerb(plugin, 'doctor', 'Alias for `plugin status` (deprecated)', true);
+    registerStatusVerb(plugin, 'list', '[deprecated] Alias for `plugin status`', true);
+    registerStatusVerb(plugin, 'doctor', '[deprecated] Alias for `plugin status`', true);
 
     // Hidden one-release top-level alias (ADR-011 R4): `kk plugins` and its
     // `status` / `list` / `doctor` subcommands reach the same status engine but
     // never render as visible first-layer commands.
-    const plugins = program.command('plugins', { hidden: true }).description('Alias for `plugin status` (deprecated)');
-    registerStatusVerb(plugins, 'status', 'Alias for `plugin status` (deprecated)', true);
-    registerStatusVerb(plugins, 'list', 'Alias for `plugin status` (deprecated)', true);
-    registerStatusVerb(plugins, 'doctor', 'Alias for `plugin status` (deprecated)', true);
+    const plugins = program.command('plugins', { hidden: true }).description('[deprecated] Alias for `plugin status`');
+    registerStatusVerb(plugins, 'status', '[deprecated] Alias for `plugin status`', true);
+    registerStatusVerb(plugins, 'list', '[deprecated] Alias for `plugin status`', true);
+    registerStatusVerb(plugins, 'doctor', '[deprecated] Alias for `plugin status`', true);
 }
