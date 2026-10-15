@@ -72,7 +72,6 @@ Add optional `publishing` to publish manifests and PluginRecord, validated in kk
       "article": {
         "format": "article",
         "locale": "source",
-        "execution": "executor",
         "requires": {"cover": false},
         "modes": {
           "draft": {"metadata": {"published": false}},
@@ -84,9 +83,9 @@ Add optional `publishing` to publish manifests and PluginRecord, validated in kk
 }
 ```
 
-`profiles` is a nonempty record of safe profile IDs. `defaultProfile` must reference a declared profile. Formats use the existing Content format enum. Locale is `source` or a validated language tag. Optional `limits` uses the existing content-limit units, never an invented character count. `requires` may declare cover/ordered-images requirements; media generation remains explicit. `modes` is a nonempty subset of `draft|live`; each metadata map is JSON data with a complete mode binding for that profile. Plugin implementation still independently validates its input and live policy. Capability data cannot execute commands or contain credentials. Unknown keys in the new subobject fail validation.
+`profiles` is a nonempty record of safe profile IDs. `defaultProfile` must reference a declared profile. ContentSchema.format currently accepts strings (schemas.ts:17); profile format is a nonempty string and does not narrow the generic Content contract. Locale is `source` or a validated language tag. Optional `limits` uses the existing content-limit units, never an invented character count. `requires` may declare cover/ordered-images requirements; media generation remains explicit. `modes` is a nonempty subset of `draft|live`; each metadata map is JSON data with a complete mode binding for that profile. Plugin implementation still independently validates its input and live policy. Capability data cannot execute commands or contain credentials. Unknown keys in the new subobject fail validation.
 
-Profiles represent existing channel operations, not new plugin instances: for example X article versus post, Weibo article versus post. Metadata is transcribed from each implementation; do not infer it from examples. Existing script-backed built-ins declare `execution: executor`. Actual agent-only plugins remain unsupported by ITC automation until they expose a deterministic invocation contract; no speculative agent fallback is added.
+Profiles represent existing channel operations, not new plugin instances: for example X article versus post, Weibo article versus post. Metadata is transcribed from each implementation; do not infer it from examples. Existing script-backed built-ins run through executor dispatch without a redundant execution enum. Actual agent-only plugins remain unsupported by ITC automation until they expose a deterministic invocation contract; no speculative agent fallback is added.
 
 `browserSession` remains the existing optional profile descriptor. The planner derives `--serial-target` from shared browser resources, conservatively serializing browser channels through the existing executor option. It never equates transport=browser with an agent requirement. API-only targets never load browser helpers.
 
@@ -120,7 +119,7 @@ workflows:
       mode: "off"
 ```
 
-These are declared defaults, not an instruction to rewrite the user's current file. `--auto` supplies its existing research/judge/unslop defaults only where a higher-priority value is absent. Live publication and image spending retain explicit launch authorization and are never enabled by a semantic choice or a generic auto/config flag. Plugin credentials remain in the existing plugin environment seam and never enter the effective-options snapshot. Config errors name keys/types without printing secret values.
+These are declared defaults, not an instruction to rewrite the user's current file. Explicit per-option launch flags win; explicit launch `--auto` supplies research/judge/unslop=true ahead of lower-priority config defaults. When auto comes only from config, explicit per-option config values win and the auto policy fills omitted values. Live publication and image spending retain explicit launch authorization and are never enabled by a semantic choice or a generic auto/config flag. Plugin credentials remain in the existing plugin environment seam and never enter the effective-options snapshot. Config errors name keys/types without printing secret values.
 
 Default allocation is `{works_dir}/{workflow-name}/{topic-name}/`, optionally followed by `YYYYMMDD/`. Here workflow-name is `kk-itc`; topic-name is the deterministic safe topic slug. The operator's current config resolves the root to `/Users/robin/xprojects/knowledge-kit/.works`, giving `.works/kk-itc/<topic-name>/`; do not hardcode this machine-specific path into product code. Preserve explicit `--dir`/work_dir as a full workspace override. `KK_WORKS_DIR` overrides the root, not the workflow/topic suffix. Resolve a relative works_dir against the config file's directory, then canonicalize it once; resolve explicit relative --dir against launch cwd. Expand only documented home prefixes, never evaluate shell substitutions.
 
@@ -135,7 +134,7 @@ Existing topic and `--in` modes are unchanged. Add `--from-collect <topic-profil
 
 Collected mode reads a fresh run-local pool using existing `kk store extract --topic <profile> --out <file>` and existing topic-scoped deduplication. An explicitly requested refresh launches the resolved kk-collect workflow through Spur, waits for its real terminal outcome, records child run identity, and only then extracts; never copy its ingestion nodes or treat async launch as completion. Skipped/locked refresh may use an existing pool only when it meets the recorded freshness policy, otherwise stop. Reuse kk-collect fan-in and store contracts; do not ingest independently inside ITC.
 
-An agent proposes at most three candidate article topics from pool Doc[]; candidates carry stable item IDs, source URLs, rationale, and references into the pool. Deterministic validation rejects unknown IDs, empty evidence, absent bodies and invalid URLs. Selection records selected item IDs with `kk store select --topic ... --workflow kk-itc --run ...` before authoring. Author-only completion or failure releases this run's selection; confirmed live publication marks published. Draft remote saves are not live publication. Uncertain remote outcomes retain a pending selection for reconciliation. Only this run's rows may be released. Empty pool or unavailable required refresh stops with an actionable result; never invent a topic. Pool age/window is recorded in topic evidence and existing extract flags enforce it.
+An agent proposes at most three candidate article topics from pool Doc[]; candidates carry stable item IDs, source URLs, rationale, and references into the pool. Deterministic validation rejects unknown IDs, empty evidence, absent bodies and invalid URLs. Selection records selected item IDs with `kk store select --topic ... --workflow kk-itc --run ...` before authoring. Known author-only/draft-only completion or safe failure releases this run's selection; a successful live-intent send receipt marks published, while unresolved possible effects retain selection for reconciliation. Draft remote saves are not live publication. Uncertain remote outcomes retain a pending selection for reconciliation. Only this run's rows may be released. Empty pool or unavailable required refresh stops with an actionable result; never invent a topic. Pool age/window is recorded in topic evidence and existing extract flags enforce it.
 
 ## Structured semantic decisions (planned)
 Add a separate ITC catalog beside kk-items. Reuse `spur decision run ... --evidence <file> --json`, with a fixed choice vocabulary compatible with the installed catalog schema:
@@ -194,3 +193,31 @@ Operator topics, file paths, preset names and target lists remain data. Use argv
 
 ## Decomposition and budget
 Six deliverables, estimated 52h total: plugin capability planning (8h), collected topics (8h), presets (6h), structured authoring decisions and child FSM (8h), DAG dispatch/recovery and SEO handoff (12h), configuration/workspace and compatibility integration/docs (10h). Source files shared across slices execute in dependency order. Each task carries its own implementation and tests; final integration owns only cross-slice coverage and doc synchronization. Parent rubric E52 D6 L5 C2 R2 = 67, forced split by effort and publication risk. No code implementation occurs in this design run.
+
+
+## Ready-depth interface freeze — 2026-10-15
+
+The source audit and per-task handoffs are recorded in [the ready-depth report](../plans/2026-10-15-g21-refineall-ready.md). New type/function/stage names below are implementation contracts, not claims that they already exist.
+
+| Owner | Frozen output / responsibility | Consumers |
+| --- | --- | --- |
+| 0298 | PublishingProfileSchema / PublishingCapabilitiesSchema, PluginRecord.publishing, buildItcPublishPlan in apps/cli/src/itc-plan.ts; async runItcStage in itc-stage.ts from commands/stage.ts | 0300 preset selection, 0302 send plan, 0303 effective options |
+| 0299 | Native itc-topic-extract/validate/select/selection-settle; topic-pool, topic-candidates and chosen-source JSON with run/digest membership | 0300 topic profile, 0301 candidate choices, 0302 settlement, 0303 workspace |
+| 0300 | ExtractProfile.publishPreset parser extension; resolveItcTargets; strict project/package preset precedence and provenance | 0301 suggested preset, 0302 frozen plan, 0303 config defaults |
+| 0301 | kk-itc-author.yaml child FSM, itc-decision handler and .itc/author-run.json / author-complete.json | 0302 parent barrier and 0303 entry/Board child authority |
+| 0302 | Root DAG, isolated target payload/receipt processing, exact result reconciliation and optional SEO handoff | 0303 final entry/settings/Board integration |
+| 0303 | Strict itc-config.ts options/workspace resolver, standard entry and parent/child Board reading | final installed operator surface |
+
+0299 depends on 0298's native dispatcher; the remaining order is unchanged. Early helpers accept explicit requests and work directories; they do not import or stub the later 0303 config resolver. Keep existing runStage synchronous for daily callers; only the native ITC command branch is awaited. Existing builtin-only script entry compatibility forwards by argv to the intercepted native command. No general router service is introduced.
+
+Profile limits are optional title/body {max,unit} using ContentCountUnit. Clear the union of profile mode keys before stamping a complete selected binding. Qiita requires private:true plus published:false for nonpublic draft mode, and private:false/published:true for live; private otherwise wins. Current WeChat article uses operation=文章 and publishStatus=draft|public, not historical operation=draft. XHS 上传图文 requires ordered metadata.images; a hero cover alone is insufficient. Plugin-local validation remains authoritative.
+
+The preset resolver's complete precedence is explicit targets > explicit preset > resolved workflow-config preset > explicitly selected topic profile preset > no targets. Exact duplicate plugin/profile selectors collapse; conflicting profiles for one plugin fail. Extend the real kk-store parseProfile/PROFILE_KEYS/ExtractProfile boundary without changing compileProfile SQL. Malformed project overrides do not fall back to package assets.
+
+Decision evidence is explicitly compacted to <=1800 UTF-16 units per file, within Spur's 2000-character bound. Persist served JSON because decision run does not write a resultFile; validate source/default and candidate binding independently of exit 0. Config auto and explicit launch auto have distinct precedence as specified above; no new generic environment override namespace is added.
+
+Receipt/SEO observations must distinguish requested mode from executor success. Aggregate status published means a successful invocation, including draft saves; Result.target may be a channel label whereas aggregate target identifies the requested plugin. Failed Result metadata is currently dropped by fanout.dispatchOne; 0302 preserves it when using typed delivery evidence instead of parsing errors or weakening all retry selection. The reserved optional Result.metadata.itcDelivery object is {schemaVersion:1,effect:none|confirmed|unknown,publicUrlVerified?:boolean}; missing evidence is unknown. Only proven effect-none failures enter an explicit safe retry subset. A composed Result URL never establishes public visibility. Public SEO URL handoffs require explicit live intent and verified public evidence; absent proof yields not-assessed.
+
+Config resolution is two-phase for collected topics: validate/freeze intake defaults with workDir:null before ideation, then finalize the selected topic's prepared workspace/snapshot. Reject malformed config/source before mkdir or counter writes. Missing ITC config uses read-only defaults; other workflows retain their existing behavior. Force is a fresh identity and never silently deletes send receipts. A resume keeps its original path/options but cannot expand current Board trusted-root authority.
+
+The Board's existing ITC revision projection reads FSM state visits; after migration the parent DAG uses action rows and the author child supplies authorized progress. Bind child ID/definition/options/draft evidence before fetching child progress through existing run endpoints; missing authority stays unavailable/null, not synthetic zero. Retain historical FSM captures. Final implementation must exercise actual validators, store/executor boundaries and isolated real Spur continuation; the earlier marker-only probe does not certify production cancellation or crash recovery.

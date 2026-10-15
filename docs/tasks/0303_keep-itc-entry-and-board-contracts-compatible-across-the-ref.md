@@ -4,7 +4,7 @@ name: Keep ITC entry and Board contracts compatible across the refactor
 status: todo
 template: feature-impl
 created_at: 2026-10-15T21:59:21.907Z
-updated_at: "2026-10-15T22:33:16.229Z"
+updated_at: "2026-10-15T22:49:55.963Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -21,25 +21,30 @@ dependencies: ["0298", "0299", "0300", "0301", "0302"]
 
 ### Background
 
-Current kk-itc has shipped authoring and fan-out but centralizes channel policy, duplicates browser routing and permits weak artifact evidence. This slice delivers: Exercise installed run-anywhere and default topic/file paths against fake transports and a manifest-only new publisher. Preserve legacy aliases and Board artifact paths with additive schema support. Remove unsafe operator-text shell interpolation and test metacharacters. Synchronize authority/derived docs and correct shipped stage/bot/DAG drift.
+The command documents ASCII ITC workspace slugs and config precedence, while current resolveWorksDir silently falls back on malformed config and ITC Board producer/revision readers assume a single FSM. Freeze ITC-specific configuration and migrate the reader to verified parent/child evidence.
 
 Implements feature G21 scenarios: R1 — Existing authoring inputs keep their observable behavior; R12 — Entry surfaces and artifacts remain consistent.
-
-Owned surface: plugins/kk/commands/workflow-run.md; apps/cli stage/Board ITC; apps/board/src/itc; packaging assets; integration tests; docs/00-05 and AGENTS.md.
-
-Verified premises: apps/cli/src/commands/stage.ts:40; apps/cli/tests/kk-itc-publish-tail.test.ts:1; docs/00_ADR.md:1210. Full contract: docs/design/kk-itc-refactor.md. Preserve existing Content → Result, direct entry execution and plugin-owned validation. No new service or live account is needed.
-
-Rubric: E10 D1 L3 C1 R1 = 16; independent behavior/risk boundary with implementation and tests together. 
-
-Ordering: after Plan ITC publication from discovered plugin capabilities, Select evidence-backed ITC topics from the collection store, Resolve topic channel presets with explicit target overrides, Persist bounded ITC semantic decisions and safe fallbacks, Dispatch ITC targets with isolated payloads and recoverable receipts. Shared workflow/stage surfaces are sequenced, not concurrently edited.
-
-2026-10-15 operator feedback amendment: Own canonical ITC configuration/workspace resolution and cross-surface compatibility. Resolve KK_CONFIG or ~/.config/kk/config.yaml with explicit launch > existing env > workflows.kk-itc > applicable global defaults > compiled defaults; refuse malformed existing config before mutation. Reuse current helpers and expand documented home prefixes without shell evaluation. Freeze non-secret options/digest; resolve relative works_dir against the config directory and --dir against launch cwd. Compose {works_dir}/kk-itc/{topic-name}/[YYYYMMDD]/ with dated=false unless requested, a validated explicit run date overriding computed date, and a stable date/timezone on resume. Preserve existing ASCII slugs and safely support Unicode topics. Keep Board trust root and workspace ownership consistent; never erase remote receipts on force. Test configured root, env/full-dir overrides, dates, invalid config, Unicode/metacharacters, collisions, changed ambient config and installed launch paths. Synchronize settings/config docs and DAG+FSM/SEO handoff readers. Existing live/spend intent remains explicit.
-
 Also implements G21 R14 — ITC workspace follows configured topic and optional date.
-
 Also implements G21 R15 — Invalid ITC configuration stops before mutation.
-
 Also implements G21 R18 — Resume retains the original effective configuration.
+
+Current-tree premises: apps/cli/src/invoke.ts:52; apps/cli/src/commands/daily.ts:105; plugins/kk/commands/workflow-run.md:189; plugins/kk/scripts/kk-workflow-stages.ts:732; apps/cli/src/board/itc.ts:200; apps/cli/src/board/reader.ts:355; apps/cli/src/board/manifest.ts:67; apps/cli/src/commands/stage.ts:40. These claims were checked against source, not inferred from old status or scratch reports.
+
+Every mapped issue remains valid; no requirement/scenario is dropped or renumbered. Config/workspace code is owned by 0303, child authoring by 0301, root DAG/publication by 0302, capabilities by 0298, topic/store intake by 0299 and presets by 0300.
+
+Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-kit-runall-0288-0297-6c4167 has unmerged shipinhao-pub, bun.lock and task0296 changes. No confirmed same-file source overlap is present, but do not enumerate its unpublished plugin or consume its lockfile; recheck source ownership before execution.
+
+
+
+**Refine corrections (2026-10-15)**
+- A canonical strict config resolver already existed → config.ts is only CLI version metadata and daily resolver falls back silently → add an ITC-specific strict resolver reusing config path/home conventions without changing other workflows.
+- Missing config behavior was consistent → workflow-run documents create-on-first-run while the new design uses read-only defaults → freeze ITC missing-config behavior and update only its profile/affected tests.
+- Config defaults should override --auto even at lower priority → --auto is an explicit launch policy → explicit per-option flags win, then auto defaults, then env/config/compiled values for those implied options.
+- Board could keep reading only the parent FSM progress → ITC root becomes a DAG and revision visits live in the child → authorize child identity/digest before reading progress; unknown evidence stays null.
+- Force/resume policy was underspecified → existing prepare resets counters and can reuse artifacts → validate first, acquire workspace ownership, preserve send receipts and require fresh run identity for force.
+- Installed entry/argv tests were only source-text pins → command currently emits shell/JSON snippets → test real native option and workspace resolution with literal metacharacters and packaged paths.
+
+- Frozen workspace root equaled current Board authority → ambient trusted-root changes can revoke preview authorization → keep original resume path without broadening Board trust; show unavailable previews.
 
 ### Requirements
 
@@ -86,29 +91,39 @@ Feature: Keep ITC entry and Board contracts compatible across the refactor
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-15T22:49:54.903Z
+
+- Closed: ITC missing config uses read-only defaults; other workflow create-on-first-run behavior is untouched. Explicit --auto outranks config defaults for implied options, while explicit per-option flags win. New allocation/config behavior is assembled in 0303, after all explicit-input helpers work.
+- Closed: no live accounts or paid generation are needed for acceptance; provider/model calls use deterministic fixtures.
+- Deferred with owner: G9 owns actual SEO draft analysis and public-URL audit execution; G21 exports typed handoffs only.
+
 ### Design
 
-Exercise installed run-anywhere and default topic/file paths against fake transports and a manifest-only new publisher. Preserve legacy aliases and Board artifact paths with additive schema support. Remove unsafe operator-text shell interpolation and test metacharacters. Synchronize authority/derived docs and correct shipped stage/bot/DAG drift.
+WHAT/WHERE: add apps/cli/src/itc-config.ts with resolveItcOptions(input:ItcLaunchInput,context):Promise<ItcEffectiveOptions> and resolveItcWorkspace(options,topic):ItcWorkspace; expose native stage itc-prepare --request <launch.json> through 0298's dispatcher. Keep existing prepare-itc positional spelling as a compatibility path for valid existing callers. Update only KK ITC entry/config, its native stage and associated Board consumers; do not silently change daily/storm/podcast defaults or their existing resolver. Earlier 0298–0302 helpers take explicit inputs and already function without this resolver; this task composes them into the standard entry.
 
-Decision: follow ADR-040 and docs/design/kk-itc-refactor.md; use a top-level DAG with bounded authoring FSM and reuse native discovery, store, decision, bot and executor seams. Rejected: expanding TARGET_PROFILES or introducing a router service, because both perpetuate duplicated ownership. Scope: plugins/kk/commands/workflow-run.md; apps/cli stage/Board ITC; apps/board/src/itc; packaging assets; integration tests; docs/00-05 and AGENTS.md.
+Config path is KK_CONFIG or resolveKkConfigPath(); missing file uses compiled defaults and ITC does not create/rewrite it. Existing malformed/unreadable/wrong-typed declared fields fail before mkdir/counter writes. Preserve unrelated config keys; validate workflows.kk-itc strictly. Declared fields are writer,itc-generating|topic; playbook,generic|english|wechat; source_locale,en|zh|ja; research/judge/unslop/auto booleans; max_revisions integer 0..10; topic_profile and publish_preset optional safe slugs; workspace:{dated:boolean}; seo:{mode:'off'|'handoff'}. Existing global defaults maxResults/fixture stay unrelated and are not remapped to ITC. Root works_dir/workflows_dir remain existing top-level paths. No live/spend default is added to config.
 
-Invariants: optional ingestion; draft-first operation; explicit live and image intent; no automated login; no data loss; exact target identity; legacy direct invocation stays valid. Material premises verified at apps/cli/src/commands/stage.ts:40; apps/cli/tests/kk-itc-publish-tail.test.ts:1; docs/00_ADR.md:1210.
+Precedence: explicit per-option launch flag > --auto implied defaults (research/judge/unslop=true only when not explicitly supplied) > existing declared env overrides > workflows.kk-itc > applicable global defaults > compiled defaults. When auto=true comes only from config, explicitly configured per-option research/judge/unslop values win; the auto policy fills only omitted config values. Explicit per-option launch flags always win. --playbook wechat implies zh only if no explicit source locale; freeze the effective result. Only KK_CONFIG/KK_WORKS_DIR and existing workflow/package resolution envs are read; no invented per-setting env namespace. Input source remains exactly one of topic,input_file,from_collect. Added ITC flags are --from-collect <slug>, --refresh-collect, --topic-profile <slug>, --publish-preset <slug>, --run-date YYYYMMDD and --seo off|handoff; keep all current flags/aliases. Distinguish absence from an explicit false/empty value.
 
-Execution budget: 10 engineering hours; one task pipeline attempt with at most one bounded repair per failing behavior before reporting unresolved evidence. Implementation must produce a meaningful source diff and behavioral tests. Persist diagnostics in the task run directory and durable verification evidence; resume from partial work rather than replaying remote effects.
+Two-phase allocation is explicit: resolveItcOptions validates and freezes defaults before collected-topic ideation; status=intake has workDir:null and no topicName. resolveItcWorkspace finalizes the validated selected topic, producing status=prepared with an absolute workDir before workspace initialization. Resume of intake uses its frozen defaults and the same candidate identity; it never rereads changed config. The prepared ItcEffectiveOptions JSON is versioned, contains only declared non-secret values, parentRunId, launchProjectRoot, absolute worksRoot/workDir, topicName/displayTitle, frozen launch instant/timezone/date, optionsDigest and the planned child/selection references. Config relative works_dir resolves against config-directory; an explicit relative --dir resolves against launch cwd. Expand only ~/$HOME prefixes, never shell code. Default path is worksRoot/kk-itc/topicName, with YYYYMMDD when workspace.dated or explicit --run-date requests it. Validate the real calendar date; resume reads its saved options snapshot and does not re-resolve ambient config. Existing ASCII slug algorithm stays stable; normalize Unicode NFC, lowercase and collapse non-letter/number separators for added non-English names; reject empty, . or .., separators/control/NUL input that would escape the root. No random path suffix or new global config root.
 
-Test seam: Bun tests with fake transports/store pools, catalog stubs and temporary plugin assets; never real publication, login, or paid generation. Each task updates its surface docs in the same change; final task handles integration consistency.
+Prepare validates source/config/options and paths before any mutation, then uses the existing kk lock acquire/release seam keyed by SHA-256 of canonical workDir and parentRunId. Persist ownership; concurrent different run IDs refuse. Refuse nonempty workspace on a fresh run unless --force. Force is a fresh parent/child identity and resets only run-owned authoring staging after preserving prior evidence; if send receipts exist, require explicit reconciliation/fresh separate directory rather than deleting or reusing them. Resume requires the same owner/options/digests. Release on known terminal completion; abrupt termination leaves a recoverable owner/lease identity. Keep Board capture under the current authoritative configured trusted root and preserve marker/digest checks. A resumed snapshot never expands Board trust: if ambient config moved that root, the run may retain its original directory while Board previews correctly become unavailable until trust is restored explicitly.
 
-Current design amendment:
-Own canonical ITC configuration/workspace resolution and cross-surface compatibility. Resolve KK_CONFIG or ~/.config/kk/config.yaml with explicit launch > existing env > workflows.kk-itc > applicable global defaults > compiled defaults; refuse malformed existing config before mutation. Reuse current helpers and expand documented home prefixes without shell evaluation. Freeze non-secret options/digest; resolve relative works_dir against the config directory and --dir against launch cwd. Compose {works_dir}/kk-itc/{topic-name}/[YYYYMMDD]/ with dated=false unless requested, a validated explicit run date overriding computed date, and a stable date/timezone on resume. Preserve existing ASCII slugs and safely support Unicode topics. Keep Board trust root and workspace ownership consistent; never erase remote receipts on force. Test configured root, env/full-dir overrides, dates, invalid config, Unicode/metacharacters, collisions, changed ambient config and installed launch paths. Synchronize settings/config docs and DAG+FSM/SEO handoff readers. Existing live/spend intent remains explicit.
+BOARD HANDOFF: root DAG producers use action rows from existing /api/runs/<id>; author artifacts and revision visits use /api/runs/<childId>/progress only after author-run.json and child completion/capture evidence bind parent ID, workspace and executed child definition digest. Never read an arbitrary file-provided child ID, synthesize parent state visits or trust mutable counter files. Missing/mismatched child evidence yields unavailable previews and null revision counts, not zero. Keep historical FSM captures readable and add fields without changing existing public filenames/outcome enums. Update manifest.ts settings whitelist for new options, reader.ts producer authority, itc.ts projection, and apps/board/src/itc UI only as needed to display existing types honestly.
+
+TEST OBSERVABILITY: apps/cli/tests/itc-config.test.ts (new) and workflow-run-command.test.ts prove R2–R5 with actual option/config/path helpers, temporary home/config/project trees, Unicode/metacharacters, precedence/auto overrides, malformed config no-write, occupied workspace, force receipts and midnight/ambient-config resume. apps/cli/tests/board/itc.test.ts and reader.test.ts prove R1/R2 historical FSM plus DAG/child counts and identity refusal using recorded trace fixtures. apps/cli/tests/kk-itc-installed.test.ts (new) packs/runs the actual stage entry in an isolated consumer without ancestor workspace modules, uses fixture child/transport outputs and checks config root, preset assets and aliases. Update only ITC source pins whose former behavior changed; retain other workflow tests. Synchronize docs/00–05, design satellites and relevant AGENTS facts as each implemented surface ships, never mark planned behavior shipped during refine.
+
+Use ADR-040 as amended and docs/design/kk-itc-refactor.md. Native application handlers may import @gobing-ai/*; shipped plugins/kk/scripts remain builtin-only (ADR-018). No new package, dependency, engine, plugin kind, live login, crawler or image spending. Source edits and behavior tests belong to implementation, not this refine. Keep task metadata priority/estimate values unchanged. Test model/network boundaries with fixtures; never mock the parser, dispatcher or receipt validation being asserted. Step 0: verify pinned Bun and selected Spur path, installed assets and frozen upstream interfaces. Do not rely on a sibling worktree's unmerged files.
+
+Execution budget: existing estimate 10h; one task pipeline with bounded repairs. Preserve partial work and task-run diagnostics on failure; meaningful code/test diff required when implementing. G21 dependencies remain the frozen WBS edges; this ready audit does not authorize implementation or merging tasks.
 
 ### Plan
 
-1. Read the owned code, all callers, feature scenarios and design; confirm dependency outputs before edits.
-2. Implement the selected behavior at its existing ownership seam, preserving validation, errors and compatibility.
-3. Add behavior tests for each mapped scenario and its malformed/degraded boundary; assert side effects are absent on refusal.
-4. Run changed-scope checks while iterating, then the project lint/test/build/rule checks through the task pipeline.
-5. Update relevant surface documentation, preserve evidence and complete independent review/verification before task closure.
-6. Apply the 2026-10-15 design amendment and exercise its added scenarios; use only the current revision contracts.
+1. (R2, R3, R4, R5) Implement typed strict ITC config/argv resolver and immutable effective-options snapshot with explicit auto policy.
+2. (R3, R4, R5) Validate source/path/date before writes, compose the standard workspace and protect ownership/receipts on force/resume.
+3. (R1, R2) Bind DAG parent and author child producer evidence in Board while retaining historical FSM rendering.
+4. (R1–R5) Exercise actual config/argv/native stage plus packaged-consumer and Board fixtures; synchronize ITC-specific docs/settings.
+5. Run changed-scope checks during iteration; use the implementation pipeline for full lint/test/build/rules, independent review and requirement verification. Preserve diagnostics and update owned surface docs.
 
 ### Solution
 
@@ -124,6 +139,8 @@ Own canonical ITC configuration/workspace resolution and cross-surface compatibi
 
 ### References
 
-<!-- Links to the parent feature, design docs, related tasks, or external references. -->
+- Feature G21 and docs/design/kk-itc-refactor.md (ADR-040 amendment).
+- Source premises: apps/cli/src/invoke.ts:52; apps/cli/src/commands/daily.ts:105; plugins/kk/commands/workflow-run.md:189; plugins/kk/scripts/kk-workflow-stages.ts:732; apps/cli/src/board/itc.ts:200; apps/cli/src/board/reader.ts:355; apps/cli/src/board/manifest.ts:67; apps/cli/src/commands/stage.ts:40.
+- Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History

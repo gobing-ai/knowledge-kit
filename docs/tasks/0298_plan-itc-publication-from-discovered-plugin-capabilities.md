@@ -4,7 +4,7 @@ name: Plan ITC publication from discovered plugin capabilities
 status: todo
 template: feature-impl
 created_at: 2026-10-15T21:59:21.896Z
-updated_at: "2026-10-15T22:31:32.914Z"
+updated_at: "2026-10-15T22:49:20.334Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -20,19 +20,24 @@ estimate_hours: 8
 
 ### Background
 
-Current kk-itc has shipped authoring and fan-out but centralizes channel policy, duplicates browser routing and permits weak artifact evidence. This slice delivers: Extend optional publishing profiles through manifest validation, discovery and packaging. Move ITC plan resolution to the application stage handler and derive built-in profiles from actual plugin mode/operation code. Keep legacy manifest invocation unchanged and refuse undeclared ITC planning.
+Publish planning currently reads TARGET_PROFILES in plugins/kk/scripts/itc-stages.ts instead of discovered capabilities; current manifest/discovery has no typed publishing field. Replace that duplicated policy at the existing stage boundary.
 
 Implements feature G21 scenarios: R5 — Publish plugins describe operation-specific capabilities.
 
-Owned surface: packages/kk-core/src/manifest.ts; packages/kk-core/src/registry.ts; apps/cli/src/stage.ts; native ITC planner; publish plugin manifests; schema/discovery/planner tests.
+Current-tree premises: packages/kk-core/src/schemas.ts:17; packages/kk-core/src/manifest.ts:55; packages/kk-core/src/registry.ts:11; apps/cli/src/stage.ts:81; apps/cli/src/commands/stage.ts:47; plugins/kk/scripts/itc-stages.ts:266; plugins/publishings/qiita-pub/src/index.ts:68; plugins/publishings/wechatmp-pub/src/modes.ts:27. These claims were checked against source, not inferred from old status or scratch reports.
 
-Verified premises: packages/kk-core/src/manifest.ts:55; plugins/kk/scripts/itc-stages.ts:266. Full contract: docs/design/kk-itc-refactor.md. Preserve existing Content → Result, direct entry execution and plugin-owned validation. No new service or live account is needed.
+Every mapped issue remains valid; no requirement/scenario is dropped or renumbered. Config/workspace code is owned by 0303, child authoring by 0301, root DAG/publication by 0302, capabilities by 0298, topic/store intake by 0299 and presets by 0300.
 
-Rubric: E8 D1 L3 C1 R1 = 14; independent behavior/risk boundary with implementation and tests together. 
+Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-kit-runall-0288-0297-6c4167 has unmerged shipinhao-pub, bun.lock and task0296 changes. No confirmed same-file source overlap is present, but do not enumerate its unpublished plugin or consume its lockfile; recheck source ownership before execution.
 
-Ordering: no prerequisites within this batch. Shared workflow/stage surfaces are sequenced, not concurrently edited.
 
-2026-10-15 operator feedback amendment: The planner consumes the canonical effective-options snapshot and remains topology-independent. ADR-040 amended now selects a top-level DAG with a child authoring FSM; reject the obsolete pure-FSM framing. No publishing capability changes are required solely for DAG scheduling.
+
+**Refine corrections (2026-10-15)**
+- Existing Content format enum → ContentSchema.format is a string defaulting to markdown → remove the invented enum restriction; validate nonempty profile formats without narrowing generic Content.
+- Unspecified native stage seam → runStage is synchronous and daily.ts calls it synchronously → add an async ITC handler in the stage command action and keep runStage/daily callers synchronous.
+- Generic draft metadata is sufficient → Qiita private overrides published and WeChat operations are 文章/贴图/视频/播客 → freeze complete plugin-owned mode bindings from current implementations.
+- Configuration snapshot assumed before 0303 → no ITC resolver exists upstream → planner accepts explicit validated request data; 0303 later supplies config-derived values.
+- TARGET_PROFILES was treated as a public contract → current tests import it but runtime entry is the stage → replace representation tests while retaining behavioral and legacy stage coverage.
 
 ### Requirements
 
@@ -55,29 +60,35 @@ Feature: Plan ITC publication from discovered plugin capabilities
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-15T22:49:19.158Z
+
+- Closed: No Content format enum or generic transport selector is added. Native ITC command dispatch is async; the existing runStage API stays sync. Configuration allocation remains owned by 0303.
+- Closed: no live accounts or paid generation are needed for acceptance; provider/model calls use deterministic fixtures.
+- Deferred with owner: G9 owns actual SEO draft analysis and public-URL audit execution; G21 exports typed handoffs only.
+
 ### Design
 
-Extend optional publishing profiles through manifest validation, discovery and packaging. Move ITC plan resolution to the application stage handler and derive built-in profiles from actual plugin mode/operation code. Keep legacy manifest invocation unchanged and refuse undeclared ITC planning.
+WHAT/WHERE: add PublishingProfileSchema and PublishingCapabilitiesSchema with inferred object interfaces in packages/kk-core/src/manifest.ts, carry publishing?: PublishingCapabilities on PluginRecord in registry.ts, and export through index.ts. The publishing subobject is strict, allowed only for kind=publish; defaultProfile must name a nonempty profiles record. A profile has format:string, locale:source or canonical language tag, optional limits:{title?,body?} with each {max:positive integer,unit:ContentCountUnit}, optional requires:{cover?:boolean,orderedImages?:boolean}, and modes:{draft?:{metadata:JSON object},live?:{metadata:JSON object}} with at least one mode. Omit the redundant execution:'executor' constant. Generic Content.format remains an unrestricted string. Plugin-local validation remains authoritative for direct execution.
 
-Decision: follow ADR-040 and docs/design/kk-itc-refactor.md; use a top-level DAG with bounded authoring FSM and reuse native discovery, store, decision, bot and executor seams. Rejected: expanding TARGET_PROFILES or introducing a router service, because both perpetuate duplicated ownership. Scope: packages/kk-core/src/manifest.ts; packages/kk-core/src/registry.ts; apps/cli/src/stage.ts; native ITC planner; publish plugin manifests; schema/discovery/planner tests.
+Freeze apps/cli/src/itc-plan.ts as the native substantive planner with buildItcPublishPlan(request:ItcPlanRequest, plugins:readonly PluginRecord[]):ItcPublishPlan. ItcPlanRequest is {schemaVersion:1,workDir,sourceLocale,live,targets:[{plugin,profile?}],sourceContentDigest,configDigest?}; workDir is explicit at this stage. Native async file IO uses the existing FileSystem seam. apps/cli/src/itc-stage.ts exports runItcStage(args:string[]):Promise<number|undefined>, returning undefined for a non-ITC stage. commands/stage.ts awaits this ITC branch and otherwise calls existing sync runStage. Support the old positional itc-publish-plan signature and add --request <JSON-file> as its validated file-input form; legacy stage normalization remains intact. Existing exported itcPublishPlan(args) in the builtin-only script may forward by argv to kk stage run; native interception prevents recursion. Remove TARGET_PROFILES and migrate its callers/tests, retaining its observable validations.
 
-Invariants: optional ingestion; draft-first operation; explicit live and image intent; no automated login; no data loss; exact target identity; legacy direct invocation stays valid. Material premises verified at packages/kk-core/src/manifest.ts:55; plugins/kk/scripts/itc-stages.ts:266.
+Mode maps are complete bindings, with the union of a profile's mode keys cleared from source metadata before applying the chosen map. Also remove stale generic operation/published/publishStatus fields. Qiita binds private:true/published:false for drafts and private:false/published:true for live. WeChat article binds operation:文章 and explicit publishStatus:draft|public, matching current browser console modes; never copy the historical operation:draft/API table. Other profiles are transcribed from each current plugin's actual mode resolver. XHS 上传图文 requires ordered metadata.images with real paths; a hero cover alone does not satisfy that requirement. Unsupported operations/media/modes refuse before dispatch. Native planner shares editorial variants only when locale, format, limits and media requirements match, while each target retains its own metadata binding. No channel policy is moved into YAML.
 
-Execution budget: 8 engineering hours; one task pipeline attempt with at most one bounded repair per failing behavior before reporting unresolved evidence. Implementation must produce a meaningful source diff and behavioral tests. Persist diagnostics in the task run directory and durable verification evidence; resume from partial work rather than replaying remote effects.
+HANDOFF: 0300 extends target/preset selection before calling this planner; 0302 consumes the same versioned plan and separate target mode maps; 0303 creates ItcPlanRequest from config. Do not import 0303's future resolver from 0298. Preserve manifest data in bundle-plugins.ts and installed discovery. Prefer all source-owned existing ITC-compatible publishers; do not add capabilities to audio/video-only channels merely to fill a registry.
 
-Test seam: Bun tests with fake transports/store pools, catalog stubs and temporary plugin assets; never real publication, login, or paid generation. Each task updates its surface docs in the same change; final task handles integration consistency.
+TEST OBSERVABILITY: packages/kk-core/tests/manifest.test.ts and registry.test.ts prove actual validation/discovery and backward compatibility. apps/cli/tests/itc-plan.test.ts (new) proves R1 via actual planner plus a manifest-only fake publisher, complete Qiita/WeChat bindings, missing required images and unsupported modes. apps/cli/tests/commands/stage.test.ts, stage.test.ts, itc-stages.test.ts and kk-itc-publish-tail.test.ts preserve both canonical/legacy stage calls and unaffected daily sync callers. Tests must inspect target payload bindings, not only schema text.
 
-Current design amendment:
-The planner consumes the canonical effective-options snapshot and remains topology-independent. ADR-040 amended now selects a top-level DAG with a child authoring FSM; reject the obsolete pure-FSM framing. No publishing capability changes are required solely for DAG scheduling.
+Use ADR-040 as amended and docs/design/kk-itc-refactor.md. Native application handlers may import @gobing-ai/*; shipped plugins/kk/scripts remain builtin-only (ADR-018). No new package, dependency, engine, plugin kind, live login, crawler or image spending. Source edits and behavior tests belong to implementation, not this refine. Keep task metadata priority/estimate values unchanged. Test model/network boundaries with fixtures; never mock the parser, dispatcher or receipt validation being asserted. Step 0: verify pinned Bun and selected Spur path, installed assets and frozen upstream interfaces. Do not rely on a sibling worktree's unmerged files.
+
+Execution budget: existing estimate 8h; one task pipeline with bounded repairs. Preserve partial work and task-run diagnostics on failure; meaningful code/test diff required when implementing. G21 dependencies remain the frozen WBS edges; this ready audit does not authorize implementation or merging tasks.
 
 ### Plan
 
-1. Read the owned code, all callers, feature scenarios and design; confirm dependency outputs before edits.
-2. Implement the selected behavior at its existing ownership seam, preserving validation, errors and compatibility.
-3. Add behavior tests for each mapped scenario and its malformed/degraded boundary; assert side effects are absent on refusal.
-4. Run changed-scope checks while iterating, then the project lint/test/build/rule checks through the task pipeline.
-5. Update relevant surface documentation, preserve evidence and complete independent review/verification before task closure.
-6. Apply the 2026-10-15 design amendment and exercise its added scenarios; use only the current revision contracts.
+1. (R1) Define strict optional capability contracts and exports; validate discovery and staged manifest round-trip.
+2. (R1) Implement native planner/request IO and async command-only dispatch; preserve sync runStage and legacy script forwarding.
+3. (R1) Declare current mode/operation profiles in publish plugin manifests; remove central table and complete conflicting metadata maps.
+4. (R1) Exercise real parser/planner, manifest-only added publisher, native/legacy CLI calls and unchanged daily stage behavior.
+5. Run changed-scope checks during iteration; use the implementation pipeline for full lint/test/build/rules, independent review and requirement verification. Preserve diagnostics and update owned surface docs.
 
 ### Solution
 
@@ -93,6 +104,8 @@ The planner consumes the canonical effective-options snapshot and remains topolo
 
 ### References
 
-<!-- Links to the parent feature, design docs, related tasks, or external references. -->
+- Feature G21 and docs/design/kk-itc-refactor.md (ADR-040 amendment).
+- Source premises: packages/kk-core/src/schemas.ts:17; packages/kk-core/src/manifest.ts:55; packages/kk-core/src/registry.ts:11; apps/cli/src/stage.ts:81; apps/cli/src/commands/stage.ts:47; plugins/kk/scripts/itc-stages.ts:266; plugins/publishings/qiita-pub/src/index.ts:68; plugins/publishings/wechatmp-pub/src/modes.ts:27.
+- Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History

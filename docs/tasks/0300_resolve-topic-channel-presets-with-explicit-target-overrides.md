@@ -4,7 +4,7 @@ name: Resolve topic channel presets with explicit target overrides
 status: todo
 template: feature-impl
 created_at: 2026-10-15T21:59:21.904Z
-updated_at: "2026-10-15T22:31:43.593Z"
+updated_at: "2026-10-15T22:49:36.042Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -21,19 +21,23 @@ dependencies: ["0298", "0299"]
 
 ### Background
 
-Current kk-itc has shipped authoring and fan-out but centralizes channel policy, duplicates browser routing and permits weak artifact evidence. This slice delivers: Add optional publishPreset to existing topic profiles without changing extraction queries. Resolve strict project/package preset assets and plugin:profile selectors. Explicit targets replace all presets; resolve a frozen intent with provenance. Reject missing/incompatible modes before sends.
+Topic extraction profiles currently reject any key outside topic/where/order/limit. The ITC planner currently accepts only a comma target list and no topic publishing preset. Add editorial presets without duplicating channel mechanics.
 
 Implements feature G21 scenarios: R6 — Topic presets resolve an inspectable frozen plan.
 
-Owned surface: topic-profile parser; plugins/kk/publish-presets assets; ITC planner; workflow-run preset args; preset/packaging tests.
+Current-tree premises: packages/kk-store/src/profile.ts:43; packages/kk-store/src/profile.ts:56; packages/kk-store/src/profile.ts:174; apps/cli/src/commands/store.ts:1236; plugins/kk/scripts/itc-stages.ts:385; scripts/bundle-plugins.ts:118. These claims were checked against source, not inferred from old status or scratch reports.
 
-Verified premises: plugins/kk/decisions/extract/ai-news.yaml:15; plugins/kk/scripts/itc-stages.ts:385. Full contract: docs/design/kk-itc-refactor.md. Preserve existing Content → Result, direct entry execution and plugin-owned validation. No new service or live account is needed.
+Every mapped issue remains valid; no requirement/scenario is dropped or renumbered. Config/workspace code is owned by 0303, child authoring by 0301, root DAG/publication by 0302, capabilities by 0298, topic/store intake by 0299 and presets by 0300.
 
-Rubric: E6 D1 L3 C1 R1 = 12; independent behavior/risk boundary with implementation and tests together. 
+Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-kit-runall-0288-0297-6c4167 has unmerged shipinhao-pub, bun.lock and task0296 changes. No confirmed same-file source overlap is present, but do not enumerate its unpublished plugin or consume its lockfile; recheck source ownership before execution.
 
-Ordering: after Plan ITC publication from discovered plugin capabilities, Select evidence-backed ITC topics from the collection store. Shared workflow/stage surfaces are sequenced, not concurrently edited.
 
-2026-10-15 operator feedback amendment: Read preset defaults from the frozen workflows.kk-itc effective-options object. Explicit targets/preset still win. Preset provenance and config digest are bound to the plan; a changed ambient config during resume never changes target intent.
+
+**Refine corrections (2026-10-15)**
+- topic-profile parser named generically → parseProfile and ExtractProfile live in packages/kk-store/src/profile.ts and reject unknown keys → explicitly extend that parser/type while leaving compileProfile SQL unchanged.
+- Preset precedence omitted workflow-config defaults → final config stage supplies a resolved explicit preset with provenance → freeze one precedence algorithm without importing 0303 prematurely.
+- Target identity/duplicates were vague → executor keys by plugin name → allow one profile per plugin, collapse exact duplicates and reject conflicting profile selectors.
+- Installed/project lookup unspecified → distinguish project root from workspace and use package assets → freeze exact search paths and no-fallback-on-malformed override behavior.
 
 ### Requirements
 
@@ -56,29 +60,35 @@ Feature: Resolve topic channel presets with explicit target overrides
      condition. Not a parking lot for open questions — an unanswered question here means the task
      is not ready to hand off. Keep empty if none. -->
 
+#### Q&A entry — 2026-10-15T22:49:34.899Z
+
+- Closed: Editorial presets extend the existing extraction profile through an optional field. Exact duplicate selectors collapse; conflicting profiles for one plugin fail. No global preset root or provider lookup is added.
+- Closed: no live accounts or paid generation are needed for acceptance; provider/model calls use deterministic fixtures.
+- Deferred with owner: G9 owns actual SEO draft analysis and public-URL audit execution; G21 exports typed handoffs only.
+
 ### Design
 
-Add optional publishPreset to existing topic profiles without changing extraction queries. Resolve strict project/package preset assets and plugin:profile selectors. Explicit targets replace all presets; resolve a frozen intent with provenance. Reject missing/incompatible modes before sends.
+WHAT/WHERE: extend ExtractProfile with publishPreset?:string and the strict PROFILE_KEYS/parser in packages/kk-store/src/profile.ts; compileProfile continues to emit only its existing query fields, so extraction result is unchanged. Extend apps/cli/src/itc-plan.ts from 0298 with resolveItcTargets(input:ItcTargetSelection):ResolvedItcTargets and preset validation. Names are new interfaces, not existing APIs. Native preset resolver uses FileSystem for IO and the existing installed package-root resolver; do not assume CWD is the workspace. Keep topic-profile and preset slugs lowercase ASCII [a-z0-9]+(-[a-z0-9]+)*; Unicode article topicName does not widen config asset identifiers.
 
-Decision: follow ADR-040 and docs/design/kk-itc-refactor.md; use a top-level DAG with bounded authoring FSM and reuse native discovery, store, decision, bot and executor seams. Rejected: expanding TARGET_PROFILES or introducing a router service, because both perpetuate duplicated ownership. Scope: topic-profile parser; plugins/kk/publish-presets assets; ITC planner; workflow-run preset args; preset/packaging tests.
+Preset v1 is a strict JSON object {schemaVersion:1,name:string,targets:[{plugin:string,profile?:string}]}, with a nonempty list. Search <launchProject>/.kk/publish-presets/<slug>.json then <resolvedPackage>/plugins/kk/publish-presets/<slug>.json. A present malformed override fails instead of falling through; canonical paths must stay under their selected root. Preserve source filename/content digest for plan provenance. Seed technical-article with zenn-pub:article and qiita-pub:article; seed chinese-article with juejin-pub:article and infoq-pub:article. Do not add XHS without ordered cards or any new publisher.
 
-Invariants: optional ingestion; draft-first operation; explicit live and image intent; no automated login; no data loss; exact target identity; legacy direct invocation stays valid. Material premises verified at plugins/kk/decisions/extract/ai-news.yaml:15; plugins/kk/scripts/itc-stages.ts:385.
+Selection precedence is explicit --targets (replacement) > explicit --publish-preset > resolved workflows.kk-itc.publish_preset > explicitly selected topic profile's publishPreset > no targets. Higher-priority empty explicit target input is invalid; absence is distinct from empty. Direct native tests supply these fields explicitly; 0303 later reads/merges config. Parse comma selectors plugin[:profile]; resolve missing profile with the discovered defaultProfile. Collapse identical selectors; reject two different profiles for the same plugin because fan-out identity is plugin-name-only. Validate selected plugin existence/publish kind, declared profile, run mode and media via 0298's planner before sending. No decision invents a target/preset or enables live/spend.
 
-Execution budget: 6 engineering hours; one task pipeline attempt with at most one bounded repair per failing behavior before reporting unresolved evidence. Implementation must produce a meaningful source diff and behavioral tests. Persist diagnostics in the task run directory and durable verification evidence; resume from partial work rather than replaying remote effects.
+HANDOFF: depends on 0298's capability schema/planner and 0299's topicProfile identity. Return {targets,origin:'explicit-targets'|'explicit-preset'|'workflow-config'|'topic-profile'|'none',presetName?,presetDigest?}; 0301 may recommend only the already resolved suggestion, 0302 freezes this origin in the plan, 0303 fills the workflow-config input from its options snapshot. Do not move config allocation or channel policy into this task.
 
-Test seam: Bun tests with fake transports/store pools, catalog stubs and temporary plugin assets; never real publication, login, or paid generation. Each task updates its surface docs in the same change; final task handles integration consistency.
+TEST OBSERVABILITY: packages/kk-store/tests/profile.test.ts proves optional publishPreset acceptance/rejection and byte-equivalent query compilation with/without that editorial key. apps/cli/tests/itc-presets.test.ts (new) uses real temporary project/package assets and planner to prove R1 precedence, absent/empty distinction, duplicate conflicts, malformed overrides, traversal, missing capability and missing media. Installed asset copying is exercised by apps/cli/tests/kk-itc-publish-tail.test.ts or its packaged-consumer sibling, with no ancestor dependency fallback.
 
-Current design amendment:
-Read preset defaults from the frozen workflows.kk-itc effective-options object. Explicit targets/preset still win. Preset provenance and config digest are bound to the plan; a changed ambient config during resume never changes target intent.
+Use ADR-040 as amended and docs/design/kk-itc-refactor.md. Native application handlers may import @gobing-ai/*; shipped plugins/kk/scripts remain builtin-only (ADR-018). No new package, dependency, engine, plugin kind, live login, crawler or image spending. Source edits and behavior tests belong to implementation, not this refine. Keep task metadata priority/estimate values unchanged. Test model/network boundaries with fixtures; never mock the parser, dispatcher or receipt validation being asserted. Step 0: verify pinned Bun and selected Spur path, installed assets and frozen upstream interfaces. Do not rely on a sibling worktree's unmerged files.
+
+Execution budget: existing estimate 6h; one task pipeline with bounded repairs. Preserve partial work and task-run diagnostics on failure; meaningful code/test diff required when implementing. G21 dependencies remain the frozen WBS edges; this ready audit does not authorize implementation or merging tasks.
 
 ### Plan
 
-1. Read the owned code, all callers, feature scenarios and design; confirm dependency outputs before edits.
-2. Implement the selected behavior at its existing ownership seam, preserving validation, errors and compatibility.
-3. Add behavior tests for each mapped scenario and its malformed/degraded boundary; assert side effects are absent on refusal.
-4. Run changed-scope checks while iterating, then the project lint/test/build/rule checks through the task pipeline.
-5. Update relevant surface documentation, preserve evidence and complete independent review/verification before task closure.
-6. Apply the 2026-10-15 design amendment and exercise its added scenarios; use only the current revision contracts.
+1. (R1) Extend the actual extraction-profile parser/type and preserve compiled query behavior.
+2. (R1) Implement strict preset asset resolution and explicit target/profile identity normalization.
+3. (R1) Apply frozen precedence, discovered capability validation and origin/digest handoff.
+4. (R1) Test real project/package overrides, mode/media errors, duplicates and installed lookup.
+5. Run changed-scope checks during iteration; use the implementation pipeline for full lint/test/build/rules, independent review and requirement verification. Preserve diagnostics and update owned surface docs.
 
 ### Solution
 
@@ -94,6 +104,8 @@ Read preset defaults from the frozen workflows.kk-itc effective-options object. 
 
 ### References
 
-<!-- Links to the parent feature, design docs, related tasks, or external references. -->
+- Feature G21 and docs/design/kk-itc-refactor.md (ADR-040 amendment).
+- Source premises: packages/kk-store/src/profile.ts:43; packages/kk-store/src/profile.ts:56; packages/kk-store/src/profile.ts:174; apps/cli/src/commands/store.ts:1236; plugins/kk/scripts/itc-stages.ts:385; scripts/bundle-plugins.ts:118.
+- Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History
