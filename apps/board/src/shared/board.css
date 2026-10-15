@@ -1,0 +1,250 @@
+/**
+ * Shared stylesheet for the KK Board modules (`kk-collect`, `kk-daily-ai-voice2`, `kk-itc`).
+ *
+ * Consumes only the host Board's `spur-*` design tokens (Tailwind v4 theme custom properties
+ * that flip with the host's `data-theme`), so the contributed pages match the native modules
+ * in both light and dark themes. Never hardcode colors here: any color outside the token set
+ * breaks the theme the host is currently rendering.
+ *
+ * The module-scoped blocks at the bottom carry each entry's structural extras; the build
+ * serves this one file as every module's `index.css` (scripts/build-board.ts).
+ */
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+
+.kk-board {
+    display: block;
+    color: var(--color-spur-text);
+    font: inherit;
+}
+
+.kk-board code,
+.kk-board pre {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+    font-size: 0.8125rem;
+}
+
+.kk-board a {
+    color: var(--color-spur-accent);
+}
+
+/* ── Header: title, run/status lines, actions ──────────────────────────── */
+
+.kk-board-header h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+    font-weight: 700;
+}
+
+.kk-board-header p {
+    margin: 0.125rem 0;
+    font-size: 0.875rem;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-board-header button,
+.kk-board > button {
+    margin-top: 0.375rem;
+    padding: 0.375rem 0.875rem;
+    font-size: 0.875rem;
+    color: var(--color-spur-text);
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+    cursor: pointer;
+}
+
+.kk-board-header button:hover,
+.kk-board > button:hover {
+    color: var(--color-spur-accent);
+    border-color: var(--color-spur-accent);
+}
+
+/* ── Tabs: segmented control on a surface strip ────────────────────────── */
+
+.kk-board-tabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0.75rem 0;
+    padding: 0.25rem;
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+}
+
+.kk-board-tabs button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-spur-text-muted);
+    background: transparent;
+    border: 0;
+    border-radius: 0.375rem;
+    cursor: pointer;
+}
+
+.kk-board-tabs button:hover {
+    color: var(--color-spur-text);
+}
+
+.kk-board-tabs button[aria-current="page"] {
+    font-weight: 600;
+    color: #fff;
+    background: var(--color-spur-accent);
+}
+
+/* ── Run selector ──────────────────────────────────────────────────────── */
+
+.kk-board-run-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-board-run-selector select {
+    padding: 0.3125rem 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-spur-text);
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+}
+
+/* ── Panels: facts, config, results, progress, preview ─────────────────── */
+
+.kk-board-facts,
+.kk-board-config,
+.kk-board-results,
+.kk-board-progress,
+.kk-board-empty {
+    margin: 0.75rem 0;
+    padding: 0.75rem 1rem;
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+}
+
+.kk-board-facts div,
+.kk-board-config div {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.kk-board-facts div + div,
+.kk-board-config div + div {
+    border-top: 1px solid var(--color-spur-border);
+}
+
+.kk-board-facts dt,
+.kk-board-config dt {
+    min-width: 12rem;
+    font-weight: 600;
+}
+
+.kk-board-facts dd,
+.kk-board-config dd {
+    margin: 0;
+}
+
+.kk-board-results section + section {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-spur-border);
+}
+
+.kk-board-results h2 {
+    margin: 0.25rem 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.kk-board-progress {
+    list-style-position: inside;
+}
+
+.kk-board-empty {
+    color: var(--color-spur-text-muted);
+}
+
+/* ── Status text ───────────────────────────────────────────────────────── */
+
+.kk-board-state {
+    font-size: 0.85em;
+    color: var(--color-spur-text-muted);
+}
+
+.kk-board-diagnostic {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-spur-error);
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+}
+
+.kk-board-footnote {
+    margin: 0.75rem 0;
+    font-size: 0.8125rem;
+    color: var(--color-spur-text-faint);
+}
+
+/* ── kk-collect ────────────────────────────────────────────────────────── */
+
+.kk-board-collect .kk-board-artifacts {
+    padding-left: 1.25rem;
+}
+
+/* ── kk-daily-ai-voice2 ────────────────────────────────────────────────── */
+
+.kk-board-daily-voice .kk-board-channels,
+.kk-board-daily-voice .kk-board-progress ul,
+.kk-board-daily-voice .kk-board-edges {
+    padding-left: 1.25rem;
+}
+
+.kk-board-daily-voice audio {
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+.kk-board-daily-voice img {
+    max-width: 240px;
+    display: block;
+}
+
+/* ── kk-itc ────────────────────────────────────────────────────────────── */
+
+.kk-board-itc .kk-board-preview {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-spur-bg);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.5rem;
+}
+
+.kk-board-itc .kk-board-preview pre,
+.kk-board-itc .kk-board-feedback,
+.kk-board-itc .kk-board-targets,
+.kk-board-itc .kk-board-progress ul {
+    padding-left: 1.25rem;
+}
+
+.kk-board-itc .kk-board-preview pre {
+    white-space: pre-wrap;
+    margin: 0.25rem 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-spur-surface);
+    border: 1px solid var(--color-spur-border);
+    border-radius: 0.375rem;
+    overflow-x: auto;
+}
+
+.kk-board-itc img {
+    max-width: 240px;
+    display: block;
+}

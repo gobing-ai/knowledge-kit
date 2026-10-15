@@ -22,14 +22,14 @@ import { join, resolve } from 'node:path';
 /** Repo root — this script sits at `<root>/scripts/`. */
 const REPO_ROOT = resolve(import.meta.dir, '..');
 
-/** One buildable contribution entry: the ESM source and its optional scoped stylesheet. */
+/** One buildable contribution entry: the ESM source and its scoped stylesheet. */
 export interface BoardEntry {
     /** Entry name; the emitted directory is also named after it. */
     name: string;
     /** Repo-relative entry module. */
     entry: string;
-    /** Repo-relative scoped stylesheet copied beside `index.js`, when the entry ships one. */
-    css?: string;
+    /** Repo-relative stylesheet copied beside `index.js` as the module's `index.css`. */
+    css: string;
 }
 
 /**
@@ -37,13 +37,16 @@ export interface BoardEntry {
  * module must not be declared in `spur.yaml` until its assets exist (§9).
  */
 export const BOARD_ENTRIES: readonly BoardEntry[] = [
-    { name: 'collect', entry: 'apps/board/src/collect/index.tsx', css: 'apps/board/src/collect/index.css' },
+    // Every module shares `shared/board.css`: one tokenized design system over the host's
+    // `spur-*` variables so all contributed pages match the native modules in both themes.
+    // Per-module structural extras live in that file, scoped by `.kk-board-<module>`.
+    { name: 'collect', entry: 'apps/board/src/collect/index.tsx', css: 'apps/board/src/shared/board.css' },
     {
         name: 'daily-voice',
         entry: 'apps/board/src/daily-voice/index.tsx',
-        css: 'apps/board/src/daily-voice/index.css',
+        css: 'apps/board/src/shared/board.css',
     },
-    { name: 'itc', entry: 'apps/board/src/itc/index.tsx', css: 'apps/board/src/itc/index.css' },
+    { name: 'itc', entry: 'apps/board/src/itc/index.tsx', css: 'apps/board/src/shared/board.css' },
 ];
 
 /** The host facades the bundle must externalize (never inline a second React runtime). */
