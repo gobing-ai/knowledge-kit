@@ -381,6 +381,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/sspai-pub": {
+      "name": "@gobing-ai/sspai-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/substack-pub": {
       "name": "@gobing-ai/substack-pub",
       "dependencies": {
@@ -566,6 +580,8 @@
     "@gobing-ai/publish-harness": ["@gobing-ai/publish-harness@workspace:packages/publish-harness"],
 
     "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/publishings/qiita-pub"],
+
+    "@gobing-ai/sspai-pub": ["@gobing-ai/sspai-pub@workspace:plugins/publishings/sspai-pub"],
 
     "@gobing-ai/substack-pub": ["@gobing-ai/substack-pub@workspace:plugins/publishings/substack-pub"],
 

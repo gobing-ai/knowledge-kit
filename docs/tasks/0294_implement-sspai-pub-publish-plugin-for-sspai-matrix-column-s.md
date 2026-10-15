@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Implement sspai-pub publish plugin for SSPAI Matrix column submissions
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:13.924Z
-updated_at: "2026-10-15T06:21:56.905Z"
+updated_at: "2026-10-15T19:12:03.676Z"
 feature_id: E97
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 8
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0294-verdict.json
 ---
 
 ## 0294. Implement sspai-pub publish plugin for SSPAI Matrix column submissions
@@ -30,16 +32,16 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Deliver discoverable sspai-pub article script plugin and standard session/profile/Result contracts.
-- [ ] R2. Render Markdown to safe article HTML, populate/read back title/body and verify requested header cover through the SSPAI editor.
-- [ ] R3. Report draft success only after a persistent saved draft receipt/readback; preview or editor fill alone remains failure/needs inspection, never a saved draft.
-- [ ] R4. Provide profile/readiness and mapping/fake tests plus real production DOM fixtures covering default draft, unsupported public, save/preview distinction and failures.
+- [x] R1. Deliver discoverable sspai-pub article script plugin and standard session/profile/Result contracts.
+- [x] R2. Render Markdown to safe article HTML, populate/read back title/body and verify requested header cover through the SSPAI editor.
+- [x] R3. Report draft success only after a persistent saved draft receipt/readback; preview or editor fill alone remains failure/needs inspection, never a saved draft.
+- [x] R4. Provide profile/readiness and mapping/fake tests plus real production DOM fixtures covering default draft, unsupported public, save/preview distinction and failures.
 
 ### Acceptance Criteria
 
-- [ ] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
+- [x] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
 
-- [ ] AC1 — R4 - sspai-pub populates Matrix submission draft (req: R1, R2, R3, R4)
+- [x] AC1 — R4 - sspai-pub populates Matrix submission draft (req: R1, R2, R3, R4)
 
 ```gherkin
 Feature: Implement sspai-pub publish plugin for SSPAI Matrix column submissions
@@ -90,24 +92,70 @@ Exact file ownership: plugins/publishings/sspai-pub/{package.json,tsconfig.json,
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R4) Scaffold article/probe/Result contract and draft-only pre-browser rail.
-- [ ] (R2) Implement safe HTML paste, scoped title/cover and readback with named required-control errors.
-- [ ] (R3,R4) Implement observed save receipt handling; execute production fixtures separating fill/preview/save, stale drafts, cover failure and public refusal; run installed discovery/check acceptance.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+- [x] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+- [x] (R1,R4) Scaffold article/probe/Result contract and draft-only pre-browser rail.
+- [x] (R2) Implement safe HTML paste, scoped title/cover and readback with named required-control errors.
+- [x] (R3,R4) Implement observed save receipt handling; execute production fixtures separating fill/preview/save, stale drafts, cover failure and public refusal; run installed discovery/check acceptance.
+- [x] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
+- [x] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/commands/plugin-check.test.ts:177` |
+| `apps/cli/tests/commands/plugin-check.test.ts:184` |
+| `apps/cli/tests/commands/plugin-check.test.ts:193` |
+| `bunfig.toml:30` |
+| `docs/04_DESIGN.md:1073` |
+| `docs/04_DESIGN.md:1348` |
+| `docs/04_DESIGN.md:26` |
+| `packages/kk-core/tests/registry.test.ts:239` |
+| `packages/kk-core/tests/registry.test.ts:613` |
+| `scripts/bundle-plugins.test.ts:34` |
+| `scripts/bundle-plugins.test.ts:41` |
+| `plugins/publishings/sspai-pub/package.json:1` |
+| `plugins/publishings/sspai-pub/plugin.json:1` |
+| `plugins/publishings/sspai-pub/src/flow.ts:1` |
+| `plugins/publishings/sspai-pub/src/index.ts:1` |
+| `plugins/publishings/sspai-pub/src/profile-check.ts:1` |
+| `plugins/publishings/sspai-pub/src/selectors.ts:1` |
+| `plugins/publishings/sspai-pub/tests/fixtures/sspai-pub-dom-runner.ts:1` |
+| `plugins/publishings/sspai-pub/tests/sspai-pub-dom.test.ts:1` |
+| `plugins/publishings/sspai-pub/tests/sspai-pub.test.ts:1` |
+| `plugins/publishings/sspai-pub/tsconfig.json:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/publishings/sspai-pub/plugin.json:3-13 (kind publish, entry/check dist, browserSession profileName sspai + https://sspai.com/); src/index.ts:31 (SSPAI_OPERATIONS ['article']), :41-78 resolveOperation dispatch `options.operation ?? content.metadata.operation ?? 'article'` before any browser/profile work; src/index.ts:105-142 processPublishIO `--in/--out` + ResultSchema parse; src/index.ts:144+ main exit semantics; packed entry/check resolve outside checkout (scripts/bundle-plugins.test.ts 24/0). |
+| R2 | MET | src/selectors.ts:51-57 grounded title `textarea[placeholder="请输入标题..."]` (sspai.js:26/50/82) + body `div[contenteditable="true"]` (sspai.js:59-60); src/flow.ts:487-503 markdownToHtml → sanitizeArticleHtml → pasteHtml single chain, sanitizer strips script/style/iframe/embed/object/on*/javascript: and preserves headings/code/list (unit 45 incl. direct sanitizer checks); src/selectors.ts:59-67 cover scoped to the active article editor form `form:has(div[contenteditable="true"]) input[type="file"]` (refine correction; no page-first fallback); src/flow.ts:443-475 cover-attach with assignment-verification readback — requested cover with no input or unverified assignment = typed failure (tests/sspai-pub.test.ts cover legs; dom `cover-missing-input` typed). |
+| R3 | MET | src/flow.ts:269-286 publishStatus 'public'/unknown refused pre-browser (launches=0 asserted in tests); src/flow.ts:516-599 draft-save via exact-visible 保存草稿/保存 (Provisional, fail-closed) + fresh id-bearing receipt URL (SSPAI_RECEIPT_URL_RES) + persisted title/body/cover readback; stale/toast-only/drifted = typed draft-save/draft-receipt failures with bounded metadata (unit + dom stale-receipt leg); preview `a.editor-extra-button-preview` (sspai.js:68) probed read-only, previewClicks===0 asserted in every dom scenario. |
+| R4 | MET | tests/sspai-pub.test.ts (45): FakeBrowserTransport mapping/CLI only, pre-browser refusal ladder incl. public refusal, sanitizer direct + via captured paste, profile missing/login-redirect, stage failures; tests/sspai-pub-dom.test.ts (7) + tests/fixtures/sspai-pub-dom-runner.ts: production selectors/scripts/flows in real headless Chromium (Playwright pin package.json plugins/publishings/sspai-pub/package.json:14) via spawnSync, module entry behind `if (import.meta.main)`, loud failure on missing Chromium (never skip), zero live writes; layer separation asserted; default draft, unsupported public, save/preview distinction, cover failure, stale receipts covered. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R4 - sspai-pub populates Matrix submission draft (req: R1, R2, R3, R4) | MET | test | tests/sspai-pub-dom.test.ts:53-66 (default draft: fresh id URL + persisted title/body, preview never clicked) and :68-78 (cover leg: scoped input assigned + read back at save); tests/sspai-pub.test.ts draft/receipt suites; success path requires fresh receipt + readback in src/flow.ts:554-599 — fill/preview alone cannot report ok. |
+| AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4) | MET | test | tests/sspai-pub.test.ts refusal/preflight/stage suites (public refusal, unknown status, empty title/body, unsupported images/tags/categories, invalid coverPath — all launches===0; stale/toast/drift typed); dom failure legs (no input, missing save, stale receipt) assert facts.stage; packed discovery/acceptance scripts/bundle-plugins.test.ts 24/0; profile/readiness ladder in src/profile-check.ts + src/selectors.ts:100 isSspaiAuthenticated. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -124,4 +172,7 @@ Exact file ownership: plugins/publishings/sspai-pub/{package.json,tsconfig.json,
 
 - 2026-10-15T06:14:54.748Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-15T17:55:11.190Z todo → wip (system)
+- 2026-10-15T19:12:03.315Z wip → testing (system)
+- 2026-10-15T19:12:03.671Z testing → done (system)
 
