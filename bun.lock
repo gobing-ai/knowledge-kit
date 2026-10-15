@@ -23,7 +23,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.35",
+      "version": "0.0.37",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -289,6 +289,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/jike-pub": {
+      "name": "@gobing-ai/jike-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/juejin-pub": {
       "name": "@gobing-ai/juejin-pub",
       "dependencies": {
@@ -494,6 +508,8 @@
     "@gobing-ai/image-gen": ["@gobing-ai/image-gen@workspace:plugins/generations/image-gen"],
 
     "@gobing-ai/infoq-pub": ["@gobing-ai/infoq-pub@workspace:plugins/publishings/infoq-pub"],
+
+    "@gobing-ai/jike-pub": ["@gobing-ai/jike-pub@workspace:plugins/publishings/jike-pub"],
 
     "@gobing-ai/juejin-pub": ["@gobing-ai/juejin-pub@workspace:plugins/publishings/juejin-pub"],
 

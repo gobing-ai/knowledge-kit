@@ -1,0 +1,12 @@
+{
+    "name": "jike-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "jike (即刻) dynamic post via a script browser transport (ts-browser-automation), live-only (publishStatus: public required)",
+    "browserSession": {
+        "profileName": "jike",
+        "homeUrl": "https://web.okjike.com"
+    }
+}
