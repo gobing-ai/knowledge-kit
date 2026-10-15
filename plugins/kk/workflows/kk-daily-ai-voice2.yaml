@@ -22,12 +22,12 @@ vars:
   window: "24h"
   language: "zh"
   voice_profile: "robin-news"
-  # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts)
-  # | voxcpm (voxcpm-tts, opt-in; ADR-036; provisional 5.6 字/秒 estimate). Same default as
-  # kk-daily-ai-voice: gemini-tts (20260929 operator override, verified live).
-  # 2026-10-15 production test (operator decision): voxcpm first, then gemini, then omni —
-  # if voxcpm output is good this becomes the standing order; on failure revert to "gemini".
-  # The generate tier below mirrors the order; the fit/duration gates take their rate from this var.
+  # Voice driver switch — voxcpm (voxcpm-tts) | gemini (gemini-tts) | voicebox (voice-gen)
+  # | ominivoice (omni-voice-gen). The generate tier below mirrors the fallback order, and the
+  # fit/duration gates take their spoken-char rate from this var — switching drivers here is enough.
+  # 2026-10-15 production test (operator decision): voxcpm first, then gemini, then omni. voxcpm
+  # rendered that episode in 21.8 min at a measured 5.19 字/秒 (fitted at 5.2); if the audio verdict
+  # is good this is the standing order, otherwise revert this default to "gemini".
   vdriver: "voxcpm"
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   surfdash_root: "/Users/robin/xprojects/surfdash"

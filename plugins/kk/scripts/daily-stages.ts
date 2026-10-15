@@ -1989,12 +1989,17 @@ function voicescriptToBlockYaml(script: Record<string, unknown>): string {
     return lines.join('\n');
 }
 
-/** Measured driver rates from dailyGenerate. Unknown drivers (incl. voxcpm, provisionally) use the voicebox rate. */
+/** Measured driver rates from dailyGenerate. Unknown drivers reuse the voicebox rate. */
 function spokenCharRate(vdriver: string): number {
     // Recalibrated 2026-10-15: episode measured 7,395 spoken chars / 1,490.9 s across 12 sections
     // (4.96 字/秒) — the effective gemini rate dropped ~8% below the 5.33-5.62 band calibrated
     // 2026-10-04/07, which consumed the fit's 2-min margin and tripped the 25-min gate at 25.2 min.
-    return vdriver === 'gemini' ? 4.95 : 5.6;
+    if (vdriver === 'gemini') return 4.95;
+    // voxcpm measured the same day on a 12-section zh+en episode: 6,772 chars / 1,297.7 s speech
+    // (5.19 字/秒). The provisional 5.6 borrowed from voicebox let the fit budget reach 7,683 chars
+    // — 24.6 min of audio, 18 s inside the 25-min gate. 5.2 puts a full-budget script at ~22.9 min.
+    if (vdriver === 'voxcpm') return 5.2;
+    return 5.6;
 }
 
 /**
