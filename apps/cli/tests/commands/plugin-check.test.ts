@@ -174,9 +174,10 @@ describe('plugin status stays static with the check field (AC5 / R6)', () => {
     });
 });
 
-describe('eight browser channels declare probes (0216 + 0291, AC1)', () => {
+describe('nine browser channels declare probes (0216 + 0291 + 0292, AC1)', () => {
     const REAL_ROOT = join(import.meta.dir, '../../../../plugins');
     const CHANNELS = [
+        'csdn-pub',
         'infoq-pub',
         'juejin-pub',
         'substack-pub',
@@ -187,7 +188,7 @@ describe('eight browser channels declare probes (0216 + 0291, AC1)', () => {
         'jike-pub',
     ];
 
-    it('plugin status --json lists check for exactly the eight browser publish channels, no others (0216 + 0291)', async () => {
+    it('plugin status --json lists check for exactly the nine browser publish channels, no others (0216 + 0291 + 0292)', async () => {
         const { code, out } = await runCaptured(['plugin', 'status', '--json', '--plugins-root', REAL_ROOT]);
         const report = JSON.parse(out) as StatusJson;
         expect(code).toBe(0);

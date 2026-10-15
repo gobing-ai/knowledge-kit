@@ -263,6 +263,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/csdn-pub": {
+      "name": "@gobing-ai/csdn-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/emdash-pub": {
       "name": "@gobing-ai/emdash-pub",
       "dependencies": {
@@ -492,6 +506,8 @@
     "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/generations/content-gen"],
 
     "@gobing-ai/core-facts-gen": ["@gobing-ai/core-facts-gen@workspace:plugins/generations/core-facts-gen"],
+
+    "@gobing-ai/csdn-pub": ["@gobing-ai/csdn-pub@workspace:plugins/publishings/csdn-pub"],
 
     "@gobing-ai/daily-article-gen": ["@gobing-ai/daily-article-gen@workspace:plugins/generations/daily-article-gen"],
 
