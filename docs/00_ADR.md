@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.38.0
+version: 1.40.0
 created_at: 2026-05-28
-updated_at: 2026-10-14
+updated_at: 2026-10-15
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -1370,3 +1370,25 @@ The optional browserSession descriptor carries profileName and an optional homeU
 **Why.** The reviewed vendor's evidence/judgment separation fits KK, while wrapping its Python pipeline would retain network/evidence defects and conflict with vendor isolation.
 
 **Detail:** [Smart SEO design](design/kk-smart-seo.md), feature G9; [vendor review](plans/2026-10-14-smart-seo-vendor-review.md).
+
+
+---
+
+## ADR-040: ITC plans use plugin publication capabilities and explicit topic channel presets
+
+**Status:** Accepted (design — G21; not implemented) · **Date:** 2026-10-15 · **Complements:** ADR-007/018/021/029/032/038.
+
+**Decision.** Retain the kk-itc state machine and existing executor fan-in/fan-out. Publish plugins own optional operation-specific planning capabilities and mode bindings; topic presets own editorial target selection. Optional topic discovery consumes kk-collect/store evidence, and Spur catalog decisions recommend only validated choices. Freeze send intent and reconcile per-target receipts before recovery; uncertain remote effects require reconciliation. Bot lifecycle stays in the harness and channel readiness/auth state stays in plugins.
+
+**Why.** A workflow-owned channel table duplicates plugin policy and makes new channels require orchestration edits; separating editorial intent from channel behavior removes that duplication while preserving explicit live/spending boundaries.
+
+**Detail:** [kk-itc-refactor.md](design/kk-itc-refactor.md); feature G21.
+
+
+### Amendment — 2026-10-15 (G21 operator feedback: DAG, configuration, SEO cooperation)
+
+**Decision.** Replace ADR-040's pure-FSM topology choice with a top-level `kk-itc` DAG containing a bounded authoring FSM; retain kk-owned fan-in/fan-out and plugin-owned channel behavior. The parent requires verified child completion before downstream work. Resolve declared ITC defaults from the canonical KK config and compose workspaces as `{works_dir}/kk-itc/{topic-name}/[YYYYMMDD]/`, preserving explicit workspace overrides. Reserve versioned SEO evidence handoffs without depending on the unfinished URL-audit workflow or inventing draft-audit support.
+
+**Why.** Independent production branches and explicit dependencies fit the expanded workflow, while revision loops, shared configuration and typed handoffs preserve reliable continuation and ownership.
+
+**Detail:** [kk-itc-refactor.md](design/kk-itc-refactor.md), revised graph, configuration and SEO sections. This amendment changes the prior topology recommendation; it does not claim the refactor is shipped.
