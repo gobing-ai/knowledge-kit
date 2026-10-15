@@ -1333,6 +1333,22 @@ output: build first, then flip `enabled`. Shapes and operator setup: `04` `kk bo
 
 **Detail:** [VoxCPM daily voice driver](design/voxcpm-daily-voice-driver.md); feature G14. This decision does not assert improved audio quality or validated hardware performance.
 
+### Amendment — 2026-10-15 (voxcpm becomes the standing default on `kk-daily-ai-voice2`)
+
+The 2026-10-15 production run rendered the episode end to end through voxcpm-tts on the operator's
+decision, and the operator's audio verdict keeps it: `kk-daily-ai-voice2` defaults to
+`vdriver: "voxcpm"` and gains a three-tier voice chain — `generate` (the var), `generate-fallback`
+(gemini), `generate-fallback2` (omni) — each fallback gated on the pool count **and** on no valid
+upstream render already existing (`metadata.generator` matches a plugin that could have produced it,
+with `qc.passed`), `onError: continue` on the two non-final tiers, and `intro` depending on all three.
+A successful primary therefore makes its siblings skip, and a failed attempt can neither be relabeled
+nor mixed into the episode. Evidence: 12/12 local sections in 47 min, joined 21.76 min inside the
+15–25 gate, all five publishes `success: true`, no fallback fired. Two follow-on fixes are part of
+this amendment: the fit rate for voxcpm is 5.2 字/秒 (measured 5.19; the beta build borrowed
+voicebox's 5.6, which budgeted 24.6 min — 18 s inside the gate), and `kk daily prepare`'s board
+manifest now accepts `voxcpm` in the `vdriver` choice list (0257 wired the stage but not the gate).
+`kk-daily-ai-voice` keeps its gemini default and single-generator shape.
+
 
 ## ADR-037: Every canonical kk operation has one noun and one verb
 

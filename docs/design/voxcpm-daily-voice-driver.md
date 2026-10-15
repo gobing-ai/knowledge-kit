@@ -7,10 +7,18 @@ sections freeze the detailed contracts; the refinement report is
 
 ## Outcome and boundaries
 
-Both daily workflows accept `vdriver=voxcpm` through `dailyGenerate`. Keep Gemini defaults,
-existing fallback policy, stage arguments and downstream intro/publish-preparation contracts.
-Audio quality remains an empirical question. No automatic publication, training, daemon, HTTP
-service, new benchmark framework or default change belongs to this feature.
+Both daily workflows accept `vdriver=voxcpm` through `dailyGenerate`. `kk-daily-ai-voice` keeps
+its Gemini default and fallback policy; stage arguments and downstream intro/publish-preparation
+contracts are unchanged by the driver choice.
+
+> **2026-10-15 amendment (operator decision, `kk-daily-ai-voice2` only):** voxcpm is the standing
+> default there, with a three-tier voice chain `voxcpm → gemini → omni` (nodes `generate`,
+> `generate-fallback`, `generate-fallback2`; `onError: continue` on the first two, each gated on the
+> pool count *and* on no valid upstream render already existing, `intro` depends on all three). The
+> first production run rendered 12/12 sections locally in 47 min (2.2x realtime), joined to
+> 21.76 min, and published to every channel with no fallback fired. VoxCPM's spoken rate measured
+> 5.19 字/秒 (6,772 chars / 1,297.7 s) and the fit now uses 5.2 instead of the borrowed voicebox 5.6.
+> `kk-daily-ai-voice` is untouched.
 
 `vendors/VoxCPM` is reference-only. No product import, subprocess, dependency, PYTHONPATH,
 model/cache/profile/reference path, symlink, fallback, copied upstream module, build input or
@@ -114,7 +122,8 @@ regeneration of the requested MP3; otherwise omit old mp3Path.
 Reset old introMerged on a fresh join so intro processing updates the correct MP3 exactly once.
 Failed join/transcode cannot leave a final Content claiming success. Preserve downstream publish
 preparation's MP3 contract. Model/profile/settings comparisons use separate work directories;
-no general cache redesign. VoxCPM's 5.6 characters/second estimate remains provisional; final
+no general cache redesign. VoxCPM's spoken rate measured 5.19 字/秒 on the 2026-10-15 production
+episode, and the fit uses 5.2; final
 measured duration is authoritative and refusals/overruns remain visible.
 
 ## Verification and evidence — tasks 0256–0258
