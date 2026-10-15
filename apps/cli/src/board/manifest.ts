@@ -33,7 +33,7 @@ export const WORKFLOW_SETTINGS: Readonly<Record<WorkflowName, Readonly<Record<st
     'kk-daily-ai-voice2': {
         window: { kind: 'duration' },
         language: { kind: 'choice', values: ['en', 'zh', 'ja'] },
-        vdriver: { kind: 'choice', values: ['voicebox', 'ominivoice', 'gemini'] },
+        vdriver: { kind: 'choice', values: ['voicebox', 'ominivoice', 'gemini', 'voxcpm'] },
         skip_review: { kind: 'boolean' },
         transcode_mp3: { kind: 'boolean' },
         cover_enabled: { kind: 'boolean' },

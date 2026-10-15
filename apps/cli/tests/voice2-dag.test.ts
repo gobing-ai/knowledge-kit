@@ -189,8 +189,15 @@ function writeKkShim(binDir: string, fixtures: { pool: string; candidates: strin
         `    if [ "\${KK_STUB_REAL_RUNREPORT}" = "1" ]; then exec $REAL "$@"; fi`,
         '    printf "%s\\n" "$*" > "$(out_arg --work-dir)/stub-run-report.txt"',
         '    exit 0 ;;',
-        '  "stage daily-generate"|"stage daily-wrap-docs")',
+        '  "stage daily-wrap-docs")',
         `    sleep ${fixtures.sleepMs} ; exit 0 ;;`,
+        // The generate tier's fallback gates read the whole-document Content's generator identity,
+        // so the stub writes one (voxcpm-tts = the default primary's plugin id); the fallback
+        // siblings then see a valid upstream render and skip — one daily-generate call per run.
+        '  "stage daily-generate")',
+        `    sleep ${fixtures.sleepMs} ; wd="$3"; rd="$4"; mkdir -p "$wd/30-audio"`,
+        `    printf '%s' '{"metadata":{"generator":"kk:voxcpm-tts","qc":{"passed":true},"audioPath":"a.wav"}}' > "$wd/30-audio/\${rd}_11_generate_content.json"`,
+        '    exit 0 ;;',
         'esac',
         'exit 0',
     ].join('\n');
@@ -239,7 +246,16 @@ function writeAgentStub(binDir: string, names: string[], noopAgents: string[]): 
         '[ -n "$KK_STUB_AGENT_LOG" ] && printf "%s\n" "$ME" >> "$KK_STUB_AGENT_LOG"',
         `case "$ME" in ${noopPattern}) exit 0 ;; esac`,
         'OUT="$(printf "%s\n" "$*" | grep -oE "[^ ]+\\.(json|md)" | tail -1)"',
-        '[ -n "$OUT" ] && mkdir -p "$(dirname "$OUT")" && printf \'%s\' \'{"stub":true}\' > "$OUT"',
+        '[ -n "$OUT" ] && mkdir -p "$(dirname "$OUT")" || exit 1',
+        // plan-translate/plan-translate-retry deliverables must satisfy the workflow's jq validity
+        // gate (array, length == candidates docs, all objects) — write the real contract shape,
+        // not a scalar, or every stubbed primary "fails" and fires its retry (0238 R2 gate).
+        'case "$OUT" in',
+        '  *_03_plan_plan.json)',
+        '    CAND="$(printf "%s\\n" "$*" | grep -oE "[^ ]+_04_quality-control-content_candidates\\.json" | head -1)"',
+        '    jq -n --slurpfile c "$CAND" \'[ $c[0].metadata.docs[] | {id} ]\' > "$OUT" ;;',
+        '  *) printf \'%s\' \'{"stub":true}\' > "$OUT" ;;',
+        'esac',
         'exit 0',
     ].join('\n');
     for (const name of names) {
@@ -964,7 +980,8 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
         const dag = loadDag();
         const guards: Record<string, string> = {
             'cover-brief': `test ! -f "\${vars.work_dir}/23-cover/\${vars.run_date}_07_cover_cover.png"`,
-            'plan-translate': `! test -s "\${vars.work_dir}/21-plan/\${vars.run_date}_03_plan_plan.json"`,
+            // plan-translate guards on JSON validity (0238 R2 gate), not just existence.
+            'plan-translate': `jq -e --argjson n "$(jq '.metadata.docs|length' "\${vars.work_dir}/21-plan/\${vars.run_date}_04_quality-control-content_candidates.json")" 'type=="array" and length==$n and all(.[];type=="object")' "\${vars.work_dir}/21-plan/\${vars.run_date}_03_plan_plan.json"`,
             'article-write': `! test -s "\${vars.work_dir}/22-article/\${vars.run_date}_06_article-write_body.md"`,
             'script-write': `! test -s "\${vars.work_dir}/24-script/\${vars.run_date}_08_script-write_plan.json"`,
         };
@@ -972,6 +989,36 @@ describe('kk-daily-ai-voice2 — agent.run recovery siblings (0238 AC1–AC4)', 
             const node = dag.nodes.find((candidate) => candidate.id === id);
             expect(node, `${id} is missing`).toBeDefined();
             expect(node?.condition?.options?.command, `${id} must skip when its own output exists`).toContain(guard);
+        }
+    });
+    it('chains the voice tier voxcpm -> gemini -> omni, each gated on a valid upstream Content', () => {
+        // 2026-10-15 operator decision: today's production order tries voxcpm first; if it is good
+        // this order stands, otherwise the primary reverts to gemini. The gates accept ANY upstream
+        // plugin id (stage stamps metadata.generator + qc.passed), so a failed attempt can neither
+        // be relabeled nor mixed into the episode, and a successful primary makes its siblings skip.
+        const dag = loadDag();
+        const nodes = ['generate', 'generate-fallback', 'generate-fallback2'].map((id) => {
+            const node = dag.nodes.find((candidate) => candidate.id === id);
+            expect(node, `${id} is missing`).toBeDefined();
+            return node!;
+        });
+        expect(nodes[0]?.action?.options?.command).toContain('"${vars.vdriver}"');
+        expect(nodes[1]?.action?.options?.command).toContain('"gemini"');
+        expect(nodes[2]?.action?.options?.command).toContain('"ominivoice"');
+        expect(nodes[2]?.action?.options?.command).toContain('OMNIVOICE_SPEED=1.06');
+        expect(nodes[1]?.dependsOn).toContain('generate');
+        expect(nodes[2]?.dependsOn).toContain('generate-fallback');
+        expect(nodes[0]?.action?.options?.onError).toBe('continue');
+        expect(nodes[1]?.action?.options?.onError).toBe('continue');
+        expect(nodes[2]?.action?.options?.onError).toBeUndefined();
+        expect(nodes[1]?.condition?.options?.command).toContain('kk:voxcpm-tts');
+        expect(nodes[1]?.condition?.options?.command).toContain('kk:gemini-tts');
+        expect(nodes[1]?.condition?.options?.command).not.toContain('kk:omni-voice-gen');
+        expect(nodes[2]?.condition?.options?.command).toContain('kk:omni-voice-gen');
+        expect(nodes[2]?.condition?.options?.command).toContain('qc.passed');
+        const intro = dag.nodes.find((candidate) => candidate.id === 'intro');
+        for (const id of ['generate', 'generate-fallback', 'generate-fallback2']) {
+            expect(intro?.dependsOn, `intro must wait for ${id}`).toContain(id);
         }
     });
 });

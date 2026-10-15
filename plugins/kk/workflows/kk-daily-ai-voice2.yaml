@@ -25,7 +25,10 @@ vars:
   # Voice driver switch — voicebox (voice-gen) | ominivoice (omni-voice-gen) | gemini (gemini-tts)
   # | voxcpm (voxcpm-tts, opt-in; ADR-036; provisional 5.6 字/秒 estimate). Same default as
   # kk-daily-ai-voice: gemini-tts (20260929 operator override, verified live).
-  vdriver: "gemini"
+  # 2026-10-15 production test (operator decision): voxcpm first, then gemini, then omni —
+  # if voxcpm output is good this becomes the standing order; on failure revert to "gemini".
+  # The generate tier below mirrors the order; the fit/duration gates take their rate from this var.
+  vdriver: "voxcpm"
   intro_music: ".works/kk-daily-ai-voice/AI每日资讯_8秒播客片头.mp3"
   surfdash_root: "/Users/robin/xprojects/surfdash"
   title: ""
@@ -542,7 +545,7 @@ nodes:
           kk stage daily-wrap-docs "${vars.work_dir}" "${vars.run_date}" "${vars.voice_profile}"
 
   - id: generate
-    description: "Invoke the voice driver plugin (vdriver: gemini -> gemini-tts, voxcpm -> voxcpm-tts) to generate the audio"
+    description: "Voice tier, primary driver (vars.vdriver — voxcpm while the 2026-10-15 production test runs). onError: continue — the fallback siblings below are the loud chain (same pattern as 0238 R2)."
     # wrap-docs is a data dependency, not a sibling: daily-generate reads its _10_wrap-docs_docs.json
     # as the TTS input. Without this edge the two nodes race in the same wave (0212 dogfood finding).
     dependsOn: [script, safety, review, wrap-docs]
@@ -554,12 +557,49 @@ nodes:
     action:
       kind: shell
       options:
+        onError: continue
         command: >-
           OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "${vars.vdriver}" "1" "${vars.episode_max_minutes}"
 
+  # Driver fallback chain (2026-10-15, operator decision): voxcpm -> gemini -> omni. Each sibling
+  # runs the same stage with a pinned driver; its condition re-checks the pool AND that NO upstream
+  # driver left a valid, passing whole-document Content (the stage stamps metadata.generator with
+  # its plugin id and the cache ignores foreign-driver sections, so a failed attempt can neither be
+  # relabeled nor mix voices). Non-final siblings continue on error; the last one is loud.
+  - id: generate-fallback
+    description: "Voice tier fallback 1: gemini (gemini-tts) when the primary driver left no valid Content"
+    dependsOn: [generate]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && ! jq -e '(.metadata.generator == "kk:voxcpm-tts" or .metadata.generator == "kk:gemini-tts") and .metadata.qc.passed == true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
+    action:
+      kind: shell
+      options:
+        onError: continue
+        command: >-
+          kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "gemini" "1" "${vars.episode_max_minutes}"
+
+  - id: generate-fallback2
+    description: "Voice tier fallback 2 (last, loud): omni-voice-gen when neither voxcpm nor gemini delivered"
+    dependsOn: [generate-fallback]
+    condition:
+      kind: shell
+      options:
+        command: >-
+          kk store pool-count "${vars.work_dir}/21-plan/${vars.run_date}_04_quality-control-content_candidates.json" --min 1
+          && ! jq -e '(.metadata.generator == "kk:voxcpm-tts" or .metadata.generator == "kk:gemini-tts" or .metadata.generator == "kk:omni-voice-gen") and .metadata.qc.passed == true' "${vars.work_dir}/30-audio/${vars.run_date}_11_generate_content.json"
+    action:
+      kind: shell
+      options:
+        command: >-
+          OMNIVOICE_SPEED=1.06 kk stage daily-generate "${vars.work_dir}" "${vars.run_date}" "${vars.plugins_path}" "${vars.transcode_mp3}" "ominivoice" "1" "${vars.episode_max_minutes}"
+
   - id: intro
     description: "Prepend the 8s intro sting (intro_music var; empty = skip), update duration/audioPath"
-    dependsOn: [generate]
+    dependsOn: [generate, generate-fallback, generate-fallback2]
     action:
       kind: shell
       options:
