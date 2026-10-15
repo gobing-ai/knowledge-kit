@@ -31,4 +31,8 @@ coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules
 	# behind import.meta.main, launch via Playwright); bun test exercises it via
 	# spawnSync, whose coverage bun cannot attribute to this file.
 	"**/tests/fixtures/sspai-pub-dom-runner.ts",
+	# xiaoyuzhou-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/xiaoyuzhou-pub-dom-runner.ts",
 ]

@@ -247,6 +247,7 @@ describe('discoverPlugins', () => {
             'weibo-pub',
             'x-pub',
             'xhs-pub',
+            'xiaoyuzhou-pub',
             'zenn-pub',
         ]);
         expect(getByName(res, 'karakeep-local')?.kind).toBe('ingestion');
@@ -621,6 +622,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'weibo-pub',
                 'x-pub',
                 'xhs-pub',
+                'xiaoyuzhou-pub',
                 'zenn-pub',
             ]);
             expect(res.plugins.every((p) => p.origin === 'builtin')).toBe(true);
