@@ -71,7 +71,7 @@ function splitList(value: string): string[] {
     return value
         .replace(/^\[|\]$/g, '')
         .split(',')
-        .map((entry) => entry.trim())
+        .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ''))
         .filter(Boolean);
 }
 
