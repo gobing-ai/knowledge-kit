@@ -82,6 +82,13 @@ describe('splitThreadContent', () => {
         expect(result.segments.join('')).toBe(text);
     });
 
+    it('hard-splits a URL longer than the limit into full-size segments instead of single code points', () => {
+        const url = 'https://example.com/a-very-long-path';
+        const result = splitThreadContent(url, { maxUnits: 10, unit: 'unicode_code_points' });
+        expect(result.segments.join('')).toBe(url);
+        expect(result.characterCounts).toEqual([10, 10, 10, 6]);
+    });
+
     it('splits astral characters on code-point boundaries without lone surrogates', () => {
         const result = splitThreadContent('🚀🚀🚀🚀', { maxUnits: 3, unit: 'unicode_code_points' });
         expect(result.segments).toEqual(['🚀🚀🚀', '🚀']);

@@ -127,7 +127,10 @@ export function splitThreadContent(text: string, options: ThreadSplitOptions): T
         if (bestBreak <= currentCodePointCursor) {
             let low = currentCodePointCursor + 1;
             let high = codePointLength;
-            let lastValid = currentCodePointCursor + 1;
+            let lastValid = -1;
+            // Largest fitting offset regardless of URLs: a URL longer than maxUnits cannot stay
+            // intact, so hard-split it at full segment size rather than one code point at a time.
+            let lastFit = currentCodePointCursor + 1;
 
             while (low <= high) {
                 const mid = Math.floor((low + high) / 2);
@@ -135,6 +138,7 @@ export function splitThreadContent(text: string, options: ThreadSplitOptions): T
                 const units = countContentUnits(slice, options.unit);
 
                 if (units <= options.maxUnits) {
+                    lastFit = mid;
                     if (!isInsideRange(mid, urlRanges)) {
                         lastValid = mid;
                     }
@@ -143,7 +147,7 @@ export function splitThreadContent(text: string, options: ThreadSplitOptions): T
                     high = mid - 1;
                 }
             }
-            bestBreak = lastValid;
+            bestBreak = lastValid > currentCodePointCursor ? lastValid : lastFit;
         }
 
         const segment = Array.from(rawText).slice(currentCodePointCursor, bestBreak).join('');

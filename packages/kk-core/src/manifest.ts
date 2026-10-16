@@ -65,6 +65,7 @@ const LimitEntrySchema = z
     })
     .strict();
 
+/** Optional title/body length limits a publishing profile enforces. */
 export const PublishingProfileLimitsSchema = z
     .object({
         title: LimitEntrySchema.optional(),
@@ -72,8 +73,10 @@ export const PublishingProfileLimitsSchema = z
     })
     .strict();
 
+/** Parsed publishing-profile length limits. */
 export type PublishingProfileLimits = z.infer<typeof PublishingProfileLimitsSchema>;
 
+/** Assets a publishing profile requires (cover, ordered images). */
 export const PublishingProfileRequiresSchema = z
     .object({
         cover: z.boolean().optional(),
@@ -81,16 +84,20 @@ export const PublishingProfileRequiresSchema = z
     })
     .strict();
 
+/** Parsed publishing-profile asset requirements. */
 export type PublishingProfileRequires = z.infer<typeof PublishingProfileRequiresSchema>;
 
+/** Channel metadata bound to one publish mode (draft or live). */
 export const PublishingProfileModeBindingSchema = z
     .object({
         metadata: z.record(z.string(), z.unknown()),
     })
     .strict();
 
+/** Parsed per-mode metadata binding. */
 export type PublishingProfileModeBinding = z.infer<typeof PublishingProfileModeBindingSchema>;
 
+/** Draft/live mode bindings; at least one mode must be declared. */
 export const PublishingProfileModesSchema = z
     .object({
         draft: PublishingProfileModeBindingSchema.optional(),
@@ -106,8 +113,10 @@ export const PublishingProfileModesSchema = z
         }
     });
 
+/** Parsed draft/live mode bindings. */
 export type PublishingProfileModes = z.infer<typeof PublishingProfileModesSchema>;
 
+/** One named publishing profile: format, locale, limits, requirements and modes. */
 export const PublishingProfileSchema = z
     .object({
         format: z.string().min(1),
@@ -120,8 +129,10 @@ export const PublishingProfileSchema = z
     })
     .strict();
 
+/** Parsed publishing profile. */
 export type PublishingProfile = z.infer<typeof PublishingProfileSchema>;
 
+/** Publish-plugin capabilities: nonempty profile map plus a default that must reference one of them. */
 export const PublishingCapabilitiesSchema = z
     .object({
         defaultProfile: z.string().min(1),
@@ -146,6 +157,7 @@ export const PublishingCapabilitiesSchema = z
         }
     });
 
+/** Parsed publish-plugin capabilities. */
 export type PublishingCapabilities = z.infer<typeof PublishingCapabilitiesSchema>;
 
 /**
