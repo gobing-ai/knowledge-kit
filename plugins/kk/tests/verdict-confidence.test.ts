@@ -293,14 +293,35 @@ describe('kk-itc-author judge verdict → confidence routing (0302 extraction)',
         expect(route(author, 'judge', invalidVars, invalidDir)).toEqual(['judge->failed']);
     });
 
-    it('the dry-run convention is preserved: an absent verdict file still routes onward', () => {
-        const dir = tempDir('kk-itc-confidence-dryrun-');
-        // No disposition stage run at all — the workflow's dry-run walk executes no actions.
+    /**
+     * The confidence level contract on the AUTO path: every accepted level (HIGH | MEDIUM | LOW)
+     * must survive the auto disposition exactly as it does interactively, and a PASS outside the
+     * enum — or carrying no level at all — must still fail closed. Auto mode is a second code path
+     * through `itc-author-verdict` (`KK_ITC_AUTO=true`), so the three levels are asserted there too
+     * rather than inferred from the interactive table above.
+     */
+    it.each([
+        ['auto PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH' }, ['judge->author-finish']],
+        ['auto PASS + MEDIUM', { verdict: 'PASS', confidence: 'MEDIUM' }, ['judge->author-finish']],
+        ['auto PASS + LOW', { verdict: 'PASS', confidence: 'LOW' }, ['judge->author-finish']],
+        ['auto PASS without confidence', { verdict: 'PASS' }, ['judge->failed']],
+        ['auto PASS + out-of-enum confidence', { verdict: 'PASS', confidence: 'SURE' }, ['judge->failed']],
+    ])('%s routes exactly one transition', (name, verdict, expected) => {
+        const dir = tempDir('kk-itc-confidence-auto-level-');
+        scenarioVerdict(dir, verdict);
+        const vars = itcVariables(dir, { auto: 'true' });
+        runDisposition(dir, vars);
+        const taken = route(author, 'judge', vars, dir);
+        expect(record(`itc:${name}`, JSON.stringify(taken) === JSON.stringify(expected), taken.join(','))).toBe(true);
+        expect(taken).toEqual(expected);
+    });
+
+    it('an absent disposition fails closed: the judge routes nowhere without the stage receipt', () => {
+        const dir = tempDir('kk-itc-confidence-absent-');
+        // No disposition stage run at all — a missing receipt must not imply finish (ba672145).
         const taken = route(author, 'judge', itcVariables(dir), dir);
-        expect(record('itc:dry-run-empty-verdict', taken.join(',') === 'judge->author-finish', taken.join(','))).toBe(
-            true,
-        );
-        expect(taken).toEqual(['judge->author-finish']);
+        expect(record('itc:absent-disposition-fails-closed', taken.length === 0, taken.join(','))).toBe(true);
+        expect(taken).toEqual([]);
     });
 
     it('the disposition stage is the SOLE judge reader in the child FSM (no inline verdict parsing)', () => {
