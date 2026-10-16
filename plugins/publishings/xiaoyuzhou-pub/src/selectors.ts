@@ -9,7 +9,7 @@
  * `input[name="title"]`, and the Draft.js shownotes editor `div[data-contents="true"]`. Its
  * mechanism is UI 填表 (xiaoyuzhou.js:3-6): fileDatas[0] → DataTransfer → `files=` +
  * change/input dispatch (xiaoyuzhou.js:32, 46-50), a bare `.value` title write explicitly flagged
- * TODO(逆向存疑) in the source itself (xiaoyuzhou.js:57-58), and a text/html simulated paste into
+ * uncertain (逆向存疑) in the source itself (xiaoyuzhou.js:57-58), and a text/html simulated paste into
  * the Draft.js editor (xiaoyuzhou.js:72-74). The source never saves (不点发布按钮，
  * xiaoyuzhou.js:6) and marks episode covers unsupported (xiaoyuzhou.js:17).
  * Anything that evidence does not pin is **Provisional** and fails closed when absent — a missing

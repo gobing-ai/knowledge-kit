@@ -12,7 +12,7 @@
  * grounded `input#upload` — never the source's in-page DataTransfer/blob fetch (xiaoyuzhou.js:38,
  * 46-50), which would move file bytes through the page; processing readiness is then verified (a
  * file assignment alone is never success, xiaoyuzhou.js:51-52). The title is filled natively with
- * input/change events — the source's bare `.value` write is flagged TODO(逆向存疑) by the source
+ * input/change events — the source's bare `.value` write is marked uncertain (逆向存疑) by the source
  * itself (xiaoyuzhou.js:57-58). Shownotes Markdown is rendered to HTML, sanitized here first
  * (script/style/iframe/embed/object, `on*` attributes, `javascript:`/`data:` URLs stripped —
  * closing task 0294's P3 sanitizer gap; code/list/heading markup preserved) and pasted into the

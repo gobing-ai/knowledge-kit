@@ -15,9 +15,6 @@ import type { IsAuthenticatedPredicate } from '@gobing-ai/ts-browser-automation'
 /** Site-owned target slug; also the profile channel key (`CNBLOGS_PROFILE_DIR`). */
 export const CNBLOGS_TARGET = 'cnblogs';
 
-/** Home entry. Provisional domain (unused by cnblogs.js; the evidence proves no home URL) — the profile default dir only. */
-export const CNBLOGS_HOME_URL = 'https://www.cnblogs.com';
-
 /**
  * Post-edit entry where the article flow composes. **Provisional**: cnblogs.js runs inside an
  * already-authenticated editor tab and never navigates (cnblogs.js fills in place only).

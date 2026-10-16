@@ -88,18 +88,30 @@ function needsLogin(error: unknown): boolean {
     return error instanceof LoginTimeoutError || error instanceof BrowserProfileMissingError;
 }
 
+/** CommonMark label matching: case-insensitive with internal whitespace collapsed. */
+function normalizeLabel(label: string): string {
+    return label.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 /**
- * Counts Markdown image references whose target is not an HTTPS URL (`![…](src)` inline syntax,
- * the only images a plain-Markdown textarea renders). Local/relative and plain-http refs are
- * unsupported by this flow: the vendor's upload endpoint (cnblogs.js:5-18) is never ported, so
- * they are refused before submit — the count only, never the path.
+ * Counts Markdown image references whose target is not an HTTPS URL — inline `![…](src)` plus
+ * reference-style `![…][id]` / `![id][]` / `![id]` resolved through `[id]: src` definitions.
+ * Local/relative and plain-http refs are unsupported by this flow: the vendor's upload endpoint
+ * (cnblogs.js:5-18) is never ported, so they are refused before submit — the count only, never
+ * the path. Definitions used only by plain links, and undefined labels, are not images.
  */
 export function countNonHttpsImageRefs(markdown: string): number {
-    const refs = markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g);
     let count = 0;
-    for (const ref of refs) {
-        const src = ref[1] ?? '';
-        if (!src.startsWith('https://')) count += 1;
+    for (const ref of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
+        if (!(ref[1] ?? '').startsWith('https://')) count += 1;
+    }
+    const definitions = new Map<string, string>();
+    for (const def of markdown.matchAll(/^ {0,3}\[([^\]]+)\]:[ \t]*<?([^\s>]+)>?/gm)) {
+        definitions.set(normalizeLabel(def[1] ?? ''), def[2] ?? '');
+    }
+    for (const ref of markdown.matchAll(/!\[([^\]]*)\](?:\[([^\]]*)\])?(?![([:])/g)) {
+        const src = definitions.get(normalizeLabel(ref[2] || ref[1] || ''));
+        if (src !== undefined && !src.startsWith('https://')) count += 1;
     }
     return count;
 }

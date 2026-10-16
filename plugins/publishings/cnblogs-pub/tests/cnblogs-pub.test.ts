@@ -439,6 +439,21 @@ describe('cnblogs-pub refusals before any browser', () => {
         expect(countNonHttpsImageRefs('![a](./x.png) ![b](y.png "t") ![c](http://z/q.png)')).toBe(3);
     });
 
+    test('reference-style images resolve through their definitions; plain link definitions are ignored', () => {
+        const md = [
+            '![a][local] ![b][Remote] ![c][] ![shortcut]',
+            '[docs](./readme.md) [plain][link]',
+            '',
+            '[local]: ./x.png',
+            '[remote]: <https://example.com/r.png> "title"',
+            '[c]: http://z/c.png',
+            '[shortcut]: ../s.png',
+            '[link]: ./not-an-image.md',
+        ].join('\n');
+        expect(countNonHttpsImageRefs(md)).toBe(3);
+        expect(countNonHttpsImageRefs('![a][undefined-label]')).toBe(0);
+    });
+
     test('a non-script driver is refused by name with the supported set, before any launch', async () => {
         const fake = makeFakeLauncher();
         const agent = new CnblogsBrowserTransport('article', 'agent', { launcher: fake.launcher });
