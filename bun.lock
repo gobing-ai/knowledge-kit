@@ -409,6 +409,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/shipinhao-pub": {
+      "name": "@gobing-ai/shipinhao-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/substack-pub": {
       "name": "@gobing-ai/substack-pub",
       "dependencies": {
@@ -596,6 +610,7 @@
     "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/publishings/qiita-pub"],
 
     "@gobing-ai/sspai-pub": ["@gobing-ai/sspai-pub@workspace:plugins/publishings/sspai-pub"],
+    "@gobing-ai/shipinhao-pub": ["@gobing-ai/shipinhao-pub@workspace:plugins/publishings/shipinhao-pub"],
     "@gobing-ai/xiaoyuzhou-pub": ["@gobing-ai/xiaoyuzhou-pub@workspace:plugins/publishings/xiaoyuzhou-pub"],
 
     "@gobing-ai/substack-pub": ["@gobing-ai/substack-pub@workspace:plugins/publishings/substack-pub"],

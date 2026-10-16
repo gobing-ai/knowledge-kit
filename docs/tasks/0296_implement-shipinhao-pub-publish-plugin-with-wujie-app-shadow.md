@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Implement shipinhao-pub publish plugin with wujie-app shadowRoot traversal for short videos
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:14.512Z
-updated_at: "2026-10-15T06:21:58.840Z"
+updated_at: "2026-10-16T00:04:01.642Z"
 feature_id: E98
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 12
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0296-verdict.json
 ---
 
 ## 0296. Implement shipinhao-pub publish plugin with wujie-app shadowRoot traversal for short videos
@@ -30,16 +32,16 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Deliver discoverable shipinhao-pub shortVideo script plugin with validated local video/cover/metadata and standard session/profile/Result contracts.
-- [ ] R2. Traverse the active wujie-app open shadow root with bounded readiness; reuse existing shadow helpers for supported closed-root controls and refuse inaccessible/ambiguous roots.
-- [ ] R3. Upload/process video, commit requested cover and explicit original-declaration choice with observable readback before draft/public submission; never declare originality by default.
-- [ ] R4. Provide readiness/fake mapping and production shadow DOM/video/cover/declaration fixtures with default-draft or explicit-public rails and verified fresh completion.
+- [x] R1. Deliver discoverable shipinhao-pub shortVideo script plugin with validated local video/cover/metadata and standard session/profile/Result contracts.
+- [x] R2. Traverse the active wujie-app open shadow root with bounded readiness; reuse existing shadow helpers for supported closed-root controls and refuse inaccessible/ambiguous roots.
+- [x] R3. Upload/process video, commit requested cover and explicit original-declaration choice with observable readback before draft/public submission; never declare originality by default.
+- [x] R4. Provide readiness/fake mapping and production shadow DOM/video/cover/declaration fixtures with default-draft or explicit-public rails and verified fresh completion.
 
 ### Acceptance Criteria
 
-- [ ] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
+- [x] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
 
-- [ ] AC1 — R2 - shipinhao-pub traverses shadowRoot and uploads short video (req: R1, R2, R3, R4)
+- [x] AC1 — R2 - shipinhao-pub traverses shadowRoot and uploads short video (req: R1, R2, R3, R4)
 
 ```gherkin
 Feature: Implement shipinhao-pub publish plugin with wujie-app shadowRoot traversal for short videos
@@ -91,25 +93,111 @@ Exact file ownership: plugins/publishings/shipinhao-pub/{package.json,tsconfig.j
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R4) Scaffold video operation/probe and strict metadata/file/status validation without shared-library changes.
-- [ ] (R2) Implement bounded active-root selection using existing open-shadow/CDP helpers with delayed/unavailable/ambiguous fixtures.
-- [ ] (R3) Implement processed-media, cover-dialog commit and explicit requested-original protocol with readback; handle default draft and explicit public separately.
-- [ ] (R1–R4) Execute production shadow fixtures for wrong root, delayed root, original absent/false/true, canvas without commit, stale signals, timeout and cleanup; prove installed entry/check.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+- [x] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+- [x] (R1,R4) Scaffold video operation/probe and strict metadata/file/status validation without shared-library changes.
+- [x] (R2) Implement bounded active-root selection using existing open-shadow/CDP helpers with delayed/unavailable/ambiguous fixtures.
+- [x] (R3) Implement processed-media, cover-dialog commit and explicit requested-original protocol with readback; handle default draft and explicit public separately.
+- [x] (R1–R4) Execute production shadow fixtures for wrong root, delayed root, original absent/false/true, canvas without commit, stale signals, timeout and cleanup; prove installed entry/check.
+- [x] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
+- [x] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/commands/plugin-check.test.ts:177` |
+| `apps/cli/tests/commands/plugin-check.test.ts:192` |
+| `apps/cli/tests/commands/plugin-check.test.ts:195` |
+| `bunfig.toml:38` |
+| `docs/04_DESIGN.md:1073` |
+| `docs/04_DESIGN.md:1369` |
+| `docs/04_DESIGN.md:26` |
+| `packages/kk-core/tests/registry.test.ts:239` |
+| `packages/kk-core/tests/registry.test.ts:615` |
+| `scripts/bundle-plugins.test.ts:34` |
+| `scripts/bundle-plugins.test.ts:41` |
+| `plugins/publishings/shipinhao-pub/package.json:1` |
+| `plugins/publishings/shipinhao-pub/plugin.json:1` |
+| `plugins/publishings/shipinhao-pub/src/flow.ts:1` |
+| `plugins/publishings/shipinhao-pub/src/index.ts:1` |
+| `plugins/publishings/shipinhao-pub/src/profile-check.ts:1` |
+| `plugins/publishings/shipinhao-pub/src/selectors.ts:1` |
+| `plugins/publishings/shipinhao-pub/tests/fixtures/shipinhao-pub-dom-runner.ts:1` |
+| `plugins/publishings/shipinhao-pub/tests/shipinhao-pub-dom.test.ts:1` |
+| `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1` |
+| `plugins/publishings/shipinhao-pub/tsconfig.json:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/publishings/shipinhao-pub/plugin.json:1-12 (kind publish, entry/check dist, browserSession profileName shipinhao + https://channels.weixin.qq.com/platform/post/video); src/index.ts:38-57 SHP_OPERATIONS ['shortVideo'] + resolveOperation dispatch `options.operation ?? content.metadata.operation ?? 'shortVideo'` before any browser/profile work; src/index.ts:98-170 processPublishIO `--in/--out` + ResultSchema parse + main() exit semantics; src/flow.ts:69,312-339 format=video, MP4/MOV required, 2 GiB local cap enforced; only `import type { Page }` from playwright (src/flow.ts:48 — no eager load); packed entry/check resolve outside checkout (scripts/bundle-plugins.test.ts:41). |
+| R2 | MET | src/selectors.ts:98 SHP_ROOT_WAIT_MS 30_000; src/flow.ts:163-207 resolveCreatorRoot polls wujie-app open shadowRoot, fails typed `shadow_root_not_ready` with no document fallback when wujie present, requires direct evidence probes when absent, refuses ambiguous inputs; src/flow.ts:803-877 setInputFiles local video path + post-upload editing form appearance verification (600s ceiling, assignment alone ≠ success, typed `upload-processing`); src/flow.ts:880-913 title native input/change fill + readback; src/flow.ts:240,915-965 description sanitized HTML paste via page.evaluate (NO locator.evaluate) + text readback. |
+| R3 | MET | src/flow.ts:1195-1322 cover commit via vertical slot card click → scoped dialog file input → crop confirm ladder with previous-button guard → slot card changed evidence verification, missing = typed failure; src/flow.ts:1100-1188 metadata.original === true executes 3-step 声明原创 sequence (ant-checkbox-input, declare-body-wrapper agreement checkbox, 声明原创 confirm) + committed checked state readback + closed dialog, original=false/absent NEVER touches originality; src/flow.ts:980-1080 draft default via 保存草稿 + fresh id receipt; public rail via scoped 发表 + fresh works receipt; stale/toast/ambiguous typed failures. |
+| R4 | MET | tests/shipinhao-pub.test.ts (70): FakeBrowserTransport mapping/CLI only, pre-browser refusal ladder, 2 GiB sparse-file cap, sanitizer direct + captured paste, preflight (missing profile/login-redirect/expiry), all stage failure branches, locator.evaluate regression guard, src-scan hygiene; tests/shipinhao-pub-dom.test.ts (10) + tests/fixtures/shipinhao-pub-dom-runner.ts: production selectors/scripts/flows in real headless Chromium (Playwright pin package.json:13, plugins/publishings/shipinhao-pub/package.json:14) via spawnSync, module entry behind `if (import.meta.main)`, loud failure on missing Chromium (never skip), route-intercepted real origin with catch-all abort = zero live writes; legs: delayed wujie root, direct form, late root refusal, cover, original, missing original control, public, stale receipt, missing-browser guard, zero-network. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R2 - shipinhao-pub traverses shadowRoot and uploads short video (req: R1, R2, R3, R4) | MET | test | tests/shipinhao-pub-dom.test.ts delayed-wujie happy draft leg (wujie shadowRoot waited, video assigned + post-upload form verified, title native fill, description pasted + read back, fresh draft receipt, save clicked, previewClicks===0); direct-form leg; cover leg (assigned + crop confirmed + slot card verified); original leg (3-step sequence executed, checked state verified); public leg (发表 clicked + fresh works receipt); absent controls fail typed. |
+| AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4) | MET | test | tests/shipinhao-pub.test.ts refusal/preflight/stage suites (unknown operation, driver, format≠video, missing/bad videoPath, 2 GiB cap, tags/cover/original validation, publishStatus unknown — all launches===0; stale/toast/ambiguous typed); dom failure legs assert facts.stage typed names; packed discovery/acceptance scripts/bundle-plugins.test.ts 24/0; apps/cli/tests/commands/plugin-check.test.ts thirteen-channel status probe. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0296 (shipinhao-pub)
+
+**Scope:** uncommitted diff — plugins/publishings/shipinhao-pub/** (src 4 files, tests 2 files: unit 70 + dom 10), bun.lock, registry.test.ts (2 lists), bundle-plugins.test.ts (13 plugins in list), plugin-check.test.ts (thirteen channels), docs/04_DESIGN.md, bunfig.toml, .spur/run/0296-gate.log (exit 0, 3386 pass).
+**Dimensions:** functional (R1–R4/AC1/AC2), SECUA (correctness/security/efficiency/usability), architecture
+**Verdict:** PASS
+
+**Fresh evidence (re-review host M-c6c4167):** `bunx tsc --noEmit` clean; `bun test tests/` → **80 pass / 0 fail** (70 unit + 10 dom, 471 expect). Gate log `.spur/run/0296-gate.log` tail: 3386 pass / 2 skip / 0 fail / 177 files, `exit:0`, post-check rules "All 2 rules passed".
+
+**Citation audit:** 74 line citations across `plugins/publishings/shipinhao-pub` src and docs verified against ground-truth 2817-line source (`/Users/robin/xprojects/knowledge-kit/.spur/run/yijianfa-source/platforms/shipinhao.js`). The 2 previous P1 citation discrepancies are verified fixed:
+1. `src/flow.ts:369,922` cites `shipinhao.js:2689-2692` for shortVideo topic `#` trimming/stripping, exactly matching `shipinhao.js:2689-2692` (`(data.tags || ...).map(tag => String(tag).replace(/^#/, "").trim())`).
+2. `src/index.ts:33` cites `shipinhao.js:10,2802` for shortVideo operation dispatch, matching prose comment at line 10 and dispatch `if (type === "shortVideo")` at line 2802.
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P1 (blocker) | correctness | Topic trimming/stripping comments updated to cite `shipinhao.js:2689-2692` matching ground truth `/Users/robin/xprojects/knowledge-kit/.spur/run/yijianfa-source/platforms/shipinhao.js:2689-2692` (`(data.tags || ...).map(tag => String(tag).replace(/^#/, "").trim())`). | `plugins/publishings/shipinhao-pub/src/flow.ts:369,922` | RESOLVED (fixed in working copy, verified against ground truth) |
+| 2 | P1 (blocker) | correctness | Operation dispatch comment in `src/index.ts:33` updated to cite `shipinhao.js:10,2802` matching shortVideo branch in `/Users/robin/xprojects/knowledge-kit/.spur/run/yijianfa-source/platforms/shipinhao.js:10,2802`. | `plugins/publishings/shipinhao-pub/src/index.ts:33` | RESOLVED (fixed in working copy, verified against ground truth) |
+| 3 | P3 (minor) | security | `sanitizeShipinhaoHtml` URL regex requires enclosing quotes (`(["'])...javascript:...`), allowing unquoted `href=javascript:...` or `src=data:...` variants to survive regex stripping (known 0294/0295 P3 gap). | `plugins/publishings/shipinhao-pub/src/flow.ts:133` | DEFER(sanitizer hardening: unquoted attribute variant, known batch P3) |
+| 4 | P4 (advisory) | usability | `publish()` falls back to `payload.options?.coverPath` and `payload.options?.tags` in addition to `metadata.*`, though the Design freeze specifies `metadata.coverPath` and `metadata.tags` (mirrors 0295 `options.coverPath` advisory). | `plugins/publishings/shipinhao-pub/src/flow.ts:698,700` | ACCEPTED |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | Discoverable `kind: publish` plugin (`plugin.json`), registry lists extended + asserted (`packages/kk-core/tests/registry.test.ts:239,614`), standard Content→Result via `processPublishIO` (`src/index.ts:107-139`), operation dispatch pre-transport (`src/index.ts:46-57`), fake transport seam (`src/index.ts:91`), --in/--out + exit semantics tested (`tests/shipinhao-pub.test.ts:457-550`) |
+| R2 | MET | Active wujie shadowRoot traversal with 30s bounded readiness (`SHP_ROOT_WAIT_MS`), no document fallback when `<wujie-app>` is present, unique direct evidence probes when absent, ambiguous direct inputs refused (`src/flow.ts:157-203`); video via `setInputFiles` on active root (`src/flow.ts:803-832`), post-upload editing form appearance verified at 600s ceiling — file assignment ≠ success (`src/flow.ts:834-877`, typed `upload-processing`); title native input/change fill + readback (`src/flow.ts:880-913`); description sanitized paste + text readback (`src/flow.ts:915-965`) |
+| R3 | MET | Requested cover through vertical slot card click → scoped dialog file input → crop confirm ladder with previous-button guard → slot card changed evidence verification, missing = typed failure (`src/flow.ts:1195-1322`); `metadata.original === true` authorizes 3-step sequence (entry checkbox → agreement checkbox in `div.declare-body-wrapper` → exact 声明原创 confirm) + committed checked state readback + closed dialog (`src/flow.ts:1100-1188`), original=false/absent never touches originality; draft default via 保存草稿 + fresh id receipt; public rail via 发表 + fresh works receipt (`src/flow.ts:980-1080`) |
+| R4 | MET | Readiness predicate + preflight (`src/selectors.ts:210-230`, `src/flow.ts:712-727`); fake-vs-fixture layer isolation (unit suite fake pages only, dom runner = real Chromium on synthetic page on real origin, catch-all abort); production fixtures for wrong root, delayed root, original absent/false/true, canvas without commit, stale signals, timeout, and cleanup (`tests/shipinhao-pub-dom.test.ts:1-120`); packed entry/check resolution outside checkout (`scripts/bundle-plugins.test.ts:41`) |
+| AC1 | MET | Real Chromium DOM fixture runner (`tests/shipinhao-pub-dom.test.ts:19-106`): delayed wujie shadowRoot waited out, video uploaded, cover cropped & committed, original declared & checked, draft saved with fresh receipt; explicit public executes through scoped 发表; absent controls fail typed |
+| AC2 | MET | Typed stageFail at all 7 `resolveRootLocator` sites (`upload-timeout`, `upload-processing`, `title-readback`, `description-paste-readback`, `draft-save`/`publish-click`, `cover-attach`); payload/readiness/timeout/stale paths exercised (22 pre-browser refusal tests, zero launches asserted); packed entry/check resolution outside checkout; `plugin status --json` thirteen-channel probe list |
+
+##### SECUA notes
+
+- **Security:** Sanitizer strips `<script>`, `<style>`, `<iframe>`, `<embed>`, `<object>`, `on*` event handlers, and `javascript:`/`data:` URLs; exactly one paste site (`src/flow.ts:232-257`) via `page.evaluate` and synthetic `ClipboardEvent`; zero `node:fs` in src (Bun.file probes mirror peer precedent); zero `eval`/`new Function`; zero base64/DataTransfer-in-page upload machinery (the single DataTransfer is in synthetic ClipboardEvent paste only); error messages bounded single line (300 chars, `boundedDetail`), recovery command leads, no DOM/cookie/token/stack leakage.
+- **Correctness:** All 7 `resolveRootLocator` sites wrapped in typed `stageFail` catch handlers; no `locator.evaluate` (all `page.evaluate`, preventing Playwright 1.55 expression bug); stale receipts, unobserved completion, and disagreeing works IDs rejected as typed failures.
+- **Efficiency:** Bounded 30s steps, 600s media ceiling, no blind sleeps; sparse-file 2 GiB test exercises size cap without disk penalty.
+- **Usability:** Recovery command `bun plugins/publishings/shipinhao-pub/src/profile-check.ts login` leads all session failure messages; `--in`/`--out` Result envelope written on refusal paths.
+
+##### Architecture notes
+
+- Skeleton parity with `xiaoyuzhou-pub`, `sspai-pub`, `cnblogs-pub`: identical dependency set, tsconfig base extension, profile-check CLI shim over `runProfileCli(SHP_CONFIG)`.
+- Open shadow root pierced natively by Playwright locators while page evaluate scripts re-derive vendor root (`rootExpression`).
+- Strict separation of mapping fake tests (`tests/shipinhao-pub.test.ts`) and real-Chromium fixture runner (`tests/fixtures/shipinhao-pub-dom-runner.ts`).
+- Grounded vs Provisional labels honest in `src/selectors.ts` (tested by hygiene suite); grounded selectors carry real line citations.
+
+**Next:** Proceed to pipeline verification / approve.
 
 ### References
 
@@ -125,4 +213,7 @@ Exact file ownership: plugins/publishings/shipinhao-pub/{package.json,tsconfig.j
 
 - 2026-10-15T06:14:59.257Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-15T20:48:17.561Z todo → wip (system)
+- 2026-10-16T00:04:00.770Z wip → testing (system)
+- 2026-10-16T00:04:01.628Z testing → done (system)
 

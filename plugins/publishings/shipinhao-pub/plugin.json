@@ -1,0 +1,12 @@
+{
+    "name": "shipinhao-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "shipinhao (channels.weixin.qq.com) short-video publish via a script browser transport with wujie-app shadowRoot traversal; draft by default, public only on an explicit publishStatus with a fresh works receipt, requested-only 声明原创 declaration",
+    "browserSession": {
+        "profileName": "shipinhao",
+        "homeUrl": "https://channels.weixin.qq.com/platform/post/video"
+    }
+}
