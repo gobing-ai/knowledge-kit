@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
+import { ItcDecisionRequestSchema, itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, ItcPlanRequestSchema } from './itc-plan';
 import { runItcTopicStage } from './itc-topic';
 
@@ -14,6 +16,14 @@ export async function runItcStage(args: string[]): Promise<number | undefined> {
 
     if (stageName === 'itc-publish-plan') {
         return runItcPublishPlan(args.slice(1));
+    }
+
+    if (stageName === 'itc-decision') {
+        return runItcDecision(args.slice(1));
+    }
+
+    if (stageName === 'itc-author-complete') {
+        return runItcAuthorComplete(args.slice(1));
     }
 
     if (
@@ -94,4 +104,113 @@ function runItcPublishPlan(args: string[]): number {
         console.error(msg);
         return 1;
     }
+}
+
+async function runItcDecision(args: string[]): Promise<number> {
+    const requestIdx = args.indexOf('--request');
+    const requestFile = requestIdx !== -1 ? args[requestIdx + 1] : undefined;
+    if (!requestFile) {
+        console.error('itc-decision: --request <JSON-file> is required');
+        return 1;
+    }
+    if (!existsSync(requestFile)) {
+        console.error(`itc-decision: request file not found: ${requestFile}`);
+        return 1;
+    }
+    try {
+        const raw = JSON.parse(readFileSync(requestFile, 'utf-8'));
+        const parsed = ItcDecisionRequestSchema.parse(raw);
+        await itcDecision(parsed);
+        return 0;
+    } catch (err: unknown) {
+        console.error(`itc-decision: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+    }
+}
+
+function runItcAuthorComplete(args: string[]): number {
+    const [workDir = '', parentRunId = '', reviewModeArg = ''] = args;
+    if (!workDir || !parentRunId) {
+        console.error('usage: itc-author-complete <work_dir> <parentRunId> [reviewMode]');
+        return 1;
+    }
+    const draftPath = join(workDir, '3-draft-draft-article.md');
+    if (!existsSync(draftPath)) {
+        console.error(`itc-author-complete: draft not found: ${draftPath}`);
+        return 1;
+    }
+    const draftText = readFileSync(draftPath, 'utf-8');
+    if (draftText.trim().length === 0) {
+        console.error(`itc-author-complete: empty draft in ${draftPath}`);
+        return 1;
+    }
+    const draftDigest = createHash('sha256').update(draftText).digest('hex');
+
+    const outlinePath = join(workDir, '2-outline/outline-approved.md');
+    if (!existsSync(outlinePath)) {
+        console.error(`itc-author-complete: approved outline not found: ${outlinePath}`);
+        return 1;
+    }
+    const outlineText = readFileSync(outlinePath, 'utf-8');
+    if (outlineText.trim().length === 0) {
+        console.error(`itc-author-complete: empty outline in ${outlinePath}`);
+        return 1;
+    }
+    const outlineDigest = createHash('sha256').update(outlineText).digest('hex');
+
+    const verdictPath = join(workDir, '.itc-verdict.json');
+    let judgeDigest: string | null = null;
+    let reviewMode: 'manual' | 'judged' = reviewModeArg === 'manual' ? 'manual' : 'judged';
+
+    if (existsSync(verdictPath)) {
+        try {
+            const verdictRaw = readFileSync(verdictPath, 'utf-8');
+            const verdictData = JSON.parse(verdictRaw) as { verdict?: unknown; confidence?: unknown };
+            if (verdictData.verdict !== 'PASS') {
+                console.error(`itc-author-complete: judge verdict is not PASS: ${String(verdictData.verdict)}`);
+                return 1;
+            }
+            const conf = String(verdictData.confidence ?? '');
+            if (!['HIGH', 'MEDIUM', 'LOW'].includes(conf)) {
+                console.error(`itc-author-complete: judge confidence must be HIGH, MEDIUM, or LOW, got '${conf}'`);
+                return 1;
+            }
+            judgeDigest = createHash('sha256').update(verdictRaw).digest('hex');
+            reviewMode = 'judged';
+        } catch (err: unknown) {
+            console.error(
+                `itc-author-complete: invalid verdict JSON: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return 1;
+        }
+    } else {
+        reviewMode = 'manual';
+    }
+
+    const runPath = join(workDir, '.itc/author-run.json');
+    let childRunId = `${parentRunId}-author`;
+    if (existsSync(runPath)) {
+        try {
+            const runMeta = JSON.parse(readFileSync(runPath, 'utf-8')) as { childRunId?: string };
+            if (runMeta.childRunId) childRunId = runMeta.childRunId;
+        } catch {
+            // keep default
+        }
+    }
+
+    const completeReceipt = {
+        schemaVersion: 1,
+        parentRunId,
+        childRunId,
+        draftDigest,
+        outlineDigest,
+        judgeDigest,
+        reviewMode,
+        status: 'complete',
+    };
+
+    const itcDir = join(workDir, '.itc');
+    mkdirSync(itcDir, { recursive: true });
+    writeFileSync(join(itcDir, 'author-complete.json'), `${JSON.stringify(completeReceipt, null, 2)}\n`);
+    return 0;
 }

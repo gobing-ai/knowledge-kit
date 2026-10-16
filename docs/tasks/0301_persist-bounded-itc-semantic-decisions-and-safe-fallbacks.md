@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Persist bounded ITC semantic decisions and safe fallbacks
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.905Z
-updated_at: "2026-10-15T22:49:43.064Z"
+updated_at: "2026-10-16T00:39:52.298Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -15,6 +15,8 @@ tags:
 estimate_hours: 8
 
 dependencies: ["0299", "0300"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0301-verdict.json
 ---
 
 ## 0301. Persist bounded ITC semantic decisions and safe fallbacks
@@ -42,8 +44,8 @@ Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-k
 
 ### Requirements
 
-- [ ] R1. Semantic choices remain within validated candidates; the workflow records source and fallback reason and uses the declared safe default or requires operator selection without enabling publication or spending.
-- [ ] R2. Interactive authoring resumes the recorded child; it continues the same child ID through repeated pauses and resumes the parent only after validating the child draft receipt without rerunning confirmed sends.
+- [x] R1. Semantic choices remain within validated candidates; the workflow records source and fallback reason and uses the declared safe default or requires operator selection without enabling publication or spending.
+- [x] R2. Interactive authoring resumes the recorded child; it continues the same child ID through repeated pauses and resumes the parent only after validating the child draft receipt without rerunning confirmed sends.
 
 ### Acceptance Criteria
 
@@ -99,15 +101,38 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `plugins/kk/decisions/kk-itc.yaml:8`: defined fixed catalog decisions `kk-itc-topic-choice`, `kk-itc-outline-choice`, and `kk-itc-preset-choice` with safe fallbacks (`defer` and `none`).
+- `apps/cli/src/itc-decision.ts:80`: implemented `itcDecision` with compact evidence <=1800 UTF-16 units per file, candidate validation against digests, explicit choice bypass, and safe catalog defaults.
+- `plugins/kk/workflows/kk-itc-author.yaml:3`: extracted child state-machine workflow `kk-itc-author` version 2 with existing authoring states and terminal complete receipt.
+- `apps/cli/src/itc-stage.ts:131`: implemented `runItcAuthorComplete` validating non-empty draft and approved outline and writing `.itc/author-complete.json` with digests.
+- `apps/cli/tests/itc-decision.test.ts:17`: verified `itcDecision` compact evidence, explicit choice bypass, invalid slot fallback, and `itc-author-complete` receipts.
+- `plugins/kk/tests/decision-catalog.test.ts:191`: verified `kk-itc` decision catalog structure, fixed choices, and safe fallbacks.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun test plugins/kk/tests/decision-catalog.test.ts`: 8 pass, 0 fail.
+- `bun test apps/cli/tests/itc-decision.test.ts`: 8 pass, 0 fail.
+- `bun test apps/cli/tests/itc-presets.test.ts`: 7 pass, 0 fail.
+- `bun test apps/cli/tests/itc-topic.test.ts`: 10 pass, 0 fail.
+- `bun test apps/cli/tests/itc-plan.test.ts`: 11 pass, 0 fail.
+- `bun test apps/cli/tests/itc-stages.test.ts`: 36 pass, 0 fail.
+- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
+- `bun run build`: all packages and bundles built successfully.
+- `spur workflow validate plugins/kk/workflows/kk-itc-author.yaml`: workflow valid.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0301
+**Scope:** Persist bounded ITC semantic decisions and safe fallbacks
+**Dimensions:** functional traceability, correctness, security, efficiency, usability, architecture
+**Verdict:** PASS
+**Confidence:** HIGH
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P3 (advisory) | architecture | Child authoring extracted to standalone kk-itc-author FSM and decisions bounded to <=1800 chars and validated candidate slots. | `apps/cli/src/itc-decision.ts:80` | RESOLVED |
 
 ### References
 
@@ -116,3 +141,8 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 - Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History
+
+- 2026-10-16T00:30:51.784Z todo → wip (system)
+- 2026-10-16T00:39:33.972Z wip → testing (system)
+- 2026-10-16T00:39:52.290Z testing → done (system)
+

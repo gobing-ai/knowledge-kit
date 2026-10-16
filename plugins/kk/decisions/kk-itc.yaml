@@ -1,0 +1,46 @@
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    minConfidence: 0
+
+decisions:
+    kk-itc-topic-choice:
+        type: choice
+        description: Choose the strongest topic candidate from the candidate evidence pool, or defer to operator
+        parameters:
+            candidates:
+                type: string
+                description: Formatted candidate options with title, rationale, item IDs and source URLs
+        criteria:
+            a: Candidate slot a is the strongest and most cohesive technical article topic.
+            b: Candidate slot b is the strongest and most cohesive technical article topic.
+            c: Candidate slot c is the strongest and most cohesive technical article topic.
+            defer: Candidates are insufficient, contradictory, or need explicit operator review.
+        fallback: defer
+
+    kk-itc-outline-choice:
+        type: choice
+        description: Choose the best structured technical article outline option, or defer to operator
+        parameters:
+            options:
+                type: string
+                description: Candidate outline options with structure, headings, and rationale
+        criteria:
+            a: Outline option a has the strongest narrative arc and technical depth.
+            b: Outline option b has the strongest narrative arc and technical depth.
+            c: Outline option c has the strongest narrative arc and technical depth.
+            defer: Outlines require manual operator adjustment or refinement.
+        fallback: defer
+
+    kk-itc-preset-choice:
+        type: choice
+        description: Accept the suggested channel publication preset, or publish to no targets by default
+        parameters:
+            suggestion:
+                type: string
+                description: The recommended publication preset name and target channels
+        criteria:
+            suggested: Accept the suggested preset for publication.
+            none: Do not use the suggested preset; leave targets unselected.
+        fallback: none

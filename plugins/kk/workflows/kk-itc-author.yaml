@@ -1,0 +1,394 @@
+---
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-itc-author
+kind: state-machine
+version: "2"
+description: >-
+  Child state-machine workflow for bounded IT content authoring: outline -> draft -> unslop -> review/judge -> complete receipt
+initialState: author-init
+terminalStates:
+  - done
+  - failed
+failureStates:
+  - failed
+
+vars:
+  work_dir: ""
+  agent: "inline"
+  writer: "topic"
+  playbook: "itc-playbook"
+  rubric: "tech-accuracy"
+  auto: "false"
+  unslop: "false"
+  judge: "true"
+  outline: ""
+  max_revisions: "2"
+  parent_run_id: ""
+  child_run_id: ""
+  definition_digest: ""
+  options_digest: ""
+  __hitlAnswer: ""
+  __hitlInput: ""
+  __verdictFeedback: ""
+
+states:
+  - id: author-init
+    description: "Initialize child authoring state and write .itc/author-run.json identity"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            mkdir -p "${vars.work_dir}/.itc" &&
+            cat <<EOF > "${vars.work_dir}/.itc/author-run.json"
+            {
+              "schemaVersion": 1,
+              "parentRunId": "${vars.parent_run_id}",
+              "childRunId": "${vars.child_run_id}",
+              "definitionDigest": "${vars.definition_digest}",
+              "optionsDigest": "${vars.options_digest}"
+            }
+            EOF
+
+  - id: outline-write
+    description: "Generate outline options a, b (and optional c) via writer skill"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:${vars.writer} skill.
+            Generate outline options (outline-option-a.md, outline-option-b.md, and optionally outline-option-c.md) in ${vars.work_dir}/2-outline/ from the brief at ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            When auto mode is on (auto=true), also write 2-outline/outline-recommendation.json as {"pick": "a|b|c", "rationale": "<why this option is strongest>"} recommending the option you would commit.
+            Do not wait for operator selection; write the option files.
+          expectFile: ${vars.work_dir}/2-outline/outline-option-a.md
+      - kind: shell
+        options:
+          command: >-
+            test -f "${vars.work_dir}/2-outline/outline-option-b.md" || { echo "missing required outline-option-b.md" >&2; exit 1; }
+
+  - id: outline-select
+    description: "Operator selects preferred outline option"
+    pause: true
+    onEnter:
+      - kind: hitl.select
+        options:
+          prompt: "Select an approved outline option from ${vars.work_dir}/2-outline/ (outline-option-a.md, outline-option-b.md, or outline-option-c.md):"
+          options:
+            - a
+            - b
+            - c
+          var: __hitlAnswer
+
+  - id: outline-autopick
+    description: "Auto mode — validate the writer's outline-recommendation.json and bind the pick as the selected outline"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run itc-outline-pick "${vars.work_dir}"
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/2-outline/.auto-pick
+          var: outline
+
+  - id: outline-commit
+    description: "Copy selected outline to outline-approved.md"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            sel="${vars.outline}";
+            if [ -z "$sel" ]; then sel="${vars.__hitlAnswer}"; fi;
+            if [ -z "$sel" ]; then sel="a"; fi;
+            src="${vars.work_dir}/2-outline/outline-option-$sel.md";
+            if [ ! -f "$src" ]; then
+              echo "selected outline file not found: $src" >&2; exit 1;
+            fi;
+            cp "$src" "${vars.work_dir}/2-outline/outline-approved.md";
+
+  - id: draft-write
+    description: "Author full technical draft from approved outline"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:${vars.writer} skill.
+            Author the technical draft at ${vars.work_dir}/3-draft-draft-article.md based on approved outline ${vars.work_dir}/2-outline/outline-approved.md and brief ${vars.work_dir}/brief.md using playbook ${vars.playbook}.
+            Revision feedback: ${vars.__hitlInput}
+          expectFile: ${vars.work_dir}/3-draft-draft-article.md
+
+  - id: unslop
+    description: "De-slop pass — kk:taste-unslop line-edits the draft"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:taste-unslop skill.
+            Read ${vars.work_dir}/3-draft-draft-article.md and write the line-edited version to ${vars.work_dir}/3-draft-draft-article.new.md, removing slop while preserving technical claims and links.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.new.md
+      - kind: shell
+        options:
+          command: mv -f "${vars.work_dir}/3-draft-draft-article.new.md" "${vars.work_dir}/3-draft-draft-article.md"
+
+  - id: draft-review
+    description: "Operator reviews and approves or requests revision on draft-article.md"
+    pause: true
+    onEnter:
+      - kind: hitl.confirm
+        options:
+          prompt: "Review draft at ${vars.work_dir}/3-draft-draft-article.md. Approve?"
+          var: __hitlAnswer
+
+  - id: draft-revise
+    description: "Collect revision feedback from operator (bounded by 3 rounds)"
+    pause: true
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.revise-count";
+      - kind: hitl.input
+        options:
+          prompt: "Provide specific revision feedback for ${vars.work_dir}/3-draft-draft-article.md:"
+          var: __hitlInput
+
+  - id: draft-autorevise
+    description: "Auto mode — apply judge feedback to the draft"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            n=$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0);
+            echo $((n + 1)) > "${vars.work_dir}/.auto-revise-count";
+      - kind: agent.run
+        options:
+          role: scribe
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:${vars.writer} skill.
+            Read the draft at ${vars.work_dir}/3-draft-draft-article.md and write a revised version to ${vars.work_dir}/3-draft-draft-article.new.md, applying every item of feedback[] in ${vars.work_dir}/.itc-verdict.json.
+          expectFile: ${vars.work_dir}/3-draft-draft-article.new.md
+      - kind: shell
+        options:
+          command: mv -f "${vars.work_dir}/3-draft-draft-article.new.md" "${vars.work_dir}/3-draft-draft-article.md"
+
+  - id: judge
+    description: "Evaluate technical draft with content-judge"
+    onEnter:
+      - kind: agent.run
+        options:
+          role: reviewer
+          agent: ${vars.agent}
+          input: |
+            Invoke the kk:content-judge skill.
+            Evaluate the draft at ${vars.work_dir}/3-draft-draft-article.md against the ${vars.rubric} rubric.
+            Write the verdict JSON to ${vars.work_dir}/.itc-verdict.json.
+          expectFile: ${vars.work_dir}/.itc-verdict.json
+      - kind: file.read.into-var
+        options:
+          path: ${vars.work_dir}/.itc-verdict.json
+          var: __verdictFeedback
+
+  - id: author-finish
+    description: "Validate non-empty draft, approved outline, and review/judge disposition, then write .itc/author-complete.json"
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run itc-author-complete "${vars.work_dir}" "${vars.parent_run_id}"
+
+  - id: done
+    description: "Terminal — IT content authoring completed successfully"
+
+  - id: failed
+    description: "Terminal — IT content authoring failed or rejected"
+
+transitions:
+  - from: author-init
+    to: outline-write
+    guard:
+      kind: always
+
+  - from: outline-write
+    to: outline-commit
+    description: "Outline pre-selected -> commit directly"
+    guard:
+      kind: shell
+      options:
+        command: 'test -n "${vars.outline}"'
+
+  - from: outline-write
+    to: outline-autopick
+    description: "Auto mode -> run auto pick"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" = "true" -a -z "${vars.outline}"'
+
+  - from: outline-write
+    to: outline-select
+    description: "Interactive mode -> pause for operator selection"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.auto}" != "true" -a -z "${vars.outline}"'
+
+  - from: outline-select
+    to: outline-commit
+    guard:
+      kind: always
+
+  - from: outline-autopick
+    to: outline-commit
+    guard:
+      kind: always
+
+  - from: outline-commit
+    to: draft-write
+    guard:
+      kind: always
+
+  - from: draft-write
+    to: unslop
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.unslop}" = "true"'
+
+  - from: draft-write
+    to: judge
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.judge}" = "true" -a "${vars.unslop}" != "true"'
+
+  - from: draft-write
+    to: draft-review
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.judge}" != "true" -a "${vars.auto}" != "true" -a "${vars.unslop}" != "true"'
+
+  - from: draft-write
+    to: author-finish
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.judge}" != "true" -a "${vars.auto}" = "true" -a "${vars.unslop}" != "true"'
+
+  - from: unslop
+    to: judge
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.judge}" = "true"'
+
+  - from: unslop
+    to: draft-review
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.judge}" != "true" -a "${vars.auto}" != "true"'
+
+  - from: unslop
+    to: author-finish
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.judge}" != "true" -a "${vars.auto}" = "true"'
+
+  - from: draft-review
+    to: author-finish
+    description: "Operator approved draft"
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.__hitlAnswer}" = "true" -o "${vars.__hitlAnswer}" = "yes"'
+
+  - from: draft-review
+    to: draft-revise
+    description: "Operator requested revision and revision budget remains"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3
+
+  - from: draft-review
+    to: failed
+    terminalReason: failed-guard
+    description: "Operator rejected draft and revision budget exhausted"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.__hitlAnswer}" != "true" -a "${vars.__hitlAnswer}" != "yes" &&
+          test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -ge 3
+
+  - from: draft-revise
+    to: draft-write
+    guard:
+      kind: always
+
+  - from: judge
+    to: author-finish
+    description: "Judge passed with acceptable confidence"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          grep -q '"verdict":\s*"PASS"' "${vars.work_dir}/.itc-verdict.json" &&
+          grep -Eq '"confidence":\s*"(HIGH|MEDIUM|LOW)"' "${vars.work_dir}/.itc-verdict.json"
+
+  - from: judge
+    to: draft-autorevise
+    description: "Judge requested revision in auto mode and auto-revision budget remains"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.auto}" = "true" &&
+          grep -q '"verdict":\s*"NEEDS_REVISION"' "${vars.work_dir}/.itc-verdict.json" &&
+          test "$(cat "${vars.work_dir}/.auto-revise-count" 2>/dev/null || echo 0)" -lt "${vars.max_revisions}"
+
+  - from: judge
+    to: draft-revise
+    description: "Judge requested revision in interactive mode and manual revision budget remains"
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test "${vars.auto}" != "true" &&
+          grep -q '"verdict":\s*"NEEDS_REVISION"' "${vars.work_dir}/.itc-verdict.json" &&
+          test "$(cat "${vars.work_dir}/.revise-count" 2>/dev/null || echo 0)" -lt 3
+
+  - from: judge
+    to: failed
+    terminalReason: failed-guard
+    description: "Judge failed or revision budget exhausted"
+    guard:
+      kind: always
+
+  - from: draft-autorevise
+    to: unslop
+    guard:
+      kind: shell
+      options:
+        command: 'test "${vars.unslop}" = "true"'
+
+  - from: draft-autorevise
+    to: judge
+    guard:
+      kind: always
+
+  - from: author-finish
+    to: done
+    guard:
+      kind: always

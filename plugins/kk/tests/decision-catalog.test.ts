@@ -187,3 +187,30 @@ describe('kk-items decision catalog registration (R2)', () => {
         expect(config.decisions?.paths).toContain('plugins/kk/decisions');
     });
 });
+
+describe('kk-itc decision catalog (0301 / G21 R1)', () => {
+    const ITC_CATALOG_PATH = join(REPO, 'plugins/kk/decisions/kk-itc.yaml');
+
+    it('declares the three ITC choice decisions with fixed vocabulary and safe fallbacks', () => {
+        const raw = readFileSync(ITC_CATALOG_PATH, 'utf-8');
+        expect(raw).toContain('$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"');
+
+        const catalog = Bun.YAML.parse(raw) as Catalog;
+        expect(catalog.version).toBe(1);
+
+        const topic = catalog.decisions['kk-itc-topic-choice'];
+        expect(topic?.type).toBe('choice');
+        expect(Object.keys(topic.criteria as Record<string, string>).sort()).toEqual(['a', 'b', 'c', 'defer']);
+        expect(topic.fallback).toBe('defer');
+
+        const outline = catalog.decisions['kk-itc-outline-choice'];
+        expect(outline?.type).toBe('choice');
+        expect(Object.keys(outline.criteria as Record<string, string>).sort()).toEqual(['a', 'b', 'c', 'defer']);
+        expect(outline.fallback).toBe('defer');
+
+        const preset = catalog.decisions['kk-itc-preset-choice'];
+        expect(preset?.type).toBe('choice');
+        expect(Object.keys(preset.criteria as Record<string, string>).sort()).toEqual(['none', 'suggested']);
+        expect(preset.fallback).toBe('none');
+    });
+});
