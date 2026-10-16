@@ -1,3 +1,15 @@
+## [0.1.1] - 2026-10-16
+
+### Fixed
+
+- fix(kk): carry the seo subject url outside the decision parameters (f88e3b05)
+<!-- src: plugins/kk/scripts/seo-decisions.ts:109 · HIGH -->
+
+### Changed
+
+- chore(spur): drop the agent-usage-refresh bootstrap job (d574586b)
+<!-- src: .spur/config.yaml · HIGH -->
+
 ## [0.1.0] - 2026-10-16
 
 ### Added
