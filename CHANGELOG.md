@@ -1,3 +1,253 @@
+## [0.1.0] - 2026-10-16
+
+### Added
+
+- feat(kk): ship the G9 smart-seo skill and installed acceptance (60f71909)
+<!-- src: plugins/kk/skills/smart-seo/SKILL.md · HIGH -->
+- feat(kk): run the Smart SEO workflow with validated narratives (task 0285) (4e651020)
+<!-- src: apps/cli/src/stage.ts:103 · HIGH -->
+- feat(kk): audit the finished episode for speaker consistency (advisory) (d5d7e02c)
+<!-- src: plugins/kk/scripts/daily-stages.ts:470 · HIGH -->
+- feat(seo): enrich audits with separate lab field and imported query evidence (task 0284) (a6f2f9af)
+<!-- src: plugins/kk/scripts/seo-enrich.ts · HIGH -->
+- feat(bilibili-pub): add bilibili shortVideo and dynamic publish plugin (0297) (22a0fe1d)
+<!-- src: plugins/publishings/bilibili-pub/src/index.ts · HIGH -->
+- feat(kk-itc): resolve entry config, workspace and Board child evidence (0303) (66907956)
+<!-- src: apps/cli/src/itc-config.ts · HIGH -->
+- feat(kk-itc): dispatch targets with isolated payloads and receipts (0302) (f17aedb6)
+<!-- src: apps/cli/src/itc-publish.ts · HIGH -->
+- feat(seo): assess SEO meaning through typed Spur catalogs with honest fallbacks (task 0283) (0d7b4f51)
+<!-- src: plugins/kk/decisions/kk-seo-page.yaml · HIGH -->
+- feat(kk-itc): persist bounded semantic decisions and child FSM (0301) (7467a90a)
+<!-- src: apps/cli/src/itc-decision.ts · HIGH -->
+- feat(voxcpm): add a speaker-consistency audit for rendered episodes (8ea9a159)
+<!-- src: plugins/generations/voxcpm-tts/scripts/audit-speaker-consistency.py · HIGH -->
+- feat(kk-itc): resolve topic channel presets with explicit target overrides (0300) (fdf6f9ca)
+<!-- src: apps/cli/src/itc-plan.ts:9 · HIGH -->
+- feat(seo): produce reproducible SEO assessments and stable prioritized reports offline (task 0282) (6a75683e)
+<!-- src: plugins/kk/scripts/seo-report.ts · HIGH -->
+- feat(kk-itc): select evidence-backed topics from collection store (0299) (b49c5f41)
+<!-- src: apps/cli/src/itc-topic.ts · HIGH -->
+- feat(kk-itc): plan publication from discovered plugin capabilities (0298) (c11264f8)
+<!-- src: apps/cli/src/itc-plan.ts · HIGH -->
+- feat(shipinhao-pub): add shipinhao shortVideo publish plugin with wujie shadow traversal (0296) (12cbd7f0)
+<!-- src: plugins/publishings/shipinhao-pub/src/index.ts · HIGH -->
+- feat(seo): collect bounded public-site SEO facts with robots and network enforcement (task 0281) (fa33c992)
+<!-- src: plugins/kk/scripts/seo-fetch.ts · HIGH -->
+- feat(kk): add voxcpm-first voice driver fallback chain to daily voice2 (9fe68296)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:28 · HIGH -->
+- feat: add filterable run selectors to board module headers (22606b52)
+<!-- src: apps/board/src/collect/index.tsx:108 · HIGH -->
+- feat(xiaoyuzhou-pub): add xiaoyuzhou podcaster draft-only audio publish plugin (0295) (2dafd7c6)
+<!-- src: plugins/publishings/xiaoyuzhou-pub/src/index.ts · HIGH -->
+- feat(sspai-pub): add sspai Matrix draft-only Markdown publish plugin (0294) (7e5507af)
+<!-- src: plugins/publishings/sspai-pub/src/index.ts · HIGH -->
+- feat(cnblogs-pub): add cnblogs Markdown article publish plugin (0293) (5330e3a2)
+<!-- src: plugins/publishings/cnblogs-pub/src/index.ts · HIGH -->
+- feat(csdn-pub): add CSDN Markdown article publish plugin (0292) (ae79691d)
+<!-- src: plugins/publishings/csdn-pub/src/index.ts · HIGH -->
+- feat(jike-pub): Jike dynamic-post publish plugin with topic tagging (0291) (914aed20)
+<!-- src: plugins/publishings/jike-pub/src/index.ts · HIGH -->
+- feat(wechatmp-pub): CGI draft creation and token extraction (0290) (d1ff02b3)
+<!-- src: plugins/publishings/wechatmp-pub/src/cgi-draft.ts · HIGH -->
+- feat(wechatmp-pub): CGI media pipeline — cover auto-crop and body image CDN migration (0289) (d46b2ca6)
+<!-- src: plugins/publishings/wechatmp-pub/src/cgi-media.ts · HIGH -->
+- feat(publish-harness): browser anti-detection and file-dialog suppression (0288) (71fe84e9)
+<!-- src: packages/publish-harness/src/browser-anti-detection.ts · HIGH -->
+- feat(kk-core): add content limit counting and thread segmentation (aaa59973)
+<!-- src: packages/kk-core/src/content-limits.ts · HIGH -->
+
+### Fixed
+
+- fix(kk): generate the smart-seo test certificate via files, not /dev/stdout (3c2b829b)
+<!-- src: plugins/kk/tests/smart-seo-collect.test.ts:249 · HIGH -->
+- fix(smart-seo): fix issues with smart-seo (f4227fb6)
+<!-- src: apps/cli/tests/smart-seo-installed.test.ts:108 · HIGH -->
+- fix(kk): require the narrative answer file before the report step (1757a896)
+<!-- src: plugins/kk/workflows/kk-smart-seo.yaml:133 · HIGH -->
+- fix(kk): record seo decision timeouts as fallbacks, not cancellations (368f4714)
+<!-- src: plugins/kk/scripts/seo-decisions.ts:149 · HIGH -->
+- fix(kk): leave visibility unmeasured when no snapshot is supplied (829e9f5b)
+<!-- src: plugins/kk/scripts/seo-enrich.ts:116 · HIGH -->
+- fix(kk): emit deferred smart-seo rules as unknown, not not-applicable (64c8761f)
+<!-- src: plugins/kk/scripts/seo-rules.ts:1517 · HIGH -->
+- fix(kk): exclude informational rules from seo category scores (5ae498af)
+<!-- src: plugins/kk/scripts/seo-rules.ts:1782 · HIGH -->
+- fix(kk): record deterministic seo judgments with deterministic provenance (3651b8eb)
+<!-- src: plugins/kk/scripts/seo-decisions.ts:332 · HIGH -->
+- fix(kk): keep seo request timers armed until the body ends (08f78a5a)
+<!-- src: plugins/kk/scripts/seo-fetch.ts:299 · HIGH -->
+- fix(kk): state one FAQ rich-result retirement date across surfaces (512463f3)
+<!-- src: plugins/kk/scripts/seo-rules.ts:487 · HIGH -->
+- fix(kk): write the seo-score digest and seo-report markdown atomically (596fd415)
+<!-- src: plugins/kk/scripts/seo-stages.ts:845 · HIGH -->
+- fix(kk): correct the FAQ rich-result retirement date (5bcc77cf)
+<!-- src: plugins/kk/scripts/seo-rules.ts:484 · HIGH -->
+- fix(publishings): close the cnblogs-pub and xiaoyuzhou-pub re-verification gaps (296153f2)
+<!-- src: plugins/publishings/cnblogs-pub/src/flow.ts:91 · HIGH -->
+- fix(kk-core): hard-cut an over-long URL instead of one code point per segment (63981574)
+<!-- src: packages/kk-core/src/thread-segmentation.ts:130 · HIGH -->
+- fix(kk-itc): strip surrounding quotes from comma-list entries (cd8c8f1c)
+<!-- src: apps/cli/src/itc-publish.ts:77 · HIGH -->
+- fix(kk-itc): bind the run snapshot to receipts, decisions and outline autopick (ebc9c2d6)
+<!-- src: apps/cli/src/itc-publish.ts:382 · HIGH -->
+- fix(kk-itc): close the gaps the 0298-0303 verification left open (cfb2e0cf)
+<!-- src: apps/cli/src/itc-config.ts:91 · HIGH -->
+- fix(kk-itc): require a finish disposition before the workflow advances (ba672145)
+<!-- src: plugins/kk/workflows/kk-itc-author.yaml:364 · HIGH -->
+- fix(kk-itc): validate the topic pool and the plan inputs (5b2f4da3)
+<!-- src: apps/cli/src/itc-topic.ts:107 · HIGH -->
+- fix(kk-itc): verify the config keys and date the workspace leaf (1d8f6b4b)
+<!-- src: apps/cli/src/itc-config.ts:230 · HIGH -->
+- fix(omni-voice-gen): ship an instruct string the model accepts (2faeb3f2)
+<!-- src: plugins/generations/omni-voice-gen/profiles.json:3 · HIGH -->
+- fix(voxcpm): refuse a second segment on an instruct profile (2b561566)
+<!-- src: plugins/generations/voxcpm-tts/src/voxcpm-client.ts:520 · HIGH -->
+- fix(kk-itc): keep the packed bundle checkout-free and retarget the verdict tests (cf7343e2)
+<!-- src: apps/cli/src/itc-plan.ts:126 · HIGH -->
+- fix(publishings): close the unquoted javascript:/data: sanitizer gap and the CGI 摘要 parity gap (45281331)
+<!-- src: plugins/publishings/bilibili-pub/src/flow.ts:120 · HIGH -->
+- fix(voxcpm): ignore a per-request instruct on reference profiles (5acbe5e9)
+<!-- src: plugins/generations/voxcpm-tts/src/voxcpm-client.ts:541 · HIGH -->
+- fix(voxcpm): warn when an instruct profile is used (bc063f86)
+<!-- src: plugins/generations/voxcpm-tts/src/voxcpm-client.ts:522 · HIGH -->
+- fix(kk): calibrate the voxcpm spoken-char rate to its measured 5.19 字/秒 (225bac1c)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2031 · HIGH -->
+- fix(kk): recalibrate gemini speech rate for the episode fit gate (b06f7b27)
+<!-- src: plugins/kk/scripts/daily-stages.ts:2029 · HIGH -->
+- fix(kk): harden plan-translate delivery for headless agy (0238 R2) (e49b2c9a)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:264 · HIGH -->
+
+### Changed
+
+- docs(tasks): record G9 re-verification verdicts (0ab79f86)
+- test: silence stage output in the itc and smart-seo suites (e5f3c5d7)
+<!-- src: apps/cli/tests/capture.ts · HIGH -->
+- docs(context): record the 0285/0286 dev-runall learnings and memory (4805e37b)
+- test(publishings): replace non-null assertions in the CGI media fixture (71d9bb5d)
+<!-- src: plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts · HIGH -->
+- chore(merge): land the dev-runall 0285,0286 batch (G9 smart-seo) (8b576dd6)
+- docs(design): mark the G9 smart-seo satellite shipped (5c1cdf63)
+- docs(tasks): record the G9 batch verdicts for 0285 and 0286 (fb93d05b)
+- docs(report): add the 2026-10-16 history-anatomy report (a257452c)
+- docs(tasks): record the 0287-0297 verdicts and close E95-E98 (0137fdee)
+- chore: ignore .zvec-grep and refresh the verification tooling (cf874ebf)
+<!-- src: .gitignore:8 · HIGH -->
+- docs(kk-itc): document the decision, plan, publish and topic contracts (7ac3d60b)
+<!-- src: apps/cli/src/itc-decision.ts · HIGH -->
+- docs(tsdoc): restore missing export docs required by the post-check gate (a945a37f)
+<!-- src: packages/kk-core/src/manifest.ts · HIGH -->
+- test(kk): add focused smart-seo cancellation, dispatch and narrative suites (4fcd7e9a)
+<!-- src: plugins/kk/tests/smart-seo-dispatch.test.ts · HIGH -->
+- docs(tasks): record the 0298-0303 verdicts as PASS (996d6284)
+- test(kk-itc): cover the stage, request and verdict boundaries (bc2aee9b)
+<!-- src: apps/cli/tests/itc-publish.test.ts · HIGH -->
+- test(kk): cover the cancellable stage seam and the narrative validator (0c526ced)
+<!-- src: apps/cli/tests/stage.test.ts · HIGH -->
+- docs(features): home the kk-smart-seo workflow under G9 (c5215f99)
+- chore: merge the 0285 Smart SEO workflow batch into main (29cd2030)
+- test(kk): verify the confidence level on the auto disposition path (edcf1d93)
+<!-- src: plugins/kk/tests/verdict-confidence.test.ts · HIGH -->
+- docs(tasks): record the 0298-0303 pipeline verify verdicts (2f57ef38)
+- docs(tasks): updat tasks after verification (d641b2db)
+- docs: the indexed-context files are tracked, only the ledger is ignored (c9128d7a)
+<!-- src: .gitignore:147 · HIGH -->
+- chore(rules): retire the asserted-confidence rules and move seo test scratch to tmpdir (f4575741)
+<!-- src: plugins/kk/tests/smart-seo-collect.test.ts:512 · MEDIUM -->
+- chore: merge main into the G21 kk-itc batch branch (ad285f11)
+- style(kk-itc): drop the unused ITC workflow constant (264d9470)
+<!-- src: plugins/kk/tests/verdict-confidence.test.ts · MEDIUM -->
+- chore: merge the G9 smart-seo batch (tasks 0281-0284) into main (36f20d93)
+- chore: merge main into the G21 kk-itc batch branch (329cb3a0)
+- refactor(kk-itc): route ITC stages through the FileSystem and output seams (34454e80)
+<!-- src: apps/cli/src/itc-stage.ts:4 · HIGH -->
+- chore: merge main (G21 kk-itc, voxcpm voice line) into the runall 0288-0297 batch branch (d7a6cfc8)
+- docs(voxcpm): note that a per-request instruct is ignored on anchored profiles (980bc2c5)
+<!-- src: plugins/generations/voxcpm-tts/README.md:88 · HIGH -->
+- docs: record the clone's speaking rate against the instruct draws (fdc038a8)
+- docs: record voxcpm speaker anchoring and the operator voice registries (0660d781)
+- chore(voice): stop committing the operator voice clip (50bb37b6)
+<!-- src: plugins/generations/omni-voice-gen/profiles.json:3 · MEDIUM -->
+- docs(context): record the voxcpm driver-switch gates, rate calibration and daily-script cache pitfalls (617aaa33)
+- docs: record voxcpm as the standing kk-daily-ai-voice2 default and its tiered voice chain (d5aefcdb)
+<!-- src: plugins/kk/workflows/kk-daily-ai-voice2.yaml:28 · HIGH -->
+- style(cli): narrow the voice-tier node lookup and assert the driver var without template syntax (bf6d2ece)
+<!-- src: apps/cli/tests/voice2-dag.test.ts:1003 · HIGH -->
+- docs: refine G21 kk-itc tasks to ready depth (abc34a1c)
+- docs: accept ADR-040 and plan the G21 kk-itc refactor (fafc1ed3)
+- docs: add 2026-10-15 history-anatomy daily report (e04d1865)
+- docs(spur): record agy sandbox and staged-write pitfalls (722aa627)
+- test(kk-core): add thread-segmentation coverage and TSDoc for base-red gate (e9b16a05)
+<!-- src: packages/kk-core/tests/thread-segmentation.test.ts · HIGH -->
+- docs: file the G9 0284 enrichment task (0f234f2d)
+- chore: enable spur bootstrap sections (68970248)
+<!-- src: .spur/config.yaml:24 · HIGH -->
+- docs: accept ADR-039 and plan the G9 smart-seo audit feature (5628c6c8)
+- docs: record yijianfa review and derive publisher features and tasks (dfe92ac5)
+- refactor: consolidate board module styles into one shared board.css (7150f4dc)
+<!-- src: apps/board/src/shared/board.css · HIGH -->
+
+<!--
+Verification (2026-10-16, sp-dev-changelog): HIGH
+- Coverage: 102 bullets = 102 commits in the exact range @gobing-ai/knowledge-kit-v0.0.37..3c2b829b
+  (`git rev-list --count @gobing-ai/knowledge-kit-v0.0.37..3c2b829b` -> 102), each short hash exactly
+  once. The tip is pinned to 3c2b829b, the HEAD at generation time, so the count stays checkable after
+  this entry lands (HEAD is deliberately not the range end). `g8-0255-parked` and `runall-f41-merged`
+  are not ancestors of HEAD, so `git describe --tags --abbrev=0` resolved the range start to
+  @gobing-ai/knowledge-kit-v0.0.37.
+- Mapping: feat->Added 27, fix->Fixed 29, docs 25 + chore 10 + test 7 + style 2 + refactor 2 ->Changed 46
+  (27+29+46 = 102). The header carries the operator-supplied `--version 0.1.0`; no tag and no release
+  exist for it (`git tag -l "*0.1.0*"` -> empty) and apps/cli/package.json:2 still reads 0.0.37, so this
+  section names a planned version, not a published artifact.
+- Claim annotations: 76 of the 102 bullets assert something about code, a workflow, a config or a
+  checked-in artifact and carry exactly one `src:` annotation comment holding one anchor and one level
+  (73 HIGH, 3 MEDIUM). The other 26 are bookkeeping — task/feature status records, plan and report
+  filings, context entries and merge commits — and carry none. Every anchor was re-read in the merged
+  tree at 3c2b829b rather than copied from a commit's hunk header, and drifted anchors were corrected at
+  read time (e.g. plugins/kk/scripts/seo-decisions.ts:332, apps/cli/src/itc-topic.ts:107,
+  plugins/kk/scripts/daily-stages.ts:2029).
+- The three MEDIUM bullets name the evidence their anchor does not cover:
+  - f4575741 (retire the asserted-confidence rules): `.spur/rules/structure/verdict-confidence-proof.*`
+    and `verdict-artifact-confidence-level.*` are deleted from the tree, so the cited test line covers
+    only the tmpdir half of the subject.
+  - 50bb37b6 (stop committing the operator voice clip): the untracked clip is a git fact (`git ls-files
+    plugins/generations/omni-voice-gen/voices` -> empty, and `.gitignore` carries the guard), while the
+    cited line is the profile that reads its instruct instead.
+  - 264d9470 (drop the unused ITC workflow constant): the deletion exists only in that commit's diff, so
+    the anchor names the containing test file.
+- Source citations for API/library claims — every bullet asserting what an external system does, checked
+  against the primary source rather than the commit that quotes it:
+  - 512463f3 and 5bcc77cf carry Google's FAQ rich-result retirement date
+    (plugins/kk/scripts/seo-rules.ts:487 and :484). https://developers.google.com/search/updates states
+    "The FAQ rich result feature is no longer shown in Google Search results" and the May 7, 2026 removal
+    date both lines carry.
+  - d5d7e02c, bc063f86, 5acbe5e9, 2b561566 and 980bc2c5 rest on VoxCPM's speaker model.
+    https://voxcpm.readthedocs.io/en/latest/usage_guide.html states "If you do not provide a reference
+    audio, VoxCPM generates a random voice each time" and "the timbre will not stay consistent across
+    calls", "Use `reference_wav_path` in Voice Cloning mode for a stable timbre", and "When Hi-Fi mode is
+    enabled, the control instruction is ignored" — the mechanism those commits guard against. The
+    within-episode spread that motivated them (2026-10-15, F0 swing) stays this repo's own measurement,
+    recorded at plugins/kk/scripts/daily-stages.ts:470 and plugins/generations/voxcpm-tts/README.md:88.
+  - Named, not confirmed: e49b2c9a's headless-agy sandbox denial and 2faeb3f2's acceptance of the new
+    instruct string have no upstream source; both bullets are graded on the fix they name (a cited
+    workflow line and a cited profile line), not on the third-party behaviour a commit comment asserts.
+  - Every other annotated bullet asserts what this repo's own code, workflow, config or checked-in
+    artifact does, so its path or path:line citation is the source of record and no external one is owed.
+- Confidence: HIGH — coverage and mapping reconcile against `git log` for the range, `git show --stat`
+  confirms every cited file exists at the cited path, each path:line anchor was re-read in the tree
+  (plugins/kk/scripts/seo-rules.ts:487, packages/kk-core/src/content-limits.ts, .spur/config.yaml:24), and
+  each externally changeable claim is quoted above from its primary source.
+  Deliberately NOT claimed: this entry verifies provenance — range, mapping, citations, the level — not
+  the truth of
+  each commit message's own description beyond the cited line, and no bullet's runtime behaviour was
+  exercised; both rules that own these two checks were run by hand over this file —
+  `.spur/rules/structure/verification-confidence-level.sh CHANGELOG.md` -> exit 0 (this block carries
+  exactly one level line, and it cites) and `.spur/rules/structure/api-library-claim-citation.sh
+  CHANGELOG.md` -> exit 0 (that rule judges `API/library claim sources and confidence` tables, of which
+  this file has none, so the citation evidence it would require lives in the per-bullet src comments and
+  the URLs above instead); they are the only gates this section is checked against.
+-->
+
 ## [0.0.36] - 2026-10-14
 
 ### Added
