@@ -105,7 +105,10 @@ function childEnv(): Record<string, string> {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
         if (value === undefined) continue;
-        if (/^(HOME|PATH|KK_SPUR_BIN|SPUR_BIN)$/.test(key)) continue;
+        // The active-run markers leak in when this suite runs under an outer `spur workflow run`
+        // (feature verification); the nested run would refuse to start.
+        if (/^(HOME|PATH|KK_SPUR_BIN|SPUR_BIN|SPUR_WORKFLOW_RUN_ACTIVE|SPUR_EXPECTED_DEFINITION_DIGEST)$/.test(key))
+            continue;
         if (/API_KEY$|_TOKEN$|^CLOUDFLARE_/.test(key)) continue;
         env[key] = value;
     }
