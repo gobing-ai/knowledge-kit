@@ -393,3 +393,384 @@ describe('Stage Execution: seo-judge (R1, R2 / AC1, AC2)', () => {
         expect(existsSync(join(visDir, 'judgments.json'))).toBe(true);
     });
 });
+
+/**
+ * The four SEO catalogs declare exactly `subject_id` and `locale` (plus `candidates` on
+ * kk-seo-keyword-page), and spur rejects an undeclared `--param` before any maker runs. Forwarding
+ * a non-parameter (the page URL travelled as `url`) therefore degraded every page and pair judgment
+ * to `source: fallback` while the stage still reported success. The shim below enforces spur's
+ * contract so that class of caller mistake fails here instead of in a real audit.
+ */
+describe('seo-judge parameter contract (R1 / AC1)', () => {
+    const testDir = mkdtempSync(join(tmpdir(), 'kk-seo-params-'));
+    const workDir = join(testDir, 'workdir');
+    const shimDir = join(testDir, 'bin');
+    const shimPath = join(shimDir, 'spur');
+    const fixtureCrawl = resolve('plugins/kk/tests/fixtures/smart-seo-minimal-crawl.json');
+
+    beforeAll(() => {
+        mkdirSync(workDir, { recursive: true });
+        mkdirSync(shimDir, { recursive: true });
+        // argv: decision run <id> --param k=v … --evidence f --json
+        writeFileSync(
+            shimPath,
+            [
+                '#!/bin/sh',
+                'id="$3"',
+                'shift 3',
+                'while [ "$#" -gt 0 ]; do',
+                '  case "$1" in',
+                '    --param)',
+                '      case "$2" in',
+                '        subject_id=*|locale=*) ;;',
+                '        candidates=*) [ "$id" = "kk-seo-keyword-page" ] || { echo "unknown --param (shim mirror of spur)" >&2; exit 1; } ;;',
+                '        *) echo "unknown --param (shim mirror of spur)" >&2; exit 1 ;;',
+                '      esac',
+                '      shift 2 ;;',
+                '    --evidence) shift 2 ;;',
+                '    *) shift ;;',
+                '  esac',
+                'done',
+                'echo \'{"type":"score","value":2,"confidence":0.9,"source":"model","maker":"shim-model"}\'',
+                '',
+            ].join('\n'),
+            { mode: 0o755 },
+        );
+
+        const crawl = JSON.parse(readFileSync(fixtureCrawl, 'utf-8'));
+        const homepage = crawl.pages[0];
+        const options = {
+            url: 'https://example.com/',
+            locale: 'en-US',
+            business_context: 'B2B developer tools',
+            semantic_pages: 5,
+            max_pairs: 5,
+        };
+        writeFileSync(join(workDir, 'options.json'), JSON.stringify(options));
+        writeFileSync(
+            join(workDir, 'manifest.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                methodVersion: '1.0.0',
+                runId: 'params-run-1',
+                createdAt: new Date().toISOString(),
+                inputDigest: 'abc',
+                stage: 'collect',
+                options,
+            }),
+        );
+        // Two pages so the page loop AND the pair loop both dispatch real children.
+        writeFileSync(
+            join(workDir, 'crawl.json'),
+            JSON.stringify({
+                ...crawl,
+                pages: [homepage, { ...homepage, subjectId: 'page-002', url: 'https://example.com/about' }],
+            }),
+        );
+    });
+
+    afterAll(() => {
+        try {
+            rmSync(testDir, { recursive: true, force: true });
+        } catch {
+            // ignore
+        }
+    });
+
+    it('dispatches page and pair judgments with declared parameters only, so none falls back', async () => {
+        const result = await executeSeoJudgeStage(workDir, { spurBin: shimPath });
+
+        // Guard: the shim really served the calls (a spawn failure would also yield fallbacks).
+        expect(result.summary.totalCalls).toBeGreaterThan(10);
+        expect(result.entries.some((e) => e.id === 'kk-seo-intent-overlap')).toBe(true);
+
+        const rejected = result.entries.filter((e) => e.reason.includes('unknown --param'));
+        expect(rejected.map((e) => `${e.id}: ${e.reason}`)).toEqual([]);
+        // `deterministic` is the homepage page-type entry; everything else is a served model answer.
+        for (const entry of result.entries) {
+            expect(entry.source, `${entry.id} (${entry.subjectUrl})`).not.toBe('fallback');
+        }
+        expect(result.entries.filter((e) => e.source === 'model').length).toBeGreaterThan(10);
+    });
+});
+
+/** Recorded confidence-level check outcomes, aggregated into `.spur/run/seo-confidence/summary.json`. */
+const confidenceChecks: { id: string; ok: boolean; detail: string }[] = [];
+const recordConfidenceCheck = (id: string, ok: boolean, detail = ''): boolean => {
+    confidenceChecks.push({ id, ok, detail });
+    return ok;
+};
+
+/**
+ * Confidence-level verification (20261016). Spur serves `confidenceLevel` on every `decision run`
+ * (`HIGH` >= 0.8, `MEDIUM` >= 0.5, else `LOW`; a null, non-numeric or out-of-range confidence is
+ * `LOW`). KK stores the raw number, so this block re-derives the level from the artifact the
+ * operator reads and verifies the boundaries, the provenance rule (only a model answer or the
+ * rule-derived homepage entry may be confident) and that a rejected input is a LOW-confidence
+ * fallback naming the input error, never an under-confident judgment.
+ */
+describe('Confidence level (HIGH/MEDIUM/LOW) verification (R2 / AC2)', () => {
+    /** Spur's banding, re-derived at the KK boundary (`HIGH` >= 0.8, `MEDIUM` >= 0.5, else LOW). */
+    const HIGH_AT = 0.8;
+    const MEDIUM_AT = 0.5;
+    type Level = 'HIGH' | 'MEDIUM' | 'LOW';
+    const levelOf = (confidence: number | null): Level => {
+        if (confidence === null || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) return 'LOW';
+        if (confidence >= HIGH_AT) return 'HIGH';
+        return confidence >= MEDIUM_AT ? 'MEDIUM' : 'LOW';
+    };
+    const served = (confidence: unknown): Record<string, unknown> => ({
+        type: 'score',
+        value: 2,
+        confidence,
+        source: 'model',
+        maker: 'shim-model',
+        reason: 'accepted',
+    });
+    const validated = (confidence: unknown) =>
+        validateAndNormalizeDecisionResult('kk-seo-importance', 'p1', 'https://example.com/p1', served(confidence));
+
+    const testDir = mkdtempSync(join(tmpdir(), 'kk-seo-confidence-'));
+    const workDir = join(testDir, 'workdir');
+
+    beforeAll(() => {
+        mkdirSync(workDir, { recursive: true });
+        const options = {
+            url: 'https://example.com/',
+            locale: 'en-US',
+            business_context: '',
+            semantic_pages: 5,
+            max_decision_calls: 40,
+        };
+        writeFileSync(join(workDir, 'options.json'), JSON.stringify(options));
+        writeFileSync(
+            join(workDir, 'manifest.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                methodVersion: '1.0.0',
+                runId: 'confidence-run-1',
+                createdAt: new Date().toISOString(),
+                inputDigest: 'abc',
+                stage: 'collect',
+                options,
+            }),
+        );
+        writeFileSync(
+            join(workDir, 'crawl.json'),
+            readFileSync(resolve('plugins/kk/tests/fixtures/smart-seo-minimal-crawl.json'), 'utf-8'),
+        );
+    });
+
+    afterAll(() => {
+        try {
+            rmSync(testDir, { recursive: true, force: true });
+        } catch {
+            // ignore
+        }
+    });
+
+    it('bands a served confidence at the 0.8 / 0.5 boundaries', () => {
+        const rows: [number, Level][] = [
+            [1, 'HIGH'],
+            [0.95, 'HIGH'],
+            [0.8, 'HIGH'],
+            [0.7999, 'MEDIUM'],
+            [0.7, 'MEDIUM'],
+            [0.5, 'MEDIUM'],
+            [0.4999, 'LOW'],
+            [0.2, 'LOW'],
+            [0, 'LOW'],
+        ];
+        for (const [confidence, expected] of rows) {
+            const entry = validated(confidence);
+            expect(entry.confidence, `confidence ${confidence}`).toBe(confidence);
+            expect(levelOf(entry.confidence), `confidence ${confidence}`).toBe(expected);
+            // KK's sufficiency gate for choice/score is exactly the HIGH band (design §7).
+            expect(entry.qualified, `confidence ${confidence}`).toBe(expected === 'HIGH');
+        }
+        expect(recordConfidenceCheck('band-boundaries', true, `${rows.length} confidences banded at 0.8 / 0.5`)).toBe(
+            true,
+        );
+    });
+
+    it('never bands a missing or out-of-range confidence as confident', () => {
+        for (const confidence of [undefined, null, Number.NaN, 'high']) {
+            const entry = validated(confidence);
+            expect(entry.confidence).toBeNull();
+            expect(levelOf(entry.confidence)).toBe('LOW');
+            expect(entry.qualified).toBe(false);
+        }
+        // Documented validation is "confidence null or finite 0–1" (design §7): a number outside the
+        // range is neither a level nor sufficient confidence, whatever the raw payload carried.
+        for (const confidence of [1.5, -0.1]) {
+            const entry = validated(confidence);
+            expect(levelOf(entry.confidence), `confidence ${confidence}`).toBe('LOW');
+            expect(entry.qualified, `confidence ${confidence}`).toBe(false);
+        }
+        expect(
+            recordConfidenceCheck('unusable-confidence-is-low', true, 'absent, non-numeric and out-of-range inputs'),
+        ).toBe(true);
+    });
+
+    it('keeps every judgments.json entry at an honest level, with LOW for every fallback', async () => {
+        const stub: DecisionStubHandler = (id) => {
+            if (id === 'kk-seo-business-model') {
+                return { type: 'choice', value: 'software', confidence: 0.9, source: 'model', maker: 'm', reason: 'a' };
+            }
+            if (id === 'kk-seo-value-proposition') {
+                return { type: 'score', value: 2, confidence: 0.6, source: 'model', maker: 'm', reason: 'a' };
+            }
+            if (id === 'kk-seo-entity-clarity') {
+                return { type: 'noul', value: true, probability: 0.9, source: 'model', maker: 'm', reason: 'a' };
+            }
+            if (id === 'kk-seo-topical-focus') {
+                return { type: 'score', value: 2, confidence: 1.5, source: 'model', maker: 'm', reason: 'a' };
+            }
+            if (id === 'kk-seo-local-intent') {
+                return { type: 'noul', value: false, probability: 0.5, confidence: 0.55, source: 'model', maker: 'm' };
+            }
+            throw new Error('backend unavailable');
+        };
+        const result = await executeSeoJudgeStage(workDir, { stub });
+        const byId = (id: string) => result.entries.find((e) => e.id === id);
+
+        expect(levelOf(byId('kk-seo-business-model')?.confidence ?? null)).toBe('HIGH');
+        expect(byId('kk-seo-business-model')?.qualified).toBe(true);
+        expect(levelOf(byId('kk-seo-value-proposition')?.confidence ?? null)).toBe('MEDIUM');
+        expect(byId('kk-seo-value-proposition')?.qualified).toBe(false);
+        expect(levelOf(byId('kk-seo-local-intent')?.confidence ?? null)).toBe('MEDIUM');
+        expect(byId('kk-seo-local-intent')?.qualified).toBe(false);
+        // Out of the documented 0–1 range: spur bands it LOW, so KK must not read it as sufficient.
+        expect(levelOf(byId('kk-seo-topical-focus')?.confidence ?? null)).toBe('LOW');
+        expect(byId('kk-seo-topical-focus')?.qualified).toBe(false);
+        // A noul answer is judged by its served probability, so it can be qualified while the raw
+        // confidence stays null (design §7): the level is LOW and the provenance carries the meaning.
+        expect(byId('kk-seo-entity-clarity')?.confidence).toBeNull();
+        expect(levelOf(byId('kk-seo-entity-clarity')?.confidence ?? null)).toBe('LOW');
+        expect(byId('kk-seo-entity-clarity')?.qualified).toBe(true);
+
+        for (const entry of result.entries) {
+            const level = levelOf(entry.confidence);
+            if (entry.source === 'fallback' || entry.source === 'default') {
+                expect(level, entry.id).toBe('LOW');
+                expect(entry.confidence, entry.id).toBeNull();
+                expect(entry.qualified, entry.id).toBe(false);
+                expect(entry.reason, entry.id).toContain('backend unavailable');
+            }
+            // Only the rule-derived homepage entry may be confident without a model answer, and it
+            // names that provenance rather than passing as HIGH-confidence model judgment.
+            if (entry.qualified && entry.source !== 'model') {
+                expect(entry.source, entry.id).toBe('deterministic');
+            }
+            if (entry.source === 'model' && (entry.type === 'choice' || entry.type === 'score')) {
+                expect(entry.qualified, entry.id).toBe(level === 'HIGH');
+            }
+        }
+        // The tallies the operator reads agree with the per-entry levels.
+        expect(result.summary.qualifiedCalls).toBe(
+            result.entries.filter((e) => e.qualified && e.source !== 'deterministic').length,
+        );
+        expect(result.summary.fallbackCalls).toBe(
+            result.entries.filter((e) => e.source === 'fallback' || e.source === 'default').length,
+        );
+        expect(
+            recordConfidenceCheck(
+                'artifact-levels',
+                true,
+                `${result.entries.length} entries; ${result.summary.qualifiedCalls} sufficient-confidence, ${result.summary.fallbackCalls} fallback`,
+            ),
+        ).toBe(true);
+    });
+
+    it('reports a rejected input as a LOW-confidence fallback that names the input error', () => {
+        // Real children: both argv problems are rejected before any maker runs.
+        const missingLocale = executeDecisionRun('kk-seo-page-type', { subject_id: 'x' }, [], { timeoutMs: 20000 });
+        const undeclared = executeDecisionRun(
+            'kk-seo-page-type',
+            { subject_id: 'x', locale: 'en-US', url: 'https://example.com/x' },
+            [],
+            { timeoutMs: 20000 },
+        );
+
+        for (const entry of [missingLocale, undeclared]) {
+            expect(entry.source).toBe('fallback');
+            expect(entry.confidence).toBeNull();
+            expect(levelOf(entry.confidence)).toBe('LOW');
+            expect(entry.qualified).toBe(false);
+            expect(entry.reason).toMatch(/parameter|--param/);
+        }
+        // LOW-for-rejected is tellable from LOW-for-weak-answer by source plus the named input error.
+        expect(missingLocale.reason).toContain('locale');
+        expect(undeclared.reason).toContain('url');
+        expect(
+            recordConfidenceCheck('rejected-input-is-not-a-judgment', true, 'missing `locale` and undeclared `url`'),
+        ).toBe(true);
+    });
+
+    it('derives the same level spur serves for the same payload', () => {
+        const proc = Bun.spawnSync(
+            [
+                'spur',
+                'decision',
+                'run',
+                'kk-seo-heading-fit',
+                '--param',
+                'subject_id=https://example.com',
+                '--param',
+                'locale=en-US',
+                '--maker',
+                'typesafe',
+                '--json',
+            ],
+            { stdout: 'pipe', stderr: 'pipe' },
+        );
+        expect(proc.exitCode).toBe(0);
+        const payload = JSON.parse(proc.stdout.toString()) as {
+            confidence: number | null;
+            confidenceLevel: Level;
+        };
+        expect(['HIGH', 'MEDIUM', 'LOW']).toContain(payload.confidenceLevel);
+        const entry = validateAndNormalizeDecisionResult(
+            'kk-seo-heading-fit',
+            'https://example.com',
+            'https://example.com',
+            payload as unknown as Record<string, unknown>,
+        );
+        // KK stores the served number verbatim, so the level the decision log shows and the level
+        // the judgment artifact implies cannot drift apart at the band boundary.
+        expect(entry.confidence).toBe(payload.confidence);
+        expect(levelOf(entry.confidence)).toBe(payload.confidenceLevel);
+        expect(
+            recordConfidenceCheck(
+                'spur-level-agreement',
+                true,
+                `served confidence ${payload.confidence} -> ${payload.confidenceLevel}`,
+            ),
+        ).toBe(true);
+    });
+});
+
+describe('seo-confidence artifact', () => {
+    it('writes a repeatable summary of every confidence-level check', () => {
+        const failed = confidenceChecks.filter((check) => !check.ok).map((check) => check.id);
+        const dir = resolve('.spur/run/seo-confidence');
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        writeFileSync(
+            join(dir, 'summary.json'),
+            `${JSON.stringify(
+                {
+                    generatedAt: new Date().toISOString(),
+                    contract:
+                        'a seo-judge confidence bands HIGH >= 0.8 / MEDIUM >= 0.5 / else LOW, and only a model answer or the rule-derived homepage entry may be sufficient confidence',
+                    thresholds: { high: 0.8, medium: 0.5 },
+                    ok: failed.length === 0,
+                    failed,
+                    checks: confidenceChecks,
+                },
+                null,
+                2,
+            )}\n`,
+        );
+        expect(failed).toEqual([]);
+    });
+});

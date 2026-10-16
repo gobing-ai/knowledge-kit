@@ -52,6 +52,13 @@ no catalogs. Do not run an audit that silently writes user-global configuration;
 is a one-time operator setup, and it is repeated only when an upgrade changes the resolved
 package root.
 
+Every decision in those catalogs declares exactly two parameters — `subject_id` and `locale`
+(plus `candidates` on `kk-seo-keyword-page`). Spur treats a declared parameter with no default as
+required and rejects an undeclared one, so a direct probe like `spur decision run
+kk-seo-page-type --param subject_id=…` is an input rejection before any maker runs, not a
+judgment. Pass both parameters, and never invent a third (`url`, for example, is carried inside
+the compact evidence packets, not as a parameter).
+
 **The catalogs' declared schema must resolve from where they live.** Each shipped SEO catalog
 declares `$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"`, and Spur resolves that
 schema through the module tree above the catalog's own directory. A global install satisfies this

@@ -91,17 +91,22 @@ export function buildCompactEvidencePacket(
 
 /**
  * Execute spur decision run via child process with strict bounds.
+ *
+ * `options.subjectUrl` is ledger display metadata, never a decision parameter: every SEO catalog
+ * declares `subject_id`/`locale` (plus `candidates` on kk-seo-keyword-page), and spur rejects an
+ * undeclared `--param` before any maker runs — so forwarding a display value in `params` would turn
+ * the whole judgment into a silent fallback.
  */
 export function executeDecisionRun(
     decisionId: string,
     params: Record<string, string>,
     evidencePaths: string[],
-    options: { spurBin?: string; timeoutMs?: number; stub?: DecisionStubHandler } = {},
+    options: { spurBin?: string; timeoutMs?: number; stub?: DecisionStubHandler; subjectUrl?: string } = {},
 ): JudgmentEntry {
     const spurBin = options.spurBin || 'spur';
     const timeoutMs = options.timeoutMs ?? 30000;
     const subjectId = params.subject_id || '';
-    const subjectUrl = params.url || subjectId;
+    const subjectUrl = options.subjectUrl || subjectId;
 
     if (options.stub) {
         try {
@@ -206,7 +211,16 @@ export function validateAndNormalizeDecisionResult(
 ): JudgmentEntry {
     const type = (typeof raw.type === 'string' ? raw.type : 'choice') as 'choice' | 'score' | 'noul';
     const val = raw.value !== undefined ? raw.value : raw.choice !== undefined ? raw.choice : raw.noul;
-    const confidence = typeof raw.confidence === 'number' && Number.isFinite(raw.confidence) ? raw.confidence : null;
+    // Documented validation is "null or finite 0–1" (design §7): an out-of-range number is not a
+    // confidence. Preserving it would let a bad maker payload pass the >= 0.8 sufficiency gate while
+    // spur bands the same value LOW.
+    const confidence =
+        typeof raw.confidence === 'number' &&
+        Number.isFinite(raw.confidence) &&
+        raw.confidence >= 0 &&
+        raw.confidence <= 1
+            ? raw.confidence
+            : null;
     const maker = typeof raw.maker === 'string' && raw.maker.trim() !== '' ? raw.maker : 'unknown';
     const source = typeof raw.source === 'string' && raw.source.trim() !== '' ? raw.source : 'default';
     const reason = typeof raw.reason === 'string' ? raw.reason : '';
@@ -361,9 +375,9 @@ export async function executeSeoJudgeStage(
             callCount += 1;
             const entry = executeDecisionRun(
                 dId,
-                { subject_id: page.url, locale: opts.locale, url: page.url },
+                { subject_id: page.url, locale: opts.locale },
                 [pFactsFile, pExcerptFile, siteContextFile],
-                options,
+                { ...options, subjectUrl: page.url },
             );
             entries.push(entry);
         }
@@ -394,9 +408,9 @@ export async function executeSeoJudgeStage(
         callCount += 1;
         const entry = executeDecisionRun(
             'kk-seo-intent-overlap',
-            { subject_id: pairId, locale: opts.locale, url: `${pA.url} :: ${pB.url}` },
+            { subject_id: pairId, locale: opts.locale },
             [pairEvFile],
-            options,
+            { ...options, subjectUrl: `${pA.url} :: ${pB.url}` },
         );
         entries.push(entry);
     }

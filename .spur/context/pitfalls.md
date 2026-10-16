@@ -192,3 +192,23 @@
   voice identity never fails loudly: the render succeeds, QC passes (loudness only), the duration
   gate passes, and every publish reports success — the defect is only audible. Any change to a voice
   profile's `mode` or registry must be followed by the F0-spread audit before the episode ships.
+
+## 2026-10-16 — seo-judge decision-parameter contract
+- **An undeclared `--param` is an input rejection, and the judge stage logged it as a fallback.** Spur's
+  catalog loader makes every declared parameter without a `default` required (`normalizeParam`:
+  `required: !hasDefault`) and refuses unknown names before any maker runs. The four SEO catalogs declare only
+  `subject_id` + `locale` (+ `candidates` on `kk-seo-keyword-page`), but `seo-decisions.ts` forwarded the page
+  URL as a fourth `url` parameter on every page-level and pair-level call — so all 13 page judgments per page and
+  every pair judgment degraded to `source: fallback` while the stage still exited 0. Only `decision_logs`
+  (`unknown --param "url"`, outcome `rejected`) showed it; `judgments.json` did not. Display metadata now travels
+  in `options.subjectUrl`, and `plugins/kk/tests/smart-seo-decisions.test.ts` pins the contract with a shim that
+  enforces spur's allow-list. Whenever a decision gains a field, diff every `--param` call site against the
+  catalog's `parameters:` block.
+- **KK's sufficiency gate must agree with spur's own level banding.** Spur serves `confidenceLevel` as
+  HIGH >= 0.8 / MEDIUM >= 0.5 / else LOW, and bands a null, non-finite OR out-of-range confidence as LOW.
+  `validateAndNormalizeDecisionResult` only checked `Number.isFinite`, so a maker payload of `confidence: 1.5`
+  passed the `>= 0.8` gate and entered the "sufficient confidence" aggregate as a HIGH-band judgment while spur
+  called the same value LOW. Verification (and the fix: out-of-range becomes null, per design §7 "null or finite
+  0–1") lives in `plugins/kk/tests/smart-seo-decisions.test.ts` → `Confidence level (HIGH/MEDIUM/LOW)
+  verification`, repeatable artifact at `.spur/run/seo-confidence/summary.json`. Re-check any new level/threshold
+  rule against spur's `confidenceLevel()` rather than restating the constant.
