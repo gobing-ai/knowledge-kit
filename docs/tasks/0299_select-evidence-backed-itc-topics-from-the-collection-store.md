@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Select evidence-backed ITC topics from the collection store
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.902Z
-updated_at: "2026-10-15T22:49:29.221Z"
+updated_at: "2026-10-16T00:23:57.349Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -15,6 +15,8 @@ tags:
 estimate_hours: 8
 
 dependencies: ["0298"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0299-verdict.json
 ---
 
 ## 0299. Select evidence-backed ITC topics from the collection store
@@ -43,8 +45,8 @@ Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-k
 
 ### Requirements
 
-- [ ] R1. Collected evidence can supply a selected topic; ranked candidates cite item IDs and source URLs and the selected candidate becomes the brief with a topic-scoped selection record.
-- [ ] R2. Empty or unavailable collections stop topic selection safely; it reports no usable topic and writes no draft or publication and releases any selection owned by this run.
+- [x] R1. Collected evidence can supply a selected topic; ranked candidates cite item IDs and source URLs and the selected candidate becomes the brief with a topic-scoped selection record.
+- [x] R2. Empty or unavailable collections stop topic selection safely; it reports no usable topic and writes no draft or publication and releases any selection owned by this run.
 
 ### Acceptance Criteria
 
@@ -104,15 +106,36 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `apps/cli/src/itc-topic.ts:95`: implemented `itcTopicExtract` with store profile compilation, 24h window, and `topic-pool.json` plus `topic-pool-manifest.json` generation with SHA-256 `poolDigest`.
+- `apps/cli/src/itc-topic.ts:189`: implemented `itcTopicValidate` with parentRunId, poolDigest, candidate count, item ID membership in pool, and sourceUrls matching doc sourceUri.
+- `apps/cli/src/itc-topic.ts:284`: implemented `itcTopicSelect` to extract the chosen candidate subset to `selected-docs.json`, write `chosen-source.json`, and record topic-scoped selection rows in SQLite.
+- `apps/cli/src/itc-topic.ts:373`: implemented `itcSelectionSettle` with published promotion, uncertain reconciliation retention, and author_only/draft_only/failed selection release.
+- `apps/cli/src/itc-stage.ts:25`: wired `itc-topic-extract`, `itc-topic-validate`, `itc-topic-select`, and `itc-selection-settle` stages to `runItcTopicStage`.
+- `apps/cli/tests/itc-topic.test.ts:95`: verified `itcTopicExtract` against seeded store and verified empty pool and failed collection refresh handling.
+- `apps/cli/tests/itc-topic.test.ts:190`: verified `itcTopicValidate` candidate slot validation.
+- `apps/cli/tests/itc-topic.test.ts:343`: verified `itcTopicSelect` subset extraction and store settlement.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun test apps/cli/tests/itc-topic.test.ts`: 10 pass, 0 fail.
+- `bun test apps/cli/tests/itc-plan.test.ts`: 11 pass, 0 fail.
+- `bun test apps/cli/tests/itc-stages.test.ts`: 36 pass, 0 fail.
+- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
+- `bun run build`: all packages and bundles built successfully.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0299
+**Scope:** Select evidence-backed ITC topics from the collection store
+**Dimensions:** functional traceability, correctness, security, efficiency, usability, architecture
+**Verdict:** PASS
+**Confidence:** HIGH
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P3 (advisory) | architecture | Evidence-backed topic intake routes store extraction, validation, subset selection, and settlement cleanly through native ITC stages without second ingestion engine. | `apps/cli/src/itc-topic.ts:95` | RESOLVED |
 
 ### References
 
@@ -121,3 +144,8 @@ Execution budget: existing estimate 8h; one task pipeline with bounded repairs. 
 - Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History
+
+- 2026-10-16T00:08:47.994Z todo → wip (system)
+- 2026-10-16T00:23:56.929Z wip → testing (system)
+- 2026-10-16T00:23:57.342Z testing → done (system)
+

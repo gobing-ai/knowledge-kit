@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
 import { buildItcPublishPlan, type ItcPlanRequest, ItcPlanRequestSchema } from './itc-plan';
+import { runItcTopicStage } from './itc-topic';
 
 /**
  * Handle native ITC workflow stages asynchronously.
@@ -13,6 +14,15 @@ export async function runItcStage(args: string[]): Promise<number | undefined> {
 
     if (stageName === 'itc-publish-plan') {
         return runItcPublishPlan(args.slice(1));
+    }
+
+    if (
+        stageName === 'itc-topic-extract' ||
+        stageName === 'itc-topic-validate' ||
+        stageName === 'itc-topic-select' ||
+        stageName === 'itc-selection-settle'
+    ) {
+        return runItcTopicStage(stageName, args.slice(1));
     }
 
     return undefined;
