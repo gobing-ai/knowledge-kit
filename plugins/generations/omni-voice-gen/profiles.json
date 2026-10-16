@@ -1,7 +1,6 @@
 {
     "robin-news": {
-        "ref_audio": "voices/robin-news.wav",
-        "ref_text": "本届赛事由北京市人民政府、中央广播电视总台、世界机器人合作组织、亚太机器人世界杯国际理事会联合主办。来自六大洲 16 个国家的 666 支队伍、2056 台机器人参赛，队伍数量较首届增长 138%，机器人"
+        "instruct": "clear, natural, calm Chinese news broadcast, moderate pace"
     },
     "sample-clone": {
         "ref_audio": "voices/sample-ref.wav",

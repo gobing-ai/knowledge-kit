@@ -30,9 +30,10 @@ history entry (`GET /history` 500s on the current build). Default origin: `http:
 
 Write that body to a scratch file, for example `$T/consent.wav`.
 
-The source clip is already in the repo and already 24 kHz mono 16-bit PCM, about 28 s:
+The source clip is operator-private (voice assets never live in git, task 0159) and already 24 kHz
+mono 16-bit PCM, about 28 s:
 
-`plugins/generations/omni-voice-gen/voices/robin-news.wav`
+`~/.config/kk/voices/robin-news.wav`
 
 ## Convert a clip that is not already 24 kHz mono s16
 
@@ -56,7 +57,7 @@ then be synthesized with either TTS model.
 T=$(mktemp -d)
 # fetch the consent sample into "$T/consent.wav" (see above)
 GEMINI_API_KEY="$GEMINI_API_KEY" bun plugins/generations/gemini-tts/src/voice-create.ts \
-  --source plugins/generations/omni-voice-gen/voices/robin-news.wav \
+  --source ~/.config/kk/voices/robin-news.wav \
   --consent "$T/consent.wav" \
   --name robin-news
 rm -rf "$T"
