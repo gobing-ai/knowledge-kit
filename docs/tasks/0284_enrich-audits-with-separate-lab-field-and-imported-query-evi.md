@@ -4,7 +4,7 @@ name: Enrich audits with separate lab field and imported query evidence
 status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.287Z
-updated_at: "2026-10-16T03:43:57.203Z"
+updated_at: "2026-10-16T18:43:12.146Z"
 feature_id: G9
 priority: P2
 tags:
@@ -123,11 +123,11 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/scripts/seo-enrich.ts:60` implements the optional enrichment slice: PSI lab parsing, independent CrUX field parsing with PHONE plus URL/origin scope, fixed-endpoint pinned transport that refuses redirects with a 2 MiB response ceiling, and strict normalized visibility import preserving source/locale/instant/provenance with unavailable metrics kept null. Verified in `plugins/kk/tests/smart-seo-enrich.test.ts:70`. |
+| R1 | MET | PSI lab parsing at `plugins/kk/scripts/seo-enrich.ts:308`; independent CrUX field parsing with p75 LCP/INP/CLS at `plugins/kk/scripts/seo-enrich.ts:334` and `plugins/kk/scripts/seo-enrich.ts:346`; deterministic page selection at `plugins/kk/scripts/seo-enrich.ts:158`; pinned fixed-endpoint provider transport with 2 MiB cap at `plugins/kk/scripts/seo-enrich.ts:25` and `plugins/kk/scripts/seo-enrich.ts:173`; strict visibility import at `plugins/kk/scripts/seo-enrich.ts:381` preserving measured-versus-estimated at `plugins/kk/scripts/seo-enrich.ts:115`; artifacts at `plugins/kk/scripts/seo-enrich.ts:507` and `plugins/kk/scripts/seo-enrich.ts:553` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Performance and imported visibility preserve source and uncertainty (req: R1) | MET | test | `plugins/kk/tests/smart-seo-enrich.test.ts:70` verifies lab/field separation (lab TBT never satisfies field INP), null-versus-zero for missing metrics, three-metric p75 gating, URL/origin scope, pinned-provider refusal paths and the 12-attempt cap; `plugins/kk/tests/smart-seo-enrich.test.ts:430` verifies source/date/locale/scope validation, future rejection, stale exclusion, citation denominators and measured-versus-estimated provenance. |
+| AC1 — Performance and imported visibility preserve source and uncertainty (req: R1) | MET | test | Lab/field separation at `plugins/kk/tests/smart-seo-enrich.test.ts:78`; missing metrics null at `plugins/kk/tests/smart-seo-enrich.test.ts:88`; all three p75 metrics required at `plugins/kk/tests/smart-seo-enrich.test.ts:95`; attempt cap at `plugins/kk/tests/smart-seo-enrich.test.ts:193`; origin fallback at `plugins/kk/tests/smart-seo-enrich.test.ts:224`; affected pages recorded at `plugins/kk/tests/smart-seo-enrich.test.ts:250`; stalled-body timeout at `plugins/kk/tests/smart-seo-enrich.test.ts:399`; snapshot provenance at `plugins/kk/tests/smart-seo-enrich.test.ts:454` and `plugins/kk/tests/smart-seo-enrich.test.ts:543`; 131 pass / 0 fail this run |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

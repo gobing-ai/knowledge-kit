@@ -4,7 +4,7 @@ name: Produce reproducible SEO assessments and stable prioritized reports offlin
 status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.284Z
-updated_at: "2026-10-16T00:24:15.982Z"
+updated_at: "2026-10-16T18:43:10.929Z"
 feature_id: G9
 priority: P2
 tags:
@@ -138,13 +138,13 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/scripts/seo-rules.ts:40` implements all 52 deterministic vendor rule dispositions emitting explicit pass/fail/unknown/not-applicable rows, stable finding IDs (`SEO-<ruleId>-<hash>`), null empty scores and coverage denominators; `plugins/kk/scripts/seo-stages.ts:580` implements `seo-check`, `seo-score` and `seo-report` with immutable offline rescoring. Verified in `plugins/kk/tests/smart-seo-analysis.test.ts:25`. |
-| R2 | MET | `plugins/kk/scripts/seo-rules.ts:50` applies dated sources (2026-10-14, RFC 9309, Google canonicalization, Google FAQ rich results retirement); heuristics labeled `heuristic: true`; observed indexing signals separated from verified visibility. Verified in `plugins/kk/tests/smart-seo-analysis.test.ts:70`. |
+| R1 | MET | 52-rule disposition table at `plugins/kk/scripts/seo-rules.ts:47`; one row per rule/subject at `plugins/kk/scripts/seo-rules.ts:642`; stable IDs at `plugins/kk/scripts/seo-rules.ts:624`; null-on-empty scores, coverage denominators and informational exclusion at `plugins/kk/scripts/seo-rules.ts:1752` and `plugins/kk/scripts/seo-rules.ts:1787`; ordered actions at `plugins/kk/scripts/seo-rules.ts:1811`; check/score/report stages at `plugins/kk/scripts/seo-stages.ts:725`, `plugins/kk/scripts/seo-stages.ts:758`, `plugins/kk/scripts/seo-stages.ts:853` |
+| R2 | MET | FAQ retirement dated once at `plugins/kk/scripts/seo-rules.ts:487` and in report disclaimers at `plugins/kk/scripts/seo-report.ts:452`; crawler purposes and GEO limits in `plugins/kk/skills/smart-seo/references/seo-geo-sources.md:22` and `plugins/kk/skills/smart-seo/references/seo-geo-sources.md:59`; visibility and judgments recorded not-assessed rather than inferred at `plugins/kk/scripts/seo-stages.ts:836` and `plugins/kk/scripts/seo-stages.ts:838` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Technical findings and priorities remain reproducible from saved evidence (req: R1) | MET | test | `plugins/kk/tests/smart-seo-analysis.test.ts:26` verifies 52 rule inventory, stable IDs under sorting and rescoring, null empty score propagation, and immutable revision-based rescoring. |
-| AC2 — SEO and GEO advice reflects dated primary sources and measurement limits (req: R2) | MET | test | `plugins/kk/tests/smart-seo-analysis.test.ts:75` verifies dated source metadata, FAQ rich-result retirement, omission of mandatory llms.txt claims, and separation of observed signals from search visibility. |
+| AC1 — Technical findings and priorities remain reproducible from saved evidence (req: R1) | MET | test | Inventory at `plugins/kk/tests/smart-seo-analysis.test.ts:27`; stable IDs at `plugins/kk/tests/smart-seo-analysis.test.ts:47`; null scores at `plugins/kk/tests/smart-seo-analysis.test.ts:242`; informational exclusion at `plugins/kk/tests/smart-seo-analysis.test.ts:263`; action order at `plugins/kk/tests/smart-seo-analysis.test.ts:456`; offline rescoring at `plugins/kk/tests/smart-seo-analysis.test.ts:581`; 131 pass / 0 fail this run |
+| AC2 — SEO and GEO advice reflects dated primary sources and measurement limits (req: R2) | MET | test | Single FAQ retirement date across surfaces at `plugins/kk/tests/smart-seo-analysis.test.ts:95`; heuristics labeled at `plugins/kk/tests/smart-seo-analysis.test.ts:124`; report disclaimers at `plugins/kk/tests/smart-seo-analysis.test.ts:703` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

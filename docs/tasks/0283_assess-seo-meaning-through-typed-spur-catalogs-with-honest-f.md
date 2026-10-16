@@ -4,7 +4,7 @@ name: Assess SEO meaning through typed Spur catalogs with honest fallbacks
 status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.286Z
-updated_at: "2026-10-16T01:04:14.148Z"
+updated_at: "2026-10-16T18:43:11.538Z"
 feature_id: G9
 priority: P2
 tags:
@@ -136,13 +136,13 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Four flat catalogs implemented under `plugins/kk/decisions/` declaring exactly 22 typed decisions (`plugins/kk/decisions/kk-seo-site.yaml:1`, `plugins/kk/decisions/kk-seo-page.yaml:1`, `plugins/kk/decisions/kk-seo-pair.yaml:1`, `plugins/kk/decisions/kk-seo-keyword.yaml:1`); `plugins/kk/scripts/seo-decisions.ts:30` implements compact evidence packet serialization (<=1800 units) and bounded argv child dispatch; `plugins/kk/scripts/seo-stages.ts:770` implements `seo-judge`. Verified in `plugins/kk/tests/smart-seo-decisions.test.ts:25`. |
-| R2 | MET | `plugins/kk/scripts/seo-decisions.ts:160` implements outcome validation with confidence thresholds (>=0.8), suppresses inapplicable questions (missing title/meta/headings, deterministic homepage), and excludes fallback/timeout/errors from semantic scores. Verified in `plugins/kk/tests/smart-seo-decisions.test.ts:90`. |
+| R1 | MET | Four flat catalogs at `plugins/kk/decisions/kk-seo-site.yaml:1`, `plugins/kk/decisions/kk-seo-page.yaml:1`, `plugins/kk/decisions/kk-seo-pair.yaml:1`, `plugins/kk/decisions/kk-seo-keyword.yaml:1`; compact evidence packet at `plugins/kk/scripts/seo-decisions.ts:42`; argv-only decision run transport at `plugins/kk/scripts/seo-decisions.ts:129` and `plugins/kk/scripts/seo-decisions.ts:139`; judge stage with call cap at `plugins/kk/scripts/seo-decisions.ts:244` and `plugins/kk/scripts/seo-decisions.ts:258` |
+| R2 | MET | Outcome validation at `plugins/kk/scripts/seo-decisions.ts:194` with model-only qualification at confidence 0.8 at `plugins/kk/scripts/seo-decisions.ts:211`; stub/malformed fallback recorded unclear and unqualified at `plugins/kk/scripts/seo-decisions.ts:106`; inapplicable title/meta/heading questions skipped at `plugins/kk/scripts/seo-decisions.ts:344`; cap/deadline exhaustion marks partial at `plugins/kk/scripts/seo-decisions.ts:451`; judgments excluded from semantic scores at `plugins/kk/scripts/seo-stages.ts:836` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Semantic judgments use discoverable typed Spur catalogs (req: R1) | MET | test | `plugins/kk/tests/smart-seo-decisions.test.ts:25` verifies 22 decisions discoverable via `spur decision list`, compact evidence serialization, and argv transport without direct vendor calls. |
-| AC2 — Missing or uncertain judgments remain unassessed (req: R2) | MET | test | `plugins/kk/tests/smart-seo-decisions.test.ts:90` verifies low-certainty / fallback qualification rejection, inapplicable question suppression, and decision call quota enforcement. |
+| AC1 — Semantic judgments use discoverable typed Spur catalogs (req: R1) | MET | test | Catalog validity at `plugins/kk/tests/smart-seo-decisions.test.ts:24`; 22 decisions discoverable at `plugins/kk/tests/smart-seo-decisions.test.ts:41`; packet bound at `plugins/kk/tests/smart-seo-decisions.test.ts:61`; real child-process run at `plugins/kk/tests/smart-seo-decisions.test.ts:267`; 131 pass / 0 fail this run |
+| AC2 — Missing or uncertain judgments remain unassessed (req: R2) | MET | test | Confidence qualification at `plugins/kk/tests/smart-seo-decisions.test.ts:126`; malformed/stub errors at `plugins/kk/tests/smart-seo-decisions.test.ts:182`; inapplicable suppression and deterministic provenance at `plugins/kk/tests/smart-seo-decisions.test.ts:232`; cap exhaustion at `plugins/kk/tests/smart-seo-decisions.test.ts:285` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

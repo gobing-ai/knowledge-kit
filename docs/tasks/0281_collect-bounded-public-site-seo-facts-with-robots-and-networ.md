@@ -4,7 +4,7 @@ name: Collect bounded public-site SEO facts with robots and network enforcement
 status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.280Z
-updated_at: "2026-10-15T23:57:57.875Z"
+updated_at: "2026-10-16T18:43:10.319Z"
 feature_id: G9
 priority: P2
 tags:
@@ -149,15 +149,15 @@ Each entry cites the first changed line per file (`file:line`).
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `plugins/kk/references/smart-seo-attribution.md:1` records upstream MIT attribution and commit 55a184a3b0d09565a4c84268f725a47784e62528; all 52 rules have explicit dispositions in `docs/plans/2026-10-14-smart-seo-vendor-review.md:70`; native `seo-preflight` and `seo-collect` stages are registered at `plugins/kk/scripts/seo-stages.ts:40` with zero vendor runtime imports. Executable tests pass in `plugins/kk/tests/smart-seo-collect.test.ts:25`. |
-| R2 | MET | Connection-pinned public HTTP(S) transport implemented in `plugins/kk/scripts/seo-fetch.ts:160` with DNS answer range validation, socket lookup pinning, peer address verification, 2 MiB streamed response cap, 40 MiB crawl total cap, 10-hop scoped redirects; verified with real local HTTP/HTTPS test servers in `plugins/kk/tests/smart-seo-collect.test.ts:160`. |
-| R3 | MET | Bun HTMLRewriter deterministic facts extraction implemented in `plugins/kk/scripts/seo-facts.ts:310`; `plugins/kk/scripts/seo-fetch.ts:460` enforces RFC 9309 robots matching and Crawl-delay; `plugins/kk/scripts/seo-fetch.ts:580` implements bounded non-expanding XML sitemap parser rejecting DOCTYPE/entities/compression. Executable tests pass in `plugins/kk/tests/smart-seo-collect.test.ts:280`. |
+| R1 | MET | Upstream MIT attribution notice at `plugins/kk/references/smart-seo-attribution.md:1`; the exhaustive 52-rule disposition contract at `docs/plans/2026-10-14-smart-seo-vendor-review.md:70`; seo-preflight and seo-collect stages at `plugins/kk/scripts/seo-stages.ts:172` and `plugins/kk/scripts/seo-stages.ts:276`; the no-vendors-import guard test at `plugins/kk/tests/smart-seo-collect.test.ts:84` |
+| R2 | MET | Public-address classification at `plugins/kk/scripts/seo-fetch.ts:220`; DNS resolve-and-pin requiring every answer public at `plugins/kk/scripts/seo-fetch.ts:234`; pinned single request with 2 MiB byte cap at `plugins/kk/scripts/seo-fetch.ts:289` and body-inclusive timeout at `plugins/kk/scripts/seo-fetch.ts:325`; scoped redirects at `plugins/kk/scripts/seo-fetch.ts:452`; 40 MiB run budget at `plugins/kk/scripts/seo-stages.ts:325`; atomic artifact writes at `plugins/kk/scripts/seo-fetch.ts:747` |
+| R3 | MET | HTMLRewriter fact extraction at `plugins/kk/scripts/seo-facts.ts:341`; RFC 9309 robots parsing at `plugins/kk/scripts/seo-fetch.ts:555` with Crawl-delay honored at `plugins/kk/scripts/seo-stages.ts:590`; bounded sitemap subset refusing DOCTYPE/ENTITY at `plugins/kk/scripts/seo-fetch.ts:698`; URL scope check at `plugins/kk/scripts/seo-facts.ts:183` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Vendor review and rule dispositions ground the delivered audit (req: R1) | MET | test | `plugins/kk/tests/smart-seo-collect.test.ts:26` verifies upstream MIT notice, review disposition link, 52 rule statuses and zero vendor imports. |
-| AC2 — Public site collection respects network scope and resource limits (req: R2) | MET | test | `plugins/kk/tests/smart-seo-collect.test.ts:160` verifies connection pinning, peer address checks, loopback rejection in production, scoped redirects, 2 MiB stream limit and quota enforcement. |
-| AC3 — Crawl policy and distinct URL evidence survive collection (req: R3) | MET | test | `plugins/kk/tests/smart-seo-collect.test.ts:280` verifies RFC 9309 robots matching, Crawl-delay enforcement, bounded XML sitemap subset with XXE refusal, and HTMLRewriter facts extraction with slash distinction. |
+| AC1 — Vendor review and rule dispositions ground the delivered audit (req: R1) | MET | test | MIT attribution test at `plugins/kk/tests/smart-seo-collect.test.ts:37`; 52-rule disposition test at `plugins/kk/tests/smart-seo-collect.test.ts:48`; no vendor runtime imports at `plugins/kk/tests/smart-seo-collect.test.ts:84`; 131 pass / 0 fail this run |
+| AC2 — Public site collection respects network scope and resource limits (req: R2) | MET | test | IP classification at `plugins/kk/tests/smart-seo-collect.test.ts:155`; loopback fail-closed at `plugins/kk/tests/smart-seo-collect.test.ts:184`; pinning and peer mismatch at `plugins/kk/tests/smart-seo-collect.test.ts:275` and `plugins/kk/tests/smart-seo-collect.test.ts:286`; off-scope redirect stop at `plugins/kk/tests/smart-seo-collect.test.ts:317`; stalled-body timeout at `plugins/kk/tests/smart-seo-collect.test.ts:326`; byte-limit abort at `plugins/kk/tests/smart-seo-collect.test.ts:336` |
+| AC3 — Crawl policy and distinct URL evidence survive collection (req: R3) | MET | test | Robots longest-match test at `plugins/kk/tests/smart-seo-collect.test.ts:348`; XXE refusal at `plugins/kk/tests/smart-seo-collect.test.ts:404`; HTML facts at `plugins/kk/tests/smart-seo-collect.test.ts:414`; slash/query identity at `plugins/kk/tests/smart-seo-collect.test.ts:127`; robots blocked/unavailable and crawl delay at `plugins/kk/tests/smart-seo-collect.test.ts:718` and `plugins/kk/tests/smart-seo-collect.test.ts:766` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
