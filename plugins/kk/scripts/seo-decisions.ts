@@ -12,7 +12,7 @@ export interface JudgmentEntry {
     value: string | number | boolean;
     confidence: number | null;
     maker: string;
-    source: string; // "model" | "default" | "fallback"
+    source: string; // "model" | "default" | "fallback" | "deterministic"
     reason: string;
     qualified: boolean;
 }
@@ -322,7 +322,7 @@ export async function executeSeoJudgeStage(
                 value: 'homepage',
                 confidence: 1.0,
                 maker: 'deterministic',
-                source: 'model',
+                source: 'deterministic',
                 reason: 'Root URL classified deterministically as homepage',
                 qualified: true,
             });

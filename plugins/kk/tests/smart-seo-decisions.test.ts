@@ -255,6 +255,8 @@ describe('Stage Execution: seo-judge (R1, R2 / AC1, AC2)', () => {
         const homeType = data.entries.find((e: { id: string }) => e.id === 'kk-seo-page-type');
         expect(homeType?.value).toBe('homepage');
         expect(homeType?.maker).toBe('deterministic');
+        // A rule-derived answer must never carry model provenance (R2).
+        expect(homeType?.source).toBe('deterministic');
 
         // Check site business model
         const bm = data.entries.find((e: { id: string }) => e.id === 'kk-seo-business-model');
