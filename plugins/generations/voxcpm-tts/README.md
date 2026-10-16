@@ -81,6 +81,9 @@ that evidence belongs to task 0258.
 `normalize` maps directly; an explicit `seed` calls `torch.manual_seed` before synthesis (the
 2.0.3 API has no `seed`/`instruct` keyword); `language` is automatic multilingual inference with
 an advisory diagnostic; `max_chunk_chars`/`crossfade_ms` are advisory (one warning per invocation)
-— the shared VoiceScript segmentation remains the request boundary. A per-request `engine`,
+— the shared VoiceScript segmentation remains the request boundary. A per-request `instruct` is
+**ignored** on a `reference`/`continuation` profile (advisory diagnostic): the daily pipeline sends
+one for every segment, derived from its `emotion`, and the anchored clip already defines the voice.
+A per-request `engine`,
 `personality=true` or an active `effects_chain` is rejected. Speed stays in shared postprocessing.
 Transcription is omitted, so ASR-dependent QC is reported unavailable (not passing evidence).
