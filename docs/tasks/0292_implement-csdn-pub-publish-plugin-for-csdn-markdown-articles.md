@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Implement csdn-pub publish plugin for CSDN markdown articles and covers
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:13.278Z
-updated_at: "2026-10-15T06:21:54.942Z"
+updated_at: "2026-10-15T16:42:39.567Z"
 feature_id: E97
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 12
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0292-verdict.json
 ---
 
 ## 0292. Implement csdn-pub publish plugin for CSDN markdown articles and covers
@@ -30,16 +32,16 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Deliver a discoverable installed csdn-pub script plugin with article operation dispatch and Content → Result/probe contracts.
-- [ ] R2. Populate and read back title, Markdown body and requested tags in the actual Markdown editor using its DOM controls.
-- [ ] R3. Upload/verify requested cover and exact category choices without silent fallback or copying vendor signing credentials.
-- [ ] R4. Verify draft/default versus explicit public behavior using fresh persisted receipts; provide profile CLI, mapping/fake tests and real production DOM fixtures.
+- [x] R1. Deliver a discoverable installed csdn-pub script plugin with article operation dispatch and Content → Result/probe contracts.
+- [x] R2. Populate and read back title, Markdown body and requested tags in the actual Markdown editor using its DOM controls.
+- [x] R3. Upload/verify requested cover and exact category choices without silent fallback or copying vendor signing credentials.
+- [x] R4. Verify draft/default versus explicit public behavior using fresh persisted receipts; provide profile CLI, mapping/fake tests and real production DOM fixtures.
 
 ### Acceptance Criteria
 
-- [ ] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
+- [x] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
 
-- [ ] AC1 — R2 - csdn-pub publishes Markdown article with cover (req: R1, R2, R3, R4)
+- [x] AC1 — R2 - csdn-pub publishes Markdown article with cover (req: R1, R2, R3, R4)
 
 ```gherkin
 Feature: Implement csdn-pub publish plugin for CSDN markdown articles and covers
@@ -91,24 +93,88 @@ Exact file ownership: plugins/publishings/csdn-pub/{package.json,tsconfig.json,p
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R4) Scaffold contract/probe and record current primary bundle hash/selector candidates; validate operation/payload/status before browser.
-- [ ] (R2,R3) Implement native editor input/paste, scoped modal tags/categories/cover and exact persisted-state readback, respecting the draft-only submission boundary.
-- [ ] (R1–R4) Execute production DOM fixtures for cledit text, cover/tag/category failure, draft modal behavior, stale toasts and explicit public; verify no vendor signed API/keys are used and run packed entry/check acceptance.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+(R1,R4) Scaffold contract/probe and record current primary bundle hash/selector candidates; validate operation/payload/status before browser.
+(R2,R3) Implement native editor input/paste, scoped modal tags/categories/cover and exact persisted-state readback, respecting the draft-only submission boundary.
+(R1–R4) Execute production DOM fixtures for cledit text, cover/tag/category failure, draft modal behavior, stale toasts and explicit public; verify no vendor signed API/keys are used and run packed entry/check acceptance.
+Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
+Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/commands/plugin-check.test.ts:177` |
+| `apps/cli/tests/commands/plugin-check.test.ts:180` |
+| `apps/cli/tests/commands/plugin-check.test.ts:191` |
+| `bunfig.toml:22` |
+| `docs/04_DESIGN.md:1073` |
+| `docs/04_DESIGN.md:1327` |
+| `docs/04_DESIGN.md:26` |
+| `packages/kk-core/tests/registry.test.ts:220` |
+| `packages/kk-core/tests/registry.test.ts:592` |
+| `scripts/bundle-plugins.test.ts:34` |
+| `scripts/bundle-plugins.test.ts:36` |
+| `plugins/publishings/csdn-pub/package.json:1` |
+| `plugins/publishings/csdn-pub/plugin.json:1` |
+| `plugins/publishings/csdn-pub/src/index.ts:1` |
+| `plugins/publishings/csdn-pub/src/profile-check.ts:1` |
+| `plugins/publishings/csdn-pub/tests/csdn-pub.test.ts:1` |
+| `plugins/publishings/csdn-pub/tests/fixtures/csdn-composer-runner.ts:1` |
+| `plugins/publishings/csdn-pub/tsconfig.json:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Discoverable plugin (plugin.json kind publish, entry/check, browserSession csdn); src/index.ts:223,243 pre-browser op/driver dispatch; Content→Result main() (src/index.ts:1116-1154); registry lists + nine-channel probe + packed check (registry.test 31/0, bundle-plugins 24/0, plugin-check 12/0) |
+| R2 | MET | src/index.ts:511-533 title display-activator + strict readback; :535-559 cledit `pre` real input events; :698-738 exact tag chips, 经验分享 never substituted (tests:1047-1052) |
+| R3 | MET | src/index.ts:793-831 modal-scoped cover file input + 上传中 settle + fresh preview; :739-792 exact category option + persisted readback + 3-cap; zero x-ca-*/OBS/HMAC ported (src-scan tests:1042-1052) |
+| R4 | MET | src/index.ts:370-379 absent→draft default; :171-179/:877-925 保存草稿 top-level action (saveArticle never called); :166-172/:928-938 fresh id-bearing receipt only, typed draft-save/draft-enabled/failure-toast failures (tests 699-783); draft runs never click public submit (tests:701-733); profile-check.ts:21-23; real-Chromium fixture draft-happy green (tests:1022) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R2 - csdn-pub publishes Markdown article with cover (req: R1, R2, R3, R4) | MET | test | bun test plugins/publishings/csdn-pub 57/0 (draft happy, modal-prep never-clicks-publish, stale/idless refusals); .spur/run/0292-verify-evidence.md R1-R4 rows; re-review PASS bbe359d6 (all findings RESOLVED) |
+| AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4) | MET | test | Zero-launch refusals (tests:398,:503); typed bounded stages; packed entry/check resolution; nine-channel probe 12/0; .spur/run/0292-gate2.log exit 0 |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0292 (csdn-pub)
+**Scope:** plugins/publishings/csdn-pub/** (working tree) + host integration (scripts/bundle-plugins.test.ts, apps/cli/tests/commands/plugin-check.test.ts, packages/kk-core/tests/registry.test.ts, docs/04_DESIGN.md, bunfig.toml), diff base 0f234f2d
+**Dimensions:** functional, security, efficiency, correctness, usability, architecture
+**Evidence base:** `csdn.js:N` = knowledge-kit `.spur/memory/evidence/publish-ready-0288-0297-20261014-01/source/platforms/csdn.js`
+**Verdict: FAIL**
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P2 (major) | functional | R4/Design draft/default leg replaced by an unrecorded blanket refusal. The task doc freezes `publishStatus` absent\|draft\|public with **default draft**, pins the editor draft control `button.button-save[data-title="保存草稿"]` ("freeze DOM save control which invokes draft intent, plus fresh persisted readback"), and AC1 requires "draft/public status verified"; the shipped flow refuses absent/draft before any browser, no draft selector exists anywhere in src (grep 保存草稿/button-save: zero hits), and the task Solution section is empty — no recorded decision. The in-code/docs justification ("draft semantics cannot be established", "the evidence carries no draft flow") is true only of the API adapter the Design superseded for DOM behavior, and ADR-022 licenses no-draft rejection only for targets with no draft mode — CSDN's is evidenced. The refusal is fail-safe, fully tested, and matches the pipeline review frame ("live-only ADR-022") and the 0291 precedent (where no draft control was evidenced — not the case here). Fix: either implement the draft leg per Design (draft selector + draft-labeled action + persisted readback + fresh receipt), or record the live-only decision in the task Q&A/Solution and correct R4/AC1 wording plus docs/04_DESIGN.md:1330 | plugins/publishings/csdn-pub/src/index.ts:357 | OPEN |
+| 2 | P3 (minor) | correctness | csdn.js line-citation drift, 5 instances (class swept): src/index.ts:11 cites saveArticle as csdn.js:193-245 (actual 183-248); src/index.ts:16 cites the signing credentials as csdn.js:19-27, 28 (actual 32-41 — IMAGE_SIGN 32-35, ARTICLE_SIGN 37-40, OBS URL 41; lines 19-28 are module scaffold, so a reader lands on the wrong block); SUCCESS_TOAST_RE comment (src/index.ts:163) cites csdn.js:241 (actual success log 242); FAILURE_TOAST_RE comment (src/index.ts:165) cites csdn.js:244 (actual failure log 245); docs/04_DESIGN.md:1335 cites csdn.js:241-244 (actual 241-245). Every other citation verified line-by-line exact: csdn.js:1, 13-14, 17-18, 202, 204-205, 206, 207, 223, 249, 257, 339, 340. Fix is mechanical | plugins/publishings/csdn-pub/src/index.ts:11 | OPEN |
+| 3 | P4 (advisory) | architecture | Deep-module health is good: launcher/stepTimeoutMs injection makes the transport fully testable offline (47/47 with zero launches); the kk-csdn-* evaluate-script markers are the fake-test seam (established 0291 peer pattern); failures are stage-typed with bounded evidence; 20 Provisional markings on un-pinned selectors, all failing loud. Wording nit: docs/04_DESIGN.md:1332 calls the csdn.js windows the selectors' "bundle evidence" — selectors are grounded in the 2026-10-14 editor bundle (src docstrings cite both sources correctly); the wording can ride finding 2's docs edit | plugins/publishings/csdn-pub/src/index.ts:81 | ACCEPTED |
+
+##### Functional Traceability
+
+| Req | Status | Evidence |
+|-----|--------|----------|
+| R1 | MET | plugin.json:3-5,8-10 (kind/entry/check/profileName `csdn`); operation+driver refused before any transport at src/index.ts:1027-1037; Content→Result via ResultSchema at src/index.ts:170-195; discovery/pack asserted by registry.test.ts:220,592, bundle CHECK_DECLARING_PLUGINS incl. csdn-pub, plugin-check nine-channel test (lines 177-191) — all green fresh |
+| R2 | MET (public runs) | grounded title display→input fill with strict normalized readback (src/index.ts:480-508); cledit `pre` body with real input events + normalized readback (src/index.ts:510-533); exact tag chips with no fuzzy/first-item fallback (src/index.ts:664); 经验分享 never substituted — src-scan test proves every occurrence sits in refusal prose |
+| R3 | MET | cover via setInputFiles seam + 上传中 settle + fresh modal media-count preview (src/index.ts:759); exact category option click + persisted value readback, empty-category fallback refused (src/index.ts:705, cites csdn.js:207); zero vendor signing material — grep x-ca/caKey/hmac/OBS/saveArticle across src+manifests: only refusal prose at src/index.ts:11 |
+| R4 | PARTIAL | fresh persisted receipts only — stale toast/URL baselines never confirm, editor-clearing never a signal, failure toast fails fast (confirmation tests green); profile CLI over shared runProfileCli (src/profile-check.ts); real-Chromium fixture import.meta.main-gated with missing-browser fail-loud + recovery hint. Draft/default leg NOT met — finding 1 |
+| AC1 | PARTIAL | public leg verified end-to-end offline + real-Chromium fixture (article-happy); "draft/public status verified" covers only the refusal half — finding 1 |
+| AC2 | MET | zero-launch refusals tested (fake.requests length 0 assertions); nine-channel probe incl. csdn-pub; CHECK_DECLARING_PLUGINS covers csdn-pub; bunfig ignores csdn-composer-runner.ts (subprocess-only, import.meta.main-gated — justified); docs/04_DESIGN.md:1327-1335 stages (editor-readiness/title-readback/body-readback/publish-open/tag-commit/category-select/cover-upload) and profile tiers all match src |
+
+**Verification (fresh, this review):** bun test plugins/publishings/csdn-pub → 47 pass / 0 fail; scripts/bundle-plugins.test.ts → 24/0; apps/cli/tests/commands/plugin-check.test.ts → 12/0; packages/kk-core/tests/registry.test.ts → 31/0; csdn-pub tsc --noEmit → exit 0; .spur/run/0292-gate.log → 3129 pass / 0 fail (2 skip, 169 files, 417.88s).
+
+**Next:** disposition finding 1 (record the live-only decision in the task trail or implement the draft leg), fix finding 2's citations in the same pass, then re-run this review on the updated diff.
 
 ### References
 
@@ -125,4 +191,7 @@ Exact file ownership: plugins/publishings/csdn-pub/{package.json,tsconfig.json,p
 
 - 2026-10-15T06:14:50.348Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-15T14:33:39.463Z todo → wip (system)
+- 2026-10-15T16:42:39.197Z wip → testing (system)
+- 2026-10-15T16:42:39.562Z testing → done (system)
 

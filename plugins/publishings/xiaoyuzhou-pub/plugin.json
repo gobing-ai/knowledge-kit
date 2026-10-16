@@ -1,0 +1,12 @@
+{
+    "name": "xiaoyuzhou-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "xiaoyuzhou (podcaster.xiaoyuzhoufm.com) podcast episode drafts via a script browser transport (ts-browser-automation); draft-only — absent/draft publishStatus saves a draft, public refuses pre-browser",
+    "browserSession": {
+        "profileName": "xiaoyuzhou",
+        "homeUrl": "https://podcaster.xiaoyuzhoufm.com/"
+    }
+}

@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Implement bilibili-pub publish plugin for Bilibili video uploads and dynamic posts
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:14.813Z
-updated_at: "2026-10-15T06:21:59.784Z"
+updated_at: "2026-10-16T01:52:14.919Z"
 feature_id: E98
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 14
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0297-verdict.json
 ---
 
 ## 0297. Implement bilibili-pub publish plugin for Bilibili video uploads and dynamic posts
@@ -30,16 +32,16 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Deliver one discoverable bilibili-pub channel plugin with local shortVideo and dynamic operation dispatch, shared session/profile and separate flow/selectors/postconditions per operation.
-- [ ] R2. Upload/process video, commit exact requested partition/title/tags/cover and verify a saved draft or submitted-video receipt according to draft/default or explicit public status.
-- [ ] R3. Populate text/images in the dynamic composer and publish only with explicit public, verifying a fresh matching post receipt rather than button click.
-- [ ] R4. Provide profile readiness, fake mapping and separate real production fixtures for both flows, invalid inputs, field readback, ambiguity/timeout and installed package operation selection.
+- [x] R1. Deliver one discoverable bilibili-pub channel plugin with local shortVideo and dynamic operation dispatch, shared session/profile and separate flow/selectors/postconditions per operation.
+- [x] R2. Upload/process video, commit exact requested partition/title/tags/cover and verify a saved draft or submitted-video receipt according to draft/default or explicit public status.
+- [x] R3. Populate text/images in the dynamic composer and publish only with explicit public, verifying a fresh matching post receipt rather than button click.
+- [x] R4. Provide profile readiness, fake mapping and separate real production fixtures for both flows, invalid inputs, field readback, ambiguity/timeout and installed package operation selection.
 
 ### Acceptance Criteria
 
-- [ ] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
+- [x] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
 
-- [ ] AC1 — R3 - bilibili-pub handles video and dynamic publishing (req: R1, R2, R3, R4)
+- [x] AC1 — R3 - bilibili-pub handles video and dynamic publishing (req: R1, R2, R3, R4)
 
 ```gherkin
 Feature: Implement bilibili-pub publish plugin for Bilibili video uploads and dynamic posts
@@ -92,25 +94,71 @@ Exact file ownership: plugins/publishings/bilibili-pub/{package.json,tsconfig.js
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R4) Scaffold one channel/manifest/probe, freeze local operation dispatch and separate payload validation/status rails before browser.
-- [ ] (R2) Implement source-grounded processed-video/partition/tags/cover flows and distinct persisted-draft versus submitted-review receipt parsing.
-- [ ] (R3) Implement dynamic composer/native image input and one explicit-public submission with matching fresh identity signal.
-- [ ] (R1–R4) Run two production fixture families covering unknown operation/driver, wrong payload, unready media, no draft capability, wrong partition, cover background, stale receipts and review-versus-public state; run installed dispatch/check acceptance.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+- [x] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+- [x] (R1,R4) Scaffold one channel/manifest/probe, freeze local operation dispatch and separate payload validation/status rails before browser.
+- [x] (R2) Implement source-grounded processed-video/partition/tags/cover flows and distinct persisted-draft versus submitted-review receipt parsing.
+- [x] (R3) Implement dynamic composer/native image input and one explicit-public submission with matching fresh identity signal.
+- [x] (R1–R4) Run two production fixture families covering unknown operation/driver, wrong payload, unready media, no draft capability, wrong partition, cover background, stale receipts and review-versus-public state; run installed dispatch/check acceptance.
+- [x] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
+- [x] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/commands/plugin-check.test.ts:177` |
+| `apps/cli/tests/commands/plugin-check.test.ts:180` |
+| `apps/cli/tests/commands/plugin-check.test.ts:196` |
+| `bunfig.toml:42` |
+| `docs/04_DESIGN.md:1073` |
+| `docs/04_DESIGN.md:1379` |
+| `docs/04_DESIGN.md:26` |
+| `packages/kk-core/tests/registry.test.ts:218` |
+| `packages/kk-core/tests/registry.test.ts:595` |
+| `scripts/bundle-plugins.test.ts:34` |
+| `scripts/bundle-plugins.test.ts:36` |
+| `plugins/publishings/bilibili-pub/package.json:1` |
+| `plugins/publishings/bilibili-pub/plugin.json:1` |
+| `plugins/publishings/bilibili-pub/src/flow.ts:1` |
+| `plugins/publishings/bilibili-pub/src/index.ts:1` |
+| `plugins/publishings/bilibili-pub/src/profile-check.ts:1` |
+| `plugins/publishings/bilibili-pub/src/selectors.ts:1` |
+| `plugins/publishings/bilibili-pub/tests/bilibili-pub-dom.test.ts:1` |
+| `plugins/publishings/bilibili-pub/tests/bilibili-pub.test.ts:1` |
+| `plugins/publishings/bilibili-pub/tests/fixtures/bilibili-pub-dom-runner.ts:1` |
+| `plugins/publishings/bilibili-pub/tsconfig.json:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/publishings/bilibili-pub/plugin.json:1-12 (kind publish, entry/check dist, browserSession profileName bilibili + https://member.bilibili.com/); src/index.ts SHP-analog `BILIBILI_OPERATIONS = ['shortVideo', 'dynamic']` with dispatch `options.operation ?? metadata.operation ?? 'shortVideo'` before any browser/profile work; one shared channel/profile and separate flow modules per operation in src/flow.ts (runShortVideoFlow / runDynamicFlow) with operation-specific selectors in src/selectors.ts (BILI_VIDEO_SELECTORS / BILI_DYNAMIC_SELECTORS); Content → Result only, `--in`/`--out` + ResultSchema.parse + main() exit semantics (src/index.ts); no new kind/transport/dependency (deps: @gobing-ai/kk-core, @gobing-ai/publish-harness, playwright — plugins/publishings/bilibili-pub/package.json); packed entry/check resolve outside the checkout (scripts/bundle-plugins.test.ts, 24/0). |
+| R2 | MET | src/flow.ts video-upload stage: `setInputFiles(videoPath)` on the local MP4/MOV path (no base64/DataTransfer in-page; hygiene-tested), 2 GiB local cap and extension/MIME checks in the pre-browser resolver, media-processing wait for the post-upload editing form (600 s ceiling = BILI_UPLOAD_TIMEOUT_MS; file assignment alone never succeeds); title filled natively with readback and >80 characters rejected, never truncated (typed refusal, zero launches); description filled and read back; tags ≤10 rejected above the limit and committed with Enter key events then read back; optional cover committed through the grounded dialog ladder (`div.cover-main` → modal input → `完成` → slot-preview changed evidence) with a typed failure when the control or the preview change is missing; partition selection is declared **Provisional** (the recovered adapter exposes no partition UI control — only the API field `form.append("category","daily")`, bilibili.js:571) and a missing chooser is a typed refusal. Draft is the default and now requires a **fresh id-bearing draft receipt URL** (`page.url() !== baselineUrl` and matching `BILI_RECEIPT_URL_RES`) — a toast or an unchanged URL is a typed `draft-receipt` failure, never `ok: true`. Explicit `'public'` clicks the grounded `span.submit-add` and requires a fresh receipt carrying `status: 'pending-review'`; a public URL is never fabricated (typed `publish-receipt` failure otherwise). |
+| R3 | MET | src/flow.ts dynamic flow: text pasted into the grounded contenteditable editor and read back, images attached through `setInputFiles` with preview-count readback (≤9 images; the vendor's MAIN-world message bridge, bilibili-main.js:54-81, is deliberately NOT reproduced); `metadata.publishStatus` must be explicitly `'public'` — absent and `'draft'` are refused before any browser opens (no evidenced draft flow on the platform); confirmation snapshots a **pre-click baseline** (current URL + receipt-shaped anchor hrefs + success-toast visibility) and accepts only a signal absent from it (fresh receipt URL / newly visible toast / a link not present before the click), so a pre-existing feed card can never confirm a submit; the vendor's own "clicked 投稿, completion unknown" state (bilibili.js:552) is never treated as success. |
+| R4 | MET | src/selectors.ts `isBilibiliAuthenticated` observes site-owned composer/creator controls and rejects passport/account login redirects; src/profile-check.ts wires the shared `runProfileCli(BILI_CONFIG)` behind `import.meta.main`; plugins/publishings/bilibili-pub/tests/bilibili-pub.test.ts keeps FakeBrowserTransport mapping/CLI coverage strictly separate from page behaviour (68 tests: surface/manifest, pre-browser refusal ladder, sanitizer chain, payload/IO + main() exit codes, session preflight, fake-page flow stages, source hygiene, environment restoration); plugins/publishings/bilibili-pub/tests/bilibili-pub-dom.test.ts (10 legs) + tests/fixtures/bilibili-pub-dom-runner.ts run real headless Chromium (Playwright pin `plugins/publishings/bilibili-pub/package.json:15`) through a spawned subprocess on the real origins with a catch-all route abort (zero live writes), guarded by `if (import.meta.main)` and failing loudly with a recovery hint when Chromium is absent (never skipping); legs cover shortVideo draft/public/cover-failure/missing-partition, dynamic public/missing-content/draft-refusal, stale receipt, missing browser and zero-network; installed entry/check acceptance is asserted through scripts/bundle-plugins.test.ts. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R3 - bilibili-pub handles video and dynamic publishing (req: R1, R2, R3, R4) | MET | test | plugins/publishings/bilibili-pub/tests/bilibili-pub-dom.test.ts shortVideo draft leg (video assigned + processing form verified, title/description/partition/tags/cover filled and read back, fresh draft receipt URL asserted) and public leg (投稿 clicked → fresh receipt with `status: 'pending-review'`); dynamic leg (text pasted + images attached with preview readback, launch clicked, fresh link absent from the pre-click baseline); separate typed failure per operation (missing partition, cover not committed, dynamic missing content, dynamic draft refusal, stale receipt). |
+| AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4) | MET | test | plugins/publishings/bilibili-pub/tests/bilibili-pub.test.ts refusal/preflight/stage suites (unknown operation, driver≠script, format≠video, title >80, tags >10, missing/invalid videoPath, 2 GiB cap, dynamic without explicit public, dynamic >9 images, empty dynamic content — all with zero launches asserted; stale/toast/ambiguous typed failures with `metadata.stage`); fresh regression legs for the two review P2 findings (draft receipt missing → typed `draft-receipt`; pre-existing dynamic card → typed `publish-receipt`); packed discovery/acceptance scripts/bundle-plugins.test.ts 24/0; `kk plugin status --json` fourteen-channel probe list (apps/cli/tests/commands/plugin-check.test.ts). |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -126,4 +174,7 @@ Exact file ownership: plugins/publishings/bilibili-pub/{package.json,tsconfig.js
 
 - 2026-10-15T06:15:01.538Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-16T00:04:43.245Z todo → wip (system)
+- 2026-10-16T01:51:56.057Z wip → testing (system)
+- 2026-10-16T01:52:14.913Z testing → done (system)
 

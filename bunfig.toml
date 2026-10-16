@@ -15,4 +15,32 @@ coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules
 	# It is E2E-verified by scripts/compose-e2e-artifact.ts instead (see
 	# docs/design/xhs-image-cards.md § Deterministic text typesetting).
 	"**/compose/chromium.ts",
+	# jike-composer-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/jike-composer-runner.ts",
+	# csdn-composer-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/csdn-composer-runner.ts",
+	# cnblogs-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/cnblogs-pub-dom-runner.ts",
+	# sspai-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/sspai-pub-dom-runner.ts",
+	# xiaoyuzhou-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/xiaoyuzhou-pub-dom-runner.ts",
+	# shipinhao-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/shipinhao-pub-dom-runner.ts",
+	# bilibili-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
+	# behind import.meta.main, launch via Playwright); bun test exercises it via
+	# spawnSync, whose coverage bun cannot attribute to this file.
+	"**/tests/fixtures/bilibili-pub-dom-runner.ts",
 ]

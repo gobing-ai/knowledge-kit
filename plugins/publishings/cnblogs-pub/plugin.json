@@ -1,0 +1,12 @@
+{
+    "name": "cnblogs-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "cnblogs (www.cnblogs.com) Markdown article via a script browser transport (ts-browser-automation), every run writes to the real site (absent/draft publishStatus saves a draft, public publishes)",
+    "browserSession": {
+        "profileName": "cnblogs",
+        "homeUrl": "https://www.cnblogs.com"
+    }
+}

@@ -249,8 +249,11 @@ describe('discoverPlugins', () => {
         expect(res.diagnostics).toHaveLength(0);
         expect(res.plugins.map((p) => p.name).sort()).toEqual([
             'aihot-ingest',
+            'bilibili-pub',
+            'cnblogs-pub',
             'content-gen',
             'core-facts-gen',
+            'csdn-pub',
             'daily-article-gen',
             'dailynews-gen',
             'emdash-pub',
@@ -259,6 +262,7 @@ describe('discoverPlugins', () => {
             'horizon-ingest',
             'image-gen',
             'infoq-pub',
+            'jike-pub',
             'juejin-pub',
             'karakeep-local',
             'last30days-ingest',
@@ -267,6 +271,8 @@ describe('discoverPlugins', () => {
             'omni-voice-gen',
             'podcast-pub',
             'qiita-pub',
+            'shipinhao-pub',
+            'sspai-pub',
             'substack-pub',
             'surfdash-pub',
             'threads-pub',
@@ -277,6 +283,7 @@ describe('discoverPlugins', () => {
             'weibo-pub',
             'x-pub',
             'xhs-pub',
+            'xiaoyuzhou-pub',
             'zenn-pub',
         ]);
         expect(getByName(res, 'karakeep-local')?.kind).toBe('ingestion');
@@ -619,8 +626,11 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
             expect(res.diagnostics).toHaveLength(0);
             expect(res.plugins.map((p) => p.name).sort()).toEqual([
                 'aihot-ingest',
+                'bilibili-pub',
+                'cnblogs-pub',
                 'content-gen',
                 'core-facts-gen',
+                'csdn-pub',
                 'daily-article-gen',
                 'dailynews-gen',
                 'emdash-pub',
@@ -629,6 +639,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'horizon-ingest',
                 'image-gen',
                 'infoq-pub',
+                'jike-pub',
                 'juejin-pub',
                 'karakeep-local',
                 'last30days-ingest',
@@ -637,6 +648,8 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'omni-voice-gen',
                 'podcast-pub',
                 'qiita-pub',
+                'shipinhao-pub',
+                'sspai-pub',
                 'substack-pub',
                 'surfdash-pub',
                 'threads-pub',
@@ -647,6 +660,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'weibo-pub',
                 'x-pub',
                 'xhs-pub',
+                'xiaoyuzhou-pub',
                 'zenn-pub',
             ]);
             expect(res.plugins.every((p) => p.origin === 'builtin')).toBe(true);

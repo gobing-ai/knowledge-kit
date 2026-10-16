@@ -188,3 +188,7 @@
   `plugins/kk/scripts/daily-stages.ts` relative to the running `kk` (the bun-global package under
   `~/node_modules/@gobing-ai/knowledge-kit/`); editing only the repo copy leaves the live run on the old
   code. Copy the file after every change.
+- **A per-request random speaker reads as "unstable quality", not as a config bug.** Removing a
+  voice identity never fails loudly: the render succeeds, QC passes (loudness only), the duration
+  gate passes, and every publish reports success — the defect is only audible. Any change to a voice
+  profile's `mode` or registry must be followed by the F0-spread audit before the episode ships.

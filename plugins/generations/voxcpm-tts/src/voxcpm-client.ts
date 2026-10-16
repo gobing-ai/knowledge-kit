@@ -273,6 +273,8 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
     let renderInFlight: { id: number; dest: string } | undefined;
     let warnedChunk = false;
     let warnedLanguage = false;
+    let warnedInstruct = false;
+    let warnedInstructIgnored = false;
     const pending = new Map<number, PendingRequest>();
     const renderResults = new Map<number, Promise<Record<string, unknown>>>();
     const signalHandlers = new Map<NodeJS.Signals, () => void>();
@@ -509,6 +511,15 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
         }
         const requestedInstruct = body.instruct?.trim();
         if (profile.mode === 'instruct') {
+            // Instruct profiles carry no reference audio, so the model samples a speaker per request:
+            // a multi-segment episode then changes voice from segment to segment (20261015: within-item
+            // F0 swing up to 103 Hz). Warn once; the fix is a reference/continuation profile.
+            if (!warnedInstruct) {
+                warnedInstruct = true;
+                echoError(
+                    `voxcpm-tts: profile "${profile.id}" is instruct-mode and pins no speaker — every request draws a new voice; use a reference/continuation profile for multi-segment episodes`,
+                );
+            }
             const instruct = requestedInstruct || profile.instruct;
             if (instruct) {
                 return { instruct, normalize: body.normalize ?? true };
@@ -516,7 +527,15 @@ export function createVoxCpmClient(options: VoxCpmClientOptions = {}): VoxCpmCli
             return { normalize: body.normalize ?? true };
         }
         if (requestedInstruct) {
-            throw new Error(`voxcpm-tts: per-request instruct is not supported for "${profile.mode}" mode`);
+            // The shared pipeline turns a segment's `emotion` into a per-request instruct, so this is
+            // the normal case for every daily episode. A reference/continuation profile already fixes
+            // the voice: ignoring the instruction beats failing the tier (or re-labelling the clip).
+            if (!warnedInstructIgnored) {
+                warnedInstructIgnored = true;
+                echoError(
+                    `voxcpm-tts: ignoring the per-request instruct on "${profile.mode}" profile "${profile.id}" — the reference clip defines the voice`,
+                );
+            }
         }
         return { normalize: body.normalize ?? true };
     }

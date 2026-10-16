@@ -23,7 +23,7 @@
     },
     "apps/cli": {
       "name": "@gobing-ai/knowledge-kit",
-      "version": "0.0.35",
+      "version": "0.0.37",
       "bin": {
         "kk": "./dist/index.js",
         "knowledge-kit": "./dist/index.js",
@@ -263,6 +263,48 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/bilibili-pub": {
+      "name": "@gobing-ai/bilibili-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "plugins/publishings/cnblogs-pub": {
+      "name": "@gobing-ai/cnblogs-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "plugins/publishings/csdn-pub": {
+      "name": "@gobing-ai/csdn-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/emdash-pub": {
       "name": "@gobing-ai/emdash-pub",
       "dependencies": {
@@ -277,6 +319,20 @@
     },
     "plugins/publishings/infoq-pub": {
       "name": "@gobing-ai/infoq-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "plugins/publishings/jike-pub": {
+      "name": "@gobing-ai/jike-pub",
       "dependencies": {
         "@gobing-ai/kk-core": "workspace:*",
         "@gobing-ai/publish-harness": "workspace:*",
@@ -334,6 +390,34 @@
         "@gobing-ai/publish-harness": "workspace:*",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "plugins/publishings/shipinhao-pub": {
+      "name": "@gobing-ai/shipinhao-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
+    "plugins/publishings/sspai-pub": {
+      "name": "@gobing-ai/sspai-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "1.4.3",
@@ -433,6 +517,20 @@
         "@types/bun": "1.4.3",
       },
     },
+    "plugins/publishings/xiaoyuzhou-pub": {
+      "name": "@gobing-ai/xiaoyuzhou-pub",
+      "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/publish-harness": "workspace:*",
+        "@gobing-ai/ts-browser-automation": "catalog:",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "playwright": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.3",
+      },
+    },
     "plugins/publishings/zenn-pub": {
       "name": "@gobing-ai/zenn-pub",
       "dependencies": {
@@ -475,9 +573,15 @@
 
     "@gobing-ai/aihot-ingest": ["@gobing-ai/aihot-ingest@workspace:plugins/ingestions/aihot-ingest"],
 
+    "@gobing-ai/bilibili-pub": ["@gobing-ai/bilibili-pub@workspace:plugins/publishings/bilibili-pub"],
+
+    "@gobing-ai/cnblogs-pub": ["@gobing-ai/cnblogs-pub@workspace:plugins/publishings/cnblogs-pub"],
+
     "@gobing-ai/content-gen": ["@gobing-ai/content-gen@workspace:plugins/generations/content-gen"],
 
     "@gobing-ai/core-facts-gen": ["@gobing-ai/core-facts-gen@workspace:plugins/generations/core-facts-gen"],
+
+    "@gobing-ai/csdn-pub": ["@gobing-ai/csdn-pub@workspace:plugins/publishings/csdn-pub"],
 
     "@gobing-ai/daily-article-gen": ["@gobing-ai/daily-article-gen@workspace:plugins/generations/daily-article-gen"],
 
@@ -494,6 +598,8 @@
     "@gobing-ai/image-gen": ["@gobing-ai/image-gen@workspace:plugins/generations/image-gen"],
 
     "@gobing-ai/infoq-pub": ["@gobing-ai/infoq-pub@workspace:plugins/publishings/infoq-pub"],
+
+    "@gobing-ai/jike-pub": ["@gobing-ai/jike-pub@workspace:plugins/publishings/jike-pub"],
 
     "@gobing-ai/juejin-pub": ["@gobing-ai/juejin-pub@workspace:plugins/publishings/juejin-pub"],
 
@@ -518,6 +624,10 @@
     "@gobing-ai/publish-harness": ["@gobing-ai/publish-harness@workspace:packages/publish-harness"],
 
     "@gobing-ai/qiita-pub": ["@gobing-ai/qiita-pub@workspace:plugins/publishings/qiita-pub"],
+
+    "@gobing-ai/shipinhao-pub": ["@gobing-ai/shipinhao-pub@workspace:plugins/publishings/shipinhao-pub"],
+
+    "@gobing-ai/sspai-pub": ["@gobing-ai/sspai-pub@workspace:plugins/publishings/sspai-pub"],
 
     "@gobing-ai/substack-pub": ["@gobing-ai/substack-pub@workspace:plugins/publishings/substack-pub"],
 
@@ -548,6 +658,8 @@
     "@gobing-ai/x-pub": ["@gobing-ai/x-pub@workspace:plugins/publishings/x-pub"],
 
     "@gobing-ai/xhs-pub": ["@gobing-ai/xhs-pub@workspace:plugins/publishings/xhs-pub"],
+
+    "@gobing-ai/xiaoyuzhou-pub": ["@gobing-ai/xiaoyuzhou-pub@workspace:plugins/publishings/xiaoyuzhou-pub"],
 
     "@gobing-ai/zenn-pub": ["@gobing-ai/zenn-pub@workspace:plugins/publishings/zenn-pub"],
 

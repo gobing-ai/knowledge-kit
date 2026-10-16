@@ -50,6 +50,13 @@ rules:
       # the page-context submit string (`kk-weibo-submit`) that posts the same request the mobile web
       # app issues — the transport's own HTTP boundary, evaluated in the browser, not scattered logic.
       - "plugins/publishings/weibo-pub/src/index.ts"
+      # wechatmp-pub CGI media/draft (tasks 0289+0290): `fetch(` lives in the page-context scripts
+      # cgi.ts/cgi-media.ts/cgi-draft.ts — credentialed filetransfer/cropimage/uploadimg2cdn/operate_appmsg posts issued BY the
+      # authenticated mp.weixin.qq.com page (credentials:'include', redirect:'error'), the transport's own
+      # HTTP boundary, not host-side scattered logic (host-side fetch stays forbidden by the Design).
+      - "plugins/publishings/wechatmp-pub/src/cgi.ts"
+      - "plugins/publishings/wechatmp-pub/src/cgi-media.ts"
+      - "plugins/publishings/wechatmp-pub/src/cgi-draft.ts"
       # surfdash-pub's index.ts implements PublishTransport (PostsurfingFileCliTransport);
       # its awaitArticleLive poll is deploy-URL liveness verification at the boundary.
       - "plugins/publishings/surfdash-pub/src/index.ts"

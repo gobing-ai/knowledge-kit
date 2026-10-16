@@ -1,0 +1,12 @@
+{
+    "name": "sspai-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "sspai (sspai.com) Matrix column article drafts via a script browser transport (ts-browser-automation); draft-only — absent/draft publishStatus saves a draft, public refuses pre-browser",
+    "browserSession": {
+        "profileName": "sspai",
+        "homeUrl": "https://sspai.com/"
+    }
+}

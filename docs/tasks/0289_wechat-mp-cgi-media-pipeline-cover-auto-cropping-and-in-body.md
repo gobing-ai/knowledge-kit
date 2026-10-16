@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: "WeChat MP CGI media pipeline: cover auto-cropping and in-body image CDN migration"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:12.423Z
-updated_at: "2026-10-15T06:18:16.758Z"
+updated_at: "2026-10-15T10:08:41.773Z"
 feature_id: E96
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 12
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0289-verdict.json
 ---
 
 ## 0289. WeChat MP CGI media pipeline: cover auto-cropping and in-body image CDN migration
@@ -31,18 +33,18 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Implement the article cover filetransfer scene=8 upload and validated same-origin session inputs in wechatmp-pub/src/cgi.ts, preserving existing mode validation and unrelated DOM flows.
-- [ ] R2. Compute centered 2.35:1 and 1:1 crop coordinates from actual image dimensions and validate both crop_multi receipts with stable file IDs/URLs; do not use vendor hard-coded pixel coordinates.
-- [ ] R3. Migrate bounded article body images to validated WeChat CDN URLs, distinguishing already-CDN, public HTTP(S) transfer and explicitly provided local file mappings; a failed required image blocks draft creation.
-- [ ] R4. Normalize external article anchors to spans while preserving nested text/markup; parse HTML as a document, refuse dangerous schemes, never evaluate content or claim a universal WeChat policy.
-- [ ] R5. Exercise production request construction, multipart fields, image/crop parsing and DOM transformations with unit and real-browser fixture tests; provide a typed prepared-media handoff to 0290.
+- [x] R1. Implement the article cover filetransfer scene=8 upload and validated same-origin session inputs in wechatmp-pub/src/cgi.ts, preserving existing mode validation and unrelated DOM flows.
+- [x] R2. Compute centered 2.35:1 and 1:1 crop coordinates from actual image dimensions and validate both crop_multi receipts with stable file IDs/URLs; do not use vendor hard-coded pixel coordinates.
+- [x] R3. Migrate bounded article body images to validated WeChat CDN URLs, distinguishing already-CDN, public HTTP(S) transfer and explicitly provided local file mappings; a failed required image blocks draft creation.
+- [x] R4. Normalize external article anchors to spans while preserving nested text/markup; parse HTML as a document, refuse dangerous schemes, never evaluate content or claim a universal WeChat policy.
+- [x] R5. Exercise production request construction, multipart fields, image/crop parsing and DOM transformations with unit and real-browser fixture tests; provide a typed prepared-media handoff to 0290.
 
 ### Acceptance Criteria
 
-- [ ] AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4, R5)
+- [x] AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4, R5)
 
-- [ ] AC1 — R2 - Dual-aspect cover upload and auto-crop (req: R1, R2, R5)
-- [ ] AC2 — R3 - Body image migration and link sanitization (req: R3, R4, R5)
+- [x] AC1 — R2 - Dual-aspect cover upload and auto-crop (req: R1, R2, R5)
+- [x] AC2 — R3 - Body image migration and link sanitization (req: R3, R4, R5)
 
 ```gherkin
 Feature: WeChat MP CGI media pipeline: cover auto-cropping and in-body image CDN migration
@@ -101,25 +103,50 @@ Dependencies/handoff: No prerequisites. 0290 consumes these helpers and owns ses
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R2) Freeze session/media validators, bounded image-byte bridge and typed CGI request construction from the recorded source; compute and test actual centered crop geometry.
-- [ ] (R3,R4) Implement page-side DOMParser transformation, image-source classification/dedup, response validation and all-or-error output; preserve caller HTML and unrelated flows on failure.
-- [ ] (R1–R5) Run wechatmp-cgi-media.test.ts and real-page CGI fixture runner against route-controlled receipts; exercise credential origin, malformed/oversize/timeouts and prevent downstream create after failed preparation.
-- [ ] (R5) Hand 0290 the exact media types/functions; retain all current wechatmp DOM/mode/profile tests and document limits.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+- [x] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+- [x] (R1,R2) Freeze session/media validators, bounded image-byte bridge and typed CGI request construction from the recorded source; compute and test actual centered crop geometry.
+- [x] (R3,R4) Implement page-side DOMParser transformation, image-source classification/dedup, response validation and all-or-error output; preserve caller HTML and unrelated flows on failure.
+- [x] (R1–R5) Run wechatmp-cgi-media.test.ts and real-page CGI fixture runner against route-controlled receipts; exercise credential origin, malformed/oversize/timeouts and prevent downstream create after failed preparation.
+- [x] (R5) Hand 0290 the exact media types/functions; retain all current wechatmp DOM/mode/profile tests and document limits.
+- [x] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- R1+R2 cover pipeline: `plugins/publishings/wechatmp-pub/src/cgi.ts:31` `WechatCgiError` (bounded reasons: wrong-origin, http-status, response-too-large, bad-receipt, network-error); `plugins/publishings/wechatmp-pub/src/cgi.ts:51` `WechatCgiSession`; `:58` `WechatUploadedImage`; `:100` `centerCropRect` (pure centered 2.35:1/1:1 geometry from actual dims); `:138`/`:152` byte validators (PNG/JPEG/WebP, ≤10 MiB, real ext/MIME); `:406` `uploadCoverImage` (frozen filetransfer scene=8 query+multipart); `:437` `cropCoverMulti` (crop_multi with size0/1 boxes); `:468` `uploadAndCropCover` (upload→crop→order-validated receipt pair). Origin gate asserts exact `https://mp.weixin.qq.com` before any dispatch; 2 MiB response cap, 30 s AbortController timeout, no retry.
+- R3+R4 body media: `plugins/publishings/wechatmp-pub/src/cgi-media.ts:25` `WechatMediaError`; `:42`/`:48` frozen input/result types; `:144` DOMParser-in-page transform (anchor→span with nested markup preserved, on*/javascript:/data:/vbscript: attributes dropped, exact-src dedupe); classification — exact-host `mmbiz.qpic.cn` HTTPS passthrough, public HTTP(S) via frozen `uploadimg2cdn` contract (`:255` receipt validation `errcode=0+file_id+url`, `:283` request), `localImages` base64 bridge (≤10 MiB/file, 20 MiB aggregate, ≤30 sources); `:331` `prepareArticleMedia` all-or-error (`WechatArticleMedia={html,cover:{wide,square},images}`), 180 s deadline, caller HTML preserved on throw.
+- R5 tests: `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts` (26 tests / 132 expects: origin refusal, exact field keys, mapping/dedup/partial-failure, receipt validation, crop math, anchor normalization, dangerous-scheme rejection, bounds); `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts` (real-Chromium runner, 20 s hard launch/nav timeouts, throws on missing browser — never skips). Coverage: cgi.ts 100% lines/funcs, cgi-media.ts 94.4% lines/99.5% funcs (≥90% gate). plugin suite 126 pass / 0 fail.
+- Surface: `docs/04_DESIGN.md` wechatmp-pub export table gains the CGI media rows (same commit). 0290 handoff: consume `WechatCgiSession`/`WechatArticleMedia`/`prepareArticleMedia`; session extraction and Result conversion stay 0290's.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/publishings/wechatmp-pub/src/cgi.ts:375 (frozen filetransfer scene=8 query) · plugins/publishings/wechatmp-pub/src/cgi.ts:406 (multipart) · plugins/publishings/wechatmp-pub/src/cgi.ts:393 (origin gate) · plugins/publishings/wechatmp-pub/src/cgi.ts:283 (receipt validation) — command: timeout 300 bun test plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts → 26 pass / 0 fail |
+| R2 | MET | plugins/publishings/wechatmp-pub/src/cgi.ts:100 (centerCropRect from actual dims) · plugins/publishings/wechatmp-pub/src/cgi.ts:468 (uploadAndCropCover 2.35:1+1:1) · plugins/publishings/wechatmp-pub/src/cgi.ts:319 (two order-matched receipts) — test: crop filter 8 pass / 0 fail |
+| R3 | MET | plugins/publishings/wechatmp-pub/src/cgi-media.ts:331 (classification) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:355 (exact-host CDN passthrough) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:255 (uploadimg2cdn receipt) — static-ref: throw-before-mutation verified at tests :664 |
+| R4 | MET | plugins/publishings/wechatmp-pub/src/cgi-media.ts:144 (DOMParser in page, no regex HTML) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:151 (dangerous attrs dropped) · plugins/publishings/wechatmp-pub/src/cgi-media.ts:157 (children preserved) |
+| R5 | MET | plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:89 (launch throws on missing browser) · plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts (26/0, real-Chromium route-mocked) · docs/04_DESIGN.md:1250 (surface rows name real exports) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| R2 - Dual-aspect cover upload and auto-crop | MET | test | bun test wechatmp-cgi-media.test.ts -t crop → 8 pass / 0 fail; centerCropRect math + order-validated crop_multi receipts |
+| R3 - Body image migration and link sanitization | MET | test | full file 26 pass / 0 fail / 132 expects (real Chromium, route-mocked endpoints) |
+| AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4, R5) | MET | command | bun run gate → exit 0 (rules passed; receipt .spur/run/0289-test-gate.status=PASS); bun test plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-media.test.ts → 26 pass / 0 fail; git diff --stat 0f234f2d371eeb421705737c21a8b5471e67a7ca -- plugins/publishings/wechatmp-pub/src/page.ts plugins/publishings/wechatmp-pub/src/flow.ts plugins/publishings/wechatmp-pub/src/modes.ts plugins/publishings/wechatmp-pub/src/index.ts → empty |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -135,4 +162,7 @@ Dependencies/handoff: No prerequisites. 0290 consumes these helpers and owns ses
 
 - 2026-10-15T06:14:43.272Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-15T10:08:41.024Z todo → wip (system)
+- 2026-10-15T10:08:41.386Z wip → testing (system)
+- 2026-10-15T10:08:41.768Z testing → done (system)
 

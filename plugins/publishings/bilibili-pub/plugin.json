@@ -1,0 +1,12 @@
+{
+    "name": "bilibili-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "check": "./src/profile-check.ts",
+    "version": "1.0.0",
+    "description": "bilibili (member.bilibili.com / t.bilibili.com) video upload and dynamic publish via a script browser transport; default shortVideo draft or submitted-review public, dynamic public-only",
+    "browserSession": {
+        "profileName": "bilibili",
+        "homeUrl": "https://member.bilibili.com/"
+    }
+}

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: WeChat MP CGI draft creation and token extraction flow refactor
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:12.718Z
-updated_at: "2026-10-15T06:18:17.573Z"
+updated_at: "2026-10-15T12:30:52.741Z"
 feature_id: E96
 
 ac_altitude: task-local
@@ -12,6 +12,8 @@ ac_numbering: task-local
 dependencies: ["0289"]
 priority: P2
 estimate_hours: 12
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0290-verdict.json
 ---
 
 ## 0290. WeChat MP CGI draft creation and token extraction flow refactor
@@ -32,17 +34,17 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Extract and validate transient token/ticket/user_name/uin session data inside the authenticated WeChat page with URL-token precedence and bounded known script fields; missing required values refuse CGI without leaking secrets.
-- [ ] R2. Route eligible plain 文章 draft runs through same-origin operate_appmsg using 0289 prepared media and validated request/receipt fields; preserve existing DOM flows for advanced article metadata, other modes and public operations.
-- [ ] R3. Return ResultSchema with verified draft id and a secret-free canonical edit URL, metadata.operation/publishStatus and receipt evidence; no TargetOutcome type or fabricated publication status.
-- [ ] R4. Preserve existing CLI, operation selection, mode validation, profile preflight, fake transport seams and all valid committed-state/audio/settings behavior; ambiguous create timeout does not retry or fall back to duplicate creation.
+- [x] R1. Extract and validate transient token/ticket/user_name/uin session data inside the authenticated WeChat page with URL-token precedence and bounded known script fields; missing required values refuse CGI without leaking secrets.
+- [x] R2. Route eligible plain 文章 draft runs through same-origin operate_appmsg using 0289 prepared media and validated request/receipt fields; preserve existing DOM flows for advanced article metadata, other modes and public operations.
+- [x] R3. Return ResultSchema with verified draft id and a secret-free canonical edit URL, metadata.operation/publishStatus and receipt evidence; no TargetOutcome type or fabricated publication status.
+- [x] R4. Preserve existing CLI, operation selection, mode validation, profile preflight, fake transport seams and all valid committed-state/audio/settings behavior; ambiguous create timeout does not retry or fall back to duplicate creation.
 
 ### Acceptance Criteria
 
-- [ ] AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
+- [x] AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
 
-- [ ] AC1 — R1 - Session token extraction from page context (req: R1, R4)
-- [ ] AC2 — R4 - Draft creation via operate_appmsg (req: R2, R3, R4)
+- [x] AC1 — R1 - Session token extraction from page context (req: R1, R4)
+- [x] AC2 — R4 - Draft creation via operate_appmsg (req: R2, R3, R4)
 
 ```gherkin
 Feature: WeChat MP CGI draft creation and token extraction flow refactor
@@ -101,25 +103,70 @@ Dependencies/handoff: 0289 provides shared session/media types and preparation; 
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R4) Verify predecessor 0289 and write the specified dated ADR-026 amendment before source divergence; inspect current advanced metadata/mode callers and freeze eligibility plus preservation tests.
-- [ ] (R1,R2) Implement transient session extraction, deterministic eligibility and strict builder/receipt validators from the recorded source field fixture.
-- [ ] (R2,R3) Integrate prepareArticleMedia, one create request and id/title readback into runMode; map to shared Result with redacted URL and ambiguity failures.
-- [ ] (R1–R4) Execute production CGI scripts/builders through real-page route fixtures, then all existing WeChat mode/audio/settings/lease/CLI tests; cover malformed/auth/timeout/unknown receipts, no duplicate fallback, and public/non-article preservation.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+- [x] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+- [x] (R1,R4) Verify predecessor 0289 and write the specified dated ADR-026 amendment before source divergence; inspect current advanced metadata/mode callers and freeze eligibility plus preservation tests.
+- [x] (R1,R2) Implement transient session extraction, deterministic eligibility and strict builder/receipt validators from the recorded source field fixture.
+- [x] (R2,R3) Integrate prepareArticleMedia, one create request and id/title readback into runMode; map to shared Result with redacted URL and ambiguity failures.
+- [x] (R1–R4) Execute production CGI scripts/builders through real-page route fixtures, then all existing WeChat mode/audio/settings/lease/CLI tests; cover malformed/auth/timeout/unknown receipts, no duplicate fallback, and public/non-article preservation.
+- [x] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
+- [x] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/00_ADR.md:1100` |
+| `docs/03_ARCHITECTURE.md:64` |
+| `docs/04_DESIGN.md:1251` |
+| `docs/04_DESIGN.md:1255` |
+| `plugins/publishings/wechatmp-pub/src/cgi.ts:484` |
+| `plugins/publishings/wechatmp-pub/src/cgi.ts:75` |
+| `plugins/publishings/wechatmp-pub/src/flow.ts:1141` |
+| `plugins/publishings/wechatmp-pub/src/flow.ts:1237` |
+| `plugins/publishings/wechatmp-pub/src/flow.ts:6` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:111` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:151` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:173` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:18` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:21` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:212` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:39` |
+| `plugins/publishings/wechatmp-pub/tests/fixtures/wechatmp-cgi-runner.ts:81` |
+| `plugins/publishings/wechatmp-pub/src/cgi-draft.ts:1` |
+| `plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-draft.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | src/cgi-draft.ts:175 (2 MiB snapshot bound) · :180 (URL token wins; ticket/user_name scan-only) · :192-193 (uin optional) · :231/:260 (refusal names fields, never values) — test: wechatmp-cgi-draft.test.ts :261/:276/:321/:337/:380 all pass (35/0, exit 0) |
+| R2 | MET | src/flow.ts:1238-1239 (文章+draft gate → runCgiDraft) · flow.ts:1148-1184 (imageBlock + localImages src→path + prepareArticleMedia) · cgi-media.ts:356-370 (mapped body-image upload) · flow.ts:1249 (public → DOM) — test: :673 advanced metadata keeps DOM · :705 missing coverPath keeps DOM · :717 public skips CGI; re-review 3f3eeb9b PASS (P2 body-images fix closed) |
+| R3 | MET | src/cgi-draft.ts:476 (list_ex readback) · :524-535 (appMsgId+title match → token-free editPath) · flow.ts:1197-1204 (Result.id = verified appMsgId; url = origin+editPath) — grep TargetOutcome in cgi-draft.ts/flow.ts/tests → 0 hits; test: :408/:438/:468 |
+| R4 | MET | command: bun run gate → exit 0 on final tree (.spur/run/0290-gate-final.log: 3045 tests/167 files, 0 fail, 2 rules passed) — test: wechatmp-pub.test.ts + wechatmp-cgi-media.test.ts 103/0 legacy DOM/mode/profile/transport suites green |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R1 - Session token extraction from page context (req: R1, R4) | MET | test | bun test plugins/publishings/wechatmp-pub/tests/wechatmp-cgi-draft.test.ts → 35 pass / 0 fail; "a valid URL token wins over the inline-script token", 2 MiB bound, optional uin, eval-free extraction, field-name-only refusals |
+| AC2 — R4 - Draft creation via operate_appmsg (req: R2, R3, R4) | MET | test | happy path: exactly one operate_appmsg dispatch, Result.id = APP_MSG_ID, secret-free url, cdnMigratedImages=1 + coverFileIds, no-coverPath draft takes images[0] as cover (默认首图为封面); readback mismatch refuses |
+| AC3 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4) | MET | command | bun run gate exit 0 (final tree, .spur/run/0290-gate-final.log); ambiguous create → ok:false + ambiguousSubmission, no retry/no DOM; media-preparation failure → stage preserved, no create dispatch (:659) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -135,4 +182,7 @@ Dependencies/handoff: 0289 provides shared session/media types and preparation; 
 
 - 2026-10-15T06:14:45.781Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-15T12:30:00.394Z todo → wip (system)
+- 2026-10-15T12:30:20.419Z wip → testing (system)
+- 2026-10-15T12:30:52.735Z testing → done (system)
 

@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Implement xiaoyuzhou-pub publish plugin for Xiaoyuzhou podcast episodes and shownotes
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T05:55:14.222Z
-updated_at: "2026-10-15T06:21:57.886Z"
+updated_at: "2026-10-15T20:48:05.623Z"
 feature_id: E98
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P2
 estimate_hours: 12
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0295-verdict.json
 ---
 
 ## 0295. Implement xiaoyuzhou-pub publish plugin for Xiaoyuzhou podcast episodes and shownotes
@@ -30,16 +32,16 @@ Verified source: exact extension v0.1.55 recovered read-only from Google's exten
 
 ### Requirements
 
-- [ ] R1. Deliver discoverable xiaoyuzhou-pub podcast script plugin using audio Content and standard session/profile/Result contracts.
-- [ ] R2. Upload the local audio file and verify completion, populate/read back episode title and rendered shownotes without truncating or trusting file assignment.
-- [ ] R3. Apply a requested episode cover and save a verified episode draft; missing platform capability or persistence signal returns explicit failure instead of vendor unsupported fields being called successful.
-- [ ] R4. Provide profile readiness, fake mapping seams and real production audio/cover/editor/save fixtures; preserve browser compatibility prerequisites and no live publication.
+- [x] R1. Deliver discoverable xiaoyuzhou-pub podcast script plugin using audio Content and standard session/profile/Result contracts.
+- [x] R2. Upload the local audio file and verify completion, populate/read back episode title and rendered shownotes without truncating or trusting file assignment.
+- [x] R3. Apply a requested episode cover and save a verified episode draft; missing platform capability or persistence signal returns explicit failure instead of vendor unsupported fields being called successful.
+- [x] R4. Provide profile readiness, fake mapping seams and real production audio/cover/editor/save fixtures; preserve browser compatibility prerequisites and no live publication.
 
 ### Acceptance Criteria
 
-- [ ] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
+- [x] AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4)
 
-- [ ] AC1 — R1 - xiaoyuzhou-pub uploads episode audio and shownotes (req: R1, R2, R3, R4)
+- [x] AC1 — R1 - xiaoyuzhou-pub uploads episode audio and shownotes (req: R1, R2, R3, R4)
 
 ```gherkin
 Feature: Implement xiaoyuzhou-pub publish plugin for Xiaoyuzhou podcast episodes and shownotes
@@ -92,24 +94,70 @@ Exact file ownership: plugins/publishings/xiaoyuzhou-pub/{package.json,tsconfig.
 
 ### Plan
 
-- [ ] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
-- [ ] (R1,R4) Scaffold audio operation/profile contracts and validate show identity, local assets/status/types before browser; recheck installed Chrome and launcher compatibility.
-- [ ] (R2,R3) Implement source-backed upload/title/Draft.js flow and bounded scoped cover/save capability checks; verify completed media, exact show and persisted draft.
-- [ ] (R1–R4) Run real-page production fixtures for missing entitlement/show/cover/save, incomplete upload, controlled-title events, safe shownotes, stale receipts and browser refusal; run packed plugin/check acceptance.
-- [ ] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
-- [ ] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
+- [x] Step 0: recheck source hashes, existing peer callers/contracts, pinned tools/browser compatibility, current worktrees/wip ownership and predecessor readiness; preserve unrelated edits.
+- [x] (R1,R4) Scaffold audio operation/profile contracts and validate show identity, local assets/status/types before browser; recheck installed Chrome and launcher compatibility.
+- [x] (R2,R3) Implement source-backed upload/title/Draft.js flow and bounded scoped cover/save capability checks; verify completed media, exact show and persisted draft.
+- [x] (R1–R4) Run real-page production fixtures for missing entitlement/show/cover/save, incomplete upload, controlled-title events, safe shownotes, stale receipts and browser refusal; run packed plugin/check acceptance.
+- [x] Update docs/04_DESIGN.md with this shipped surface in the same change; align relevant feature notes/status only after real delivery.
+- [x] Run project lint/tests/build/rules and task-pipeline review/traceable verify before done; fixture success is not a live account acceptance certificate.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `apps/cli/tests/commands/plugin-check.test.ts:177` |
+| `apps/cli/tests/commands/plugin-check.test.ts:191` |
+| `apps/cli/tests/commands/plugin-check.test.ts:194` |
+| `bunfig.toml:34` |
+| `docs/04_DESIGN.md:1073` |
+| `docs/04_DESIGN.md:1358` |
+| `docs/04_DESIGN.md:26` |
+| `packages/kk-core/tests/registry.test.ts:250` |
+| `packages/kk-core/tests/registry.test.ts:625` |
+| `scripts/bundle-plugins.test.ts:34` |
+| `scripts/bundle-plugins.test.ts:43` |
+| `plugins/publishings/xiaoyuzhou-pub/package.json:1` |
+| `plugins/publishings/xiaoyuzhou-pub/plugin.json:1` |
+| `plugins/publishings/xiaoyuzhou-pub/src/flow.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/src/index.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/src/profile-check.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/src/selectors.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/tests/fixtures/xiaoyuzhou-pub-dom-runner.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/tests/xiaoyuzhou-pub-dom.test.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/tests/xiaoyuzhou-pub.test.ts:1` |
+| `plugins/publishings/xiaoyuzhou-pub/tsconfig.json:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | plugins/publishings/xiaoyuzhou-pub/plugin.json:3-10 (kind publish, entry/check dist, browserSession profileName xiaoyuzhou + https://podcaster.xiaoyuzhoufm.com/); src/index.ts:36-58 XYZF_OPERATIONS ['podcast'] + resolveOperation dispatch `options.operation ?? content.metadata.operation ?? 'podcast'` before any browser/profile work; src/index.ts:131-170 processPublishIO `--in/--out` + ResultSchema parse + main() exit semantics; only `import type { Page }` from playwright (src/flow.ts:48 — no eager load); packed entry/check resolve outside checkout (scripts/bundle-plugins.test.ts). |
+| R2 | MET | src/flow.ts:544 setInputFiles local audio path (no base64/DataTransfer-in-page — hygiene-tested in tests/sspai-hygiene analog src-scan describe); src/flow.ts:549-566 processing-ready verification before proceed with typed 600s ceiling (XYZF_UPLOAD_TIMEOUT_MS, src/selectors.ts:93) — file assignment alone never succeeds; src/flow.ts:581-586 title native input/change fill + normalized readback, vendor bare `.value` assignment deliberately not reproduced (source flags it TODO(逆向存疑) at xiaoyuzhou.js:57-58); src/flow.ts:608-630 Draft.js `div[data-contents="true"]` sanitized text/html paste (markdownToHtml → plugin-local sanitizer stripping script/iframe/on*/javascript:/data: → pasteHtml) + readback. |
+| R3 | MET | src/flow.ts:506-520 podcastId show-verify BEFORE upload (first/default show never used; dom leg asserts zero assignments on verify failure); src/flow.ts:647-692 requested cover with missing/unverified control = typed cover-attach failure — never the vendor's unsupported silent skip (xiaoyuzhou.js:17); src/selectors.ts:72-73 exact-visible 保存草稿/保存 with typed draft-save failure on absence (src/flow.ts:704-731, no manufactured draft); src/flow.ts:737-801 ok:true only on fresh id-bearing episode receipt (XYZF_RECEIPT_URL_RES) + persisted title/audio/shownotes(/cover) readback — toast/stale/ambiguous typed failures; src/flow.ts:357-370 publishStatus 'public'/unknown refused pre-browser (launches=0); src/flow.ts:490-501 unsupported-browser.html = environment failure before upload (official Chrome 147+ requirement, XYZF_UNSUPPORTED_URL_RE). |
+| R4 | MET | tests/xiaoyuzhou-pub.test.ts (61): FakeBrowserTransport mapping/CLI only, full pre-browser refusal ladder incl. public refusal, 500 MiB local cap (sparse-file), sanitizer direct + captured-paste, preflight (login-redirect/missing profile/unsupported-browser), all stage failure branches, src-scan hygiene; tests/xiaoyuzhou-pub-dom.test.ts (9) + tests/fixtures/xiaoyuzhou-pub-dom-runner.ts: production selectors/scripts/flows in real headless Chromium (Playwright pin plugins/publishings/xiaoyuzhou-pub/package.json:13) via spawnSync, module entry behind `if (import.meta.main)` (runner:330), loud typed failure on missing Chromium (runner:49-55), route-intercepted real origin with catch-all abort (runner:260) = zero live writes; legs: happy draft, cover, audio-timeout, show-verify-fail, missing-save, stale-receipt, login, missing-browser guard, zero-network. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — R1 - xiaoyuzhou-pub uploads episode audio and shownotes (req: R1, R2, R3, R4) | MET | test | tests/xiaoyuzhou-pub-dom.test.ts default-draft leg (audio assigned + processing-verified, title native events, shownotes pasted + read back, fresh episode receipt, save clicked, previewClicks===0) and cover leg (assigned + read back at save); absent required save capability is a typed draft-save failure (tests missing-save leg) and absent cover control a typed cover-attach failure — never claimed as success. |
+| AC2 — Payload, readiness, failure and installed behavior remain observable (req: R1, R2, R3, R4) | MET | test | tests/xiaoyuzhou-pub.test.ts refusal/preflight/stage suites (public/unknown status, unknown operation, driver, format≠audio, empty title/body, missing podcastId, bad audio path/extension, 500 MiB cap, duration validation, images/tags/categories — all launches===0; stale/toast/ambiguous typed); dom failure legs assert facts.stage typed names; packed discovery/acceptance scripts/bundle-plugins.test.ts 24/0; readiness ladder isXiaoyuzhouAuthenticated (src/selectors.ts:105) rejects login redirects and the unsupported-browser page. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -126,4 +174,7 @@ Exact file ownership: plugins/publishings/xiaoyuzhou-pub/{package.json,tsconfig.
 
 - 2026-10-15T06:14:57.004Z backlog → todo (system)
 - 2026-10-14 ready-depth inline refinement: validated seven-part checklist; see batch report for corrections and source evidence.
+- 2026-10-15T19:14:41.826Z todo → wip (system)
+- 2026-10-15T20:48:05.259Z wip → testing (system)
+- 2026-10-15T20:48:05.619Z testing → done (system)
 
