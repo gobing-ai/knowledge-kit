@@ -1,0 +1,57 @@
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    minConfidence: 0
+
+decisions:
+    kk-seo-keyword-relevance:
+        type: score
+        description: Relevance of a keyword query to the target page content and topic.
+        parameters:
+            subject_id:
+                type: string
+                description: Keyword identifier or query string.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Unrelated or tangential keyword query with no relevance.
+            - Low relevance or secondary query with modest topical connection.
+            - Highly relevant keyword directly addressed by primary page content.
+            - Perfect primary target query with comprehensive topical alignment.
+        fallback: 0
+
+    kk-seo-keyword-other-brand:
+        type: noul
+        description: Whether the keyword query references a competitor or third-party brand.
+        parameters:
+            subject_id:
+                type: string
+                description: Keyword identifier or query string.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Query contains an explicit competitor brand, trademark, or proprietary product name.
+            "false": Query consists of generic, unbranded or owned brand search terms.
+        fallback: false
+
+    kk-seo-keyword-page:
+        type: choice
+        description: Mapping strategy for targeting this keyword query across site pages.
+        parameters:
+            subject_id:
+                type: string
+                description: Keyword identifier or query string.
+            locale:
+                type: string
+                description: Target audience locale.
+            candidates:
+                type: json
+                description: Serialized list of candidate page titles and URLs (max 30 candidates).
+        criteria:
+            existing: Map keyword to an existing candidate page that already best satisfies intent.
+            new: Create a dedicated new landing page or article to satisfy search intent.
+            unclear: Ambiguous intent, low commercial relevance, or insufficient evidence to map.
+        fallback: unclear

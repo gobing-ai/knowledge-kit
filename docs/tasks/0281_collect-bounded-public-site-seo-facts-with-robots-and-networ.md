@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Collect bounded public-site SEO facts with robots and network enforcement
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.280Z
-updated_at: "2026-10-15T05:04:57.882Z"
+updated_at: "2026-10-15T23:57:57.875Z"
 feature_id: G9
 priority: P2
 tags:
@@ -12,6 +12,8 @@ tags:
   - geo
 estimate_hours: 12
 
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0281-verdict.json
 ---
 
 ## 0281. Collect bounded public-site SEO facts with robots and network enforcement
@@ -37,15 +39,15 @@ Current-tree audit: no Smart SEO runtime files are present; all local requiremen
 
 ### Requirements
 
-- [ ] R1. Retain vendor MIT attribution and the exhaustive review disposition while delivering seo-preflight and seo-collect through the existing stage runner without vendors imports.
-- [ ] R2. Implement connection-pinned public HTTP(S) transport, bounded responses/request counts/deadlines, scoped redirects, cancellation and run-bound atomic artifacts per design §3–5.
-- [ ] R3. Collect deterministic HTML facts with Bun HTMLRewriter, respect path-specific robots/full delay, preserve slash/query URL identity and support only the declared bounded XML subset with explicit unknowns.
+- [x] R1. Retain vendor MIT attribution and the exhaustive review disposition while delivering seo-preflight and seo-collect through the existing stage runner without vendors imports.
+- [x] R2. Implement connection-pinned public HTTP(S) transport, bounded responses/request counts/deadlines, scoped redirects, cancellation and run-bound atomic artifacts per design §3–5.
+- [x] R3. Collect deterministic HTML facts with Bun HTMLRewriter, respect path-specific robots/full delay, preserve slash/query URL identity and support only the declared bounded XML subset with explicit unknowns.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Vendor review and rule dispositions ground the delivered audit (req: R1)
-- [ ] AC2 — Public site collection respects network scope and resource limits (req: R2)
-- [ ] AC3 — Crawl policy and distinct URL evidence survive collection (req: R3)
+- [x] AC1 — Vendor review and rule dispositions ground the delivered audit (req: R1)
+- [x] AC2 — Public site collection respects network scope and resource limits (req: R2)
+- [x] AC3 — Crawl policy and distinct URL evidence survive collection (req: R3)
 
 ```gherkin
 Feature: Collect bounded public-site SEO facts with robots and network enforcement
@@ -103,25 +105,70 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 
 ### Plan
 
-- [ ] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
-- [ ] (R1,R2) Confirm Bun 1.4.3, predecessor-free stage seam and ADR-016/018; add lazy seo dispatch without eagerly loading optional helpers. Implement strict options/envelope/workspace validation and collection-only preflight with create-new writes.
-- [ ] (R2) Implement pinned HTTP(S), public address policy, peer verification, original Host/SNI, no proxies/reuse, scoped redirects and shared budgets; run actual local HTTP/HTTPS compatibility tests before allowing live crawl.
-- [ ] (R3) Implement robots grouping/path matching/full delay, bounded sitemap subset and streaming HTMLRewriter facts; preserve exact request URLs, null facts and explicit blocked/unavailable/partial outcomes.
-- [ ] (R1–R3) In plugins/kk/tests/smart-seo-collect.test.ts, verify attribution/disposition linkage, socket boundary, parser refusal, budget/cancellation, distinct URLs and atomic failure through the real collector; hand a minimal valid artifact fixture to 0282.
-- [ ] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
-- [ ] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
+- [x] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
+- [x] (R1,R2) Confirm Bun 1.4.3, predecessor-free stage seam and ADR-016/018; add lazy seo dispatch without eagerly loading optional helpers. Implement strict options/envelope/workspace validation and collection-only preflight with create-new writes.
+- [x] (R2) Implement pinned HTTP(S), public address policy, peer verification, original Host/SNI, no proxies/reuse, scoped redirects and shared budgets; run actual local HTTP/HTTPS compatibility tests before allowing live crawl.
+- [x] (R3) Implement robots grouping/path matching/full delay, bounded sitemap subset and streaming HTMLRewriter facts; preserve exact request URLs, null facts and explicit blocked/unavailable/partial outcomes.
+- [x] (R1–R3) In plugins/kk/tests/smart-seo-collect.test.ts, verify attribution/disposition linkage, socket boundary, parser refusal, budget/cancellation, distinct URLs and atomic failure through the real collector; hand a minimal valid artifact fixture to 0282.
+- [x] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
+- [x] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/04_DESIGN.md:24` |
+| `docs/04_DESIGN.md:599` |
+| `packages/kk-core/src/content-limits.ts:104` |
+| `packages/kk-core/src/content-limits.ts:182` |
+| `packages/kk-core/src/content-limits.ts:191` |
+| `packages/kk-core/src/content-limits.ts:200` |
+| `packages/kk-core/src/content-limits.ts:85` |
+| `packages/kk-core/src/content-limits.ts:92` |
+| `packages/kk-core/src/thread-segmentation.ts:15` |
+| `packages/kk-core/src/thread-segmentation.ts:9` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:131` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1757` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1777` |
+| `packages/kk-core/tests/thread-segmentation.test.ts:1` |
+| `plugins/kk/references/smart-seo-attribution.md:1` |
+| `plugins/kk/scripts/seo-facts.ts:1` |
+| `plugins/kk/scripts/seo-fetch.ts:1` |
+| `plugins/kk/scripts/seo-stages.ts:1` |
+| `plugins/kk/tests/fixtures/smart-seo-minimal-crawl.json:1` |
+| `plugins/kk/tests/smart-seo-collect.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/references/smart-seo-attribution.md:1` records upstream MIT attribution and commit 55a184a3b0d09565a4c84268f725a47784e62528; all 52 rules have explicit dispositions in `docs/plans/2026-10-14-smart-seo-vendor-review.md:70`; native `seo-preflight` and `seo-collect` stages are registered at `plugins/kk/scripts/seo-stages.ts:40` with zero vendor runtime imports. Executable tests pass in `plugins/kk/tests/smart-seo-collect.test.ts:25`. |
+| R2 | MET | Connection-pinned public HTTP(S) transport implemented in `plugins/kk/scripts/seo-fetch.ts:160` with DNS answer range validation, socket lookup pinning, peer address verification, 2 MiB streamed response cap, 40 MiB crawl total cap, 10-hop scoped redirects; verified with real local HTTP/HTTPS test servers in `plugins/kk/tests/smart-seo-collect.test.ts:160`. |
+| R3 | MET | Bun HTMLRewriter deterministic facts extraction implemented in `plugins/kk/scripts/seo-facts.ts:310`; `plugins/kk/scripts/seo-fetch.ts:460` enforces RFC 9309 robots matching and Crawl-delay; `plugins/kk/scripts/seo-fetch.ts:580` implements bounded non-expanding XML sitemap parser rejecting DOCTYPE/entities/compression. Executable tests pass in `plugins/kk/tests/smart-seo-collect.test.ts:280`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Vendor review and rule dispositions ground the delivered audit (req: R1) | MET | test | `plugins/kk/tests/smart-seo-collect.test.ts:26` verifies upstream MIT notice, review disposition link, 52 rule statuses and zero vendor imports. |
+| AC2 — Public site collection respects network scope and resource limits (req: R2) | MET | test | `plugins/kk/tests/smart-seo-collect.test.ts:160` verifies connection pinning, peer address checks, loopback rejection in production, scoped redirects, 2 MiB stream limit and quota enforcement. |
+| AC3 — Crawl policy and distinct URL evidence survive collection (req: R3) | MET | test | `plugins/kk/tests/smart-seo-collect.test.ts:280` verifies RFC 9309 robots matching, Crawl-delay enforcement, bounded XML sitemap subset with XXE refusal, and HTMLRewriter facts extraction with slash distinction. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -134,3 +181,8 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 - Concurrency at kickoff: git worktree list showed only current main; spur task list --status wip --json returned [].
 
 ### History
+
+- 2026-10-15T23:12:50.168Z todo → wip (system)
+- 2026-10-15T23:57:01.101Z wip → testing (system)
+- 2026-10-15T23:57:57.864Z testing → done (system)
+

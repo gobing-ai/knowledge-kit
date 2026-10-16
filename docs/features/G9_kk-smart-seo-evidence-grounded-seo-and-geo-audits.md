@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G9"
 name: "kk-smart-seo: evidence-grounded SEO and GEO audits"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-10-15T04:39:32.556Z"
-updated_at: "2026-10-15T04:40:35.115Z"
+updated_at: "2026-10-16T01:44:50.601Z"
 ---
 
 # G9: kk-smart-seo: evidence-grounded SEO and GEO audits
@@ -147,3 +147,6 @@ Feature: Smart SEO and GEO audit
 ## Notes
 
 ## History
+
+- 2026-10-16T00:00:24.514Z backlog → active (system)
+

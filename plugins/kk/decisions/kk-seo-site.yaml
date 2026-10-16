@@ -1,0 +1,90 @@
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    minConfidence: 0
+
+decisions:
+    kk-seo-business-model:
+        type: choice
+        description: Primary business model demonstrated by the website.
+        parameters:
+            subject_id:
+                type: string
+                description: Site origin or domain identifier.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            service: Professional, consulting, agency or client service business.
+            ecommerce: Online retail, digital goods or direct merchandise commerce.
+            publisher: Media publication, news, editorial blog or content platform.
+            software: SaaS, downloadable software or technical web application.
+            nonprofit: Charitable, educational, public-interest or non-commercial entity.
+            mixed: Multiple co-equal business models operating simultaneously.
+            unclear: Ambiguous, placeholder, or insufficient business signals.
+        fallback: unclear
+
+    kk-seo-value-proposition:
+        type: score
+        description: Clarity and distinctness of the site's primary value proposition.
+        parameters:
+            subject_id:
+                type: string
+                description: Site origin or domain identifier.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Unclear or missing value proposition; visitor cannot tell what is offered.
+            - Generic offering stated without differentiation or distinct audience focus.
+            - Clear value proposition with identifiable benefits and defined audience.
+            - Highly distinctive value proposition with clear competitive edge and proof points.
+        fallback: 0
+
+    kk-seo-entity-clarity:
+        type: noul
+        description: Whether the organization or person behind the site is clearly identified.
+        parameters:
+            subject_id:
+                type: string
+                description: Site origin or domain identifier.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Organization, brand name, and operator entity are clearly identified.
+            "false": Operator entity is anonymous, ambiguous, or lacks verifiable attribution.
+        fallback: false
+
+    kk-seo-topical-focus:
+        type: score
+        description: Degree of topical consistency across the site content.
+        parameters:
+            subject_id:
+                type: string
+                description: Site origin or domain identifier.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Fragmented or conflicting topics with no clear thematic center.
+            - Broad topical coverage with weak cohesion across sections.
+            - Consistent topical authority around a defined subject domain.
+            - Deep, highly cohesive topical authority with comprehensive coverage.
+        fallback: 0
+
+    kk-seo-local-intent:
+        type: noul
+        description: Whether the business explicitly serves a bounded local geographic market.
+        parameters:
+            subject_id:
+                type: string
+                description: Site origin or domain identifier.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Physical address, service area, or local market signals are prominent.
+            "false": No local geographic market restriction; serves general or digital audience.
+        fallback: false

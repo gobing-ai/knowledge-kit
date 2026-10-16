@@ -904,6 +904,10 @@ describe('sspai-pub article flow (offline fake page)', () => {
 });
 
 describe('sspai-pub source hygiene (no eval, one sanitized paste, no vendor endpoints)', () => {
+    test('unquoted javascript:/data: attribute values are stripped too', () => {
+        const sanitized = sanitizeArticleHtml('<a href=javascript:alert(1)>a</a><img src=data:text/html,x>');
+        expect(sanitized).not.toMatch(/javascript:|data:text/i);
+    });
     test('no eval/new Function and no upload/vendor endpoint machinery in src', async () => {
         const sources = [
             await readFile(join(import.meta.dir, '..', 'src', 'index.ts'), 'utf-8'),
