@@ -80,11 +80,11 @@ describe('Smart SEO Assessments Execution (R1, R2 / AC1, AC2)', () => {
         const h1Row = assessments.find((r) => r.ruleId === 'h1_missing');
         expect(h1Row?.status).toBe('pass');
 
-        // Deferred rules emit not-applicable
+        // Deferred rules are applicable but not assessed: unknown, never a silent not-applicable
         const schemaRow = assessments.find((r) => r.ruleId === 'schema_required');
-        expect(schemaRow?.status).toBe('not-applicable');
+        expect(schemaRow?.status).toBe('unknown');
         const extLinkRow = assessments.find((r) => r.ruleId === 'broken_external_links');
-        expect(extLinkRow?.status).toBe('not-applicable');
+        expect(extLinkRow?.status).toBe('unknown');
 
         // Dated FAQ rich-result retirement info
         const faqRow = assessments.find((r) => r.ruleId === 'faq_rich_result_limited');

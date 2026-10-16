@@ -46,6 +46,8 @@ Every eligible rule/subject pair yields exactly **one** row:
 `status` is `pass | fail | unknown | not-applicable`. **The absence of a row is an error, never a
 pass.** `not-applicable` means the rule cannot apply to that subject (for example a site-level rule
 against a page-level subject); it is excluded from both the score and the coverage denominator.
+A `deferred`-disposition rule applies but is not assessed in this method version, so it emits
+`unknown` and counts in `coverage.unknown`.
 
 Intent-sensitive observations are not defects by themselves: a robots directive, an intentional
 `noindex`, a canonical pointing elsewhere, a missing optional file or missing optional metadata all
