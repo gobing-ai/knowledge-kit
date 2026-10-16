@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { echo, echoError } from '@gobing-ai/ts-utils';
@@ -97,4 +97,93 @@ function forwardChildOutput(chunk: Buffer | string | null | undefined, write: (m
     const text = typeof chunk === 'string' ? chunk : (chunk?.toString('utf-8') ?? '');
     if (text.length === 0) return;
     write(text.endsWith('\n') ? text.slice(0, -1) : text);
+}
+
+/** Signals a host cancels an interactive `kk stage run` with. */
+const FORWARDED_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+/** Grace period before a stage that ignored the forwarded signal is killed outright. */
+const CANCEL_ESCALATION_MS = 5000;
+
+/** Conventional shell exit status for a signal-terminated process. */
+function signalExitCode(signal: NodeJS.Signals): number {
+    if (signal === 'SIGINT') return 130;
+    if (signal === 'SIGTERM') return 143;
+    if (signal === 'SIGHUP') return 129;
+    return 1;
+}
+
+/**
+ * Cancellable variant of `runStage` used by the `kk stage run` verb.
+ *
+ * `spawnSync` cannot react to a signal while it blocks, so a cancellation addressed only to the
+ * CLI process left the stage process — and everything the stage had spawned — running (measured
+ * 2026-10-15: SIGTERM to the parent left both the stage child and its decision/socket grandchild
+ * alive). The stage therefore runs in its own process group and every forwarded signal is
+ * delivered to that whole group, which reaches the stage's own children as well.
+ *
+ * Output is captured and forwarded on exit through the same echo targets as `runStage`, so the
+ * output-target seam and the exit-status contract are unchanged.
+ */
+export function runStageCancellable(args: string[], execPath = process.execPath, argv1?: string): Promise<number> {
+    const script = resolveStagesScript(argv1);
+    return new Promise<number>((resolvePromise, rejectPromise) => {
+        const child = spawn(execPath, [script, ...args], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            // `env: process.env` is explicit for the same reason as `runStage`: Bun snapshots the
+            // environment at startup, so a variable set later never reached the child otherwise.
+            env: process.env,
+            detached: true,
+        });
+
+        const stdoutChunks: Buffer[] = [];
+        const stderrChunks: Buffer[] = [];
+        child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(Buffer.from(chunk)));
+        child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(Buffer.from(chunk)));
+
+        let escalation: ReturnType<typeof setTimeout> | undefined;
+        const forward = (signal: NodeJS.Signals): void => {
+            const pid = child.pid;
+            if (pid === undefined) return;
+            try {
+                process.kill(-pid, signal); // negative pid = the stage's whole process group
+            } catch {
+                try {
+                    child.kill(signal);
+                } catch {
+                    // already exited
+                }
+            }
+            escalation ??= setTimeout(() => {
+                try {
+                    process.kill(-pid, 'SIGKILL');
+                } catch {
+                    // already exited
+                }
+            }, CANCEL_ESCALATION_MS);
+        };
+
+        const handlers = new Map<NodeJS.Signals, () => void>();
+        for (const signal of FORWARDED_SIGNALS) {
+            const handler = (): void => forward(signal);
+            handlers.set(signal, handler);
+            process.on(signal, handler);
+        }
+        const disarm = (): void => {
+            for (const [signal, handler] of handlers) process.removeListener(signal, handler);
+            handlers.clear();
+            if (escalation !== undefined) clearTimeout(escalation);
+        };
+
+        child.on('error', (err: Error) => {
+            disarm();
+            rejectPromise(new Error(`failed to spawn stage runner at ${script}: ${err.message}`));
+        });
+        child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+            disarm();
+            forwardChildOutput(Buffer.concat(stdoutChunks), echo);
+            forwardChildOutput(Buffer.concat(stderrChunks), echoError);
+            resolvePromise(code ?? (signal === null ? 1 : signalExitCode(signal)));
+        });
+    });
 }

@@ -1,8 +1,29 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, test } from 'bun:test';
+import { spawn } from 'node:child_process';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resolveStagesScript, runStage } from '../src/stage';
+
+/** True while the pid is still alive; a signal-0 probe never throws for a live process. */
+function alive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 /** Fixture checkout: source marker + source runner (exit 17) + divergent staged runner (exit 18). */
 function fixtureCheckout(): string {
@@ -136,4 +157,69 @@ describe('resolveStagesScript — checkout source precedence (0178)', () => {
         writeFileSync(file, 'x');
         expect(() => resolveStagesScript('/nonexistent/kk-entry', file)).toThrow(/install or refresh the kk package/);
     });
+});
+
+describe('runStageCancellable — host cancellation reaches the stage and its children (0285)', () => {
+    it('maps the stage exit code and forwards a host signal to the whole stage process group', async () => {
+        const repoRoot = resolve(import.meta.dir, '../../..');
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-stage-cancel-')));
+        const bin = join(dir, 'bin');
+        const workDir = join(dir, 'work');
+        mkdirSync(bin, { recursive: true });
+        mkdirSync(workDir, { recursive: true });
+        // A grandchild the stage spawns: recording its pid is how the test proves it died too.
+        const stubPidFile = join(dir, 'stub.pid');
+        writeFileSync(join(bin, 'spur'), `#!/bin/sh\nprintf '%s\\n' "$$" >> "${stubPidFile}"\nsleep 60\n`);
+        chmodSync(join(bin, 'spur'), 0o755);
+        writeFileSync(
+            join(workDir, 'options.json'),
+            JSON.stringify({
+                url: 'https://example.com',
+                locale: 'en-US',
+                business_context: '',
+                max_pages: 60,
+                max_depth: 5,
+                max_requests: 200,
+                deadline_seconds: 600,
+                semantic_pages: 20,
+                max_pairs: 10,
+                max_keywords: 10,
+                max_decision_calls: 320,
+                performance: false,
+                visibility_file: '',
+                fixture: '',
+            }),
+        );
+        writeFileSync(
+            join(workDir, 'crawl.json'),
+            readFileSync(join(repoRoot, 'plugins/kk/tests/fixtures/smart-seo-minimal-crawl.json'), 'utf-8'),
+        );
+
+        // The real CLI drives the real stage runner; SIGTERM addresses only the CLI process.
+        const cli = spawn('bun', [join(repoRoot, 'apps/cli/src/index.ts'), 'stage', 'run', 'seo-judge', workDir], {
+            cwd: repoRoot,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` },
+        });
+        // Await the exit event itself: a `let exited` holder narrows to `null` under TypeScript's
+        // control-flow analysis because the assignment happens in a callback.
+        const closed = new Promise<number | null>((resolvePromise) => cli.on('close', resolvePromise));
+        try {
+            const deadline = Date.now() + 20_000;
+            while (!existsSync(stubPidFile) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+            expect(existsSync(stubPidFile)).toBe(true);
+            const stubPid = Number(readFileSync(stubPidFile, 'utf-8').trim());
+
+            cli.kill('SIGTERM');
+            expect(await closed).toBe(143);
+            expect(alive(stubPid)).toBe(false);
+        } finally {
+            try {
+                cli.kill('SIGKILL');
+            } catch {
+                // already gone
+            }
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
 });

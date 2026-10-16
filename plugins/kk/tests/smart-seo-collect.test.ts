@@ -651,12 +651,14 @@ describe('Stage Execution: seo-preflight and seo-collect (R1–R3)', () => {
         const optFile = join(testDir, 'auto-opt.json');
         writeFileSync(optFile, JSON.stringify({ url: 'https://example.com' }), 'utf-8');
 
-        await seoPreflight(['', optFile, 'run-alloc-1', 'true']);
+        await seoPreflight(['', optFile, 'run-alloc-1', 'false']);
         const runWorkDirFile = resolve('.spur', 'run', 'run-alloc-1-seo-work-dir.txt');
         expect(existsSync(runWorkDirFile)).toBe(true);
-        const recorded = JSON.parse(readFileSync(runWorkDirFile, 'utf-8'));
-        expect(recorded.workDir).toContain('.works/kk-smart-seo');
-        expect(existsSync(recorded.workDir)).toBe(true);
+        // Plain text on purpose: the workflow projects this exact file into `work_dir`
+        // with `file.read.into-var`, which sets the var to the raw file content (design §3).
+        const recorded = readFileSync(runWorkDirFile, 'utf-8').trim();
+        expect(recorded).toContain('.works/kk-smart-seo');
+        expect(existsSync(recorded)).toBe(true);
     });
 
     it('handles offline fixture mode in seo-collect', async () => {

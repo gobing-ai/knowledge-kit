@@ -1,0 +1,250 @@
+---
+# kk-smart-seo — evidence-grounded SEO/GEO audit (feature G9, task 0285).
+#
+#   preflight -> collect -> check -> enrich -> judge -> score -> narrative -> report -> done|partial
+#
+# Eight stages over the existing `kk stage run seo-*` actions plus ONE bounded narrative
+# agent.run. No new workflow engine, no scheduler, no Board surface (design §3/§13).
+#
+# Contract notes that matter when editing this file:
+#   * Deterministic actions pass quoted environment data, never templated shell source:
+#     `kk stage run seo-<stage> "$work_dir"`. Workflow vars are exported to the shell env, so a
+#     value with spaces or shell metacharacters stays one literal argv entry, and a NUL byte is
+#     refused by the stage validators.
+#   * preflight atomically writes `.spur/run/<run-id>-seo-work-dir.txt` (plain text, the resolved
+#     absolute workspace). `file.read.into-var` projects that exact run-bound file back into
+#     `work_dir` before collection, so an allocated directory (empty `work_dir`) binds correctly.
+#   * Required stages use an `action-ok` edge to the next stage and a default `always` edge to
+#     `failed`. Optional evidence (PSI/CrUX, semantic decisions) is persisted by its stage as an
+#     availability outcome and the stage still exits 0 — an unavailable optional input is a
+#     `partial` report, never a failed run.
+#   * `report` chooses `done` vs `partial` from the validated `report.json.status`; an absent or
+#     malformed report falls through to `failed`.
+#   * `iterationBound: 12` covers the eight stages plus the terminal hop with no open loop.
+#   * The narrative has no revision loop: one fresh `agent.run`, `timeoutMs: 120000`, an
+#     unconditional edge to `report`, and `onError: continue` so an absent or invalid narrative
+#     degrades to the labeled deterministic summary instead of failing the audit.
+"$schema": "@gobing-ai/spur/schemas/state-machine-workflow.schema.json"
+name: kk-smart-seo
+kind: state-machine
+version: "2"
+description: >-
+  Read-only SEO/GEO audit for one public URL: bounded collection, deterministic checks,
+  optional measured evidence, typed semantic judgments, deterministic scoring, an optional
+  validated narrative and a JSON/Markdown report.
+initialState: preflight
+terminalStates:
+  - done
+  - partial
+  - failed
+failureStates:
+  - failed
+iterationBound: 12
+vars:
+  # Path to the UTF-8 JSON options file (max 64 KiB, strict schema — see seo-facts.validateOptions).
+  options_file: ""
+  # Empty asks preflight to allocate .works/kk-smart-seo/<UTC-stamp>-<run-id>; a non-empty value
+  # must name an absent or empty directory (overwrite is refused). Preflight rewrites this var from
+  # the run-bound work-dir file, so the resolved absolute path is authoritative below.
+  work_dir: ""
+  # Seeded by the engine; declared here so the schema keeps every var explicit.
+  __runId: ""
+
+states:
+  - id: preflight
+    description: >-
+      Validate the options file, allocate or verify the run workspace, install the run-bound
+      work-dir file and (require_decisions=true) prove the four SEO decision catalogs are served.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-preflight "$work_dir" "$options_file" "$__runId" true
+      - kind: file.read.into-var
+        options:
+          path: ".spur/run/${vars.__runId}-seo-work-dir.txt"
+          var: work_dir
+
+  - id: collect
+    description: >-
+      Bounded public-site collection: robots, sitemaps, scoped redirects and per-page facts,
+      all inside one shared page/request/byte/deadline budget.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-collect "$work_dir"
+
+  - id: check
+    description: >-
+      Deterministic offline rule assessment over the collected facts: one explicit
+      pass/fail/unknown/not-applicable row per rule and eligible subject.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-check "$work_dir"
+
+  - id: enrich
+    description: >-
+      Optional measured evidence (PSI lab + CrUX field, imported visibility). Disabled or
+      unavailable evidence is persisted as an availability outcome and the stage exits 0.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-enrich "$work_dir"
+
+  - id: judge
+    description: >-
+      Typed semantic judgments through `spur decision` against the four SEO catalogs. Fallback,
+      malformed, low-certainty or unavailable results stay unknown/review; deadline exhaustion
+      leaves the remaining questions explicitly unassessed and the stage still exits 0.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-judge "$work_dir"
+
+  - id: score
+    description: >-
+      Deterministic scoring, stable finding/action IDs, prioritization and the audit artifact.
+      Refuses to overwrite an existing audit in the same workspace.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-score "$work_dir"
+
+  - id: narrative
+    description: >-
+      ONE bounded narrative attempt. The agent selects allow-listed headings and fixed
+      fact/action/limit templates pointing at recorded audit records; it cannot introduce prose,
+      measurements, diagnoses or predictions. Absent/invalid output is rejected and the report
+      falls back to its deterministic summary — never an audit failure (onError: continue).
+    onEnter:
+      - kind: agent.run
+        onError: continue
+        options:
+          role: coder
+          session: fresh
+          timeoutMs: 120000
+          answerFile: "${vars.work_dir}/narrative.json"
+          input: >-
+            Author the optional Smart SEO narrative offline; change no file but this artifact.
+            Source: ${vars.work_dir}/audit.json. Its SHA-256 covers the exact file bytes (shasum -a 256).
+            Reply with exactly one JSON object, captured verbatim as narrative.json:
+            {"schemaVersion":1,"runId":"<audit.runId>","auditDigest":"<sha256>","sections":[{"heading":"summary|priorities|limits","claims":[{"template":"fact|action|limit","evidenceRef":{"artifact":"audit.json","jsonPointer":"/facts/<key>|/actions/<id>|/limits/<key>"}}]}]}
+            Only those three headings, templates and pointer roots are accepted. No other keys anywhere (a prose `text` field rejects the whole narrative). At most 30 claims; each pointer must address a record present in audit.json. Select and order recorded references; never invent a measurement, unit, diagnosis or prediction.
+            If no valid narrative is possible, reply with exactly {} - the report then falls back to its deterministic summary.
+
+  - id: report
+    description: >-
+      Materialize report.json and report.md, validating the optional narrative against the audit
+      digest first. Report status decides the terminal state: done, or partial when requested
+      evidence was unavailable.
+    onEnter:
+      - kind: shell
+        options:
+          command: >-
+            kk stage run seo-report "$work_dir"
+
+  - id: done
+    description: >-
+      Terminal — every requested stage assessed its eligible evidence and every artifact was
+      materialized with a complete status.
+  - id: partial
+    description: >-
+      Terminal — successful artifact delivery with missing requested evidence. Not a failure:
+      coverage and limits in the report name what was unavailable.
+  - id: failed
+    description: Terminal — a required stage failed or the report could not be materialized.
+
+transitions:
+  - from: preflight
+    to: collect
+    description: Options validated, workspace bound and (when required) SEO catalogs served.
+    guard:
+      kind: action-ok
+  - from: preflight
+    to: failed
+    terminalReason: failed-check
+    description: Invalid options, unusable workspace, unserved decision catalogs or stage error.
+
+  - from: collect
+    to: check
+    description: Collection completed within budget.
+    guard:
+      kind: action-ok
+  - from: collect
+    to: failed
+    terminalReason: failed-check
+    description: Collection failed (network policy, malformed predecessor input or stage error).
+
+  - from: check
+    to: enrich
+    description: Every rule/eligible-subject row assessed and checks.json written.
+    guard:
+      kind: action-ok
+  - from: check
+    to: failed
+    terminalReason: failed-check
+    description: Assessment could not be produced from the collected evidence.
+
+  - from: enrich
+    to: judge
+    description: Optional evidence resolved to available/unavailable outcomes.
+    guard:
+      kind: action-ok
+  - from: enrich
+    to: failed
+    terminalReason: failed-check
+    description: Invalid supplied visibility input or an enrichment stage error.
+
+  - from: judge
+    to: score
+    description: Judgment pass finished (including deadline exhaustion with unassessed remainder).
+    guard:
+      kind: action-ok
+  - from: judge
+    to: failed
+    terminalReason: failed-check
+    description: The decision catalog contract was violated or the stage errored.
+
+  - from: score
+    to: narrative
+    description: audit.json materialized with stable IDs and scores.
+    guard:
+      kind: action-ok
+  - from: score
+    to: failed
+    terminalReason: failed-check
+    description: Scoring failed or refused to overwrite an existing audit.
+
+  # Unconditional: the narrative is optional, so every outcome continues to reporting.
+  - from: narrative
+    to: report
+    description: Narrative attempt settled (valid, absent or rejected) — materialize the report.
+    guard:
+      kind: always
+
+  - from: report
+    to: done
+    description: report.json materialized with status "done".
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test -f "$work_dir/report.json" && jq -e '.status == "done"' "$work_dir/report.json" >/dev/null
+  - from: report
+    to: partial
+    description: report.json materialized with status "partial" (missing requested evidence).
+    guard:
+      kind: shell
+      options:
+        command: >-
+          test -f "$work_dir/report.json" && jq -e '.status == "partial"' "$work_dir/report.json" >/dev/null
+  - from: report
+    to: failed
+    terminalReason: failed-check
+    description: Absent or malformed report.json — no JSON report can be certified.

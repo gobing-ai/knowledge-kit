@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -529,11 +530,35 @@ describe('Stage Execution: seo-check, seo-score, and seo-report (R1 / AC1)', () 
         await expect(seoScore([workDir, revDir])).rejects.toThrow(/refusing overwrite/);
     });
 
-    it('runs seo-report to render markdown and json report artifacts', async () => {
-        // Add optional narrative
+    it('runs seo-report to render markdown and json report artifacts with a validated narrative', async () => {
+        // A validated narrative selects allow-listed headings and points at immutable audit records.
+        const auditDigest = createHash('sha256')
+            .update(readFileSync(join(workDir, 'audit.json'), 'utf-8'))
+            .digest('hex');
         const narrative = {
             schemaVersion: 1,
-            sections: [{ heading: 'Overview', text: 'Target site has good technical structure.' }],
+            runId: 'fixture-run-001',
+            auditDigest,
+            sections: [
+                {
+                    heading: 'summary',
+                    claims: [
+                        {
+                            template: 'fact',
+                            evidenceRef: { artifact: 'audit.json', jsonPointer: '/facts/pages_visited' },
+                        },
+                    ],
+                },
+                {
+                    heading: 'limits',
+                    claims: [
+                        {
+                            template: 'limit',
+                            evidenceRef: { artifact: 'audit.json', jsonPointer: '/limits/pagesVisited' },
+                        },
+                    ],
+                },
+            ],
         };
         writeFileSync(join(workDir, 'narrative.json'), JSON.stringify(narrative));
 
@@ -548,11 +573,66 @@ describe('Stage Execution: seo-check, seo-score, and seo-report (R1 / AC1)', () 
         expect(reportJson.schemaVersion).toBe(1);
         expect(reportJson.status).toBe('done');
         expect(reportJson.narrativeStatus).toBe('included');
+        expect(reportJson.narrativeDiagnostics).toBeUndefined();
 
         const reportMd = readFileSync(reportMdPath, 'utf-8');
         expect(reportMd).toContain('# Smart SEO Audit Report');
+        expect(reportMd).toContain('### Summary');
+        expect(reportMd).toContain('Observed fact');
+        expect(reportMd).toContain('### Limits');
         expect(reportMd).toContain('RFC 9309');
         expect(reportMd).toContain('Google retired general FAQ rich results');
+    });
+
+    it('rejects free-prose or unapproved-pointer narratives and falls back to a labeled deterministic report', async () => {
+        // Free prose is the historical shape: it carries a `text` key and no audit identity,
+        // so the whole narrative is refused rather than rendered as unvalidated prose.
+        writeFileSync(
+            join(workDir, 'narrative.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                sections: [{ heading: 'Overview', text: 'Target site has good technical structure.' }],
+            }),
+        );
+        await seoReport([workDir]);
+
+        let reportJson: ReportJsonArtifact = JSON.parse(readFileSync(join(workDir, 'report.json'), 'utf-8'));
+        expect(reportJson.narrativeStatus).toBe('rejected');
+        expect(existsSync(join(workDir, 'narrative-diagnostics.json'))).toBe(true);
+        let reportMd = readFileSync(join(workDir, 'report.md'), 'utf-8');
+        expect(reportMd).toContain('**Narrative rejected**');
+        expect(reportMd).toContain('- Coverage:');
+
+        // A well-formed envelope that points outside the approved collections is equally refused.
+        const auditDigest = createHash('sha256')
+            .update(readFileSync(join(workDir, 'audit.json'), 'utf-8'))
+            .digest('hex');
+        writeFileSync(
+            join(workDir, 'narrative.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                runId: 'fixture-run-001',
+                auditDigest,
+                sections: [
+                    {
+                        heading: 'summary',
+                        claims: [
+                            {
+                                template: 'fact',
+                                evidenceRef: { artifact: 'audit.json', jsonPointer: '/facts/not_a_recorded_fact' },
+                            },
+                        ],
+                    },
+                ],
+            }),
+        );
+        await seoReport([workDir]);
+
+        reportJson = JSON.parse(readFileSync(join(workDir, 'report.json'), 'utf-8'));
+        expect(reportJson.narrativeStatus).toBe('rejected');
+        expect(reportJson.narrativeDiagnostics?.join(' ')).toContain('unknown fact id');
+        reportMd = readFileSync(join(workDir, 'report.md'), 'utf-8');
+        expect(reportMd).toContain('Narrative rejected');
     });
 
     it('renders report markdown with escaped user strings and disclaimers', () => {
