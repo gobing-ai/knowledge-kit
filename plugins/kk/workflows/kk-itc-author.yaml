@@ -345,11 +345,11 @@ transitions:
 
   - from: judge
     to: author-finish
-    description: "Judge PASS with a HIGH/MEDIUM/LOW confidence (or no verdict file — the dry-run convention)"
+    description: "Judge PASS with a HIGH/MEDIUM/LOW confidence"
     guard:
       kind: shell
       options:
-        command: 'test ! -f "${vars.work_dir}/.itc/disposition.txt" || grep -qx finish "${vars.work_dir}/.itc/disposition.txt"'
+        command: 'grep -qx finish "${vars.work_dir}/.itc/disposition.txt"'
 
   - from: judge
     to: draft-autorevise
