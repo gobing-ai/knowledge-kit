@@ -33,7 +33,6 @@ import { join } from 'node:path';
 const REPO = join(import.meta.dir, '../../..');
 const WORKFLOWS = join(REPO, 'plugins/kk/workflows');
 
-const ITC = 'plugins/kk/workflows/kk-itc.yaml';
 /** 0302/0303: the ITC root is a DAG; the judge now lives in the extracted authoring child FSM. */
 const ITC_AUTHOR = 'plugins/kk/workflows/kk-itc-author.yaml';
 const ITC_STAGE_ENTRY = 'apps/cli/src/index.ts';
