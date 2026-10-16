@@ -1,0 +1,230 @@
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    minConfidence: 0
+
+decisions:
+    kk-seo-page-type:
+        type: choice
+        description: Functional structural role of this webpage within the site.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            homepage: Primary domain root or brand entry point.
+            product: Specific item, merchandise or standalone paid SKU.
+            category: Collection, catalogue index, listing or facet filter page.
+            service: Specific professional or client service offering.
+            article: Editorial blog post, knowledge article, guide or news story.
+            landing: Targeted campaign, lead generation or conversion page.
+            about: Organization background, team or company history.
+            contact: Communication, physical location or support contact page.
+            policy: Terms of service, privacy policy or legal disclosure.
+            other: Functional page outside the standard classifications.
+            unclear: Ambiguous, mixed, or insufficient content signals.
+        fallback: unclear
+
+    kk-seo-search-intent:
+        type: choice
+        description: Primary user search intent targeted by this page.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            informational: User seeks knowledge, explanations, answers or tutorials.
+            navigational: User seeks to locate a specific brand, tool or destination.
+            commercial: User evaluates options, reviews, comparisons or solutions.
+            transactional: User is ready to purchase, subscribe, sign up or download.
+            mixed: Multiple distinct search intents addressed equally.
+            unclear: Ambiguous or undefined user intent.
+        fallback: unclear
+
+    kk-seo-page-action:
+        type: choice
+        description: Strategic editorial action recommended for this page.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            keep-or-improve: Valuable page worth retaining and updating incrementally.
+            rewrite: Substantive content overhaul required to meet search intent.
+            review-consolidation: Potential cannibalization or thin page to consolidate.
+            unclear: Insufficient evidence to determine strategic page action.
+        fallback: unclear
+
+    kk-seo-importance:
+        type: score
+        description: Strategic importance of this page to site search authority.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Incidental or utility page with negligible search potential.
+            - Secondary supporting page with modest targeted relevance.
+            - Core pillar or commercial page driving regular search authority.
+            - Essential primary asset or high-converting flagship page.
+        fallback: 0
+
+    kk-seo-helpfulness:
+        type: score
+        description: Depth and utility of the page content for human visitors.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Thin, repetitive or boilerplate text offering little value.
+            - Basic overview covering surface facts without original insight.
+            - Thorough and genuinely helpful content with practical utility.
+            - Exceptional, comprehensive resource with expert depth and clarity.
+        fallback: 0
+
+    kk-seo-specificity:
+        type: score
+        description: Precision and concrete focus of the topic discussion.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Vague, generic claims with no specific details or examples.
+            - Mostly general statements with a few isolated specifics.
+            - Concrete discussion with precise details, steps or terminology.
+            - Highly rigorous and exact specification with actionable details.
+        fallback: 0
+
+    kk-seo-trust:
+        type: score
+        description: Credibility, evidence and verifiable signals of expertise.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Unsubstantiated claims with zero sourcing or author attribution.
+            - Modest credibility signals with basic organizational context.
+            - Clear author expertise, cited sources, and verifiable claims.
+            - Authoritative industry benchmark with transparent methodology.
+        fallback: 0
+
+    kk-seo-citability:
+        type: score
+        description: Ease and likelihood of being quoted by answer engines.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Prose structure is unfocused and difficult to extract citations from.
+            - Contains extractable points buried in dense conversational prose.
+            - Clear, concise statements directly answering user questions.
+            - Structured, highly quotable definitions, data points and conclusions.
+        fallback: 0
+
+    kk-seo-title-fit:
+        type: score
+        description: How accurately the HTML title describes the page substance.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Title is misleading, irrelevant or clickbait disconnected from body.
+            - Title loosely matches body but misses primary topic emphasis.
+            - Title accurately reflects main subject and matches search intent.
+            - Title is concise, compelling and perfectly aligned with page content.
+        fallback: 0
+
+    kk-seo-meta-fit:
+        type: score
+        description: How accurately the meta description summarizes the page content.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            - Meta description is missing, generic or irrelevant.
+            - Description is partially relevant but lacks distinct proposition.
+            - Description clearly summarizes key page value and answers intent.
+            - Description is compelling, perfectly accurate and snippet-ready.
+        fallback: 0
+
+    kk-seo-answer-first:
+        type: noul
+        description: Whether the page answers the primary question early before the fold.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Direct answer or core conclusion appears in the opening section.
+            "false": Direct answer is buried deep after extensive filler or intro prose.
+        fallback: false
+
+    kk-seo-next-step:
+        type: noul
+        description: Whether the page guides the reader toward a clear next step or CTA.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Identifiable next action, link or relevant resource provided.
+            "false": Dead-end page with no contextual navigation or clear next step.
+        fallback: false
+
+    kk-seo-heading-fit:
+        type: noul
+        description: Whether the heading hierarchy accurately mirrors page topic flow.
+        parameters:
+            subject_id:
+                type: string
+                description: Canonical URL of the page.
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Headings outline a coherent logical structure matching body sections.
+            "false": Headings are disorganized, misleading, decorative or missing.
+        fallback: false

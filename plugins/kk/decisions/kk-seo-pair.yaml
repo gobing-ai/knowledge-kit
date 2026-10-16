@@ -1,0 +1,21 @@
+$schema: "@gobing-ai/spur/schemas/decision-catalog.schema.json"
+version: 1
+
+defaults:
+    minConfidence: 0
+
+decisions:
+    kk-seo-intent-overlap:
+        type: noul
+        description: Whether two sampled pages target substantially identical search intent and topic.
+        parameters:
+            subject_id:
+                type: string
+                description: Sorted pair identifier (pageA_id::pageB_id).
+            locale:
+                type: string
+                description: Target audience locale.
+        criteria:
+            "true": Both pages compete for the same primary query intent and cannibalize search authority.
+            "false": Pages serve distinct user queries or complementary stages of user intent.
+        fallback: false

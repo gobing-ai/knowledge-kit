@@ -1,0 +1,85 @@
+{
+    "schemaVersion": 1,
+    "methodVersion": "1.0.0",
+    "runId": "fixture-run-001",
+    "createdAt": "2026-10-15T00:00:00.000Z",
+    "inputDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "predecessorDigests": {
+        "options.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "status": "complete",
+    "pages": [
+        {
+            "subjectId": "page-001",
+            "url": "https://example.com/",
+            "status": 200,
+            "availability": "available",
+            "redirectChain": [],
+            "evidencePath": "evidence/pages/page-001.json",
+            "evidenceHash": "abc123hash",
+            "facts": {
+                "url": "https://example.com/",
+                "title": "Example Domain",
+                "titleCount": 1,
+                "metaDescription": "Example domain for illustration.",
+                "metaDescriptionCount": 1,
+                "canonical": "https://example.com/",
+                "robotsDirectives": [],
+                "viewport": "width=device-width, initial-scale=1",
+                "lang": "en",
+                "headings": [{ "level": 1, "text": "Example Domain" }],
+                "h1Count": 1,
+                "images": [{ "src": "/logo.png", "alt": "Logo", "width": 100, "height": 100 }],
+                "links": [
+                    { "href": "https://example.com/about", "text": "About Us", "rel": null, "isInternal": true },
+                    { "href": "https://other.com", "text": "External Link", "rel": "nofollow", "isInternal": false }
+                ],
+                "openGraph": {
+                    "og:title": "Example Domain"
+                },
+                "hreflang": [],
+                "jsonLd": [
+                    {
+                        "raw": "{\"@context\":\"https://schema.org\",\"@type\":\"WebSite\",\"name\":\"Example\"}",
+                        "parsed": { "@context": "https://schema.org", "@type": "WebSite", "name": "Example" },
+                        "types": ["WebSite"],
+                        "error": null
+                    }
+                ],
+                "wordCount": 120,
+                "textSample": "Example Domain This domain is for use in illustrative examples in documents.",
+                "ttfbMs": 45,
+                "htmlByteLength": 1256,
+                "isRawHtmlShell": false
+            },
+            "error": null
+        }
+    ],
+    "requests": [
+        {
+            "url": "https://example.com/robots.txt",
+            "method": "GET",
+            "status": 404,
+            "durationMs": 30,
+            "bytesReceived": 150,
+            "error": null,
+            "timestamp": "2026-10-15T00:00:00.000Z"
+        },
+        {
+            "url": "https://example.com/",
+            "method": "GET",
+            "status": 200,
+            "durationMs": 45,
+            "bytesReceived": 1256,
+            "error": null,
+            "timestamp": "2026-10-15T00:00:00.000Z"
+        }
+    ],
+    "limits": {
+        "pagesVisited": 1,
+        "requestsMade": 2,
+        "totalBytes": 1406,
+        "elapsedSeconds": 1,
+        "hitLimit": null
+    }
+}

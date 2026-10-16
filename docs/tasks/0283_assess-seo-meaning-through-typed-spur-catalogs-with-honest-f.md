@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Assess SEO meaning through typed Spur catalogs with honest fallbacks
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T04:45:13.286Z
-updated_at: "2026-10-15T05:05:00.119Z"
+updated_at: "2026-10-16T01:04:14.148Z"
 feature_id: G9
 priority: P2
 tags:
@@ -13,6 +13,8 @@ tags:
 estimate_hours: 8
 
 dependencies: ["0281", "0282"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0283-verdict.json
 ---
 
 ## 0283. Assess SEO meaning through typed Spur catalogs with honest fallbacks
@@ -38,13 +40,13 @@ Current-tree audit: no Smart SEO runtime files are present; all local requiremen
 
 ### Requirements
 
-- [ ] R1. Implement the four flat catalogs and 22 declared typed decisions, seo-judge argv transport, compact evidence packets, served-outcome ledger and bounded candidate relevance mapping per design §7; load/show contracts using isolated Spur config.
-- [ ] R2. Validate outcome values/confidence/provenance; skip inapplicable questions and preserve fallback/malformed/low-certainty/error/timeout/cap-exhaustion as unknown or review, excluding them from semantic scores.
+- [x] R1. Implement the four flat catalogs and 22 declared typed decisions, seo-judge argv transport, compact evidence packets, served-outcome ledger and bounded candidate relevance mapping per design §7; load/show contracts using isolated Spur config.
+- [x] R2. Validate outcome values/confidence/provenance; skip inapplicable questions and preserve fallback/malformed/low-certainty/error/timeout/cap-exhaustion as unknown or review, excluding them from semantic scores.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Semantic judgments use discoverable typed Spur catalogs (req: R1)
-- [ ] AC2 — Missing or uncertain judgments remain unassessed (req: R2)
+- [x] AC1 — Semantic judgments use discoverable typed Spur catalogs (req: R1)
+- [x] AC2 — Missing or uncertain judgments remain unassessed (req: R2)
 
 ```gherkin
 Feature: Assess SEO meaning through typed Spur catalogs with honest fallbacks
@@ -95,25 +97,63 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 
 ### Plan
 
-- [ ] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
-- [ ] (R1) Add four flat catalogs with exactly 22 IDs, explicit required parameters, fixed choices/descriptive 0–3 levels and conservative defaults; load/status/show each using isolated config and an offline maker.
-- [ ] (R1) Implement compact serialized evidence, deterministic page/pair/candidate selection and argv-based child dispatch in seo-decisions.ts with measured attempts and shared deadline/call quota.
-- [ ] (R2) Validate served type/range/source/confidence/reason/maker, suppress inapplicable questions and missing visibility, classify default/error/timeout as unknown and insufficient confidence as review; adapt only model-qualified results to existing 0282 scoring.
-- [ ] (R1,R2) In plugins/kk/tests/smart-seo-decisions.test.ts, execute real stub children for malformed/default/timeout/cancel/cap cases; exercise real catalog loading, >2000-unit/multibyte evidence, literal argv, candidate ties and absent metadata/visibility.
-- [ ] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
-- [ ] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
+- [x] Step 0: Recheck current task contract, cited source files, Bun/tool pins, worktrees/wip ownership and completed predecessor artifact interfaces before editing; preserve unrelated working-tree changes.
+- [x] (R1) Add four flat catalogs with exactly 22 IDs, explicit required parameters, fixed choices/descriptive 0–3 levels and conservative defaults; load/status/show each using isolated config and an offline maker.
+- [x] (R1) Implement compact serialized evidence, deterministic page/pair/candidate selection and argv-based child dispatch in seo-decisions.ts with measured attempts and shared deadline/call quota.
+- [x] (R2) Validate served type/range/source/confidence/reason/maker, suppress inapplicable questions and missing visibility, classify default/error/timeout as unknown and insufficient confidence as review; adapt only model-qualified results to existing 0282 scoring.
+- [x] (R1,R2) In plugins/kk/tests/smart-seo-decisions.test.ts, execute real stub children for malformed/default/timeout/cancel/cap cases; exercise real catalog loading, >2000-unit/multibyte evidence, literal argv, candidate ties and absent metadata/visibility.
+- [x] Update docs/04_DESIGN.md in the same change for this shipped slice; preserve accepted/deferred scope and source checked-at dates.
+- [x] Run project lint, tests, build and rule gates; complete task-pipeline review and traceable requirement/AC verification before recording done. Never waive an upstream implementation dependency because refinement passed.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Change-map (auto-generated — implement step did not record a Solution).
+Each entry cites the first changed line per file (`file:line`).
+
+| Change (`file:line`) |
+|----------------------|
+| `docs/04_DESIGN.md:24` |
+| `docs/04_DESIGN.md:599` |
+| `docs/04_DESIGN.md:603` |
+| `docs/features/G9_kk-smart-seo-evidence-grounded-seo-and-geo-audits.md:9` |
+| `plugins/kk/scripts/kk-workflow-stages.ts:1784` |
+| `plugins/kk/scripts/seo-stages.ts:3` |
+| `plugins/kk/scripts/seo-stages.ts:767` |
+| `plugins/kk/scripts/seo-stages.ts:802` |
+| `plugins/kk/scripts/seo-stages.ts:813` |
+| `plugins/kk/decisions/kk-seo-keyword.yaml:1` |
+| `plugins/kk/decisions/kk-seo-page.yaml:1` |
+| `plugins/kk/decisions/kk-seo-pair.yaml:1` |
+| `plugins/kk/decisions/kk-seo-site.yaml:1` |
+| `plugins/kk/scripts/seo-decisions.ts:1` |
+| `plugins/kk/tests/smart-seo-decisions.test.ts:1` |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Four flat catalogs implemented under `plugins/kk/decisions/` declaring exactly 22 typed decisions (`plugins/kk/decisions/kk-seo-site.yaml:1`, `plugins/kk/decisions/kk-seo-page.yaml:1`, `plugins/kk/decisions/kk-seo-pair.yaml:1`, `plugins/kk/decisions/kk-seo-keyword.yaml:1`); `plugins/kk/scripts/seo-decisions.ts:30` implements compact evidence packet serialization (<=1800 units) and bounded argv child dispatch; `plugins/kk/scripts/seo-stages.ts:770` implements `seo-judge`. Verified in `plugins/kk/tests/smart-seo-decisions.test.ts:25`. |
+| R2 | MET | `plugins/kk/scripts/seo-decisions.ts:160` implements outcome validation with confidence thresholds (>=0.8), suppresses inapplicable questions (missing title/meta/headings, deterministic homepage), and excludes fallback/timeout/errors from semantic scores. Verified in `plugins/kk/tests/smart-seo-decisions.test.ts:90`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Semantic judgments use discoverable typed Spur catalogs (req: R1) | MET | test | `plugins/kk/tests/smart-seo-decisions.test.ts:25` verifies 22 decisions discoverable via `spur decision list`, compact evidence serialization, and argv transport without direct vendor calls. |
+| AC2 — Missing or uncertain judgments remain unassessed (req: R2) | MET | test | `plugins/kk/tests/smart-seo-decisions.test.ts:90` verifies low-certainty / fallback qualification rejection, inapplicable question suppression, and decision call quota enforcement. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -126,3 +166,8 @@ Shared-file protocol: implement sequentially in frozen order 0281, 0282, 0283, 0
 - Concurrency at kickoff: git worktree list showed only current main; spur task list --status wip --json returned [].
 
 ### History
+
+- 2026-10-16T00:37:29.285Z todo → wip (system)
+- 2026-10-16T01:04:07.694Z wip → testing (system)
+- 2026-10-16T01:04:14.073Z testing → done (system)
+

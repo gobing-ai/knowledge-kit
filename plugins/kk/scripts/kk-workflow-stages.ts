@@ -128,6 +128,21 @@ async function loadItcStages(): Promise<typeof import('./itc-stages.ts')> {
     }
 }
 
+/**
+ * Load the seo-* helper sibling lazily (task 0281): this runner is resolved — and copied
+ * alone — from installs where the sibling may be absent, so the seo-* stages fail loud with a
+ * remediation path instead of breaking every stage at load.
+ */
+async function loadSeoStages(): Promise<typeof import('./seo-stages.ts')> {
+    try {
+        return await import('./seo-stages.ts');
+    } catch {
+        return fail(
+            'seo-stages.ts not found next to kk-workflow-stages.ts — install or refresh the kk package (bun link in a checkout)',
+        );
+    }
+}
+
 /** coreutils-style reason for the errno codes the staged file operations can hit. */
 
 /**
@@ -1739,8 +1754,71 @@ if (import.meta.main)
             itcAdaptVerify(rest);
             break;
         }
+        case 'seo-preflight': {
+            const { seoPreflight } = await loadSeoStages();
+            try {
+                await seoPreflight(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-collect': {
+            const { seoCollect } = await loadSeoStages();
+            try {
+                await seoCollect(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-check': {
+            const { seoCheck } = await loadSeoStages();
+            try {
+                await seoCheck(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-enrich': {
+            const { seoEnrich } = await loadSeoStages();
+            try {
+                await seoEnrich(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-judge': {
+            const { seoJudge } = await loadSeoStages();
+            try {
+                await seoJudge(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-score': {
+            const { seoScore } = await loadSeoStages();
+            try {
+                await seoScore(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
+        case 'seo-report': {
+            const { seoReport } = await loadSeoStages();
+            try {
+                await seoReport(rest);
+            } catch (err: unknown) {
+                fail(err instanceof Error ? err.message : String(err));
+            }
+            break;
+        }
         default:
             fail(
-                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|itc-*|daily-*)`,
+                `unknown stage: ${stage ?? '(none)'} (expected prepare-itc|prepare-solo|prepare-storm|validate|wrap|duration|render-storm|itc-*|daily-*|seo-*)`,
             );
     }
