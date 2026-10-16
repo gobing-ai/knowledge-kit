@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { createNodeFileSystem, type ProcessExecutor, type ProcessOptions } from '@gobing-ai/ts-runtime';
 import { type ItcDecisionRequest, itcDecision } from '../src/itc-decision';
 import { runItcStage } from '../src/itc-stage';
+import { silenceOutputPerTest } from './capture';
+
+// Stage stdout is the workflow protocol and stderr is operator diagnostics; neither is this
+// suite's subject, so the seam's default targets are silenced for every test here.
+silenceOutputPerTest();
 
 async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), 'kk-itc-decision-test-'));

@@ -783,7 +783,6 @@ describe('3. sanitizer chain and paste-script construction', () => {
     test('the HTML captured at paste time is exactly sanitize(markdownToHtml(body))', async () => {
         const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
         const result = await transport(fake).publish({ content: draftContent({ videoPath: VIDEO_PATH }) });
-        console.log('LATE-RESULT:', result);
         expect(result.ok).toBe(true);
         const paste = fake.calls.find((call) => call.startsWith('paste:'));
         expect(paste).toBeDefined();

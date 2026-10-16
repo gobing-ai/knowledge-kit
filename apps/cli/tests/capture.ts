@@ -1,3 +1,4 @@
+import { afterEach, beforeEach } from 'bun:test';
 import { createBufferTarget, setDefaultOutputTargets, type WriteTarget } from '@gobing-ai/ts-utils';
 
 export interface CapturedOutput {
@@ -33,4 +34,17 @@ export function captureOutput(): CapturedOutput {
 export function silenceOutput(): () => void {
     const noop: WriteTarget = { write() {} };
     return setDefaultOutputTargets({ stdout: noop, stderr: noop });
+}
+
+/**
+ * Register per-test silence for the ts-utils output seam. Stage suites drive
+ * stdout/stderr protocols (JSON envelopes, operator diagnostics) that are not
+ * their subject; this keeps the dots reporter clean.
+ */
+export function silenceOutputPerTest(): void {
+    let restore: () => void;
+    beforeEach(() => {
+        restore = silenceOutput();
+    });
+    afterEach(() => restore());
 }

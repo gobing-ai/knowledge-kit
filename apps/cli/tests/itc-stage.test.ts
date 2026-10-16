@@ -3,6 +3,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runItcStage } from '../src/itc-stage';
+import { silenceOutputPerTest } from './capture';
+
+// Stage stdout is the workflow protocol and stderr is operator diagnostics; neither is this
+// suite's subject, so the seam's default targets are silenced for every test here.
+silenceOutputPerTest();
 
 /**
  * 0303 — the ITC stage dispatcher boundary.

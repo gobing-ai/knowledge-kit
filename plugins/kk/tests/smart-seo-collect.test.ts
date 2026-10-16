@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as http from 'node:http';
@@ -24,6 +24,14 @@ import {
     resolveAndPinDns,
 } from '../scripts/seo-fetch';
 import { seoCollect, seoPreflight } from '../scripts/seo-stages';
+
+// seo-stages.ts ships as a node-builtin-only script, so console.error IS its progress channel.
+// Mute it per test so in-process stage runs don't pollute the test reporter.
+let stageProgress: { mockRestore(): void };
+beforeEach(() => {
+    stageProgress = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => stageProgress.mockRestore());
 
 describe('Smart SEO Attribution and Upstream Disposition (R1 / AC1)', () => {
     it('verifies upstream MIT attribution and commit reference', () => {

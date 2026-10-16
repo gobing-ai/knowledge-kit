@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,6 +11,14 @@ import {
 } from '../scripts/seo-decisions';
 import type { PageRecord } from '../scripts/seo-facts';
 import { seoJudge } from '../scripts/seo-stages';
+
+// seo-stages.ts ships as a node-builtin-only script, so console.error IS its progress channel.
+// Mute it per test so in-process stage runs don't pollute the test reporter.
+let stageProgress: { mockRestore(): void };
+beforeEach(() => {
+    stageProgress = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => stageProgress.mockRestore());
 
 describe('Smart SEO Catalogs and Declarations (R1 / AC1)', () => {
     it('verifies the existence and validity of all four flat catalogs', () => {

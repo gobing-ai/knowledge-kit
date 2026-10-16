@@ -16,6 +16,11 @@ import {
     verifyItcOptionsSnapshot,
 } from '../src/itc-config';
 import { runItcStage } from '../src/itc-stage';
+import { silenceOutputPerTest } from './capture';
+
+// Stage stdout is the workflow protocol and stderr is operator diagnostics; neither is this
+// suite's subject, so the seam's default targets are silenced for every test here.
+silenceOutputPerTest();
 
 async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), 'kk-itc-config-'));

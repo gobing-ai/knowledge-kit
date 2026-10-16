@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -31,6 +31,14 @@ import {
  * Cancellation is proven against real processes: `kk stage run` must forward a host signal, and
  * the stage's own children (decision subprocesses) must die with it.
  */
+// seo-stages.ts ships as a node-builtin-only script, so console.error IS its progress channel.
+// Mute it per test so in-process stage runs don't pollute the test reporter.
+let stageProgress: { mockRestore(): void };
+beforeEach(() => {
+    stageProgress = spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => stageProgress.mockRestore());
+
 const repoRoot = resolve(import.meta.dir, '../../..');
 const workflowPath = join(repoRoot, 'plugins/kk/workflows/kk-smart-seo.yaml');
 const stagesScript = join(repoRoot, 'plugins/kk/scripts/kk-workflow-stages.ts');
