@@ -238,6 +238,8 @@ describe('buildItcPublishPlan (0298 / G21 R5)', () => {
                 'requires ordered metadata.images with real paths',
             );
 
+            writeFileSync(join(workDir, '4-illustrations/card-1.png'), 'image');
+            writeFileSync(join(workDir, '4-illustrations/card-2.png'), 'image');
             // With real image paths -> succeeds
             writeFileSync(
                 join(workDir, '4-publish/content.json'),

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
-import type { Doc } from '@gobing-ai/kk-core';
+import { type Doc, DocSchema } from '@gobing-ai/kk-core';
 import {
     compileProfile,
     DEFAULT_LABEL_PRIORITY,
@@ -101,6 +101,9 @@ export async function itcTopicExtract(
     request: ItcTopicExtractRequest,
     fs: FileSystem = createNodeFileSystem(),
 ): Promise<{ count: number; poolDigest: string }> {
+    request = ItcTopicExtractRequestSchema.parse(request);
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(request.topicProfile)) throw new Error('invalid topic profile slug');
+    if (request.refreshRun?.status === 'failed') throw new Error('requested collection refresh failed (failed)');
     const profilePath = await resolveTopicProfilePath(fs, request.topicProfile, request.profilePath);
     const profileText = await fs.readFile(profilePath);
     const profile: ExtractProfile = parseProfile(profileText);
@@ -127,7 +130,7 @@ export async function itcTopicExtract(
             // default fallback policy
         }
         const rawDocs = await store.items.selectByProfile(query, policy);
-        docs = rawDocs.map(toPoolDoc);
+        docs = z.array(DocSchema).parse(rawDocs.map(toPoolDoc));
     } finally {
         await store.close();
     }
@@ -143,8 +146,7 @@ export async function itcTopicExtract(
 
     await fs.ensureDir(request.intakeDir);
 
-    const sortedIds = docs.map((d) => d.id).sort();
-    const poolDigest = createHash('sha256').update(JSON.stringify(sortedIds)).digest('hex');
+    const poolDigest = createHash('sha256').update(JSON.stringify(docs)).digest('hex');
 
     const manifest = {
         schemaVersion: 1,
@@ -214,7 +216,7 @@ export async function itcTopicValidate(
         poolDigest: string;
         topicProfile: string;
     };
-    const poolDocs = JSON.parse(await fs.readFile(poolPath)) as Doc[];
+    const poolDocs = z.array(DocSchema).parse(JSON.parse(await fs.readFile(poolPath)));
     const rawCandidates = JSON.parse(await fs.readFile(candidatesPath));
 
     const parsed = ItcTopicCandidatesArtifactSchema.safeParse(rawCandidates);
@@ -228,7 +230,8 @@ export async function itcTopicValidate(
             `parentRunId mismatch: request ${request.parentRunId} vs candidates ${artifact.parentRunId} vs manifest ${manifest.parentRunId}`,
         );
     }
-    if (artifact.poolDigest !== manifest.poolDigest) {
+    const currentDigest = createHash('sha256').update(JSON.stringify(poolDocs)).digest('hex');
+    if (artifact.poolDigest !== manifest.poolDigest || currentDigest !== manifest.poolDigest) {
         throw new Error(
             `stale candidates: poolDigest mismatch (candidates ${artifact.poolDigest} vs pool ${manifest.poolDigest})`,
         );
@@ -296,6 +299,7 @@ export async function itcTopicSelect(
     request: ItcTopicSelectRequest,
     fs: FileSystem = createNodeFileSystem(),
 ): Promise<{ selectedCandidateId: string; itemIds: string[] }> {
+    await itcTopicValidate(request, fs);
     const manifestPath = join(request.intakeDir, 'topic-pool-manifest.json');
     const poolPath = join(request.intakeDir, 'topic-pool.json');
     const candidatesPath = join(request.intakeDir, 'topic-candidates.json');

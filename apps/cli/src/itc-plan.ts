@@ -306,8 +306,8 @@ export async function resolveItcTargets(
     // 4. Topic profile's publishPreset
     if (input.topicProfile !== undefined) {
         const topicSlug = input.topicProfile.trim();
-        if (topicSlug === '') {
-            throw new Error('topicProfile input is empty');
+        if (!SLUG_REGEX.test(topicSlug)) {
+            throw new Error('topicProfile must be a lowercase hyphenated slug');
         }
         const profilePath =
             input.topicProfilePath !== undefined && (await fs.exists(input.topicProfilePath))
@@ -361,7 +361,16 @@ async function hasOrderedImages(fs: FileSystem, workDir: string): Promise<boolea
         return (
             Array.isArray(images) &&
             images.length > 0 &&
-            images.every((img) => typeof img === 'string' && img.trim().length > 0)
+            (
+                await Promise.all(
+                    images.map(
+                        async (img) =>
+                            typeof img === 'string' &&
+                            img.trim().length > 0 &&
+                            (await fs.exists(resolve(workDir, img))),
+                    ),
+                )
+            ).every(Boolean)
         );
     } catch {
         return false;
