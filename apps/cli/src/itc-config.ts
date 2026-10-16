@@ -224,15 +224,19 @@ export async function readItcConfigBlock(
     let parsed: unknown;
     try {
         parsed = Bun.YAML.parse(text);
-    } catch (error) {
-        throw new ItcConfigInvalidError(
-            `config file is not valid YAML: ${configPath} (${error instanceof Error ? error.message : String(error)})`,
-        );
+    } catch {
+        throw new ItcConfigInvalidError(`config file is not valid YAML: ${configPath}`);
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new ItcConfigInvalidError(`config file has no top-level mapping: ${configPath}`);
     }
-    const workflows = (parsed as Record<string, unknown>).workflows;
+    const root = parsed as Record<string, unknown>;
+    for (const key of ['works_dir', 'workflows_dir']) {
+        if (root[key] !== undefined && (typeof root[key] !== 'string' || root[key].trim() === '')) {
+            throw new ItcConfigInvalidError(`config key '${key}' must be a nonempty path string`);
+        }
+    }
+    const workflows = root.workflows;
     if (workflows === undefined) return {};
     if (workflows === null || typeof workflows !== 'object' || Array.isArray(workflows)) {
         throw new ItcConfigInvalidError("config key 'workflows' must be a mapping");
@@ -510,6 +514,9 @@ export async function resolveItcOptions(
 
     const force = input.force ?? false;
     const frozen = now();
+    if (runDate === null && block.workspace?.dated) {
+        runDate = `${frozen.getFullYear()}${String(frozen.getMonth() + 1).padStart(2, '0')}${String(frozen.getDate()).padStart(2, '0')}`;
+    }
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     const intake = source.sourceKind === 'from_collect';
@@ -547,7 +554,12 @@ export async function resolveItcOptions(
     };
 
     // A direct topic/input already knows its workspace; a collected source finalizes it after ideation.
-    const withWorkspace = intake ? draft : applyWorkspace(draft, input);
+    const expandedInput = {
+        ...input,
+        ...(input.dir !== undefined ? { dir: expandHome(input.dir, homeDir) } : {}),
+        ...(input.workDir !== undefined ? { workDir: expandHome(input.workDir, homeDir) } : {}),
+    };
+    const withWorkspace = intake ? draft : applyWorkspace(draft, expandedInput);
 
     return {
         ...withWorkspace,
@@ -611,7 +623,7 @@ export function resolveItcWorkspace(
             dated: input.runDate !== undefined,
         };
     }
-    const leaf = options.runDate !== null ? `${slug}-${options.runDate}` : slug;
+    const leaf = options.runDate !== null ? join(slug, options.runDate) : slug;
     return { workDir: join(options.worksRoot, 'kk-itc', leaf), topicName: slug, dated: options.runDate !== null };
 }
 

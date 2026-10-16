@@ -124,7 +124,7 @@ describe('0303 R3 — ITC workspace follows the configured topic and optional da
             writeConfig(home, 'works_dir: .works\n');
             const options = await resolveItcOptions({ topic: 'reliable-workflows', runDate: '20261015' }, ctx(home));
             expect(options.workDir).toBe(
-                join(home, '.config', 'kk', '.works', 'kk-itc', 'reliable-workflows-20261015'),
+                join(home, '.config', 'kk', '.works', 'kk-itc', 'reliable-workflows', '20261015'),
             );
         });
     });
