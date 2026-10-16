@@ -55,6 +55,13 @@ async function withImages(specs: Record<string, number>, run: (path: (name: stri
     }
 }
 
+/** `noUncheckedIndexedAccess` guard: fails loudly on a missing fixture item, never asserts non-null. */
+function nth<T>(items: readonly T[], index: number): T {
+    const item = items[index];
+    if (item === undefined) throw new Error(`expected an item at index ${index}, got ${items.length}`);
+    return item;
+}
+
 async function capture(run: () => Promise<unknown>): Promise<{ reason?: string; error?: string }> {
     try {
         await run();
@@ -555,7 +562,7 @@ describe('CGI media browser fixtures (real Chromium, route-mocked mp origin)', (
                 ENDPOINTS.uploadimg2cdn,
             ]);
 
-            const ft1 = facts.requests[0]!;
+            const ft1 = nth(facts.requests, 0);
             expect(Object.keys(ft1.query).sort()).toEqual([
                 'action',
                 'f',
@@ -590,7 +597,7 @@ describe('CGI media browser fixtures (real Chromium, route-mocked mp origin)', (
             expect(ft1.fileFields).toEqual(['file']);
             expect(ft1.bodyBytes).toBeGreaterThanOrEqual(4096);
 
-            const ci = facts.requests[1]!;
+            const ci = nth(facts.requests, 1);
             expect(ci.query).toEqual({ action: 'crop_multi' });
             expect(Object.keys(ci.fields).sort()).toEqual([
                 'ajax',
@@ -621,7 +628,7 @@ describe('CGI media browser fixtures (real Chromium, route-mocked mp origin)', (
             expect(ci.fields.size1_y2).toBe('800');
             expect(ci.fileFields).toEqual([]);
 
-            const ui = facts.requests[3]!;
+            const ui = nth(facts.requests, 3);
             expect(Object.keys(ui.query).sort()).toEqual(['lang', 't', 'token']);
             expect(ui.query.lang).toBe('zh_CN');
             expect(ui.query.token).toBe(SESSION.token);
