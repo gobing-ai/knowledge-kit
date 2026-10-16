@@ -88,6 +88,8 @@ export interface ItcEffectiveOptions {
     publishTargets: string;
     publishLive: boolean;
     publishPreset: string | null;
+    /** Whether the preset came from the launch flag or `workflows.kk-itc` (target precedence, 0300). */
+    publishPresetSource: 'launch' | 'config' | null;
     topicProfile: string | null;
     seo: 'off' | 'handoff';
     sourceKind: 'topic' | 'input_file' | 'from_collect';
@@ -130,7 +132,7 @@ const COMPILED_DEFAULTS = {
     inlineImages: false,
     publishTargets: '',
     publishLive: false,
-    seo: 'handoff',
+    seo: 'off',
     dated: false,
 } as const;
 
@@ -542,6 +544,8 @@ export async function resolveItcOptions(
         publishTargets: input.publishTargets ?? COMPILED_DEFAULTS.publishTargets,
         publishLive: input.publishLive ?? COMPILED_DEFAULTS.publishLive,
         publishPreset: publishPreset ?? null,
+        publishPresetSource:
+            input.publishPreset !== undefined ? 'launch' : publishPreset !== undefined ? 'config' : null,
         topicProfile: topicProfile ?? null,
         seo,
         sourceKind: source.sourceKind,
@@ -586,6 +590,35 @@ function applyWorkspace(
 ): Omit<ItcEffectiveOptions, 'optionsDigest' | 'frozenAt'> {
     const workspace = resolveItcWorkspace(draft, workspaceNameFor(draft.sourceKind, draft.sourceValue), input);
     return { ...draft, status: 'prepared', workDir: workspace.workDir, topicName: workspace.topicName };
+}
+
+/**
+ * Finalize a collected-topic intake snapshot once ideation chose the topic: the chosen title names
+ * the workspace and becomes the display title; every other frozen option stays as resolved at intake.
+ */
+export function finalizeItcCollectedOptions(
+    options: ItcEffectiveOptions,
+    chosen: Pick<ChosenTopic, 'topicName' | 'displayTitle' | 'topicProfile'>,
+    input: Pick<ItcLaunchInput, 'dir' | 'workDir' | 'runDate'> = {},
+): ItcEffectiveOptions {
+    const { optionsDigest: _intakeDigest, frozenAt, ...draft } = options;
+    const workspace = resolveItcWorkspace(draft, chosen.topicName, input);
+    const prepared = {
+        ...draft,
+        status: 'prepared' as const,
+        workDir: workspace.workDir,
+        topicName: workspace.topicName,
+        displayTitle: chosen.displayTitle,
+        topicProfile: draft.topicProfile ?? chosen.topicProfile,
+    };
+    return { ...prepared, frozenAt, optionsDigest: digestItcOptions(prepared) };
+}
+
+/** The subset of `chosen-source.json` that finalizes a collected workspace. */
+export interface ChosenTopic {
+    topicName: string;
+    displayTitle: string;
+    topicProfile: string;
 }
 
 /** The composed workspace for a finalized topic. */

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { dirname } from 'node:path';
 import {
     createNodeFileSystem,
@@ -23,7 +24,7 @@ export const ItcDecisionRequestSchema = z
         schemaVersion: z.literal(1).default(1),
         parentRunId: z.string().min(1),
         decisionId: z.enum(['kk-itc-topic-choice', 'kk-itc-outline-choice', 'kk-itc-preset-choice']),
-        candidateDigest: z.string().min(1),
+        candidateDigest: z.string().min(1).optional(),
         candidates: z.array(ItcDecisionCandidateSchema).min(1),
         evidenceFiles: z.array(z.string()).default([]),
         outPath: z.string().min(1),
@@ -87,6 +88,9 @@ export async function itcDecision(
     executor: ProcessExecutor = new NodeProcessExecutor(),
 ): Promise<ItcDecisionResult> {
     const fallback = request.decisionId === 'kk-itc-preset-choice' ? 'none' : 'defer';
+    // Bind the outcome to the exact candidate slots it was chosen from (the producer may pre-compute it).
+    const candidateDigest =
+        request.candidateDigest ?? createHash('sha256').update(JSON.stringify(request.candidates)).digest('hex');
     const validCandidateIds = new Set(request.candidates.map((c) => c.id));
 
     // Allowed output values
@@ -112,7 +116,7 @@ export async function itcDecision(
             schemaVersion: 1,
             parentRunId: request.parentRunId,
             decisionId: request.decisionId,
-            candidateDigest: request.candidateDigest,
+            candidateDigest,
             value: selectedValue,
             source: isValid ? 'explicit' : 'default',
             reason: isValid
@@ -218,7 +222,7 @@ export async function itcDecision(
         schemaVersion: 1,
         parentRunId: request.parentRunId,
         decisionId: request.decisionId,
-        candidateDigest: request.candidateDigest,
+        candidateDigest,
         value: resultValue,
         source: resultSource,
         reason: resultReason,

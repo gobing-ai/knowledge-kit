@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { NodeProcessExecutor, type ProcessOptions, type ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     ItcReceiptSchema,
     itcCheckTargets,
@@ -19,6 +21,23 @@ async function withTempDir(fn: (dir: string) => Promise<void> | void): Promise<v
     } finally {
         rmSync(tempDir, { recursive: true, force: true });
     }
+}
+
+function seedReceipt(receiptsDir: string, plugin: string, fields: Record<string, unknown>): void {
+    writeFileSync(
+        join(receiptsDir, `${plugin}.json`),
+        JSON.stringify({
+            schemaVersion: 1,
+            parentRunId: 'run-rec',
+            planDigest: 'd1',
+            payloadDigest: 'd2',
+            plugin,
+            profile: 'article',
+            mode: 'draft',
+            attemptId: 'attempt-1',
+            ...fields,
+        }),
+    );
 }
 
 describe('itcMaterializePlan & Target Payloads (0302 / G21 R2)', () => {
@@ -78,6 +97,36 @@ describe('itcCheckTargets & Probes (0302 / G21 R1)', () => {
 
             const code = await itcCheckTargets([workDir]);
             expect(code).toBe(0);
+        });
+    });
+
+    it('refuses with exit 1 when a target channel probe fails', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            mkdirSync(publishDir, { recursive: true });
+            writeFileSync(
+                join(publishDir, 'publish-plan.json'),
+                JSON.stringify({ schemaVersion: 1, targets: [{ plugin: 'juejin-pub', profile: 'article' }] }),
+            );
+            const probed: string[][] = [];
+            class FailingProbe extends NodeProcessExecutor {
+                override async run(options: ProcessOptions): Promise<ProcessResult> {
+                    probed.push(options.args ?? []);
+                    return {
+                        command: options.command,
+                        args: options.args ?? [],
+                        exitCode: 1,
+                        stdout: '',
+                        stderr: '',
+                        durationMs: 0,
+                    } as ProcessResult;
+                }
+            }
+
+            const code = await itcCheckTargets([workDir], undefined, new FailingProbe());
+            expect(code).toBe(1);
+            expect(probed).toHaveLength(1);
+            expect(probed[0]?.[1]).toBe('check');
         });
     });
 });
@@ -223,6 +272,49 @@ describe('itcSendTargets, Receipts & Recovery (0302 / G21 R3, R4)', () => {
             expect(uncertainReceipt.attemptId).toBe('attempt-1');
         });
     });
+    it('re-dispatches the safe failure on retry instead of re-reading the first attempt aggregate', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            const receiptsDir = join(publishDir, 'receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            seedReceipt(receiptsDir, 'pub-ok', { status: 'succeeded', effect: 'confirmed' });
+            seedReceipt(receiptsDir, 'pub-safe', { status: 'failed', effect: 'none' });
+            seedReceipt(receiptsDir, 'pub-unknown', { status: 'uncertain', effect: 'unknown' });
+            // The first attempt's failed aggregate is still on disk.
+            writeFileSync(
+                join(publishDir, 'fanout-result.pub-safe.json'),
+                JSON.stringify({ targets: [{ target: 'pub-safe', ok: false, status: 'failed' }] }),
+            );
+            writeFileSync(
+                join(publishDir, 'publish-plan.json'),
+                JSON.stringify({
+                    schemaVersion: 1,
+                    targets: ['pub-ok', 'pub-safe', 'pub-unknown'].map((plugin) => ({
+                        plugin,
+                        profile: 'article',
+                        mode: 'draft',
+                    })),
+                }),
+            );
+
+            const dispatched: string[] = [];
+            const dispatch = async (argv: string[]): Promise<number> => {
+                const target = argv[argv.indexOf('--target') + 1] ?? '';
+                dispatched.push(target);
+                writeFileSync(
+                    argv[argv.indexOf('--out') + 1] ?? '',
+                    JSON.stringify({ targets: [{ target, ok: true, status: 'published' }] }),
+                );
+                return 0;
+            };
+            expect(await itcSendTargets([workDir, '--retry'], undefined, dispatch)).toBe(0);
+
+            expect(dispatched).toEqual(['pub-safe']);
+            const safe = JSON.parse(readFileSync(join(receiptsDir, 'pub-safe.json'), 'utf-8'));
+            expect(safe.attemptId).toBe('retry-1');
+            expect(safe.status).toBe('succeeded');
+        });
+    });
 });
 
 describe('itcReconcileReceipts & Exact Target Audit (0302 / G21 R5)', () => {
@@ -241,6 +333,41 @@ describe('itcReconcileReceipts & Exact Target Audit (0302 / G21 R5)', () => {
 
             const code = await itcReconcileReceipts([workDir]);
             expect(code).toBe(1);
+        });
+    });
+    it('settles nothing for a brief-driven run without a chosen source', async () => {
+        await withTempDir(async (workDir) => {
+            const receiptsDir = join(workDir, '4-publish/receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            seedReceipt(receiptsDir, 'pub-unknown', { status: 'uncertain', effect: 'unknown' });
+            writeFileSync(
+                join(workDir, '4-publish/publish-plan.json'),
+                JSON.stringify({ schemaVersion: 1, targets: [{ plugin: 'pub-unknown', profile: 'article' }] }),
+            );
+
+            expect(await itcReconcileReceipts([workDir])).toBe(0);
+            expect(existsSync(join(workDir, '.selection-reconcile.json'))).toBe(false);
+        });
+    });
+
+    it('retains the chosen source selection under its own run and topic when an outcome is uncertain', async () => {
+        await withTempDir(async (workDir) => {
+            const receiptsDir = join(workDir, '4-publish/receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            seedReceipt(receiptsDir, 'pub-unknown', { status: 'uncertain', effect: 'unknown' });
+            writeFileSync(
+                join(workDir, '4-publish/publish-plan.json'),
+                JSON.stringify({ schemaVersion: 1, targets: [{ plugin: 'pub-unknown', profile: 'article' }] }),
+            );
+            writeFileSync(
+                join(workDir, 'chosen-source.json'),
+                JSON.stringify({ schemaVersion: 1, parentRunId: 'run-42', topicProfile: 'rust-weekly', itemIds: [] }),
+            );
+
+            expect(await itcReconcileReceipts([workDir])).toBe(0);
+            const retained = JSON.parse(readFileSync(join(workDir, '.selection-reconcile.json'), 'utf-8'));
+            expect(retained.parentRunId).toBe('run-42');
+            expect(retained.topicProfile).toBe('rust-weekly');
         });
     });
 });
@@ -313,6 +440,51 @@ describe('itcReportSummary (0302 / G21 R5)', () => {
 
             const mdPath = join(workDir, '5-report/report.md');
             expect(readFileSync(mdPath, 'utf-8')).toContain('ITC Publication Run Report');
+        });
+    });
+    it('reports a target contract failure for missing, extra and stale receipts', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            const receiptsDir = join(publishDir, 'receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            const planRaw = JSON.stringify({
+                schemaVersion: 1,
+                targets: [
+                    { plugin: 'pub-a', profile: 'article' },
+                    { plugin: 'pub-b', profile: 'article' },
+                ],
+            });
+            writeFileSync(join(publishDir, 'publish-plan.json'), planRaw);
+            const planDigest = createHash('sha256').update(planRaw).digest('hex');
+            seedReceipt(receiptsDir, 'pub-a', { planDigest: 'other-plan', status: 'succeeded', effect: 'confirmed' });
+            seedReceipt(receiptsDir, 'pub-extra', { planDigest, status: 'succeeded', effect: 'confirmed' });
+
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.outcome).toBe('failed');
+            expect(rep.targetContractFailure).toEqual({
+                expected: ['pub-a', 'pub-b'],
+                observed: ['pub-a', 'pub-extra'],
+                stale: ['pub-a'],
+            });
+            expect(readFileSync(join(workDir, '5-report/report.md'), 'utf-8')).toContain('Target contract failure');
+        });
+    });
+
+    it('reports done when every planned target has a current successful receipt', async () => {
+        await withTempDir(async (workDir) => {
+            const publishDir = join(workDir, '4-publish');
+            const receiptsDir = join(publishDir, 'receipts');
+            mkdirSync(receiptsDir, { recursive: true });
+            const planRaw = JSON.stringify({ schemaVersion: 1, targets: [{ plugin: 'pub-a', profile: 'article' }] });
+            writeFileSync(join(publishDir, 'publish-plan.json'), planRaw);
+            const planDigest = createHash('sha256').update(planRaw).digest('hex');
+            seedReceipt(receiptsDir, 'pub-a', { planDigest, status: 'succeeded', effect: 'confirmed' });
+
+            expect(await itcReportSummary([workDir, '2'])).toBe(0);
+            const rep = JSON.parse(readFileSync(join(workDir, '5-report/report.json'), 'utf-8'));
+            expect(rep.outcome).toBe('done');
+            expect(rep.targetContractFailure).toBeUndefined();
         });
     });
 });

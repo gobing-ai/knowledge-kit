@@ -293,14 +293,12 @@ describe('kk-itc-author judge verdict → confidence routing (0302 extraction)',
         expect(route(author, 'judge', invalidVars, invalidDir)).toEqual(['judge->failed']);
     });
 
-    it('the dry-run convention is preserved: an absent verdict file still routes onward', () => {
-        const dir = tempDir('kk-itc-confidence-dryrun-');
-        // No disposition stage run at all — the workflow's dry-run walk executes no actions.
+    it('an absent disposition fails closed: the judge routes nowhere without the stage receipt', () => {
+        const dir = tempDir('kk-itc-confidence-absent-');
+        // No disposition stage run at all — a missing receipt must not imply finish (ba672145).
         const taken = route(author, 'judge', itcVariables(dir), dir);
-        expect(record('itc:dry-run-empty-verdict', taken.join(',') === 'judge->author-finish', taken.join(','))).toBe(
-            true,
-        );
-        expect(taken).toEqual(['judge->author-finish']);
+        expect(record('itc:absent-disposition-fails-closed', taken.length === 0, taken.join(','))).toBe(true);
+        expect(taken).toEqual([]);
     });
 
     it('the disposition stage is the SOLE judge reader in the child FSM (no inline verdict parsing)', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const REPO = resolve(import.meta.dir, '../../..');
@@ -47,6 +48,8 @@ describe('kk-itc DAG workflow (0302 / G21 R6)', () => {
         // report depends on verify-child-freeze so all-skipped publication branches still produce report
         const reportNode = parsed.nodes.find((n) => n.id === 'report');
         expect(reportNode?.dependsOn).toContain('verify-child-freeze');
+        // ...and on every branch tail, so the report never races an unfinished send or SEO export.
+        expect(reportNode?.dependsOn).toEqual(['verify-child-freeze', 'reconcile-settle', 'seo']);
     });
 
     it('validates kk-itc-author child workflow exists and is state-machine with version 2', () => {
@@ -93,5 +96,141 @@ describe('kk-itc DAG workflow (0302 / G21 R6)', () => {
             stderr: 'pipe',
         });
         expect(resAuthor.exitCode).toBe(0);
+    });
+});
+
+describe('kk-itc child launch (0301 R2 / 0302 R6)', () => {
+    const node = (
+        Bun.YAML.parse(readFileSync(ITC_DAG, 'utf-8')) as {
+            nodes: Array<{ id: string; action: { options: { command: string } } }>;
+        }
+    ).nodes.find((n) => n.id === 'child-author');
+    // `${vars.name}` assembled at runtime so lint's noTemplateCurlyInString stays quiet
+    const commandFor = (workDir: string): string =>
+        (node?.action.options.command ?? '').replace(/\$\{vars\.(\w+)\}/g, (_, name: string) =>
+            name === '__runId' ? 'parent-1' : name === 'work_dir' ? workDir : `v-${name}`,
+        );
+    // The frozen snapshot is the child's only source for the config-backed options.
+    const seedOptions = (dir: string): void =>
+        writeFileSync(
+            join(dir, 'itc-options.json'),
+            JSON.stringify({
+                writer: 'itc-generating',
+                playbook: 'generic',
+                auto: true,
+                unslop: false,
+                judge: false,
+                maxRevisions: 3,
+                optionsDigest: 'od-1',
+            }),
+        );
+
+    // A stub `spur` whose child run status is a file: `run`/`continue` log their argv and move
+    // the status to what the scenario says the child reaches next.
+    function launch(before: string, after: string): { exitCode: number; calls: string[]; stderr: string } {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-itc-child-'));
+        try {
+            const status = join(dir, 'status');
+            writeFileSync(status, before);
+            writeFileSync(
+                join(dir, 'spur'),
+                [
+                    '#!/bin/sh',
+                    `echo "$*" >> "${join(dir, 'calls')}"`,
+                    `case "$2" in`,
+                    `  trace) s=$(cat "${status}"); [ -n "$s" ] || exit 1; printf '{"run":{"status":"%s"}}' "$s" ;;`,
+                    `  run|continue) printf '%s' "${after}" > "${status}" ;;`,
+                    'esac',
+                ].join('\n'),
+            );
+            chmodSync(join(dir, 'spur'), 0o755);
+            seedOptions(dir);
+            const result = Bun.spawnSync(['sh', '-c', commandFor(dir)], {
+                env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` },
+                stderr: 'pipe',
+            });
+            const calls = readFileSync(join(dir, 'calls'), 'utf-8')
+                .trim()
+                .split('\n')
+                .filter((c) => !c.startsWith('workflow trace'));
+            return { exitCode: result.exitCode, calls, stderr: result.stderr.toString() };
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    it('launches a fresh child under the id derived from the parent run', () => {
+        const { exitCode, calls } = launch('', 'done');
+        expect(exitCode).toBe(0);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toContain('workflow run plugins/kk/workflows/kk-itc-author.yaml --run-id parent-1-author');
+        // Child vars come from the frozen snapshot, stringified for the FSM's string vars.
+        expect(calls[0]).toContain('"writer":"itc-generating"');
+        expect(calls[0]).toContain('"auto":"true"');
+        expect(calls[0]).toContain('"max_revisions":"3"');
+        expect(calls[0]).toContain('"options_digest":"od-1"');
+        expect(calls[0]).toContain('"child_run_id":"parent-1-author"');
+    });
+
+    it('a cancelled parent stops the owned child and cancels its run', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-itc-cancel-'));
+        try {
+            const calls = join(dir, 'calls');
+            writeFileSync(
+                join(dir, 'spur'),
+                [
+                    '#!/bin/sh',
+                    `echo "$*" >> "${calls}"`,
+                    `case "$2" in`,
+                    '  trace) exit 1 ;;',
+                    `  run) echo $$ > "${join(dir, 'child.pid')}"; exec sleep 30 ;;`,
+                    'esac',
+                ].join('\n'),
+            );
+            chmodSync(join(dir, 'spur'), 0o755);
+            seedOptions(dir);
+            const parent = Bun.spawn(['sh', '-c', commandFor(dir)], {
+                env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` },
+                stderr: 'pipe',
+            });
+            const pidFile = join(dir, 'child.pid');
+            for (let i = 0; i < 100 && !existsSync(pidFile); i++) await Bun.sleep(20);
+            const childPid = Number(readFileSync(pidFile, 'utf-8').trim());
+            parent.kill('SIGTERM');
+            expect(await parent.exited).toBe(143);
+            const alive = (): boolean => {
+                try {
+                    process.kill(childPid, 0);
+                    return true;
+                } catch {
+                    return false;
+                }
+            };
+            for (let i = 0; i < 50 && alive(); i++) await Bun.sleep(20);
+            expect(alive()).toBe(false);
+            expect(readFileSync(calls, 'utf-8')).toContain('workflow cancel parent-1-author');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('continues the same paused child instead of starting a second one', () => {
+        const { exitCode, calls } = launch('paused', 'done');
+        expect(exitCode).toBe(0);
+        expect(calls).toEqual(['workflow continue parent-1-author --yes']);
+    });
+
+    it('reports a child that pauses again as a distinct non-success naming the child', () => {
+        const { exitCode, stderr } = launch('paused', 'paused');
+        expect(exitCode).toBe(1);
+        expect(stderr).toContain('child parent-1-author paused');
+    });
+
+    it('never relaunches a completed or failed child', () => {
+        expect(launch('done', 'done')).toMatchObject({ exitCode: 0, calls: [] });
+        const failed = launch('failed', 'failed');
+        expect(failed.exitCode).toBe(1);
+        expect(failed.calls).toEqual([]);
+        expect(failed.stderr).toContain('refusing to relaunch');
     });
 });

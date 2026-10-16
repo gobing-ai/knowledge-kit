@@ -16,7 +16,7 @@ vars:
   work_dir: ""
   agent: "inline"
   writer: "topic"
-  playbook: "itc-playbook"
+  playbook: "generic"
   rubric: "tech-accuracy"
   auto: "false"
   unslop: "false"
@@ -81,12 +81,13 @@ states:
           var: __hitlAnswer
 
   - id: outline-autopick
-    description: "Auto mode — validate the writer's outline-recommendation.json and bind the pick as the selected outline"
+    description: "Auto mode — validate the writer's recommendation, then bind the bounded catalog decision (empty on defer)"
     onEnter:
       - kind: shell
         options:
           command: >-
-            kk stage run itc-outline-pick "${vars.work_dir}"
+            kk stage run itc-outline-pick "${vars.work_dir}" &&
+            kk stage run itc-decision --outline "${vars.work_dir}" "${vars.parent_run_id}"
       - kind: file.read.into-var
         options:
           path: ${vars.work_dir}/2-outline/.auto-pick
@@ -252,8 +253,19 @@ transitions:
 
   - from: outline-autopick
     to: outline-commit
+    description: "Decision chose a validated slot"
     guard:
-      kind: always
+      kind: shell
+      options:
+        command: 'test -n "${vars.outline}"'
+
+  - from: outline-autopick
+    to: outline-select
+    description: "Decision deferred -> pause for operator selection (never a guessed first choice)"
+    guard:
+      kind: shell
+      options:
+        command: 'test -z "${vars.outline}"'
 
   - from: outline-commit
     to: draft-write

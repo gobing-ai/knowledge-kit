@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { type Content, discoverAllPlugins } from '@gobing-ai/kk-core';
+import { type Content, discoverAllPlugins, type PluginRecord } from '@gobing-ai/kk-core';
 import {
     createNodeFileSystem,
     type FileSystem,
@@ -10,8 +10,10 @@ import {
 import { echoError } from '@gobing-ai/ts-utils';
 import { z } from 'zod';
 import { runFanout } from './fanout';
+import type { ItcEffectiveOptions } from './itc-config';
+import { itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, type ItcPublishPlan, resolveItcTargets } from './itc-plan';
-import { itcSelectionSettle } from './itc-topic';
+import { type ChosenSourceArtifact, type ItcSelectionSettleRequest, itcSelectionSettle } from './itc-topic';
 
 export const ItcDeliveryMetadataSchema = z
     .object({
@@ -77,11 +79,16 @@ function splitList(value: string): string[] {
  * Materializes 4-publish/content.json and resolves target publication plan.
  */
 export async function itcMaterializePlan(args: string[], fs: FileSystem = createNodeFileSystem()): Promise<number> {
-    const [workDir = '', targetsArg = '', sourceLocale = '', liveArg = '', presetArg = ''] = args;
+    const [workDir = '', ...positional] = args;
     if (!workDir) {
         echoError('usage: itc-materialize-plan <work_dir> [targets] [source_locale] [publish_live] [preset]');
         return 1;
     }
+    // The frozen launch snapshot (0303) wins over positional args, which remain for legacy callers.
+    const snapshot = await readOptionsSnapshot(fs, workDir);
+    const [targetsArg = '', sourceLocale = '', liveArg = '', presetArg = ''] = snapshot
+        ? [snapshot.publishTargets, snapshot.sourceLocale, String(snapshot.publishLive), '']
+        : positional;
     const live = liveArg === 'true';
     const draftPath = join(workDir, '3-draft-draft-article.md');
     if (!(await fs.exists(draftPath))) {
@@ -139,13 +146,42 @@ export async function itcMaterializePlan(args: string[], fs: FileSystem = create
     await fs.writeFile(join(publishDir, 'content.json'), `${JSON.stringify(content, null, 2)}\n`);
 
     // Target resolution
-    const resolvedTargets = await resolveItcTargets(
-        {
-            explicitTargets: targetsArg ? targetsArg : undefined,
-            explicitPreset: presetArg ? presetArg : undefined,
-        },
-        fs,
-    );
+    const fromLaunch = snapshot?.publishPresetSource === 'launch' ? snapshot.publishPreset : null;
+    const fromConfig = snapshot?.publishPresetSource === 'config' ? snapshot.publishPreset : null;
+    let resolvedTargets: Awaited<ReturnType<typeof resolveItcTargets>>;
+    try {
+        resolvedTargets = await resolveItcTargets(
+            {
+                explicitTargets: targetsArg ? targetsArg : undefined,
+                explicitPreset: presetArg ? presetArg : (fromLaunch ?? undefined),
+                workflowConfigPreset: fromConfig ?? undefined,
+                topicProfile: snapshot?.topicProfile ?? undefined,
+                projectRoot: snapshot?.launchProjectRoot,
+            },
+            fs,
+        );
+    } catch (err: unknown) {
+        echoError(`itc-materialize-plan: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+    }
+    // A topic-profile preset is only a suggestion: a bounded decision accepts it or plans nothing.
+    if (resolvedTargets.origin === 'topic-profile' && snapshot) {
+        const decision = await itcDecision(
+            {
+                parentRunId: snapshot.parentRunId,
+                decisionId: 'kk-itc-preset-choice',
+                candidates: [
+                    {
+                        id: 'suggested',
+                        title: `${resolvedTargets.presetName}: ${resolvedTargets.targets.map((t) => t.plugin).join(', ')}`,
+                    },
+                ],
+                outPath: join(workDir, '4-publish', 'preset-decision.json'),
+            },
+            fs,
+        );
+        if (decision.value !== 'suggested') resolvedTargets = { targets: [], origin: 'none' };
+    }
 
     if (resolvedTargets.targets.length === 0) {
         // No targets to plan
@@ -181,7 +217,7 @@ export async function itcMaterializePlan(args: string[], fs: FileSystem = create
         await fs.writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`);
 
         // Prepare isolated target payloads
-        await prepareTargetPayloads(fs, workDir, plan);
+        await prepareTargetPayloads(fs, workDir, plan, plugins);
         return 0;
     } catch (err: unknown) {
         echoError(`itc-materialize-plan: ${err instanceof Error ? err.message : String(err)}`);
@@ -189,12 +225,50 @@ export async function itcMaterializePlan(args: string[], fs: FileSystem = create
     }
 }
 
+/** The frozen `itc-options.json` fields materialize reads; absent for legacy positional callers. */
+async function readOptionsSnapshot(
+    fs: FileSystem,
+    workDir: string,
+): Promise<
+    | Pick<
+          ItcEffectiveOptions,
+          | 'parentRunId'
+          | 'publishTargets'
+          | 'sourceLocale'
+          | 'publishLive'
+          | 'publishPreset'
+          | 'publishPresetSource'
+          | 'topicProfile'
+          | 'launchProjectRoot'
+      >
+    | undefined
+> {
+    const path = join(workDir, 'itc-options.json');
+    if (!(await fs.exists(path))) return undefined;
+    return JSON.parse(await fs.readFile(path)) as ItcEffectiveOptions;
+}
+
 /**
  * Prepares isolated payload files per target with mode-key unions cleared and specific metadata applied.
  */
-async function prepareTargetPayloads(fs: FileSystem, workDir: string, plan: ItcPublishPlan): Promise<void> {
+async function prepareTargetPayloads(
+    fs: FileSystem,
+    workDir: string,
+    plan: ItcPublishPlan,
+    plugins: readonly PluginRecord[],
+): Promise<void> {
     const publishDir = join(workDir, '4-publish');
     if (!plan.targets || plan.targets.length === 0) return;
+    const planned = new Set(plan.targets.map((t) => t.plugin));
+    const modeKeys = new Set(['operation', 'published', 'publishStatus', 'private', 'mode']);
+    for (const plugin of plugins) {
+        if (!planned.has(plugin.name)) continue;
+        for (const profile of Object.values(plugin.publishing?.profiles ?? {})) {
+            for (const binding of Object.values(profile.modes)) {
+                for (const key of Object.keys(binding?.metadata ?? {})) modeKeys.add(key);
+            }
+        }
+    }
 
     for (const target of plan.targets) {
         const variantEntry = plan.variants[target.variant];
@@ -208,8 +282,8 @@ async function prepareTargetPayloads(fs: FileSystem, workDir: string, plan: ItcP
         const baseContent = JSON.parse(await fs.readFile(basePath)) as Content;
         const cleanedMetadata: Record<string, unknown> = { ...(baseContent.metadata ?? {}) };
 
-        // Clear generic and mode-key union fields
-        for (const k of ['operation', 'published', 'publishStatus', 'private', 'mode']) {
+        // Clear every mode switch any planned profile declares, so no target inherits another's.
+        for (const k of modeKeys) {
             delete cleanedMetadata[k];
         }
 
@@ -336,7 +410,9 @@ export async function itcSendTargets(
         const payloadRaw = (await fs.exists(payloadPath)) ? await fs.readFile(payloadPath) : '{}';
         const payloadDigest = createHash('sha256').update(payloadRaw).digest('hex');
 
-        const outPath = join(publishDir, `fanout-result.${target.plugin}.json`);
+        // A retry writes its own aggregate: reusing the first attempt's result would re-read the
+        // failure instead of re-sending, while the existence check stays the idempotency guard.
+        const outPath = join(publishDir, `fanout-result.${target.plugin}${isRetry ? '.retry' : ''}.json`);
         const fanoutArgs = [
             '--content',
             payloadPath,
@@ -437,15 +513,26 @@ export async function itcReconcileReceipts(args: string[], fs: FileSystem = crea
     if (!(await fs.exists(planPath))) return 0;
 
     const plan = JSON.parse(await fs.readFile(planPath)) as ItcPublishPlan;
+    // Only a collected-topic run holds a store selection; a brief-driven run has nothing to settle.
+    const chosenPath = join(workDir, 'chosen-source.json');
+    const chosen = (await fs.exists(chosenPath))
+        ? (JSON.parse(await fs.readFile(chosenPath)) as ChosenSourceArtifact)
+        : undefined;
+    const settle = async (outcome: ItcSelectionSettleRequest['outcome']): Promise<void> => {
+        if (chosen === undefined) return;
+        await itcSelectionSettle(
+            {
+                schemaVersion: 1,
+                intakeDir: workDir,
+                parentRunId: chosen.parentRunId,
+                topicProfile: chosen.topicProfile,
+                outcome,
+            },
+            fs,
+        );
+    };
     if (!plan.targets || plan.targets.length === 0) {
-        // No targets planned -> settle as author_only
-        await itcSelectionSettle({
-            schemaVersion: 1,
-            intakeDir: workDir,
-            parentRunId: 'itc-parent',
-            topicProfile: 'ai-news',
-            outcome: 'author_only',
-        });
+        await settle('author_only');
         return 0;
     }
 
@@ -467,26 +554,12 @@ export async function itcReconcileReceipts(args: string[], fs: FileSystem = crea
         }
     }
 
-    // Determine strongest known outcome
-    let strongestOutcome: 'published' | 'uncertain' | 'author_only' | 'draft_only' | 'failed' = 'failed';
+    // Strongest known outcome: one confirmed live send promotes the selection; otherwise an
+    // unresolved remote effect retains it for reconciliation; anything else releases it.
+    const liveSuccess = receipts.some((r) => r.mode === 'live' && r.status === 'succeeded');
     const hasUncertain = receipts.some((r) => r.effect === 'unknown' || r.status === 'uncertain');
     const allSucceeded = receipts.every((r) => r.status === 'succeeded');
-
-    if (hasUncertain) {
-        strongestOutcome = 'uncertain';
-    } else if (allSucceeded) {
-        strongestOutcome = plan.live ? 'published' : 'draft_only';
-    } else {
-        strongestOutcome = 'failed';
-    }
-
-    await itcSelectionSettle({
-        schemaVersion: 1,
-        intakeDir: workDir,
-        parentRunId: 'itc-parent',
-        topicProfile: 'ai-news',
-        outcome: strongestOutcome,
-    });
+    await settle(liveSuccess ? 'published' : hasUncertain ? 'uncertain' : allSucceeded ? 'draft_only' : 'failed');
 
     return 0;
 }
@@ -600,8 +673,23 @@ export async function itcReportSummary(args: string[], fs: FileSystem = createNo
         }
     }
 
-    if (receipts.some((r) => r.status === 'failed')) {
+    if (receipts.some((r) => r.status !== 'succeeded')) {
         outcome = 'failed';
+    }
+
+    // R5: the receipts must be exactly the frozen plan's targets, bound to that plan's digest.
+    const planPath = join(workDir, '4-publish/publish-plan.json');
+    let targetContract: { expected: string[]; observed: string[]; stale: string[] } | undefined;
+    if (await fs.exists(planPath)) {
+        const planRaw = await fs.readFile(planPath);
+        const planDigest = createHash('sha256').update(planRaw).digest('hex');
+        const expected = ((JSON.parse(planRaw) as ItcPublishPlan).targets ?? []).map((t) => t.plugin).sort();
+        const observed = receipts.map((r) => r.plugin).sort();
+        const stale = receipts.filter((r) => r.planDigest !== planDigest).map((r) => r.plugin);
+        if (expected.join('\n') !== observed.join('\n') || stale.length > 0) {
+            targetContract = { expected, observed, stale };
+            outcome = 'failed';
+        }
     }
 
     const reportJson = {
@@ -609,6 +697,7 @@ export async function itcReportSummary(args: string[], fs: FileSystem = createNo
         verdict,
         revisions,
         receipts,
+        ...(targetContract ? { targetContractFailure: targetContract } : {}),
         maxRevisions: Number(maxRevisions) || 2,
     };
 
@@ -621,6 +710,11 @@ export async function itcReportSummary(args: string[], fs: FileSystem = createNo
         `- Verdict: ${verdict}`,
         `- Revisions: ${revisions}`,
         `- Target Receipts: ${receipts.length}`,
+        ...(targetContract
+            ? [
+                  `- Target contract failure: expected [${targetContract.expected.join(', ')}], observed [${targetContract.observed.join(', ')}], stale [${targetContract.stale.join(', ')}]`,
+              ]
+            : []),
         '',
         '## Targets',
         ...receipts.map((r) => `- ${r.plugin} (${r.profile}): status=${r.status}, effect=${r.effect}`),

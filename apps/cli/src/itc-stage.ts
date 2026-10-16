@@ -4,6 +4,8 @@ import { discoverAllPlugins } from '@gobing-ai/kk-core';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { echo, echoError } from '@gobing-ai/ts-utils';
 import {
+    type ChosenTopic,
+    finalizeItcCollectedOptions,
     type ItcEffectiveOptions,
     type ItcLaunchInput,
     resolveItcOptions,
@@ -159,6 +161,7 @@ async function runItcPublishPlan(args: string[], fs: FileSystem): Promise<number
 }
 
 async function runItcDecision(args: string[], fs: FileSystem): Promise<number> {
+    if (args[0] === '--outline' || args[0] === '--topic') return runSlotDecision(args, fs);
     const requestIdx = args.indexOf('--request');
     const requestFile = requestIdx !== -1 ? args[requestIdx + 1] : undefined;
     if (!requestFile) {
@@ -173,6 +176,69 @@ async function runItcDecision(args: string[], fs: FileSystem): Promise<number> {
         const raw = JSON.parse(await fs.readFile(requestFile));
         const parsed = ItcDecisionRequestSchema.parse(raw);
         await itcDecision(parsed, fs);
+        return 0;
+    } catch (err: unknown) {
+        echoError(`itc-decision: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+    }
+}
+
+/**
+ * Workflow-facing decision forms that build the bounded candidate set from real slot files:
+ * `--outline <work_dir> <parentRunId>` binds the outline pick into `2-outline/.auto-pick` (empty on
+ * defer, so the child pauses for the operator instead of guessing); `--topic <intake_dir>
+ * <parentRunId>` prints the chosen candidate id or `defer`.
+ */
+async function runSlotDecision(args: string[], fs: FileSystem): Promise<number> {
+    const [mode, dir = '', parentRunId = ''] = args;
+    if (!dir || !parentRunId) {
+        echoError(`itc-decision: usage: itc-decision ${mode} <dir> <parentRunId>`);
+        return 1;
+    }
+    try {
+        if (mode === '--topic') {
+            const candidatesPath = join(dir, 'topic-candidates.json');
+            const artifact = JSON.parse(await fs.readFile(candidatesPath)) as {
+                candidates: Array<{ id: string; title: string; reason: string }>;
+            };
+            const result = await itcDecision(
+                {
+                    parentRunId,
+                    decisionId: 'kk-itc-topic-choice',
+                    candidates: artifact.candidates.map((c) => ({ id: c.id, title: c.title, description: c.reason })),
+                    evidenceFiles: [candidatesPath],
+                    outPath: join(dir, 'topic-decision.json'),
+                },
+                fs,
+            );
+            echo(result.value);
+            return 0;
+        }
+        const outlineDir = join(dir, '2-outline');
+        const candidates: Array<{ id: string; title: string }> = [];
+        const evidenceFiles: string[] = [];
+        for (const id of ['a', 'b', 'c']) {
+            const file = join(outlineDir, `outline-option-${id}.md`);
+            if (!(await fs.exists(file))) continue;
+            const heading = (await fs.readFile(file)).split('\n').find((line) => line.trim() !== '') ?? id;
+            candidates.push({ id, title: heading.replace(/^#+\s*/, '').trim() });
+            evidenceFiles.push(file);
+        }
+        if (candidates.length === 0) throw new Error(`no outline options in ${outlineDir}`);
+        evidenceFiles.push(join(outlineDir, 'outline-recommendation.json'));
+        const result = await itcDecision(
+            {
+                parentRunId,
+                decisionId: 'kk-itc-outline-choice',
+                candidates,
+                evidenceFiles,
+                outPath: join(outlineDir, 'outline-decision.json'),
+            },
+            fs,
+        );
+        const pick = result.value === 'defer' ? '' : result.value;
+        if (pick === '') echoError(`itc-decision: outline choice deferred to the operator: ${result.reason}`);
+        await fs.writeFile(join(outlineDir, '.auto-pick'), pick);
         return 0;
     } catch (err: unknown) {
         echoError(`itc-decision: ${err instanceof Error ? err.message : String(err)}`);
@@ -304,6 +370,32 @@ async function runItcPrepare(args: string[], fs: FileSystem): Promise<number> {
         return 1;
     }
 
+    // Phase 2 of a collected-topic launch: the chosen topic finalizes the intake snapshot.
+    const chosenIdx = args.indexOf('--chosen');
+    const intakeDir = chosenIdx !== -1 ? args[chosenIdx + 1] : undefined;
+    if (intakeDir !== undefined) {
+        if (options.status !== 'intake') {
+            echoError('itc-prepare: --chosen applies only to a --from-collect launch');
+            return 1;
+        }
+        const chosenPath = join(intakeDir, 'chosen-source.json');
+        if (!(await fs.exists(chosenPath))) {
+            echoError(`itc-prepare: chosen source not found: ${chosenPath}`);
+            return 1;
+        }
+        let chosen: ChosenTopic & { parentRunId?: string };
+        try {
+            chosen = JSON.parse(await fs.readFile(chosenPath)) as ChosenTopic & { parentRunId?: string };
+            if (chosen.parentRunId !== options.parentRunId) {
+                throw new Error(`chosen source belongs to run '${chosen.parentRunId}', not '${options.parentRunId}'`);
+            }
+            options = finalizeItcCollectedOptions(options, chosen, launch);
+        } catch (err: unknown) {
+            echoError(`itc-prepare: ${err instanceof Error ? err.message : String(err)}`);
+            return 1;
+        }
+    }
+
     const workDir = options.workDir;
     if (workDir === null) {
         // Collected-topic intake: no workspace exists yet; print the intake snapshot only.
@@ -319,6 +411,19 @@ async function runItcPrepare(args: string[], fs: FileSystem): Promise<number> {
 
     try {
         await writeItcOptionsSnapshot(workDir, options, fs);
+        // The workspace owns its selection evidence: reconcile settles from its chosen-source.json.
+        if (intakeDir !== undefined) {
+            // selected-docs.json lands as docs.json, the references source materialize already reads.
+            const copies: [string, string][] = [
+                ['chosen-source.json', 'chosen-source.json'],
+                ['selected-docs.json', 'docs.json'],
+                ['topic-pool-manifest.json', 'topic-pool-manifest.json'],
+            ];
+            for (const [from, to] of copies) {
+                const src = join(intakeDir, from);
+                if (await fs.exists(src)) await fs.writeFile(join(workDir, to), await fs.readFile(src));
+            }
+        }
     } catch (err: unknown) {
         echoError(
             `itc-prepare: cannot write the workspace at ${workDir}: ${err instanceof Error ? err.message : String(err)}`,

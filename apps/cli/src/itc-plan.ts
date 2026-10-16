@@ -110,7 +110,6 @@ export interface ItcPublishPlan {
     targets?: ItcPlanTargetDetail[];
 }
 
-const BROWSER_TARGETS = new Set(['substack-pub', 'juejin-pub', 'infoq-pub', 'xhs-pub']);
 const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
@@ -469,11 +468,8 @@ export async function buildItcPublishPlan(
         }
         Object.assign(variants[variant].switches, switches);
 
-        const isBrowser =
-            BROWSER_TARGETS.has(targetReq.plugin) ||
-            (plugin.browserSession !== undefined &&
-                targetReq.plugin !== 'wechatmp-pub' &&
-                targetReq.plugin !== 'x-pub');
+        // A plugin that declares a browser session drives a real browser profile: dispatch it serially.
+        const isBrowser = plugin.browserSession !== undefined;
 
         if (isBrowser) {
             browser.push({ target: targetReq.plugin, variant });

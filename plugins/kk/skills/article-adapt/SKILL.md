@@ -9,8 +9,8 @@ description: This skill should be used when a kk-itc publish plan contains varia
 
 
 This skill adapts one published article into one Content file per `publish-plan.json` variant with
-`adapt: true`. It is deliberately **thin**: the plan (built from `TARGET_PROFILES` in
-`plugins/kk/scripts/itc-stages.ts`) carries the per-variant locale, format and limits — this skill
+`adapt: true`. It is deliberately **thin**: the plan (built by `buildItcPublishPlan` in
+`apps/cli/src/itc-plan.ts` from each publish manifest's declared profiles) carries the per-variant locale, format and limits — this skill
 holds **no platform table** and never decides which variants exist.
 
 ## Inputs

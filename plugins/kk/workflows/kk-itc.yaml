@@ -7,37 +7,72 @@ description: >-
   -> illustration/SEO branches -> materialize & plan -> target check -> fan-out send -> reconcile-settle -> report
 
 vars:
+  # Config-backed options default to "" so `workflows.kk-itc` and compiled defaults apply (0303);
+  # the frozen `$work_dir/itc-options.json` is the single source every downstream node reads.
   topic: ""
   input_file: ""
+  from_collect: ""
+  topic_profile: ""
+  run_date: ""
   work_dir: ""
-  writer: "topic"
-  playbook: "itc-playbook"
+  writer: ""
+  playbook: ""
   rubric: "tech-accuracy"
-  research: "false"
-  judge: "true"
-  auto: "false"
-  unslop: "false"
+  outline: ""
+  research: ""
+  judge: ""
+  auto: ""
+  unslop: ""
   force: "false"
-  max_revisions: "2"
-  source_locale: "en"
+  max_revisions: ""
+  source_locale: ""
   publish_targets: ""
   publish_preset: ""
-  publish_live: "false"
-  cover_enabled: "false"
-  inline_images: "false"
-  seo_mode: "handoff"
+  publish_live: ""
+  cover_enabled: ""
+  inline_images: ""
+  seo_mode: ""
   agent: "inline"
   __runId: ""
   __definitionDigest: ""
 
 nodes:
   - id: prepare
-    description: "Prepare the ITC workspace and brief"
+    description: "Freeze the effective options (itc-prepare) bound to this run, then prepare the brief"
     action:
       kind: shell
       options:
-        command: >-
-          kk stage run prepare-itc "${vars.work_dir}" "${vars.topic}" "${vars.input_file}" "${vars.force}"
+        # The entry normally freezes itc-options.json before launch (a collected topic must be
+        # chosen first); a direct launch freezes it here. A snapshot from another run is refused.
+        command: |
+          wd="${vars.work_dir}"; run="${vars.__runId}"; o="$wd/itc-options.json"
+          test -n "$wd" || { echo "work_dir is required (derive it with kk stage run itc-prepare)" >&2; exit 1; }
+          if [ ! -f "$o" ]; then
+            req="$(mktemp)"
+            jq -n --arg topic "${vars.topic}" --arg inputFile "${vars.input_file}" --arg fromCollect "${vars.from_collect}" \
+              --arg topicProfile "${vars.topic_profile}" --arg runDate "${vars.run_date}" --arg workDir "$wd" --arg parentRunId "$run" \
+              --arg writer "${vars.writer}" --arg playbook "${vars.playbook}" --arg sourceLocale "${vars.source_locale}" \
+              --arg publishTargets "${vars.publish_targets}" --arg publishPreset "${vars.publish_preset}" --arg seo "${vars.seo_mode}" \
+              --arg maxRevisions "${vars.max_revisions}" --arg research "${vars.research}" --arg judge "${vars.judge}" \
+              --arg auto "${vars.auto}" --arg unslop "${vars.unslop}" --arg force "${vars.force}" --arg publishLive "${vars.publish_live}" \
+              --arg coverEnabled "${vars.cover_enabled}" --arg inlineImages "${vars.inline_images}" \
+              '$ARGS.named | with_entries(select(.value != ""))
+                | with_entries(if (.key | IN("research","judge","auto","unslop","force","publishLive","coverEnabled","inlineImages"))
+                    then .value = (.value == "true") else . end)
+                | if has("maxRevisions") then .maxRevisions |= tonumber else . end' > "$req" || { rm -f "$req"; exit 1; }
+            kk stage run itc-prepare --request "$req" > /dev/null; rc=$?; rm -f "$req"; test "$rc" -eq 0 || exit 1
+          fi
+          test -f "$o" || { echo "a collected topic must be chosen before launch: run the entry's intake, then itc-prepare --chosen" >&2; exit 1; }
+          pr=$(jq -r '.parentRunId' "$o")
+          if [ "$pr" != "$run" ] && [ "${vars.force}" != "true" ]; then
+            echo "$o belongs to run '$pr', not '$run'; pass force=true to adopt it" >&2; exit 1
+          fi
+          kind=$(jq -r '.sourceKind' "$o"); val=$(jq -r '.sourceValue' "$o")
+          case "$kind" in
+            input_file) kk stage run prepare-itc "$wd" "" "$val" "${vars.force}" ;;
+            from_collect) kk stage run prepare-itc "$wd" "$(jq -r '.displayTitle' "$o")" "" "${vars.force}" ;;
+            *) kk stage run prepare-itc "$wd" "$val" "" "${vars.force}" ;;
+          esac
 
   - id: child-author
     description: "Run child authoring state machine (outline -> draft -> unslop -> review/judge)"
@@ -46,9 +81,36 @@ nodes:
     action:
       kind: shell
       options:
-        command: >-
-          spur workflow run plugins/kk/workflows/kk-itc-author.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"agent\":\"${vars.agent}\",\"writer\":\"${vars.writer}\",\"playbook\":\"${vars.playbook}\",\"rubric\":\"${vars.rubric}\",\"auto\":\"${vars.auto}\",\"unslop\":\"${vars.unslop}\",\"judge\":\"${vars.judge}\",\"max_revisions\":\"${vars.max_revisions}\",\"parent_run_id\":\"${vars.__runId}\",\"child_run_id\":\"${vars.__runId}-author\"}"
+        # The child id is derived from the parent before launch, so an interrupted parent queries
+        # and continues the SAME child instead of starting a second one; a paused child stays a
+        # distinct non-success for the parent until it is answered and reaches done. The child
+        # runs as an owned process: a cancelled parent signals it and cancels its run.
+        command: |
+          cid="${vars.__runId}-author"
+          v=$(jq -c --arg wd "${vars.work_dir}" --arg agent "${vars.agent}" --arg rubric "${vars.rubric}" --arg outline "${vars.outline}" \
+            --arg run "${vars.__runId}" --arg dd "${vars.__definitionDigest}" \
+            '{work_dir:$wd, agent:$agent, rubric:$rubric, outline:$outline, writer:.writer, playbook:.playbook,
+              auto:(.auto|tostring), unslop:(.unslop|tostring), judge:(.judge|tostring), max_revisions:(.maxRevisions|tostring),
+              parent_run_id:$run, child_run_id:($run + "-author"), definition_digest:$dd, options_digest:.optionsDigest}' \
+            "${vars.work_dir}/itc-options.json") || exit 1
+          owned() {
+            env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST "$@" &
+            pid=$!
+            trap 'kill -TERM "$pid" 2>/dev/null; spur workflow cancel "$cid" >/dev/null 2>&1; exit 143' TERM INT HUP
+            wait "$pid"; rc=$?
+            trap - TERM INT HUP
+            return "$rc"
+          }
+          st=$(spur workflow trace "$cid" --json 2>/dev/null | jq -r '.run.status // empty')
+          case "$st" in
+            done) exit 0 ;;
+            paused) owned spur workflow continue "$cid" --yes ;;
+            "") owned spur workflow run plugins/kk/workflows/kk-itc-author.yaml --run-id "$cid" --vars "$v" ;;
+            *) echo "child $cid is $st; refusing to relaunch it" >&2; exit 1 ;;
+          esac
+          st=$(spur workflow trace "$cid" --json 2>/dev/null | jq -r '.run.status // empty')
+          if [ "$st" = paused ]; then echo "child $cid paused: answer it with spur workflow continue $cid, then resume this run" >&2; exit 1; fi
+          test "$st" = done || { echo "child $cid ended $st" >&2; exit 1; }
 
   - id: verify-child-freeze
     description: "Verify child authoring completion receipt and freeze draft/outline digests"
@@ -67,7 +129,7 @@ nodes:
     condition:
       kind: shell
       options:
-        command: 'test "${vars.cover_enabled}" = "true" || test "${vars.inline_images}" = "true"'
+        command: 'jq -e ".coverEnabled or .inlineImages" "${vars.work_dir}/itc-options.json" >/dev/null'
     action:
       kind: agent.run
       options:
@@ -88,7 +150,7 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage run itc-materialize-plan "${vars.work_dir}" "${vars.publish_targets}" "${vars.source_locale}" "${vars.publish_live}" "${vars.publish_preset}"
+          kk stage run itc-materialize-plan "${vars.work_dir}"
 
   - id: adapt
     description: "Prepare per-platform variant Content files via kk:article-adapt — runs only for adapt:true variants (R9)"
@@ -128,16 +190,17 @@ nodes:
           kk stage run itc-check-targets "${vars.work_dir}"
 
   - id: send-confirm
-    description: "Confirm target send authorization"
+    description: >-
+      Operator approval of a LIVE send: `pause: true` stops the run and RESUME is the approval
+      (no action); cancelling is the rejection. Skipped for draft-only or empty plans.
     dependsOn:
       - adapt-verify
       - check-targets
-    action:
+    pause: true
+    condition:
       kind: shell
       options:
-        command: >-
-          test -f "${vars.work_dir}/4-publish/publish-plan.json" || exit 0;
-          echo "send confirmed"
+        command: 'jq -e ".live == true and (.targets // [] | length) > 0" "${vars.work_dir}/4-publish/publish-plan.json" >/dev/null 2>&1'
 
   - id: fanout-send
     description: "Dispatch target payloads via executor fan-out and record receipts"
@@ -179,14 +242,18 @@ nodes:
       kind: shell
       options:
         command: >-
-          kk stage run itc-export-seo "${vars.work_dir}" "${vars.seo_mode}"
+          kk stage run itc-export-seo "${vars.work_dir}" "$(jq -r '.seo' "${vars.work_dir}/itc-options.json")"
 
   - id: report
     description: "Produce final run report summary"
+    # Mandatory freeze plus every branch: a skipped optional branch still satisfies the edge,
+    # so an all-skipped publication reports, but a report never races an unfinished send.
     dependsOn:
       - verify-child-freeze
+      - reconcile-settle
+      - seo
     action:
       kind: shell
       options:
         command: >-
-          kk stage run itc-report-summary "${vars.work_dir}" "${vars.max_revisions}"
+          kk stage run itc-report-summary "${vars.work_dir}" "$(jq -r '.maxRevisions' "${vars.work_dir}/itc-options.json")"

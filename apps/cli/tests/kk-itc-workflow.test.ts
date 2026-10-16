@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -252,6 +252,10 @@ describe('kk-itc auto mode + revise loop + report (0149)', () => {
 
     it('task check — the dry-run walk with auto=true reaches done', () => {
         const workDir = mkdtempSync(join(tmpdir(), 'kk-itc-dryrun-'));
+        // The judge guard fails closed without a disposition (ba672145), and --dry-run runs no
+        // stage actions, so seed the disposition the itc-author-verdict stage would have written.
+        mkdirSync(join(workDir, '.itc'), { recursive: true });
+        writeFileSync(join(workDir, '.itc/disposition.txt'), 'finish\n');
         const result = Bun.spawnSync(
             [
                 'spur',

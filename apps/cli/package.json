@@ -53,7 +53,8 @@
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
         "commander": "15.0.0",
-        "playwright": "catalog:"
+        "playwright": "catalog:",
+        "zod": "4.4.3"
     },
     "devDependencies": {
         "@gobing-ai/kk-board": "workspace:*",
