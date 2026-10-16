@@ -812,6 +812,10 @@ describe('2. pre-browser refusals', () => {
 });
 
 describe('3. sanitizer chain', () => {
+    test('unquoted javascript:/data: attribute values are stripped too', () => {
+        const sanitized = sanitizeBilibiliHtml('<a href=javascript:alert(1)>a</a><img src=data:text/html,x>');
+        expect(sanitized).not.toMatch(/javascript:|data:text/i);
+    });
     test('sanitizeBilibiliHtml strips script, style, iframe, embed, and object blocks', () => {
         const dirty =
             '<div>Safe<script>alert(1)</script><style>body{color:red;}</style><iframe>evil</iframe><embed src="x"/><object data="y"></object></div>';

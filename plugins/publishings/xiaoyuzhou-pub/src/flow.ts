@@ -131,7 +131,8 @@ export function sanitizeXiaoyuzhouHtml(html: string): string {
         .replace(/<\s*(script|style|iframe|embed|object)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
         .replace(/<\s*(script|style|iframe|embed|object)\b[^>]*>/gi, '')
         .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-        .replace(/(\s(?:href|src)\s*=\s*)(["'])\s*(?:javascript|data):[^"']*\2/gi, '$1$2$2');
+        .replace(/(\s(?:href|src)\s*=\s*)(["'])\s*(?:javascript|data):[^"']*\2/gi, '$1$2$2')
+        .replace(/(\s(?:href|src)\s*=\s*)(?:javascript|data):[^\s>]*/gi, '$1""');
 }
 
 /**

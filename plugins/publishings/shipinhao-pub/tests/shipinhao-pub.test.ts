@@ -736,6 +736,10 @@ describe('2. pre-browser refusals (zero browser launches)', () => {
 });
 
 describe('3. sanitizer chain and paste-script construction', () => {
+    test('unquoted javascript:/data: attribute values are stripped too', () => {
+        const sanitized = sanitizeShipinhaoHtml('<a href=javascript:alert(1)>a</a><img src=data:text/html,x>');
+        expect(sanitized).not.toMatch(/javascript:|data:text/i);
+    });
     const dirtyBody = [
         '# Shipinhao Fixture',
         '',

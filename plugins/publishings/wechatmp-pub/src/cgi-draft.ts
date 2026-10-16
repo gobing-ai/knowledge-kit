@@ -14,6 +14,7 @@
 import type { Content } from '@gobing-ai/kk-core';
 import type { WechatCgiSession } from './cgi';
 import type { WechatArticleMedia } from './cgi-media';
+import { deriveDigest } from './modes';
 import type { WechatPage } from './page';
 
 const MP_ORIGIN = 'https://mp.weixin.qq.com';
@@ -308,7 +309,9 @@ export function buildCreateArticlePayload(
         type: '77',
         title0: content.title ?? '',
         author0: plain('author'),
-        digest0: plain('digest'),
+        // Parity with the DOM path: an absent metadata.digest still sends the body-derived 摘要
+        // (`deriveDigest`, capped at DERIVED_DIGEST_MAX) instead of dropping it to an empty digest0.
+        digest0: deriveDigest(content) ?? '',
         auto_gen_digest0: '0',
         content0: media.html,
         sourceurl0: '',

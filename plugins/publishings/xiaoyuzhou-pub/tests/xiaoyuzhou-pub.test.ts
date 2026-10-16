@@ -1242,6 +1242,10 @@ describe('xiaoyuzhou-pub source hygiene (no eval, one sanitized paste, setInputF
 });
 
 describe('xiaoyuzhou-pub environment restoration', () => {
+    test('unquoted javascript:/data: attribute values are stripped too', () => {
+        const sanitized = sanitizeXiaoyuzhouHtml('<a href=javascript:alert(1)>a</a><img src=data:text/html,x>');
+        expect(sanitized).not.toMatch(/javascript:|data:text/i);
+    });
     test('no xiaoyuzhou profile env leaks between suites', () => {
         expect(process.env.XIAOYUZHOU_PROFILE_DIR).toBe(originalChannelDir);
         expect(process.env.KK_BROWSER_PROFILE_DIR).toBe(originalSharedDir);

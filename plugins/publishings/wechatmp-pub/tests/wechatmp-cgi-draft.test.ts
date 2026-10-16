@@ -215,10 +215,18 @@ describe('create payload builder (pure)', () => {
             { x1: 10, y1: 20, x2: 610, y2: 610 },
         ]);
     });
-    test('an omitted digest or author lands as an empty string', () => {
+    test('an omitted digest falls back to the body-derived 摘要 (DOM-path parity) and an omitted author is empty', () => {
         const bare = buildCreateArticlePayload(SESSION, cgiContent(), CREATE_MEDIA, { random: 'f'.repeat(16) });
-        expect(bare.fields.digest0).toBe('');
+        // Parity with the DOM path: `deriveDigest` supplies the body's first non-empty line rather
+        // than dropping the 摘要 to '' (the gap task 0290's review logged).
+        expect(bare.fields.digest0).toBe('正文');
         expect(bare.fields.author0).toBe('');
+    });
+    test('an explicit metadata.digest still wins over the derived 摘要', () => {
+        const explicit = buildCreateArticlePayload(SESSION, cgiContent({ digest: '显式摘要' }), CREATE_MEDIA, {
+            random: 'f'.repeat(16),
+        });
+        expect(explicit.fields.digest0).toBe('显式摘要');
     });
     test('the create url carries the token, lang=zh_CN and type=77 under the operate_appmsg subpath', () => {
         const url = new URL(payload().url);
