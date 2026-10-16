@@ -40,7 +40,7 @@ const FIRST_SEEN_AT = 'first_seen_at';
 export const DEFAULT_EXTRACT_LIMIT = 20;
 
 /** Every top-level profile key the schema allows; anything else is a typo, not an extension. */
-const PROFILE_KEYS = new Set(['topic', 'where', 'order', 'limit']);
+const PROFILE_KEYS = new Set(['topic', 'where', 'order', 'limit', 'publishPreset']);
 
 /** One `where` predicate: a decision value set, or a numeric bound on a score decision. */
 export type ProfilePredicate =
@@ -61,6 +61,8 @@ export interface ExtractProfile {
     order: ProfileOrder[];
     /** Pool cap from the profile; `--limit` overrides it (see {@link compileProfile}). */
     limit: number;
+    /** Optional editorial publish preset name (task 0300). */
+    publishPreset?: string;
 }
 
 /** Per-call options {@link compileProfile} merges over the parsed profile. */
@@ -214,7 +216,21 @@ export function parseProfile(yaml: string): ExtractProfile {
         }
         limit = document.limit;
     }
-    return { topic: topic.trim(), where, order, limit };
+
+    let publishPreset: string | undefined;
+    if (document.publishPreset !== undefined) {
+        if (
+            typeof document.publishPreset !== 'string' ||
+            !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(document.publishPreset.trim())
+        ) {
+            throw new ProfileInvalidError(
+                `publishPreset: expected a lowercase hyphenated slug, got ${JSON.stringify(document.publishPreset)}`,
+            );
+        }
+        publishPreset = document.publishPreset.trim();
+    }
+
+    return { topic: topic.trim(), where, order, limit, ...(publishPreset !== undefined ? { publishPreset } : {}) };
 }
 
 /**

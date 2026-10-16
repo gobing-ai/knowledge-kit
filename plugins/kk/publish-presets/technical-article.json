@@ -1,0 +1,14 @@
+{
+    "schemaVersion": 1,
+    "name": "technical-article",
+    "targets": [
+        {
+            "plugin": "zenn-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "qiita-pub",
+            "profile": "article"
+        }
+    ]
+}

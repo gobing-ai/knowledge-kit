@@ -1,0 +1,14 @@
+{
+    "schemaVersion": 1,
+    "name": "chinese-article",
+    "targets": [
+        {
+            "plugin": "juejin-pub",
+            "profile": "article"
+        },
+        {
+            "plugin": "infoq-pub",
+            "profile": "article"
+        }
+    ]
+}

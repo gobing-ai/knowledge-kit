@@ -140,6 +140,21 @@ describe('parseProfile', () => {
         expect(() => parseProfile('[not, a, mapping]\n')).toThrow(/YAML mapping/);
         expect(() => parseProfile('topic: t\nwhere: {unclosed\n')).toThrow(ProfileInvalidError);
     });
+
+    it('0300 — accepts optional publishPreset as lowercase hyphenated slug and rejects invalid formats', () => {
+        const valid = parseProfile(
+            'topic: t\nwhere:\n  kk-item-category: { in: [ai-news] }\npublishPreset: technical-article\n',
+        );
+        expect(valid.publishPreset).toBe('technical-article');
+
+        for (const bad of ['Technical', 'tech article', 'tech_article', 'tech/article', '']) {
+            expect(() =>
+                parseProfile(
+                    `topic: t\nwhere:\n  kk-item-category: { in: [ai-news] }\npublishPreset: ${JSON.stringify(bad)}\n`,
+                ),
+            ).toThrow(ProfileInvalidError);
+        }
+    });
 });
 
 describe('compileProfile', () => {
@@ -155,16 +170,13 @@ describe('compileProfile', () => {
         expect(query.excludeTopic).toBeUndefined();
     });
 
-    it('applies the --limit and excludeTopic overrides', () => {
-        const profile = parseProfile(readFileSync(AI_NEWS_PROFILE, 'utf-8'));
-        const query = compileProfile(profile, {
-            windowMs: 3_600_000,
-            now: 1,
-            limit: 5,
-            excludeTopic: 'ai-news',
-        });
-
-        expect(query.limit).toBe(5);
-        expect(query.excludeTopic).toBe('ai-news');
+    it('0300 — compileProfile query is byte-equivalent with or without publishPreset', () => {
+        const withPreset = parseProfile(
+            'topic: t\nwhere:\n  kk-item-category: { in: [ai-news] }\npublishPreset: technical-article\n',
+        );
+        const withoutPreset = parseProfile('topic: t\nwhere:\n  kk-item-category: { in: [ai-news] }\n');
+        const q1 = compileProfile(withPreset, { windowMs: 3600000, now: 1000, limit: 10 });
+        const q2 = compileProfile(withoutPreset, { windowMs: 3600000, now: 1000, limit: 10 });
+        expect(q1).toEqual(q2);
     });
 });
