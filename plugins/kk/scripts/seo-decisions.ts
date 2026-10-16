@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { CrawlArtifact, PageRecord, SeoOptions } from './seo-facts';
-import { writeJsonAtomic } from './seo-fetch';
+import { assertSeoNotCancelled, SEO_CANCEL_SIGNALS, SeoStageCancelledError, writeJsonAtomic } from './seo-fetch';
 
 export interface JudgmentEntry {
     id: string; // decision id, e.g. "kk-seo-page-type"
@@ -123,6 +123,9 @@ export function executeDecisionRun(
         }
     }
 
+    // Cancellation refuses new dispatch (design §4); the stage aborts instead of recording fallbacks.
+    assertSeoNotCancelled();
+
     const args = ['decision', 'run', decisionId];
     for (const [k, v] of Object.entries(params)) {
         args.push('--param', `${k}=${v}`);
@@ -138,6 +141,17 @@ export function executeDecisionRun(
             timeout: timeoutMs,
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+
+        // The signal handlers cannot run while spawnSync blocks, so a cancellation delivered to the
+        // process group is observed through the child's own termination signal instead: the child
+        // was killed by the same cancellation, which means this stage must stop rather than record
+        // the kill as a fallback result and dispatch another decision.
+        if (res.signal !== null && (SEO_CANCEL_SIGNALS as readonly string[]).includes(res.signal)) {
+            throw new SeoStageCancelledError(res.signal as NodeJS.Signals, decisionId);
+        }
+        // A cancellation that arrived while the child ran already terminated it with the process
+        // group; the loop must stop here rather than treat the killed child as a fallback result.
+        assertSeoNotCancelled();
 
         if (res.status !== 0 || !res.stdout) {
             return {
@@ -157,6 +171,8 @@ export function executeDecisionRun(
         const parsed = JSON.parse(res.stdout);
         return validateAndNormalizeDecisionResult(decisionId, subjectId, subjectUrl, parsed);
     } catch (err: unknown) {
+        // Cancellation is control flow, not a fallback decision: it must abort the stage.
+        if (err instanceof SeoStageCancelledError) throw err;
         return {
             id: decisionId,
             subjectId,

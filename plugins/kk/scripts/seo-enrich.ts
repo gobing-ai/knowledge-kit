@@ -3,7 +3,15 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import { resolve } from 'node:path';
 import type { CrawlArtifact, SeoOptions } from './seo-facts';
-import { isPublicAddress, resolveAndPinDns, writeJsonAtomic } from './seo-fetch';
+import {
+    assertSeoNotCancelled,
+    isPublicAddress,
+    onSeoCancel,
+    resolveAndPinDns,
+    SeoStageCancelledError,
+    seoCancelledSignal,
+    writeJsonAtomic,
+} from './seo-fetch';
 
 /** Fixed PSI lab endpoint (design §8/§13). No other origin may receive the PSI key. */
 export const PSI_ENDPOINT = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
@@ -184,6 +192,7 @@ export async function providerRequestJson(
         const abort = (err: Error): void => {
             if (settled) return;
             settled = true;
+            disposeCancel();
             try {
                 req?.destroy();
             } catch {
@@ -191,6 +200,16 @@ export async function providerRequestJson(
             }
             rejectPromise(err);
         };
+
+        // Cancellation aborts the in-flight provider socket (design §4).
+        const disposeCancel = onSeoCancel((signal) => {
+            abort(new SeoStageCancelledError(signal, url));
+        });
+        const alreadyCancelled = seoCancelledSignal();
+        if (alreadyCancelled !== null) {
+            abort(new SeoStageCancelledError(alreadyCancelled, url));
+            return;
+        }
 
         const timer = setTimeout(() => abort(new Error(`provider request timed out after ${timeoutMs}ms`)), timeoutMs);
 
@@ -248,6 +267,7 @@ export async function providerRequestJson(
             res.on('end', () => {
                 if (settled) return;
                 settled = true;
+                disposeCancel();
                 clearTimeout(timer);
                 const body = Buffer.concat(chunks).toString('utf-8');
                 if (res.statusCode !== undefined && res.statusCode !== 200) {
@@ -582,9 +602,14 @@ export async function runSeoEnrich(workDir: string, deps: EnrichDeps = {}): Prom
         const unavailable: { url: string; scope: 'lab' | 'field'; reason: string }[] = [];
         let attempts = 0;
 
-        const budgetLeft = (): boolean => attempts < MAX_ENRICH_ATTEMPTS && Date.now() - startedAt < ENRICH_DEADLINE_MS;
+        const budgetLeft = (): boolean =>
+            attempts < MAX_ENRICH_ATTEMPTS &&
+            Date.now() - startedAt < ENRICH_DEADLINE_MS &&
+            seoCancelledSignal() === null;
 
         for (const pageUrl of pages) {
+            // Cancellation stops new provider dispatch (design §4).
+            assertSeoNotCancelled();
             if (psiKey) {
                 for (const strategy of ['mobile', 'desktop'] as const) {
                     if (!budgetLeft()) break;

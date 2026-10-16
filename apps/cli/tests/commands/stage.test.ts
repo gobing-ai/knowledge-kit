@@ -17,6 +17,16 @@ function withTempDir<T>(fn: (dir: string) => T): T {
     }
 }
 
+/** Async twin of `withTempDir` for action-level tests driven through `parseAsync`. */
+async function withTempDirAsync<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+    const dir = mkdtempSync(join(tmpdir(), 'kk-stage-verb-'));
+    try {
+        return await fn(dir);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+}
+
 /** Fake installed package: dist/index.js entry + optional shipped stages script. */
 function fakePkg(dir: string, stagesScript?: string): string {
     const dist = join(dir, 'dist');
@@ -130,11 +140,11 @@ describe('kk stage verb (0144)', () => {
         ).toEqual(['<args...>']);
     });
 
-    it('the `stage run` action maps non-zero exits to CommanderError and passes unknown flags through', () => {
+    it('the `stage run` action maps non-zero exits to CommanderError and passes unknown flags through', async () => {
         const program = new Command();
         registerStageCommand(program);
 
-        withTempDir((dir) => {
+        await withTempDirAsync(async (dir) => {
             const argv1 = fakePkg(dir, 'process.exit(3);\n');
             const stages = join(dir, 'plugins/kk/scripts/kk-workflow-stages.ts');
             // The action resolves the runner from process.argv[1]; point it at the fake package.
@@ -143,21 +153,22 @@ describe('kk stage verb (0144)', () => {
             const prevCwd = process.cwd();
             process.chdir(dir); // cwd fallback must not mask the package tier
             try {
-                // from:'user' parses from index 0: argv[0] is the program/verb itself.
-                expect(() => program.parse(['stage', 'run', 'daily-prepare'], { from: 'user' })).toThrow(
+                // The action is async (a cancellable spawn forwards host signals), so the verb is
+                // driven through parseAsync; the exit-code contract is unchanged.
+                await expect(program.parseAsync(['stage', 'run', 'daily-prepare'], { from: 'user' })).rejects.toThrow(
                     CommanderError,
                 );
                 try {
-                    program.parse(['stage', 'run', 'daily-prepare'], { from: 'user' });
+                    await program.parseAsync(['stage', 'run', 'daily-prepare'], { from: 'user' });
                 } catch (err) {
                     expect((err as CommanderError).code).toBe('kk.stage.failed');
                     expect((err as CommanderError).exitCode).toBe(3);
                 }
                 // Unknown flags pass through to the runner as positional args.
                 writeFileSync(stages, 'if (process.argv[3] === "--future-flag") process.exit(0);\nprocess.exit(1);\n');
-                expect(() =>
-                    program.parse(['stage', 'run', 'daily-prepare', '--future-flag'], { from: 'user' }),
-                ).not.toThrow();
+                await expect(
+                    program.parseAsync(['stage', 'run', 'daily-prepare', '--future-flag'], { from: 'user' }),
+                ).resolves.toBeDefined();
             } finally {
                 process.argv[1] = prevArgv1;
                 process.chdir(prevCwd);

@@ -5,6 +5,112 @@ import * as https from 'node:https';
 import { dirname } from 'node:path';
 import { normalizeUrl, sha256 } from './seo-facts';
 
+/* ------------------------------------------------------------------ *
+ * Stage cancellation (design §4)
+ *
+ * A cancelled audit must abort its active sockets and child processes,
+ * dispatch no further request or decision, and preserve the artifacts it
+ * already wrote. The registry lives here because this module is the shared
+ * leaf every SEO stage imports — no cycle, one cancellation surface.
+ * ------------------------------------------------------------------ */
+
+/** Signals that cancel a running SEO stage (a host interrupt or engine cancel). */
+export const SEO_CANCEL_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+
+/** Raised when a stage observes cancellation; callers stop dispatching new work. */
+export class SeoStageCancelledError extends Error {
+    readonly signal: NodeJS.Signals;
+    constructor(signal: NodeJS.Signals, detail = '') {
+        super(detail === '' ? `seo stage cancelled by ${signal}` : `seo stage cancelled by ${signal}: ${detail}`);
+        this.name = 'SeoStageCancelledError';
+        this.signal = signal;
+    }
+}
+
+type SeoCancelListener = (signal: NodeJS.Signals) => void;
+
+let seoCancelledBy: NodeJS.Signals | null = null;
+let seoHandlersInstalled = false;
+const seoCancelListeners = new Set<SeoCancelListener>();
+const seoSignalHandlers = new Map<NodeJS.Signals, () => void>();
+
+/** The signal that cancelled this process, or null while it is still live. */
+export function seoCancelledSignal(): NodeJS.Signals | null {
+    return seoCancelledBy;
+}
+
+/** Conventional shell exit status for a signal-terminated process. */
+export function seoSignalExitCode(signal: NodeJS.Signals): number {
+    if (signal === 'SIGINT') return 130;
+    if (signal === 'SIGTERM') return 143;
+    if (signal === 'SIGHUP') return 129;
+    return 1;
+}
+
+/** Install the process handlers once; every later call only registers a listener. */
+function ensureSeoCancelHandlers(): void {
+    if (seoHandlersInstalled) return;
+    seoHandlersInstalled = true;
+    for (const signal of SEO_CANCEL_SIGNALS) {
+        const handler = (): void => {
+            if (seoCancelledBy !== null) return; // first signal wins; a second never re-enters work
+            seoCancelledBy = signal;
+            for (const listener of [...seoCancelListeners]) {
+                try {
+                    listener(signal);
+                } catch {
+                    // a listener failure must not block the remaining cancellations
+                }
+            }
+        };
+        seoSignalHandlers.set(signal, handler);
+        process.on(signal, handler);
+    }
+}
+
+/**
+ * Observe cancellation. Returns a disposer that removes the listener (and, when
+ * no listener remains, the process signal handlers) so a long-lived process does
+ * not accumulate handlers across stages.
+ */
+export function onSeoCancel(listener: SeoCancelListener): () => void {
+    ensureSeoCancelHandlers();
+    seoCancelListeners.add(listener);
+    return () => {
+        seoCancelListeners.delete(listener);
+        if (seoCancelListeners.size === 0) {
+            for (const [signal, handler] of seoSignalHandlers) process.removeListener(signal, handler);
+            seoSignalHandlers.clear();
+            seoHandlersInstalled = false;
+        }
+    };
+}
+
+/** Throw when the process has been cancelled — the check every bounded loop makes. */
+export function assertSeoNotCancelled(): void {
+    if (seoCancelledBy !== null) throw new SeoStageCancelledError(seoCancelledBy);
+}
+
+/**
+ * Keep cancellation observable for a whole stage, so a signal that lands between two
+ * bounded steps is still recorded instead of killing the process by default action.
+ * Returns a disposer; the shipped stages are one-shot processes and may keep it.
+ */
+export function installSeoStageCancellation(): () => void {
+    return onSeoCancel(() => {
+        // State is recorded by the signal handler; in-flight requests have their own listeners.
+    });
+}
+
+/** Reset process-wide cancellation state. Tests only — a cancelled process never resumes. */
+export function resetSeoStageCancellation(): void {
+    for (const [signal, handler] of seoSignalHandlers) process.removeListener(signal, handler);
+    seoSignalHandlers.clear();
+    seoCancelListeners.clear();
+    seoHandlersInstalled = false;
+    seoCancelledBy = null;
+}
+
 export interface TransportOptions {
     allowLoopback?: boolean;
     ca?: string | Buffer;
@@ -194,6 +300,7 @@ export function pinnedSingleRequest(
         const cleanupAndReject = (err: Error): void => {
             if (settled) return;
             settled = true;
+            disposeCancel();
             if (clientReq) {
                 try {
                     clientReq.destroy();
@@ -203,6 +310,15 @@ export function pinnedSingleRequest(
             }
             rejectPromise(err);
         };
+
+        // Cancellation aborts the in-flight socket, not merely the loop that would have used it.
+        const disposeCancel = onSeoCancel((signal) => {
+            cleanupAndReject(new SeoStageCancelledError(signal, targetUrl));
+        });
+        if (seoCancelledBy !== null) {
+            cleanupAndReject(new SeoStageCancelledError(seoCancelledBy, targetUrl));
+            return;
+        }
 
         const timer = setTimeout(() => {
             cleanupAndReject(new Error(`Request timed out after ${timeoutMs}ms for ${targetUrl}`));
@@ -276,6 +392,7 @@ export function pinnedSingleRequest(
             res.on('end', () => {
                 if (settled) return;
                 settled = true;
+                disposeCancel();
                 clearTimeout(timer);
                 const rawHeaders: Record<string, string> = {};
                 for (const [k, v] of Object.entries(res.headers)) {
@@ -317,6 +434,11 @@ export function pinnedSingleRequest(
             cleanupAndReject(err);
         });
 
+        // A signal that arrived while the request object was being built must not still open a socket.
+        if (settled) {
+            clientReq.destroy();
+            return;
+        }
         clientReq.end();
     });
 }
@@ -335,6 +457,7 @@ export async function fetchWithPinnedDns(
     const maxRedirects = 10;
 
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
+        assertSeoNotCancelled();
         const parsed = new URL(currentUrl);
 
         // Scope check

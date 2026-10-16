@@ -1759,64 +1759,18 @@ if (import.meta.main)
             itcAdaptVerify(rest);
             break;
         }
-        case 'seo-preflight': {
-            const { seoPreflight } = await loadSeoStages();
-            try {
-                await seoPreflight(rest);
-            } catch (err: unknown) {
-                fail(err instanceof Error ? err.message : String(err));
-            }
-            break;
-        }
-        case 'seo-collect': {
-            const { seoCollect } = await loadSeoStages();
-            try {
-                await seoCollect(rest);
-            } catch (err: unknown) {
-                fail(err instanceof Error ? err.message : String(err));
-            }
-            break;
-        }
-        case 'seo-check': {
-            const { seoCheck } = await loadSeoStages();
-            try {
-                await seoCheck(rest);
-            } catch (err: unknown) {
-                fail(err instanceof Error ? err.message : String(err));
-            }
-            break;
-        }
-        case 'seo-enrich': {
-            const { seoEnrich } = await loadSeoStages();
-            try {
-                await seoEnrich(rest);
-            } catch (err: unknown) {
-                fail(err instanceof Error ? err.message : String(err));
-            }
-            break;
-        }
-        case 'seo-judge': {
-            const { seoJudge } = await loadSeoStages();
-            try {
-                await seoJudge(rest);
-            } catch (err: unknown) {
-                fail(err instanceof Error ? err.message : String(err));
-            }
-            break;
-        }
-        case 'seo-score': {
-            const { seoScore } = await loadSeoStages();
-            try {
-                await seoScore(rest);
-            } catch (err: unknown) {
-                fail(err instanceof Error ? err.message : String(err));
-            }
-            break;
-        }
+        case 'seo-preflight':
+        case 'seo-collect':
+        case 'seo-check':
+        case 'seo-enrich':
+        case 'seo-judge':
+        case 'seo-score':
         case 'seo-report': {
-            const { seoReport } = await loadSeoStages();
+            // The seo helper owns its dispatch: cancellation installation, the cancellation marker
+            // and the conventional signal exit status must apply however the stage was reached.
+            const { runSeoStage } = await loadSeoStages();
             try {
-                await seoReport(rest);
+                await runSeoStage(stage, rest);
             } catch (err: unknown) {
                 fail(err instanceof Error ? err.message : String(err));
             }

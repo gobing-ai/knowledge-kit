@@ -1,5 +1,15 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+    copyFileSync,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    renameSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { type DecisionStubHandler, executeSeoJudgeStage } from './seo-decisions';
 import { type EnrichDeps, runSeoEnrich } from './seo-enrich';
 import {
@@ -15,15 +25,139 @@ import {
     sha256,
     validateOptions,
 } from './seo-facts';
-import { fetchWithPinnedDns, parseRobotsTxt, parseSitemapXml, writeJsonAtomic } from './seo-fetch';
-import { type AuditArtifact, type ReportJsonArtifact, renderReportMarkdown } from './seo-report';
+import {
+    assertSeoNotCancelled,
+    fetchWithPinnedDns,
+    installSeoStageCancellation,
+    parseRobotsTxt,
+    parseSitemapXml,
+    SeoStageCancelledError,
+    seoSignalExitCode,
+    writeJsonAtomic,
+} from './seo-fetch';
+import {
+    type AuditArtifact,
+    type ReportJsonArtifact,
+    renderDeterministicSummary,
+    renderNarrativeSections,
+    renderReportMarkdown,
+    validateNarrative,
+} from './seo-report';
 import { type AssessmentRow, buildPrioritizedActions, calculateScoresAndCoverage, runSeoChecks } from './seo-rules';
 
 function fail(message: string): never {
     throw new Error(message);
 }
 
+/** Sibling temp file + rename, so a reader never observes a partially written value. */
+function writeTextAtomic(destPath: string, text: string): void {
+    const parent = dirname(destPath);
+    if (!existsSync(parent)) {
+        mkdirSync(parent, { recursive: true });
+    }
+    const tmpPath = `${destPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    try {
+        writeFileSync(tmpPath, text, 'utf-8');
+        renameSync(tmpPath, destPath);
+    } catch (err) {
+        try {
+            rmSync(tmpPath, { force: true });
+        } catch {
+            // best-effort cleanup
+        }
+        throw err;
+    }
+}
+
 const allowAll = (): boolean => true;
+
+/**
+ * SEO decision catalogs the integrated workflow requires (design §7/§10).
+ * Direct collection-only stage use passes `require_decisions=false` and needs none of these.
+ */
+export const REQUIRED_SEO_CATALOGS = [
+    'kk-seo-site.yaml',
+    'kk-seo-page.yaml',
+    'kk-seo-pair.yaml',
+    'kk-seo-keyword.yaml',
+] as const;
+
+/** The 22 declared SEO decision ids (§7). A served catalog missing any of these is incomplete. */
+export const REQUIRED_SEO_DECISION_IDS = [
+    'kk-seo-business-model',
+    'kk-seo-value-proposition',
+    'kk-seo-entity-clarity',
+    'kk-seo-topical-focus',
+    'kk-seo-local-intent',
+    'kk-seo-page-type',
+    'kk-seo-search-intent',
+    'kk-seo-page-action',
+    'kk-seo-importance',
+    'kk-seo-helpfulness',
+    'kk-seo-specificity',
+    'kk-seo-trust',
+    'kk-seo-citability',
+    'kk-seo-title-fit',
+    'kk-seo-meta-fit',
+    'kk-seo-answer-first',
+    'kk-seo-next-step',
+    'kk-seo-heading-fit',
+    'kk-seo-intent-overlap',
+    'kk-seo-keyword-relevance',
+    'kk-seo-keyword-other-brand',
+    'kk-seo-keyword-page',
+] as const;
+
+/** Configuration-pointing failure text for a missing SEO contract (§10). */
+function missingDecisionsMessage(detail: string): string {
+    return [
+        `seo-preflight: SEO decision catalogs are not served — ${detail}`,
+        'Registration fix: append `<kk-package-root>/plugins/kk/decisions` to the project config `decisions.paths`',
+        '(`.spur/config.yaml`), preserving every existing entry and maker setting, then re-run preflight.',
+        'Repeat the setup if an upgrade changes the resolved package root.',
+    ].join('\n');
+}
+
+/**
+ * Static readiness probe for the integrated workflow (`require_decisions=true`).
+ * Reads the served catalog inventory only — it is configuration evidence, never model health,
+ * and it dispatches no maker, so it is safe in offline fixture mode too.
+ */
+export function checkSeoDecisionContracts(
+    runJson: (args: string[]) => { status: number | null; stdout: string },
+): void {
+    const res = runJson(['decision', 'list', '--json']);
+    if (res.status !== 0) {
+        fail(missingDecisionsMessage('`spur decision list --json` did not succeed'));
+    }
+    let entries: unknown;
+    try {
+        entries = JSON.parse(res.stdout);
+    } catch {
+        fail(missingDecisionsMessage('`spur decision list --json` did not return JSON'));
+    }
+    if (!Array.isArray(entries)) fail(missingDecisionsMessage('`spur decision list --json` did not return an array'));
+
+    const servedIds = new Set<string>();
+    const servedCatalogs = new Set<string>();
+    for (const entry of entries) {
+        if (typeof entry !== 'object' || entry === null) continue;
+        const record = entry as { id?: unknown; source?: unknown };
+        if (typeof record.id === 'string') servedIds.add(record.id);
+        if (typeof record.source === 'string') servedCatalogs.add(record.source.split('/').pop() ?? '');
+    }
+
+    const missingCatalogs = REQUIRED_SEO_CATALOGS.filter((name) => !servedCatalogs.has(name));
+    const missingIds = REQUIRED_SEO_DECISION_IDS.filter((id) => !servedIds.has(id));
+    if (missingCatalogs.length === 0 && missingIds.length === 0) return;
+    const detail = [
+        missingCatalogs.length > 0 ? `missing catalog file(s): ${missingCatalogs.join(', ')}` : '',
+        missingIds.length > 0 ? `missing decision id(s): ${missingIds.join(', ')}` : '',
+    ]
+        .filter((part) => part !== '')
+        .join('; ');
+    fail(missingDecisionsMessage(detail));
+}
 
 /**
  * Format UTC date as YYYYMMDDTHHMMSSZ.
@@ -108,23 +242,29 @@ export async function seoPreflight(args: string[]): Promise<void> {
     writeJsonAtomic(join(workDir, 'options.json'), options);
     writeJsonAtomic(join(workDir, 'manifest.json'), manifest);
 
-    // Atomically write run-bound work dir file (.spur/run/<run-id>-seo-work-dir.txt)
+    // Atomically write the run-bound work-dir file (.spur/run/<run-id>-seo-work-dir.txt).
+    // Plain text on purpose: the workflow projects this exact file into `work_dir` with
+    // `file.read.into-var`, which sets the var to the raw file content (design §3).
     const runDir = resolve('.spur', 'run');
     if (!existsSync(runDir)) {
         mkdirSync(runDir, { recursive: true });
     }
     const runWorkDirFile = join(runDir, `${runId}-seo-work-dir.txt`);
-    try {
-        writeJsonAtomic(runWorkDirFile, { workDir });
-    } catch {
-        // Fallback simple write if atomic write to file succeeds
-    }
+    writeTextAtomic(runWorkDirFile, workDir);
 
-    // Check require_decisions
+    // Check require_decisions: the integrated workflow requires the four SEO contracts to be
+    // served before any collection or judgment begins (design §7/§10).
     const requireDecisions = requireDecisionsArg === 'true';
     if (requireDecisions) {
-        // Direct collection default is false; when true in full workflow, verify catalogs exist
-        console.error('seo-preflight: decisions check enabled (require_decisions=true)');
+        checkSeoDecisionContracts((args) => {
+            const res = spawnSync(process.env.KK_SPUR_BIN || 'spur', args, {
+                encoding: 'utf-8',
+                env: process.env,
+                maxBuffer: 8 * 1024 * 1024,
+            });
+            return { status: res.status, stdout: String(res.stdout ?? '') };
+        });
+        console.error('seo-preflight: decision contracts verified (require_decisions=true)');
     }
 
     console.error(`seo-preflight: initialized work_dir=${workDir} runId=${runId}`);
@@ -389,6 +529,8 @@ export async function seoCollect(
     const visitedUrls = new Set<string>();
 
     while (candidateUrls.length > 0 && limits.pagesVisited < maxPages) {
+        // Cancellation stops new page dispatch even when no request is in flight (design §4).
+        assertSeoNotCancelled();
         if (Date.now() >= deadlineMs) {
             limits.hitLimit = 'deadline';
             break;
@@ -721,26 +863,39 @@ export async function seoReport(args: string[]): Promise<void> {
 
     const auditRaw = readFileSync(auditPath, 'utf-8');
     const audit: AuditArtifact = JSON.parse(auditRaw);
+    const auditDigest = sha256(auditRaw);
 
-    // Optional narrative check
-    let narrativeText: string | undefined;
+    // Optional narrative: strict template/reference validation (design §9). An absent,
+    // invalid or unreadable narrative is never an audit failure — it degrades to a
+    // labeled deterministic summary over the immutable audit records.
     let narrativeStatus: 'omitted' | 'included' | 'rejected' = 'omitted';
+    let narrativeDiagnostics: string[] = [];
+    let narrativeText: string;
     const narrativePath = join(workDir, 'narrative.json');
     if (existsSync(narrativePath)) {
-        try {
-            const narrRaw = readFileSync(narrativePath, 'utf-8');
-            const narr = JSON.parse(narrRaw);
-            if (narr && typeof narr === 'object' && Array.isArray(narr.sections)) {
-                narrativeStatus = 'included';
-                narrativeText = narr.sections
-                    .map((s: { heading?: string; text?: string }) => `### ${s.heading || 'Summary'}\n\n${s.text || ''}`)
-                    .join('\n\n');
-            } else {
-                narrativeStatus = 'rejected';
-            }
-        } catch {
-            narrativeStatus = 'rejected';
+        const validation = validateNarrative(readFileSync(narrativePath, 'utf-8'), audit, auditDigest);
+        narrativeStatus = validation.status;
+        narrativeDiagnostics = validation.diagnostics;
+        if (validation.status === 'included') {
+            narrativeText = renderNarrativeSections(audit, validation.sections);
+        } else {
+            // Diagnostics are persisted beside the report; the report itself stays deterministic.
+            writeJsonAtomic(join(workDir, 'narrative-diagnostics.json'), {
+                schemaVersion: 1,
+                runId: audit.runId,
+                status: 'rejected',
+                diagnostics: validation.diagnostics,
+            });
+            narrativeText = [
+                '**Narrative rejected** — the supplied narrative was discarded in full (see `narrative-diagnostics.json`).',
+                '',
+                renderDeterministicSummary(audit),
+            ].join('\n');
         }
+    } else {
+        narrativeText = ['**Narrative omitted** — deterministic summary.', '', renderDeterministicSummary(audit)].join(
+            '\n',
+        );
     }
 
     const reportMd = renderReportMarkdown(audit, narrativeText);
@@ -759,6 +914,7 @@ export async function seoReport(args: string[]): Promise<void> {
         actionsCount: audit.actions.length,
         actions: audit.actions,
         narrativeStatus,
+        ...(narrativeStatus === 'rejected' ? { narrativeDiagnostics } : {}),
     };
 
     writeJsonAtomic(join(workDir, 'report.json'), reportJson);
@@ -803,8 +959,29 @@ export async function seoJudge(
     );
 }
 
-if (import.meta.main) {
-    const [stage, ...rest] = process.argv.slice(2);
+/** Every SEO stage this module serves. */
+export const SEO_STAGE_NAMES = [
+    'seo-preflight',
+    'seo-collect',
+    'seo-check',
+    'seo-enrich',
+    'seo-judge',
+    'seo-score',
+    'seo-report',
+] as const;
+
+/**
+ * Dispatch one SEO stage with cancellation installed, the cancellation marker written for a
+ * cancelled run, and the conventional signal exit status.
+ *
+ * Shared by this module's own entry point and by the shipped `kk-workflow-stages.ts` runner, so a
+ * cancelled audit behaves identically however the stage was reached. `work_dir` is the first
+ * positional argument of every stage, which is where a cancellation marker is recorded.
+ */
+export async function runSeoStage(stage: string | undefined, rest: string[]): Promise<void> {
+    // Installed before any stage runs: a signal between bounded steps is recorded rather than
+    // killing the process by default action, so the cancellation marker can be written.
+    const disposeCancel = installSeoStageCancellation();
     try {
         switch (stage) {
             case 'seo-preflight':
@@ -829,10 +1006,37 @@ if (import.meta.main) {
                 await seoReport(rest);
                 break;
             default:
-                fail(
-                    `unknown stage: ${stage ?? '(none)'} (expected seo-preflight|seo-collect|seo-check|seo-enrich|seo-judge|seo-score|seo-report)`,
-                );
+                fail(`unknown stage: ${stage ?? '(none)'} (expected ${SEO_STAGE_NAMES.join('|')})`);
         }
+    } catch (err: unknown) {
+        if (err instanceof SeoStageCancelledError) {
+            // Preserve completed artifacts, mark the workspace, and exit with the conventional code.
+            const workDir = rest[0] ? resolve(rest[0]) : '';
+            if (workDir !== '' && existsSync(workDir)) {
+                try {
+                    writeJsonAtomic(join(workDir, 'cancelled.json'), {
+                        schemaVersion: 1,
+                        stage: stage ?? '',
+                        signal: err.signal,
+                        cancelledAt: new Date().toISOString(),
+                    });
+                } catch {
+                    // the marker is evidence, not a precondition for stopping
+                }
+            }
+            console.error(err.message);
+            process.exit(seoSignalExitCode(err.signal));
+        }
+        throw err;
+    } finally {
+        disposeCancel();
+    }
+}
+
+if (import.meta.main) {
+    const [stage, ...rest] = process.argv.slice(2);
+    try {
+        await runSeoStage(stage, rest);
     } catch (err: unknown) {
         console.error(err instanceof Error ? err.message : String(err));
         process.exit(1);

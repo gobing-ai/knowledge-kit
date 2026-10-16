@@ -1,6 +1,6 @@
 import { type Command, CommanderError } from 'commander';
 import { runItcStage } from '../itc-stage';
-import { runStage } from '../stage';
+import { runStageCancellable } from '../stage';
 
 /** Root options main() accepts before the `stage` token (the root -v/--verbose pair). */
 const ROOT_GLOBALS = new Set(['-v', '--verbose']);
@@ -48,15 +48,19 @@ export function registerStageCommand(program: Command): void {
             if (args[0]?.startsWith('itc-')) {
                 return (async () => {
                     const itcCode = await runItcStage(args);
-                    const code = itcCode !== undefined ? itcCode : runStage(args);
+                    const code = itcCode !== undefined ? itcCode : await runStageCancellable(args);
                     if (code !== 0) {
                         throw new CommanderError(code, 'kk.stage.failed', `stage failed with exit code ${code}`);
                     }
                 })();
             }
-            const code = runStage(args);
-            if (code !== 0) {
-                throw new CommanderError(code, 'kk.stage.failed', `stage failed with exit code ${code}`);
-            }
+            // Cancellable on purpose: `runStage`'s synchronous spawn cannot forward a host signal,
+            // which left the stage process and its children running after a cancellation.
+            return (async () => {
+                const code = await runStageCancellable(args);
+                if (code !== 0) {
+                    throw new CommanderError(code, 'kk.stage.failed', `stage failed with exit code ${code}`);
+                }
+            })();
         });
 }
