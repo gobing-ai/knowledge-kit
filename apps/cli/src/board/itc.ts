@@ -212,6 +212,70 @@ export function revisionUsage(progress: unknown, settings: Record<string, string
     return { revise, autoRevise, total: revise + autoRevise, budget: revisionBudget(settings), recorded: true };
 }
 
+/**
+ * Authorized child-authoring evidence for an ITC run (0303 Board handoff).
+ *
+ * The ITC root is a `kind: dag` while revision visits live in the `kk-itc-author` child FSM, so the
+ * parent projection can no longer read them from its own progress. A child is authoritative ONLY
+ * when the persisted `author-run.json` binds the parent run id, the workspace and the executed child
+ * definition digest — a file-provided child id alone is never trusted, and missing/mismatched
+ * evidence yields nulls rather than a synthetic zero.
+ */
+export interface ItcChildEvidence {
+    /** The child run id, present only when the binding verified. */
+    childRunId: string | null;
+    /** The verified child definition digest, or null when the binding did not verify. */
+    definitionDigest: string | null;
+    /** Why the child was rejected, for the Board diagnostic. */
+    reason: string | null;
+}
+
+/** Verify an `author-run.json` document against the parent run and workspace it must bind. */
+export function authorizeItcChild(
+    authorRun: unknown,
+    expected: { parentRunId: string; workDir: string; definitionDigest: string | null },
+): ItcChildEvidence {
+    const record = asRecord(authorRun);
+    if (record === null)
+        return { childRunId: null, definitionDigest: null, reason: 'author-run.json is missing or unreadable' };
+    const parentRunId = stringOrNull(record.parentRunId);
+    const childRunId = stringOrNull(record.childRunId);
+    if (parentRunId !== expected.parentRunId || childRunId === null || childRunId === '') {
+        return { childRunId: null, definitionDigest: null, reason: 'author-run.json does not bind this parent run' };
+    }
+    if (childRunId !== `${expected.parentRunId}-author`) {
+        return { childRunId: null, definitionDigest: null, reason: 'author-run.json names an unexpected child run id' };
+    }
+    const digest = stringOrNull(record.definitionDigest);
+    if (expected.definitionDigest !== null && digest !== null && digest !== expected.definitionDigest) {
+        return {
+            childRunId: null,
+            definitionDigest: null,
+            reason: 'author-run.json executed a different definition digest',
+        };
+    }
+    return { childRunId, definitionDigest: digest, reason: null };
+}
+
+/**
+ * Revision usage for an ITC run: the child's recorded visits when the child binding verified, and
+ * nulls — never zero — when it did not or the child recorded nothing.
+ */
+export function revisionUsageFromChild(
+    parentProgress: unknown,
+    childEvidence: ItcChildEvidence,
+    childProgress: unknown,
+    settings: Record<string, string>,
+): ItcRevisions {
+    // A historical single-FSM capture still reads its own progress unchanged.
+    const parentStates = asRecord(parentProgress)?.states;
+    if (Array.isArray(parentStates)) return revisionUsage(parentProgress, settings);
+    if (childEvidence.childRunId === null) {
+        return { revise: null, autoRevise: null, total: null, budget: revisionBudget(settings), recorded: false };
+    }
+    return revisionUsage(childProgress, settings);
+}
+
 /** One recorded result row, normalized out of either Result shape. */
 function resultRows(parsed: Record<string, unknown> | null): Record<string, unknown>[] {
     if (parsed === null) return [];
@@ -312,6 +376,8 @@ export function projectItcResults(input: {
     observationOf: (spec: ArtifactSpec) => ArtifactObservation | undefined;
     resultSpecs?: readonly ItcResultSpec[];
     progress?: unknown;
+    /** Authorized child evidence; when absent the child is treated as unverified (nulls, not zero). */
+    child?: { evidence: ItcChildEvidence; progress?: unknown };
     diagnostics?: BoardDiagnostic[];
 }): RunResults {
     const { record, detail, marker } = input;
@@ -398,11 +464,20 @@ export function projectItcResults(input: {
         selectedOutline: preview('outline-approved'),
         draft: preview('draft'),
         judge,
-        revisions: revisionUsage(input.progress, record.settings),
+        revisions:
+            input.child === undefined
+                ? revisionUsage(input.progress, record.settings)
+                : revisionUsageFromChild(input.progress, input.child.evidence, input.child.progress, record.settings),
         targets,
         report,
         counts,
     };
+    if (input.child !== undefined && input.child.evidence.reason !== null) {
+        diagnostics.push({
+            code: 'board.itc.child-unverified',
+            message: `${input.child.evidence.reason}; revision counts and child progress are unavailable.`,
+        });
+    }
     if (resultSpecs.length === 0 && reportRecord === null) {
         diagnostics.push({
             code: 'board.publish.unavailable',

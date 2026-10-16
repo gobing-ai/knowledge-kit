@@ -2,6 +2,13 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { discoverAllPlugins } from '@gobing-ai/kk-core';
+import {
+    type ItcEffectiveOptions,
+    type ItcLaunchInput,
+    resolveItcOptions,
+    verifyItcOptionsSnapshot,
+    writeItcOptionsSnapshot,
+} from './itc-config';
 import { ItcDecisionRequestSchema, itcDecision } from './itc-decision';
 import { buildItcPublishPlan, type ItcPlanRequest, ItcPlanRequestSchema } from './itc-plan';
 import {
@@ -49,6 +56,10 @@ export async function runItcStage(args: string[]): Promise<number | undefined> {
 
     if (stageName === 'itc-report-summary') {
         return itcReportSummary(args.slice(1));
+    }
+
+    if (stageName === 'itc-prepare') {
+        return runItcPrepare(args.slice(1));
     }
 
     if (stageName === 'itc-author-verdict') {
@@ -249,5 +260,67 @@ function runItcAuthorComplete(args: string[]): number {
     const itcDir = join(workDir, '.itc');
     mkdirSync(itcDir, { recursive: true });
     writeFileSync(join(itcDir, 'author-complete.json'), `${JSON.stringify(completeReceipt, null, 2)}\n`);
+    return 0;
+}
+
+/**
+ * `itc-prepare` (0303): resolve the frozen ITC effective options from a launch JSON, compose the
+ * workspace and persist `itc-options.json`. Validation happens BEFORE any mkdir, so an invalid
+ * config or source stops without writing a workspace.
+ */
+async function runItcPrepare(args: string[]): Promise<number> {
+    const requestIdx = args.indexOf('--request');
+    const requestFile = requestIdx !== -1 ? args[requestIdx + 1] : undefined;
+    if (requestFile === undefined || requestFile === '') {
+        console.error('itc-prepare: --request <launch.json> is required');
+        return 1;
+    }
+    if (!existsSync(requestFile)) {
+        console.error(`itc-prepare: request file not found: ${requestFile}`);
+        return 1;
+    }
+    let launch: ItcLaunchInput;
+    try {
+        launch = JSON.parse(readFileSync(requestFile, 'utf-8')) as ItcLaunchInput;
+    } catch (err: unknown) {
+        console.error(
+            `itc-prepare: invalid JSON in ${requestFile}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return 1;
+    }
+
+    let options: ItcEffectiveOptions;
+    try {
+        options = await resolveItcOptions(launch, {
+            ...(process.env.KK_CONFIG ? { env: process.env } : {}),
+        });
+    } catch (err: unknown) {
+        // R4: the key/file error is reported and NOTHING is written.
+        console.error(`itc-prepare: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+    }
+
+    const workDir = options.workDir;
+    if (workDir === null) {
+        // Collected-topic intake: no workspace exists yet; print the intake snapshot only.
+        console.log(JSON.stringify(options));
+        return 0;
+    }
+
+    const reuseCheck = await verifyItcOptionsSnapshot(workDir, options);
+    if (reuseCheck.ok === false && !options.force) {
+        console.error(`itc-prepare: ${reuseCheck.reason}`);
+        return 1;
+    }
+
+    try {
+        await writeItcOptionsSnapshot(workDir, options);
+    } catch (err: unknown) {
+        console.error(
+            `itc-prepare: cannot write the workspace at ${workDir}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return 1;
+    }
+    console.log(JSON.stringify(options));
     return 0;
 }

@@ -25,6 +25,7 @@ import { captureRun } from '../../src/board/capture';
 import type { ArtifactObservation } from '../../src/board/collect';
 import {
     asJudgeConfidence,
+    authorizeItcChild,
     boundedPreview,
     type ItcSummary,
     isOutOfVocabularyConfidence,
@@ -32,6 +33,7 @@ import {
     projectItcResults,
     projectJudge,
     revisionUsage,
+    revisionUsageFromChild,
 } from '../../src/board/itc';
 import { createBoardReader } from '../../src/board/reader';
 import { main } from '../../src/main';
@@ -537,5 +539,87 @@ describe('kk-itc prepare + Board capture', () => {
             if (prevWorks === undefined) delete process.env.KK_WORKS_DIR;
             else process.env.KK_WORKS_DIR = prevWorks;
         }
+    });
+});
+
+describe('0303 — ITC child evidence and revision counts across the DAG refactor', () => {
+    const SETTINGS = { max_revisions: '2' };
+
+    it('authorizes only a child that binds this parent run, workspace and definition digest', () => {
+        const ok = authorizeItcChild(
+            { schemaVersion: 1, parentRunId: 'run-1', childRunId: 'run-1-author', definitionDigest: 'sha256:abc' },
+            { parentRunId: 'run-1', workDir: '/w', definitionDigest: 'sha256:abc' },
+        );
+        expect(ok.childRunId).toBe('run-1-author');
+        expect(ok.reason).toBeNull();
+
+        // A different parent, an unexpected child id and a mismatched digest are all refused.
+        expect(
+            authorizeItcChild(
+                { parentRunId: 'run-2', childRunId: 'run-2-author' },
+                {
+                    parentRunId: 'run-1',
+                    workDir: '/w',
+                    definitionDigest: null,
+                },
+            ).childRunId,
+        ).toBeNull();
+        expect(
+            authorizeItcChild(
+                { parentRunId: 'run-1', childRunId: 'someone-else' },
+                {
+                    parentRunId: 'run-1',
+                    workDir: '/w',
+                    definitionDigest: null,
+                },
+            ).reason,
+        ).toContain('unexpected child run id');
+        expect(
+            authorizeItcChild(
+                { parentRunId: 'run-1', childRunId: 'run-1-author', definitionDigest: 'sha256:zzz' },
+                {
+                    parentRunId: 'run-1',
+                    workDir: '/w',
+                    definitionDigest: 'sha256:abc',
+                },
+            ).reason,
+        ).toContain('different definition digest');
+
+        // A missing document is refused, never treated as an empty child.
+        expect(
+            authorizeItcChild(undefined, { parentRunId: 'run-1', workDir: '/w', definitionDigest: null }).reason,
+        ).toContain('missing');
+    });
+
+    it('reads child revision visits when the binding verified and nulls — never zero — when it did not', () => {
+        const childProgress = {
+            states: [{ state: 'draft-revise' }, { state: 'draft-autorevise' }, { state: 'draft-autorevise' }],
+        };
+        const verified = { childRunId: 'run-1-author', definitionDigest: 'sha256:abc', reason: null };
+        const usage = revisionUsageFromChild(null, verified, childProgress, SETTINGS);
+        expect(usage).toEqual({ revise: 1, autoRevise: 2, total: 3, budget: 2, recorded: true });
+
+        const refused = {
+            childRunId: null,
+            definitionDigest: null,
+            reason: 'author-run.json does not bind this parent run',
+        };
+        const none = revisionUsageFromChild(null, refused, childProgress, SETTINGS);
+        expect(none.revise).toBeNull();
+        expect(none.total).toBeNull();
+        expect(none.recorded).toBe(false);
+        expect(none.budget).toBe(2);
+    });
+
+    it('keeps a historical single-FSM capture readable from its own progress projection', () => {
+        const historical = { states: [{ state: 'draft-revise' }] };
+        const usage = revisionUsageFromChild(
+            historical,
+            { childRunId: null, definitionDigest: null, reason: 'no child' },
+            null,
+            SETTINGS,
+        );
+        expect(usage).toEqual(revisionUsage(historical, SETTINGS));
+        expect(usage.revise).toBe(1);
     });
 });

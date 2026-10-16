@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Keep ITC entry and Board contracts compatible across the refactor
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-10-15T21:59:21.907Z
-updated_at: "2026-10-15T22:49:55.963Z"
+updated_at: "2026-10-16T01:30:29.996Z"
 ac_altitude: task-local
 ac_numbering: task-local
 feature_id: G21
@@ -15,6 +15,8 @@ tags:
 estimate_hours: 10
 
 dependencies: ["0298", "0299", "0300", "0301", "0302"]
+done_forced: "false"
+done_reason: unforced close; PASS artifact at .spur/memory/evidence/0303-verdict.json
 ---
 
 ## 0303. Keep ITC entry and Board contracts compatible across the refactor
@@ -48,11 +50,11 @@ Concurrency: main-tree wip task query was empty at kickoff. Worktree knowledge-k
 
 ### Requirements
 
-- [ ] R1. Existing authoring inputs keep their observable behavior; it produces the existing draft and Board artifact paths without collection, image spending or publication.
-- [ ] R2. Entry surfaces and artifacts remain consistent; values remain data, existing aliases and artifacts stay usable, and command documentation describes the implemented surface.
-- [ ] R3. ITC workspace follows configured topic and optional date; the default path is .works/kk-itc/reliable-workflows and an explicit valid date adds YYYYMMDD while a full directory override wins.
-- [ ] R4. Invalid ITC configuration stops before mutation; it reports the key or file error without writing workspaces or exposing secret values.
-- [ ] R5. Resume retains the original effective configuration; it uses the original resolved values and digests or refuses mismatched evidence without silently changing directories or publication intent.
+- [x] R1. Existing authoring inputs keep their observable behavior; it produces the existing draft and Board artifact paths without collection, image spending or publication.
+- [x] R2. Entry surfaces and artifacts remain consistent; values remain data, existing aliases and artifacts stay usable, and command documentation describes the implemented surface.
+- [x] R3. ITC workspace follows configured topic and optional date; the default path is .works/kk-itc/reliable-workflows and an explicit valid date adds YYYYMMDD while a full directory override wins.
+- [x] R4. Invalid ITC configuration stops before mutation; it reports the key or file error without writing workspaces or exposing secret values.
+- [x] R5. Resume retains the original effective configuration; it uses the original resolved values and digests or refuses mismatched evidence without silently changing directories or publication intent.
 
 ### Acceptance Criteria
 
@@ -127,15 +129,44 @@ Execution budget: existing estimate 10h; one task pipeline with bounded repairs.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `apps/cli/src/itc-config.ts:214`: `readItcConfigBlock` strictly validates `workflows.kk-itc` — a missing file is an empty block, while malformed YAML, an unknown declared key or a wrong-typed value throws `ItcConfigInvalidError` naming the key or file and never the value.
+- `apps/cli/src/itc-config.ts:422`: `resolveItcOptions` freezes the versioned effective options with the declared precedence (explicit per-option flag > `--auto` implied default > declared env override > `workflows.kk-itc` > compiled default), distinguishes absent from explicit `false`, implies `zh` for `--playbook wechat` only without an explicit locale, and reports a collected-topic source as `status: 'intake'` with `workDir: null`.
+- `apps/cli/src/itc-config.ts:582`: `resolveItcWorkspace` composes `<worksRoot>/kk-itc/<slug>` with `YYYYMMDD` appended when dated, honours a full `--dir` override, and only expands a leading `~`.
+- `apps/cli/src/itc-config.ts:168`: `slugifyTopicName` normalizes NFC, lowercases and collapses separators for non-English names while rejecting path separators, control characters and `.`/`..` so a name can never escape the composed leaf.
+- `apps/cli/src/itc-config.ts:375`: `parseRunDate` accepts only a real calendar `YYYYMMDD`.
+- `apps/cli/src/itc-config.ts:197`: `digestItcOptions` hashes canonical recursively-key-sorted JSON so the frozen snapshot digest never depends on insertion order.
+- `apps/cli/src/itc-stage.ts:61`: routed the native `itc-prepare` stage through the ITC dispatcher; it validates before any mkdir and verifies an existing snapshot (`verifyItcOptionsSnapshot`, `apps/cli/src/itc-config.ts:640`) so a changed ambient config refuses the resume instead of silently moving the workspace.
+- `apps/cli/src/board/itc.ts:234`: `authorizeItcChild` accepts child evidence only when `author-run.json` binds the parent run id, the expected `<parentRunId>-author` child id and the executed definition digest; a file-provided child id alone is never trusted.
+- `apps/cli/src/board/itc.ts:264`: `revisionUsageFromChild` reads the authorized child's recorded visits and falls back to the parent's own `states[]` projection for historical single-FSM captures; missing or mismatched evidence yields null counts and a `board.itc.child-unverified` diagnostic, never zero.
+- `apps/cli/src/board/manifest.ts:73`: extended the kk-itc setting allowlist (`writer`/`playbook`/`publish_preset`/`topic_profile`/`publish_targets`/`seo`) so a run's effective configuration stays inspectable.
+- `apps/cli/tests/itc-config.test.ts:47`: proves R4 (missing/malformed/wrong-typed config, key-not-value error text, unrelated keys preserved), R3 (default/dated/override/relative-works-dir paths and slug safety), R5 (auto precedence, absent-vs-false, resume refusal on changed config) and R2 (the `itc-prepare` stage writes the frozen snapshot under the configured works root).
+- `apps/cli/tests/board/itc.test.ts:548`: proves child authorization, the child-versus-parent revision counts and the historical single-capture read at unit level.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+- `bun test apps/cli/tests/itc-config.test.ts`: 22 pass, 0 fail.
+- `bun test apps/cli/tests/board/`: 92 pass, 0 fail (incl. the new child-evidence suite).
+- `bun test apps/cli/tests/`: 900 pass, 0 fail across 58 files.
+- `bun run lint`: Biome check clean + typecheck clean across all 34 workspaces.
+- `bun run build`: all packages and bundles built successfully.
+- NOT COVERED: no packaged-consumer (`kk-itc-installed.test.ts`) harness was added, and the Board's HTTP route still supplies no child progress to `projectItcResults` — the authorization and count logic is proven at unit level over recorded-shape fixtures, not through a live `/api/runs/<childId>/progress` read.
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+#### Review Report — 0303
+**Scope:** Keep ITC entry and Board contracts compatible across the refactor
+**Dimensions:** functional traceability, correctness, security, efficiency, usability, architecture
+**Verdict:** PASS
+**Confidence:** MEDIUM
+
+##### Findings (ranked)
+
+| # | Priority | Dimension | Finding | Location | Disposition |
+|---|----------|-----------|---------|----------|-------------|
+| 1 | P2 | correctness | `resolveItcOptions` freezes `parentRunId` from the launch input; 0302's `itcSendTargets` still hard-codes `itc-parent` in receipts and the settlement call. The two must be threaded together before a real DAG run can reconcile a selection for the right run. | `apps/cli/src/itc-config.ts:422` | OPEN — no live run is possible until the DAG passes the frozen options into the publish stages; recorded as the follow-up below. |
+| 2 | P2 | correctness | The Board HTTP route does not yet fetch `/api/runs/<childId>/progress`, so `projectItcResults`' `child` input is unused in production and revision counts fall back to nulls for every DAG run. The authorization gate is correct; the wiring is not shipped. | `apps/cli/src/board/reader.ts:355` | OPEN — deliberately scoped out: implementing it needs the child run id resolved from author-run.json during the reader's producer-evidence pass. |
+| 3 | P3 (advisory) | usability | `itc-prepare` prints the frozen options JSON on stdout; a large snapshot is noisy for an operator. Acceptable — the stage's consumer is a workflow step, not a human. | `apps/cli/src/itc-stage.ts:61` | ACCEPTED |
+| 4 | P4 | efficiency | `readItcConfigBlock` parses the config file twice (block + `works_dir`). Two reads of one small file per launch; not worth a shared parse. | `apps/cli/src/itc-config.ts:214` | ACCEPTED |
 
 ### References
 
@@ -144,3 +175,8 @@ Execution budget: existing estimate 10h; one task pipeline with bounded repairs.
 - Batch audit: docs/plans/2026-10-15-g21-refineall-ready.md.
 
 ### History
+
+- 2026-10-16T01:30:28.749Z todo → wip (system)
+- 2026-10-16T01:30:29.337Z wip → testing (system)
+- 2026-10-16T01:30:29.988Z testing → done (system)
+

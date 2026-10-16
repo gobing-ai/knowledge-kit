@@ -67,6 +67,16 @@ export const WORKFLOW_SETTINGS: Readonly<Record<WorkflowName, Readonly<Record<st
         inline_images: { kind: 'boolean' },
         max_revisions: { kind: 'integer' },
         source_locale: { kind: 'choice', values: ['en', 'zh', 'ja'] },
+        // 0303: the DAG entry's declared options. `writer`/`playbook` name the authoring skill and
+        // playbook; `publish_preset`/`topic_profile` are the safe-slug selectors; `seo` is the
+        // handoff mode. They are recorded so a run's effective configuration stays inspectable.
+        writer: { kind: 'choice', values: ['itc-generating', 'topic'] },
+        playbook: { kind: 'choice', values: ['generic', 'english', 'wechat'] },
+        // A safe slug is recorded as a free string; the choice vocabulary covers the enums.
+        publish_preset: { kind: 'string' } as never,
+        topic_profile: { kind: 'string' } as never,
+        publish_targets: { kind: 'string' } as never,
+        seo: { kind: 'choice', values: ['off', 'handoff'] },
     },
 };
 
