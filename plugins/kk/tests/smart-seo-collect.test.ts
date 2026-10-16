@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as http from 'node:http';
 import * as https from 'node:https';
@@ -194,6 +194,7 @@ describe('Local HTTP/HTTPS Servers & Peer Checks (R2 / AC2)', () => {
 
     let httpsServer: https.Server;
     let httpsPort: number;
+    let sslKey: string;
     let sslCert: string;
 
     beforeAll(async () => {
@@ -241,22 +242,41 @@ describe('Local HTTP/HTTPS Servers & Peer Checks (R2 / AC2)', () => {
             });
         });
 
-        // Start HTTPS test server with on-the-fly certificate
-        const certOutput = execSync(
-            'openssl req -x509 -newkey rsa:2048 -nodes -keyout /dev/stdout -out /dev/stdout -days 1 -subj "/CN=localhost"',
-            { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
-        );
-        const key = certOutput.slice(
-            certOutput.indexOf('-----BEGIN PRIVATE KEY-----'),
-            certOutput.indexOf('-----END PRIVATE KEY-----') + 25,
-        );
-        sslCert = certOutput.slice(
-            certOutput.indexOf('-----BEGIN CERTIFICATE-----'),
-            certOutput.indexOf('-----END CERTIFICATE-----') + 25,
-        );
+        // Start HTTPS test server with on-the-fly certificate.
+        // openssl writes key and cert to separate scratch files: pointing both at /dev/stdout
+        // only worked on the macOS char device — openssl 3 on Linux exits 1 with empty stdout
+        // (run 38960927438).
+        const certDir = mkdtempSync(join(tmpdir(), 'kk-seo-cert-'));
+        const keyPath = join(certDir, 'key.pem');
+        const certPath = join(certDir, 'cert.pem');
+        try {
+            execFileSync(
+                'openssl',
+                [
+                    'req',
+                    '-x509',
+                    '-newkey',
+                    'rsa:2048',
+                    '-nodes',
+                    '-keyout',
+                    keyPath,
+                    '-out',
+                    certPath,
+                    '-days',
+                    '1',
+                    '-subj',
+                    '/CN=localhost',
+                ],
+                { stdio: ['ignore', 'ignore', 'ignore'] },
+            );
+            sslKey = readFileSync(keyPath, 'utf-8');
+            sslCert = readFileSync(certPath, 'utf-8');
+        } finally {
+            rmSync(certDir, { recursive: true, force: true });
+        }
 
         await new Promise<void>((resolvePromise) => {
-            httpsServer = https.createServer({ key, cert: sslCert }, (_req, res) => {
+            httpsServer = https.createServer({ key: sslKey, cert: sslCert }, (_req, res) => {
                 res.writeHead(200, { 'Content-Type': 'text/html' });
                 res.end('<html><head><title>Secure HTTPS</title></head><body>Secure Content</body></html>');
             });
