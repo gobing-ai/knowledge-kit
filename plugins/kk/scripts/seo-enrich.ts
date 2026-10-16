@@ -188,10 +188,12 @@ export async function providerRequestJson(
         const chunks: Buffer[] = [];
         let bytes = 0;
         let req: http.ClientRequest | null = null;
+        let timer: ReturnType<typeof setTimeout> | undefined;
 
         const abort = (err: Error): void => {
             if (settled) return;
             settled = true;
+            clearTimeout(timer);
             disposeCancel();
             try {
                 req?.destroy();
@@ -211,7 +213,7 @@ export async function providerRequestJson(
             return;
         }
 
-        const timer = setTimeout(() => abort(new Error(`provider request timed out after ${timeoutMs}ms`)), timeoutMs);
+        timer = setTimeout(() => abort(new Error(`provider request timed out after ${timeoutMs}ms`)), timeoutMs);
 
         const lookup = (
             _h: string,
@@ -245,7 +247,7 @@ export async function providerRequestJson(
         if (isHttps) (requestOptions as https.RequestOptions).servername = parsed.hostname;
 
         req = client.request(requestOptions, (res) => {
-            clearTimeout(timer);
+            // The timer stays armed until 'end': a body that stalls after the headers must still time out.
             // §13: provider redirects are refused rather than followed to another origin.
             if (res.statusCode !== undefined && res.statusCode >= 300 && res.statusCode < 400) {
                 abort(new Error(`provider redirect refused (status ${res.statusCode})`));

@@ -326,6 +326,12 @@ describe('Provider transport client (R1 / AC1)', () => {
                         res.end('not json at all');
                         return;
                     }
+                    if (url.startsWith('/stall-body')) {
+                        // Headers arrive promptly; the body never completes.
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.write('{');
+                        return;
+                    }
                     if (url.startsWith('/slow')) {
                         setTimeout(() => {
                             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -388,6 +394,12 @@ describe('Provider transport client (R1 / AC1)', () => {
 
     it('times out a stalled provider request', async () => {
         await expect(providerRequestJson(url('/slow'), { method: 'GET' }, 50, seam)).rejects.toThrow(/timed out/);
+    });
+
+    it('times out a provider response whose body stalls after the headers arrive', async () => {
+        await expect(providerRequestJson(url('/stall-body'), { method: 'GET' }, 300, seam)).rejects.toThrow(
+            /timed out/,
+        );
     });
 
     it('rejects a peer address that does not match the pinned address', async () => {

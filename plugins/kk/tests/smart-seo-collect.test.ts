@@ -216,6 +216,12 @@ describe('Local HTTP/HTTPS Servers & Peer Checks (R2 / AC2)', () => {
                     res.end('<html><head><title>Final Page</title></head><body><h1>Final</h1></body></html>');
                     return;
                 }
+                if (url === '/stall-body') {
+                    // Headers arrive promptly; the body never completes.
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.write('<html>');
+                    return;
+                }
                 if (url === '/large') {
                     // Send > 2 MiB
                     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -315,6 +321,16 @@ describe('Local HTTP/HTTPS Servers & Peer Checks (R2 / AC2)', () => {
         });
         expect(result.status).toBe(302);
         expect(result.headers.location).toBe('http://evil.com/leak');
+    });
+
+    it('times out a response whose body stalls after the headers arrive', async () => {
+        await expect(
+            pinnedSingleRequest(
+                `http://localhost:${httpPort}/stall-body`,
+                { ip: '127.0.0.1', family: 4 },
+                { allowLoopback: true, timeoutMs: 300 },
+            ),
+        ).rejects.toThrow(/timed out/);
     });
 
     it('aborts response streaming when byte limit is exceeded', async () => {

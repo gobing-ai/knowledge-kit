@@ -296,10 +296,12 @@ export function pinnedSingleRequest(
         const chunks: Buffer[] = [];
         const startTime = Date.now();
         let clientReq: http.ClientRequest | https.ClientRequest | null = null;
+        let timer: ReturnType<typeof setTimeout> | undefined;
 
         const cleanupAndReject = (err: Error): void => {
             if (settled) return;
             settled = true;
+            clearTimeout(timer);
             disposeCancel();
             if (clientReq) {
                 try {
@@ -320,7 +322,7 @@ export function pinnedSingleRequest(
             return;
         }
 
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
             cleanupAndReject(new Error(`Request timed out after ${timeoutMs}ms for ${targetUrl}`));
         }, timeoutMs);
 
@@ -364,7 +366,7 @@ export function pinnedSingleRequest(
 
         clientReq = client.request(reqOptions, (res) => {
             ttfbMs = Date.now() - startTime;
-            clearTimeout(timer);
+            // The timer stays armed until 'end': a body that stalls after the headers must still time out.
 
             // Peer check verification
             const remote = clientReq?.socket?.remoteAddress ?? null;
