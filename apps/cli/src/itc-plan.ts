@@ -113,12 +113,20 @@ export interface ItcPublishPlan {
 const BROWSER_TARGETS = new Set(['substack-pub', 'juejin-pub', 'infoq-pub', 'xhs-pub']);
 const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+/**
+ * The package/checkout root that ships the ITC assets, found by walking up from the cwd for
+ * `plugins/kk/publish-presets`. Never derived from the module location: Bun inlines `__dirname`
+ * as an absolute source path in the bundle, which would make the packed CLI reference the checkout
+ * it was built in (0255 AC7).
+ */
 async function resolveDefaultPackageRoot(fs: FileSystem): Promise<string> {
-    const candidates = [resolve(process.cwd()), resolve(__dirname, '../../../'), resolve(__dirname, '../')];
-    for (const c of candidates) {
-        if (await fs.exists(join(c, 'plugins/kk/publish-presets'))) return c;
+    let dir = resolve(process.cwd());
+    for (;;) {
+        if (await fs.exists(join(dir, 'plugins/kk/publish-presets'))) return dir;
+        const parent = resolve(dir, '..');
+        if (parent === dir) return process.cwd();
+        dir = parent;
     }
-    return process.cwd();
 }
 
 /** Parse comma-separated target tokens: `medium-pub,qiita-pub:article` */

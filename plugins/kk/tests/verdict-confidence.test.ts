@@ -34,6 +34,9 @@ const REPO = join(import.meta.dir, '../../..');
 const WORKFLOWS = join(REPO, 'plugins/kk/workflows');
 
 const ITC = 'plugins/kk/workflows/kk-itc.yaml';
+/** 0302/0303: the ITC root is a DAG; the judge now lives in the extracted authoring child FSM. */
+const ITC_AUTHOR = 'plugins/kk/workflows/kk-itc-author.yaml';
+const ITC_STAGE_ENTRY = 'apps/cli/src/index.ts';
 const EXAMPLE = 'plugins/kk/workflows/judge-gated-publish-example.yaml';
 const COLLECT = 'plugins/kk/workflows/kk-collect.yaml';
 /** The live daily DAG, and the nested machine its `safety` node shells out (20261012). */
@@ -184,23 +187,46 @@ afterAll(() => {
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('kk-itc judge verdict → confidence routing', () => {
-    const itc = load(ITC);
+describe('kk-itc-author judge verdict → confidence routing (0302 extraction)', () => {
+    const author = load(ITC_AUTHOR);
 
-    /** The workflow's own var defaults + the fixture work dir (vars are templated or env-exported). */
+    /** The child FSM's own var defaults + the fixture work dir (vars are templated or env-exported). */
     const itcVariables = (dir: string, extra: Record<string, string> = {}): Record<string, string> => ({
-        ...itc.vars,
+        ...author.vars,
         auto: 'false',
         judge: 'true',
+        max_revisions: '2',
         work_dir: dir,
         ...extra,
     });
 
+    /**
+     * Run the REAL disposition stage — `kk stage run itc-author-verdict` — so the routing asserted
+     * below is produced by shipped code, not by a fixture standing in for it. The stage collapses
+     * verdict + revision budget into one word the guards then read.
+     */
+    function runDisposition(dir: string, vars: Record<string, string>): void {
+        const result = Bun.spawnSync(
+            [process.execPath, join(REPO, ITC_STAGE_ENTRY), 'stage', 'run', 'itc-author-verdict', dir],
+            {
+                cwd: dir,
+                env: {
+                    ...process.env,
+                    KK_ITC_AUTO: vars.auto ?? 'false',
+                    KK_ITC_MAX_REVISIONS: vars.max_revisions ?? '2',
+                },
+                stdout: 'pipe',
+                stderr: 'pipe',
+            },
+        );
+        expect(result.exitCode, `itc-author-verdict failed: ${result.stderr.toString()}`).toBe(0);
+    }
+
     it.each([
-        ['PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH' }, ['judge->done']],
-        ['PASS + MEDIUM', { verdict: 'PASS', confidence: 'MEDIUM' }, ['judge->done']],
-        ['PASS + LOW', { verdict: 'PASS', confidence: 'LOW' }, ['judge->done']],
-        // The contract violation fails the run through the out-of-contract catch-all.
+        ['PASS + HIGH', { verdict: 'PASS', confidence: 'HIGH' }, ['judge->author-finish']],
+        ['PASS + MEDIUM', { verdict: 'PASS', confidence: 'MEDIUM' }, ['judge->author-finish']],
+        ['PASS + LOW', { verdict: 'PASS', confidence: 'LOW' }, ['judge->author-finish']],
+        // The contract violation fails the run instead of deadlocking the machine.
         ['PASS without confidence', { verdict: 'PASS' }, ['judge->failed']],
         ['PASS + out-of-enum confidence', { verdict: 'PASS', confidence: 'SURE' }, ['judge->failed']],
         ['PASS + lowercase confidence', { verdict: 'PASS', confidence: 'high' }, ['judge->failed']],
@@ -209,45 +235,84 @@ describe('kk-itc judge verdict → confidence routing', () => {
     ])('%s routes exactly one transition', (name, verdict, expected) => {
         const dir = tempDir('kk-itc-confidence-');
         scenarioVerdict(dir, verdict);
-        const taken = route(itc, 'judge', itcVariables(dir), dir);
+        const vars = itcVariables(dir);
+        runDisposition(dir, vars);
+        const taken = route(author, 'judge', vars, dir);
         expect(record(`itc:${name}`, JSON.stringify(taken) === JSON.stringify(expected), taken.join(','))).toBe(true);
         expect(taken).toEqual(expected);
     });
 
-    it('a contract-violating PASS never reaches done or publish-entry with targets set', () => {
+    it('an exhausted revision budget fails instead of looping', () => {
+        const dir = tempDir('kk-itc-confidence-budget-');
+        scenarioVerdict(dir, { verdict: 'NEEDS_REVISION', confidence: 'HIGH' });
+        writeFileSync(join(dir, '.revise-count'), '3');
+        const vars = itcVariables(dir);
+        runDisposition(dir, vars);
+        expect(route(author, 'judge', vars, dir)).toEqual(['judge->failed']);
+    });
+
+    it('a contract-violating PASS never reaches author-finish or a publish handoff', () => {
         const dir = tempDir('kk-itc-confidence-publish-');
         const verdict = scenarioVerdict(dir, { verdict: 'PASS', confidence: 'SURE' });
-        const taken = route(itc, 'judge', itcVariables(dir, { publish_targets: 'qiita-pub' }), dir);
+        const vars = itcVariables(dir);
+        runDisposition(dir, vars);
+        const taken = route(author, 'judge', vars, dir);
         expect(record('itc:invalid-pass-blocks-publish', taken.join(',') === 'judge->failed', taken.join(','))).toBe(
             true,
         );
-        expect(taken).not.toContain('judge->publish-entry');
+        expect(taken).not.toContain('judge->author-finish');
         expect(readFileSync(verdict, 'utf-8')).toContain('SURE'); // the evidence is never rewritten
     });
 
-    it('auto mode keeps a valid PASS and a plain FAIL on their existing routes', () => {
+    it('auto mode keeps a valid PASS and routes an in-budget NEEDS_REVISION to the auto reviser', () => {
         const passDir = tempDir('kk-itc-confidence-auto-pass-');
         scenarioVerdict(passDir, { verdict: 'PASS', confidence: 'HIGH' });
-        expect(route(itc, 'judge', itcVariables(passDir, { auto: 'true' }), passDir)).toEqual(['judge->report']);
+        const passVars = itcVariables(passDir, { auto: 'true' });
+        runDisposition(passDir, passVars);
+        expect(route(author, 'judge', passVars, passDir)).toEqual(['judge->author-finish']);
 
         const failDir = tempDir('kk-itc-confidence-auto-fail-');
         scenarioVerdict(failDir, { verdict: 'FAIL' });
-        const failTaken = route(itc, 'judge', itcVariables(failDir, { auto: 'true' }), failDir);
-        expect(record('itc:auto-fail-unchanged', failTaken.join(',') === 'judge->report', failTaken.join(','))).toBe(
+        const failVars = itcVariables(failDir, { auto: 'true' });
+        runDisposition(failDir, failVars);
+        const failTaken = route(author, 'judge', failVars, failDir);
+        expect(record('itc:auto-fail-unchanged', failTaken.join(',') === 'judge->failed', failTaken.join(','))).toBe(
             true,
         );
-        expect(failTaken).toEqual(['judge->report']);
+        expect(failTaken).toEqual(['judge->failed']);
+
+        const reviseDir = tempDir('kk-itc-confidence-auto-revise-');
+        scenarioVerdict(reviseDir, { verdict: 'NEEDS_REVISION' });
+        const reviseVars = itcVariables(reviseDir, { auto: 'true' });
+        runDisposition(reviseDir, reviseVars);
+        expect(route(author, 'judge', reviseVars, reviseDir)).toEqual(['judge->draft-autorevise']);
 
         const invalidDir = tempDir('kk-itc-confidence-auto-invalid-');
         scenarioVerdict(invalidDir, { verdict: 'PASS', confidence: 'SURE' });
-        expect(route(itc, 'judge', itcVariables(invalidDir, { auto: 'true' }), invalidDir)).toEqual(['judge->failed']);
+        const invalidVars = itcVariables(invalidDir, { auto: 'true' });
+        runDisposition(invalidDir, invalidVars);
+        expect(route(author, 'judge', invalidVars, invalidDir)).toEqual(['judge->failed']);
     });
 
-    it('the dry-run convention is preserved: an absent verdict file still routes interactive PASS onward', () => {
+    it('the dry-run convention is preserved: an absent verdict file still routes onward', () => {
         const dir = tempDir('kk-itc-confidence-dryrun-');
-        const taken = route(itc, 'judge', itcVariables(dir), dir);
-        expect(record('itc:dry-run-empty-verdict', taken.join(',') === 'judge->done', taken.join(','))).toBe(true);
-        expect(taken).toEqual(['judge->done']);
+        // No disposition stage run at all — the workflow's dry-run walk executes no actions.
+        const taken = route(author, 'judge', itcVariables(dir), dir);
+        expect(record('itc:dry-run-empty-verdict', taken.join(',') === 'judge->author-finish', taken.join(','))).toBe(
+            true,
+        );
+        expect(taken).toEqual(['judge->author-finish']);
+    });
+
+    it('the disposition stage is the SOLE judge reader in the child FSM (no inline verdict parsing)', () => {
+        const judge = author.transitions.filter((t) => t.from === 'judge' && t.command !== null);
+        const inline = judge.filter((t) => /jq -r .*verdict/.test(t.command ?? ''));
+        expect(record('itc:single-disposition-reader', inline.length === 0, `${inline.length} inline readers`)).toBe(
+            true,
+        );
+        expect(inline).toEqual([]);
+        // Every judge exit reads the one disposition file the stage writes.
+        for (const t of judge) expect(t.command).toContain('.itc/disposition.txt');
     });
 });
 
@@ -541,7 +606,7 @@ describe('every judge-verdict consumer verifies confidence', () => {
     it('the judge-state guards are the ones the scan covers (no silent parser gap)', () => {
         // Guard the parser: a judge state whose transitions lost their command would make the
         // consumer scan above vacuous.
-        for (const workflow of [load(ITC), load(EXAMPLE)]) {
+        for (const workflow of [load(ITC_AUTHOR), load(EXAMPLE)]) {
             const judge = workflow.transitions.filter((t) => t.from === 'judge');
             const extracted = judge.filter((t) => t.command !== null).length;
             const ok = judge.length > 0 && extracted === judge.length;
