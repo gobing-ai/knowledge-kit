@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { resolveStagesScript, runStage } from '../src/stage';
+import { resolveStagesScript, runStage, runStageCancellable } from '../src/stage';
 
 /** True while the pid is still alive; a signal-0 probe never throws for a live process. */
 function alive(pid: number): boolean {
@@ -219,6 +219,76 @@ describe('runStageCancellable — host cancellation reaches the stage and its ch
             } catch {
                 // already gone
             }
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
+});
+
+describe('runStageCancellable — exit status, spawn failure and signal forwarding (0285)', () => {
+    const made: string[] = [];
+    afterEach(() => {
+        for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+    /** Fake installed package: a dist entry plus the stages script this test controls. */
+    function pkg(body: string): string {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-cancel-unit-')));
+        made.push(dir);
+        mkdirSync(join(dir, 'dist'), { recursive: true });
+        mkdirSync(join(dir, 'plugins/kk/scripts'), { recursive: true });
+        writeFileSync(join(dir, 'dist/index.js'), 'process.exit(0);\n');
+        writeFileSync(join(dir, 'plugins/kk/scripts/kk-workflow-stages.ts'), body);
+        return join(dir, 'dist/index.js');
+    }
+
+    it('resolves the child exit code (no signal) through the cancellable path', async () => {
+        // The child writes to both streams so the captured-output forwarding is exercised too.
+        const argv1 = pkg('console.log("stage-out"); console.error("stage-err"); process.exit(7);\n');
+        await expect(runStageCancellable(['daily-prepare'], process.execPath, argv1)).resolves.toBe(7);
+    });
+
+    it('maps a child killed by a forwarded signal to the conventional status', async () => {
+        // The child dies by SIGTERM, so the close event carries a null code and the signal instead.
+        const argv1 = pkg('process.kill(process.pid, "SIGTERM");\n');
+        await expect(runStageCancellable(['daily-prepare'], process.execPath, argv1)).resolves.toBe(143);
+    });
+
+    it('rejects with a named error when the runner cannot be spawned', async () => {
+        await expect(runStageCancellable(['x'], '/nonexistent/binary-xyz', '/nonexistent/kk-entry')).rejects.toThrow(
+            /failed to spawn stage runner/,
+        );
+    });
+
+    it('forwards a host signal to the stage process group and disarms afterwards', async () => {
+        // The child swallows SIGTERM and exits 0 on its own, so the escalation timer is armed and then
+        // disarmed by the close handler — a real cancellation is proven end to end in the test above.
+        const argv1 = pkg('process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 300);\n');
+        const pending = runStageCancellable(['daily-prepare'], process.execPath, argv1);
+        await new Promise((r) => setTimeout(r, 120));
+        process.emit('SIGTERM');
+        await expect(pending).resolves.toBe(0);
+        // Handlers are removed on close: a further signal must not reach the finished run.
+        process.emit('SIGTERM');
+    }, 30_000);
+});
+
+describe('runStageCancellable — escalation of a stage that ignores the signal (0285)', () => {
+    it('force-kills the process group when the stage outlives the grace period', async () => {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-cancel-esc-')));
+        try {
+            mkdirSync(join(dir, 'dist'), { recursive: true });
+            mkdirSync(join(dir, 'plugins/kk/scripts'), { recursive: true });
+            writeFileSync(join(dir, 'dist/index.js'), 'process.exit(0);\n');
+            // Swallows SIGTERM and lingers past CANCEL_ESCALATION_MS (5 s), so the escalation fires.
+            writeFileSync(
+                join(dir, 'plugins/kk/scripts/kk-workflow-stages.ts'),
+                'process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 30000);\n',
+            );
+            const pending = runStageCancellable(['daily-prepare'], process.execPath, join(dir, 'dist/index.js'));
+            await new Promise((r) => setTimeout(r, 150));
+            process.emit('SIGTERM');
+            // The child is SIGKILLed, which is not one of the forwarded signals: exit status falls to 1.
+            await expect(pending).resolves.toBe(1);
+        } finally {
             rmSync(dir, { recursive: true, force: true });
         }
     }, 60_000);

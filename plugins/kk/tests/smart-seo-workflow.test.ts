@@ -1,10 +1,24 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { AuditArtifact } from '../scripts/seo-report';
+import {
+    assertSeoNotCancelled,
+    installSeoStageCancellation,
+    onSeoCancel,
+    resetSeoStageCancellation,
+    SeoStageCancelledError,
+    seoCancelledSignal,
+    seoSignalExitCode,
+} from '../scripts/seo-fetch';
+import {
+    type AuditArtifact,
+    renderDeterministicSummary,
+    renderNarrativeSections,
+    validateNarrative,
+} from '../scripts/seo-report';
 
 /**
  * Task 0285 — Smart SEO workflow: validated narrative and terminal outcomes.
@@ -352,26 +366,110 @@ describe('narrative rejection matrix (R1)', () => {
         coverage: { totalRules: 52, applicableRules: 10, assessed: 10, unknown: 0, ratio: 1 },
         facts: { pages_visited: { value: 3, unit: 'count', source: 'crawl.json' } },
         assessments: [],
-        actions: [],
+        actions: [
+            {
+                id: 'SEO-title_missing-abcdef123456',
+                ruleId: 'title_missing',
+                title: 'Fix the missing title tag',
+                severity: 'critical',
+                priority: 'P1',
+                category: 'content',
+                affectedPagesCount: 2,
+                affectedSubjects: ['https://example.com'],
+                effort: 1,
+                heuristic: false,
+                description: 'Title missing',
+            },
+        ],
         judgments: { status: 'not-assessed' },
         performance: { status: 'not-assessed' },
         visibility: { status: 'not-assessed' },
         limits: { pagesVisited: 3, requestsMade: 4, totalBytes: 10, elapsedSeconds: 1, hitLimit: null },
     };
 
-    /** Validate a narrative variant through the real module (no CLI, so the matrix stays fast). */
-    function validate(narrative: unknown): { status: string; diagnostics: string[] } {
-        const script = [
-            `import { validateNarrative } from ${JSON.stringify(join(repoRoot, 'plugins/kk/scripts/seo-report.ts'))};`,
-            `const audit = ${JSON.stringify(audit)};`,
-            `const raw = ${JSON.stringify(JSON.stringify(narrative))};`,
-            `const out = validateNarrative(raw, audit, "digest-under-test");`,
-            `console.log(JSON.stringify({ status: out.status, diagnostics: out.diagnostics }));`,
-        ].join('\n');
-        const res = spawnSync('bun', ['-e', script], { encoding: 'utf-8', cwd: repoRoot });
-        if (res.status !== 0) throw new Error(`validateNarrative probe failed: ${res.stderr}`);
-        return JSON.parse(res.stdout.trim().split('\n').pop() as string);
+    /**
+     * Validate a narrative variant in-process against the real module. The audit above is a local
+     * fixture, so the digest under test is a literal.
+     */
+    function validate(narrative: unknown) {
+        return validateNarrative(JSON.stringify(narrative), audit, 'digest-under-test');
     }
+
+    it('renders an accepted narrative through fixed templates and a labeled fallback summary', () => {
+        const accepted = validate({
+            ...base,
+            sections: [
+                {
+                    heading: 'summary',
+                    claims: [
+                        {
+                            template: 'fact',
+                            evidenceRef: { artifact: 'audit.json', jsonPointer: '/facts/pages_visited' },
+                        },
+                    ],
+                },
+                {
+                    heading: 'priorities',
+                    claims: [
+                        {
+                            template: 'action',
+                            evidenceRef: {
+                                artifact: 'audit.json',
+                                jsonPointer: '/actions/SEO-title_missing-abcdef123456',
+                            },
+                        },
+                    ],
+                },
+                {
+                    heading: 'limits',
+                    claims: [
+                        {
+                            template: 'limit',
+                            evidenceRef: { artifact: 'audit.json', jsonPointer: '/limits/pagesVisited' },
+                        },
+                    ],
+                },
+            ],
+        });
+        expect(accepted.status).toBe('included');
+
+        const markdown = renderNarrativeSections(audit, accepted.sections);
+        expect(markdown).toContain('### Summary');
+        expect(markdown).toContain('**Observed fact**');
+        expect(markdown).toContain('### Priorities');
+        expect(markdown).toContain('**Planned action**');
+        expect(markdown).toContain('### Limits');
+        expect(markdown).toContain('**Recorded limit**');
+
+        // The fallback summary counts actions and reports the recorded crawler limits.
+        const summary = renderDeterministicSummary(audit);
+        expect(summary).toContain('- Coverage:');
+        expect(summary).toContain('- Prioritized actions: 1 (P1 1, P2 0, P3 0, review 0).');
+        expect(summary).toContain('- Crawl limits: pages 3, requests 4');
+    });
+
+    it('renders a record whose value is null as none, and rejects an unknown action id', () => {
+        const withNullLimit: AuditArtifact = { ...audit, limits: { pagesVisited: 3, hitLimit: null } };
+        const nullSummary = renderDeterministicSummary(withNullLimit);
+        expect(nullSummary).toContain('hit limit none');
+
+        const rejected = validate({
+            ...base,
+            sections: [
+                {
+                    heading: 'priorities',
+                    claims: [
+                        {
+                            template: 'action',
+                            evidenceRef: { artifact: 'audit.json', jsonPointer: '/actions/not-a-recorded-action' },
+                        },
+                    ],
+                },
+            ],
+        });
+        expect(rejected.status).toBe('rejected');
+        expect(rejected.diagnostics.join(' ')).toContain('unknown action id');
+    });
 
     const digest = 'digest-under-test';
     const base = { schemaVersion: 1, runId: 'narr-run', auditDigest: digest };
@@ -721,5 +819,58 @@ describe('cancellation (R2)', () => {
             }
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('stage cancellation registry (R2)', () => {
+    afterEach(() => resetSeoStageCancellation());
+
+    it('maps each forwarded signal to its conventional exit status', () => {
+        expect(seoSignalExitCode('SIGINT')).toBe(130);
+        expect(seoSignalExitCode('SIGTERM')).toBe(143);
+        expect(seoSignalExitCode('SIGHUP')).toBe(129);
+        expect(seoSignalExitCode('SIGUSR1')).toBe(1);
+    });
+
+    it('records the cancelling signal once, notifies listeners and refuses to re-enter', () => {
+        const seen: NodeJS.Signals[] = [];
+        const dispose = onSeoCancel((signal) => seen.push(signal));
+        expect(seoCancelledSignal()).toBeNull();
+        assertSeoNotCancelled();
+
+        process.emit('SIGTERM');
+        expect(seen).toEqual(['SIGTERM']);
+        expect(seoCancelledSignal()).toBe('SIGTERM');
+        expect(() => assertSeoNotCancelled()).toThrow(SeoStageCancelledError);
+
+        // First signal wins: a second never re-enters the listeners.
+        process.emit('SIGINT');
+        expect(seen).toEqual(['SIGTERM']);
+
+        dispose();
+        expect(seoCancelledSignal()).toBe('SIGTERM');
+        resetSeoStageCancellation();
+        expect(seoCancelledSignal()).toBeNull();
+    });
+
+    it('keeps cancellation observable for a whole stage and removes handlers afterwards', () => {
+        const dispose = installSeoStageCancellation();
+        expect(seoCancelledSignal()).toBeNull();
+
+        process.emit('SIGHUP');
+        expect(seoCancelledSignal()).toBe('SIGHUP');
+
+        dispose();
+        resetSeoStageCancellation();
+        // With the last listener gone the handlers are removed, so a further signal is inert.
+        process.emit('SIGHUP');
+        expect(seoCancelledSignal()).toBeNull();
+    });
+});
+
+describe('runSeoStage dispatcher (R2)', () => {
+    it('refuses an unknown stage by name', async () => {
+        const { runSeoStage } = await import('../scripts/seo-stages');
+        await expect(runSeoStage('seo-nope', [])).rejects.toThrow(/unknown stage: seo-nope/);
     });
 });

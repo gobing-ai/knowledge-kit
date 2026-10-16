@@ -105,13 +105,8 @@ const FORWARDED_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGH
 /** Grace period before a stage that ignored the forwarded signal is killed outright. */
 const CANCEL_ESCALATION_MS = 5000;
 
-/** Conventional shell exit status for a signal-terminated process. */
-function signalExitCode(signal: NodeJS.Signals): number {
-    if (signal === 'SIGINT') return 130;
-    if (signal === 'SIGTERM') return 143;
-    if (signal === 'SIGHUP') return 129;
-    return 1;
-}
+/** Conventional shell exit status per forwarded signal; anything else falls back to 1. */
+const SIGNAL_EXIT_CODES: Partial<Record<NodeJS.Signals, number>> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
 
 /**
  * Cancellable variant of `runStage` used by the `kk stage run` verb.
@@ -183,7 +178,7 @@ export function runStageCancellable(args: string[], execPath = process.execPath,
             disarm();
             forwardChildOutput(Buffer.concat(stdoutChunks), echo);
             forwardChildOutput(Buffer.concat(stderrChunks), echoError);
-            resolvePromise(code ?? (signal === null ? 1 : signalExitCode(signal)));
+            resolvePromise(code ?? (signal === null ? 1 : (SIGNAL_EXIT_CODES[signal] ?? 1)));
         });
     });
 }
