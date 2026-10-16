@@ -842,7 +842,7 @@ export async function seoScore(args: string[]): Promise<void> {
     writeJsonAtomic(join(targetDir, 'audit.json'), auditArtifact);
     const digestMd = `# Smart SEO Audit Digest\n\n- Technical Score: ${scores.technical !== null ? scores.technical : 'null'}\n- Actions Count: ${actions.length}\n`;
     writeJsonAtomic(join(targetDir, 'digest.json'), { digestMd });
-    writeFileSync(join(targetDir, 'digest.md'), digestMd, 'utf-8');
+    writeTextAtomic(join(targetDir, 'digest.md'), digestMd);
 
     console.error(`seo-score: generated audit.json in ${targetDir} with ${actions.length} prioritized actions`);
 }
@@ -899,7 +899,7 @@ export async function seoReport(args: string[]): Promise<void> {
     }
 
     const reportMd = renderReportMarkdown(audit, narrativeText);
-    writeFileSync(join(workDir, 'report.md'), reportMd, 'utf-8');
+    writeTextAtomic(join(workDir, 'report.md'), reportMd);
 
     const reportJson: ReportJsonArtifact = {
         schemaVersion: 1,
